@@ -1554,3 +1554,47 @@ Verification:
 - Passed: `unit2_training_probe`, `training_saved_unit_control_probe`, `thermal_allocation_probe`, `momentum_budget_allocation_probe`, `limb_momentum_range_probe`, `combat_probe`, `ui_layout_probe`, `text_overflow_probe`。
 - `teamedit_probe` exit code 0；输出中仍有已知 AI/template 非法提示，不影响单位2训练靶机合法性。
 - `--check-only --quit-after 1` exit code 0；ObjectDB cleanup warnings remain ordinary teardown noise.
+
+## 2026-05-21 统一动力链与旧动力字段拒绝
+
+Rules:
+- 新动力链唯一公开语义：引擎提供 `drive_output`，推进器与绑定行动关节消耗 `drive_demand/joint_drive_demand`，统计层输出 `drive_output_total`、`drive_demand_total`、`drive_margin`、`drive_ratio`、`move_speed`、`boost_speed`、`action_drive_scale`、`stability_drive_scale`。
+- 有效 catalog 的 engine 只暴露 `drive_family/drive_size/drive_output/drive_idle_heat/drive_mass/drive_role_tags/drive_team_philosophy`；booster 只暴露 `thruster_family/thruster_size/move_momentum/boost_momentum/boost_duration/brake_power/reaction_cancel/drive_demand`。
+- 旧动力字段 `power/engine_power/engine_motion_scale/engine_momentum_output/thruster_momentum/thruster_engine_demand/allocated_momentum/boost_power/normal_thrust/boost_cone/booster_size` 等只作为 legacy 检测目标；保存单位或拓扑中出现即判为旧动力数据，需要在 TeamEdit 重建。
+- 六类引擎哲学：`duelist` 轻量高响应，`gunline` 火控稳定，`rushdown` 瞬时动作与 Boost，`siege` 重载稳定，`swarm` 傀儡低价，`support_grid` 结界/支援场域。
+- 四类推进语义：`cruise` 巡航、`sustain` 持续、`overburn` 过载、`stabilizer` 稳架。Boost 成功后按 `boost_heat * boost_heat_mult` 进入热槽。
+
+Implementation notes:
+- `_selected_component()` 在 engine/booster 路径调用 `_drive_component_with_defaults()`，对旧 catalog 条目做有效字段归一化并剥离旧动力键，避免旧存档索引漂移。
+- `_merge_engine_stats()`、payload merge、`_bound_joint_budget_for_stats()` 和 `_apply_engine_momentum_budget()` 已改为新 drive budget；旧 `engine_momentum_note` 分支被 `drive_note` 取代。
+- `Fighter` 的速度表、移动、刹车、Boost、行动模块关节速度和主动反作用力抵消改读 `move_speed/move_acceleration/brake_power/action_drive_scale/stability_drive_scale/reaction_cancel`。
+- 自由画布旧 `groups/attack_groups`、旧动力字段和旧关节分配字段被 `_unit_has_legacy_drive_data()` 捕获；训练入口返回 legacy drive rebuild 提示。
+
+Verification:
+- Added and passed: `drive_catalog_schema_probe`, `drive_gradient_philosophy_probe`, `drive_budget_teamedit_probe`, `drive_runtime_movement_probe`, `drive_runtime_action_speed_probe`, `drive_recoil_stability_probe`, `drive_legacy_rejection_probe`.
+- Updated and passed: `engine_thruster_cooling_economy_probe`.
+- Passed regressions: `boost_cooldown_probe`, `eight_direction_boost_probe`, `reverse_cannot_boost_probe`.
+- `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 20` reproduced the known headless/headed check-only timeout path, then completed through `check_only_fallback_probe` with exit code 0. ObjectDB/RID cleanup warnings remain teardown noise when probe exit code is 0.
+
+## 2026-05-21 零件库 Hover 详情大卡重制
+
+Rules:
+- 零件库详细页本轮定义为零件 hover 大卡和躯干详情 payload hover；不新增独立详情页，不调整 catalog 数值，不改战斗 API。
+- 玩家可见信息采用关键战斗信息密度：购买、质量、生命、接口/槽位、武器、热、动力、行动适配和软件定位；隐藏兼容/调试/底层工程口径。
+- Hover 大卡继续使用现有程序化零件图，不引入外部图标资产，不恢复旧 atlas 或旧 child visual。
+
+Implementation notes:
+- `EditorPartHoverPopupView` 改为说明书式布局：标题、零件图、4x2 图标指标栏和短说明/标签区。
+- `_hover_card_stat_entries()` 不再用 radius、active damage 等 fallback 补满 8 项；各零件类型只展示关键指标，并给指标附带程序绘制 icon key。
+- 新增 `_hover_card_player_detail_lines()`，将躯干、肢体、近战、枪械、引擎、散热器、推进器、行动模块与 soul/code/ether 的 hover 文案压缩为玩家语义。
+- 编辑器底部旧 `Legacy Load`/`兼容负载` 文案改为 `Momentum Allocation`/`动力分配`，避免和新系统术语冲突。
+- 新增 `part_hover_detail_page_probe.gd`，并更新 `catalog_ui_terms_probe.gd`、`part_library_ui_probe.gd` 的 UI 术语期望。
+
+Verification:
+- Passed: `part_hover_detail_page_probe`, `catalog_ui_terms_probe`, `part_library_ui_probe`, `ui_layout_probe`, `text_overflow_probe`.
+- Passed new-system samples: `engine_ui_terms_probe`, `cooling_ui_terms_probe`, `missile_part_data_probe`, `laser_part_data_probe`, `blunt_weapon_gradient_probe`, `first_ether_origin_pin_probe`, `thermal_pit_crew_source_code_probe`.
+- Passed core regressions: `board_battle_art_identity_probe`, `runtime_geometry_identity_probe`, `training_topology_visual_consistency_probe`, `combat_probe`, `no_old_combat_terms_probe`, `no_legacy_runtime_pointers_probe`.
+- Headless `--check-only --quit-after 1` exit code 0. ObjectDB cleanup warnings appeared on several successful probe exits and remain ordinary teardown noise.
+
+Sync:
+- Implemented in `E:\New project`; Documents mirror sync completed for touched hover UI files, updated probes, new probe, and this worklog.

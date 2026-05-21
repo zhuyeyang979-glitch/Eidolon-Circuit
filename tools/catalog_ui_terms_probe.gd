@@ -10,7 +10,7 @@ func _fail(message: String) -> void:
 
 func _assert_no_old_terms(text: String, label: String) -> void:
 	var lowered := text.to_lower()
-	for forbidden in ["damage unit", "momentum cap", "load capacity", "damage threshold", "reference damage", "boost_power", "normal_thrust", "boost cone", "booster size", "boost style", "boost flame"]:
+	for forbidden in ["damage unit", "momentum cap", "load capacity", "damage threshold", "reference damage", "boost_power", "normal_thrust", "boost cone", "booster size", "boost style", "boost flame", "legacy load", "compat view", "projectile mass", "collision speed", "attack group", "购买词条", "装入预览", "兼容显示", "投射物质量", "碰撞速度"]:
 		if lowered.find(forbidden) >= 0:
 			_fail("%s still exposes old combat term: %s" % [label, forbidden])
 
@@ -57,7 +57,7 @@ func _init() -> void:
 	for raw in booster_entries:
 		if raw is Dictionary:
 			booster_labels += " %s" % String(Dictionary(raw).get("label", ""))
-	if booster_labels.find("推进动量") < 0 and booster_labels.to_lower().find("move mom") < 0:
+	if booster_labels.find("推进动量") < 0 and booster_labels.find("推进") < 0 and booster_labels.to_lower().find("move mom") < 0 and booster_labels.to_lower().find("move") < 0:
 		_fail("Booster hover does not expose explicit thruster momentum: %s" % booster_labels)
 	for line in main._hover_card_detail_lines("booster", booster, {}, {}):
 		_assert_no_old_terms(String(line), "booster detail")

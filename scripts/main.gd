@@ -1720,52 +1720,109 @@ class EditorPartHoverPopupView:
 		var rect := Rect2(Vector2.ZERO, size)
 		draw_rect(rect, Color(0.004, 0.01, 0.018, 0.96), true)
 		draw_rect(Rect2(Vector2.ONE, size - Vector2(2.0, 2.0)), _slot_color().lerp(Color.WHITE, 0.18), false, 2.0)
-		draw_string(font, Vector2(18.0, 28.0), _trim(title, 34), HORIZONTAL_ALIGNMENT_LEFT, size.x - 36.0, 18, Color(0.95, 0.98, 1.0, 1.0))
-		draw_string(font, Vector2(18.0, 48.0), _trim(subtitle, 48), HORIZONTAL_ALIGNMENT_LEFT, size.x - 36.0, 11, Color(1.0, 0.86, 0.26, 1.0))
-		var art_rect := Rect2(Vector2(18.0, 62.0), Vector2(size.x - 36.0, 118.0))
+		draw_string(font, Vector2(18.0, 27.0), _trim(title, 36), HORIZONTAL_ALIGNMENT_LEFT, size.x - 36.0, 17, Color(0.95, 0.98, 1.0, 1.0))
+		draw_string(font, Vector2(18.0, 48.0), _trim(subtitle, 54), HORIZONTAL_ALIGNMENT_LEFT, size.x - 36.0, 10, Color(1.0, 0.86, 0.26, 1.0))
+		var art_rect := Rect2(Vector2(18.0, 62.0), Vector2(size.x - 36.0, 112.0))
 		draw_rect(art_rect, Color(0.008, 0.018, 0.03, 0.94), true)
 		draw_rect(art_rect, Color(0.24, 0.4, 0.52, 0.54), false, 1.0)
 		_draw_large_art(art_rect)
-		var stat_rect := Rect2(Vector2(18.0, 190.0), Vector2(size.x - 36.0, 126.0))
+		var stat_rect := Rect2(Vector2(18.0, 184.0), Vector2(size.x - 36.0, 132.0))
 		draw_rect(stat_rect, Color(0.0, 0.0, 0.0, 0.26), true)
 		draw_rect(stat_rect, Color(0.34, 0.58, 0.72, 0.34), false, 1.0)
-		_draw_stat_bars(font, stat_rect)
-		var data_rect := Rect2(Vector2(18.0, 326.0), Vector2(size.x - 36.0, size.y - 344.0))
+		_draw_metric_tiles(font, stat_rect)
+		var data_rect := Rect2(Vector2(18.0, 328.0), Vector2(size.x - 36.0, size.y - 346.0))
 		draw_rect(data_rect, Color(0.0, 0.0, 0.0, 0.34), true)
-		var y := data_rect.position.y + 18.0
+		draw_rect(data_rect, Color(0.34, 0.58, 0.72, 0.22), false, 1.0)
+		var y := data_rect.position.y + 17.0
 		for line in detail_lines:
 			if y > data_rect.end.y - 6.0:
 				break
 			var line_text := String(line)
 			var line_color := Color(1.0, 0.36, 0.24, 1.0) if line_text.begins_with("!") else Color(0.82, 0.9, 0.96, 1.0)
-			draw_string(font, Vector2(data_rect.position.x + 10.0, y), _trim(line_text, 68), HORIZONTAL_ALIGNMENT_LEFT, data_rect.size.x - 20.0, 12, line_color)
-			y += 16.0
+			if line_text.begins_with("#"):
+				var chip_text := line_text.substr(1).strip_edges()
+				var chip_w := minf(data_rect.size.x - 20.0, maxf(88.0, float(chip_text.length()) * 7.2 + 18.0))
+				var chip_rect := Rect2(Vector2(data_rect.position.x + 10.0, y - 12.0), Vector2(chip_w, 18.0))
+				draw_rect(chip_rect, _slot_color().lerp(Color(0.02, 0.05, 0.07, 1.0), 0.56), true)
+				draw_rect(chip_rect, _slot_color().lerp(Color.WHITE, 0.26), false, 1.0)
+				draw_string(font, chip_rect.position + Vector2(8.0, 13.0), _trim(chip_text, 38), HORIZONTAL_ALIGNMENT_LEFT, chip_rect.size.x - 14.0, 10, Color(0.9, 0.98, 1.0, 0.96))
+			else:
+				draw_string(font, Vector2(data_rect.position.x + 10.0, y), _trim(line_text, 62), HORIZONTAL_ALIGNMENT_LEFT, data_rect.size.x - 20.0, 11, line_color)
+			y += 17.0
 
-	func _draw_stat_bars(font: Font, rect: Rect2) -> void:
-		var columns := 2
-		var rows := 4
+	func _draw_metric_tiles(font: Font, rect: Rect2) -> void:
+		var columns := 4
+		var rows := 2
 		var cell_w := rect.size.x / float(columns)
 		var cell_h := rect.size.y / float(rows)
 		for i in range(mini(stat_entries.size(), columns * rows)):
 			var entry: Dictionary = stat_entries[i]
 			var col := i % columns
 			var row := floori(float(i) / float(columns))
-			var cell := Rect2(rect.position + Vector2(float(col) * cell_w + 8.0, float(row) * cell_h + 5.0), Vector2(cell_w - 16.0, cell_h - 8.0))
-			_draw_stat_bar(font, cell, entry)
+			var cell := Rect2(rect.position + Vector2(float(col) * cell_w + 5.0, float(row) * cell_h + 6.0), Vector2(cell_w - 10.0, cell_h - 11.0))
+			_draw_metric_tile(font, cell, entry)
 
-	func _draw_stat_bar(font: Font, rect: Rect2, entry: Dictionary) -> void:
+	func _draw_metric_tile(font: Font, rect: Rect2, entry: Dictionary) -> void:
 		var label := String(entry.get("label", ""))
 		var value := float(entry.get("value", 0.0))
 		var max_value := maxf(1.0, float(entry.get("max_value", absf(value) * 1.2)))
 		var unit := String(entry.get("unit", ""))
 		var color: Color = entry.get("color", _slot_color())
+		var icon := String(entry.get("icon", ""))
 		var value_text := _format_value(value, unit)
-		draw_string(font, rect.position + Vector2(0.0, 9.0), _trim(label, 10), HORIZONTAL_ALIGNMENT_LEFT, rect.size.x * 0.52, 9, Color(0.82, 0.9, 0.96, 1.0))
-		draw_string(font, rect.position + Vector2(rect.size.x * 0.52, 9.0), _trim(value_text, 9), HORIZONTAL_ALIGNMENT_RIGHT, rect.size.x * 0.48, 9, Color(1.0, 0.9, 0.34, 1.0))
-		var bar_rect := Rect2(rect.position + Vector2(0.0, 14.0), Vector2(rect.size.x, 8.0))
+		draw_rect(rect, Color(0.01, 0.02, 0.032, 0.86), true)
+		var border_color := color.lerp(Color.WHITE, 0.2)
+		border_color.a = 0.38
+		draw_rect(rect, border_color, false, 1.0)
+		_draw_metric_icon(icon, rect.position + Vector2(15.0, 18.0), 10.0, color)
+		draw_string(font, rect.position + Vector2(31.0, 15.0), _trim(label, 9), HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 35.0, 9, Color(0.82, 0.9, 0.96, 1.0))
+		draw_string(font, rect.position + Vector2(31.0, 31.0), _trim(value_text, 10), HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 35.0, 12, Color(1.0, 0.9, 0.34, 1.0))
+		var bar_rect := Rect2(rect.position + Vector2(7.0, rect.size.y - 8.0), Vector2(rect.size.x - 14.0, 4.0))
 		draw_rect(bar_rect, Color(0.0, 0.0, 0.0, 0.5), true)
 		draw_rect(Rect2(bar_rect.position, Vector2(bar_rect.size.x * clampf(value / max_value, 0.0, 1.0), bar_rect.size.y)), color, true)
 		draw_rect(bar_rect, Color(0.58, 0.72, 0.84, 0.45), false, 1.0)
+
+	func _draw_metric_icon(icon: String, center: Vector2, radius: float, color: Color) -> void:
+		var dark := Color(0.0, 0.0, 0.0, 0.58)
+		draw_circle(center, radius, dark)
+		match icon:
+			"cost":
+				draw_circle(center, radius * 0.72, color)
+				draw_arc(center, radius * 0.44, 0.0, TAU, 20, Color(0.02, 0.04, 0.06, 0.9), 1.4)
+			"mass":
+				draw_colored_polygon([center + Vector2(-radius * 0.7, radius * 0.6), center + Vector2(radius * 0.7, radius * 0.6), center + Vector2(radius * 0.42, -radius * 0.62), center + Vector2(-radius * 0.42, -radius * 0.62)], color)
+			"hp":
+				draw_line(center + Vector2(-radius * 0.72, 0.0), center + Vector2(radius * 0.72, 0.0), color, 3.0)
+				draw_line(center + Vector2(0.0, -radius * 0.72), center + Vector2(0.0, radius * 0.72), color, 3.0)
+			"range", "length":
+				draw_line(center + Vector2(-radius * 0.82, 0.0), center + Vector2(radius * 0.82, 0.0), color, 2.2)
+				draw_line(center + Vector2(radius * 0.82, 0.0), center + Vector2(radius * 0.48, -radius * 0.28), color, 2.2)
+				draw_line(center + Vector2(radius * 0.82, 0.0), center + Vector2(radius * 0.48, radius * 0.28), color, 2.2)
+			"port":
+				for a in [0.0, PI * 0.5, PI, PI * 1.5]:
+					draw_circle(center + Vector2(cos(a), sin(a)) * radius * 0.58, radius * 0.2, color)
+			"slot":
+				draw_rect(Rect2(center - Vector2(radius * 0.62, radius * 0.48), Vector2(radius * 1.24, radius * 0.96)), color, false, 2.0)
+			"heat":
+				draw_colored_polygon([center + Vector2(0.0, -radius * 0.84), center + Vector2(radius * 0.58, radius * 0.18), center + Vector2(0.0, radius * 0.78), center + Vector2(-radius * 0.5, radius * 0.08)], color)
+			"power":
+				draw_line(center + Vector2(-radius * 0.32, radius * 0.78), center + Vector2(radius * 0.16, -radius * 0.08), color, 3.0)
+				draw_line(center + Vector2(radius * 0.16, -radius * 0.08), center + Vector2(-radius * 0.08, -radius * 0.08), color, 3.0)
+				draw_line(center + Vector2(-radius * 0.08, -radius * 0.08), center + Vector2(radius * 0.34, -radius * 0.78), color, 3.0)
+			"ammo":
+				draw_rect(Rect2(center + Vector2(-radius * 0.28, -radius * 0.72), Vector2(radius * 0.56, radius * 1.34)), color, true)
+				draw_colored_polygon([center + Vector2(-radius * 0.28, -radius * 0.72), center + Vector2(radius * 0.28, -radius * 0.72), center + Vector2(0.0, -radius)], color.lerp(Color.WHITE, 0.25))
+			"cool":
+				for a in [0.0, TAU / 3.0, TAU * 2.0 / 3.0]:
+					draw_line(center, center + Vector2(cos(a), sin(a)) * radius * 0.82, color, 2.0)
+				draw_circle(center, radius * 0.22, color)
+			"boost":
+				draw_colored_polygon([center + Vector2(-radius * 0.8, -radius * 0.42), center + Vector2(radius * 0.72, 0.0), center + Vector2(-radius * 0.8, radius * 0.42)], color)
+			"action":
+				draw_arc(center, radius * 0.68, -PI * 0.75, PI * 0.72, 24, color, 2.4)
+				draw_line(center + Vector2(radius * 0.58, radius * 0.44), center + Vector2(radius * 0.84, radius * 0.16), color, 2.4)
+			_:
+				draw_circle(center, radius * 0.56, color)
 
 	func _format_value(value: float, unit: String) -> String:
 		if unit == "m" or unit == "x":
@@ -5064,7 +5121,7 @@ const EDITOR_PART_GROUP_SLOTS = {
 const EDITOR_PART_GROUP_NAMES_ZH = {"torso": "躯干", "limb": "肢体", "terminal_weapon": "武器", "barrier_panel": "结界板", "software_muscle": "软肌肉", "software": "软件"}
 const EDITOR_PART_GROUP_NAMES_EN = {"torso": "TORSO", "limb": "LIMB", "terminal_weapon": "WEAPON", "barrier_panel": "BARRIER", "software_muscle": "SOFT-MUS", "software": "SOFT"}
 const EDITOR_SORT_KEY_ORDER = ["cost", "hp", "mass", "length", "stiffness", "energy", "power", "damage", "range"]
-const EDITOR_SORT_KEY_NAMES_ZH = {"cost": "价格", "hp": "生命", "mass": "质量", "length": "长度", "stiffness": "刚度", "energy": "兼容负载", "power": "动力", "damage": "伤害", "range": "射程"}
+const EDITOR_SORT_KEY_NAMES_ZH = {"cost": "价格", "hp": "生命", "mass": "质量", "length": "长度", "stiffness": "刚度", "energy": "动力分配", "power": "动力", "damage": "伤害", "range": "射程"}
 const EDITOR_SORT_KEY_NAMES_EN = {"cost": "COST", "hp": "HP", "mass": "MASS", "length": "LENGTH", "stiffness": "STIFFNESS", "energy": "LEGACY LOAD", "power": "POWER", "damage": "DAMAGE", "range": "RANGE"}
 const TOPOLOGY_PART_SLOTS = ["limb_muscle", "muscle"]
 const LIMB_MUSCLE_LENGTH_MULTIPLIER = 0.5
@@ -6007,6 +6064,9 @@ var settings_backdrop: BackdropView
 var hud_overlay: CockpitHudView
 var battle_minimap_view: BattleMinimapView
 var battle_instrument_gauge: BattleInstrumentGaugeView
+var battle_ui_last_heavy_msec := -1000000
+var battle_ui_last_minimap_msec := -1000000
+var battle_ui_last_sortie_msec := -1000000
 var component_art_view: ComponentArtView
 var editor_battle_preview_view: BattlePartPreviewView
 var editor_structure_reference_view: TextureRect
@@ -21929,16 +21989,28 @@ func _separate_unit_part_pair(a, b, delta: float) -> void:
 	var b_share := clampf(mass_a / total_mass, 0.12, 0.88)
 	var max_checks := 0
 	var deferred_runtime_responses: Array = []
+	var shifted_a_colliders: Array = []
 	for raw_a in a_colliders:
 		if not (raw_a is Dictionary):
 			continue
 		var raw_collider_a: Dictionary = raw_a
-		var collider_a: Dictionary = _shift_collider_to_origin(raw_collider_a, origin_x)
-		for raw_b in b_colliders:
-			if not (raw_b is Dictionary):
+		shifted_a_colliders.append({"raw": raw_collider_a, "shifted": _shift_collider_to_origin(raw_collider_a, origin_x)})
+	var shifted_b_colliders: Array = []
+	for raw_b in b_colliders:
+		if not (raw_b is Dictionary):
+			continue
+		var raw_collider_b: Dictionary = raw_b
+		shifted_b_colliders.append({"raw": raw_collider_b, "shifted": _shift_collider_to_origin(raw_collider_b, origin_x)})
+	for entry_a in shifted_a_colliders:
+		var raw_collider_a: Dictionary = Dictionary(entry_a.get("raw", {}))
+		var collider_a: Dictionary = Dictionary(entry_a.get("shifted", {}))
+		for entry_b in shifted_b_colliders:
+			var raw_collider_b: Dictionary = Dictionary(entry_b.get("raw", {}))
+			var collider_b: Dictionary = Dictionary(entry_b.get("shifted", {}))
+			var broadphase_gap := _collider_broadphase_gap(collider_a, collider_b)
+			var broadphase_margin := contact_padding + (RUNTIME_CONTACT_REQUIRED_OVERLAP if exact_runtime_pair else 0.0) + 0.02
+			if broadphase_gap > broadphase_margin:
 				continue
-			var raw_collider_b: Dictionary = raw_b
-			var collider_b: Dictionary = _shift_collider_to_origin(raw_collider_b, origin_x)
 			var gap := _collider_gap(collider_a, collider_b) - contact_padding
 			if exact_runtime_pair:
 				if gap > -RUNTIME_CONTACT_REQUIRED_OVERLAP:
@@ -24510,6 +24582,8 @@ func _collider_gap(a: Dictionary, b: Dictionary) -> float:
 
 
 func _collider_bounding_radius(collider: Dictionary) -> float:
+	if collider.has("bounding_radius"):
+		return maxf(0.001, float(collider.get("bounding_radius", 0.0)))
 	var center := _collider_center(collider)
 	var shape := String(collider.get("shape", "circle"))
 	if shape == "polygon":
@@ -24523,6 +24597,10 @@ func _collider_bounding_radius(collider: Dictionary) -> float:
 		var b: Vector2 = collider.get("b", a)
 		return maxf(center.distance_to(a), center.distance_to(b)) + maxf(0.0, float(collider.get("radius", 0.0)))
 	return maxf(0.0, float(collider.get("radius", 0.0)))
+
+
+func _collider_broadphase_gap(a: Dictionary, b: Dictionary) -> float:
+	return _collider_center(a).distance_to(_collider_center(b)) - _collider_bounding_radius(a) - _collider_bounding_radius(b)
 
 
 func _collider_overlap_depth_estimate(a: Dictionary, b: Dictionary) -> float:
@@ -35037,7 +35115,7 @@ func _update_editor_ui() -> void:
 	var engine_power_note := " | 动力 %.0f | 常热 %.1f" % [_engine_momentum_output_for_part(selected_component), float(selected_component.get("idle_heat", 0.0))] if _ui_is_zh() and selected_slot_key == "engine" else (" | POWER %.0f | IDLE HEAT %.1f" % [_engine_momentum_output_for_part(selected_component), float(selected_component.get("idle_heat", 0.0))] if selected_slot_key == "engine" else "")
 	var selected_energy := _part_effective_energy(selected_component, selected_slot_key)
 	var selected_is_no_energy_software := selected_energy <= 0.0
-	var selected_energy_label := ("无动力分配" if _ui_is_zh() else "No Momentum Allocation") if selected_is_no_energy_software else (("兼容负载 %.0f" if _ui_is_zh() else "Legacy Load %.0f") % selected_energy)
+	var selected_energy_label := ("无动力分配" if _ui_is_zh() else "No Momentum Allocation") if selected_is_no_energy_software else (("动力分配 %.0f" if _ui_is_zh() else "Momentum Allocation %.0f") % selected_energy)
 	var detail_format := "%s\n价格 %d | 生命 %d | 质量 %.0f | %s | 长度 %.2f | 半径 %.2f | 尺寸 %s | 类别 %s | 接口 %d%s%s%s%s%s%s%s" if _ui_is_zh() else "%s\nCost %d | HP %d | Mass %.0f | %s | Length %.2f | Radius %.2f | Size %s | Class %s | Ends %d%s%s%s%s%s%s%s"
 	var detail_summary := _localized_component_summary(selected_component, selected_slot_key)
 	var size_label := _zh_part_name(String(selected_component.get("size_class", "standard")).to_upper()) if _ui_is_zh() else String(selected_component.get("size_class", "standard")).to_upper()
@@ -36132,7 +36210,7 @@ func _show_editor_part_hover(slot_key: String, part_index: int, part: Dictionary
 	var preview_summary: Dictionary = _team_summary(player_id) if _editor_is_blank_work_canvas() else preview_context.get("summary", _team_summary(player_id))
 	var title := "%02d %s" % [part_index + 1, _zh_part_name(String(part.get("name", ""))) if _ui_is_zh() else String(part.get("name", ""))]
 	var subtitle := _hover_card_subtitle(slot_key, part)
-	var lines := _hover_card_detail_lines(slot_key, part, current_stats, preview_stats)
+	var lines := _hover_card_player_detail_lines(slot_key, part)
 	var stat_entries := _hover_card_stat_entries(slot_key, part)
 	if editor_hover_popup_view != null:
 		editor_hover_popup_view.size = Vector2(466.0, 500.0)
@@ -36255,104 +36333,184 @@ func _hover_card_subtitle(slot_key: String, part: Dictionary) -> String:
 
 func _hover_card_stat_entries(slot_key: String, part: Dictionary) -> Array:
 	var entries: Array = []
-	_add_hover_stat(entries, "价格" if _ui_is_zh() else "Cost", float(part.get("cost", 0.0)), 180.0, "", Color(1.0, 0.84, 0.24, 1.0))
-	_add_hover_stat(entries, "质量" if _ui_is_zh() else "Mass", float(part.get("mass", 0.0)), 180.0, "", Color(0.78, 0.88, 0.96, 1.0))
+	_add_hover_stat(entries, "价格" if _ui_is_zh() else "Cost", float(part.get("cost", 0.0)), 180.0, "", Color(1.0, 0.84, 0.24, 1.0), "cost")
+	_add_hover_stat(entries, "质量" if _ui_is_zh() else "Mass", float(part.get("mass", 0.0)), 180.0, "", Color(0.78, 0.88, 0.96, 1.0), "mass")
 	if slot_key != "joint":
-		_add_hover_stat(entries, "生命" if _ui_is_zh() else "HP", float(part.get("hp", 0.0)), 220.0, "", Color(0.32, 1.0, 0.62, 1.0))
-		_add_hover_stat(entries, "长度" if _ui_is_zh() else "Length", float(part.get("length", 0.0)), 4.5, "m", Color(0.34, 0.88, 1.0, 1.0))
-	if _component_has_combat_volume(part, slot_key):
-		_add_hover_stat(entries, "刚度" if _ui_is_zh() else "Stiffness", _part_stiffness(part, slot_key), PART_STIFFNESS_BASE_MOMENTUM * 8.0, "", Color(1.0, 0.42, 0.28, 1.0))
-	if _component_has_combat_volume(part, slot_key):
-		_add_hover_stat(entries, "伤害系数" if _ui_is_zh() else "Damage Coeff", _part_damage_coeff(part, slot_key), 3.0, "x", Color(1.0, 0.48, 0.28, 1.0))
-		_add_hover_stat(entries, "破防系数" if _ui_is_zh() else "Break Coeff", _part_break_coeff(part, slot_key), 1.5, "x", Color(1.0, 0.72, 0.26, 1.0))
+		_add_hover_stat(entries, "生命" if _ui_is_zh() else "HP", float(part.get("hp", 0.0)), 220.0, "", Color(0.32, 1.0, 0.62, 1.0), "hp")
 	if slot_key in ["limb_muscle", "muscle"] and _component_has_combat_volume(part, slot_key) and not _component_is_torso(part):
-		_add_hover_stat(entries, "承载下限" if _ui_is_zh() else "Mom Min", _limb_momentum_min_for_part(part, slot_key), 5200.0, "", Color(1.0, 0.7, 0.24, 1.0))
-		_add_hover_stat(entries, "承载上限" if _ui_is_zh() else "Mom Max", _limb_momentum_max_for_part(part, slot_key), 5200.0, "", Color(1.0, 0.84, 0.24, 1.0))
-		_add_hover_stat(entries, "默认分配" if _ui_is_zh() else "Default Alloc", _default_limb_allocated_momentum_for_part(part, slot_key), 5200.0, "", Color(0.42, 0.98, 1.0, 1.0))
+		_add_hover_stat(entries, "刚度" if _ui_is_zh() else "Stiffness", _part_stiffness(part, slot_key), PART_STIFFNESS_BASE_MOMENTUM * 8.0, "", Color(1.0, 0.42, 0.28, 1.0), "power")
+		_add_hover_stat(entries, "伤害系数" if _ui_is_zh() else "Damage Coeff", _part_damage_coeff(part, slot_key), 3.0, "x", Color(1.0, 0.48, 0.28, 1.0), "action")
+		_add_hover_stat(entries, "破防系数" if _ui_is_zh() else "Break Coeff", _part_break_coeff(part, slot_key), 1.5, "x", Color(1.0, 0.72, 0.26, 1.0), "hp")
+		_add_hover_stat(entries, "承载" if _ui_is_zh() else "Drive", _default_limb_allocated_momentum_for_part(part, slot_key), 5200.0, "", Color(0.42, 0.98, 1.0, 1.0), "action")
 	if slot_key == "muscle" and _part_is_standard_blunt_gauntlet(part):
-		_add_hover_stat(entries, "伸出" if _ui_is_zh() else "Extend", float(part.get("embedded_joint_extension", STANDARD_GAUNTLET_EXTENSION_M)), 3.0, "m", Color(0.42, 0.98, 1.0, 1.0))
-		_add_hover_stat(entries, "动量系数" if _ui_is_zh() else "Mom Mult", float(part.get("terminal_momentum_mult", STANDARD_GAUNTLET_MOMENTUM_MULT)), 2.0, "x", Color(1.0, 0.78, 0.26, 1.0))
+		_add_hover_stat(entries, "伸出" if _ui_is_zh() else "Extend", float(part.get("embedded_joint_extension", STANDARD_GAUNTLET_EXTENSION_M)), 3.0, "m", Color(0.42, 0.98, 1.0, 1.0), "length")
+		_add_hover_stat(entries, "动量系数" if _ui_is_zh() else "Mom Mult", float(part.get("terminal_momentum_mult", STANDARD_GAUNTLET_MOMENTUM_MULT)), 2.0, "x", Color(1.0, 0.78, 0.26, 1.0), "action")
 	if slot_key == "joint":
-		_add_hover_stat(entries, "固定输出动量" if _ui_is_zh() else "Fixed Output Mom", _joint_fixed_output_momentum(part), 5200.0, "", Color(1.0, 0.84, 0.24, 1.0))
-		_add_hover_stat(entries, "刚度" if _ui_is_zh() else "Stiffness", _part_stiffness(part, slot_key), 5200.0, "", Color(1.0, 0.42, 0.28, 1.0))
-		_add_hover_stat(entries, "软件式关节" if _ui_is_zh() else "Software Joint", 0.0, 1.0, "", Color(0.44, 0.76, 1.0, 1.0))
-	elif slot_key in ["limb_muscle", "muscle"] and not _component_has_combat_volume(part, slot_key):
-		_add_hover_stat(entries, "刚度" if _ui_is_zh() else "Stiffness", _part_stiffness(part, slot_key), PART_STIFFNESS_BASE_MOMENTUM * 8.0, "", Color(1.0, 0.42, 0.28, 1.0))
+		_add_hover_stat(entries, "输出" if _ui_is_zh() else "Output", _joint_fixed_output_momentum(part), 5200.0, "", Color(1.0, 0.84, 0.24, 1.0), "action")
+		_add_hover_stat(entries, "刚度" if _ui_is_zh() else "Stiffness", _part_stiffness(part, slot_key), 5200.0, "", Color(1.0, 0.42, 0.28, 1.0), "power")
+		_add_hover_stat(entries, "逻辑关节" if _ui_is_zh() else "Logic", 1.0, 1.0, "", Color(0.44, 0.76, 1.0, 1.0), "slot")
 	elif slot_key == "engine":
-		_add_hover_stat(entries, "动力" if _ui_is_zh() else "Power", _engine_momentum_output_for_part(part), 620.0, "", Color(1.0, 0.74, 0.28, 1.0))
-		_add_hover_stat(entries, "火控稳定" if _ui_is_zh() else "Fire Ctrl", float(part.get("engine_recoil_stability", part.get("recoil_stability", 1.0))), 1.55, "x", Color(0.52, 0.78, 1.0, 1.0))
-		_add_hover_stat(entries, "推进控制" if _ui_is_zh() else "Boost Ctrl", float(part.get("engine_boost_control", 1.0)), 1.55, "x", Color(0.42, 0.98, 1.0, 1.0))
-		_add_hover_stat(entries, "常态热" if _ui_is_zh() else "Idle Heat", _engine_idle_heat_for_part(part, maxf(float(part.get("power", 0.0)), _engine_momentum_output_for_part(part) * 0.72)), 32.0, "", Color(1.0, 0.2, 0.12, 1.0))
+		_add_hover_stat(entries, "动力" if _ui_is_zh() else "Power", _engine_momentum_output_for_part(part), 620.0, "", Color(1.0, 0.74, 0.28, 1.0), "power")
+		_add_hover_stat(entries, "火控稳定" if _ui_is_zh() else "Fire Ctrl", float(part.get("engine_recoil_stability", part.get("recoil_stability", 1.0))), 1.55, "x", Color(0.52, 0.78, 1.0, 1.0), "range")
+		_add_hover_stat(entries, "推进控制" if _ui_is_zh() else "Boost Ctrl", float(part.get("engine_boost_control", 1.0)), 1.55, "x", Color(0.42, 0.98, 1.0, 1.0), "boost")
+		_add_hover_stat(entries, "常态热" if _ui_is_zh() else "Idle Heat", _engine_idle_heat_for_part(part, maxf(float(part.get("power", 0.0)), _engine_momentum_output_for_part(part) * 0.72)), 32.0, "", Color(1.0, 0.2, 0.12, 1.0), "heat")
 	elif slot_key == "cooling":
-		_add_hover_stat(entries, "散热" if _ui_is_zh() else "Cooling", float(part.get("cooling", part.get("cooling_rate", 0.0))), 90.0, "", Color(0.28, 1.0, 0.72, 1.0))
-		_add_hover_stat(entries, "热槽" if _ui_is_zh() else "Heat Cap", _cooling_heat_capacity_for_part(part), 120.0, "", Color(1.0, 0.36, 0.22, 1.0))
-		_add_hover_stat(entries, "手动冷却" if _ui_is_zh() else "Manual", float(part.get("manual_cooling_bonus", 0.0)), 32.0, "", Color(0.42, 0.98, 1.0, 1.0))
+		_add_hover_stat(entries, "散热" if _ui_is_zh() else "Cooling", float(part.get("cooling", part.get("cooling_rate", 0.0))), 90.0, "", Color(0.28, 1.0, 0.72, 1.0), "cool")
+		_add_hover_stat(entries, "热槽" if _ui_is_zh() else "Heat Cap", _cooling_heat_capacity_for_part(part), 120.0, "", Color(1.0, 0.36, 0.22, 1.0), "heat")
+		_add_hover_stat(entries, "手动冷却" if _ui_is_zh() else "Manual", float(part.get("manual_cooling_bonus", 0.0)), 32.0, "", Color(0.42, 0.98, 1.0, 1.0), "cool")
 	elif slot_key == "booster":
-		_add_hover_stat(entries, "分配动量" if _ui_is_zh() else "Allocated", _thruster_allocated_momentum_for_part(part), 520.0, "", Color(0.78, 0.52, 1.0, 1.0))
-		_add_hover_stat(entries, "推进动量" if _ui_is_zh() else "Move Mom", _booster_normal_momentum_for_part(part), 520.0, "", Color(1.0, 0.64, 0.24, 1.0))
-		_add_hover_stat(entries, "Boost动量" if _ui_is_zh() else "Boost Mom", _booster_boost_momentum_for_part(part), 720.0, "", Color(1.0, 0.86, 0.24, 1.0))
-		_add_hover_stat(entries, "Boost持续" if _ui_is_zh() else "Boost Dur", float(part.get("boost_duration", 0.0)), 1.0, "s", Color(0.42, 0.98, 1.0, 1.0))
-		_add_hover_stat(entries, "刹车稳定" if _ui_is_zh() else "Brake", float(part.get("brake_efficiency", 1.0)), 2.2, "x", Color(0.38, 1.0, 0.72, 1.0))
-		_add_hover_stat(entries, "反冲抵消" if _ui_is_zh() else "Recoil", float(part.get("recoil_cancel", 0.0)), 2.0, "x", Color(0.62, 0.78, 1.0, 1.0))
-		_add_hover_stat(entries, "常态热" if _ui_is_zh() else "Idle Heat", _booster_idle_heat_for_part(part), 36.0, "", Color(1.0, 0.18, 0.12, 1.0))
+		_add_hover_stat(entries, "分配" if _ui_is_zh() else "Allocated", _thruster_allocated_momentum_for_part(part), 520.0, "", Color(0.78, 0.52, 1.0, 1.0), "power")
+		_add_hover_stat(entries, "推进" if _ui_is_zh() else "Move", _booster_normal_momentum_for_part(part), 520.0, "", Color(1.0, 0.64, 0.24, 1.0), "boost")
+		_add_hover_stat(entries, "Boost" if _ui_is_zh() else "Boost", _booster_boost_momentum_for_part(part), 720.0, "", Color(1.0, 0.86, 0.24, 1.0), "boost")
+		_add_hover_stat(entries, "常态热" if _ui_is_zh() else "Idle Heat", _booster_idle_heat_for_part(part), 36.0, "", Color(1.0, 0.18, 0.12, 1.0), "heat")
 	elif slot_key == "muscle":
 		if _part_is_ammo_payload(part):
 			var caps: Dictionary = part.get("ammo_capacity", {})
-			var total_ammo := int(caps.get("bullet", 0)) + int(caps.get("chemical", 0)) + int(caps.get("laser", 0))
-			_add_hover_stat(entries, "弹数" if _ui_is_zh() else "Ammo", float(total_ammo), 320.0, "", Color(1.0, 0.86, 0.24, 1.0))
-			_add_hover_stat(entries, "槽尺寸" if _ui_is_zh() else "Slot Size", float(_volume_rank_from_value(part.get("ammo_size_tier", part.get("slot_volume_tier", "XS")), 1)), 5.0, "", Color(0.42, 0.98, 1.0, 1.0))
+			var total_ammo := int(caps.get("bullet", 0)) + int(caps.get("chemical", 0)) + int(caps.get("laser", 0)) + int(caps.get("explosive", 0))
+			_add_hover_stat(entries, "弹数" if _ui_is_zh() else "Ammo", float(total_ammo), 320.0, "", Color(1.0, 0.86, 0.24, 1.0), "ammo")
+			_add_hover_stat(entries, "槽尺寸" if _ui_is_zh() else "Slot Size", float(_volume_rank_from_value(part.get("ammo_size_tier", part.get("slot_volume_tier", "XS")), 1)), 5.0, "", Color(0.42, 0.98, 1.0, 1.0), "slot")
 		elif _component_is_torso(part):
-			_add_hover_stat(entries, "接口" if _ui_is_zh() else "Ports", float(part.get("joint_ports", part.get("connection_ends", 0))), 16.0, "", Color(0.42, 0.82, 1.0, 1.0))
-			_add_hover_stat(entries, "机内插件槽" if _ui_is_zh() else "Internal Slots", float(_torso_plugin_capacity_for_part(part)), 10.0, "", Color(0.42, 0.98, 0.78, 1.0))
-			_add_hover_stat(entries, "软件槽" if _ui_is_zh() else "Software Slots", float(_torso_software_capacity_for_part(part)), 10.0, "", Color(0.78, 0.52, 1.0, 1.0))
+			_add_hover_stat(entries, "接口" if _ui_is_zh() else "Ports", float(part.get("joint_ports", part.get("connection_ends", 0))), 16.0, "", Color(0.42, 0.82, 1.0, 1.0), "port")
+			_add_hover_stat(entries, "刚度" if _ui_is_zh() else "Stiffness", _part_stiffness(part, slot_key), PART_STIFFNESS_BASE_MOMENTUM * 8.0, "", Color(1.0, 0.42, 0.28, 1.0), "power")
+			_add_hover_stat(entries, "伤害系数" if _ui_is_zh() else "Damage Coeff", _part_damage_coeff(part, slot_key), 3.0, "x", Color(1.0, 0.48, 0.28, 1.0), "action")
+			_add_hover_stat(entries, "破防系数" if _ui_is_zh() else "Break Coeff", _part_break_coeff(part, slot_key), 1.5, "x", Color(1.0, 0.72, 0.26, 1.0), "hp")
+			_add_hover_stat(entries, "机内槽" if _ui_is_zh() else "Internal", float(_torso_plugin_capacity_for_part(part)), 10.0, "", Color(0.42, 0.98, 0.78, 1.0), "slot")
 		else:
-			_add_hover_stat(entries, "伤害" if _ui_is_zh() else "Damage", maxf(float(part.get("normal_damage", 0.0)), maxf(float(part.get("armor_damage", 0.0)), float(part.get("active_damage", 0.0)))), 140.0, "", Color(1.0, 0.36, 0.26, 1.0))
-			_add_hover_stat(entries, "射程" if _ui_is_zh() else "Range", float(part.get("projectile_range", part.get("range", part.get("normal_range", 0.0)))), 6.0, "m", Color(0.42, 0.82, 1.0, 1.0))
+			var is_ranged := _terminal_weapon_kind_for_part(part, "muscle") == "ranged"
+			_add_hover_stat(entries, "伤害" if _ui_is_zh() else "Damage", maxf(float(part.get("projectile_damage", 0.0)), maxf(float(part.get("normal_damage", 0.0)), maxf(float(part.get("armor_damage", 0.0)), float(part.get("active_damage", 0.0))))), 140.0, "", Color(1.0, 0.36, 0.26, 1.0), "action")
+			_add_hover_stat(entries, "射程" if _ui_is_zh() else "Range", float(part.get("projectile_range", part.get("range", part.get("normal_range", part.get("length", 0.0))))), 6.0, "m", Color(0.42, 0.82, 1.0, 1.0), "range" if is_ranged else "length")
 			if bool(part.get("projectile", false)):
-				var projectile_preview := part.duplicate(true)
-				projectile_preview["projectile"] = true
-				var projectile_speed := _projectile_collision_speed_for_event(projectile_preview)
-				var projectile_mass := _projectile_mass_for_event(projectile_preview, projectile_speed)
-				_add_hover_stat(entries, "弹质量" if _ui_is_zh() else "Proj Mass", projectile_mass, 12.0, "", Color(0.72, 0.9, 1.0, 1.0))
-				_add_hover_stat(entries, "弹动量" if _ui_is_zh() else "Proj Mom", projectile_mass * projectile_speed, 120.0, "", Color(1.0, 0.72, 0.28, 1.0))
+				_add_hover_stat(entries, "弹药" if _ui_is_zh() else "Ammo", float(part.get("carried_ammo", 0)), 32.0, "", Color(1.0, 0.86, 0.24, 1.0), "ammo")
+				_add_hover_stat(entries, "热耗" if _ui_is_zh() else "Heat", float(part.get("normal_heat", part.get("heat_cost", 0.0))), 60.0, "", Color(1.0, 0.3, 0.18, 1.0), "heat")
 	elif slot_key == "module":
-		_add_hover_stat(entries, "无动力消耗" if _ui_is_zh() else "No Power", 0.0, 1.0, "", Color(0.72, 0.98, 0.82, 1.0))
-		_add_hover_stat(entries, "伤害倍率" if _ui_is_zh() else "Dmg Mult", float(part.get("module_damage_mult", 1.0)), 4.0, "x", Color(1.0, 0.48, 0.28, 1.0))
+		_add_hover_stat(entries, "绑定键" if _ui_is_zh() else "Bind Key", 1.0, 1.0, "", Color(0.72, 0.98, 0.82, 1.0), "action")
+		_add_hover_stat(entries, "倍率" if _ui_is_zh() else "Mult", float(part.get("module_damage_mult", 1.0)), 4.0, "x", Color(1.0, 0.48, 0.28, 1.0), "action")
 		if String(part.get("module_action_profile", "")) == "blunt_gauntlet_extend_swing":
-			_add_hover_stat(entries, "热耗" if _ui_is_zh() else "Heat Cost", float(part.get("special_heat_fraction", GAUNTLET_SPECIAL_HEAT_FRACTION)) * 100.0, 50.0, "%", Color(1.0, 0.36, 0.22, 1.0))
-			_add_hover_stat(entries, "伸出" if _ui_is_zh() else "Extend", float(part.get("module_extension_m", STANDARD_GAUNTLET_EXTENSION_M)), 3.0, "m", Color(0.42, 0.98, 1.0, 1.0))
+			_add_hover_stat(entries, "热耗" if _ui_is_zh() else "Heat Cost", float(part.get("special_heat_fraction", GAUNTLET_SPECIAL_HEAT_FRACTION)) * 100.0, 50.0, "%", Color(1.0, 0.36, 0.22, 1.0), "heat")
+			_add_hover_stat(entries, "伸出" if _ui_is_zh() else "Extend", float(part.get("module_extension_m", STANDARD_GAUNTLET_EXTENSION_M)), 3.0, "m", Color(0.42, 0.98, 1.0, 1.0), "length")
 	else:
-		_add_hover_stat(entries, "无动力分配" if _ui_is_zh() else "No Allocation", 0.0, 1.0, "", Color(0.96, 0.92, 0.72, 1.0))
-	while entries.size() < 8:
-		var fallback_index := entries.size()
-		var fallback_keys := ["radius", "joint_ports", "module_slots", "torso_slots"] if slot_key == "muscle" and _component_is_torso(part) else ["radius", "connection_ends", "normal_damage", "active_damage"]
-		var fallback_key: String = String(fallback_keys[fallback_index % fallback_keys.size()])
-		var zh_fallback_names := {"module_slots": "软件槽", "torso_slots": "机内插件槽", "joint_ports": "接口", "connection_ends": "接口", "radius": "半径"}
-		var en_fallback_names := {"module_slots": "SOFTWARE", "torso_slots": "INTERNAL", "joint_ports": "PORTS", "connection_ends": "ENDS", "radius": "RADIUS"}
-		var fallback_label: String = String(zh_fallback_names.get(fallback_key, _zh_part_name(fallback_key.to_upper()))) if _ui_is_zh() else String(en_fallback_names.get(fallback_key, fallback_key.to_upper()))
-		var fallback_value := float(part.get(fallback_key, 0.0))
-		if _component_is_torso(part):
-			if fallback_key == "module_slots":
-				fallback_value = float(_torso_software_capacity_for_part(part))
-			elif fallback_key == "torso_slots":
-				fallback_value = float(_torso_plugin_capacity_for_part(part))
-			elif fallback_key == "joint_ports":
-				fallback_value = float(part.get("joint_ports", part.get("connection_ends", 0)))
-		_add_hover_stat(entries, fallback_label, fallback_value, 10.0 if fallback_key in ["joint_ports", "module_slots", "torso_slots"] else (8.0 if fallback_key != "active_damage" else 140.0), "", Color(0.52, 0.66, 0.78, 1.0))
+		_add_hover_stat(entries, "无动力" if _ui_is_zh() else "No Power", 1.0, 1.0, "", Color(0.96, 0.92, 0.72, 1.0), "slot")
 	return entries.slice(0, 8)
 
 
-func _add_hover_stat(entries: Array, label: String, value: float, max_value: float, unit: String, color: Color) -> void:
+func _add_hover_stat(entries: Array, label: String, value: float, max_value: float, unit: String, color: Color, icon: String = "") -> void:
 	entries.append({
 		"label": label,
 		"value": value,
 		"max_value": maxf(1.0, maxf(max_value, absf(value) * 1.15)),
 		"unit": unit,
 		"color": color,
+		"icon": icon,
 	})
 
 
+func _hover_card_player_detail_lines(slot_key: String, part: Dictionary) -> Array:
+	var lines: Array = []
+	var zh := _ui_is_zh()
+	var size_label := _part_size_tier_label(part, slot_key)
+	var volume_label := _volume_rank_label(_part_slot_volume_rank(part, slot_key))
+	var maker := _zh_part_name(String(part.get("maker", ""))) if zh else String(part.get("maker", ""))
+	if maker != "":
+		lines.append("#%s" % maker)
+	if slot_key in ["engine", "cooling", "booster"] or bool(part.get("torso_slot_payload", false)):
+		lines.append(("#插件体积 %s" if zh else "#Plugin Size %s") % volume_label)
+	elif size_label != "":
+		lines.append(("#尺寸 %s" if zh else "#Size %s") % size_label)
+	match slot_key:
+		"joint":
+			lines.append("#%s" % ("逻辑关节" if zh else "Logic Joint"))
+			lines.append(("固定输出动量 %.0f；安装在关节点，不生成战斗体积。" if zh else "Fixed output %.0f; installs on a joint point and adds no battle volume.") % _joint_fixed_output_momentum(part))
+			lines.append("只驱动远离躯干侧的肢体组。" if zh else "Drives only the limb group away from the torso.")
+		"limb_muscle":
+			var joint_kind := String(part.get("embedded_joint_kind", part.get("joint_drive_kind", _joint_drive_kind_for_part(part, slot_key))))
+			lines.append(("#内置关节 %s" if zh else "#Embedded %s") % joint_kind)
+			lines.append(("承载 %.0f-%.0f；适合按质量选择武器和行动模块。" if zh else "Drive %.0f-%.0f; match it to weapon mass and action modules.") % [_limb_momentum_min_for_part(part, slot_key), _limb_momentum_max_for_part(part, slot_key)])
+			lines.append(("刚度 %.0f / 伤害 %.2fx / 破防 %.2fx。" if zh else "Stiffness %.0f / damage %.2fx / break %.2fx.") % [_part_stiffness(part, slot_key), _part_damage_coeff(part, slot_key), _part_break_coeff(part, slot_key)])
+		"muscle":
+			if _part_is_ammo_payload(part):
+				var caps: Dictionary = part.get("ammo_capacity", {})
+				var ammo_tags: Array = []
+				for ammo_key in ["bullet", "chemical", "laser", "explosive"]:
+					var amount := int(caps.get(ammo_key, 0))
+					if amount > 0:
+						ammo_tags.append("%s %d" % [_zh_part_name(ammo_key.to_upper()) if zh else ammo_key.capitalize(), amount])
+				lines.append("#%s" % ("弹药插件" if zh else "Ammo Plugin"))
+				lines.append(("弹药：%s。" if zh else "Ammo: %s.") % (", ".join(ammo_tags) if not ammo_tags.is_empty() else ("无" if zh else "none")))
+				lines.append(("只能装入同尺寸或更大的机内插件槽。" if zh else "Fits only an equal-or-larger internal slot."))
+			elif _component_is_torso(part):
+				lines.append("#%s" % ("躯干核心" if zh else "Torso Core"))
+				lines.append(("接口 %d；机内槽 %d，软件槽 %d。" if zh else "%d ports; %d internal slots, %d software slots.") % [int(part.get("joint_ports", part.get("connection_ends", 0))), _torso_plugin_capacity_for_part(part), _torso_software_capacity_for_part(part)])
+				lines.append(("结构件：负责连接、插件容量和受击承载，不显示武器伤害。" if zh else "Structure part: connection, slot capacity, and hit endurance; no weapon damage readout."))
+			elif _terminal_weapon_kind_for_part(part, "muscle") == "ranged" and bool(part.get("projectile", false)):
+				var gun_kind := String(part.get("gun_kind", _gun_kind_for_data(part)))
+				var ammo_kind := String(part.get("ammo_kind", _ammo_kind_for_data(part)))
+				lines.append(("#%s / %s" if zh else "#%s / %s") % [_zh_part_name(gun_kind.to_upper()) if zh else gun_kind.capitalize(), _zh_part_name(ammo_kind.to_upper()) if zh else ammo_kind.capitalize()])
+				var fire_text := ""
+				match gun_kind:
+					"laser_gun":
+						fire_text = "按住持续光束；需要激光行动模块。" if zh else "Hold for beam ticks; needs a laser action module."
+					"missile_launcher":
+						fire_text = "按住锁定，松开发射；目标可用遮蔽物规避。" if zh else "Hold to lock, release to fire; cover can break guidance."
+					"rifle":
+						fire_text = "按住连发点射；适合中距离火力窗口。" if zh else "Hold for burst fire; best in mid-range fire windows."
+					"sprayer":
+						fire_text = "按住喷洒；适合压制和持续伤害。" if zh else "Hold to spray; good for pressure and damage over time."
+					_:
+						fire_text = "锁定后松开发射；适合精确单发。" if zh else "Lock then release; suited to precise single shots."
+				lines.append(("射程 %.2fm，弹药 %d，热耗 %.0f。" if zh else "Range %.2fm, ammo %d, heat %.0f.") % [float(part.get("projectile_range", part.get("range", 0.0))), int(part.get("carried_ammo", 0)), float(part.get("normal_heat", part.get("heat_cost", 0.0)))])
+				lines.append(fire_text)
+			elif _part_is_standard_blunt_gauntlet(part):
+				lines.append("#%s" % ("钝击拳套" if zh else "Blunt Gauntlet"))
+				lines.append(("伸出 %.1fm，接触动量 %.2fx；必须用合法拳套模块启动。" if zh else "%.1fm extension, %.2fx contact momentum; needs a legal gauntlet module.") % [float(part.get("embedded_joint_extension", STANDARD_GAUNTLET_EXTENSION_M)), float(part.get("terminal_momentum_mult", STANDARD_GAUNTLET_MOMENTUM_MULT))])
+				lines.append("实体近战，不发射投射物。" if zh else "Physical melee body, never a projectile weapon.")
+			else:
+				var family := String(part.get("weapon_family", part.get("damage_type", "melee")))
+				lines.append(("#%s" if zh else "#%s") % (_zh_part_name(family.to_upper()) if zh else family.capitalize()))
+				lines.append(("长度 %.2fm；刚度 %.0f，伤害 %.2fx，破防 %.2fx。" if zh else "Length %.2fm; stiffness %.0f, damage %.2fx, break %.2fx.") % [float(part.get("length", 0.0)), _part_stiffness(part, slot_key), _part_damage_coeff(part, slot_key), _part_break_coeff(part, slot_key)])
+				lines.append("伤害来自真实接触和当前动作姿态。" if zh else "Damage comes from real contact and the active pose.")
+		"engine":
+			var engine_family := String(part.get("engine_family", "balanced"))
+			lines.append("#%s" % _engine_family_label(engine_family))
+			lines.append(("动力 %.0f，常态热 %.1f；驱动推进器和绑定肢体。" if zh else "Power %.0f, idle heat %.1f; feeds thrusters and bound limbs.") % [_engine_momentum_output_for_part(part), _engine_idle_heat_for_part(part, maxf(float(part.get("power", 0.0)), _engine_momentum_output_for_part(part) * 0.72))])
+			lines.append(_engine_family_summary(engine_family))
+		"cooling":
+			var cooling_tags := ", ".join(_cooling_tags_for_part(part))
+			lines.append(("#%s" if zh else "#%s") % String(part.get("cooling_profile", "balanced")).capitalize())
+			lines.append(("散热 %.1f，热槽 %.0f，手动冷却 +%.0f。" if zh else "Cooling %.1f, heat cap %.0f, manual +%.0f.") % [float(part.get("cooling", part.get("cooling_rate", 0.0))), _cooling_heat_capacity_for_part(part), float(part.get("manual_cooling_bonus", 0.0))])
+			lines.append(("适配：%s。" if zh else "Fit: %s.") % (cooling_tags if cooling_tags != "" else ("通用热管理" if zh else "general heat control")))
+		"booster":
+			var thruster_family := String(part.get("thruster_family", ""))
+			lines.append("#%s" % _thruster_family_label(thruster_family))
+			lines.append(("推进 %.0f，Boost %.0f，常态热 %.1f。" if zh else "Move %.0f, boost %.0f, idle heat %.1f.") % [_booster_normal_momentum_for_part(part), _booster_boost_momentum_for_part(part), _booster_idle_heat_for_part(part)])
+			lines.append(_thruster_family_summary(thruster_family))
+		"module":
+			var profile := String(part.get("module_action_profile", part.get("command_window_profile", "")))
+			lines.append(("#行动模块" if zh else "#Action Module"))
+			lines.append(("绑定目标：%s。" if zh else "Target: %s.") % String(part.get("module_target_kind", part.get("target_kind", "part"))))
+			match profile:
+				"gun_activate", "rifle_burst_activate", "laser_beam_activate", "missile_lock_activate":
+					lines.append("枪械模块：只授权显式投射物发射。" if zh else "Gun module: explicit projectile authorization only.")
+				"blunt_gauntlet_extend_swing", "blunt_shield_guard_bash", "blunt_hammer_windup_slam":
+					lines.append("实体近战模块：改变姿态、速度和热量；伤害由接触结算。" if zh else "Physical melee module: pose, speed, and heat; contact resolves damage.")
+				_:
+					lines.append("选择合法部位后绑定攻击键；输入表由模块声明。" if zh else "Select a legal part, bind an attack key; inputs are declared by the module.")
+		"special":
+			var kind := String(part.get("kind", "special"))
+			lines.append(("#%s" if zh else "#%s") % (_zh_part_name(kind.to_upper()) if zh else kind.capitalize()))
+			match kind:
+				"soul":
+					lines.append("英魂：定义英雄身份、热槽或机体倾向。" if zh else "Soul: defines hero identity, heat, or body preference.")
+				"code":
+					lines.append(("源代码：%d 机小队 AI，策略 %s。" if zh else "Code: %d-unit squad AI, policy %s.") % [int(part.get("group_count", 1)), String(part.get("source_target_policy", part.get("ai", "")))])
+				"ether":
+					lines.append("以太：给结界材料提供空间许可或场域规则。" if zh else "Ether: grants barrier space permission or field rules.")
+				_:
+					lines.append("软件核心：改变身份、队伍或结界规则；不占战斗体积。" if zh else "Software core: changes identity, team, or barrier rules; no battle volume.")
+	return lines.slice(0, 7)
+
+
 func _hover_card_detail_lines(slot_key: String, part: Dictionary, current_stats: Dictionary, preview_stats: Dictionary) -> Array:
+	return _hover_card_player_detail_lines(slot_key, part)
 	var lines: Array = []
 	var cost := int(part.get("cost", 0))
 	var hp := int(part.get("hp", 0))
@@ -37464,48 +37622,56 @@ func _update_battle_instrument_gauge() -> void:
 
 
 func _update_battle_ui() -> void:
+	var now_msec := Time.get_ticks_msec()
 	_update_arena_boundary_lines()
-	_update_battle_minimap()
-	battle_mode_label.text = _battle_mode_title()
-	var minutes := int(floorf(match_time_remaining / 60.0))
-	var seconds := int(floorf(fmod(match_time_remaining, 60.0)))
-	match_timer_label.text = "%02d:%02d" % [minutes, seconds]
-	for player_id in [1, 2]:
-		resource_labels[player_id].text = "P%d %s %d" % [player_id, _ui_term("resource"), int(runtime_resource[player_id])]
-		victory_labels[player_id].text = "%s %d/%d" % [_ui_term("victory_points"), int(victory_points[player_id]), WIN_POINTS]
-		var portal: Dictionary = PORTALS[int(portal_index[player_id])]
-		portal_labels[player_id].text = "%s %s  %s" % [_ui_term("portal"), String(portal["name"]), _sortie_discount_status(player_id, 3)]
-		var statuses := [
-			_role_status_text(player_id, "hero"),
-			_role_status_text(player_id, "puppet"),
-			_role_status_text(player_id, "barrier"),
-		]
-		for i in range(3):
-			var role_key: String = ROLE_ORDER[i]
-			var hp_ratio := _role_health_ratio(player_id, role_key)
-			var shield_ratio := _role_shield_ratio(player_id, role_key)
-			var heat_ratio := _role_heat_ratio(player_id, role_key) if heat_hud_enabled else 0.0
-			if role_health_fills[player_id][role_key] != null:
-				role_health_fills[player_id][role_key].color = _team_primary_color(player_id).lerp(_team_accent_color(player_id), 0.18)
-			if role_shield_fills[player_id][role_key] != null:
-				role_shield_fills[player_id][role_key].color = _shield_bar_color(player_id)
-			if role_key == "puppet":
-				role_health_fills[player_id][role_key].visible = false
-				role_shield_fills[player_id][role_key].visible = false
-				_set_puppet_segment_bar(player_id, 330.0)
-			else:
-				_set_corner_bar(role_health_fills[player_id][role_key], player_id, 330.0, hp_ratio)
-				_set_shield_corner_bar(role_shield_fills[player_id][role_key], player_id, 330.0, shield_ratio)
-				role_shield_fills[player_id][role_key].visible = shield_ratio > 0.001
-			_set_corner_bar(role_heat_fills[player_id][role_key], player_id, 330.0, heat_ratio)
-			role_bar_labels[player_id][role_key].text = _role_bar_text(player_id, role_key)
-			unit_status_labels[player_id][i].text = statuses[i]
-		var hero = active_units[player_id]["hero"]
-		if hero_ammo_labels.get(player_id, null) != null:
-			var ammo_display := _unit_ammo_display_text(hero) if _is_live_unit(hero) else ""
-			hero_ammo_labels[player_id].text = ammo_display
-			hero_ammo_labels[player_id].visible = ammo_display != ""
-	_update_sortie_thumbnails()
+	if now_msec - battle_ui_last_minimap_msec >= 100:
+		battle_ui_last_minimap_msec = now_msec
+		_update_battle_minimap()
+	var heavy_update := now_msec - battle_ui_last_heavy_msec >= 160
+	if heavy_update:
+		battle_ui_last_heavy_msec = now_msec
+		battle_mode_label.text = _battle_mode_title()
+		var minutes := int(floorf(match_time_remaining / 60.0))
+		var seconds := int(floorf(fmod(match_time_remaining, 60.0)))
+		match_timer_label.text = "%02d:%02d" % [minutes, seconds]
+		for player_id in [1, 2]:
+			resource_labels[player_id].text = "P%d %s %d" % [player_id, _ui_term("resource"), int(runtime_resource[player_id])]
+			victory_labels[player_id].text = "%s %d/%d" % [_ui_term("victory_points"), int(victory_points[player_id]), WIN_POINTS]
+			var portal: Dictionary = PORTALS[int(portal_index[player_id])]
+			portal_labels[player_id].text = "%s %s  %s" % [_ui_term("portal"), String(portal["name"]), _sortie_discount_status(player_id, 3)]
+			var statuses := [
+				_role_status_text(player_id, "hero"),
+				_role_status_text(player_id, "puppet"),
+				_role_status_text(player_id, "barrier"),
+			]
+			for i in range(3):
+				var role_key: String = ROLE_ORDER[i]
+				var hp_ratio := _role_health_ratio(player_id, role_key)
+				var shield_ratio := _role_shield_ratio(player_id, role_key)
+				var heat_ratio := _role_heat_ratio(player_id, role_key) if heat_hud_enabled else 0.0
+				if role_health_fills[player_id][role_key] != null:
+					role_health_fills[player_id][role_key].color = _team_primary_color(player_id).lerp(_team_accent_color(player_id), 0.18)
+				if role_shield_fills[player_id][role_key] != null:
+					role_shield_fills[player_id][role_key].color = _shield_bar_color(player_id)
+				if role_key == "puppet":
+					role_health_fills[player_id][role_key].visible = false
+					role_shield_fills[player_id][role_key].visible = false
+					_set_puppet_segment_bar(player_id, 330.0)
+				else:
+					_set_corner_bar(role_health_fills[player_id][role_key], player_id, 330.0, hp_ratio)
+					_set_shield_corner_bar(role_shield_fills[player_id][role_key], player_id, 330.0, shield_ratio)
+					role_shield_fills[player_id][role_key].visible = shield_ratio > 0.001
+				_set_corner_bar(role_heat_fills[player_id][role_key], player_id, 330.0, heat_ratio)
+				role_bar_labels[player_id][role_key].text = _role_bar_text(player_id, role_key)
+				unit_status_labels[player_id][i].text = statuses[i]
+			var hero = active_units[player_id]["hero"]
+			if hero_ammo_labels.get(player_id, null) != null:
+				var ammo_display := _unit_ammo_display_text(hero) if _is_live_unit(hero) else ""
+				hero_ammo_labels[player_id].text = ammo_display
+				hero_ammo_labels[player_id].visible = ammo_display != ""
+	if now_msec - battle_ui_last_sortie_msec >= 5000:
+		battle_ui_last_sortie_msec = now_msec
+		_update_sortie_thumbnails()
 	battle_message_label.text = battle_message
 	_update_battle_instrument_gauge()
 

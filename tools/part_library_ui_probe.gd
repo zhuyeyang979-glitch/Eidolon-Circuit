@@ -60,7 +60,7 @@ func _init() -> void:
 	var summary: Dictionary = main._team_summary(1)
 	var entries: Array = main._editor_stats_entries(stats, {}, summary, {}, {})
 	var labels := _entry_labels(entries)
-	for required_label in ["当前画布造价", "动力平衡", "热管理平衡", "机内插件槽 0/0", "软件槽 0/0"]:
+	for required_label in ["当前画布造价", "动力分配", "热管理平衡", "机内插件槽 0/0", "软件槽 0/0"]:
 		if not labels.has(required_label):
 			_fail("Dashboard missing %s in labels %s." % [required_label, str(labels)])
 	if labels.has("全队总价"):
