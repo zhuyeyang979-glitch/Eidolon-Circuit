@@ -10,6 +10,27 @@ Primary implementation file: `scripts/main.gd`
 
 Godot version in workspace: `tools/godot-4.6.2/Godot_v4.6.2-stable_win64_console.exe`
 
+## 2026-05-21 Git Workspace Cleanup
+
+### Rules
+
+- `E:\New project` remains the active development copy; `C:\Users\Administrator\Documents\New project` remains the mirror and does not receive `.git/`.
+- `tools/*.gd.uid` is treated as local Godot probe metadata and should not enter version control.
+- `scripts/main.gd.uid` and `scripts/fighter.gd.uid` remain tracked because they identify core runtime script resources.
+
+### Implementation Notes
+
+- Added `tools/*.gd.uid` to `.gitignore` so future probe runs do not pollute `git status` or scoped `git diff`.
+- Removed the 19 historical tool probe UID files from version tracking: `ai_entry_probe.gd.uid`, `ai_template_pool_probe.gd.uid`, `attitude_control_probe.gd.uid`, `barrier_panel_probe.gd.uid`, `battle_translation_probe.gd.uid`, `catalog_probe.gd.uid`, `chemical_heat_probe.gd.uid`, `combat_probe.gd.uid`, `corner_joint_probe.gd.uid`, `editor_canvas_probe.gd.uid`, `ether_heat_economy_probe.gd.uid`, `ether_probe.gd.uid`, `identity_module_probe.gd.uid`, `projectile_momentum_probe.gd.uid`, `resource_entry_probe.gd.uid`, `shield_probe.gd.uid`, `source_code_probe.gd.uid`, `teamedit_probe.gd.uid`, and `ui_layout_probe.gd.uid`.
+- Kept normal source, scene, resource, probe `.gd`, Markdown, JSON, and PowerShell files diffable for later bounded reviews.
+
+### Verification
+
+- `git diff --check` passes.
+- `git ls-files 'tools/*.gd.uid'` is empty after cleanup.
+- `git check-ignore -v tools/ether_probe.gd.uid` resolves to the new `.gitignore` rule.
+- Mirrored `.gitignore` and `WORKLOG_RULEBOOK.md` to Documents and removed the same tool probe UID files there.
+
 ## 1. Game Pitch
 
 `Eidolon Circuit: Mobius Arsenal` is a top-down 2D fighting/shooting prototype about player-built machines.
@@ -1515,3 +1536,21 @@ Sync:
 - Implemented in `E:\New project`.
 - Documents mirror sync completed for `scripts/main.gd`, `scripts/fighter.gd`, `scripts/part_art.gd`, updated probes, new probes, and `WORKLOG_RULEBOOK.md`.
 - Final mirrored hashes include `scripts/main.gd` = `9A05DCD54FEBA0EED0FC8CA89EC43BA54E1AF0B210F3D8E083DD31366704F920`, `scripts/fighter.gd` = `8AA70276778CF1D7647E5616832061EEC7C36334317C695B1A8FE692537D99BA`, `scripts/part_art.gd` = `557496E4C648E54312D5B9BFDB0D11C7358E3109C1BE21742C282ED18BBB821A`.
+
+## 2026-05-21 单位2训练靶机动力合法化
+
+Rules:
+- 训练靶机单位2继续作为新动力系统的合法训练基准；不放宽预算规则，不降低四肢行动模块分配。
+- 修复只替换过弱引擎，保留四接口躯干、四肢拓扑、推进器、散热器、英魂和 `U/I/O/J` 四个 `双段正锋折返` 绑定。
+
+Implementation notes:
+- 最新单位2保存文件写为 `user://saved_units/2_1779360176.json`。
+- 原最新文件 `2_1779318152.json` 已备份到 `user://saved_units/backups/unit2_engine_repair_1779360176_2_1779318152.json`。
+- 引擎 payload 从漂移后的弱引擎索引 `2` 更新为索引 `3`：`LIGHT FORMATION ENGINE`。
+- 同步更新 `slot_payloads`、`purchased_parts["engine"] = [3]` 和可读 `part_name`，避免 UI 或导入逻辑回退到旧引擎。
+- 动力预算从 `engine output 49 < thruster 10 + bound limbs 52` 修正为约 `64 >= 10 + 52`；现有 `NANO HEAT VEIN` 仍能覆盖热管理。
+
+Verification:
+- Passed: `unit2_training_probe`, `training_saved_unit_control_probe`, `thermal_allocation_probe`, `momentum_budget_allocation_probe`, `limb_momentum_range_probe`, `combat_probe`, `ui_layout_probe`, `text_overflow_probe`。
+- `teamedit_probe` exit code 0；输出中仍有已知 AI/template 非法提示，不影响单位2训练靶机合法性。
+- `--check-only --quit-after 1` exit code 0；ObjectDB cleanup warnings remain ordinary teardown noise.

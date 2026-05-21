@@ -7,3 +7,4 @@ logs/
 tools/downloads/
 tools/git-portable/
 tools/godot-*/
+tools/*.gd.uid
