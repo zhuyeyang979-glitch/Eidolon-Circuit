@@ -1,0 +1,9 @@
+.godot/
+.import/
+export.cfg
+export_presets.cfg
+*.translation
+logs/
+tools/downloads/
+tools/git-portable/
+tools/godot-*/

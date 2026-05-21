@@ -1,0 +1,38 @@
+<svg width="128" height="128" viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="42%" r="75%">
+      <stop offset="0" stop-color="#17364A"/>
+      <stop offset="0.52" stop-color="#08131E"/>
+      <stop offset="1" stop-color="#02060B"/>
+    </radialGradient>
+    <linearGradient id="ring" x1="18" y1="30" x2="110" y2="96">
+      <stop stop-color="#23E6FF"/>
+      <stop offset="0.48" stop-color="#FFE14A"/>
+      <stop offset="1" stop-color="#FF2F6D"/>
+    </linearGradient>
+    <linearGradient id="blade" x1="28" y1="28" x2="100" y2="102">
+      <stop stop-color="#E9FDFF"/>
+      <stop offset="0.5" stop-color="#2DEBFF"/>
+      <stop offset="1" stop-color="#702BFF"/>
+    </linearGradient>
+    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="2.6" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  <rect width="128" height="128" rx="22" fill="url(#bg)"/>
+  <path d="M18 70C34 28 88 20 108 54C92 44 66 48 49 66C37 79 27 85 18 70Z" fill="#0B1D29"/>
+  <path d="M18 70C35 31 89 21 108 54C89 47 66 53 49 69C37 81 26 84 18 70Z" stroke="url(#ring)" stroke-width="7" stroke-linecap="round" filter="url(#glow)"/>
+  <path d="M107 58C90 99 36 108 19 74C37 82 61 76 78 59C91 46 101 44 107 58Z" stroke="url(#ring)" stroke-width="7" stroke-linecap="round" opacity="0.88" filter="url(#glow)"/>
+  <path d="M41 43L64 26L87 43L79 76L64 91L49 76L41 43Z" fill="#121A23" stroke="#D8FCFF" stroke-width="3"/>
+  <path d="M52 47L64 38L76 47L72 68L64 76L56 68L52 47Z" fill="#20E6FF" opacity="0.82" filter="url(#glow)"/>
+  <path d="M36 62L17 48L30 82L48 76L54 66L36 62Z" fill="url(#blade)" stroke="#EAFEFF" stroke-width="2"/>
+  <path d="M92 62L111 48L98 82L80 76L74 66L92 62Z" fill="url(#blade)" stroke="#EAFEFF" stroke-width="2"/>
+  <path d="M28 88L48 78L56 88L40 105L22 104L28 88Z" fill="#FF2F6D" stroke="#FFE14A" stroke-width="2"/>
+  <path d="M100 88L80 78L72 88L88 105L106 104L100 88Z" fill="#FF2F6D" stroke="#FFE14A" stroke-width="2"/>
+  <circle cx="64" cy="63" r="8" fill="#FFE14A" filter="url(#glow)"/>
+  <path d="M33 25L42 34M95 25L86 34M27 111L38 101M101 111L90 101" stroke="#26E7FF" stroke-width="3" stroke-linecap="round" opacity="0.8"/>
+</svg>
