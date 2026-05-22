@@ -2285,6 +2285,37 @@ Sync:
 - Implemented in `E:\New project`.
 - Mirror targets remain `C:\Users\Administrator\Documents\New project` and `C:\Users\Administrator\OneDrive\ドキュメント\New project`.
 
+## 2026-05-23 Catalog card body texture timing and adjacent-page prewarm
+
+Rules:
+- `CatalogCardBodyTextureCache` now reports headed request/submit/capture timing so the real card-body texture path can be distinguished from catalog data refresh and UI property writes.
+- Card body prewarm is strictly idle work. It only runs when TeamEdit is in the parts catalog, no preview/card-body request is active or queued, and the normal preview budget is positive.
+- Current-page card bodies stay higher priority than prewarm. Adjacent-page prewarm waits until visible card body captures drain, then queues one body from the next page first, previous page second.
+- Headless probes must not enqueue card body prewarm requests because the texture renderer is not available there.
+
+Implementation notes:
+- Added timing counters to `CatalogCardBodyTextureCache`: request, submit, capture totals plus last-request/submit/capture timings.
+- Added `prewarm_request_count` and `prewarm()` to expose whether adjacent-page work was actually queued.
+- `_tick_editor_visuals()` now calls `_prewarm_adjacent_catalog_card_bodies()` during idle preview-budget frames, then processes the same body texture queue used by visible cards.
+- The TeamEdit perf overlay now displays card body hit/miss/queued/active state, submit/capture/prewarm counts, and last request/submit/capture timings.
+- Added `tools/catalog_card_body_prewarm_probe.gd`. Headless mode verifies the overlay fields and skip behavior; headed mode verifies idle adjacent-page prewarm, submit, capture, and timing output.
+
+Verification:
+- `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 60` passed headless.
+- `tools/run_godot_checked.ps1 -Probe catalog_card_body_prewarm_probe -TimeoutSec 60` passed headless (`headless-skip`).
+- `tools/run_godot_checked.ps1 -Probe catalog_card_body_prewarm_probe -Headed -TimeoutSec 60` passed on NVIDIA GeForce RTX 4080 SUPER (`prewarm=1 submit=17 capture=16 last=0.01/0.01/0.00ms`).
+- `tools/run_godot_checked.ps1 -Probe teamedit_scroll_frame_budget_probe -TimeoutSec 60` passed. The remaining hot scope is still `teamedit.catalog.cards`, which is the next optimization target.
+- `tools/run_godot_checked.ps1 -Probe catalog_card_redraw_budget_probe -TimeoutSec 60` passed.
+- `tools/run_godot_checked.ps1 -Probe part_preview_texture_cache_probe -TimeoutSec 60` passed.
+- `tools/run_godot_checked.ps1 -Probe teamedit_trace_profiler_probe -TimeoutSec 60` passed (`hover_p95=6.26ms`, `slider_p95=5.31ms`, `pose_p95=5.53ms`).
+- `tools/run_godot_checked.ps1 -Probe teamedit_probe -TimeoutSec 120` passed.
+- `tools/run_godot_checked.ps1 -Probe combat_probe -TimeoutSec 60` passed.
+- `ui_layout_probe` and `text_overflow_probe` timed out at 120s but passed when rerun with `-TimeoutSec 240`.
+
+Notes:
+- This round gives profiler visibility into card body texture hit/miss/capture behavior and starts warming adjacent catalog pages without blocking current interaction.
+- The next performance cut should continue reducing the card itself: either pre-render the full visible card body including text/state into a retained texture, or replace the remaining Button/Control property churn with lighter retained card items.
+
 ## 2026-05-23 TeamEdit Catalog Card 热路径收束
 
 Rules:

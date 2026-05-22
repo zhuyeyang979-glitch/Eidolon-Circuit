@@ -1224,6 +1224,13 @@ class CatalogCardBodyTextureCache:
 	static var miss_count := 0
 	static var queue_hit_count := 0
 	static var last_captured_keys: Array = []
+	static var request_time_usec := 0
+	static var submit_time_usec := 0
+	static var capture_time_usec := 0
+	static var last_request_usec := 0
+	static var last_submit_usec := 0
+	static var last_capture_usec := 0
+	static var prewarm_request_count := 0
 
 	static func key_for(slot_key: String, part: Dictionary, display_name: String, line_a: String, line_b: String, selected: bool, preview_size: Vector2) -> String:
 		var size_key := "%dx%d" % [maxi(1, int(round(preview_size.x))), maxi(1, int(round(preview_size.y)))]
@@ -1238,17 +1245,24 @@ class CatalogCardBodyTextureCache:
 		]
 
 	static func request_preview(owner: Node, slot_key: String, part: Dictionary, display_name: String, line_a: String, line_b: String, selected: bool, preview_size: Vector2) -> Texture2D:
+		var started := Time.get_ticks_usec()
 		if DisplayServer.get_name().to_lower() == "headless":
+			last_request_usec = Time.get_ticks_usec() - started
+			request_time_usec += last_request_usec
 			return null
 		var safe_size := Vector2(maxf(8.0, preview_size.x), maxf(8.0, preview_size.y))
 		var cache_key := key_for(slot_key, part, display_name, line_a, line_b, selected, safe_size)
 		if textures.has(cache_key):
 			hit_count += 1
 			_touch_lru(cache_key)
+			last_request_usec = Time.get_ticks_usec() - started
+			request_time_usec += last_request_usec
 			return textures[cache_key]
 		miss_count += 1
 		if pending_requests.has(cache_key):
 			queue_hit_count += 1
+			last_request_usec = Time.get_ticks_usec() - started
+			request_time_usec += last_request_usec
 			return null
 		pending_requests[cache_key] = {
 			"display_name": display_name,
@@ -1258,6 +1272,8 @@ class CatalogCardBodyTextureCache:
 			"size": safe_size,
 		}
 		pending_order.append(cache_key)
+		last_request_usec = Time.get_ticks_usec() - started
+		request_time_usec += last_request_usec
 		return null
 
 	static func peek_preview(slot_key: String, part: Dictionary, display_name: String, line_a: String, line_b: String, selected: bool, preview_size: Vector2) -> Texture2D:
@@ -1295,15 +1311,20 @@ class CatalogCardBodyTextureCache:
 		return captured + submitted
 
 	static func _submit_render(owner: Node, cache_key: String, display_name: String, line_a: String, line_b: String, selected: bool, preview_size: Vector2) -> bool:
+		var started := Time.get_ticks_usec()
 		var tree: SceneTree = null
 		if owner != null and owner.is_inside_tree():
 			tree = owner.get_tree()
 		else:
 			tree = Engine.get_main_loop() as SceneTree
 		if tree == null or tree.root == null:
+			last_submit_usec = Time.get_ticks_usec() - started
+			submit_time_usec += last_submit_usec
 			return false
 		_ensure_renderer(tree, preview_size)
 		if render_viewport == null or render_canvas == null:
+			last_submit_usec = Time.get_ticks_usec() - started
+			submit_time_usec += last_submit_usec
 			return false
 		var viewport_size := Vector2i(maxi(8, int(ceil(preview_size.x))), maxi(8, int(ceil(preview_size.y))))
 		if render_viewport.size != viewport_size:
@@ -1315,25 +1336,35 @@ class CatalogCardBodyTextureCache:
 			"submit_frame": Engine.get_process_frames(),
 		}
 		submit_count += 1
+		last_submit_usec = Time.get_ticks_usec() - started
+		submit_time_usec += last_submit_usec
 		return true
 
 	static func _capture_active_request() -> int:
+		var started := Time.get_ticks_usec()
 		if active_request.is_empty() or render_viewport == null:
+			last_capture_usec = Time.get_ticks_usec() - started
 			return 0
 		if Engine.get_process_frames() <= int(active_request.get("submit_frame", -1)):
+			last_capture_usec = Time.get_ticks_usec() - started
 			return 0
 		var cache_key := String(active_request.get("key", ""))
 		active_request = {}
 		if cache_key == "" or textures.has(cache_key):
+			last_capture_usec = Time.get_ticks_usec() - started
 			return 0
 		var viewport_texture := render_viewport.get_texture()
 		if viewport_texture == null:
+			last_capture_usec = Time.get_ticks_usec() - started
 			return 0
 		var image := viewport_texture.get_image()
 		if image == null or image.is_empty():
+			last_capture_usec = Time.get_ticks_usec() - started
 			return 0
 		textures[cache_key] = ImageTexture.create_from_image(image)
 		capture_count += 1
+		last_capture_usec = Time.get_ticks_usec() - started
+		capture_time_usec += last_capture_usec
 		_touch_lru(cache_key)
 		_prune_lru()
 		last_captured_keys.append(cache_key)
@@ -1359,6 +1390,18 @@ class CatalogCardBodyTextureCache:
 		while lru_order.size() > max_entries:
 			var old_key := String(lru_order.pop_front())
 			textures.erase(old_key)
+
+	static func prewarm(owner: Node, slot_key: String, part: Dictionary, display_name: String, line_a: String, line_b: String, selected: bool, preview_size: Vector2) -> bool:
+		if DisplayServer.get_name().to_lower() == "headless":
+			return false
+		var before_pending := pending_order.size()
+		var texture := request_preview(owner, slot_key, part, display_name, line_a, line_b, selected, preview_size)
+		if texture != null:
+			return false
+		if pending_order.size() > before_pending:
+			prewarm_request_count += 1
+			return true
+		return false
 
 
 class PartCatalogCardButton:
@@ -20054,6 +20097,8 @@ func _tick_editor_visuals(delta: float) -> void:
 	var preview_processed := PartPreviewTextureCache.process_queue(self, preview_budget)
 	if preview_processed > 0:
 		_queue_editor_preview_icon_redraws()
+	if preview_budget > 0:
+		_prewarm_adjacent_catalog_card_bodies()
 	var card_body_processed := CatalogCardBodyTextureCache.process_queue(self, preview_budget)
 	if card_body_processed > 0:
 		_queue_editor_catalog_card_body_redraws()
@@ -20125,6 +20170,52 @@ func _queue_editor_catalog_card_body_redraws() -> void:
 			continue
 		button.text_layer.body_texture = CatalogCardBodyTextureCache.peek_preview(button.text_layer.slot_key, button.text_layer.part, button.text_layer.display_name, button.text_layer.data_line_a, button.text_layer.data_line_b, button.text_layer.selected, button.text_layer.size)
 		button.text_layer.queue_redraw()
+
+
+func _prewarm_adjacent_catalog_card_bodies() -> void:
+	if editor_panel_mode != "parts":
+		return
+	if CatalogCardBodyTextureCache.active_request.size() > 0 or CatalogCardBodyTextureCache.pending_order.size() > 0:
+		return
+	if editor_catalog_buttons.is_empty():
+		return
+	var role_key: String = ROLE_ORDER[editor_role_index]
+	var slot_key: String = BUILD_SLOTS[editor_slot_index]
+	var entries := _editor_catalog_entries(role_key, slot_key)
+	if entries.is_empty():
+		return
+	var page_size := maxi(1, editor_catalog_buttons.size())
+	var max_page := maxi(0, int(ceilf(float(entries.size()) / float(page_size))) - 1)
+	var pages: Array = []
+	if editor_catalog_page + 1 <= max_page:
+		pages.append(editor_catalog_page + 1)
+	if editor_catalog_page - 1 >= 0:
+		pages.append(editor_catalog_page - 1)
+	for raw_page in pages:
+		var page := int(raw_page)
+		for i in range(page_size):
+			var actual_index := page * page_size + i
+			if actual_index < 0 or actual_index >= entries.size():
+				continue
+			var entry: Dictionary = entries[actual_index]
+			var entry_slot := String(entry.get("slot", slot_key))
+			var part_index := int(entry.get("index", 0))
+			var part: Dictionary = _catalog_display_part(entry_slot, entry.get("part", _selected_component(role_key, entry_slot, part_index)))
+			var selected_card := part_index == _editor_selected_part_index_for_slot(_editor_current_blueprint(), role_key, entry_slot)
+			var card_model := _catalog_card_cached_model(entry_slot, part, part_index)
+			var marker := "已装 " if _ui_is_zh() and selected_card else ("IN " if selected_card else "")
+			if entry_slot in ["joint", "limb_muscle", "muscle"]:
+				marker = "待选 " if _ui_is_zh() and selected_card and _has_pending_canvas_part() else marker
+			var title := "%s%s" % [marker, String(card_model.get("title_base", ""))]
+			var line_a := String(card_model.get("line_a", ""))
+			var line_b := String(card_model.get("line_b", ""))
+			var preview_size := Vector2(116.0, 30.0)
+			if not editor_catalog_buttons.is_empty() and editor_catalog_buttons[0] is PartCatalogCardButton:
+				var button: PartCatalogCardButton = editor_catalog_buttons[0]
+				if button.text_layer != null:
+					preview_size = button.text_layer.size
+			if CatalogCardBodyTextureCache.prewarm(self, entry_slot, part, title, line_a, line_b, selected_card, preview_size):
+				return
 
 
 func mark_editor_dirty(flags: int, reason: String = "editor") -> void:
@@ -20317,6 +20408,9 @@ func _editor_perf_overlay_text() -> String:
 		"preview hit/miss/q/active: %d/%d/%d/%d" % [int(PartPreviewTextureCache.hit_count), int(PartPreviewTextureCache.miss_count), int(PartPreviewTextureCache.pending_order.size()), 0 if PartPreviewTextureCache.active_request.is_empty() else 1],
 		"preview submit/capture/render/force: %d/%d/%d/%d" % [int(PartPreviewTextureCache.submit_count), int(PartPreviewTextureCache.capture_count), int(PartPreviewTextureCache.render_count), int(PartPreviewTextureCache.force_draw_count)],
 		"preview viewport/process: %d/%d" % [int(PartPreviewTextureCache.subviewport_create_count), int(PartPreviewTextureCache.process_count)],
+		"card body h/m/q/a: %d/%d/%d/%d" % [int(CatalogCardBodyTextureCache.hit_count), int(CatalogCardBodyTextureCache.miss_count), int(CatalogCardBodyTextureCache.pending_order.size()), 0 if CatalogCardBodyTextureCache.active_request.is_empty() else 1],
+		"card body sub/cap/prewarm: %d/%d/%d" % [int(CatalogCardBodyTextureCache.submit_count), int(CatalogCardBodyTextureCache.capture_count), int(CatalogCardBodyTextureCache.prewarm_request_count)],
+		"card body time req/sub/cap: %.2f/%.2f/%.2fms" % [float(CatalogCardBodyTextureCache.last_request_usec) / 1000.0, float(CatalogCardBodyTextureCache.last_submit_usec) / 1000.0, float(CatalogCardBodyTextureCache.last_capture_usec) / 1000.0],
 		"ui full/deferred/alloc: %d/%d/%d" % [int(editor_full_update_request_count), int(editor_dirty_flush_count), int(editor_deferred_full_refresh_request_count)],
 		"dirty flush: %d flags:%d %.2fms" % [int(editor_dirty_scheduler_flush_count), int(editor_dirty_scheduler_last_flags), float(editor_dirty_scheduler_last_usec) / 1000.0],
 		"catalog skip/update: %d %.2fms" % [int(editor_catalog_revision_skip_count), float(editor_catalog_update_usec) / 1000.0],
