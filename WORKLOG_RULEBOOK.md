@@ -3098,3 +3098,48 @@ Notes:
 Sync:
 - Implemented in `E:\New project`.
 - Mirror targets remain `C:\Users\Administrator\Documents\New project` and `C:\Users\Administrator\OneDrive\ドキュメント\New project`.
+
+## 2026-05-23 Desktop Shortcuts and TeamEdit Catalog Card Hot Path
+
+Rules:
+- `E:\New project` is still the only implementation source. Documents and OneDrive are mirrors.
+- Desktop shortcuts are verified against the implementation source before treating a performance report as code-related.
+- TeamEdit catalog cards must avoid high-frequency `Button._draw()` body rendering and bulk text/property churn; selected/hover/pulse state belongs in a lightweight overlay, not in the card body texture key.
+- Board UI refresh domains are independent: hint/body labels/shop buttons/catalog/board visual must not force each other to refresh after ordinary clicks or assembly edits.
+
+Implementation notes:
+- Added `CatalogCardRetainedItem` and routed visible catalog cards through a retained card body that draws cached preview/body textures plus a tiny overlay. The underlying `PartCatalogCardButton` is kept as the hit/focus shell but no longer paints the card body in normal headed UI.
+- Removed `selected` from the catalog card body texture key. Selected and pulse state now render as overlay, preventing page swaps and hover changes from invalidating the card body cache.
+- Deferred visible catalog card texture requests while interaction is active; idle frames request visible-card textures and adjacent page prewarm without blocking page swap.
+- Split `_update_editor_board_ui()` catalog and board visual refresh into domain revision keys so click/assembly paths do not automatically refresh unrelated catalog cards or visual snapshots.
+- Added profiler scopes for `button.hit_test`, `button.fallback_trigger`, `editor_action`, `install_part`, and assembly paths so the next slow click can report the actual hot leaf instead of “TeamEdit is slow” generically.
+- Added probes for desktop shortcut targets, retained catalog cards, catalog page-swap budget, board UI domain dirtying, button click frame budget, and assembly frame budget.
+
+Verification:
+- `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120` passed.
+- New probes passed:
+  - `desktop_shortcut_latest_probe`
+  - `catalog_card_retained_item_probe`
+  - `catalog_card_page_swap_budget_probe` headed and headless
+  - `editor_board_ui_domain_dirty_probe`
+  - `teamedit_click_frame_budget_probe`
+  - `teamedit_assembly_frame_budget_probe`
+- Performance probes passed:
+  - `teamedit_scroll_frame_budget_probe -Headed`
+  - `teamedit_trace_profiler_probe -Headed`
+  - `catalog_card_redraw_budget_probe`
+  - `part_preview_texture_cache_probe`
+- Regression probes passed:
+  - `teamedit_probe`
+  - `combat_probe`
+  - `ui_layout_probe`
+  - `text_overflow_probe`
+
+Findings:
+- The desktop shortcuts are not stale: `Eidolon Circuit.lnk`, `Strike Lab Game.lnk`, and `Godot 4.6.2.lnk` all target the Godot executable under `E:\New project\tools\godot-4.6.2` with `--path "E:\New project"`.
+- The visible stutter is therefore not from running an old mirror. The hottest measured TeamEdit path before this pass was catalog card work: `teamedit.catalog.cards` accumulated around 248 ms in the headed trace, while ordinary hover/slider/pose paths were already below 2 ms p95.
+- After this pass, retained cards and deferred texture requests remove card texture capture from page swaps, but page-swap p95 is still noticeably higher than hover/slider. Current headed measurements: `teamedit_scroll_frame_budget_probe` reports `p95=5.84ms`, `max=152.30ms`, with hot leaves `teamedit.catalog.cards=242.94ms` and `teamedit.catalog.entries=37.32ms`; `catalog_card_page_swap_budget_probe` reports `p95=77.75ms` with `body_submit=0`.
+- If the real window still feels sticky, the next cut should focus on the remaining catalog page model/signature/property work and button fallback chain, not on GPU collision or board rendering.
+
+Sync:
+- Implemented in `E:\New project`; mirror sync and local commit recorded by the surrounding Git history.

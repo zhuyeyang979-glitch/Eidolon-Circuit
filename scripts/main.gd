@@ -1234,13 +1234,12 @@ class CatalogCardBodyTextureCache:
 
 	static func key_for(slot_key: String, part: Dictionary, display_name: String, line_a: String, line_b: String, selected: bool, preview_size: Vector2) -> String:
 		var size_key := "%dx%d" % [maxi(1, int(round(preview_size.x))), maxi(1, int(round(preview_size.y)))]
-		return "%s|%s|%s|%s|%s|%s|%s" % [
+		return "%s|%s|%s|%s|%s|%s" % [
 			slot_key,
 			String(part.get("stable_key", part.get("name", ""))),
 			display_name,
 			line_a,
 			line_b,
-			str(selected),
 			size_key,
 		]
 
@@ -1268,7 +1267,7 @@ class CatalogCardBodyTextureCache:
 			"display_name": display_name,
 			"line_a": line_a,
 			"line_b": line_b,
-			"selected": selected,
+			"selected": false,
 			"size": safe_size,
 		}
 		pending_order.append(cache_key)
@@ -1404,6 +1403,241 @@ class CatalogCardBodyTextureCache:
 		return false
 
 
+class CatalogCardRetainedItem:
+	extends Control
+
+	static var defer_texture_requests := false
+
+	var slot_key := ""
+	var part := {}
+	var display_name := ""
+	var data_line_a := ""
+	var data_line_b := ""
+	var selected := false
+	var content_signature := ""
+	var textures_requested_signature := ""
+	var preview_texture: Texture2D
+	var body_texture: Texture2D
+	var preview_request_count := 0
+	var body_request_count := 0
+	var redraw_count := 0
+
+	func _init() -> void:
+		mouse_filter = Control.MOUSE_FILTER_IGNORE
+		focus_mode = Control.FOCUS_NONE
+
+	func configure(next_slot: String, next_part: Dictionary, next_display_name: String, next_line_a: String, next_line_b: String, next_selected: bool) -> void:
+		var next_signature := _content_signature(next_slot, next_part, next_display_name, next_line_a, next_line_b)
+		var selected_changed := selected != next_selected
+		selected = next_selected
+		if next_signature == content_signature:
+			if selected_changed:
+				queue_redraw()
+			return
+		content_signature = next_signature
+		slot_key = next_slot
+		part = next_part
+		display_name = next_display_name
+		data_line_a = next_line_a
+		data_line_b = next_line_b
+		preview_texture = null
+		body_texture = null
+		if not defer_texture_requests:
+			_request_textures()
+		queue_redraw()
+
+	func _content_signature(next_slot: String, next_part: Dictionary, next_display_name: String, next_line_a: String, next_line_b: String) -> String:
+		var size_key := "%dx%d" % [maxi(1, int(round(size.x))), maxi(1, int(round(size.y)))]
+		return "%s|%s|%s|%s|%s|%s" % [
+			next_slot,
+			String(next_part.get("stable_key", next_part.get("name", ""))),
+			next_display_name,
+			next_line_a,
+			next_line_b,
+			size_key,
+		]
+
+	func _request_textures() -> void:
+		textures_requested_signature = content_signature
+		preview_texture = null
+		body_texture = null
+		if slot_key == "" or part.is_empty() or size.x <= 0.0 or size.y <= 0.0:
+			return
+		var art_rect := _art_rect()
+		var body_rect := _body_texture_rect()
+		preview_texture = PartPreviewTextureCache.request_preview(self, slot_key, part, false, 0.0, art_rect.size)
+		body_texture = CatalogCardBodyTextureCache.request_preview(self, slot_key, part, display_name, data_line_a, data_line_b, false, body_rect.size)
+		preview_request_count += 1
+		body_request_count += 1
+
+	func ensure_textures_requested() -> bool:
+		if slot_key == "" or part.is_empty():
+			return false
+		if textures_requested_signature == content_signature:
+			return false
+		_request_textures()
+		queue_redraw()
+		return true
+
+	func _notification(what: int) -> void:
+		if what == NOTIFICATION_RESIZED:
+			var next_signature := _content_signature(slot_key, part, display_name, data_line_a, data_line_b)
+			if next_signature != content_signature:
+				content_signature = next_signature
+				_request_textures()
+			queue_redraw()
+
+	func preview_cache_key() -> String:
+		if slot_key == "" or part.is_empty():
+			return ""
+		return PartPreviewTextureCache.key_for(slot_key, part, false, 0.0, _art_rect().size)
+
+	func body_cache_key() -> String:
+		if slot_key == "" or part.is_empty():
+			return ""
+		return CatalogCardBodyTextureCache.key_for(slot_key, part, display_name, data_line_a, data_line_b, false, _body_texture_rect().size)
+
+	func refresh_preview_texture() -> bool:
+		if slot_key == "" or part.is_empty():
+			return false
+		var next_texture := PartPreviewTextureCache.peek_preview(slot_key, part, false, 0.0, _art_rect().size)
+		if next_texture == null or next_texture == preview_texture:
+			return false
+		preview_texture = next_texture
+		queue_redraw()
+		return true
+
+	func refresh_body_texture() -> bool:
+		if slot_key == "" or part.is_empty():
+			return false
+		var next_texture := CatalogCardBodyTextureCache.peek_preview(slot_key, part, display_name, data_line_a, data_line_b, false, _body_texture_rect().size)
+		if next_texture == null or next_texture == body_texture:
+			return false
+		body_texture = next_texture
+		queue_redraw()
+		return true
+
+	func _draw() -> void:
+		redraw_count += 1
+		if not visible:
+			return
+		var card_rect := Rect2(Vector2.ZERO, size)
+		var base := Color(0.024, 0.036, 0.047, 0.96)
+		if selected:
+			base = Color(0.07, 0.075, 0.044, 0.98)
+		draw_rect(card_rect, base, true)
+		draw_rect(Rect2(Vector2(1.0, 1.0), size - Vector2(2.0, 2.0)), _slot_color().lerp(Color.WHITE, 0.28 if selected else 0.0), false, 2.0 if selected else 1.0)
+		var art_rect := _art_rect()
+		draw_rect(art_rect, Color(0.006, 0.012, 0.018, 0.78), true)
+		if preview_texture == null:
+			refresh_preview_texture()
+		if preview_texture != null:
+			draw_texture_rect(preview_texture, art_rect, false)
+		else:
+			draw_rect(art_rect.grow(-4.0), _slot_color().darkened(0.35), true)
+			draw_rect(art_rect.grow(-4.0), _slot_color().lerp(Color.WHITE, 0.22), false, 1.0)
+		draw_rect(art_rect, Color(0.26, 0.36, 0.46, 0.5), false, 1.0)
+		_draw_size_ruler(art_rect, _thumbnail_size_scale())
+		_draw_size_badge(art_rect)
+		var data_rect := _data_rect()
+		draw_rect(data_rect, Color(0.0, 0.0, 0.0, 0.38), true)
+		if body_texture == null:
+			refresh_body_texture()
+		if body_texture != null:
+			draw_texture_rect(body_texture, _body_texture_rect(), false)
+		else:
+			_draw_body_fallback(_body_texture_rect())
+		if selected:
+			draw_circle(Vector2(size.x - 10.0, 10.0), 4.0, Color(1.0, 0.86, 0.24, 1.0))
+
+	func _art_rect() -> Rect2:
+		var simple_card := data_line_a == "" and data_line_b == ""
+		return Rect2(Vector2(8.0, 6.0), Vector2(size.x - 16.0, maxf(26.0, size.y * (0.56 if simple_card else 0.38))))
+
+	func _data_rect() -> Rect2:
+		var art_rect := _art_rect()
+		var data_y := art_rect.position.y + art_rect.size.y + 3.0
+		return Rect2(Vector2(4.0, data_y), Vector2(size.x - 8.0, size.y - data_y - 4.0))
+
+	func _body_texture_rect() -> Rect2:
+		var data_rect := _data_rect()
+		return Rect2(data_rect.position + Vector2(3.0, 0.0), data_rect.size - Vector2(6.0, 0.0))
+
+	func _draw_body_fallback(rect: Rect2) -> void:
+		var font := ThemeDB.get_fallback_font()
+		var simple_card := data_line_a == "" and data_line_b == ""
+		draw_string(font, rect.position + Vector2(0.0, 12.0 if simple_card else 8.0), _card_trim(display_name, 17 if simple_card else 14), HORIZONTAL_ALIGNMENT_LEFT, rect.size.x, 10 if simple_card else 8, Color(0.9, 0.96, 1.0, 0.98))
+		if not simple_card:
+			draw_string(font, rect.position + Vector2(0.0, 17.0), _card_trim(data_line_a, 15), HORIZONTAL_ALIGNMENT_LEFT, rect.size.x, 7, Color(0.78, 0.9, 1.0, 0.95))
+			draw_string(font, rect.position + Vector2(0.0, minf(26.0, rect.size.y - 2.0)), _card_trim(data_line_b, 15), HORIZONTAL_ALIGNMENT_LEFT, rect.size.x, 7, Color(0.72, 0.78, 0.84, 0.95))
+
+	func _card_trim(value: String, max_chars: int) -> String:
+		if value.length() <= max_chars:
+			return value
+		return value.substr(0, max(0, max_chars - 1)) + "."
+
+	func _slot_color() -> Color:
+		match slot_key:
+			"special":
+				return Color(1.0, 0.82, 0.22, 1.0)
+			"joint":
+				return Color(0.24, 0.82, 1.0, 1.0)
+			"limb_muscle":
+				return Color(0.76, 0.9, 1.0, 1.0)
+			"booster":
+				return Color(1.0, 0.42, 0.12, 1.0)
+			"engine":
+				return Color(0.58, 0.42, 1.0, 1.0)
+			"cooling":
+				return Color(0.28, 0.96, 0.72, 1.0)
+			"module":
+				return Color(0.92, 0.94, 1.0, 1.0)
+		return _damage_color(String(part.get("projectile_damage_type", part.get("damage_type", ""))))
+
+	func _damage_color(damage_type: String) -> Color:
+		match damage_type:
+			"bullet":
+				return Color(1.0, 0.16, 0.1, 1.0)
+			"chemical":
+				return Color(0.95, 0.92, 0.18, 1.0)
+			"laser":
+				return Color(0.18, 0.84, 1.0, 1.0)
+			"pierce":
+				return Color(0.88, 0.24, 1.0, 1.0)
+			"tear":
+				return Color(1.0, 0.38, 0.18, 1.0)
+			"impact":
+				return Color(1.0, 0.66, 0.18, 1.0)
+			"explosive":
+				return Color(1.0, 0.32, 0.08, 1.0)
+			"web":
+				return Color(0.78, 0.9, 1.0, 1.0)
+		return Color(0.72, 0.82, 0.9, 1.0)
+
+	func _thumbnail_size_scale() -> float:
+		var tier := String(part.get("size_tier", part.get("size_class", part.get("slot_volume_tier", "M")))).to_upper()
+		return float({"XS": 0.42, "S": 0.58, "M": 0.76, "L": 0.92, "XL": 1.0}.get(tier, 0.72))
+
+	func _draw_size_ruler(rect: Rect2, scale_value: float) -> void:
+		var y := rect.position.y + rect.size.y - 4.0
+		var width := maxf(10.0, rect.size.x * clampf(scale_value, 0.25, 1.0))
+		var start := Vector2(rect.position.x + 5.0, y)
+		var end := start + Vector2(width, 0.0)
+		draw_line(start, end, Color(0.86, 0.96, 1.0, 0.48), 1.0)
+		draw_line(start + Vector2(0.0, -3.0), start + Vector2(0.0, 3.0), Color(0.86, 0.96, 1.0, 0.38), 1.0)
+		draw_line(end + Vector2(0.0, -3.0), end + Vector2(0.0, 3.0), Color(0.86, 0.96, 1.0, 0.38), 1.0)
+
+	func _draw_size_badge(rect: Rect2) -> void:
+		var tier := String(part.get("size_tier", part.get("size_class", part.get("slot_volume_tier", "")))).to_upper()
+		if tier == "":
+			return
+		var font := ThemeDB.get_fallback_font()
+		var badge_rect := Rect2(rect.position + Vector2(rect.size.x - 28.0, 4.0), Vector2(24.0, 12.0))
+		draw_rect(badge_rect, Color(0.0, 0.0, 0.0, 0.45), true)
+		draw_rect(badge_rect, Color(0.86, 0.96, 1.0, 0.28), false, 1.0)
+		draw_string(font, badge_rect.position + Vector2(3.0, 9.0), tier.substr(0, 2), HORIZONTAL_ALIGNMENT_LEFT, badge_rect.size.x, 8, Color(0.9, 0.98, 1.0, 0.9))
+
+
 class PartCatalogCardButton:
 	extends Button
 
@@ -1432,8 +1666,10 @@ class PartCatalogCardButton:
 	var set_card_noop_count := 0
 	var text_layer: CatalogCardTextLayer
 	var preview_icon: PartPreviewIconView
+	var retained_item: CatalogCardRetainedItem
 
 	func _ready() -> void:
+		flat = true
 		_ensure_card_nodes()
 		_ensure_preview_icon()
 
@@ -1482,7 +1718,6 @@ class PartCatalogCardButton:
 		_apply_card_texts()
 		_layout_card_nodes()
 		_sync_preview_icon(false)
-		queue_redraw()
 
 	func set_art_sheets(next_asset: Texture2D, next_joint: Texture2D, next_limb: Texture2D, next_blade: Texture2D, next_blunt: Texture2D, next_pierce: Texture2D, next_torso: Texture2D, next_booster: Texture2D, next_engine: Texture2D, next_projectile: Texture2D) -> void:
 		# Thumbnail art is now renderer-driven; sheet arguments stay only for old call-site compatibility.
@@ -1525,13 +1760,16 @@ class PartCatalogCardButton:
 		return Rect2(Vector2(8.0, 6.0), Vector2(size.x - 16.0, maxf(26.0, size.y * (0.56 if simple_card else 0.38))))
 
 	func _ensure_card_nodes() -> void:
-		if text_layer == null:
-			text_layer = CatalogCardTextLayer.new()
-			text_layer.name = "CardTextLayer"
-			add_child(text_layer)
+		if retained_item == null:
+			retained_item = CatalogCardRetainedItem.new()
+			retained_item.name = "CatalogCardRetainedItem"
+			add_child(retained_item)
 		_layout_card_nodes()
 
 	func _layout_card_nodes() -> void:
+		if retained_item != null:
+			retained_item.position = Vector2.ZERO
+			retained_item.size = size
 		if text_layer == null:
 			return
 		var art_rect := _art_rect()
@@ -1541,6 +1779,8 @@ class PartCatalogCardButton:
 		text_layer.size = data_rect.size - Vector2(6.0, 0.0)
 
 	func _apply_card_texts() -> void:
+		if retained_item != null:
+			retained_item.configure(slot_key, part, display_name, data_line_a, data_line_b, selected)
 		if text_layer != null:
 			text_layer.configure(slot_key, part, display_name, data_line_a, data_line_b, selected)
 
@@ -1571,41 +1811,26 @@ class PartCatalogCardButton:
 	func _sync_preview_icon(force_redraw: bool = false) -> void:
 		if preview_icon == null:
 			return
+		if DisplayServer.get_name().to_lower() != "headless":
+			if preview_icon.visible:
+				preview_icon.visible = false
+			preview_icon.clear_preview()
+			return
 		var art_rect := _art_rect()
 		if preview_icon.position != art_rect.position:
 			preview_icon.position = art_rect.position
 		if preview_icon.size != art_rect.size:
 			preview_icon.size = art_rect.size
 		var next_visible := visible and not part.is_empty() and slot_key != ""
-		if preview_icon.visible != next_visible:
-			preview_icon.visible = next_visible
 		if preview_icon.visible:
-			preview_icon.set_preview(slot_key, part, selected, 0.0, _preview_signature())
-			if force_redraw:
-				preview_icon.queue_redraw()
+			preview_icon.visible = false
+		if next_visible:
+			preview_icon.set_preview(slot_key, part, false, 0.0, _preview_signature())
 		else:
 			preview_icon.clear_preview()
 
 	func _draw() -> void:
-		if not visible:
-			return
-		var card_rect := Rect2(Vector2.ZERO, size)
-		var base := Color(0.024, 0.036, 0.047, 0.96)
-		if selected:
-			base = Color(0.07, 0.075, 0.044, 0.98)
-		draw_rect(card_rect, base, true)
-		draw_rect(Rect2(Vector2(1.0, 1.0), size - Vector2(2.0, 2.0)), _slot_color().lerp(Color.WHITE, 0.28 if selected else 0.0), false, 2.0 if selected else 1.0)
-		var simple_card := data_line_a == "" and data_line_b == ""
-		var art_rect := Rect2(Vector2(8.0, 6.0), Vector2(size.x - 16.0, maxf(26.0, size.y * (0.56 if simple_card else 0.38))))
-		draw_rect(art_rect, Color(0.006, 0.012, 0.018, 0.78), true)
-		draw_rect(art_rect, Color(0.26, 0.36, 0.46, 0.5), false, 1.0)
-		_draw_size_ruler(art_rect, _thumbnail_size_scale())
-		_draw_size_badge(art_rect)
-		var data_y := art_rect.position.y + art_rect.size.y + 3.0
-		var data_rect := Rect2(Vector2(4.0, data_y), Vector2(size.x - 8.0, size.y - data_y - 4.0))
-		draw_rect(data_rect, Color(0.0, 0.0, 0.0, 0.38), true)
-		if selected:
-			draw_circle(Vector2(size.x - 10.0, 10.0), 4.0, Color(1.0, 0.86, 0.24, 1.0))
+		return
 
 	func _draw_art(rect: Rect2) -> void:
 		_draw_size_ruler(rect, _thumbnail_size_scale())
@@ -8411,11 +8636,13 @@ var editor_visible_control_sample_frame := -1000000
 var editor_deferred_full_refresh_request_count := 0
 var editor_dashboard_idle_recompute_count := 0
 var editor_catalog_buttons_revision_key := ""
+var editor_catalog_domain_revision_key := ""
 var editor_catalog_card_signature_cache := {}
 var editor_catalog_revision_skip_count := 0
 var editor_catalog_update_usec := 0
 var editor_catalog_card_update_count := 0
 var editor_board_ui_revision_key := ""
+var editor_board_visual_domain_revision_key := ""
 var editor_board_ui_revision_skip_count := 0
 var editor_board_visual_request_count := 0
 var editor_board_visual_deferred_count := 0
@@ -13290,7 +13517,11 @@ func _handle_global_ui_mouse_input(event: InputEvent) -> bool:
 		if format_button == null:
 			return true
 		return _trigger_button_mouse_fallback(format_button)
+	if hot_path_profiler != null:
+		hot_path_profiler.scope_begin("button.hit_test")
 	var button = _top_visible_button_at(mouse_event.position)
+	if hot_path_profiler != null:
+		hot_path_profiler.scope_end("button.hit_test")
 	if button == null:
 		return false
 	if game_state == STATE_MENU:
@@ -13504,12 +13735,18 @@ func _find_button_at_recursive(node: Node, mouse_position: Vector2):
 
 
 func _trigger_button_mouse_fallback(button: Button) -> bool:
+	if hot_path_profiler != null:
+		hot_path_profiler.scope_begin("button.fallback_trigger")
 	var now := Time.get_ticks_msec()
 	if now - ui_mouse_click_latch_msec < 120:
+		if hot_path_profiler != null:
+			hot_path_profiler.scope_end("button.fallback_trigger")
 		return true
 	ui_mouse_click_latch_msec = now
 	button.emit_signal("pressed")
 	_play_sfx_wave("clack", 620.0, 0.035, -22.0)
+	if hot_path_profiler != null:
+		hot_path_profiler.scope_end("button.fallback_trigger")
 	return true
 
 
@@ -18585,12 +18822,16 @@ func _visible_part_group_slots() -> Array:
 
 
 func _select_catalog_component(component_index: int) -> void:
+	if hot_path_profiler != null:
+		hot_path_profiler.scope_begin("install_part")
 	var player_id := _editor_player()
 	var role_key: String = ROLE_ORDER[editor_role_index]
 	var slot_key: String = BUILD_SLOTS[editor_slot_index]
 	var entries := _editor_catalog_entries(role_key, slot_key)
 	var actual_entry_index := editor_catalog_page * editor_catalog_buttons.size() + component_index
 	if actual_entry_index < 0 or actual_entry_index >= entries.size():
+		if hot_path_profiler != null:
+			hot_path_profiler.scope_end("install_part")
 		return
 	var unit_bp: Dictionary = _editor_current_blueprint()
 	var entry: Dictionary = entries[actual_entry_index]
@@ -18599,6 +18840,8 @@ func _select_catalog_component(component_index: int) -> void:
 	var clicked_part: Dictionary = entry.get("part", _selected_component(role_key, slot_key, actual_index))
 	if _part_installs_as_torso_payload(slot_key, clicked_part):
 		_add_torso_payload_component(slot_key, actual_index, clicked_part)
+		if hot_path_profiler != null:
+			hot_path_profiler.scope_end("install_part")
 		return
 	if _role_uses_body_board(role_key) and _is_body_group_slot(slot_key):
 		_ensure_custom_topology(unit_bp)
@@ -18608,6 +18851,8 @@ func _select_catalog_component(component_index: int) -> void:
 			_play_sfx_wave("clack", 640.0, 0.04, -18.0)
 			ai_team_manual_lock[player_id] = true
 			_update_editor_ui()
+			if hot_path_profiler != null:
+				hot_path_profiler.scope_end("install_part")
 			return
 		var topology: Dictionary = unit_bp.get("custom_topology", {})
 		var nodes: Array = topology.get("nodes", [])
@@ -18627,6 +18872,8 @@ func _select_catalog_component(component_index: int) -> void:
 		_trigger_editor_snap(slot_key, String(clicked_part.get("name", "")))
 		ai_team_manual_lock[player_id] = true
 	_update_editor_ui()
+	if hot_path_profiler != null:
+		hot_path_profiler.scope_end("install_part")
 
 
 func _torso_payload_kind_for_part(part: Dictionary, slot_key: String) -> String:
@@ -19451,10 +19698,14 @@ func _close_editor_torso_detail() -> void:
 
 
 func _editor_action(action_key: String) -> void:
+	if hot_path_profiler != null:
+		hot_path_profiler.scope_begin("editor_action")
 	if action_key.begins_with("bind_key_"):
 		var pieces := action_key.split("_")
 		var key_value := int(pieces[pieces.size() - 1]) if pieces.size() > 0 else 1
 		_set_pending_module_attack_key(key_value)
+		if hot_path_profiler != null:
+			hot_path_profiler.scope_end("editor_action")
 		return
 	if action_key.begins_with("panel_"):
 		editor_panel_mode = action_key.substr(String("panel_").length())
@@ -19465,6 +19716,8 @@ func _editor_action(action_key: String) -> void:
 			_clear_editor_hover_card()
 			editor_load_page = 0
 		_update_editor_ui()
+		if hot_path_profiler != null:
+			hot_path_profiler.scope_end("editor_action")
 		return
 	match action_key:
 		"edit_side":
@@ -19519,6 +19772,8 @@ func _editor_action(action_key: String) -> void:
 			if Array(blueprints[player_id].get(role_key_for_prev, [])).is_empty():
 				_reset_editor_working_canvas(role_key_for_prev)
 				_update_editor_ui()
+				if hot_path_profiler != null:
+					hot_path_profiler.scope_end("editor_action")
 				return
 			editor_unit_indices[role_key_for_prev] = _wrapped_index(int(editor_unit_indices[role_key_for_prev]) - 1, blueprints[player_id][role_key_for_prev].size())
 			active_roster_indices[player_id][role_key_for_prev] = int(editor_unit_indices[role_key_for_prev])
@@ -19530,6 +19785,8 @@ func _editor_action(action_key: String) -> void:
 			if Array(blueprints[player_id].get(role_key_for_next, [])).is_empty():
 				_reset_editor_working_canvas(role_key_for_next)
 				_update_editor_ui()
+				if hot_path_profiler != null:
+					hot_path_profiler.scope_end("editor_action")
 				return
 			editor_unit_indices[role_key_for_next] = _wrapped_index(int(editor_unit_indices[role_key_for_next]) + 1, blueprints[player_id][role_key_for_next].size())
 			active_roster_indices[player_id][role_key_for_next] = int(editor_unit_indices[role_key_for_next])
@@ -19601,6 +19858,8 @@ func _editor_action(action_key: String) -> void:
 			_set_editor_board_zoom(editor_board_zoom * EDITOR_BOARD_ZOOM_STEP)
 		"board_zoom_reset":
 			_reset_editor_board_zoom()
+	if hot_path_profiler != null:
+		hot_path_profiler.scope_end("editor_action")
 
 
 func _start_blank_topology() -> void:
@@ -20098,6 +20357,7 @@ func _tick_editor_visuals(delta: float) -> void:
 	if preview_processed > 0:
 		_queue_editor_preview_icon_redraws()
 	if preview_budget > 0:
+		_request_visible_catalog_card_textures()
 		_prewarm_adjacent_catalog_card_bodies()
 	var card_body_processed := CatalogCardBodyTextureCache.process_queue(self, preview_budget)
 	if card_body_processed > 0:
@@ -20128,6 +20388,16 @@ func _tick_editor_visuals(delta: float) -> void:
 		_update_editor_perf_overlay()
 
 
+func _request_visible_catalog_card_textures() -> void:
+	for raw_button in editor_catalog_buttons:
+		if raw_button == null or not (raw_button is PartCatalogCardButton):
+			continue
+		var button: PartCatalogCardButton = raw_button
+		if button.visible and button.retained_item != null:
+			if button.retained_item.ensure_textures_requested():
+				return
+
+
 func _queue_editor_preview_icon_redraws() -> void:
 	var captured := {}
 	for raw_key in PartPreviewTextureCache.last_captured_keys:
@@ -20138,6 +20408,11 @@ func _queue_editor_preview_icon_redraws() -> void:
 		if raw_button == null:
 			continue
 		var button = raw_button
+		if button is PartCatalogCardButton and button.retained_item != null and button.retained_item.visible:
+			var retained: CatalogCardRetainedItem = button.retained_item
+			var retained_key := retained.preview_cache_key()
+			if retained_key != "" and captured.has(retained_key):
+				retained.refresh_preview_texture()
 		if button.preview_icon != null and button.preview_icon.visible:
 			var icon_key := PartPreviewTextureCache.key_for(button.preview_icon.slot_key, button.preview_icon.part, button.preview_icon.selected, button.preview_icon.pulse, button.preview_icon.size)
 			if not captured.has(icon_key):
@@ -20163,6 +20438,11 @@ func _queue_editor_catalog_card_body_redraws() -> void:
 		if raw_button == null or not (raw_button is PartCatalogCardButton):
 			continue
 		var button: PartCatalogCardButton = raw_button
+		if button.retained_item != null and button.retained_item.visible:
+			var retained_key := button.retained_item.body_cache_key()
+			if retained_key != "" and captured.has(retained_key):
+				button.retained_item.refresh_body_texture()
+				continue
 		if button.text_layer == null or not button.text_layer.visible:
 			continue
 		var body_key := CatalogCardBodyTextureCache.key_for(button.text_layer.slot_key, button.text_layer.part, button.text_layer.display_name, button.text_layer.data_line_a, button.text_layer.data_line_b, button.text_layer.selected, button.text_layer.size)
@@ -20212,7 +20492,9 @@ func _prewarm_adjacent_catalog_card_bodies() -> void:
 			var preview_size := Vector2(116.0, 30.0)
 			if not editor_catalog_buttons.is_empty() and editor_catalog_buttons[0] is PartCatalogCardButton:
 				var button: PartCatalogCardButton = editor_catalog_buttons[0]
-				if button.text_layer != null:
+				if button.retained_item != null:
+					preview_size = button.retained_item._body_texture_rect().size
+				elif button.text_layer != null:
 					preview_size = button.text_layer.size
 			if CatalogCardBodyTextureCache.prewarm(self, entry_slot, part, title, line_a, line_b, selected_card, preview_size):
 				return
@@ -40653,8 +40935,41 @@ func _update_editor_board_ui(role_key: String, unit_bp: Dictionary, precomputed_
 		template_toggle_button.modulate = Color(1.0, 0.88, 0.28, 1.0) if editor_template_menu_open else Color(0.86, 0.9, 0.94, 1.0)
 		template_toggle_button.visible = false
 	_layout_editor_template_drawer(role_key, template_drawer_visible)
-	_update_editor_catalog_buttons(role_key, unit_bp)
-	_refresh_editor_visual_views(precomputed_stats)
+	var catalog_domain_key := ""
+	if editor_panel_mode == "parts":
+		var catalog_slot_key: String = BUILD_SLOTS[editor_slot_index]
+		catalog_domain_key = "%s|%s|%s|%s|%s|%d|%d|%d|%s|%s" % [
+			role_key,
+			catalog_slot_key,
+			editor_part_group_mode,
+			editor_part_filter_mode,
+			editor_catalog_sort_key,
+			1 if editor_catalog_sort_ascending else 0,
+			editor_catalog_page,
+			_editor_selected_part_index_for_slot(unit_bp, role_key, catalog_slot_key),
+			_editor_catalog_cache_source_signature(role_key, catalog_slot_key),
+			ui_language,
+		]
+	else:
+		catalog_domain_key = "hidden|%s" % editor_panel_mode
+	if catalog_domain_key != editor_catalog_domain_revision_key:
+		editor_catalog_domain_revision_key = catalog_domain_key
+		_update_editor_catalog_buttons(role_key, unit_bp)
+	var visual_domain_key := "%s|%s|%s|%s|%d|%d|%s|%s|%s|%s" % [
+		role_key,
+		str(custom_board_enabled),
+		custom_board_cache_key,
+		_editor_board_dynamic_revision_key() if custom_board_enabled else "",
+		editor_topology_node_index,
+		editor_open_torso_node_index,
+		editor_board_tool,
+		editor_pending_place_slot,
+		str(editor_pending_place_index),
+		_editor_visual_stats_revision_key(precomputed_stats),
+	]
+	if visual_domain_key != editor_board_visual_domain_revision_key:
+		editor_board_visual_domain_revision_key = visual_domain_key
+		_refresh_editor_visual_views(precomputed_stats)
 	if hot_path_profiler != null:
 		hot_path_profiler.record_value("teamedit.board_ui_usec", Time.get_ticks_usec() - board_ui_started)
 		hot_path_profiler.scope_end("teamedit.board_ui")
@@ -41233,6 +41548,7 @@ func _update_editor_catalog_buttons(role_key: String, unit_bp: Dictionary) -> vo
 	if hot_path_profiler != null:
 		hot_path_profiler.scope_end("teamedit.catalog.page_label")
 		hot_path_profiler.scope_begin("teamedit.catalog.cards")
+	CatalogCardRetainedItem.defer_texture_requests = Time.get_ticks_msec() < editor_preview_pause_until_msec
 	for i in range(editor_catalog_buttons.size()):
 		var button: Button = editor_catalog_buttons[i]
 		var actual_index: int = editor_catalog_page * page_size + i
@@ -41278,6 +41594,7 @@ func _update_editor_catalog_buttons(role_key: String, unit_bp: Dictionary) -> vo
 			_set_control_text_if_changed(button, "%s%d %s" % [fallback_marker, part_index + 1, _short_part_name(String(part.get("name", "")))])
 			editor_catalog_card_update_count += 1
 		editor_catalog_card_signature_cache[i] = card_signature
+	CatalogCardRetainedItem.defer_texture_requests = false
 	if hot_path_profiler != null:
 		hot_path_profiler.scope_end("teamedit.catalog.cards")
 		hot_path_profiler.scope_begin("teamedit.catalog.nav_buttons")
