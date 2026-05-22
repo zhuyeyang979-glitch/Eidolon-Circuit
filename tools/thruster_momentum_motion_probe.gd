@@ -40,7 +40,7 @@ func _init() -> void:
 	var main = MainScene.new()
 	root.add_child(main)
 	main._ready()
-	var light_stats := {"mass": 12.0, "speed_mult": 1.0, "thruster_momentum": 80.0, "boost_momentum": 160.0, "boost_duration": 0.3, "brake_efficiency": 1.0, "speed": 1.0}
+	var light_stats := {"mass": 12.0, "speed_mult": 1.0, "thruster_allocated_momentum": 80.0, "move_efficiency": 1.0, "boost_efficiency": 1.0, "boost_momentum": 160.0, "boost_duration": 0.3, "brake_efficiency": 1.0, "speed": 1.0}
 	var heavy_stats := light_stats.duplicate(true)
 	heavy_stats["mass"] = 48.0
 	main._apply_thruster_momentum_stats(light_stats, "hero")

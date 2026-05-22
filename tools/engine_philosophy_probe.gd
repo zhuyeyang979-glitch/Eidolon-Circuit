@@ -64,9 +64,9 @@ func _init() -> void:
 		if Array(pair[1]).is_empty():
 			_fail("Family has no engines: %s" % String(pair[0]))
 	if not failed:
-		if _max_value(melee, "engine_motion_scale", 1.0) <= _max_value(balanced, "engine_motion_scale", 1.0):
-			_fail("melee_drive should have stronger limb-drive scale than balanced")
-		if _avg_value(ranged, "idle_heat", 0.0) >= _avg_value(melee, "idle_heat", 0.0):
+		if _max_value(melee, "engine_command_drive", 1.0) <= _max_value(balanced, "engine_command_drive", 1.0):
+			_fail("melee_drive should have stronger command drive than balanced")
+		if _avg_value(ranged, "engine_heat_coeff", 0.0) >= _avg_value(melee, "engine_heat_coeff", 0.0):
 			_fail("ranged_control should run cooler on average than melee_drive")
 		if _max_value(ranged, "recoil_stability", 1.0) < 1.05:
 			_fail("ranged_control should expose old recoil/fire-control stability")
@@ -80,8 +80,8 @@ func _init() -> void:
 			_fail("melee_drive should improve command drive over balanced")
 		if _max_value(siege, "engine_supply_load", 1.0) <= _max_value(balanced, "engine_supply_load", 1.0):
 			_fail("siege_reactor should expose heavier support load capacity")
-		if _max_value(siege, "power", 0.0) < _max_value(balanced, "power", 0.0) * 1.75:
-			_fail("siege_reactor should clearly exceed balanced peak power")
+		if _max_value(siege, "engine_momentum_output", 0.0) < _max_value(balanced, "engine_momentum_output", 0.0) * 1.75:
+			_fail("siege_reactor should clearly exceed balanced peak momentum output")
 		for raw in swarm:
 			var part: Dictionary = raw
 			if _rank(main, part) > 2:
@@ -100,17 +100,16 @@ func _init() -> void:
 		"normal_cooldown": 0.34,
 		"attack_cooldown": 0.5,
 		"turn_speed": 1.0,
-		"power_load": 80.0,
-		"engine_power": 0.0,
-		"engine_motion_scale": 1.0,
+		"engine_momentum_output": 0.0,
+		"engine_momentum_required": 80.0,
 	}
 	for raw in melee:
 		main._merge_engine_stats(stats, raw)
-	main._apply_engine_power_budget(stats, "hero", true)
-	if float(stats.get("engine_family_motion_scale", 1.0)) <= 1.0:
-		_fail("melee engines should raise weighted engine_family_motion_scale")
+	main._apply_engine_momentum_budget(stats, "hero", true)
+	if float(stats.get("engine_command_drive", 1.0)) <= 1.0:
+		_fail("melee engines should raise weighted engine_command_drive")
 	if failed:
 		quit(1)
 		return
-	print("ENGINE_PHILOSOPHY_PROBE ok melee_drive=%.2f ranged_heat=%.2f booster_speed=%.2f" % [_max_value(melee, "engine_motion_scale", 1.0), _avg_value(ranged, "idle_heat", 0.0), _max_value(booster, "speed_mult", 1.0)])
+	print("ENGINE_PHILOSOPHY_PROBE ok command=%.2f ranged_heat_coeff=%.3f booster_speed=%.2f" % [_max_value(melee, "engine_command_drive", 1.0), _avg_value(ranged, "engine_heat_coeff", 0.0), _max_value(booster, "speed_mult", 1.0)])
 	quit()

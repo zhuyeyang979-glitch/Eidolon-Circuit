@@ -21,14 +21,17 @@ func _base_stats() -> Dictionary:
 		"health": 100,
 		"shield_max": 0,
 		"mass": 24.0,
-		"engine_power": 120.0,
-		"required_power": 80.0,
+		"engine_momentum_output": 120.0,
+		"engine_momentum_required": 80.0,
+		"engine_momentum_margin": 40.0,
 		"cooling": 48.0,
 		"idle_heat_load": 20.0,
 		"body_move_speed": 3.2,
 		"boost_speed": 5.4,
-		"thruster_momentum": 76.8,
+		"thruster_allocated_momentum": 64.0,
+		"move_momentum": 76.8,
 		"boost_momentum": 129.6,
+		"boost_total_momentum": 193.6,
 		"thruster_acceleration": 1.6,
 		"boost_duration": 0.32,
 		"turn_speed": 1.2,
@@ -75,9 +78,9 @@ func _init() -> void:
 		_fail("Dashboard is missing thruster acceleration.")
 	if not _has_stat(entries, "Boost持续", "boost_duration"):
 		_fail("Dashboard is missing boost duration.")
-	if not _has_stat(entries, "推进器总动量", "thruster_momentum"):
-		_fail("Dashboard is missing total thruster momentum.")
-	if not _has_stat(entries, "Boost总动量", "boost_momentum"):
+	if not _has_stat(entries, "移动动量", "move_momentum"):
+		_fail("Dashboard is missing move momentum.")
+	if not _has_stat(entries, "Boost总动量", "boost_total_momentum"):
 		_fail("Dashboard is missing total boost momentum.")
 	if not _has_stat(entries, "转向角速", "turn_speed"):
 		_fail("Dashboard is missing turn angular speed.")

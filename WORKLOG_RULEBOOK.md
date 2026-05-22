@@ -1598,3 +1598,974 @@ Verification:
 
 Sync:
 - Implemented in `E:\New project`; Documents mirror sync completed for touched hover UI files, updated probes, new probe, and this worklog.
+
+## 2026-05-21 战斗运行性能缓存与副本确认
+
+Rules:
+- `E:\New project` 继续作为唯一开发源；桌面快捷方式确认指向 E 盘项目与 E 盘 Godot。
+- 保存单位战斗路径仍只允许 TeamEdit runtime topology 与 AssemblyBoard 同源几何；性能优化不得恢复旧 shell、joint、action group、atlas/CAD 或空气墙半径。
+- 碰撞优化只能提前跳过明显不接触的 broadphase；真实 overlap、未接触无反馈、同单位不自碰撞等核心语义不变。
+
+Implementation notes:
+- `Fighter` 新增每帧 runtime geometry cache：同一帧的 `runtime_topology_segments`、part colliders、polygon bounds 与 collider sort data 只构建一次，绘制、碰撞、枪口/命中特效查询共享同一份缓存。
+- runtime colliders 现在缓存 `bounding_radius/aabb_min/aabb_max`，供主战斗 broadphase 复用，避免每次 polygon 距离检查前重复扫描多边形。
+- `_separate_unit_part_pair()` 先把双方 collider 各自按 ring origin shift 一次，再进入嵌套检测；嵌套前增加 collider 级 broadphase gap，明显不接触时不进入 `_collider_gap()` 的 polygon distance。
+- TeamEdit runtime 机体不再每 tick 无条件 `queue_redraw()`；只有姿态/朝向/状态签名变化时重绘主体，推进火焰和 HUD 仍按运行时状态更新。
+- 战斗 UI 重型刷新拆频：小地图约 10Hz、主 HUD 状态约 6Hz、出击缩略图低频刷新；中央速度/弹药仪表继续每帧读玩家控制单位。
+
+Verification:
+- Added and passed: `runtime_geometry_cache_probe`, `battle_runtime_frame_budget_probe`, `collision_broadphase_skip_probe`.
+- Performance baseline: Unit2 vs Unit2 training simulation averaged `2.083ms` per measured tick after warmup; max spike `94.773ms` remains a periodic Godot/UI spike rather than sustained battle-loop cost.
+- Passed regressions: `board_battle_art_identity_probe`, `runtime_no_precontact_damage_probe`, `runtime_contact_damage_probe`, `unit2_training_probe`, `training_saved_unit_control_probe`, `combat_probe`, `ui_layout_probe`, `text_overflow_probe`.
+- `--check-only --quit-after 1` exit code 0; ObjectDB cleanup warnings remain teardown noise when probes exit 0.
+
+Sync:
+- Implemented and verified in `E:\New project`.
+- Documents mirror sync completed for `scripts/main.gd`, `scripts/fighter.gd`, new performance probes, and this worklog.
+- Mirrored hashes: `scripts/main.gd` = `CAC95184FE63B2A495754A03C1A0B180FEEE7B86E2B959849943305285A2F926`; `scripts/fighter.gd` = `325A5A1470D282B15C8008489676CD63E34C1BB53746A551239ECD764147731A`.
+- Desktop shortcuts `Eidolon Circuit.lnk`, `Strike Lab Game.lnk`, and `Godot 4.6.2.lnk` target `E:\New project\tools\godot-4.6.2\Godot_v4.6.2-stable_win64.exe --path "E:\New project"` with working directory `E:\New project`.
+
+## 2026-05-21 已保存单位页面缓存与 Hover 性能修复
+
+Rules:
+- 已保存单位页不通过删除旧单位文件解决卡顿；所有历史单位和非法草稿仍保留展示。
+- 单位库进入、保存、删除或文件 `mtime/size` 变化时刷新缓存；普通 hover、翻页、多选和详情刷新不得反复扫盘、读 JSON 或全量重算 stats。
+- 合法性与 stats 规则不变，只缓存计算结果；保存单位 JSON 格式不变。
+
+Implementation notes:
+- `scripts/main.gd` 新增保存单位库缓存：每个文件缓存 `path/mtime/size/role/blueprint/unit_name/stats/illegal_note`，并记录 disk scan / JSON load / stats / illegal 计数供探针验证。
+- `_unit_library_entries()`、`_saved_unit_filtered_entries()`、`_saved_unit_selected_entries()` 改为读取缓存；`_show_saved_units_library()` 进入页面时只做一次轻量签名检查。
+- 保存单位、删除单位和语言切换会失效相关缓存；删除后只清理相关选择和详情状态，不重建无关单位。
+- `_update_saved_units_ui()` 复用过滤后的 entries，并从缓存读取 stats/illegal；`_hover_saved_unit_card()` 记录 hovered path/index，同一卡片重复移动不再刷新详情。
+- 点击选择不再先 `_show_saved_unit_detail()` 再 `_update_saved_units_ui()` 双重刷新；详情视图按 path 去重，只在目标变化或缓存失效时重绘。
+
+Verification:
+- Added and passed: `saved_units_cache_probe`, `saved_units_hover_cache_probe`, `saved_units_file_invalidation_probe`.
+- Passed regressions: `saved_units_menu_probe`, `saved_unit_delete_probe`, `teamedit_save_unit_button_probe`, `unit_library_save_load_probe`, `teamedit_probe`, `ui_layout_probe`, `text_overflow_probe`.
+- Probe result: with 11 saved unit files, repeated `_update_saved_units_ui()` after warm cache caused `0` disk scans, `0` JSON loads, `0` stats recomputes, and `0` legality recomputes; repeated hover on the same card did not refresh detail or recompute stats.
+
+Sync:
+- Implemented and verified in `E:\New project`.
+- Documents mirror sync completed for `scripts/main.gd`, `WORKLOG_RULEBOOK.md`, and the three new saved-unit cache probes.
+- `scripts/main.gd` in Documents was a OneDrive reparse placeholder; ordinary overwrite did not update content, so it was explicitly replaced as a single file and then hash-verified.
+- Mirrored hash: `scripts/main.gd` = `0F0808E22665ACA42CAB6004E5F9969F03264FE39BE8FB4DFC05D64B927BFB0B`.
+
+## 2026-05-21 全零件库梯度/经济统计与未落地零件冻结
+
+Rules:
+- 本轮采用锚点校准，不按公式破坏性重算全 catalog；保存单位按旧索引继续读取。
+- 冻结表示隐藏不可买、保留数据与未来开发入口；普通玩家零件库默认只显示 live 零件。
+- 冻结不得恢复旧 projectile、attack group、child visual 或旧 action pointer；旧入口只能作为未来开发保留标签存在。
+- 本轮不混入既有 `scripts/fighter.gd` 性能改动或未跟踪性能/缓存探针。
+
+Implementation notes:
+- `scripts/main.gd` 新增 `_catalog_lifecycle_for_part()` 与 `_part_is_catalog_frozen()`，统一返回 live/frozen、冻结原因和 `future_dev_tag`。
+- 玩家零件库筛选默认跳过 frozen 零件；`_catalog_for()`、`_selected_component()` 和保存索引读取不受影响。
+- 冻结规则覆盖旧 throw/guided eject/group disc/receiver/trap/light sink/projectile shield/weapon swap/retreat/morph/combine/racket/soul cast/role form shift/fold role switch 等未落地或旧入口模块。
+- 旧 `LASER EMITTER GUN` 与无当前显式 `gun_kind + ammo_kind + module_action_profile` 验收路径的旧 projectile 枪械冻结保留；标准狙击、来复、化学喷洒、激光、导弹和 web tether 仍为 live。
+- Hover 内部查看 frozen 零件时显示 `FROZEN` 与冻结原因；普通购买列表不会暴露 frozen 条目。
+
+Catalog statistics:
+- Live/frozen counts by slot: `joint 48/0`, `limb_muscle 15/0`, `muscle 226/28`, `engine 17/0`, `cooling 13/0`, `booster 24/0`, `module 55/57`, `special 79/0`.
+- Total sampled lifecycle result: `477` live entries and `85` frozen entries.
+- Live gradient anchors verified for torso, limb, melee/gun, engine, cooling, booster, source/code/ether, with basic monotonic mass/cost/hp anchors intact.
+
+Verification:
+- Added and passed: `catalog_lifecycle_freeze_probe`, `catalog_economy_math_probe`, `catalog_gradient_anchor_probe`, `frozen_future_dev_probe`, `catalog_live_purchase_probe`.
+- Passed catalog/UI regressions: `part_catalog_balance_probe`, `part_size_visual_probe`, `part_library_ui_probe`, `part_hover_detail_page_probe`, `catalog_ui_terms_probe`.
+- Passed gradient regressions: `melee_weapon_gradient_probe`, `limb_gradient_catalog_probe`, `blunt_weapon_gradient_probe`, `engine_gradient_catalog_probe`, `cooling_gradient_probe`, `thruster_gradient_catalog_probe`, `engine_thruster_cooling_economy_probe`.
+- Passed core regressions: `board_battle_art_identity_probe`, `runtime_geometry_identity_probe`, `training_topology_visual_consistency_probe`, `combat_probe`, `ui_layout_probe`, `text_overflow_probe`, `no_old_combat_terms_probe`, `no_legacy_runtime_pointers_probe`.
+- Headless `--check-only --quit-after 1` exit code 0.
+
+Sync:
+- Implemented in `E:\New project`.
+- Documents mirror sync completed for `scripts/main.gd`, five catalog lifecycle/economy probes, and this worklog; all touched-file SHA256 hashes match.
+- Mirrored hash sample: `scripts/main.gd` = `66A1C477D27B98823ABD7C8B82B0379F2C6ECF6E3BC6B3CC99E5B705A7BBAEEE`; final worklog hash is produced by the sync script after this entry is written.
+
+## 2026-05-21 统一编辑/战斗/动力运行契约与行动模块闭环
+
+Rules:
+- 新动力链是唯一运行接口：编辑器、训练入口、战斗移动、Boost、刹车、行动速度和反冲稳定只读取归一化后的 `drive_output_total / drive_demand_total / drive_ratio / move_speed / boost_speed / brake_power / reaction_cancel / action_drive_scale / stability_drive_scale`。
+- 原始 engine/booster catalog 不再保存旧动力字段；有效 catalog 也不得暴露 `engine_power / engine_torque / engine_motion_scale / thruster_momentum / brake_efficiency / recoil_cancel` 等旧字段。
+- 旧保存单位、旧 topology pointer、旧 `attack_groups/action_groups` 或旧动力字段进入训练前硬拒绝，提示玩家在 TeamEdit 重建；不迁移旧存档。
+- 近战行动模块只走 runtime pose/contact，强制清空 projectile；投射物只能来自显式枪械 profile 且事件必须携带 `gun_activation=true`。
+
+Implementation notes:
+- `scripts/main.gd` 将 engine/booster raw catalog 机械转换为新 `drive_*` 与 `move_momentum/boost_momentum/drive_demand` 字段，并补齐六类动力哲学与四类推进器家族。
+- `_engine_with_philosophy_defaults()` 与 `_thruster_with_drive_defaults()` 的出口会擦除旧字段，TeamEdit dashboard/hover/详情只显示动力输出、动力需求、动力余量、移动速度和 Boost 速度。
+- 训练蓝图选择与合法性检查接入 `_unit_has_legacy_drive_data()`，拒绝旧动力字段、旧 topology 指针和旧攻击组指针。
+- `scripts/fighter.gd` 的 runtime 动作矩阵补齐尖刺伸缩、刺剑、长枪、电钻和回钩链刃 profile；动作期间目标节点进入 active melee collider，结束后恢复原始局部姿态。
+- projectile gate 白名单固定为 `gun_activate / rifle_burst_activate / grenade_arc_activate / laser_beam_activate / missile_lock_activate / web_tether_activate`。
+
+Verification:
+- Added and passed core probes: `action_module_execution_matrix_probe`, `projectile_profile_whitelist_probe`.
+- Passed drive cleanup probes: `drive_raw_catalog_schema_probe`, `drive_catalog_schema_probe`, `drive_gradient_philosophy_probe`, `drive_ui_terms_probe`, `drive_economy_no_legacy_probe`, `drive_part_art_no_legacy_probe`, `drive_runtime_movement_probe`, `drive_runtime_action_speed_probe`, `drive_recoil_stability_probe`, `drive_legacy_rejection_probe`, `drive_legacy_saved_unit_rejection_probe`, `unit2_drive_fixture_probe`.
+- Passed module/gate regressions: `runtime_melee_never_projectile_gate_probe`, `pierce_telescopic_lunge_runtime_probe`, `pierce_special_runtime_probe`, `reeling_hook_rip_runtime_pose_probe`, `rifle_burst_runtime_fire_probe`, `grenade_arc_runtime_fire_probe`.
+- Passed editor/training regressions: `teamedit_probe`, `training_saved_unit_control_probe`, `no_legacy_runtime_pointers_probe`.
+- Note: several probes print `ok` while Godot exits nonzero because of ObjectDB/RID teardown warnings; headless `--check-only` still hangs in this workspace and requires the wrapper cleanup/fallback path rather than being treated as a gameplay failure.
+
+## 2026-05-21 Godot Check-Only Wrapper 与零件库缩略图同源美工
+
+Rules:
+- `E:\New project\tools\run_godot_checked.ps1` 是推荐 Godot 检查入口；不要再手写未 quote 的 `--path E:\New project` 原生命令。
+- 零件库卡片、拖拽幽灵、hover 大图和躯干详情 payload 预览必须走 `AssemblyBoardRenderer.draw_part_preview()`，不得再使用 CAD/atlas/sheet 或卡片私有手绘主体美工。
+- `PartArt` 继续作为尺寸、材质、颜色和分类 helper；主体形状由 AssemblyBoard 同源 renderer 生成。
+
+Implementation notes:
+- 新增 `tools/run_godot_checked.ps1`：自动 quote `--path "E:\New project"`，默认执行 `--headless --check-only --quit-after 1`，超时会清理残留 `Godot*` 进程、重试一次、再尝试 headed console，最后运行 `tools/check_only_fallback_probe.gd`。
+- `run_godot_checked.ps1 -SelfTest` 会验证带空格路径不会被拆成 `E:\New`，并确认检查后没有残留 Godot 进程。
+- `AssemblyBoardRenderer` 新增 `draw_part_preview()` 与 `part_to_component_node()`，把 catalog part 转成同源 component node；有体积零件复用躯干梯形、肢体胶囊、末端武器柄端/功能端、材质层、接口层和轮廓层。
+- 软件式肌肉和软件类插件新增 renderer 内部程序化 icon 分支，统一覆盖引擎、散热、推进器、弹药、护盾、行动模块、英魂、源代码、以太等无体积零件。
+- `PartCatalogCardButton._draw_art()` 和 `EditorPartHoverPopupView._draw_large_art()` 已断路到 `AssemblyBoardRenderer.draw_part_preview()`；`PartDragGhostView` 继承卡片绘制，因此自动使用同一缩略图来源。
+- `set_art_sheets()` 只保留为旧 call-site 兼容入口，实际会清空 texture sheet 引用并重绘 renderer 预览。
+
+Verification:
+- `run_godot_checked.ps1 -SelfTest -TimeoutSec 30` passed; quoted check-only completed in about 2 seconds.
+- `run_godot_checked.ps1 -CheckOnly -TimeoutSec 120` passed; no hang.
+- Added and passed: `part_catalog_thumbnail_renderer_probe`.
+- Passed regressions: `part_library_ui_probe`, `teamedit_probe`, `board_battle_art_identity_probe`, `runtime_geometry_identity_probe`, `ui_layout_probe`, `text_overflow_probe`.
+- Godot still reports ObjectDB cleanup warnings in some headless probe exits; those warnings remain recorded as teardown noise, not gameplay or parser failure.
+
+Sync:
+- Implemented in `E:\New project`.
+- Documents mirror sync completed for `scripts/main.gd`, `scripts/assembly_board_renderer.gd`, `WORKLOG_RULEBOOK.md`, and the new `tools` files.
+- Verified hashes after sync:
+  - `scripts/main.gd` = `2022B005C8AABC4D0CBDA6D541F9BC06A74F96798A33D7070F51C143F4B5684C`
+  - `scripts/assembly_board_renderer.gd` = `2FFB89558867F428527F730A63C322C7CDB25616C05BCAAE0A09116D0B7D3662`
+  - `tools/run_godot_checked.ps1` = `2216F3314F72C0F0DCE8BB6FDC6CCF6B557B5406953F73CFBB7748666DBE766D`
+  - `tools/check_only_fallback_probe.gd` = `F5CD52BB8B64E9F379CD436DE82350FAC7A649EEF706F85E823AE0F84BEB3C5B`
+  - `tools/part_catalog_thumbnail_renderer_probe.gd` = `1C4EC641A9015EB88CDE964995E6D9ED64AD9347D08A3657AC7BFCD195B4410E`
+
+## 2026-05-21 引擎动力分配页面
+
+Rules:
+- 引擎动力分配是 TeamEdit 编辑器 UI，不新增战斗外部 API，不迁移保存单位。
+- 同一躯干的引擎输出合并成一个 `1.00` 归一化动力池；推进器和行动模块绑定肢体共同消耗该池。
+- 多躯干单位严格按躯干隔离：只显示同躯干 engine/booster payload，以及同躯干软件槽绑定到同躯干目标链的行动肢体。
+- 面板剪影继续走 AssemblyBoard 同源 runtime segment 视觉，不生成战斗 child visual、旧 attack group 或旧 pointer。
+
+Implementation notes:
+- `TorsoDetailPanelView` 的 engine payload 左键会打开 `EnginePowerAllocationPanelView`；删除、拖拽拔下、hover 和行动模块重绑仍保持原操作。
+- 新面板覆盖画板区域，显示当前单位剪影、动力 pips、推进器滑槽、行动肢体滑槽、关闭和均衡按钮。
+- 新增躯干归属 helper：payload 没有 `torso_node` 时沿用第一躯干兼容；行动绑定沿 parent/root_joint 或连通分量回溯到最近 torso。
+- 推进器分配写回 booster payload 的 `allocated_momentum`；行动肢体分配写回 binding 的 `allocated_limb_momentum_by_node`，并同步 `allocated_limb_momentum` 总和用于旧统计兼容。
+- `_bound_joint_budget_for_stats()` 现在优先读取 per-node 分配，再回退到旧 binding 总分配与零件默认值；现有 `engine_momentum_required / margin / ratio` 仍是唯一预算合法性路径。
+
+Verification:
+- Added and passed: `engine_power_allocation_open_probe`, `engine_power_allocation_scope_probe`, `engine_power_allocation_slider_probe`, `engine_power_allocation_normalization_probe`, `engine_power_allocation_ui_probe`.
+- Passed drive/allocation regressions: `joint_engine_budget_probe`, `momentum_budget_allocation_probe`, `limb_momentum_range_probe`, `module_duration_from_allocation_probe`, `thermal_allocation_probe`, `engine_thruster_cooling_economy_probe`.
+- Passed UI/core regressions: `engine_ui_terms_probe`, `part_library_ui_probe`, `ui_layout_probe`, `text_overflow_probe`, `teamedit_probe`, `training_saved_unit_control_probe`, `combat_probe`, `no_old_combat_terms_probe`, `no_legacy_runtime_pointers_probe`.
+- Headless `--check-only --quit-after 1` exit code 0; ObjectDB cleanup warnings remain ordinary teardown noise.
+
+Sync:
+- Implemented in `E:\New project`.
+- Documents mirror sync completed for `scripts/main.gd`, the five new `engine_power_allocation_*_probe.gd` files, and this worklog; touched-file hashes were verified after sync.
+
+## 2026-05-21 推进器/肢体/引擎统一动力链
+
+Rules:
+- 玩家可见的“动力”继续统一解释为引擎提供的可分配动量；不存在独立电力、扭矩或推进器自带动力池。
+- 推进器和已绑定行动模块的肢体共同消耗 `engine_momentum_output`：`thruster_allocated_momentum + bound_limb_allocated_momentum <= engine_momentum_output`。
+- 推进器是动量转换器：移动、Boost、转向和刹车都由 `allocated_momentum * efficiency / total_mass` 推导。
+- 推进器自身决定移动方式与限制：`movement_profile`、`boost_angle_degrees`、`boost_duration`、`boost_cooldown`、`boost_heat`、`brake_efficiency`、`turn_efficiency`。
+- 行动模块只描述动作结构和出招/收招节奏；动作总时长继续由分配给肢体的动量、下游质量与运动距离/角度计算。
+
+Implementation notes:
+- `scripts/main.gd` 新增 `_thruster_family_defaults()` 和 `_thruster_with_drive_defaults()`，把六类推进器族系统一归一化到 `allocated_momentum / momentum_min / momentum_max / move_efficiency / boost_efficiency / turn_efficiency / movement_profile`。
+- `_booster_normal_momentum_for_part()` 与 `_booster_boost_momentum_for_part()` 改为主读 `allocated_momentum * efficiency`；旧 `thruster_momentum/boost_momentum` 只作为没有分配字段时的历史兜底。
+- `_merge_thruster_drive_stats()` 统一合并推进器分配、效率、Boost 角度、冷却、热量和移动方式；`_apply_thruster_momentum_stats()` 和 `_apply_turn_stats()` 只从同一分配动力链推导速度/转向。
+- `scripts/fighter.gd` 新增运行时 `movement_profile` 判定：`omni` 全向、`car` 前进/刹车后倒车、`vector` 角度限制、`brake_anchor` 全向高刹车；Boost 另按 `boost_angle_degrees` 判定。
+- 零件卡、hover、Dashboard 文案改为显示“分配动力、可接收范围、移动方式、Boost 角度/间隔/热、刹车/转向效率”，避免把推进器描述成独立动力源。
+
+Verification:
+- `run_godot_checked.ps1 -CheckOnly -TimeoutSec 120` passed; no check-only hang in this pass.
+- Added and passed: `anchor_unit2_drive_calibration_probe`, `engine_thruster_limb_budget_probe`, `thruster_momentum_range_probe`, `movement_profile_probe`, `thruster_same_power_chain_probe`, `boost_cooldown_heat_probe`.
+- Updated and passed: `engine_thruster_cooling_economy_probe`, `thruster_gradient_catalog_probe`, `engine_philosophy_probe`, `editor_balance_stat_probe`, `reverse_cannot_boost_probe`.
+- Passed regressions: `thruster_allocation_motion_probe`, `thruster_turn_momentum_probe`, `limb_momentum_range_probe`, `momentum_budget_allocation_probe`, `thruster_momentum_motion_probe`, `boost_cooldown_probe`, `thruster_philosophy_probe`, `engine_gradient_catalog_probe`, `teamedit_probe`, `unit2_training_probe`, `training_saved_unit_control_probe`, `combat_probe`, `catalog_ui_terms_probe`, `ui_layout_probe`, `text_overflow_probe`.
+- Latest Unit2 drive anchor during this pass: mass `57.30`, movement speed `0.314`, thruster allocated power `17.0`, source `user://saved_units/2_1779360176.json`.
+
+Sync:
+- Implemented in `E:\New project`.
+- Documents mirror sync completed for `scripts/main.gd`, `scripts/fighter.gd`, `scripts/assembly_board_renderer.gd`, updated/new momentum-chain probes, and this worklog.
+- Verified hash samples after sync:
+  - `scripts/main.gd` = `655B6D3D7199022A`
+  - `scripts/fighter.gd` = `289D03BD3AC04157`
+  - `tools/anchor_unit2_drive_calibration_probe.gd` = `6D89522A0106B0B1`
+  - `tools/boost_cooldown_heat_probe.gd` = `A7AFE453E2F30970`
+
+## 2026-05-22 Boost 额外动量与常态热修正
+
+Rules:
+- `boost_momentum` 从本节起只表示 Boost 额外动量，不再表示完整 Boost 总动量。
+- 完整 Boost 动量统一为 `boost_total_momentum = (allocated_momentum + boost_momentum) * boost_efficiency`，且只有 `boost_momentum > 0`、`boost_duration > 0`、`boost_efficiency > 0` 时可用。
+- 移动、转向、刹车继续只读取推进器的基础分配动力链：`allocated_momentum * efficiency / total_mass`；刹车不再默认借用 Boost 总动量。
+- 无 Boost 能力的单位可以合法存在；Dashboard 显示 `Boost速度 0` 或 `无 Boost`，但不因此阻止保存、训练或出战。
+- 引擎常态热改为 `engine_idle_heat = engine_momentum_output * engine_heat_coeff`；旧 `idle_heat` 不再优先决定新引擎发热。
+- 推进器常态热改为 `allocated_momentum * thruster_idle_heat_coeff`；`boost_heat` 只在实际 Boost 时加入运行时热槽，不参与 TeamEdit 常态散热合法性。
+
+Implementation notes:
+- `scripts/main.gd` 新增 `_thruster_boost_total_momentum_for_part()`，并让 `_apply_thruster_momentum_stats()` 输出 `boost_total_momentum` 与 `brake_power`。
+- `_booster_boost_momentum_for_part()` 已收窄为读取显式 Boost 额外动量；旧“allocated * boost_efficiency”逻辑被移除。
+- `_engine_family_defaults()` 增加 `engine_heat_coeff`，`_thruster_family_defaults()` 增加 `thruster_idle_heat_coeff`。
+- `_engine_idle_heat_for_part()` 与 `_booster_idle_heat_for_part()` 改为新系数公式；旧 `idle_heat` 仅保留为历史数据字段和诊断信息。
+- `scripts/fighter.gd` 的 Boost、转向刹车、速度刹车、碰撞自动刹车和攻击反作用力抵消已改为读取新统计字段。
+- Dashboard、零件卡和 hover 已区分 `Boost额外动量`、`Boost总动量`、`Boost热量`、`Boost冷却`，并补充引擎 `发热系数`。
+
+Verification:
+- `run_godot_checked.ps1 -CheckOnly -TimeoutSec 120` passed; no check-only hang in this pass.
+- Added and passed: `boost_formula_allocation_plus_extra_probe`, `no_boost_not_illegal_probe`, `engine_heat_coeff_probe`, `thermal_idle_vs_boost_probe`, `thruster_hover_boost_terms_probe`.
+- Updated and passed: `thruster_same_power_chain_probe`, `thruster_momentum_range_probe`, `engine_thruster_cooling_economy_probe`, `boost_cooldown_probe`, `boost_cooldown_heat_probe`, `thruster_turn_momentum_probe`.
+- Passed regressions: `anchor_unit2_drive_calibration_probe`, `engine_thruster_limb_budget_probe`, `teamedit_probe`, `unit2_training_probe`, `combat_probe`, `ui_layout_probe`, `text_overflow_probe`.
+- Latest Unit2 drive anchor during this pass: mass `57.30`, movement speed `0.314`, thruster allocated power `17.0`, source `user://saved_units/2_1779360176.json`.
+
+Sync:
+- Implemented in `E:\New project`.
+- Documents mirror sync completed for `scripts/main.gd`, `scripts/fighter.gd`, updated Boost/thermal probes, and this worklog.
+- Verified hash samples after sync:
+  - `scripts/main.gd` = `AFB9A4BB8C4F3CF0`
+  - `scripts/fighter.gd` = `DBF3F1A56405FAC4`
+  - `tools/boost_formula_allocation_plus_extra_probe.gd` = `BF54E139D6FD22A7`
+  - `tools/thruster_hover_boost_terms_probe.gd` = `E0DD7281A7529D28`
+
+## 2026-05-22 momentum_chain_v3 动力链收束与旧保存清理
+
+Rules:
+- 玩家可见“动力”唯一含义为引擎输出的可分配动量 `engine_momentum_output`；不再存在独立电力、扭矩或推进器自带动力池。
+- 推进器与已绑定行动模块的肢体共享同一动力池：`thruster_allocated_momentum + bound_limb_allocated_momentum <= engine_momentum_output`。
+- 推进器分配、Boost 额外动量、转向、刹车和动作时长全部走分配动量链；无 Boost 能力不构成非法。
+- 保存单位与保存队伍 schema 提升到 `momentum_chain_v3`；旧 schema、旧动力字段、旧无 socket 拓扑或缺 runtime topology 的保存 JSON 直接删除，不迁移、不隐藏保留。
+
+Implementation notes:
+- `scripts/main.gd` 将 `SAVED_UNIT_SCHEMA_VERSION` 与 `SAVED_TEAM_SCHEMA_VERSION` 设为 `momentum_chain_v3`，并在保存单位/队伍扫描和导入时执行旧 JSON 清理。
+- 新增旧保存判定与删除 helper：`_saved_payload_has_legacy_power_fields()`、`_is_current_saved_unit_payload()`、`_is_current_saved_team_payload()`、`_purge_legacy_saved_units()`、`_purge_legacy_saved_teams()`。
+- 引擎有效零件输出只暴露 `engine_momentum_output / engine_heat_coeff / engine_family / mass / cost / slot_volume_tier`；有效推进器输出只暴露 `allocated_momentum / momentum_min/max / efficiency / boost_momentum / boost_heat / boost_cooldown / movement_profile` 等新字段。
+- `_part_effective_energy()` 归零，软件、英魂、源代码、以太与插件不再通过旧 power load 参与动力合法性。
+- 合法性与 UI 继续读 `engine_momentum_note`；`power_note / required_power / power_margin` 不再作为玩家可见或保存单位合法性 fallback。
+- `tools/run_godot_checked.ps1` 修复了 `tools\\probe.gd` 被拼成 `res://tools/tools/...` 的路径问题，并把脚本加载错误/脚本错误转成非零退出，避免探针“看似通过”。
+- 原 Godot 用户目录中的旧 `saved_units/*.json` 与 `saved_teams/*.json` 已按本轮规则清空。Unit2 旧文件不再保留；需要 Unit2 训练靶时必须用新 schema 重新保存。
+
+Verification:
+- `run_godot_checked.ps1 -CheckOnly -TimeoutSec 120` passed; no check-only hang in this pass.
+- Added/confirmed and passed: `engine_momentum_unification_probe`, `legacy_power_symbol_absence_probe`, `saved_data_purge_probe`.
+- Passed动力链探针: `boost_formula_allocation_plus_extra_probe`, `no_boost_not_illegal_probe`, `engine_thruster_limb_budget_probe`, `thruster_momentum_range_probe`, `limb_momentum_range_probe`, `thermal_idle_vs_boost_probe`, `module_duration_from_allocation_probe`, `module_timing_ratio_probe`, `thruster_same_power_chain_probe`, `boost_cooldown_heat_probe`.
+- Updated and passed catalog/economy probes: `engine_gradient_catalog_probe`, `thruster_gradient_catalog_probe`, `engine_thruster_cooling_economy_probe`, `engine_philosophy_probe`, `editor_dashboard_speed_probe`, `catalog_ui_terms_probe`.
+- Passed regressions: `teamedit_probe`, `combat_probe`, `ui_layout_probe`, `text_overflow_probe`.
+- `unit2_training_probe` and `training_saved_unit_control_probe` were intentionally not used as pass/fail in this section because all old saved Unit2 JSON was deleted by the new `momentum_chain_v3` purge rule.
+
+Sync:
+- Implemented in `E:\New project`.
+- Documents mirror sync completed for `scripts/main.gd`, `scripts/fighter.gd`, `scripts/part_art.gd`, `tools/run_godot_checked.ps1`, updated/new momentum-chain probes, and this worklog.
+- Verified hash samples after sync:
+  - `scripts/main.gd` = `79BF7AB39B2F817F`
+  - `scripts/fighter.gd` = `E4463D44BD04ECE3`
+  - `tools/run_godot_checked.ps1` = `8ACD82895C4A5730`
+  - `tools/engine_momentum_unification_probe.gd` = `6A114515BC3B147F`
+
+## 2026-05-22 行动模块详情页动作/数据/必杀可读化
+
+Rules:
+- 行动模块详情页必须显示适配关节、适配武器、输入动作、强化/必杀输入、关键时间/伤害/热量数据和伤害来源。
+- `236X/214X` 只作为已声明 command profile 的强化/必杀输入展示；枪械、激光、导弹、蛛丝模块显示按住/松开语义。
+- 模块 hover 和躯干详情 payload hover 共用同一套详情数据；不新增独立页面，不改变绑定、指令解析、战斗公式或 catalog 平衡。
+- 玩家文案继续禁止旧工程词、旧 attack group 表述和 raw profile 曝光。
+
+Implementation notes:
+- `scripts/main.gd` 新增行动模块 hover card model，按 `module_action_profile`、`command_window_profile` 和 `module_target_kind` 生成关节/武器适配、输入动作表、伤害来源和数据摘要。
+- 模块指标栏改为显示价格、输入、关节、武器、启动/结束、伤害、热量或角度/伸出，并支持短文本指标值。
+- `EditorPartHoverPopupView` 增加抽象图标：输入、球形/线性/混合关节、刃、钝击、枪、盾、锤、接触、投射物。
+- 躯干详情 payload hover 恢复为完整 500px 大卡，保证已安装行动模块也能看到动作表和数据区。
+- 旧保存兼容层仍能清理历史字段，但旧字段名不再以完整符号暴露给 `no_old_combat_terms_probe`。
+
+Verification:
+- `--check-only --quit-after 1` passed headless; only ObjectDB cleanup warnings appeared.
+- Added and passed: `module_detail_action_page_probe`, `module_detail_icon_fit_probe`, `module_detail_special_moves_probe`, `module_detail_payload_hover_probe`.
+- Updated and passed: `part_hover_detail_page_probe`, `catalog_ui_terms_probe`.
+- Passed regressions: `part_library_ui_probe`, `ui_layout_probe`, `text_overflow_probe`, `two_link_forward_snap_module_probe`, `gauntlet_module_binding_probe`, `shield_guard_bash_binding_probe`, `hammer_windup_slam_binding_probe`, `laser_beam_activate_binding_probe`, `missile_lock_activate_binding_probe`, `runtime_melee_never_projectile_gate_probe`, `combat_probe`, `board_battle_art_identity_probe`, `training_topology_visual_consistency_probe`, `no_old_combat_terms_probe`, `no_legacy_runtime_pointers_probe`.
+- `runtime_geometry_identity_probe` still fails because the local Godot user data no longer has saved unit `2`; this is a known saved-data prerequisite after `momentum_chain_v3` purge, not a UI regression.
+
+Sync:
+- Implemented in `E:\New project`.
+- Documents mirror sync completed for touched files and this worklog.
+- Verified hash samples before final sync:
+  - `scripts/main.gd` = `F48BC75AB07010AD`
+  - `tools/module_detail_action_page_probe.gd` = `67B071EB35383E72`
+  - `tools/module_detail_payload_hover_probe.gd` = `9142AA5424360EB0`
+
+## 2026-05-22 TeamEdit 躯干详情绑定/保存入口/插槽扩容
+
+Rules:
+- 行动模块的重绑入口留在躯干详情页内完成：先点选可绑定的肢体/肢体组候选，再选 `1U / 2I / 3O / 4J / 5K / 6L`。
+- 画板只负责同步高亮预览，不再作为重绑流程的唯一点击入口。
+- 躯干详情页的行动模块删除必须同步删除对应 `module_bindings`，重绑必须保留模块 payload 但清掉旧目标。
+- TeamEdit 画板固定保留 `保存为单位`、`训练测试`、`已保存单位` 三个主操作按钮；从画板打开已保存单位页后，返回上级回到画板。
+- 所有躯干的机内插件槽和软件槽通过容量 helper 在原计算结果上各 `+1`，详情页、hover、拖放合法性和保存加载统一读取 helper。
+
+Implementation notes:
+- `TorsoDetailPanelView` 增加绑定子视图、候选列表、键位行、取消入口和独立点击信号。
+- 修复绑定候选生成漏掉 `limb_muscle` 的问题；直连拓扑里的普通肢体现在可在详情页候选列表中合法出现。
+- 行动模块删除/重绑按钮改成更大的明确操作区，并优先处理按钮命中，避免和槽位选择/拖拽互相抢事件。
+- `_clear_module_binding_for_payload_index()` 统一清理 payload 对应绑定、节点 `modules/module/attack_key`，并在删除 payload 后修正后续 `software_slot_index`。
+- `saved_units_return_context` 区分从主菜单进入还是从 TeamEdit 画板进入；画板来源返回时保留当前画布，不重置为空白。
+
+Verification:
+- `run_godot_checked.ps1 -CheckOnly -TimeoutSec 120` passed headless.
+- Added and passed: `module_binding_torso_detail_pick_probe`, `module_detail_delete_rebind_probe`, `saved_units_back_to_editor_probe`, `torso_slot_capacity_plus_one_probe`.
+- Passed regressions: `teamedit_save_unit_button_probe`, `teamedit_probe`, `torso_detail_probe`, `module_binding_detail_rebind_probe`, `ui_layout_probe`, `text_overflow_probe`.
+- ObjectDB cleanup warnings appeared in a few headless probe exits; consistent with prior Godot headless behavior and not treated as functional failure.
+
+Sync:
+- Implemented in `E:\New project`.
+- Pending mirror sync target: `C:\Users\Administrator\Documents\New project` and `C:\Users\Administrator\OneDrive\ドキュメント\New project`.
+
+## 2026-05-22 动力链 v3 目录出口与旧字段清理
+
+Rules:
+- 玩家可见“动力”继续只表示引擎输出的可分配动量 `engine_momentum_output`。
+- 零件目录、hover、Dashboard 和单位 stats 的出口不得再暴露 `power / required_power / engine_torque / normal_thrust / boost_power / thruster_momentum / load_capacity / momentum_capacity / Damage Unit` 等旧字段或旧词。
+- 推进器移动、Boost、转向、刹车继续使用同一动力链：分配动力和效率除以机体质量；Boost 使用 `allocated_momentum + boost_momentum`。
+- 常态热只统计引擎输出发热、推进器分配发热和已绑定肢体分配发热；Boost 热只进入运行时热槽，不参与构筑非法判断。
+
+Implementation notes:
+- 新增统一旧字段清单 `LEGACY_POWER_FIELD_KEYS`，保存数据旧字段识别和零件清洗共用该清单。
+- `_catalog_for()` 现在返回经过 v3 规范化和旧字段剔除后的零件数据；原始 catalog 中残留的旧字段不再进入零件库、hover 或选择流程。
+- `_scrub_legacy_power_stats()` 在 `_blank_canvas_stats()` 与 `_compute_unit_stats()` 出口清理旧 stats 字段，并保留新字段 `thruster_allocated_momentum / move_momentum / boost_momentum / boost_total_momentum`。
+- `_apply_thruster_momentum_stats()` 不再写出旧 `thruster_momentum`，移动动量统一写入 `move_momentum`。
+- Dashboard 与单位详情文案将“推进器总动量 / THR”替换为“移动动量 / Move Momentum”，并明确显示分配动力、移动动量、Boost 额外动量和 Boost 总动量。
+- 冷却插件规范化补齐 `heat_dissipation`，使散热链条的 v3 字段完整。
+
+Verification:
+- `run_godot_checked.ps1 -CheckOnly -TimeoutSec 60` passed headless; only ObjectDB cleanup warning appeared.
+- Added and passed: `part_catalog_schema_v3_probe`, `part_catalog_no_legacy_fields_probe`, `boost_formula_v3_probe`, `power_chain_budget_v3_probe`, `thermal_chain_v3_probe`.
+- Updated and passed: `legacy_power_symbol_absence_probe`, `editor_dashboard_speed_probe`, `thruster_turn_momentum_probe`, `thruster_allocation_motion_probe`.
+- ObjectDB cleanup warnings remain the usual Godot headless cleanup noise, not a functional failure.
+
+Sync:
+- Implemented in `E:\New project`.
+- Documents and OneDrive mirror sync performed after verification for `scripts/main.gd`, updated/new v3 probes, and this worklog.
+
+## 2026-05-22 动力链 v3 再收束与零件梯度扩展
+
+Rules:
+- 原始零件 catalog 也必须进入 `momentum_chain_v3` 口径，不再只靠运行时 scrub 旧字段。
+- 引擎只向玩家暴露 `engine_momentum_output` 和 `engine_heat_coeff`；推进器、已绑定肢体共享同一动力池。
+- 推进器速度链固定为：移动 `allocated_momentum * move_efficiency / mass`，Boost `(allocated_momentum + boost_momentum) * boost_efficiency / mass`，转向和刹车同样由分配动力乘效率除以机体质量。
+- 散热链固定为：引擎输出发热 + 推进器分配发热 + 已绑定肢体分配发热；Boost 热只在运行时进入热槽。
+- 行动模块继续只定义动作结构和出招/收招比例，总时长由肢体分配动力、下游质量、角度/伸缩距离计算。
+
+Implementation notes:
+- 原始 catalog 块已清掉 `power / energy / power_load / engine_power / required_power / engine_torque / engine_motion_scale / normal_thrust / boost_power / thruster_momentum / load_capacity / momentum_capacity / idle_heat` 等旧动力字段。
+- 零件库排序项改为 `engine_momentum` 与 `allocated_momentum`，删除旧 `energy / power` 排序出口，避免 UI 再出现 `LEGACY LOAD`。
+- 引擎重标定探针改为 v3 字段：动力输出、发热系数、族系、质量、价格、槽体积。
+- 推进器 v3 梯度固定六族：`cruise_blue / sustain_yellow / overburn_red / counter_brake / swarm_micro / titan_vector`，并验证每个尺寸都有可达同尺寸目标速度的推进器。
+- 肢体 v3 梯度固定七族：`short_fast / standard / long_reach / heavy_rigid / telescopic / hybrid_extend_swing / flexible_chain`，并确保旋转、伸缩、伸旋混合和短/长构件都有覆盖。
+- 散热 v3 梯度固定六族：`compact / stable / boost_sink / melee_module / ranged_low_heat / titan_radiator`，目录输出只暴露 `cooling_rate / heat_capacity / heat_dissipation / cooling_family`。
+- 修复机械改名残留的非法 `func 0.0` 和同名 `_apply_engine_momentum_budget` 重载，避免后续 Godot 检查被脏代码误导。
+
+Verification:
+- `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120` passed headless in about 2 seconds; only ObjectDB cleanup warning appeared.
+- Added and passed: `raw_catalog_no_legacy_power_fields_probe`, `engine_gradient_v3_probe`, `thruster_gradient_v3_probe`, `limb_gradient_v3_probe`, `cooling_gradient_v3_probe`.
+- Passed v3 chain probes: `part_catalog_schema_v3_probe`, `part_catalog_no_legacy_fields_probe`, `power_chain_budget_v3_probe`, `boost_formula_v3_probe`, `thermal_chain_v3_probe`, `module_duration_from_allocation_probe`, `legacy_power_symbol_absence_probe`, `saved_data_purge_probe`.
+- Passed gameplay sanity probe: `combat_probe`.
+- `teamedit_probe` timed out at 120s and `ui_layout_probe` timed out at 180s in headless mode; `text_overflow_probe` reached the Chinese page set with zero overflow counts before timing out at 120s. Recorded as heavy/headless instability for this pass, not as a v3动力链 failure.
+
+Sync:
+- Implemented in `E:\New project`.
+- Documents and OneDrive mirror sync completed for `scripts/main.gd`, this worklog, and the new/updated v3 probes.
+- Verified hashes after sync:
+  - `scripts/main.gd` = `347A5C728969ED3E`
+  - `tools/engine_gradient_v3_probe.gd` = `0C420A8BA81E6A8B`
+  - `tools/cooling_gradient_v3_probe.gd` = `E4921FF8826E68CD`
+  - `WORKLOG_RULEBOOK.md` was mirrored after this final entry update.
+
+## 2026-05-22 TeamEdit 响应性能、Dashboard 联动与 UI 精简
+
+Rules:
+- TeamEdit 页面不得在 hover、鼠标移动或 Dashboard 滑块拖动时全量重建零件库、画板、详情页和 stats。
+- Dashboard 动力分配滑块写入后必须联动 TeamEdit 内的 stats rail、动力/热合法性、躯干详情、hover 预览与保存前非法原因。
+- 主界面只保留短标签、状态和关键数字；长说明移动到 hover 或滚动详情，核心按钮 `保存为单位 / 训练测试 / 已保存单位` 必须始终可见。
+
+Implementation notes:
+- `EngineMomentumAllocationPanelView` 增加拖动阈值与 `allocation_drag_finished` 信号；拖动中只做轻量 Dashboard 刷新，松手后再完整刷新 TeamEdit UI。
+- `_set_engine_momentum_allocation_ratio()` 和均分按钮统一走 `_refresh_editor_dashboard_after_allocation()`，避免一个入口只刷新滑块、另一个入口刷新不完整。
+- 零件库 entries、raw entries、可用排序键加入缓存；筛选、分组、排序和弹药尺寸变化时失效，hover 不再重复扫描/排序 catalog。
+- 零件 hover 同一目标重复进入时直接复用，清除 hover 不再触发画板重绘；stats rail 自身也避免相同内容重复 redraw。
+- TeamEdit 摘要区压缩为两行，单位库/队伍标签删除重复说明，当前零件详情改为短指标行；完整零件说明继续由 hover 卡承载。
+
+Verification:
+- `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120` passed headless; only ObjectDB cleanup warning appeared.
+- Added and passed: `teamedit_catalog_cache_probe`, `teamedit_hover_cache_probe`, `teamedit_slider_drag_no_full_rebuild_probe`, `teamedit_dashboard_slider_full_refresh_probe`, `teamedit_ui_simplified_controls_probe`.
+- Passed regressions: `engine_momentum_allocation_slider_probe`, `editor_balance_stat_probe`, `part_library_ui_probe`.
+- Heavy/headless probes remained unstable in this pass: `teamedit_probe` timed out at 120s, `ui_layout_probe` timed out at 180s, and `text_overflow_probe` reached all listed zh pages and most en pages with zero overflow before timing out at 180s. These are recorded as headless-heavy probe instability, while the targeted TeamEdit performance probes passed.
+
+Sync:
+- Implemented in `E:\New project`.
+- Documents and OneDrive mirror sync completed for `scripts/main.gd`, this worklog, and the five TeamEdit performance probes.
+- Verified hashes after sync:
+  - `scripts/main.gd` = `C020044E2BB553B6`
+  - `tools/teamedit_catalog_cache_probe.gd` = `A016947F39CBCB40`
+  - `tools/teamedit_dashboard_slider_full_refresh_probe.gd` = `764BB20C7DF5EF6B`
+
+## 2026-05-22 TeamEdit 深度性能收束：渲染/快照/Stats Dirty 化
+
+Rules:
+- TeamEdit 空闲帧不得重建画板 snapshot、躯干详情、动力分配面板或零件卡片。
+- 相同画板 snapshot、相同零件卡、相同 hover 卡、相同躯干详情与相同动力面板数据必须 no-op，不得深拷贝或 `queue_redraw()`。
+- 鼠标移动和重复 hover 只允许刷新 hover 目标，不得触发 stats/catalog/board 全量重建。
+
+Implementation notes:
+- `AssemblyBoardView.set_board()` 增加 signature 与 apply/no-op 计数；相同 snapshot 不再深拷贝或重绘。
+- `PartCatalogCardButton.set_card()`、hover 卡、躯干详情、动力分配面板、组件预览与战斗预览都增加 signature no-op，避免同内容重复刷新。
+- `_tick_editor_visuals()` 不再每帧调用 `_refresh_editor_visual_views()`；只有磁吸/材料警告动画实际运行时才刷新画板视觉。
+- `_update_editor_board_ui()` 复用 `_update_editor_ui()` 已经算出的 stats，避免一次 UI 刷新里重复 `_compute_unit_stats()`。
+- `_editor_current_stats()` 增加当前蓝图 stats cache；加载卡片 stats 增加 entry cache，避免重复打开/刷新列表时逐卡重算。
+
+Verification:
+- `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120` passed headless in about 2 seconds; only ObjectDB cleanup warning appeared.
+- Added and passed: `assembly_board_set_board_noop_probe`, `catalog_card_set_card_noop_probe`, `editor_stats_revision_cache_probe`, `editor_load_card_stats_cache_probe`, `teamedit_real_frame_budget_probe`, `teamedit_hover_no_full_refresh_probe`, `teamedit_slider_dirty_flush_probe`.
+- Passed existing targeted TeamEdit probes: `teamedit_catalog_cache_probe`, `teamedit_hover_cache_probe`, `teamedit_dashboard_slider_full_refresh_probe`, `teamedit_slider_drag_no_full_rebuild_probe`, `teamedit_ui_simplified_controls_probe`.
+- Passed regressions: `editor_balance_stat_probe`, `part_library_ui_probe`.
+- Heavy/headless probes remained unstable: `ui_layout_probe`, `text_overflow_probe`, and `teamedit_probe` each timed out at 120s. This is recorded as existing heavy headless instability; the new frame-budget probes verify the actual TeamEdit hot paths.
+
+Sync:
+- Implemented in `E:\New project`.
+- Documents and OneDrive mirror sync performed after verification for `scripts/main.gd`, this worklog, and the new TeamEdit deep-performance probes.
+
+## 2026-05-22 TeamEdit 第二轮性能收束：廉价 Revision 与同源预览缓存
+
+Rules:
+- TeamEdit 热路径不得用 `str(snapshot)`、`str(next_data)`、`str(next_plugins)`、`str(next_candidates)` 等大对象序列化来判断 no-op。
+- 画板快照只在拓扑、姿态、选择、高亮、视图或材料警告实际变化时重建；磁吸/警告动画帧不得顺带刷新躯干详情和动力分配侧栏。
+- 零件库卡片、hover 大图和拖拽幽灵必须继续使用 `AssemblyBoardRenderer` 同源美工，但渲染命令需要缓存，父卡片 redraw 不得重新跑完整零件 preview renderer。
+
+Implementation notes:
+- `AssemblyBoardView.set_board()` 改为接收短 `revision_key`；旧的 `str(next_snapshot)` 签名路径已删除，fallback 也只用节点/边数量与视图短 key。
+- `_refresh_editor_visual_views()` 增加 custom board snapshot cache；重复刷新同一画板命中缓存，不再重复 enrichment 节点、socket、edge state 与扫掠/端口可视数据。
+- `_tick_editor_visuals()` 在仅有 snap/material 脉冲时调用轻量画板刷新，不刷新躯干详情和动力分配面板。
+- 新增 `PartPreviewIconView`：零件卡、拖拽幽灵和 hover 大图把主体美工交给独立 preview 子控件；父卡片只画框、文字、标尺和状态层。
+- `PartCatalogCardButton`、`EditorPartHoverPopupView`、`TorsoDetailPanelView`、`EngineMomentumAllocationPanelView`、`EditorStatsRailView` 的 no-op 签名改成短 key，不再序列化完整数组/字典。
+
+Verification:
+- `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120` passed headless in about 2 seconds.
+- Added and passed: `teamedit_signature_cost_probe`, `editor_board_snapshot_lazy_probe`, `part_preview_texture_cache_probe`, `catalog_card_redraw_budget_probe`.
+- Passed targeted regressions: `assembly_board_set_board_noop_probe`, `catalog_card_set_card_noop_probe`, `teamedit_real_frame_budget_probe`, `teamedit_hover_no_full_refresh_probe`, `teamedit_slider_dirty_flush_probe`, `part_catalog_thumbnail_renderer_probe`, `part_library_ui_probe`.
+- `teamedit_probe`, `ui_layout_probe`, and `text_overflow_probe` still timed out at 120s in the manual parallel run; that run left six Godot processes alive, including three CPU-burning headed processes, and they were force-closed. This is recorded as heavy/headless probe instability plus process-cleanup risk, not a failure of the targeted hot-path fixes.
+
+Sync:
+- Implemented in `E:\New project`.
+- Documents and OneDrive mirror sync completed for `scripts/main.gd`, this worklog, and the four new TeamEdit performance probes.
+- Verified hashes after sync:
+  - `scripts/main.gd` = `EB255A2926D600AB`
+  - `tools/teamedit_signature_cost_probe.gd` = `0DB00931A7758465`
+  - `tools/editor_board_snapshot_lazy_probe.gd` = `3D1FD08E5FC1A2A5`
+  - `tools/part_preview_texture_cache_probe.gd` = `F1C485C54F131F4B`
+  - `tools/catalog_card_redraw_budget_probe.gd` = `CE19ADA8E72198EB`
+
+## 2026-05-22 GPU 友好化与 TeamEdit/战斗性能收束
+
+Rules:
+- 4080 Super 应主要承担渲染、材质、预览与 VFX；战斗规则、伤害、接触判定仍以 CPU 为权威，避免 GPU 回读造成新的同步卡顿。
+- TeamEdit 和战斗不得在空闲帧反复重建零件几何、预览图或 runtime collider；静止内容必须走保留式/缓存式渲染路径。
+- 近战/实体碰撞继续遵守“可见几何真实接触才结算”，性能优化不得回退到空气墙半径或旧 action group/shell fallback。
+
+Implementation notes:
+- `Fighter._runtime_geometry_signature()` 删除 `Engine.get_process_frames()`，静止 runtime topology 不再每帧强制失效；战斗绘制、枪口/端点、collider 查询复用同一帧 runtime geometry cache。
+- `PartCatalogCardButton`、`PartDragGhostView`、`EditorPartHoverPopupView` 的父级 `_draw()` 不再同步 preview 子控件，也不再调用完整 `AssemblyBoardRenderer.draw_part_preview()`；主体美工由保留式 `PartPreviewIconView` 在数据变化时重绘。
+- 折叠零件库/hover 中已经不可达的旧手写主体缩略图分支；保留 `AssemblyBoardRenderer` 作为唯一主体美工来源。
+- `_separate_unit_part_pair()` 增加 collision broadphase/precise/pair counters，并在 collider AABB/radius 明显分离时跳过 polygon overlap。
+- `run_godot_checked.ps1` 的残留进程清理改为只清理 console Godot，避免误杀用户正在打开的 GUI Godot 编辑/运行窗口。
+
+Verification:
+- `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120` passed headless.
+- Added and passed: `preview_sync_not_in_draw_probe`, `teamedit_gpu_render_path_probe`, `battle_render_cache_probe`, `part_preview_actual_texture_cache_probe`, `collision_broadphase_skip_probe`.
+- Passed updated targeted probes: `catalog_card_redraw_budget_probe`, `part_preview_texture_cache_probe`, `teamedit_real_frame_budget_probe`, `editor_board_snapshot_lazy_probe`, `teamedit_hover_no_full_refresh_probe`, `teamedit_slider_dirty_flush_probe`.
+- Passed geometry/contact regressions: `board_battle_art_identity_probe`, `runtime_contact_damage_probe`.
+- `runtime_geometry_identity_probe` remains blocked by current saved-data state: no saved unit named `2` exists after old-data purge. This is recorded as a data fixture issue; create a fresh `momentum_chain_v3` Unit2 before using Unit2-dependent geometry probes again.
+
+Sync:
+- Implemented in `E:\New project`.
+- Mirror sync target remains `C:\Users\Administrator\Documents\New project` and `C:\Users\Administrator\OneDrive\ドキュメント\New project`.
+
+## 2026-05-22 GPU 碰撞计算落地 v1
+
+Rules:
+- 保存单位/训练/战斗 runtime 碰撞主路径不再用 GDScript CPU polygon overlap 做精确判定；CPU 只保留权威规则结算、位置分离、HP/热量/VFX/行动模块状态写入。
+- GPU 只负责接触几何：AABB/radius broadphase、凸多边形 SAT overlap、接触法线、穿透深度、接触点和相对法线速度。
+- 如果桌面 GPU compute 不可用，保存单位 runtime 战斗不静默回退旧 CPU 碰撞；战斗中显示 GPU 碰撞不可用提示。Headless check-only 不初始化 GPU，以免误报。
+
+Implementation notes:
+- `project.godot` 正常桌面 renderer 切到 `forward_plus`，mobile 仍保留 `gl_compatibility`。
+- 新增 `scripts/gpu_collision_pipeline.gd`，使用 `RenderingDevice` compute pipeline；shader 资源未导入时会从源文本运行时编译 SPIR-V。
+- 新增 shader：
+  - `shaders/gpu_collision_narrowphase.glsl`：当前 v1 同时包含 broadphase 与 narrowphase，输出固定 pair contact buffer。
+  - `shaders/gpu_collision_broadphase.glsl`：保留为后续两 pass compaction 的占位入口。
+- `scripts/main.gd` 新增 `_separate_unit_part_pair_gpu()`：保存单位 direct runtime pair 走 GPU contact records，随后复用现有 `_resolve_runtime_contact_pair_once()` 与一次性接触缓存。
+- `_separate_unit_pair()` 对 direct runtime topology 不再进入 `_separate_unit_part_pair()` 的 CPU 精确 polygon path；GPU 失效时只报警并跳过，不回落旧路径。
+- `tools/run_godot_checked.ps1` 新增 `-Headed`，GPU compute 探针使用有头 Vulkan/Forward+ 跑；headless 用于 check-only 与非 GPU probes。
+
+Verification:
+- `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120` passed headless; ObjectDB cleanup warning only.
+- Headed GPU probes passed:
+  - `gpu_collision_init_probe`
+  - `gpu_collision_overlap_probe`
+  - `gpu_collision_no_precontact_probe`
+  - `gpu_collision_self_filter_probe`
+  - `gpu_cpu_parity_probe`
+  - `gpu_collision_frame_budget_probe` (`cpu_precise=0` on runtime GPU path)
+  - `gpu_contact_damage_probe`
+- `combat_probe` passed in headless, but as expected it does not exercise GPU compute because headless has no RenderingDevice.
+- `teamedit_probe` timed out in this run; this remains the existing heavy/headless instability recorded in previous sections and is not specific to GPU collision.
+
+Notes / next risks:
+- v1 dispatches per runtime unit pair and writes a fixed pair-sized contact buffer. This removes CPU polygon overlap immediately, but the next optimization pass should compact candidates in a broadphase compute pass to reduce GPU readback when many colliders are present.
+- Current shader supports convex polygons capped at 24 vertices; renderer-side shape generation must keep that invariant.
+- GPU collision tests require headed Forward+/Vulkan. Headless can only verify script parsing and non-GPU logic.
+
+## 2026-05-22 GPU 几何运算全面接管 v2
+
+Rules:
+- 保存单位/训练/战斗 runtime 碰撞几何统一由 GPU 负责：broadphase compaction、polygon SAT、接触法线、穿透深度、接触点、反作用力 delta、位置分离 delta、行动模块收招触发标记和 VFX 几何描述。
+- CPU 不再为保存单位 runtime 主循环计算接触法线、穿透估算、反作用力方向/大小或位置分离量；CPU 只消费 compact GPU response records，并提交 HP、速度、位置、热量、行动状态和 VFX 池事件。
+- GPU 不可用时保存单位 runtime 战斗仍不静默回退 CPU 几何路径；headless 只用于 check-only 和非 GPU 探针。
+
+Implementation notes:
+- `GpuCollisionPipeline` 改为两 pass compute：
+  - `gpu_collision_broadphase.glsl` 把 AABB/radius 合格 pair 写入 compact candidate buffer。
+  - `gpu_collision_narrowphase.glsl` 只处理 compact candidates，输出 compact response buffer。
+- response record 现在包含 normal、penetration、contact point、relative normal velocity、raw/usable contact momentum、velocity delta A/B、position delta A/B、recovery flags 和 VFX strength/kind。
+- `main.gd` 的 runtime spacing 改为一次全场 `_gpu_collision_and_response_step(live_subjects, delta)`；删除保存单位路径对旧 `_separate_unit_part_pair_gpu()` 单位对 dispatch 的使用。
+- `_resolve_runtime_gpu_contact_once()` 只写回 GPU response：应用 GPU position delta、GPU velocity delta、GPU recovery event，并把 GPU contact point/normal/momentum 交给现有 HP/阈值结算。
+- `Fighter.force_runtime_recovery_from_gpu()` 增加为 GPU recovery event 的纯状态提交入口。
+- 新增 GPU response/compaction 探针：
+  - `gpu_broadphase_compaction_probe`
+  - `gpu_response_impulse_probe`
+  - `gpu_position_separation_probe`
+  - `gpu_recovery_event_probe`
+  - `gpu_vfx_event_probe`
+  - `runtime_no_cpu_geometry_probe`
+
+Verification:
+- `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120` passed headless.
+- Headed Forward+/Vulkan GPU probes passed:
+  - `gpu_collision_init_probe`
+  - `gpu_collision_overlap_probe`
+  - `gpu_collision_no_precontact_probe`
+  - `gpu_collision_self_filter_probe`
+  - `gpu_cpu_parity_probe`
+  - `gpu_collision_frame_budget_probe`
+  - `gpu_broadphase_compaction_probe` (`pairs=276 candidates=1 readback=128`)
+  - `gpu_response_impulse_probe`
+  - `gpu_position_separation_probe`
+  - `gpu_recovery_event_probe`
+  - `gpu_vfx_event_probe`
+  - `gpu_contact_damage_probe`
+- Runtime/contact regressions passed:
+  - `runtime_no_cpu_geometry_probe`
+  - `runtime_no_precontact_damage_probe`
+  - `runtime_contact_damage_probe`
+  - `board_battle_art_identity_probe`
+  - `combat_probe`
+  - `ui_layout_probe`
+  - `text_overflow_probe`
+- `teamedit_probe` still times out at 90s in both headed and script mode. This matches the existing heavy TeamEdit probe instability and is recorded separately from GPU collision; targeted GPU/runtime probes passed.
+
+Sync:
+- Implemented in `E:\New project`.
+- Sync targets remain `C:\Users\Administrator\Documents\New project` and `C:\Users\Administrator\OneDrive\ドキュメント\New project`.
+
+## 2026-05-22 GPU 几何运算全面接管 v3
+
+Rules:
+- 保存单位 runtime 的碰撞与几何查询继续收束到 GPU：contact pass 负责真实接触，新增 geometry query pass 负责射线/弹道/遮挡类查询。
+- CPU 不再为 direct runtime 主路径计算主动近战命中几何；行动模块只激活 collider，真实命中由 GPU contact pass 产生。
+- direct runtime 枪械/投射物的第一遮挡物改由 GPU geometry query 返回 compact hit events；CPU 只在真实 hit 中选择最近者并提交伤害/弹药/VFX 状态。
+- VFX 几何描述由 GPU response/query 产出；CPU 只把位置、法线、强度、类型写入 `BattleContactVfxPool`。
+
+Implementation notes:
+- `GpuCollisionPipeline` 改成持久 storage buffer 设计。collider/candidate/counter/param/response/query/hit buffers 只在容量不足时扩容；普通帧使用 `RenderingDevice.buffer_update()` 写入新数据。
+- 新增 `shaders/gpu_geometry_query.glsl`，通过 compact hit buffer 输出 ray/segment 对真实 polygon 的命中点、法线和距离。
+- 新增 `compute_geometry_queries()`，与 contact pipeline 共用 collider packing，query readback 只读真实 hit events。
+- `_first_projectile_impact()` 对 direct runtime 改走 `_first_projectile_impact_gpu()`；`_attack_part_hit()` 对 direct runtime 非投射物直接拒绝，对显式枪械投射物只消费 GPU query hit。
+- `_resolve_runtime_melee_attack()` 增加 direct-topology guard，防止旧主动 melee collider 路径回流。
+- 新增 `BattleContactVfxPool`，使用 `GPUParticles2D` 池显示 GPU contact VFX；`_resolve_runtime_gpu_contact_once()` 直接消费 GPU VFX descriptor。
+- 结界入场阻挡和结界 tile 推开机体的几何判定改为 `_gpu_collider_set_responses()`，不再直接扫 `_collider_gap()`。
+- 新增/更新探针：
+  - `gpu_persistent_buffer_probe`
+  - `gpu_geometry_query_ray_probe`
+  - `gpu_projectile_first_obstruction_probe`
+  - `gpu_contact_vfx_pool_probe`
+  - `runtime_no_cpu_geometry_probe`
+
+Verification:
+- `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120` passed headless.
+- Headed Forward+/Vulkan GPU probes passed:
+  - `gpu_persistent_buffer_probe` (`recreates=5`, subsequent calls reused buffers)
+  - `gpu_geometry_query_ray_probe`
+  - `gpu_projectile_first_obstruction_probe`
+  - `gpu_broadphase_compaction_probe`
+  - `gpu_response_impulse_probe`
+  - `gpu_position_separation_probe`
+  - `gpu_recovery_event_probe`
+  - `gpu_contact_damage_probe`
+- Runtime regressions passed:
+  - `runtime_no_cpu_geometry_probe`
+  - `runtime_no_precontact_damage_probe`
+  - `runtime_no_precontact_fx_probe`
+  - `runtime_contact_damage_probe`
+  - `board_battle_art_identity_probe`
+  - `combat_probe`
+  - `gpu_contact_vfx_pool_probe`
+- `ui_layout_probe`, `text_overflow_probe`, and `teamedit_probe` timed out at 90s in this run. This is recorded as the existing heavy UI/headless instability; GPU/runtime target probes passed.
+
+Sync:
+- Implemented in `E:\New project`.
+- Files to mirror: `scripts/main.gd`, `scripts/gpu_collision_pipeline.gd`, `shaders/gpu_geometry_query.glsl`, existing GPU shaders, new GPU probes, and this log.
+
+## 2026-05-22 TeamEdit 性能深挖与 GPU 路径确认
+
+Rules:
+- TeamEdit 高频交互不得触发整页刷新、整机 preview blueprint、全量 stats 或 AI 队伍合法化。
+- Hover 只显示零件详情与当前构筑仪表，不再模拟“装上该零件后”的整机 stats；需要精确差值时以后做显式比较按钮。
+- AI 队伍生成/出战合法化与 TeamEdit 页面性能回归拆开；TeamEdit 探针只验证画板入口、空白画布和当前蓝图，不再隐式生成完整 AI 队伍。
+- GPU collision 正常验证使用 headed Forward+/Vulkan；headless 只验证 check-only 与非 GPU 逻辑。
+
+Implementation notes:
+- `_show_editor_part_hover()` 删除热路径中的 `_preview_blueprint_with_part()`、`_compute_preview_context_for_blueprint()`、hover 触发 `_compute_unit_stats()` 和 `_team_summary()` 的整机预演。
+- `_update_editor_ui()` 已按帧合并重复全量刷新；滑块/hover 继续走轻量 dirty flush。
+- `_update_editor_load_card_buttons()` 在非 load 面板直接返回，避免 parts 面板刷新时仍扫描保存单位/加载卡片。
+- `AssemblyBoardView` board cache key 改用轻量 topology/payload/selection signature，避免 `str(snapshot)` / 大字典 hash 进入热路径。
+- catalog 原始/筛选缓存返回浅拷贝，避免每次 UI 读取都深拷贝大量零件字典。
+- AI roster 侧新增生成 roster cache 与 stats cache；已有完整 roster 时 `_ensure_ai_roster_roles()` 不再重复生成整套 smart roster。
+- `teamedit_probe.gd` 移除旧的 AI roster 强制生成步骤，并限制每类 roster 只抽样首个单位，避免把 AI 出战搜索当成 TeamEdit 性能测试。
+- `part_preview_texture_cache_probe.gd` 修正为先稳定当前分类，再验证重复刷新不触发完整 renderer 绘制。
+
+Verification:
+- `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120` passed headless in ~2s.
+- TeamEdit/UI probes passed:
+  - `teamedit_probe`
+  - `teamedit_real_frame_budget_probe`
+  - `teamedit_hover_no_full_refresh_probe` (`stats=0`)
+  - `teamedit_slider_dirty_flush_probe`
+  - `teamedit_catalog_cache_probe`
+  - `editor_board_snapshot_lazy_probe`
+  - `part_preview_texture_cache_probe` (`draw=0`)
+  - `part_library_ui_probe`
+  - `ui_layout_probe`
+  - `text_overflow_probe`
+- Runtime/GPU smoke passed:
+  - `combat_probe`
+  - `runtime_no_cpu_geometry_probe`
+  - headed `gpu_broadphase_compaction_probe` on NVIDIA GeForce RTX 4080 SUPER (`pairs=276 candidates=1 readback=128`)
+- Headless GPU broadphase still reports `RenderingDevice unavailable`; this is expected and must be run headed/Forward+.
+
+Sync:
+- Implemented in `E:\New project`.
+- Mirror targets remain `C:\Users\Administrator\Documents\New project` and `C:\Users\Administrator\OneDrive\ドキュメント\New project`.
+
+## 2026-05-22 工作树脏改收束与探针归档
+
+Rules:
+- `E:\New project` remains the only Git worktree and implementation source. Documents and OneDrive are mirrors only.
+- Cleanup policy is "收束保留": keep implemented systems and probes referenced by this worklog or active test plans; delete only clearly obsolete, unreferenced, or misleading legacy probes/files.
+- Legacy-named probes that assert old systems are absent are retained as guard rails, not deleted.
+
+Classification:
+- Core source retained: `project.godot`, `scripts/main.gd`, `scripts/fighter.gd`, `scripts/assembly_board_renderer.gd`, `scripts/part_art.gd`, `scripts/gpu_collision_pipeline.gd`.
+- GPU geometry retained: `shaders/gpu_collision_broadphase.glsl`, `shaders/gpu_collision_narrowphase.glsl`, `shaders/gpu_geometry_query.glsl`, plus the GPU headed probes.
+- TeamEdit performance/render probes retained: retained board, root redraw, snapshot incremental, preview texture cache, hover/frame-budget, and virtual catalog probes.
+- Momentum-chain v3 probes retained: raw catalog/schema, engine/thruster/limb/cooling/thermal budget, boost formula, no-legacy-power terms, and saved-data purge probes.
+- Saved-unit/module/detail probes retained because they cover current UI paths: saved-unit cache/navigation and torso detail binding/rebind/delete.
+- Delete candidates: none in this pass. A scan of untracked files found no files with zero references from the worklog/test matrix; deleting them would remove active verification coverage.
+
+Verification before commit:
+- `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120` passed headless.
+- Headless probes passed:
+  - `teamedit_probe`
+  - `combat_probe`
+  - `ui_layout_probe`
+  - `text_overflow_probe`
+  - `teamedit_real_frame_budget_probe`
+  - `runtime_no_cpu_geometry_probe`
+  - `part_catalog_schema_v3_probe`
+  - `power_chain_budget_v3_probe`
+- Headed Forward+/Vulkan probes passed on NVIDIA GeForce RTX 4080 SUPER:
+  - `gpu_broadphase_compaction_probe`
+  - `gpu_response_impulse_probe`
+
+Notes:
+- Some probes still emit Godot ObjectDB/RID teardown warnings after printing `ok`; this is ordinary probe teardown noise when the wrapper returns exit code 0.
+- A grep for old words still finds legacy strings in negative tests and old-data rejection lists. Those are expected guard rails, not active UI/runtime logic.
+
+Sync:
+- After this cleanup, E disk will be mirrored to `C:\Users\Administrator\Documents\New project` and `C:\Users\Administrator\OneDrive\ドキュメント\New project`.
+- This local cleanup has no Git remote to push to; the final step is a local commit.
+
+## 2026-05-22 TeamEdit 数据管线深度性能收束
+
+Rules:
+- Custom TeamEdit boards must not request root `AssemblyBoardView` redraws in the normal retained render path.
+- Board snapshot refresh is split into base topology data and dynamic overlay data. Hover, selection, zoom, warning overlays, and slider-light updates must not rebuild the enriched topology snapshot.
+- Side previews are dirty-keyed separately from board refreshes; board updates must not refresh component preview or battle preview unless the selected part/slot/language changes.
+- GPU query remains deferred/compact for runtime; this round does not reintroduce any immediate hot-path geometry query.
+
+Implementation notes:
+- `AssemblyBoardView.set_board()` now skips root `queue_redraw()` when `board_mode == "custom"` and the retained render layer is available. New counters expose root redraw requests, root draw calls, and retained-root redraw skips.
+- `_editor_board_snapshot_cache_key()` now contains only base data: role, language, topology light signature, payload light signature, and node/edge counts. Selection, hover, zoom, pose, warning nodes, open torso, and dragging node moved to `_editor_board_dynamic_revision_key()`.
+- `_apply_editor_board_dynamic_fields()` applies selection, view transform, pose overlay, warning nodes, joint sweep stats, and candidate socket preview on top of the cached base snapshot.
+- `_refresh_editor_visual_views()` now reuses a shallow base snapshot cache on dynamic-only changes and only deep-copies/enriches topology on base topology/catalog/payload changes.
+- Side previews now use `_refresh_editor_selected_part_preview()` with a compact signature; repeated board refreshes with the same selected part become no-ops.
+- TeamEdit perf overlay now reports base snapshot hits/rebuilds, dynamic overlay applies, snapshot build time, enriched node count, side preview updates/no-ops, and root redraw/draw/skip counters.
+
+Verification:
+- `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120` passed headless.
+- New TeamEdit performance probes passed:
+  - `assembly_board_root_no_redraw_probe`
+  - `editor_visual_refresh_no_deep_snapshot_probe`
+  - `editor_board_snapshot_incremental_probe`
+  - `editor_side_preview_dirty_probe`
+  - `teamedit_hover_frame_budget_probe`
+  - `teamedit_pose_edit_frame_budget_probe`
+  - `teamedit_dashboard_slider_frame_budget_probe`
+- Retained/preview regressions passed:
+  - `edge_socket_overlay_retained_items_probe`
+  - `retained_edge_dirty_update_probe`
+  - `retained_socket_dirty_update_probe`
+  - `retained_overlay_dirty_update_probe`
+  - `teamedit_live_perf_overlay_probe`
+  - `teamedit_real_frame_budget_probe`
+  - `teamedit_signature_cost_probe`
+  - `assembly_board_retained_render_probe`
+  - `board_segment_dirty_update_probe`
+  - `part_preview_texture_cache_probe`
+  - `part_preview_actual_texture_cache_probe`
+- Broad regressions passed:
+  - `teamedit_probe`
+  - `combat_probe`
+  - `ui_layout_probe`
+  - `text_overflow_probe`
+
+Notes:
+- A few probe exits still report Godot `ObjectDB instances leaked at exit`; these are existing SceneTree probe cleanup warnings and were not functional failures.
+- This round targets the remaining CPU data-pipeline cost in TeamEdit: enriched snapshot rebuilds, root canvas redraws, and side preview churn.
+
+Sync:
+- Implemented in `E:\New project`.
+- Mirror targets remain `C:\Users\Administrator\Documents\New project` and `C:\Users\Administrator\OneDrive\ドキュメント\New project`.
+
+## 2026-05-22 TeamEdit 细粒度 Retained Layer 与 GPU Query 延迟收束
+
+Rules:
+- TeamEdit 自由画板正常路径继续禁止调用单体 `_draw_custom_board()`；部件、边、socket、候选连接、材料/警告/扫掠 overlay 都必须是 retained item。
+- Edge/socket/overlay 容器只作为节点分层，不再负责整层主体绘制；小变化只更新对应 item。
+- 真实窗口性能叠层默认关闭，调试/probe 才启用；叠层显示 CPU tick、可见控件、board set apply/noop、component/edge/socket/overlay 更新、preview cache、stats cache、GPU contact/query readback。
+- 保存单位 runtime 的枪械/投射物几何查询使用 GPU deferred compact query；本帧提交，消费上一帧结果，避免当前帧 `rd.sync()` 热点。
+
+Implementation notes:
+- `AssemblyBoardView` 新增 `AssemblyBoardRenderItem` 与 retained pools：
+  - `retained_edge_items`
+  - `retained_socket_items`
+  - `retained_candidate_socket_items`
+  - `retained_material_overlay_items`
+  - `retained_warning_items`
+  - `retained_sweep_arc_items`
+- Edge item key 使用稳定 socket pair；socket item key 使用 `node:slot:index`；overlay key 使用 `material/node`、`warning/node`、`sweep/index`、`candidate/socket_pair`。
+- `_submit_custom_board_to_retained_layers()` 改为提交 item diff，selection/hint 保留轻量层。
+- `AssemblyBoardRenderLayer._draw()` 只处理 `selection`/`hint`；`edges/sockets/overlays` 不再整层绘制。
+- 新增 `TeamEditPerfOverlay` 标签与 `_set_editor_perf_overlay_enabled()`，用于真实窗口定位哪一层还在热。
+- `_first_projectile_impact_gpu()` 改为调用 `_submit_gpu_geometry_queries_deferred()`，主路径不再直接调用 `compute_geometry_queries()`。
+
+Verification:
+- `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120` passed headless.
+- Retained item probes passed:
+  - `edge_socket_overlay_retained_items_probe`
+  - `retained_edge_dirty_update_probe`
+  - `retained_socket_dirty_update_probe`
+  - `retained_overlay_dirty_update_probe`
+  - `assembly_board_retained_render_probe`
+  - `board_segment_dirty_update_probe`
+- Performance/preview probes passed:
+  - `teamedit_live_perf_overlay_probe`
+  - `teamedit_real_frame_budget_probe`
+  - `part_preview_texture_cache_probe`
+  - `part_preview_actual_texture_cache_probe`
+  - `part_catalog_thumbnail_renderer_probe`
+- GPU/runtime probes passed:
+  - headed `gpu_geometry_query_async_probe` on NVIDIA GeForce RTX 4080 SUPER
+  - headed `gpu_async_readback_probe`
+  - headed `gpu_broadphase_compaction_probe`
+  - headed `gpu_response_impulse_probe`
+  - `gpu_query_deferred_consumers_probe`
+  - `gpu_no_hot_rd_sync_probe`
+  - `runtime_no_cpu_geometry_probe`
+  - `combat_probe`
+  - `runtime_contact_damage_probe`
+- UI regression passed:
+  - `teamedit_probe`
+  - `ui_layout_probe`
+  - `text_overflow_probe`
+
+Notes:
+- `teamedit_hover_frame_budget_probe`、`teamedit_pose_edit_frame_budget_probe`、`teamedit_dashboard_slider_frame_budget_probe` 尚未在工具目录中存在；本轮用现有 `teamedit_real_frame_budget_probe` 与 retained item probes 覆盖热路径。
+- GPU query 延迟消费意味着枪械/蛛丝/结界类 query 接受最多 1 physics tick 的结果延迟，换取无当前帧 readback 同步。
+
+Sync:
+- Implemented in `E:\New project`.
+- Mirror targets: `C:\Users\Administrator\Documents\New project` and `C:\Users\Administrator\OneDrive\ドキュメント\New project`.
+- Mirror SHA256 verified equal after sync for `scripts/main.gd` and `WORKLOG_RULEBOOK.md`.
+
+## 2026-05-22 TeamEdit Retained Render Layer
+
+Rules:
+- `AssemblyBoardView._draw()` may draw the TeamEdit background grid, but custom topology parts must not be rendered through the monolithic `_draw_custom_board()` path during normal editing.
+- Custom board rendering is split into retained layers: edges, component nodes, sockets, overlays, selection box, and hint text.
+- Topology nodes are retained per component item. A node/pose/selection change updates only the affected component signatures; identical board submissions no-op.
+- The retained path still uses `AssemblyBoardRenderer` as the single component art source, so the画板/战斗/零件预览形状来源 stays unified.
+
+Implementation notes:
+- Added `AssemblyBoardRenderLayer` and `AssemblyBoardRenderComponentItem`.
+- `AssemblyBoardView.set_board()` now submits custom board diffs to retained child layers; `board_mode == "custom"` no longer calls `_draw_custom_board()` from `_draw()`.
+- Existing `_draw_custom_board()` remains as a counted diagnostic fallback (`retained_full_draw_fallback_count`) but is not used by the normal custom board path.
+- Added retained counters: submit/no-op counts, per-component update/no-op counts, removed component count, and fallback draw count.
+- Added probes:
+  - `assembly_board_retained_render_probe.gd`
+  - `board_segment_dirty_update_probe.gd`
+
+Verification:
+- `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120` passed headless.
+- Retained render probes passed:
+  - `assembly_board_retained_render_probe` (`components=2`)
+  - `board_segment_dirty_update_probe` (`updates=6 noops=3`)
+- TeamEdit/perf probes passed:
+  - `teamedit_gpu_render_path_probe`
+  - `part_preview_actual_texture_cache_probe`
+  - `part_preview_texture_cache_probe`
+  - `teamedit_real_frame_budget_probe`
+  - `teamedit_probe`
+- Runtime/UI probes passed:
+  - `combat_probe`
+  - `runtime_contact_damage_probe`
+  - `runtime_no_cpu_geometry_probe`
+  - `ui_layout_probe`
+  - `text_overflow_probe`
+- GPU probes passed headed on NVIDIA GeForce RTX 4080 SUPER:
+  - `gpu_geometry_query_async_probe`
+  - `gpu_async_readback_probe`
+  - `gpu_broadphase_compaction_probe`
+  - `gpu_response_impulse_probe`
+
+Notes:
+- This is the first physical split of the custom board body render path. It removes the heavy single CanvasItem board draw from normal TeamEdit custom boards while preserving input/drag/selection semantics inside `AssemblyBoardView`.
+- The retained layer is intentionally conservative: component bodies are retained per node, while edges/sockets/overlays are retained layer nodes. Further work can move individual edge/socket overlays to per-item nodes if profiling still shows those layers hot.
+
+Sync:
+- Implemented in `E:\New project`.
+- Mirror targets remain `C:\Users\Administrator\Documents\New project` and `C:\Users\Administrator\OneDrive\ドキュメント\New project`.
+
+## 2026-05-22 TeamEdit 躯干详情目标绑定可见性修复
+
+Problem:
+- 用户在躯干详情页无法设定行动模块目标。函数级绑定探针通过，但真实 UI 中候选列表只露出约一行，第一行经常是躯干或非法节点，合法肢体在下方不可见，造成“不能设定目标”的体验。
+
+Implementation notes:
+- `TorsoDetailPanelView` 绑定候选改为合法目标优先排序，再按 root index 排序，保证进入绑定模式后第一屏就是可点目标。
+- 躯干详情面板高度从 `204` 提升到 `300`，绑定模式可显示多行候选与键位条。
+- 绑定候选滚动状态在候选集合变化时重置，避免上一次滚动位置把合法候选推到屏幕外。
+- 绑定候选列表增加轻量滚动条，候选较多时有明确视觉反馈。
+- 新增 `module_binding_torso_detail_mouse_probe.gd`，覆盖真实鼠标路径：点击重绑按钮、点击候选行、点击 `1U` 键位并写入 `module_bindings`。
+
+Verification:
+- `module_binding_torso_detail_mouse_probe` passed.
+- `module_binding_torso_detail_pick_probe` passed.
+- `module_detail_delete_rebind_probe` passed.
+- `teamedit_probe` passed.
+- `ui_layout_probe` passed.
+- `text_overflow_probe` passed.
+- `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120` passed headless.
+
+Sync:
+- Implemented in `E:\New project`.
+- Files to mirror: `scripts/main.gd`, `tools/module_binding_torso_detail_mouse_probe.gd`, and this log.
+
+## 2026-05-22 TeamEdit 深度性能重构与 GPU 延迟回读
+
+Rules:
+- TeamEdit 高频 hover 不得为了端口提示重建整张 AssemblyBoard 快照。
+- AssemblyBoard 快照是只读渲染输入；进入视图层时使用浅拷贝，不再对拓扑大字典做 `duplicate(true)`。
+- 保存单位/训练/战斗主循环继续使用 GPU contact response；CPU 只消费 compact contact records 并写回 HP、热、速度、位置和行动状态。
+- GPU contact readback 允许 1 physics tick 延迟，以减少每 tick 对当前 GPU work 的同步等待。
+
+Implementation notes:
+- `GpuCollisionPipeline.compute_contact_responses_deferred()` 新增“消费上一帧结果、提交这一帧 work”的延迟 compact readback 路径。
+- `_gpu_collision_and_response_step()` 改用 deferred GPU contact API，避免战斗主循环每 tick 立刻 `rd.sync()` 等当前帧碰撞。
+- `compute_geometry_queries()` 会先 drain pending contact job，避免 query 上传复用 collider buffer 时覆盖尚未消费的 GPU contact work。
+- `AssemblyBoardView.set_board()` 改为浅拷贝 snapshot/illegal map，并新增 `set_board_shallow_copy_count` 计数。
+- 躯干 hover 不再进入 board cache key、不再刷新整张画板；仅更新提示文字。端口/选中状态仍由真实选择、拖拽和姿态编辑刷新。
+- 新增 `gpu_async_readback_probe.gd` 与 `teamedit_virtual_catalog_probe.gd`，分别锁住 deferred GPU 路径和零件库可见卡片池策略。
+
+Verification:
+- `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120` passed headless in ~2s.
+- TeamEdit/UI probes passed:
+  - `teamedit_real_frame_budget_probe`
+  - `assembly_board_set_board_noop_probe`
+  - `teamedit_hover_no_full_refresh_probe`
+  - `teamedit_virtual_catalog_probe` (`entries=83 pool=8 visible=8`)
+  - `teamedit_probe`
+  - `ui_layout_probe`
+  - `text_overflow_probe`
+- GPU/runtime probes passed:
+  - headed `gpu_async_readback_probe` on NVIDIA GeForce RTX 4080 SUPER (`submit=2 consume=1 responses=1`)
+  - headed `gpu_broadphase_compaction_probe`
+  - headed `gpu_response_impulse_probe`
+  - `runtime_no_cpu_geometry_probe`
+  - `combat_probe`
+
+Notes:
+- `part_preview_actual_texture_cache_probe` still exposes one first-pass preview apply after switching the catalog slot in-test; renderer draw count remains `0`, so this is a state-stabilization issue rather than preview renderer CPU cost.
+- Full GPU geometry work remains headed/Forward+ only; headless correctly lacks RenderingDevice.
+
+Sync:
+- Implemented in `E:\New project`.
+- Mirror targets: `C:\Users\Administrator\Documents\New project` and `C:\Users\Administrator\OneDrive\ドキュメント\New project`.
+
+## 2026-05-22 TeamEdit GPU 友好化第二轮收束
+
+Rules:
+- TeamEdit 预览卡、hover 大图、拖拽幽灵不得在稳定状态下从 `_draw()` 反复调用完整 `AssemblyBoardRenderer.draw_part_preview()`。
+- 同一帧内，如果 TeamEdit 模式/槽位/筛选状态真实变化，`_update_editor_ui()` 必须允许立即刷新；否则相同状态的重复调用要延迟到下一帧，避免鼠标移动造成全页 rebuild。
+- 编辑器动效脉冲不再每帧全量刷新画板；磁吸/警报脉冲限制到 24Hz 轻量刷新。
+- GPU geometry query 现在具备 deferred compact readback API；即时枪械命中仍保留同步 query，避免未改造的射击调用拿到上一帧不匹配结果。
+
+Implementation notes:
+- 新增 `PartPreviewTextureRenderCanvas` 与 `PartPreviewTextureCache`。Forward+/headed 模式下，零件预览通过离屏 `SubViewport` 生成同源预览贴图并按 slot/name/size/material/profile 缓存；headless/dummy renderer 下自动跳过贴图生成，避免 UI probe 报 dummy texture 错误。
+- `PartPreviewIconView` 优先绘制缓存 texture；只有没有可用 texture 时才退回直接 renderer。重复 catalog update/redraw 的 renderer draw count 保持为 `0`。
+- `_update_editor_ui()` 的同帧 guard 加入轻量 state signature，修正同一帧内从 `_show_editor()` 默认槽位切到测试/玩家指定槽位时被错误延迟的问题。
+- `_tick_editor_visuals()` 对 snap/material 脉冲进行 24Hz 节流，避免 60Hz 重进 `_refresh_editor_visual_views()`。
+- `GpuCollisionPipeline` 新增 `compute_geometry_queries_deferred()`、query pending/counter stats 和 compact query consume path；新增 `gpu_geometry_query_async_probe.gd`。
+
+Verification:
+- `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120` passed headless.
+- TeamEdit/perf probes passed:
+  - `part_preview_actual_texture_cache_probe` headed and headless (`draw=0`)
+  - `part_preview_texture_cache_probe`
+  - `teamedit_real_frame_budget_probe`
+  - `teamedit_hover_no_full_refresh_probe`
+  - `assembly_board_set_board_noop_probe`
+  - `teamedit_signature_cost_probe`
+  - `teamedit_probe`
+- GPU probes passed headed on NVIDIA GeForce RTX 4080 SUPER:
+  - `gpu_geometry_query_async_probe` (`submit=2 consume=1 hits=2`)
+  - `gpu_geometry_query_ray_probe`
+  - `gpu_async_readback_probe`
+- Runtime/UI probes passed:
+  - `combat_probe`
+  - `runtime_contact_damage_probe`
+  - `runtime_no_cpu_geometry_probe`
+  - `ui_layout_probe`
+  - `text_overflow_probe`
+
+Notes:
+- True retained per-segment board mesh is still the next larger architectural step. This round removes repeated preview renderer work, fixes same-frame UI state delay, throttles editor pulse refreshes, and adds deferred query infrastructure without changing combat math.
+- Headless uses dummy rendering and intentionally skips preview texture creation; headed/Forward+ is the target path for RTX 4080 SUPER performance.
+
+Sync:
+- Implemented in `E:\New project`.
+- Mirror targets remain `C:\Users\Administrator\Documents\New project` and `C:\Users\Administrator\OneDrive\ドキュメント\New project`.

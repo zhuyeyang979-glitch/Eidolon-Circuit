@@ -21,6 +21,7 @@ func _make_unit():
 			"body_move_speed": 3.0,
 			"thruster_acceleration": 10.0,
 			"boost_momentum": 50.0,
+			"boost_total_momentum": 50.0,
 			"boost_duration": 0.3,
 			"boost_cooldown": 0.5,
 			"teamedit_runtime_topology": true,

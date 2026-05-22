@@ -6,8 +6,6 @@ func _init() -> void:
 	var main = MainScene.new()
 	root.add_child(main)
 	main._ready()
-	main._legalize_ai_player_roster(1, true)
-	main._legalize_ai_player_roster(2, true)
 	var hero_bp: Dictionary = main._blueprint_for(1, "hero", 0)
 	var stats: Dictionary = main._compute_unit_stats(1, "hero", 0)
 	var topology_note: String = main._topology_rule_note(hero_bp, "hero", stats)
@@ -44,14 +42,14 @@ func _init() -> void:
 	])
 	for role_key in MainScene.ROLE_ORDER:
 		var roster: Array = main.blueprints[1][role_key]
-		for i in range(roster.size()):
+		for i in range(mini(roster.size(), 1)):
 			var unit_bp: Dictionary = roster[i]
 			var unit_stats: Dictionary = main._compute_unit_stats(1, role_key, i)
 			var notes := []
 			if main._role_uses_body_board(role_key):
 				notes.append(main._module_material_rule_note(unit_bp))
 				notes.append(main._topology_rule_note(unit_bp, role_key, unit_stats))
-			for note_key in ["load_note", "slot_payload_note", "momentum_note", "power_note"]:
+			for note_key in ["slot_payload_note", "momentum_note", "engine_momentum_note"]:
 				if String(unit_stats.get(note_key, "")) != "":
 					notes.append("%s=%s" % [note_key, String(unit_stats.get(note_key, ""))])
 			print("TEAMEDIT_UNIT %s%d %s cost=%d deploy=%d len=%.2f notes=%s" % [

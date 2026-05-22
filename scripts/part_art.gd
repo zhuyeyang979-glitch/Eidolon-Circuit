@@ -89,7 +89,8 @@ static func make_group_part(group: Dictionary, part_kind: String, stats: Diction
 		part["slot"] = "booster"
 		part["flame_color"] = stats.get("flame_color", group.get("flame_color", "blue"))
 		part["thruster_family"] = stats.get("thruster_family", group.get("thruster_family", "cruise_blue"))
-		part["thruster_momentum"] = stats.get("thruster_momentum", group.get("thruster_momentum", 0.0))
+		part["allocated_momentum"] = stats.get("thruster_allocated_momentum", group.get("allocated_momentum", 0.0))
+		part["move_momentum"] = stats.get("move_momentum", 0.0)
 		part["boost_momentum"] = stats.get("boost_momentum", group.get("boost_momentum", 0.0))
 		part["component_mass"] = stats.get("mass", group.get("mass", 0.0))
 	elif part_kind == "barrier_tile":

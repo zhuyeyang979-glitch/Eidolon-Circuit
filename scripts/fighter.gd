@@ -114,6 +114,14 @@ var limb_drive_amplitudes: Array = []
 var limb_drive_directions: Array = []
 var limb_drive_states: Array = []
 var runtime_module_actions: Array = []
+var runtime_geometry_cache_segments_by_key := {}
+var runtime_geometry_cache_colliders_key := ""
+var runtime_geometry_cache_colliders: Array = []
+var runtime_geometry_cache_builds := 0
+var runtime_geometry_cache_hits := 0
+var runtime_geometry_cache_misses := 0
+var runtime_geometry_collider_builds := 0
+var runtime_geometry_visual_redraw_key := ""
 
 var stats := {}
 var primary_color := Color(0.1, 0.72, 0.9, 1.0)
@@ -147,6 +155,7 @@ func setup_unit(config: Dictionary) -> void:
 	unit_name = String(config.get("unit_name", unit_name))
 	group_name = String(config.get("group_name", group_name))
 	stats = config.get("stats", {}).duplicate(true)
+	_invalidate_runtime_geometry_cache()
 	max_health = int(stats.get("health", max_health))
 	health = max_health
 
@@ -217,6 +226,7 @@ func deploy(spawn_ring_pos: float, spawn_lane: float) -> void:
 	set_meta("last_melee_module_heat_key", "")
 	set_meta("melee_module_heat_ledger", {})
 	runtime_module_actions.clear()
+	_invalidate_runtime_geometry_cache()
 	aim_pose_part_index = -1
 	aim_pose_direction = last_action_direction
 	aim_pose_timer = 0.0
@@ -404,11 +414,14 @@ func _sync_facing_from_angle() -> void:
 
 
 func _turn_brake_acceleration() -> float:
-	var boost_momentum: float = maxf(0.0, float(stats.get("boost_momentum", 0.0)))
+	var brake_power: float = maxf(0.0, float(stats.get("brake_power", 0.0)))
 	var mass: float = maxf(1.0, float(stats.get("mass", 1.0)))
 	var duration: float = maxf(0.04, float(stats.get("boost_duration", 0.3)))
 	var brake_efficiency := maxf(0.1, float(stats.get("brake_efficiency", 1.0)))
-	var momentum_brake := (boost_momentum / mass) / duration * brake_efficiency
+	var allocated_momentum := maxf(0.0, float(stats.get("thruster_allocated_momentum", stats.get("allocated_momentum", 0.0))))
+	var momentum_brake := brake_power / duration
+	if momentum_brake <= 0.0:
+		momentum_brake = (allocated_momentum / mass) / duration * brake_efficiency
 	var damping_fallback := maxf(0.0, float(stats.get("turn_damping", 0.0)))
 	return maxf(maxf(momentum_brake, damping_fallback), 0.1)
 
@@ -473,17 +486,38 @@ func _thruster_drive_direction(requested: Vector2) -> Vector2:
 		return Vector2.ZERO
 	var desired := requested.normalized()
 	if _has_runtime_topology():
-		return desired
+		var profile := String(stats.get("movement_profile", "omni")).to_lower()
+		match profile:
+			"car":
+				var forward := _forward_vector()
+				var forward_component := desired.dot(forward)
+				if forward_component > 0.08:
+					return forward
+				if _reverse_drive_allowed(desired) and forward_component < -0.08:
+					return -forward
+				return Vector2.ZERO
+			"vector":
+				return _direction_inside_thruster_cone(desired, float(stats.get("boost_angle_degrees", 180.0)))
+			_:
+				return desired
 	if _has_bidirectional_thrusters():
 		return desired
+	return _direction_inside_thruster_cone(desired, float(stats.get("thruster_cone_degrees", 180.0)))
+
+
+func _direction_inside_thruster_cone(desired: Vector2, cone_degrees: float) -> Vector2:
+	if desired.length() <= 0.04:
+		return Vector2.ZERO
 	var forward := _forward_vector()
 	var side := _side_vector()
 	var forward_component := desired.dot(forward)
 	var side_component := desired.dot(side)
-	var cone_degrees := clampf(float(stats.get("thruster_cone_degrees", 180.0)), 20.0, 180.0)
+	cone_degrees = clampf(cone_degrees, 20.0, 360.0)
+	if cone_degrees >= 359.0:
+		return desired.normalized()
 	var cone_cos := cos(deg_to_rad(cone_degrees * 0.5))
 	if forward_component >= cone_cos:
-		return desired
+		return desired.normalized()
 	if cone_degrees >= 179.0:
 		if absf(side_component) <= 0.001:
 			return Vector2.ZERO
@@ -493,6 +527,20 @@ func _thruster_drive_direction(requested: Vector2) -> Vector2:
 		return Vector2.ZERO
 	var clamped := forward * cone_cos + side * side_sign * sqrt(maxf(0.0, 1.0 - cone_cos * cone_cos))
 	return clamped.normalized()
+
+
+func _thruster_boost_direction(requested: Vector2) -> Vector2:
+	if requested.length() <= 0.04:
+		return Vector2.ZERO
+	var desired := requested.normalized()
+	var profile := String(stats.get("movement_profile", "omni")).to_lower()
+	if profile == "car" and desired.dot(_forward_vector()) <= 0.0:
+		return Vector2.ZERO
+	var boost_angle := clampf(float(stats.get("boost_angle_degrees", 360.0)), 20.0, 360.0)
+	if boost_angle >= 359.0:
+		return desired
+	var cone_cos := cos(deg_to_rad(boost_angle * 0.5))
+	return desired if desired.dot(_forward_vector()) >= cone_cos else Vector2.ZERO
 
 
 func _is_rear_brake_zone(input_dir: Vector2) -> bool:
@@ -521,10 +569,13 @@ func _clamp_velocity_to_speedometer() -> void:
 
 
 func _brake_delta_velocity() -> float:
-	var boost_momentum: float = maxf(0.0, float(stats.get("boost_momentum", 0.0)))
+	var brake_power: float = maxf(0.0, float(stats.get("brake_power", 0.0)))
+	if brake_power > 0.0:
+		return brake_power
+	var allocated_momentum: float = maxf(0.0, float(stats.get("thruster_allocated_momentum", stats.get("allocated_momentum", 0.0))))
 	var mass: float = maxf(1.0, float(stats.get("mass", 1.0)))
 	var brake_efficiency := maxf(0.1, float(stats.get("brake_efficiency", 1.0)))
-	return boost_momentum / mass * brake_efficiency
+	return allocated_momentum / mass * brake_efficiency
 
 
 func _boost_brake_acceleration() -> float:
@@ -817,7 +868,7 @@ func _runtime_sources_motion_stats(target_nodes: Array) -> Dictionary:
 	if mass <= 0.0:
 		mass = maxf(1.0, float(stats.get("mass", 1.0)) * 0.18)
 	if output <= 0.0:
-		output = maxf(18.0, float(stats.get("bound_limb_allocated_momentum", stats.get("bound_joint_output_momentum", stats.get("max_joint_output_momentum", 90.0)))))
+		output = maxf(0.0, float(stats.get("bound_limb_allocated_momentum", 0.0)))
 	return {"sources": sources, "mass": mass, "length": length, "output": output}
 
 
@@ -891,7 +942,7 @@ func begin_runtime_module_action(action_kind: String, binding: Dictionary, input
 		return {}
 	var attack_key := clampi(int(binding.get("attack_key", 1)), 1, 6)
 	var state_key := action_kind if action_kind in [STATE_NORMAL, STATE_ARMOR, STATE_ACTIVE] else STATE_NORMAL
-	var fallback_duration := maxf(0.18, float(module_part.get("duration", binding.get("duration", 0.62))))
+	var fallback_duration := 0.62
 	var motion_budget := _runtime_action_motion_budget(target_nodes, module_part, float(module_part.get("swing_arc_degrees", 180.0)), 0.0, fallback_duration, state_key)
 	var duration := maxf(0.12, float(motion_budget.get("duration", fallback_duration)))
 	var cooldown := maxf(0.12, float(module_part.get("cooldown", binding.get("cooldown", duration * 0.72))))
@@ -965,7 +1016,7 @@ func _begin_runtime_blunt_terminal_action(action_kind: String, binding: Dictiona
 	var attack_key := clampi(int(binding.get("attack_key", 1)), 1, 6)
 	var state_key := action_kind if action_kind in [STATE_NORMAL, STATE_ARMOR, STATE_ACTIVE] else STATE_NORMAL
 	var default_duration := 0.5 if profile == "blunt_shield_guard_bash" else 0.82
-	var fallback_duration := maxf(0.18, float(module_part.get("duration", binding.get("duration", default_duration))))
+	var fallback_duration := default_duration
 	var startup_ratio := clampf(float(module_part.get("startup_ratio", 0.26 if profile == "blunt_shield_guard_bash" else 0.45)), 0.05, 0.95)
 	var root_local := _runtime_local_vector(target_source.get("a_local", Vector2.ZERO))
 	var tip_local := _runtime_local_vector(target_source.get("b_local", root_local + Vector2.RIGHT * 0.5))
@@ -1086,7 +1137,7 @@ func _begin_runtime_blade_action(action_kind: String, binding: Dictionary, input
 			default_duration = 0.72
 		"extend_slash_driver":
 			default_duration = 0.64
-	var fallback_duration := maxf(0.16, float(module_part.get("duration", binding.get("duration", default_duration))))
+	var fallback_duration := default_duration
 	var startup_ratio := clampf(float(module_part.get("startup_ratio", 0.36)), 0.05, 0.95)
 	var swing_arc := deg_to_rad(maxf(0.0, float(module_part.get("swing_arc_degrees", 180.0))))
 	var chain_length := 0.0
@@ -1182,7 +1233,7 @@ func _begin_runtime_gauntlet_extend_swing_action(action_kind: String, binding: D
 		return {}
 	var attack_key := clampi(int(binding.get("attack_key", 1)), 1, 6)
 	var state_key := action_kind if action_kind in [STATE_NORMAL, STATE_ARMOR, STATE_ACTIVE] else STATE_NORMAL
-	var fallback_duration := maxf(0.18, float(module_part.get("duration", binding.get("duration", 0.68))))
+	var fallback_duration := 0.68
 	var startup_ratio := clampf(float(module_part.get("startup_ratio", 1.0 / 3.0)), 0.05, 0.95)
 	var extension_m := maxf(0.0, float(module_part.get("module_extension_m", module_part.get("required_extension_m", 2.0))))
 	var swing_degrees := float(module_part.get("swing_arc_degrees", 70.0))
@@ -1303,6 +1354,22 @@ func force_runtime_recovery_from_collision(node_index: int) -> void:
 			runtime_module_actions[i] = action
 
 
+func force_runtime_recovery_from_gpu(node_index: int) -> void:
+	if node_index < 0 or runtime_module_actions.is_empty():
+		return
+	for i in range(runtime_module_actions.size()):
+		if not (runtime_module_actions[i] is Dictionary):
+			continue
+		var action: Dictionary = runtime_module_actions[i]
+		var target_nodes: Array = Array(action.get("target_nodes", []))
+		if not _runtime_node_array_has(target_nodes, node_index):
+			continue
+		var startup_ratio := clampf(float(action.get("startup_ratio", TWO_LINK_DEFAULT_STARTUP_RATIO)), 0.05, 0.95)
+		var duration := maxf(0.001, float(action.get("duration", 0.0)))
+		action["timer"] = minf(float(action.get("timer", duration)), duration * (1.0 - startup_ratio))
+		runtime_module_actions[i] = action
+
+
 func request_collision_auto_brake() -> void:
 	if not active:
 		return
@@ -1316,10 +1383,8 @@ func _tick_collision_auto_brake(delta: float) -> void:
 	if velocity.length() <= 0.001:
 		velocity = Vector2.ZERO
 		return
-	var boost_momentum := maxf(0.0, float(stats.get("boost_momentum", 0.0)))
-	var mass := maxf(1.0, float(stats.get("mass", 1.0)))
 	var duration := maxf(0.04, float(stats.get("boost_duration", 0.3)))
-	var brake_accel := (boost_momentum / mass) / duration
+	var brake_accel := _brake_delta_velocity() / duration
 	if brake_accel <= 0.0001:
 		return
 	var old_dir := velocity.normalized()
@@ -1885,55 +1950,67 @@ func part_colliders() -> Array:
 	if _has_barrier_tiles():
 		return _barrier_tile_colliders()
 	if _is_teamedit_runtime_unit():
-		if not _has_runtime_topology():
-			return colliders
-		var active_nodes := _runtime_active_collider_node_set()
-		for raw_segment in _runtime_topology_world_segments(true, true):
-			if not (raw_segment is Dictionary):
-				continue
-			var segment_dict: Dictionary = Dictionary(raw_segment).duplicate(true)
-			var part_kind := String(segment_dict.get("part_kind", "limb_muscle"))
-			var node_index := int(segment_dict.get("node_index", segment_dict.get("part_index", -999999)))
-			var independent_damage := part_kind == "torso" or active_nodes.has(node_index)
-			var part_name := String(segment_dict.get("name", part_kind.to_upper()))
-			segment_dict["runtime_topology"] = true
-			segment_dict["independent_damage"] = independent_damage
-			if not independent_damage:
-				segment_dict["damage_proxy"] = "torso"
-				segment_dict["damage_proxy_torso_unit_index"] = int(segment_dict.get("torso_unit_index", 0))
-			var runtime_polygon := _runtime_segment_polygon_world(segment_dict)
-			if runtime_polygon.size() >= 3:
-				segment_dict["shape"] = "polygon"
-				segment_dict["polygon"] = runtime_polygon
-				segment_dict["radius"] = 0.0
-			else:
-				segment_dict["radius"] = maxf(0.006, float(segment_dict.get("radius", 0.04)) * BODY_COLLIDER_EXPAND)
-			segment_dict["part_index"] = -1 if part_kind == "torso" else _runtime_attack_index_for_segment(segment_dict)
-			segment_dict["name"] = part_name
-			var contact_group := _runtime_contact_group_for_segment(segment_dict)
-			var contact_fields := _contact_fields_for_segment(contact_group, part_kind)
-			if part_kind == "torso":
-				contact_fields = {
-					"damage_type": "blunt",
-					"material_class": String(segment_dict.get("material_class", "body")),
-					"contact_damage": 0.4,
-					"contact_damage_mult": 0.08,
-					"damage_coeff": 1.0,
-					"break_coeff": 0.5,
-					"contact_shape_kind": "rounded_torso",
-				}
-				segment_dict["torso_unit_index"] = int(segment_dict.get("node_index", 0))
-			for key in contact_fields.keys():
-				segment_dict[key] = contact_fields[key]
-			if not segment_dict.has("contact_shape_kind"):
-				segment_dict["contact_shape_kind"] = "rounded_terminal" if part_kind == "terminal" else ("rounded_panel" if part_kind == "barrier_tile" else "rounded_limb")
-			if not segment_dict.has("stiffness_momentum"):
-				segment_dict["stiffness_momentum"] = _default_stiffness_for_segment(segment_dict, part_kind)
-			if not segment_dict.has("path_stiffness_momentum"):
-				segment_dict["path_stiffness_momentum"] = _default_path_stiffness_for_segment(segment_dict, part_kind)
-			colliders.append(segment_dict)
-		return colliders
+		return _runtime_cached_part_colliders()
 	return colliders
+
+
+func _runtime_cached_part_colliders() -> Array:
+	if not _has_runtime_topology():
+		return []
+	var cache_key := _runtime_geometry_signature(true, true, "colliders")
+	if runtime_geometry_cache_colliders_key == cache_key:
+		runtime_geometry_cache_hits += 1
+		return runtime_geometry_cache_colliders
+	var colliders: Array = []
+	var active_nodes := _runtime_active_collider_node_set()
+	for raw_segment in _runtime_topology_world_segments(true, true):
+		if not (raw_segment is Dictionary):
+			continue
+		var segment_dict: Dictionary = Dictionary(raw_segment).duplicate(true)
+		var part_kind := String(segment_dict.get("part_kind", "limb_muscle"))
+		var node_index := int(segment_dict.get("node_index", segment_dict.get("part_index", -999999)))
+		var independent_damage := part_kind == "torso" or active_nodes.has(node_index)
+		var part_name := String(segment_dict.get("name", part_kind.to_upper()))
+		segment_dict["runtime_topology"] = true
+		segment_dict["independent_damage"] = independent_damage
+		if not independent_damage:
+			segment_dict["damage_proxy"] = "torso"
+			segment_dict["damage_proxy_torso_unit_index"] = int(segment_dict.get("torso_unit_index", 0))
+		var runtime_polygon := _runtime_segment_polygon_world(segment_dict)
+		if runtime_polygon.size() >= 3:
+			segment_dict["shape"] = "polygon"
+			segment_dict["polygon"] = runtime_polygon
+			segment_dict["radius"] = 0.0
+		else:
+			segment_dict["radius"] = maxf(0.006, float(segment_dict.get("radius", 0.04)) * BODY_COLLIDER_EXPAND)
+		segment_dict["part_index"] = -1 if part_kind == "torso" else _runtime_attack_index_for_segment(segment_dict)
+		segment_dict["name"] = part_name
+		var contact_group := _runtime_contact_group_for_segment(segment_dict)
+		var contact_fields := _contact_fields_for_segment(contact_group, part_kind)
+		if part_kind == "torso":
+			contact_fields = {
+				"damage_type": "blunt",
+				"material_class": String(segment_dict.get("material_class", "body")),
+				"contact_damage": 0.4,
+				"contact_damage_mult": 0.08,
+				"damage_coeff": 1.0,
+				"break_coeff": 0.5,
+				"contact_shape_kind": "rounded_torso",
+			}
+			segment_dict["torso_unit_index"] = int(segment_dict.get("node_index", 0))
+		for key in contact_fields.keys():
+			segment_dict[key] = contact_fields[key]
+		if not segment_dict.has("contact_shape_kind"):
+			segment_dict["contact_shape_kind"] = "rounded_terminal" if part_kind == "terminal" else ("rounded_panel" if part_kind == "barrier_tile" else "rounded_limb")
+		if not segment_dict.has("stiffness_momentum"):
+			segment_dict["stiffness_momentum"] = _default_stiffness_for_segment(segment_dict, part_kind)
+		if not segment_dict.has("path_stiffness_momentum"):
+			segment_dict["path_stiffness_momentum"] = _default_path_stiffness_for_segment(segment_dict, part_kind)
+		colliders.append(_runtime_collider_with_bounds(segment_dict))
+	runtime_geometry_cache_colliders_key = cache_key
+	runtime_geometry_cache_colliders = colliders
+	runtime_geometry_collider_builds += 1
+	return runtime_geometry_cache_colliders
 
 
 func _runtime_active_collider_node_set() -> Dictionary:
@@ -2464,6 +2541,95 @@ func _has_runtime_topology() -> bool:
 	return bool(stats.get("teamedit_runtime_topology", false)) and Array(stats.get("runtime_topology_segments", [])).size() > 0
 
 
+func _invalidate_runtime_geometry_cache() -> void:
+	runtime_geometry_cache_segments_by_key.clear()
+	runtime_geometry_cache_colliders_key = ""
+	runtime_geometry_cache_colliders.clear()
+	runtime_geometry_visual_redraw_key = ""
+
+
+func _runtime_actions_cache_signature() -> String:
+	if runtime_module_actions.is_empty():
+		return "-"
+	var parts: Array[String] = []
+	for raw_action in runtime_module_actions:
+		if not (raw_action is Dictionary):
+			continue
+		var action: Dictionary = raw_action
+		parts.append("%s:%d:%d:%d:%d:%d:%d" % [
+			String(action.get("profile", "")),
+			int(action.get("variant", STATE_NORMAL)),
+			int(action.get("phase", 0)),
+			int(action.get("node_index", -1)),
+			int(round(float(action.get("timer", 0.0)) * 1000.0)),
+			int(round(float(action.get("duration", 0.0)) * 1000.0)),
+			int(round(float(action.get("phase_timer", 0.0)) * 1000.0)),
+		])
+	return "|".join(parts)
+
+
+func _runtime_geometry_signature(include_torso: bool, include_dynamic: bool, kind: String) -> String:
+	return "%s|%s|%s|%.3f|%.3f|%.4f|%s|%d" % [
+		kind,
+		str(include_torso),
+		str(include_dynamic),
+		ring_pos,
+		lane,
+		facing_angle,
+		_runtime_actions_cache_signature(),
+		Array(stats.get("runtime_topology_segments", [])).size(),
+	]
+
+
+func _runtime_visual_redraw_signature() -> String:
+	return "%s|%.4f|%s|%d|%d|%d" % [
+		String(current_state),
+		facing_angle,
+		_runtime_actions_cache_signature(),
+		int(round(state_timer * 1000.0)),
+		int(round(heat * 100.0)),
+		Array(stats.get("runtime_topology_segments", [])).size(),
+	]
+
+
+func _runtime_collider_with_bounds(collider: Dictionary) -> Dictionary:
+	var result: Dictionary = collider.duplicate(true)
+	var raw_a = result.get("a", Vector2.ZERO)
+	var raw_b = result.get("b", Vector2.ZERO)
+	var a_for_center: Vector2 = raw_a if raw_a is Vector2 else Vector2.ZERO
+	var b_for_center: Vector2 = raw_b if raw_b is Vector2 else a_for_center
+	var raw_center = result.get("center", (a_for_center + b_for_center) * 0.5)
+	var center: Vector2 = raw_center if raw_center is Vector2 else (a_for_center + b_for_center) * 0.5
+	var min_point := center
+	var max_point := center
+	var radius := 0.0
+	var polygon := Array(result.get("polygon", []))
+	if polygon.size() > 0:
+		min_point = polygon[0]
+		max_point = polygon[0]
+		for raw_point in polygon:
+			var point: Vector2 = raw_point
+			min_point.x = minf(min_point.x, point.x)
+			min_point.y = minf(min_point.y, point.y)
+			max_point.x = maxf(max_point.x, point.x)
+			max_point.y = maxf(max_point.y, point.y)
+			radius = maxf(radius, point.distance_to(center))
+	else:
+		var a: Vector2 = raw_a if raw_a is Vector2 else center
+		var b: Vector2 = raw_b if raw_b is Vector2 else center
+		var shape_radius := float(result.get("radius", 0.0))
+		min_point = Vector2(minf(a.x, b.x), minf(a.y, b.y)) - Vector2.ONE * shape_radius
+		max_point = Vector2(maxf(a.x, b.x), maxf(a.y, b.y)) + Vector2.ONE * shape_radius
+		radius = maxf(a.distance_to(center), b.distance_to(center)) + shape_radius
+	if radius <= 0.0:
+		radius = maxf((max_point.x - min_point.x) * 0.5, (max_point.y - min_point.y) * 0.5)
+	result["center"] = center
+	result["bounding_radius"] = radius
+	result["aabb_min"] = min_point
+	result["aabb_max"] = max_point
+	return result
+
+
 func _runtime_local_vector(raw_value) -> Vector2:
 	if raw_value is Vector2:
 		return raw_value
@@ -2777,6 +2943,7 @@ func _commit_runtime_two_link_forward_snap_pose(action: Dictionary) -> void:
 		updated["axis_local"] = override.get("axis_local", updated.get("axis_local", Vector2.RIGHT))
 		segments[i] = updated
 	stats["runtime_topology_segments"] = segments
+	_invalidate_runtime_geometry_cache()
 	_refresh_visuals()
 
 
@@ -2886,6 +3053,7 @@ func _commit_runtime_gauntlet_extend_swing_pose(action: Dictionary) -> void:
 		updated["axis_local"] = override.get("axis_local", updated.get("axis_local", Vector2.RIGHT))
 		segments[i] = updated
 	stats["runtime_topology_segments"] = segments
+	_invalidate_runtime_geometry_cache()
 	_refresh_visuals()
 
 
@@ -2992,6 +3160,7 @@ func _commit_runtime_blunt_terminal_pose(action: Dictionary) -> void:
 		updated["axis_local"] = override.get("axis_local", updated.get("axis_local", Vector2.RIGHT))
 		segments[i] = updated
 	stats["runtime_topology_segments"] = segments
+	_invalidate_runtime_geometry_cache()
 	_refresh_visuals()
 
 
@@ -3112,6 +3281,7 @@ func _commit_runtime_blade_pose(action: Dictionary) -> void:
 		updated["axis_local"] = override.get("axis_local", updated.get("axis_local", Vector2.RIGHT))
 		segments[i] = updated
 	stats["runtime_topology_segments"] = segments
+	_invalidate_runtime_geometry_cache()
 	_refresh_visuals()
 
 
@@ -3138,6 +3308,18 @@ func _runtime_module_segment_overrides(body_length: float, body_radius: float) -
 
 
 func _runtime_topology_world_segments(include_torso: bool = true, include_dynamic: bool = true) -> Array:
+	var cache_key := _runtime_geometry_signature(include_torso, include_dynamic, "segments")
+	if runtime_geometry_cache_segments_by_key.has(cache_key):
+		runtime_geometry_cache_hits += 1
+		return runtime_geometry_cache_segments_by_key[cache_key]
+	runtime_geometry_cache_misses += 1
+	var segments := _runtime_topology_world_segments_uncached(include_torso, include_dynamic)
+	runtime_geometry_cache_segments_by_key[cache_key] = segments
+	runtime_geometry_cache_builds += 1
+	return segments
+
+
+func _runtime_topology_world_segments_uncached(include_torso: bool = true, include_dynamic: bool = true) -> Array:
 	var result: Array = []
 	if not _has_runtime_topology():
 		return result
@@ -3201,13 +3383,13 @@ func boost(direction: Vector2, ring_length: float) -> bool:
 	if _brake_reverse_waiting_for_repress(direction) or _input_should_velocity_brake(direction):
 		_apply_velocity_brake(0.0, "reverse_brake", true, direction)
 		return false
-	if _is_rear_brake_zone(direction):
-		return false
 	var boost_momentum: float = maxf(0.0, float(stats.get("boost_momentum", 0.0)))
+	var boost_total_momentum: float = maxf(0.0, float(stats.get("boost_total_momentum", 0.0)))
 	var boost_speed: float = maxf(0.0, float(stats.get("boost_speed", 0.0)))
-	if boost_momentum <= 0.0 and boost_speed <= 0.0:
+	var boost_duration := maxf(0.0, float(stats.get("boost_duration", 0.0)))
+	if boost_momentum <= 0.0 or boost_duration <= 0.0 or (boost_total_momentum <= 0.0 and boost_speed <= 0.0):
 		return false
-	var boost_dir := _thruster_drive_direction(direction)
+	var boost_dir := _thruster_boost_direction(direction)
 	if boost_dir.length() <= 0.04:
 		_apply_velocity_brake(0.0, "unusable_boost_angle", true, direction)
 		return false
@@ -3215,7 +3397,7 @@ func boost(direction: Vector2, ring_length: float) -> bool:
 	var recovery_return := recovery_boost_timer > 0.0 and velocity.length() > 0.08 and boost_dir.dot(-velocity.normalized()) > 0.18
 	var thruster_family := String(stats.get("thruster_family", "")).to_lower()
 	var mass := maxf(1.0, float(stats.get("mass", 1.0)))
-	var max_delta_v := boost_momentum / mass
+	var max_delta_v := boost_total_momentum / mass
 	if boost_speed > 0.0:
 		max_delta_v = maxf(max_delta_v, boost_speed - maxf(0.0, velocity.dot(boost_dir)))
 	if recovery_return:
@@ -3227,7 +3409,7 @@ func boost(direction: Vector2, ring_length: float) -> bool:
 		max_delta_v *= clampf(0.82 + _recovery_response_multiplier() * 0.18, 0.72, 1.16)
 	if max_delta_v <= 0.001:
 		return false
-	var boost_duration := maxf(0.04, float(stats.get("boost_duration", 0.3)))
+	boost_duration = maxf(0.04, boost_duration)
 	boost_drive_direction = boost_dir
 	boost_drive_duration = boost_duration
 	boost_drive_timer = boost_duration
@@ -3239,6 +3421,7 @@ func boost(direction: Vector2, ring_length: float) -> bool:
 	boost_flash_timer = maxf(boost_flash_timer, flash_duration)
 	thruster_visual_timer = maxf(thruster_visual_timer, flash_duration)
 	thruster_output_direction = boost_dir
+	add_heat(maxf(0.0, float(stats.get("boost_heat", 0.0))), "boost")
 	moved_this_frame = true
 	boost_cooldown_timer = maxf(boost_cooldown_timer, maxf(0.0, float(stats.get("boost_cooldown", BOOST_COOLDOWN_DEFAULT))))
 	_refresh_visuals()
@@ -3341,7 +3524,7 @@ func apply_physics_impulse(direction: Vector2, impulse: float, part_index: int =
 
 
 func _available_attack_reaction_cancel_momentum(countered: bool) -> float:
-	var boost_momentum := maxf(0.0, float(stats.get("boost_momentum", 0.0)))
+	var boost_momentum := maxf(0.0, float(stats.get("boost_total_momentum", stats.get("boost_momentum", 0.0))))
 	var cancel_mult := clampf(float(stats.get("recoil_cancel", 0.0)) * 0.52 + _attitude_stabilization() * 0.16, 0.0, 0.84)
 	if countered:
 		cancel_mult = maxf(cancel_mult, clampf(float(stats.get("recoil_cancel", 0.45)), 0.0, 0.92))
@@ -3579,7 +3762,6 @@ func _refresh_visuals() -> void:
 		else:
 			state_flash.visible = false
 		_refresh_part_visuals(runtime_material_color)
-		queue_redraw()
 		smoke_cloud.visible = smoke_timer > 0.0
 		_refresh_thruster_flames()
 		_set_heat_fill()
@@ -3673,7 +3855,10 @@ func _refresh_part_visuals(material_color: Color) -> void:
 	if _is_teamedit_runtime_unit():
 		for line in barrier_tile_lines:
 			line.visible = false
-		queue_redraw()
+		var redraw_key := _runtime_visual_redraw_signature()
+		if redraw_key != runtime_geometry_visual_redraw_key:
+			runtime_geometry_visual_redraw_key = redraw_key
+			queue_redraw()
 		return
 	for line in barrier_tile_lines:
 		line.visible = false

@@ -80,7 +80,7 @@ func _init() -> void:
 	_assert_card(main, "limb_muscle", limb, ["承载", "刚度"], "limb")
 	_assert_card(main, "muscle", melee, ["实体近战"], "melee")
 	_assert_card(main, "muscle", gun, ["射程", "弹药"], "gun")
-	_assert_card(main, "module", module, ["绑定"], "module")
+	_assert_card(main, "module", module, ["行动模块", "绑定", "数据"], "module")
 	_assert_card(main, "engine", engine, ["动力", "常态热"], "engine")
 	_assert_card(main, "cooling", cooling, ["散热", "适配"], "cooling")
 	_assert_card(main, "booster", booster, ["推进", "Boost"], "booster")

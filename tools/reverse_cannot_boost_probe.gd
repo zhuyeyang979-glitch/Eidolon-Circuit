@@ -22,6 +22,8 @@ func _make_runtime_fighter():
 			"thruster_acceleration": 24.0,
 			"boost_momentum": 80.0,
 			"boost_duration": 0.3,
+			"movement_profile": "car",
+			"boost_angle_degrees": 120.0,
 			"teamedit_runtime_topology": true,
 			"runtime_topology_segments": [{"part_kind": "torso"}],
 		},

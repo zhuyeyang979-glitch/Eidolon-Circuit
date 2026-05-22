@@ -61,5 +61,22 @@ func _init() -> void:
 		_fail("Booster hover does not expose explicit thruster momentum: %s" % booster_labels)
 	for line in main._hover_card_detail_lines("booster", booster, {}, {}):
 		_assert_no_old_terms(String(line), "booster detail")
+	var module: Dictionary = {}
+	for i in range(main._catalog_for("hero", "module").size()):
+		var candidate: Dictionary = main._selected_component("hero", "module", i)
+		if String(candidate.get("module_action_profile", "")) == "blunt_shield_guard_bash":
+			module = candidate
+			break
+	if module.is_empty():
+		_fail("Could not find a live module sample for UI term probe.")
+	var module_labels := ""
+	for raw in main._hover_card_stat_entries("module", module):
+		if raw is Dictionary:
+			module_labels += " %s %s" % [String(Dictionary(raw).get("label", "")), String(Dictionary(raw).get("value_text", ""))]
+	for required in ["输入", "关节", "武器", "伤害"]:
+		if module_labels.find(String(required)) < 0:
+			_fail("Module hover stats missing %s: %s" % [String(required), module_labels])
+	for line in main._hover_card_detail_lines("module", module, {}, {}):
+		_assert_no_old_terms(String(line), "module detail")
 	print("CATALOG_UI_TERMS_PROBE ok")
 	quit()

@@ -17,14 +17,13 @@ func _init() -> void:
 	var seen_ranks := {}
 	var seen_families := {}
 	var required_fields := [
-		"power",
-		"idle_heat",
+		"engine_momentum_output",
+		"engine_heat_coeff",
 		"mass",
 		"cost",
 		"slot_volume_tier",
 		"heat_capacity",
 		"engine_family",
-		"engine_motion_scale",
 		"engine_weapon_tags",
 		"engine_team_role",
 		"engine_heat_profile",
@@ -47,12 +46,10 @@ func _init() -> void:
 		seen_ranks[rank] = true
 		var family := String(part.get("engine_family", "")).to_lower()
 		seen_families[family] = true
-		if float(part.get("power", 0.0)) + 0.01 < main._economy_engine_power_target(rank):
-			_fail("%s power %.2f below same-size target %.2f" % [name, float(part.get("power", 0.0)), main._economy_engine_power_target(rank)])
-		if float(part.get("idle_heat", 0.0)) <= 0.0:
-			_fail("%s idle heat must be explicit and positive" % name)
-		if float(part.get("engine_motion_scale", 0.0)) <= 0.0:
-			_fail("%s engine_motion_scale must be positive" % name)
+		if float(part.get("engine_momentum_output", 0.0)) + 0.01 < main._economy_engine_momentum_target(rank):
+			_fail("%s momentum output %.2f below same-size target %.2f" % [name, float(part.get("engine_momentum_output", 0.0)), main._economy_engine_momentum_target(rank)])
+		if float(part.get("engine_heat_coeff", 0.0)) <= 0.0:
+			_fail("%s engine heat coeff must be explicit and positive" % name)
 		if String(part.get("summary", "")).strip_edges() == "":
 			_fail("%s summary must explain its use case" % name)
 	for rank in range(1, 6):

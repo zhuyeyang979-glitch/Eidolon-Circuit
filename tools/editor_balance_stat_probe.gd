@@ -47,13 +47,13 @@ func _init() -> void:
 	main._ready()
 	main._show_editor()
 	var current := _base_stats()
-	current["engine_power"] = 120.0
-	current["required_power"] = 80.0
+	current["engine_momentum_output"] = 120.0
+	current["engine_momentum_required"] = 80.0
 	current["cooling"] = 56.0
 	current["idle_heat_load"] = 34.0
 	var preview := current.duplicate(true)
-	preview["engine_power"] = 70.0
-	preview["required_power"] = 96.0
+	preview["engine_momentum_output"] = 70.0
+	preview["engine_momentum_required"] = 96.0
 	preview["cooling"] = 24.0
 	preview["idle_heat_load"] = 44.0
 	var entries: Array = main._editor_stats_entries(current, preview, {"cost": 0, "units": 0}, {"cost": 0, "units": 0}, {"power": false, "thermal": false})
@@ -71,8 +71,8 @@ func _init() -> void:
 		_fail("Thermal balance entry missing.")
 	if bool(thermal.get("illegal", true)):
 		_fail("Thermal balance should be legal when cooling exceeds idle heat.")
-	current["engine_power"] = 40.0
-	current["required_power"] = 88.0
+	current["engine_momentum_output"] = 40.0
+	current["engine_momentum_required"] = 88.0
 	current["cooling"] = 18.0
 	current["idle_heat_load"] = 32.0
 	entries = main._editor_stats_entries(current, current, {"cost": 0, "units": 0}, {"cost": 0, "units": 0}, {"power": true, "thermal": true})
