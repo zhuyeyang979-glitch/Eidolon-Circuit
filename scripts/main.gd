@@ -871,6 +871,7 @@ class PartPreviewTextureCache:
 	static var queue_hit_count := 0
 	static var process_count := 0
 	static var subviewport_create_count := 0
+	static var last_captured_keys: Array = []
 	static var active_request := {}
 	static var max_entries := 256
 	static var render_viewport: SubViewport
@@ -895,6 +896,8 @@ class PartPreviewTextureCache:
 		return request_preview(owner, slot_key, part, selected, pulse, preview_size)
 
 	static func request_preview(_owner: Node, slot_key: String, part: Dictionary, selected: bool, pulse: float, preview_size: Vector2) -> Texture2D:
+		if DisplayServer.get_name().to_lower() == "headless":
+			return null
 		var safe_size := Vector2(maxf(8.0, preview_size.x), maxf(8.0, preview_size.y))
 		var cache_key := key_for(slot_key, part, selected, pulse, safe_size)
 		if textures.has(cache_key):
@@ -907,7 +910,7 @@ class PartPreviewTextureCache:
 			return null
 		pending_requests[cache_key] = {
 			"slot": slot_key,
-			"part": part.duplicate(true),
+			"part": part,
 			"selected": selected,
 			"pulse": pulse,
 			"size": safe_size,
@@ -924,6 +927,7 @@ class PartPreviewTextureCache:
 		return null
 
 	static func process_queue(owner: Node, budget: int = 2) -> int:
+		last_captured_keys = []
 		if DisplayServer.get_name().to_lower() == "headless":
 			active_request = {}
 			pending_requests.clear()
@@ -1004,6 +1008,7 @@ class PartPreviewTextureCache:
 		textures[cache_key] = ImageTexture.create_from_image(image)
 		_touch_lru(cache_key)
 		_prune_lru()
+		last_captured_keys.append(cache_key)
 		return 1
 
 	static func _ensure_renderer(tree: SceneTree, preview_size: Vector2) -> void:
@@ -1157,6 +1162,14 @@ class PartCatalogCardButton:
 		_ensure_preview_icon()
 		set_card_call_count += 1
 		var signature := _card_signature(next_slot, next_part, next_selected, next_language, next_index, next_display_name, next_line_a, next_line_b)
+		_apply_card(signature, next_slot, next_part, next_selected, next_language, next_index, next_display_name, next_line_a, next_line_b)
+
+	func set_card_with_signature(signature: String, next_slot: String, next_part: Dictionary, next_selected: bool, next_language: String, next_index: int, next_display_name: String, next_line_a: String, next_line_b: String) -> void:
+		_ensure_preview_icon()
+		set_card_call_count += 1
+		_apply_card(signature, next_slot, next_part, next_selected, next_language, next_index, next_display_name, next_line_a, next_line_b)
+
+	func _apply_card(signature: String, next_slot: String, next_part: Dictionary, next_selected: bool, next_language: String, next_index: int, next_display_name: String, next_line_a: String, next_line_b: String) -> void:
 		if signature == last_card_signature:
 			set_card_noop_count += 1
 			return
@@ -1170,8 +1183,9 @@ class PartCatalogCardButton:
 		display_name = next_display_name
 		data_line_a = next_line_a
 		data_line_b = next_line_b
-		text = ""
-		_sync_preview_icon(true)
+		if text != "":
+			text = ""
+		_sync_preview_icon(false)
 		queue_redraw()
 
 	func set_art_sheets(next_asset: Texture2D, next_joint: Texture2D, next_limb: Texture2D, next_blade: Texture2D, next_blunt: Texture2D, next_pierce: Texture2D, next_torso: Texture2D, next_booster: Texture2D, next_engine: Texture2D, next_projectile: Texture2D) -> void:
@@ -1242,9 +1256,13 @@ class PartCatalogCardButton:
 		if preview_icon == null:
 			return
 		var art_rect := _art_rect()
-		preview_icon.position = art_rect.position
-		preview_icon.size = art_rect.size
-		preview_icon.visible = visible and not part.is_empty() and slot_key != ""
+		if preview_icon.position != art_rect.position:
+			preview_icon.position = art_rect.position
+		if preview_icon.size != art_rect.size:
+			preview_icon.size = art_rect.size
+		var next_visible := visible and not part.is_empty() and slot_key != ""
+		if preview_icon.visible != next_visible:
+			preview_icon.visible = next_visible
 		if preview_icon.visible:
 			preview_icon.set_preview(slot_key, part, selected, 0.0, _preview_signature())
 			if force_redraw:
@@ -7989,6 +8007,7 @@ var editor_catalog_sort_ascending := true
 var editor_catalog_raw_cache := {}
 var editor_catalog_entries_cache := {}
 var editor_catalog_sort_keys_cache := {}
+var editor_catalog_card_model_cache := {}
 var editor_load_entry_stats_cache := {}
 var editor_catalog_cache_hit_count := 0
 var editor_catalog_cache_miss_count := 0
@@ -8018,6 +8037,7 @@ var editor_board_dynamic_overlay_apply_count := 0
 var editor_board_node_enrich_count := 0
 var editor_board_snapshot_build_usec := 0
 var editor_board_light_signature_count := 0
+var editor_fast_board_revision_counter := 0
 var editor_side_preview_signature := ""
 var editor_side_preview_update_count := 0
 var editor_side_preview_noop_count := 0
@@ -14553,6 +14573,64 @@ func _engine_allocation_clamped_ratio(data: Dictionary, entry_id: String, reques
 	return clampf(requested_ratio, 0.0, upper)
 
 
+func _engine_allocation_view_entry_for_id(entry_id: String) -> Dictionary:
+	if engine_momentum_allocation_view == null or not engine_momentum_allocation_view.visible:
+		return {}
+	for raw_entry in Array(engine_momentum_allocation_view.entries):
+		if raw_entry is Dictionary and String(Dictionary(raw_entry).get("id", "")) == entry_id:
+			return Dictionary(raw_entry)
+	return {}
+
+
+func _engine_allocation_clamped_ratio_from_entries(entries: Array, entry_id: String, requested_ratio: float) -> float:
+	var current := 0.0
+	var other := 0.0
+	var found := false
+	for raw_entry in entries:
+		if not (raw_entry is Dictionary):
+			continue
+		var entry: Dictionary = raw_entry
+		if String(entry.get("id", "")) == entry_id:
+			current = maxf(0.0, float(entry.get("ratio", 0.0)))
+			found = true
+		else:
+			other += maxf(0.0, float(entry.get("ratio", 0.0)))
+	if not found:
+		return 0.0
+	var max_allowed := maxf(0.0, 1.0 - other)
+	var total := other + current
+	var upper := max_allowed
+	if total > 1.0001:
+		upper = maxf(current, max_allowed)
+	return clampf(requested_ratio, 0.0, upper)
+
+
+func _update_engine_allocation_view_entry(entry_id: String, ratio: float, momentum: float) -> void:
+	if engine_momentum_allocation_view == null or not engine_momentum_allocation_view.visible:
+		return
+	var next_entries: Array = Array(engine_momentum_allocation_view.entries).duplicate(true)
+	var used_ratio := 0.0
+	for i in range(next_entries.size()):
+		if not (next_entries[i] is Dictionary):
+			continue
+		var entry: Dictionary = Dictionary(next_entries[i]).duplicate(true)
+		if String(entry.get("id", "")) == entry_id:
+			entry["ratio"] = ratio
+			entry["momentum"] = momentum
+			entry["allocated_momentum"] = momentum
+		next_entries[i] = entry
+		used_ratio += maxf(0.0, float(entry.get("ratio", 0.0)))
+	for i in range(next_entries.size()):
+		if next_entries[i] is Dictionary:
+			var entry: Dictionary = Dictionary(next_entries[i]).duplicate(true)
+			entry["over_budget"] = used_ratio > 1.0001
+			next_entries[i] = entry
+	engine_momentum_allocation_view.entries = next_entries
+	engine_momentum_allocation_view.used_ratio = used_ratio
+	engine_momentum_allocation_view.last_allocation_signature = ""
+	engine_momentum_allocation_view.queue_redraw()
+
+
 func _write_engine_allocation_entry_momentum(unit_bp: Dictionary, entry: Dictionary, momentum: float) -> void:
 	var entry_id := String(entry.get("id", ""))
 	if entry_id.begins_with("booster:"):
@@ -14787,6 +14865,61 @@ func _apply_editor_board_dynamic_fields(snapshot: Dictionary, role_key: String, 
 	return snapshot
 
 
+func _refresh_editor_visual_views_fast_drag(changed_nodes: Array = []) -> void:
+	if assembly_board_view == null:
+		return
+	var role_key: String = ROLE_ORDER[editor_role_index]
+	var unit_bp: Dictionary = _editor_current_blueprint()
+	if not _role_uses_body_board(role_key) or not unit_bp.has("custom_topology") or editor_board_base_snapshot_cache.is_empty():
+		_refresh_editor_visual_views({}, false)
+		return
+	var topology: Dictionary = unit_bp.get("custom_topology", {})
+	var source_nodes: Array = Array(topology.get("nodes", []))
+	var snapshot: Dictionary = editor_board_base_snapshot_cache.duplicate(false)
+	var nodes: Array = Array(snapshot.get("nodes", [])).duplicate(false)
+	if nodes.size() != source_nodes.size():
+		_refresh_editor_visual_views({}, false)
+		return
+	var indices: Array = changed_nodes.duplicate()
+	if indices.is_empty():
+		for i in range(source_nodes.size()):
+			indices.append(i)
+	for raw_index in indices:
+		var index := int(raw_index)
+		if index < 0 or index >= nodes.size() or index >= source_nodes.size() or not (source_nodes[index] is Dictionary):
+			continue
+		var source_node: Dictionary = source_nodes[index]
+		var node: Dictionary = Dictionary(nodes[index]).duplicate(false) if nodes[index] is Dictionary else {}
+		for pose_key in ["pos", "axis", "rotation", "local_angle", "local_extension", "parent_node", "parent_socket", "root_socket"]:
+			if source_node.has(pose_key):
+				node[pose_key] = source_node[pose_key]
+		nodes[index] = node
+	snapshot["nodes"] = nodes
+	var base_key := String(editor_board_base_snapshot_cache_key)
+	if base_key == "":
+		base_key = _editor_board_snapshot_cache_key(role_key, unit_bp)
+	snapshot = _apply_editor_board_dynamic_fields(snapshot, role_key, unit_bp, base_key, {})
+	editor_fast_board_revision_counter += 1
+	var fast_revision := "%s|fast:%d:%d:%d:%d" % [
+		base_key,
+		editor_fast_board_revision_counter,
+		int(editor_dragging_node_index),
+		int(editor_pose_root_node),
+		indices.size(),
+	]
+	snapshot["revision_key"] = fast_revision
+	assembly_board_view.apply_board_diff({
+		"snapshot": snapshot,
+		"selected_part": editor_selected_body_part,
+		"illegal_parts": {},
+		"snap_part": editor_snap_part,
+		"snap_amount": clampf(editor_snap_timer / 0.28, 0.0, 1.0),
+		"mode": "custom",
+		"language": ui_language,
+		"motion_phase": editor_canvas_motion_phase,
+	}, fast_revision)
+
+
 func _record_engine_allocation_undo_once() -> void:
 	if editor_engine_allocation_undo_recorded:
 		return
@@ -14796,14 +14929,20 @@ func _record_engine_allocation_undo_once() -> void:
 
 func _set_engine_momentum_allocation_ratio(entry_id: String, requested_ratio: float) -> void:
 	var unit_bp: Dictionary = _editor_current_blueprint()
-	var data := _engine_momentum_allocation_data(unit_bp, editor_engine_allocation_torso_node_index, editor_engine_allocation_payload_index)
-	var entry := _engine_allocation_entry_for_id(data, entry_id)
+	var entry := _engine_allocation_view_entry_for_id(entry_id)
+	var pool := maxf(0.0, float(engine_momentum_allocation_view.engine_output)) if engine_momentum_allocation_view != null and engine_momentum_allocation_view.visible else 0.0
+	var ratio := _engine_allocation_clamped_ratio_from_entries(Array(engine_momentum_allocation_view.entries), entry_id, requested_ratio) if engine_momentum_allocation_view != null and engine_momentum_allocation_view.visible else 0.0
+	if entry.is_empty() or pool <= 0.0:
+		var data := _engine_momentum_allocation_data(unit_bp, editor_engine_allocation_torso_node_index, editor_engine_allocation_payload_index)
+		entry = _engine_allocation_entry_for_id(data, entry_id)
+		pool = maxf(0.0, float(data.get("engine_output", 0.0)))
+		ratio = _engine_allocation_clamped_ratio(data, entry_id, requested_ratio)
 	if entry.is_empty():
 		return
-	var ratio := _engine_allocation_clamped_ratio(data, entry_id, requested_ratio)
-	var pool := maxf(0.0, float(data.get("engine_output", 0.0)))
 	_record_engine_allocation_undo_once()
-	_write_engine_allocation_entry_momentum(unit_bp, entry, pool * ratio)
+	var momentum := pool * ratio
+	_write_engine_allocation_entry_momentum(unit_bp, entry, momentum)
+	_update_engine_allocation_view_entry(entry_id, ratio, momentum)
 	ai_team_manual_lock[_editor_player()] = true
 	_refresh_editor_dashboard_after_allocation(false)
 
@@ -14822,7 +14961,8 @@ func _refresh_editor_dashboard_after_allocation(full_refresh: bool) -> void:
 	editor_allocation_light_refresh_count += 1
 	# Slider drag must stay cheap: live allocation numbers update immediately,
 	# while stats/legal/detail recompute is deferred to drag end or idle flush.
-	_refresh_engine_momentum_allocation_view()
+	if engine_momentum_allocation_view != null and engine_momentum_allocation_view.visible:
+		engine_momentum_allocation_view.queue_redraw()
 
 
 func _equalize_engine_momentum_allocation() -> void:
@@ -16127,7 +16267,7 @@ func _handle_editor_board_input(event: InputEvent) -> void:
 			_update_editor_pose_drag(unit_bp, motion_event.position)
 		elif editor_selecting_topology_box and _role_uses_body_board(role_key) and unit_bp.has("custom_topology"):
 			editor_selection_box_current = motion_event.position
-			_refresh_editor_visual_views()
+			_refresh_editor_visual_views_fast_drag()
 		elif editor_dragging_node_index >= 0 and _role_uses_body_board(role_key) and unit_bp.has("custom_topology"):
 			if editor_dragging_selected_nodes:
 				_move_selected_topology_nodes_by_delta(unit_bp, motion_event.position - editor_group_drag_start)
@@ -16895,7 +17035,7 @@ func _move_custom_node_to(unit_bp: Dictionary, node_index: int, local_position: 
 	if editor_board_hint_label != null:
 		editor_board_hint_label.text = "刚性拖拽节点 %d：已连接部件会保持固定贴合距离。" % (node_index + 1) if _ui_is_zh() else "Rigid snap node %d: linked parts stay at one exact contact distance." % (node_index + 1)
 	ai_team_manual_lock[_editor_player()] = true
-	_refresh_editor_visual_views()
+	_refresh_editor_visual_views_fast_drag([node_index])
 
 
 func _start_whole_topology_drag(unit_bp: Dictionary, local_position: Vector2) -> void:
@@ -16937,7 +17077,7 @@ func _move_custom_topology_by_delta(unit_bp: Dictionary, local_delta: Vector2) -
 	unit_bp["custom_topology"] = topology
 	_topology_update_local_pose_fields(ROLE_ORDER[editor_role_index], unit_bp)
 	ai_team_manual_lock[_editor_player()] = true
-	_refresh_editor_visual_views()
+	_refresh_editor_visual_views_fast_drag()
 
 
 func _finish_rigid_topology_drag(unit_bp: Dictionary, success_message: String, repaired_message: String) -> void:
@@ -17113,7 +17253,11 @@ func _move_selected_topology_nodes_by_delta(unit_bp: Dictionary, local_delta: Ve
 	unit_bp["custom_topology"] = topology
 	_topology_update_local_pose_fields(ROLE_ORDER[editor_role_index], unit_bp)
 	ai_team_manual_lock[_editor_player()] = true
-	_refresh_editor_visual_views()
+	var changed: Array = []
+	for raw_item in editor_group_drag_original_positions:
+		if raw_item is Dictionary:
+			changed.append(int(Dictionary(raw_item).get("index", -1)))
+	_refresh_editor_visual_views_fast_drag(changed)
 
 
 func _topology_downstream_node_indices(role_key: String, unit_bp: Dictionary, nodes: Array, edges: Array, root_index: int) -> Array:
@@ -17455,7 +17599,7 @@ func _update_editor_pose_drag(unit_bp: Dictionary, local_position: Vector2) -> v
 	unit_bp["custom_topology"] = topology
 	_topology_apply_local_fk(ROLE_ORDER[editor_role_index], unit_bp, root_index)
 	ai_team_manual_lock[_editor_player()] = true
-	_refresh_editor_visual_views()
+	_refresh_editor_visual_views_fast_drag(editor_pose_downstream_nodes)
 
 
 func _finish_editor_pose_drag(unit_bp: Dictionary) -> void:
@@ -19670,15 +19814,26 @@ func _tick_editor_visuals(delta: float) -> void:
 
 
 func _queue_editor_preview_icon_redraws() -> void:
+	var captured := {}
+	for raw_key in PartPreviewTextureCache.last_captured_keys:
+		captured[String(raw_key)] = true
+	if captured.is_empty():
+		return
 	for raw_button in editor_catalog_buttons:
 		if raw_button == null:
 			continue
 		var button = raw_button
 		if button.preview_icon != null and button.preview_icon.visible:
+			var icon_key := PartPreviewTextureCache.key_for(button.preview_icon.slot_key, button.preview_icon.part, button.preview_icon.selected, button.preview_icon.pulse, button.preview_icon.size)
+			if not captured.has(icon_key):
+				continue
 			button.preview_icon.preview_texture = PartPreviewTextureCache.peek_preview(button.preview_icon.slot_key, button.preview_icon.part, button.preview_icon.selected, button.preview_icon.pulse, button.preview_icon.size)
 			button.preview_icon.queue_redraw()
 	if editor_hover_popup_view != null and editor_hover_popup_view.preview_icon != null and editor_hover_popup_view.preview_icon.visible:
 		var hover_icon: PartPreviewIconView = editor_hover_popup_view.preview_icon
+		var hover_key := PartPreviewTextureCache.key_for(hover_icon.slot_key, hover_icon.part, hover_icon.selected, hover_icon.pulse, hover_icon.size)
+		if not captured.has(hover_key):
+			return
 		hover_icon.preview_texture = PartPreviewTextureCache.peek_preview(hover_icon.slot_key, hover_icon.part, hover_icon.selected, hover_icon.pulse, hover_icon.size)
 		hover_icon.queue_redraw()
 
@@ -19710,24 +19865,60 @@ func flush_editor_dirty(budget_usec: int = 0) -> void:
 	var stats := {}
 	var needs_stats := (flags & (EDITOR_DIRTY_DASHBOARD | EDITOR_DIRTY_STATS | EDITOR_DIRTY_LEGALITY | EDITOR_DIRTY_DETAIL)) != 0
 	if needs_stats:
+		if hot_path_profiler != null:
+			hot_path_profiler.scope_begin("teamedit.flush.stats")
 		stats = _editor_current_stats()
+		if hot_path_profiler != null:
+			hot_path_profiler.scope_end("teamedit.flush.stats")
 	if (flags & EDITOR_DIRTY_HOVER) != 0 and editor_hover_popup_view != null:
+		if hot_path_profiler != null:
+			hot_path_profiler.scope_begin("teamedit.flush.hover")
 		editor_hover_popup_view.move_to_front()
+		if hot_path_profiler != null:
+			hot_path_profiler.scope_end("teamedit.flush.hover")
 	if (flags & EDITOR_DIRTY_BOARD) != 0:
+		if hot_path_profiler != null:
+			hot_path_profiler.scope_begin("teamedit.flush.board")
 		_refresh_editor_visual_views(stats, false)
+		if hot_path_profiler != null:
+			hot_path_profiler.scope_end("teamedit.flush.board")
 	if (flags & EDITOR_DIRTY_CATALOG) != 0:
+		if hot_path_profiler != null:
+			hot_path_profiler.scope_begin("teamedit.flush.catalog")
 		_update_editor_catalog_buttons(role_key, unit_bp)
+		if hot_path_profiler != null:
+			hot_path_profiler.scope_end("teamedit.flush.catalog")
 	if (flags & (EDITOR_DIRTY_DASHBOARD | EDITOR_DIRTY_STATS | EDITOR_DIRTY_LEGALITY)) != 0:
 		if stats.is_empty():
+			if hot_path_profiler != null:
+				hot_path_profiler.scope_begin("teamedit.flush.stats")
 			stats = _editor_current_stats()
+			if hot_path_profiler != null:
+				hot_path_profiler.scope_end("teamedit.flush.stats")
+		if hot_path_profiler != null:
+			hot_path_profiler.scope_begin("teamedit.flush.dashboard")
 		_refresh_editor_stats_rail(stats)
+		if hot_path_profiler != null:
+			hot_path_profiler.scope_end("teamedit.flush.dashboard")
 	if (flags & EDITOR_DIRTY_DETAIL) != 0:
+		if hot_path_profiler != null:
+			hot_path_profiler.scope_begin("teamedit.flush.detail")
 		_refresh_torso_detail_view()
 		_refresh_engine_momentum_allocation_view()
+		if hot_path_profiler != null:
+			hot_path_profiler.scope_end("teamedit.flush.detail")
 	if (flags & EDITOR_DIRTY_ACTION_BUTTONS) != 0:
+		if hot_path_profiler != null:
+			hot_path_profiler.scope_begin("teamedit.flush.actions")
 		_refresh_editor_module_binding_buttons()
+		if hot_path_profiler != null:
+			hot_path_profiler.scope_end("teamedit.flush.actions")
 	if (flags & EDITOR_DIRTY_ROSTER) != 0:
+		if hot_path_profiler != null:
+			hot_path_profiler.scope_begin("teamedit.flush.roster")
 		_update_editor_roster_overview()
+		if hot_path_profiler != null:
+			hot_path_profiler.scope_end("teamedit.flush.roster")
 	editor_dirty_scheduler_last_usec = Time.get_ticks_usec() - started
 	if game_state_store != null:
 		game_state_store.clear_dirty(GameStateStore.DOMAIN_EDITOR, flags)
@@ -40126,6 +40317,29 @@ func _catalog_card_title(slot_key: String, part: Dictionary, actual_index: int, 
 	return "%s%02d %s%s" % [marker, actual_index + 1, _short_part_name(String(part.get("name", ""))), size_suffix]
 
 
+func _catalog_card_cached_model(slot_key: String, part: Dictionary, actual_index: int) -> Dictionary:
+	var cache_key := "%s|%d|%s|%s|%s|%s" % [
+		slot_key,
+		actual_index,
+		String(part.get("stable_key", part.get("name", ""))),
+		String(part.get("size_tier", part.get("size_class", part.get("slot_volume_tier", "")))),
+		String(part.get("material_visual", part.get("material_class", ""))),
+		ui_language,
+	]
+	if editor_catalog_card_model_cache.has(cache_key):
+		return Dictionary(editor_catalog_card_model_cache[cache_key])
+	var data_lines := _catalog_card_data_lines(slot_key, part)
+	var size_suffix := " %s" % String(part.get("ammo_size_tier", "")) if slot_key == "muscle" and _part_is_ammo_payload(part) else ""
+	var base_title := "%02d %s%s" % [actual_index + 1, _short_part_name(String(part.get("name", ""))), size_suffix]
+	var model := {
+		"title_base": base_title,
+		"line_a": String(data_lines[0]),
+		"line_b": String(data_lines[1]),
+	}
+	editor_catalog_card_model_cache[cache_key] = model
+	return model
+
+
 func _engine_family_label(family: String) -> String:
 	match family.to_lower():
 		"balanced":
@@ -40293,6 +40507,7 @@ func _invalidate_editor_catalog_cache() -> void:
 	editor_catalog_raw_cache.clear()
 	editor_catalog_entries_cache.clear()
 	editor_catalog_sort_keys_cache.clear()
+	editor_catalog_card_model_cache.clear()
 	editor_load_entry_stats_cache.clear()
 
 
@@ -40317,7 +40532,7 @@ func _editor_catalog_entries(role_key: String, slot_key: String) -> Array:
 	var cache_key := _editor_catalog_entries_cache_key(role_key, slot_key)
 	if editor_catalog_entries_cache.has(cache_key):
 		editor_catalog_cache_hit_count += 1
-		return Array(editor_catalog_entries_cache[cache_key]).duplicate()
+		return Array(editor_catalog_entries_cache[cache_key])
 	var entries := _editor_catalog_raw_entries(role_key, slot_key)
 	var available_sort_keys := _editor_available_sort_keys_from_entries(entries)
 	if not available_sort_keys.has(editor_catalog_sort_key):
@@ -40325,10 +40540,10 @@ func _editor_catalog_entries(role_key: String, slot_key: String) -> Array:
 		cache_key = _editor_catalog_entries_cache_key(role_key, slot_key)
 		if editor_catalog_entries_cache.has(cache_key):
 			editor_catalog_cache_hit_count += 1
-			return Array(editor_catalog_entries_cache[cache_key]).duplicate()
+			return Array(editor_catalog_entries_cache[cache_key])
 	_sort_editor_catalog_entries(entries, slot_key)
 	editor_catalog_cache_miss_count += 1
-	editor_catalog_entries_cache[cache_key] = entries.duplicate()
+	editor_catalog_entries_cache[cache_key] = entries
 	return entries
 
 
@@ -40599,7 +40814,11 @@ func _update_editor_catalog_buttons(role_key: String, unit_bp: Dictionary) -> vo
 			hot_path_profiler.scope_end("teamedit.catalog")
 		return
 	var slot_key: String = BUILD_SLOTS[editor_slot_index]
+	if hot_path_profiler != null:
+		hot_path_profiler.scope_begin("teamedit.catalog.entries")
 	var entries := _editor_catalog_entries(role_key, slot_key)
+	if hot_path_profiler != null:
+		hot_path_profiler.scope_end("teamedit.catalog.entries")
 	var page_size: int = max(1, editor_catalog_buttons.size())
 	var max_page: int = maxi(0, int(ceilf(float(entries.size()) / float(page_size))) - 1)
 	editor_catalog_page = clampi(editor_catalog_page, 0, max_page)
@@ -40622,10 +40841,15 @@ func _update_editor_catalog_buttons(role_key: String, unit_bp: Dictionary) -> vo
 			hot_path_profiler.scope_end("teamedit.catalog")
 		return
 	editor_catalog_buttons_revision_key = revision_key
+	if hot_path_profiler != null:
+		hot_path_profiler.scope_begin("teamedit.catalog.page_label")
 	if editor_catalog_page_label != null:
 		_set_control_position_if_changed(editor_catalog_page_label, Vector2(1110.0, 330.0))
 		_set_control_size_if_changed(editor_catalog_page_label, Vector2(96.0, 20.0))
 		_set_control_text_if_changed(editor_catalog_page_label, ("页 %d/%d  %d" if _ui_is_zh() else "P %d/%d %d") % [editor_catalog_page + 1, max_page + 1, entries.size()])
+	if hot_path_profiler != null:
+		hot_path_profiler.scope_end("teamedit.catalog.page_label")
+		hot_path_profiler.scope_begin("teamedit.catalog.cards")
 	for i in range(editor_catalog_buttons.size()):
 		var button: Button = editor_catalog_buttons[i]
 		var actual_index: int = editor_catalog_page * page_size + i
@@ -40635,8 +40859,8 @@ func _update_editor_catalog_buttons(role_key: String, unit_bp: Dictionary) -> vo
 		if not visible_item:
 			_set_control_text_if_changed(button, "")
 			var hidden_sig := "hidden|%d" % i
-			if button.has_method("set_card") and String(editor_catalog_card_signature_cache.get(i, "")) != hidden_sig:
-				button.call("set_card", slot_key, {}, false, ui_language, actual_index, "", "", "")
+			if button is PartCatalogCardButton and String(editor_catalog_card_signature_cache.get(i, "")) != hidden_sig:
+				(button as PartCatalogCardButton).set_card_with_signature(hidden_sig, slot_key, {}, false, ui_language, actual_index, "", "", "")
 				editor_catalog_card_signature_cache[i] = hidden_sig
 			continue
 		var entry: Dictionary = entries[actual_index]
@@ -40644,8 +40868,13 @@ func _update_editor_catalog_buttons(role_key: String, unit_bp: Dictionary) -> vo
 		var part_index := int(entry.get("index", 0))
 		var part: Dictionary = _catalog_display_part(entry_slot, entry.get("part", _selected_component(role_key, entry_slot, part_index)))
 		var selected_card := part_index == _editor_selected_part_index_for_slot(unit_bp, role_key, entry_slot)
-		var data_lines := _catalog_card_data_lines(entry_slot, part)
-		var title := _catalog_card_title(entry_slot, part, part_index, selected_card)
+		var card_model := _catalog_card_cached_model(entry_slot, part, part_index)
+		var marker := "已装 " if _ui_is_zh() and selected_card else ("IN " if selected_card else "")
+		if entry_slot in ["joint", "limb_muscle", "muscle"]:
+			marker = "待选 " if _ui_is_zh() and selected_card and _has_pending_canvas_part() else marker
+		var title := "%s%s" % [marker, String(card_model.get("title_base", ""))]
+		var line_a := String(card_model.get("line_a", ""))
+		var line_b := String(card_model.get("line_b", ""))
 		var card_signature := "%s|%d|%s|%s|%s|%s|%s|%s" % [
 			entry_slot,
 			part_index,
@@ -40653,23 +40882,28 @@ func _update_editor_catalog_buttons(role_key: String, unit_bp: Dictionary) -> vo
 			str(selected_card),
 			ui_language,
 			title,
-			String(data_lines[0]),
-			String(data_lines[1]),
+			line_a,
+			line_b,
 		]
 		if String(editor_catalog_card_signature_cache.get(i, "")) == card_signature:
 			continue
-		if button.has_method("set_card"):
-			button.call("set_card", entry_slot, part, selected_card, ui_language, part_index, title, String(data_lines[0]), String(data_lines[1]))
+		if button is PartCatalogCardButton:
+			(button as PartCatalogCardButton).set_card_with_signature(card_signature, entry_slot, part, selected_card, ui_language, part_index, title, line_a, line_b)
 			editor_catalog_card_update_count += 1
 		else:
-			var marker := ">> " if selected_card else ""
-			_set_control_text_if_changed(button, "%s%d %s" % [marker, part_index + 1, _short_part_name(String(part.get("name", "")))])
+			var fallback_marker := ">> " if selected_card else ""
+			_set_control_text_if_changed(button, "%s%d %s" % [fallback_marker, part_index + 1, _short_part_name(String(part.get("name", "")))])
 			editor_catalog_card_update_count += 1
 		editor_catalog_card_signature_cache[i] = card_signature
+	if hot_path_profiler != null:
+		hot_path_profiler.scope_end("teamedit.catalog.cards")
+		hot_path_profiler.scope_begin("teamedit.catalog.nav_buttons")
 	if editor_action_buttons.has("prev_catalog"):
 		_set_button_disabled_if_changed(editor_action_buttons["prev_catalog"], editor_catalog_page <= 0)
 	if editor_action_buttons.has("next_catalog"):
 		_set_button_disabled_if_changed(editor_action_buttons["next_catalog"], editor_catalog_page >= max_page)
+	if hot_path_profiler != null:
+		hot_path_profiler.scope_end("teamedit.catalog.nav_buttons")
 	editor_catalog_update_usec = Time.get_ticks_usec() - update_started
 	if hot_path_profiler != null:
 		hot_path_profiler.record_value("teamedit.catalog_usec", editor_catalog_update_usec)

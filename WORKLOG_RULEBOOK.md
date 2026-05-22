@@ -2285,6 +2285,52 @@ Sync:
 - Implemented in `E:\New project`.
 - Mirror targets remain `C:\Users\Administrator\Documents\New project` and `C:\Users\Administrator\OneDrive\ドキュメント\New project`.
 
+## 2026-05-22 全游戏热路径与状态层清理
+
+Rules:
+- 真实性能验收以 headed/真实交互采样为主；普通 probe 只作为热路径断言和回归保护。
+- 高频输入不得直接触发全页刷新：鼠标移动、hover、catalog 滚动、Dashboard slider drag、preview pulse 只能标记 dirty 或做轻量值更新。
+- TeamEdit catalog/card、board、dashboard、detail、hover、saved units、GPU readback 都必须有可观测 scope，不能再只输出一个模糊的 `probe ok`。
+- Preview cache miss 在 headless 下直接跳过，不排队、不深拷贝零件数据；headed 下仍走异步 SubViewport 队列。
+
+Implementation notes:
+- `HotPathProfiler` 增加 `interaction_hot_scopes()`，probe 能输出排除父级聚合后的 leaf hot scope。
+- `teamedit_scroll_frame_budget_probe` 改为真实 catalog 翻页采样，并增加“同页重复 dirty flush 必须 0 卡片更新”的断言。
+- `saved_units_trace_profiler_probe` 升级为翻页/hover 真实采样，而不是只检查计数器存在。
+- Dashboard slider drag 走轻量分配视图更新，拖动中不重算完整 stats/legal/detail；松手/idle 后再做一次完整刷新。
+- 姿态/拖拽/框选等高频画板路径使用 fast board diff，避免重建整份 topology snapshot。
+- Catalog 卡片刷新缓存了 card model，避免翻页时重复计算 data lines；`PartCatalogCardButton` 支持预计算 signature，减少 set_card 内部字符串签名成本。
+- `PartPreviewTextureCache.request_preview()` 在 headless 直接返回，headed 队列只保存稳定 part 引用，不再交互帧内 `duplicate(true)`。
+- Preview capture 后只重绘命中的可见 icon，不再捕获一张贴图就刷新所有 catalog/hover icon。
+
+Verification:
+- `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120` passed headless.
+- TeamEdit/profile probes passed:
+  - `teamedit_scroll_frame_budget_probe` (`p95=5.99ms`, `same_page_updates=0`; first-page max remains a warm-start/catalog-card spike)
+  - `teamedit_trace_profiler_probe` (`hover_p95=0.82ms`, `slider_p95=0.06ms`, `pose_p95=0.14ms`)
+  - `teamedit_real_frame_budget_probe`
+  - `teamedit_dashboard_slider_frame_budget_probe`
+  - `editor_catalog_revision_cache_probe`
+  - `editor_property_write_budget_probe`
+  - `editor_board_model_incremental_probe`
+  - `part_preview_texture_cache_probe`
+  - `catalog_card_redraw_budget_probe`
+- Saved units and GPU/runtime probes passed:
+  - `saved_units_trace_profiler_probe` (`page_p95=2.55ms`, `hover_p95=0.10ms`)
+  - `gpu_no_hot_rd_sync_probe`
+  - `performance_profile_4080s_probe`
+  - `battle_vfx_budget_probe`
+  - `editor_render_cache_probe`
+- Regression probes passed:
+  - `teamedit_probe`
+  - `combat_probe`
+  - `ui_layout_probe`
+  - `text_overflow_probe`
+
+Next direction:
+- If the user still sees visible TeamEdit stutter, the profiler points to catalog card application as the next target: replace card Control drawing/text with retained/lightweight card rows or a pre-rendered card texture per visible entry.
+- Board hover/slider/pose are no longer the dominant measured hot path in current probes.
+
 ## 2026-05-22 TeamEdit 热路径真实采样与全量刷新收束
 
 Rules:
@@ -2916,6 +2962,51 @@ Verification:
 Notes:
 - True retained per-segment board mesh is still the next larger architectural step. This round removes repeated preview renderer work, fixes same-frame UI state delay, throttles editor pulse refreshes, and adds deferred query infrastructure without changing combat math.
 - Headless uses dummy rendering and intentionally skips preview texture creation; headed/Forward+ is the target path for RTX 4080 SUPER performance.
+
+## 2026-05-22 RTX 4080S 靶机适配与 UI 热路径状态层
+
+Rules:
+- `E:\New project` remains the implementation source; Documents and OneDrive copies are mirrors only.
+- Hot-path UI refreshes should build small state dictionaries and apply them through guarded diff helpers instead of repeatedly assigning `text`, `visible`, `disabled`, or `modulate` directly.
+- Settings/video rows are now real runtime controls. The default target profile is `balanced_4080s`; `ultra_4080s` raises VFX/projectile/particle budgets, while `compat_60` keeps a conservative 60 FPS cap and lower budgets.
+- Battle VFX has per-frame budgets for total effects, projectile traces, hit effects, and GPU contact particles. Dropped effects are counted rather than allowed to grow without limit.
+- GPU contact readback keeps the deferred submit/consume structure, but the consume step now performs a measured sync before buffer readback on the 4080S path. This favors stability over risking driver-level `buffer_get_data` crashes.
+
+Implementation notes:
+- Added `PERFORMANCE_PROFILE_SPECS`, `performance_profile`, `runtime_quality_config`, and `user://performance_settings.json` persistence.
+- Added `_apply_ui_state()` plus `build_editor_ui_state()`, `build_battle_hud_state()`, and `build_torso_detail_state()` as the lightweight UI state contract.
+- Settings video page now exposes a functional performance-profile row and shows FPS cap, render scale, VFX scale, board preview quality, projectile/VFX budgets, and GPU collision mode.
+- Battle HUD label updates and settings hot-path updates route through guarded UI state application; existing custom draw views remain retained/cached controls.
+- `BattleContactVfxPool` now sizes particle pool and particle amount from the active performance profile.
+- `_spawn_projectile_trace()`, `_spawn_hit_effect()`, and GPU contact VFX descriptors consume frame budgets before spawning visual effects.
+
+Verification:
+- `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120` passed headless.
+- New probes passed:
+  - `ui_state_diff_probe`
+  - `direct_ui_write_hotpath_probe`
+  - `performance_profile_4080s_probe`
+  - `settings_functional_video_probe`
+  - `battle_vfx_budget_probe`
+  - `editor_render_cache_probe`
+- Regression probes passed:
+  - `teamedit_probe`
+  - `ui_layout_probe`
+  - `text_overflow_probe`
+  - `torso_detail_probe`
+  - `melee_module_compatibility_probe`
+  - `module_binding_torso_detail_pick_probe`
+  - `runtime_melee_never_projectile_gate_probe`
+  - `projectile_warning_only_gun_activate_probe`
+  - `momentum_budget_allocation_probe`
+  - `engine_thruster_limb_budget_probe`
+  - `assembly_board_set_board_noop_probe`
+- Headed RTX 4080 SUPER GPU probes passed:
+  - `gpu_async_readback_probe`
+  - `gpu_collision_frame_budget_probe`
+
+Notes:
+- `battle_runtime_frame_budget_probe` timed out under headless in this source tree; it depends on saved-unit runtime setup and is not a reliable 4080S headed target probe. The TeamEdit, VFX budget, and headed GPU probes are the active acceptance checks for this round.
 
 Sync:
 - Implemented in `E:\New project`.

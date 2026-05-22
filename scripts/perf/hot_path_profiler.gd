@@ -136,16 +136,52 @@ func interaction_stats(name: String) -> Dictionary:
 	}
 
 
+func interaction_hot_scopes(name: String, limit: int = 5, exclude_parent_scopes: bool = true) -> Array:
+	var scopes: Dictionary = _interaction_scope_totals.get(name, {})
+	var rows: Array = []
+	for scope_name in scopes.keys():
+		var scope_text := String(scope_name)
+		if exclude_parent_scopes:
+			var has_child := false
+			var child_prefix := scope_text + "."
+			for other_name in scopes.keys():
+				if String(other_name).begins_with(child_prefix):
+					has_child = true
+					break
+			if has_child:
+				continue
+		rows.append({
+			"name": scope_text,
+			"usec": int(scopes[scope_name]),
+		})
+	rows.sort_custom(func(a, b): return int(a.get("usec", 0)) > int(b.get("usec", 0)))
+	if limit > 0 and rows.size() > limit:
+		rows = rows.slice(0, limit)
+	return rows
+
+
 func interaction_summary_line(name: String) -> String:
 	var stats := interaction_stats(name)
-	return "%s n=%d p95 %.2fms max %.2fms hot %s %.2fms" % [
+	var leaf_scopes := interaction_hot_scopes(name, 3, true)
+	var leaf_texts: Array = []
+	for row in leaf_scopes:
+		leaf_texts.append("%s %.2fms" % [String(row.get("name", "")), float(row.get("usec", 0)) / 1000.0])
+	var leaf_suffix := ""
+	if not leaf_texts.is_empty():
+		var joined_leaf_text := ""
+		for i in range(leaf_texts.size()):
+			if i > 0:
+				joined_leaf_text += ", "
+			joined_leaf_text += String(leaf_texts[i])
+		leaf_suffix = " leaf[%s]" % joined_leaf_text
+	return ("%s n=%d p95 %.2fms max %.2fms hot %s %.2fms" % [
 		name,
 		int(stats.get("count", 0)),
 		float(stats.get("p95_usec", 0)) / 1000.0,
 		float(stats.get("max_usec", 0)) / 1000.0,
 		String(stats.get("hot_scope", "")),
 		float(stats.get("hot_scope_usec", 0)) / 1000.0,
-	]
+	]) + leaf_suffix
 
 
 func all_interaction_summary_lines() -> Array:

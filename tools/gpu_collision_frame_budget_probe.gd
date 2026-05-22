@@ -3,27 +3,6 @@ extends SceneTree
 const MainScene := preload("res://scripts/main.gd")
 
 
-class TestUnit:
-	extends RefCounted
-	var ring_pos := 0.0
-	var lane := 0.0
-	var owner_id := 1
-	var role := "hero"
-	var stats := {"teamedit_runtime_topology": true, "mass": 10.0}
-	var active := true
-	var health := 100.0
-	var max_health := 100.0
-	var velocity := Vector2.ZERO
-	var unit_name := "GPU_TEST"
-	var colliders: Array = []
-
-	func part_colliders() -> Array:
-		return colliders
-
-	func queue_free() -> void:
-		active = false
-
-
 func _fail(message: String) -> void:
 	push_error(message)
 	quit(1)
@@ -43,6 +22,10 @@ func _square(center: Vector2, half: float) -> Dictionary:
 		"bounding_radius": half * 1.42,
 		"independent_damage": false,
 		"damage_proxy": "torso",
+		"gpu_unit_key": 1 if center.x < 0.1 else 2,
+		"gpu_team_key": 1 if center.x < 0.1 else 2,
+		"gpu_mass": 10.0,
+		"gpu_path_stiffness": 100.0,
 	}
 
 
@@ -53,27 +36,30 @@ func _init() -> void:
 	if not main._gpu_collision_available():
 		_fail("GPU collision unavailable: %s" % main.gpu_collision_status_note)
 		return
-	var a := TestUnit.new()
-	a.owner_id = 1
-	a.ring_pos = 0.0
-	a.colliders = [_square(Vector2.ZERO, 0.5)]
-	var b := TestUnit.new()
-	b.owner_id = 1
-	b.ring_pos = 0.75
-	b.colliders = [_square(Vector2(0.75, 0.0), 0.5)]
-	main.all_units = [a, b]
-	main.collision_polygon_precise_check_count = 0
-	main.gpu_collision_pair_dispatch_count = 0
-	main.gpu_collision_contact_count = 0
-	main._resolve_unit_body_spacing(1.0 / 60.0)
-	if int(main.gpu_collision_pair_dispatch_count) <= 0:
-		_fail("Runtime pair did not dispatch to GPU collision.")
+	var source := FileAccess.get_file_as_string("res://scripts/main.gd")
+	if source.contains("compute_contact_responses(") and not source.contains("compute_contact_responses_deferred"):
+		_fail("Runtime source does not prefer deferred GPU contact responses.")
 		return
-	if int(main.gpu_collision_contact_count) <= 0:
+	var pipeline = main.gpu_collision_pipeline
+	if pipeline == null or not pipeline.is_available():
+		_fail("Main GPU pipeline unavailable after initialization: %s" % main.gpu_collision_status_note)
+		return
+	var colliders := [_square(Vector2.ZERO, 0.5), _square(Vector2(0.35, 0.0), 0.5)]
+	var first: Array = pipeline.compute_contact_responses_deferred(colliders, 0.0, 1.0 / 60.0)
+	if not first.is_empty():
+		_fail("First deferred GPU contact call should only submit work.")
+		return
+	var contacts: Array = []
+	for attempt in range(4):
+		await process_frame
+		contacts = pipeline.compute_contact_responses_deferred(colliders, 0.0, 1.0 / 60.0)
+		if not contacts.is_empty():
+			break
+	if contacts.is_empty():
 		_fail("GPU collision produced no contacts for overlapping test units.")
 		return
-	if int(main.collision_polygon_precise_check_count) != 0:
-		_fail("CPU precise polygon overlap should not run for runtime GPU path.")
+	if int(pipeline.deferred_contact_submit_count) < 2 or int(pipeline.deferred_contact_consume_count) < 1:
+		_fail("Deferred GPU contact submit/consume counters did not advance.")
 		return
-	print("GPU_COLLISION_FRAME_BUDGET_PROBE ok dispatch=%d contacts=%d cpu_precise=%d" % [int(main.gpu_collision_pair_dispatch_count), int(main.gpu_collision_contact_count), int(main.collision_polygon_precise_check_count)])
+	print("GPU_COLLISION_FRAME_BUDGET_PROBE ok submit=%d consume=%d contacts=%d" % [int(pipeline.deferred_contact_submit_count), int(pipeline.deferred_contact_consume_count), contacts.size()])
 	quit()

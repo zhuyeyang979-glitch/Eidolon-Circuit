@@ -57,10 +57,29 @@ func _init() -> void:
 		if int(stats.get("count", 0)) <= 0:
 			_fail("Profiler did not record interaction samples for %s." % stat_name)
 			return
-	print("TEAMEDIT_TRACE_PROFILER_PROBE ok hover_p95=%.2fms slider_p95=%.2fms pose_p95=%.2fms hot=%s" % [
+	print("TEAMEDIT_TRACE_PROFILER_PROBE ok hover_p95=%.2fms slider_p95=%.2fms pose_p95=%.2fms hot=%s leaf=%s" % [
 		float(hover_stats.get("p95_usec", 0)) / 1000.0,
 		float(slider_stats.get("p95_usec", 0)) / 1000.0,
 		float(pose_stats.get("p95_usec", 0)) / 1000.0,
 		String(pose_stats.get("hot_scope", "")),
+		_leaf_scope_text(main.hot_path_profiler, "pose"),
 	])
 	quit(0)
+
+
+func _leaf_scope_text(profiler, interaction_name: String) -> String:
+	if profiler == null or not profiler.has_method("interaction_hot_scopes"):
+		return "n/a"
+	var rows: Array = profiler.interaction_hot_scopes(interaction_name, 4, true)
+	var parts: Array = []
+	for row in rows:
+		var scope_name := String(row.get("name", ""))
+		if scope_name in ["teamedit.flush_dirty", "teamedit.flush.board"]:
+			continue
+		parts.append("%s:%.2fms" % [scope_name, float(row.get("usec", 0)) / 1000.0])
+	var text := ""
+	for i in range(parts.size()):
+		if i > 0:
+			text += ","
+		text += String(parts[i])
+	return text

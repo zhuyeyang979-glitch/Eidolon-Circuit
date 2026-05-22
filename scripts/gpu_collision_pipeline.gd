@@ -332,7 +332,7 @@ func _consume_pending_contact_frame(blocking: bool = true) -> Array:
 		return []
 	_pending_contact_frame = {}
 	deferred_contact_pending = false
-	_record_deferred_readback_without_sync()
+	_sync_and_measure()
 	deferred_contact_consume_count += 1
 	var counter_bytes_size := int(frame.get("counter_bytes", 16))
 	var out_counter_bytes := rd.buffer_get_data(frame.get("counter_buffer", RID()), 0, counter_bytes_size)
@@ -531,7 +531,7 @@ func _consume_pending_query_frame(blocking: bool = true) -> Array:
 		return []
 	_pending_query_frame = {}
 	deferred_query_pending = false
-	_record_deferred_readback_without_sync()
+	_sync_and_measure()
 	deferred_query_consume_count += 1
 	var counter_bytes_size := int(frame.get("counter_bytes", 16))
 	var out_counter_bytes := rd.buffer_get_data(frame.get("query_counter_buffer", RID()), 0, counter_bytes_size)
