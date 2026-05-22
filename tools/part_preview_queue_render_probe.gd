@@ -24,10 +24,12 @@ func _run() -> void:
 	main._update_editor_ui()
 	var before_viewports := int(MainScene.PartPreviewTextureCache.subviewport_create_count)
 	var before_render := int(MainScene.PartPreviewTextureCache.render_count)
+	var submitted_or_captured := MainScene.PartPreviewTextureCache.process_queue(main, 4)
+	await process_frame
 	var processed := MainScene.PartPreviewTextureCache.process_queue(main, 4)
 	if DisplayServer.get_name().to_lower() != "headless":
 		if processed <= 0:
-			_fail("Headed preview queue did not process any pending texture.")
+			_fail("Headed preview queue did not capture any pending async texture. first=%d active=%s" % [submitted_or_captured, str(MainScene.PartPreviewTextureCache.active_request)])
 			return
 		if int(MainScene.PartPreviewTextureCache.render_count) <= before_render:
 			_fail("Headed preview queue did not render any texture. processed=%d display=%s inside=%s viewports=%d renders=%d" % [

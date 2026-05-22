@@ -34,7 +34,12 @@ func _init() -> void:
 	if not bool(pipeline.deferred_contact_pending):
 		_fail("Deferred contact job was not left pending after submit.")
 		return
-	var second := pipeline.compute_contact_responses_deferred([a, b], 0.0, 1.0 / 60.0)
+	var second: Array = []
+	for attempt in range(3):
+		await process_frame
+		second = pipeline.compute_contact_responses_deferred([a, b], 0.0, 1.0 / 60.0)
+		if not second.is_empty():
+			break
 	if second.is_empty():
 		_fail("Second deferred contact call did not consume previous GPU contact results.")
 		return

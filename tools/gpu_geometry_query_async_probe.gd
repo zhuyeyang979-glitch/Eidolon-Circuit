@@ -36,7 +36,12 @@ func _init() -> void:
 	if not bool(pipeline.deferred_query_pending):
 		_fail("Deferred query job was not left pending after submit.")
 		return
-	var second := pipeline.compute_geometry_queries_deferred(colliders, query, 1.0 / 60.0)
+	var second: Array = []
+	for attempt in range(3):
+		await process_frame
+		second = pipeline.compute_geometry_queries_deferred(colliders, query, 1.0 / 60.0)
+		if not second.is_empty():
+			break
 	if second.is_empty():
 		_fail("Second deferred query call did not consume previous GPU query hits.")
 		return

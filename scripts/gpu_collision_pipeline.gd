@@ -72,10 +72,12 @@ var param_buffer_bytes := 0
 var response_buffer_bytes := 0
 
 var query_buffer_rid: RID
+var query_collider_buffer_rid: RID
 var query_param_buffer_rid: RID
 var query_counter_buffer_rid: RID
 var query_hit_buffer_rid: RID
 var query_buffer_bytes := 0
+var query_collider_buffer_bytes := 0
 var query_param_buffer_bytes := 0
 var query_counter_buffer_bytes := 0
 var query_hit_buffer_bytes := 0
@@ -161,16 +163,17 @@ func compute_geometry_queries_deferred(colliders: Array, queries: Array, delta: 
 func compute_contact_responses(colliders: Array, required_overlap: float = 0.0, delta: float = 0.0, defer_readback: bool = false) -> Array:
 	if not is_available():
 		return []
-	# Contact and query jobs share collider buffers. Consume any pending query before
-	# writing fresh collider data so the GPU never races the CPU-side upload.
-	_consume_pending_query_frame()
 	var deferred_records: Array = []
 	var deferred_stats: Dictionary = {}
 	if defer_readback:
-		deferred_records = _consume_pending_contact_frame()
+		deferred_records = _consume_pending_contact_frame(false)
 		deferred_stats = _last_consumed_contact_stats.duplicate(true)
+		if not _pending_contact_frame.is_empty():
+			last_deferred_readback = true
+			last_readback_bytes = 0
+			return deferred_records
 	else:
-		_consume_pending_contact_frame()
+		_consume_pending_contact_frame(true)
 	var collider_count := mini(colliders.size(), MAX_COLLIDERS)
 	last_collider_count = collider_count
 	last_pair_count = int(maxi(0, collider_count * (collider_count - 1) / 2))
@@ -247,6 +250,7 @@ func compute_contact_responses(colliders: Array, required_overlap: float = 0.0, 
 			"collider_count": collider_count,
 			"broadphase_set": broadphase_set,
 			"narrowphase_set": narrowphase_set,
+			"submit_frame": Engine.get_process_frames(),
 		}
 		last_deferred_readback = true
 		last_candidate_count = int(deferred_stats.get("candidate_count", 0))
@@ -311,12 +315,15 @@ func compute_contact_responses(colliders: Array, required_overlap: float = 0.0, 
 	return responses
 
 
-func _consume_pending_contact_frame() -> Array:
+func _consume_pending_contact_frame(blocking: bool = true) -> Array:
 	_last_consumed_contact_stats = {}
 	if _pending_contact_frame.is_empty() or rd == null:
 		deferred_contact_pending = false
 		return []
 	var frame := _pending_contact_frame
+	if not blocking and Engine.get_process_frames() <= int(frame.get("submit_frame", -1)):
+		deferred_contact_pending = true
+		return []
 	_pending_contact_frame = {}
 	deferred_contact_pending = false
 	_sync_and_measure()
@@ -389,16 +396,17 @@ func _parse_contact_response_floats(out_floats: PackedFloat32Array, parse_count:
 func compute_geometry_queries(colliders: Array, queries: Array, delta: float = 0.0, defer_readback: bool = false) -> Array:
 	if not is_available():
 		return []
-	# Geometry queries share the collider buffer. Drain any deferred contact job before
-	# uploading query data so the GPU never reads a buffer while the CPU rewrites it.
-	_consume_pending_contact_frame()
 	var deferred_hits: Array = []
 	var deferred_stats: Dictionary = {}
 	if defer_readback:
-		deferred_hits = _consume_pending_query_frame()
+		deferred_hits = _consume_pending_query_frame(false)
 		deferred_stats = _last_consumed_query_stats.duplicate(true)
+		if not _pending_query_frame.is_empty():
+			last_deferred_query_readback = true
+			last_readback_bytes = 0
+			return deferred_hits
 	else:
-		_consume_pending_query_frame()
+		_consume_pending_query_frame(true)
 	var collider_count := mini(colliders.size(), MAX_COLLIDERS)
 	var query_count := mini(queries.size(), MAX_QUERIES)
 	last_collider_count = collider_count
@@ -433,13 +441,13 @@ func compute_geometry_queries(colliders: Array, queries: Array, delta: float = 0
 	last_buffer_recreate_count = 0
 	last_buffer_reuse_count = 0
 	_ensure_query_buffers(collider_bytes.size(), query_bytes.size(), param_bytes.size(), counter_bytes.size(), hit_bytes_size)
-	_update_buffer(collider_buffer_rid, collider_bytes)
+	_update_buffer(query_collider_buffer_rid, collider_bytes)
 	_update_buffer(query_buffer_rid, query_bytes)
 	_update_buffer(query_param_buffer_rid, param_bytes)
 	_update_buffer(query_counter_buffer_rid, counter_bytes)
 
 	var uniforms: Array[RDUniform] = []
-	uniforms.append(_storage_uniform(0, collider_buffer_rid))
+	uniforms.append(_storage_uniform(0, query_collider_buffer_rid))
 	uniforms.append(_storage_uniform(1, query_buffer_rid))
 	uniforms.append(_storage_uniform(2, query_hit_buffer_rid))
 	uniforms.append(_storage_uniform(3, query_counter_buffer_rid))
@@ -461,6 +469,7 @@ func compute_geometry_queries(colliders: Array, queries: Array, delta: float = 0
 			"counter_bytes": counter_bytes.size(),
 			"max_hits": max_hits,
 			"uniform_set": uniform_set,
+			"submit_frame": Engine.get_process_frames(),
 		}
 		last_deferred_query_readback = true
 		last_query_hit_count = int(deferred_stats.get("hit_count", deferred_hits.size()))
@@ -503,12 +512,15 @@ func compute_geometry_queries(colliders: Array, queries: Array, delta: float = 0
 	return hits
 
 
-func _consume_pending_query_frame() -> Array:
+func _consume_pending_query_frame(blocking: bool = true) -> Array:
 	_last_consumed_query_stats = {}
 	if _pending_query_frame.is_empty() or rd == null:
 		deferred_query_pending = false
 		return []
 	var frame := _pending_query_frame
+	if not blocking and Engine.get_process_frames() <= int(frame.get("submit_frame", -1)):
+		deferred_query_pending = true
+		return []
 	_pending_query_frame = {}
 	deferred_query_pending = false
 	_sync_and_measure()
@@ -578,7 +590,7 @@ func _ensure_collision_buffers(collider_bytes: int, candidate_bytes: int, counte
 
 
 func _ensure_query_buffers(collider_bytes: int, query_bytes: int, query_param_bytes: int, query_counter_bytes: int, query_hit_bytes: int) -> void:
-	collider_buffer_rid = _ensure_storage_buffer(collider_buffer_rid, "collider_buffer_bytes", collider_bytes)
+	query_collider_buffer_rid = _ensure_storage_buffer(query_collider_buffer_rid, "query_collider_buffer_bytes", collider_bytes)
 	query_buffer_rid = _ensure_storage_buffer(query_buffer_rid, "query_buffer_bytes", query_bytes)
 	query_param_buffer_rid = _ensure_storage_buffer(query_param_buffer_rid, "query_param_buffer_bytes", query_param_bytes)
 	query_counter_buffer_rid = _ensure_storage_buffer(query_counter_buffer_rid, "query_counter_buffer_bytes", query_counter_bytes)

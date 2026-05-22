@@ -852,9 +852,13 @@ class PartPreviewTextureCache:
 	static var hit_count := 0
 	static var miss_count := 0
 	static var render_count := 0
+	static var submit_count := 0
+	static var capture_count := 0
+	static var force_draw_count := 0
 	static var queue_hit_count := 0
 	static var process_count := 0
 	static var subviewport_create_count := 0
+	static var active_request := {}
 	static var max_entries := 256
 	static var render_viewport: SubViewport
 	static var render_canvas: PartPreviewTextureRenderCanvas
@@ -904,14 +908,17 @@ class PartPreviewTextureCache:
 		return null
 
 	static func process_queue(owner: Node, budget: int = 2) -> int:
-		if budget <= 0 or pending_order.is_empty():
-			return 0
 		if DisplayServer.get_name().to_lower() == "headless":
+			active_request = {}
 			pending_requests.clear()
 			pending_order.clear()
 			return 0
-		var processed := 0
-		while processed < budget and not pending_order.is_empty():
+		var captured := _capture_active_request()
+		if budget <= 0:
+			process_count += captured
+			return captured
+		var submitted := 0
+		while active_request.is_empty() and submitted < budget and not pending_order.is_empty():
 			var cache_key := String(pending_order.pop_front())
 			if not pending_requests.has(cache_key):
 				continue
@@ -922,14 +929,10 @@ class PartPreviewTextureCache:
 			var request: Dictionary = pending_requests[cache_key]
 			pending_requests.erase(cache_key)
 			var request_size: Vector2 = request.get("size", Vector2(64.0, 48.0))
-			var texture := _render_texture(owner, String(request.get("slot", "")), Dictionary(request.get("part", {})), bool(request.get("selected", false)), float(request.get("pulse", 0.0)), request_size)
-			if texture != null:
-				textures[cache_key] = texture
-				_touch_lru(cache_key)
-				_prune_lru()
-			processed += 1
-		process_count += processed
-		return processed
+			if _submit_render(owner, cache_key, String(request.get("slot", "")), Dictionary(request.get("part", {})), bool(request.get("selected", false)), float(request.get("pulse", 0.0)), request_size):
+				submitted += 1
+		process_count += captured + submitted
+		return captured
 
 	static func _touch_lru(cache_key: String) -> void:
 		lru_order.erase(cache_key)
@@ -940,33 +943,52 @@ class PartPreviewTextureCache:
 			var old_key := String(lru_order.pop_front())
 			textures.erase(old_key)
 
-	static func _render_texture(owner: Node, slot_key: String, part: Dictionary, selected: bool, pulse: float, preview_size: Vector2) -> Texture2D:
+	static func _submit_render(owner: Node, cache_key: String, slot_key: String, part: Dictionary, selected: bool, pulse: float, preview_size: Vector2) -> bool:
 		if DisplayServer.get_name().to_lower() == "headless":
-			return null
+			return false
 		var tree: SceneTree = null
 		if owner != null and owner.is_inside_tree():
 			tree = owner.get_tree()
 		else:
 			tree = Engine.get_main_loop() as SceneTree
 		if tree == null or tree.root == null:
-			return null
+			return false
 		_ensure_renderer(tree, preview_size)
 		if render_viewport == null or render_canvas == null:
-			return null
+			return false
 		var viewport_size := Vector2i(maxi(8, int(ceil(preview_size.x))), maxi(8, int(ceil(preview_size.y))))
 		if render_viewport.size != viewport_size:
 			render_viewport.size = viewport_size
 		render_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
 		render_canvas.configure(slot_key, part, selected, pulse, preview_size)
-		RenderingServer.force_draw(false)
+		active_request = {
+			"key": cache_key,
+			"submit_frame": Engine.get_process_frames(),
+		}
+		submit_count += 1
+		return true
+
+	static func _capture_active_request() -> int:
+		if active_request.is_empty() or render_viewport == null:
+			return 0
+		if Engine.get_process_frames() <= int(active_request.get("submit_frame", -1)):
+			return 0
+		var cache_key := String(active_request.get("key", ""))
+		active_request = {}
+		if cache_key == "" or textures.has(cache_key):
+			return 0
 		var viewport_texture := render_viewport.get_texture()
 		if viewport_texture == null:
-			return null
+			return 0
 		var image := viewport_texture.get_image()
 		if image == null or image.is_empty():
-			return null
+			return 0
 		render_count += 1
-		return ImageTexture.create_from_image(image)
+		capture_count += 1
+		textures[cache_key] = ImageTexture.create_from_image(image)
+		_touch_lru(cache_key)
+		_prune_lru()
+		return 1
 
 	static func _ensure_renderer(tree: SceneTree, preview_size: Vector2) -> void:
 		if render_viewport != null and is_instance_valid(render_viewport) and render_canvas != null and is_instance_valid(render_canvas):
@@ -7937,6 +7959,9 @@ var editor_perf_overlay_enabled := false
 var editor_perf_overlay_label: Label
 var editor_perf_overlay_frame_samples: Array = []
 var editor_perf_overlay_last_usec := 0
+var editor_preview_pause_until_msec := 0
+var editor_dirty_flush_count := 0
+var editor_full_update_request_count := 0
 var editor_ammo_size_rank := 1
 var editor_ammo_size_buttons: Array = []
 var editor_sort_menu_open := false
@@ -8102,6 +8127,8 @@ func _submit_gpu_geometry_queries_deferred(colliders: Array, queries: Array, del
 
 
 func _input(event: InputEvent) -> void:
+	if game_state == STATE_EDITOR and (event is InputEventMouseMotion or event is InputEventMouseButton):
+		editor_preview_pause_until_msec = Time.get_ticks_msec() + 150
 	if settings_rebind_action != "" and _handle_battle_input_rebind_event(event):
 		get_viewport().set_input_as_handled()
 		return
@@ -19117,7 +19144,10 @@ func _show_editor_material_link_warning(node_indices: Array, reason: String = ""
 func _tick_editor_visuals(delta: float) -> void:
 	var tick_start := Time.get_ticks_usec()
 	var visual_dirty := false
-	var preview_processed := PartPreviewTextureCache.process_queue(self, 2)
+	var preview_budget := 1
+	if Time.get_ticks_msec() < editor_preview_pause_until_msec or editor_pose_dragging or editor_drag_catalog_active or editor_drag_catalog_started or editor_dragging_node_index >= 0 or editor_dragging_selected_nodes or editor_dragging_whole_unit:
+		preview_budget = 0
+	var preview_processed := PartPreviewTextureCache.process_queue(self, preview_budget)
 	if preview_processed > 0:
 		_queue_editor_preview_icon_redraws()
 	if editor_snap_timer > 0.0:
@@ -19166,6 +19196,7 @@ func _flush_editor_deferred_ui() -> void:
 	var frame := Engine.get_process_frames()
 	if editor_update_ui_last_frame == frame:
 		return
+	editor_dirty_flush_count += 1
 	_update_editor_ui(true)
 
 
@@ -19218,8 +19249,10 @@ func _editor_perf_overlay_text() -> String:
 		"snapshot b h/r: %d/%d  dyn:%d" % [int(editor_board_base_snapshot_hit_count), int(editor_board_base_snapshot_rebuild_count), int(editor_board_dynamic_overlay_apply_count)],
 		"snapshot build: %.2fms nodes:%d" % [float(editor_board_snapshot_build_usec) / 1000.0, int(editor_board_node_enrich_count)],
 		"side preview u/n: %d/%d" % [int(editor_side_preview_update_count), int(editor_side_preview_noop_count)],
-		"preview hit/miss/q/render: %d/%d/%d/%d" % [int(PartPreviewTextureCache.hit_count), int(PartPreviewTextureCache.miss_count), int(PartPreviewTextureCache.pending_order.size()), int(PartPreviewTextureCache.render_count)],
+		"preview hit/miss/q/active: %d/%d/%d/%d" % [int(PartPreviewTextureCache.hit_count), int(PartPreviewTextureCache.miss_count), int(PartPreviewTextureCache.pending_order.size()), 0 if PartPreviewTextureCache.active_request.is_empty() else 1],
+		"preview submit/capture/render/force: %d/%d/%d/%d" % [int(PartPreviewTextureCache.submit_count), int(PartPreviewTextureCache.capture_count), int(PartPreviewTextureCache.render_count), int(PartPreviewTextureCache.force_draw_count)],
 		"preview viewport/process: %d/%d" % [int(PartPreviewTextureCache.subviewport_create_count), int(PartPreviewTextureCache.process_count)],
+		"ui full/deferred flush: %d/%d" % [int(editor_full_update_request_count), int(editor_dirty_flush_count)],
 		"stats h/m: %d/%d" % [int(editor_current_stats_cache_hit_count), int(editor_current_stats_cache_miss_count)],
 		"gpu contact/q bytes: %d/%d" % [int(gpu_collision_readback_bytes), int(gpu_geometry_query_readback_bytes)],
 		"gpu query submit/consume: %d/%d" % [int(gpu_geometry_query_submit_count), int(gpu_geometry_query_consume_count)],
@@ -38776,6 +38809,7 @@ func _update_editor_ui(force_now: bool = false) -> void:
 	editor_update_ui_last_state_signature = ui_state_signature
 	editor_update_ui_deferred = false
 	editor_update_ui_count += 1
+	editor_full_update_request_count += 1
 	var player_id := _editor_player()
 	var role_key: String = ROLE_ORDER[editor_role_index]
 	if not blueprints.has(player_id):

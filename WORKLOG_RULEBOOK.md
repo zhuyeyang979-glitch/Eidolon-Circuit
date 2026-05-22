@@ -2261,6 +2261,66 @@ Sync:
 - Implemented in `E:\New project`.
 - Mirror targets remain `C:\Users\Administrator\Documents\New project` and `C:\Users\Administrator\OneDrive\ドキュメント\New project`.
 
+## 2026-05-22 TeamEdit 异步预览烘焙与 GPU buffer 分离
+
+Rules:
+- 零件预览贴图 miss 不允许在 TeamEdit 当前帧调用 `RenderingServer.force_draw(false)` 或等待 GPU；卡片、hover、拖拽幽灵只能显示已有缓存或轻量占位。
+- 预览烘焙采用两阶段：第 N 帧提交到持久 `SubViewport`，第 N+1 帧捕获 texture 并写入缓存。滚动、拖拽、滑块、姿态编辑等交互期间预览预算为 0，交互停止后逐帧恢复。
+- GPU contact 与 geometry query 不再共享同一个 collider buffer，也不再为了上传 query 而 drain pending contact，或为了 contact 而 drain pending query。
+- Deferred GPU contact/query 只消费上一帧或更早的 compact event；如果结果尚未跨帧完成，本帧跳过消费而不是阻塞当前帧。
+- TeamEdit 性能叠层必须显示预览 submit/capture/active、force draw 次数、UI full update/dirty flush 与 GPU sync 统计，方便下一轮继续定位。
+
+Implementation notes:
+- `PartPreviewTextureCache` 拆成 `_submit_render()` 与 `_capture_active_request()`；删除预览路径里的同步 `force_draw`。
+- `_tick_editor_visuals()` 根据鼠标/拖拽/姿态编辑状态动态设置预览预算，交互中只捕获已完成请求，不提交新预览。
+- `GpuCollisionPipeline` 增加独立 `query_collider_buffer_rid/query_collider_buffer_bytes`，contact/query 上传互不覆盖。
+- Deferred contact/query consume 增加跨帧保护；当前帧提交的 GPU work 不会在同帧被强制 sync 消费。
+- 新增 probes：
+  - `part_preview_no_force_draw_probe`
+  - `part_preview_async_bake_probe`
+  - `editor_input_no_direct_full_refresh_probe`
+  - `gpu_contact_query_buffer_separation_probe`
+- 更新 headed GPU probes，使其接受 1-2 帧 deferred readback 延迟。
+
+Verification:
+- `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120` passed headless.
+- Preview/TeamEdit probes passed:
+  - `part_preview_no_force_draw_probe`
+  - headed `part_preview_async_bake_probe` (`submit=2 capture=1`)
+  - headed `part_preview_queue_render_probe` (`processed=1 viewports=1 renders=1`)
+  - `part_preview_no_subviewport_per_draw_probe`
+  - `part_preview_texture_cache_probe`
+  - `part_preview_actual_texture_cache_probe`
+  - `editor_input_no_direct_full_refresh_probe`
+  - `teamedit_live_perf_overlay_probe`
+  - `teamedit_real_frame_budget_probe`
+  - `teamedit_hover_frame_budget_probe`
+  - `teamedit_pose_edit_frame_budget_probe`
+  - `teamedit_dashboard_slider_frame_budget_probe`
+  - `assembly_board_root_no_redraw_probe`
+- GPU/runtime probes passed:
+  - `gpu_contact_query_buffer_separation_probe`
+  - headed `gpu_async_readback_probe`
+  - headed `gpu_geometry_query_async_probe`
+  - headed `gpu_no_hot_rd_sync_probe`
+  - headed `gpu_broadphase_compaction_probe`
+  - headed `gpu_response_impulse_probe`
+  - `runtime_no_cpu_geometry_probe`
+  - `combat_probe`
+  - `runtime_contact_damage_probe`
+  - `board_battle_art_identity_probe`
+- UI probes passed:
+  - `ui_layout_probe`
+  - `text_overflow_probe`
+
+Notes:
+- This round removes the remaining known preview `force_draw` spike and separates GPU contact/query buffers. If TeamEdit still feels slow, the next target should be real-window overlay readings for root Control/layout cost and any still-hot full `_update_editor_ui()` callers outside board mouse motion and slider drag.
+- Headed validation used Forward+/Vulkan on NVIDIA GeForce RTX 4080 SUPER.
+
+Sync:
+- Implemented in `E:\New project`.
+- Mirror sync and commit id are recorded in the final Git cleanup section after copy verification.
+
 ## 2026-05-22 TeamEdit 预览队列与性能验证修正
 
 Rules:
