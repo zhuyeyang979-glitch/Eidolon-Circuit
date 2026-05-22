@@ -1114,6 +1114,45 @@ class PartPreviewIconView:
 		]
 
 
+class CatalogCardTextLayer:
+	extends Control
+
+	var display_name := ""
+	var data_line_a := ""
+	var data_line_b := ""
+	var selected := false
+	var last_text_signature := ""
+
+	func _init() -> void:
+		mouse_filter = Control.MOUSE_FILTER_IGNORE
+		focus_mode = Control.FOCUS_NONE
+
+	func configure(next_display_name: String, next_line_a: String, next_line_b: String, next_selected: bool) -> void:
+		var signature := "%s|%s|%s|%s" % [next_display_name, next_line_a, next_line_b, str(next_selected)]
+		if signature == last_text_signature:
+			return
+		last_text_signature = signature
+		display_name = next_display_name
+		data_line_a = next_line_a
+		data_line_b = next_line_b
+		selected = next_selected
+		queue_redraw()
+
+	func _draw() -> void:
+		var font := ThemeDB.get_fallback_font()
+		var simple_card := data_line_a == "" and data_line_b == ""
+		var title_color := Color(1.0, 0.92, 0.36, 1.0) if selected else Color(0.9, 0.96, 1.0, 0.98)
+		draw_string(font, Vector2(0.0, 12.0 if simple_card else 8.0), _card_trim(display_name, 17 if simple_card else 14), HORIZONTAL_ALIGNMENT_LEFT, size.x, 10 if simple_card else 8, title_color)
+		if not simple_card:
+			draw_string(font, Vector2(0.0, 17.0), _card_trim(data_line_a, 15), HORIZONTAL_ALIGNMENT_LEFT, size.x, 7, Color(0.78, 0.9, 1.0, 0.95))
+			draw_string(font, Vector2(0.0, minf(26.0, size.y - 2.0)), _card_trim(data_line_b, 15), HORIZONTAL_ALIGNMENT_LEFT, size.x, 7, Color(0.72, 0.78, 0.84, 0.95))
+
+	func _card_trim(value: String, max_chars: int) -> String:
+		if value.length() <= max_chars:
+			return value
+		return value.substr(0, max(0, max_chars - 1)) + "."
+
+
 class PartCatalogCardButton:
 	extends Button
 
@@ -1140,13 +1179,21 @@ class PartCatalogCardButton:
 	var set_card_call_count := 0
 	var set_card_apply_count := 0
 	var set_card_noop_count := 0
+	var art_back: ColorRect
+	var data_back: ColorRect
+	var title_label: Label
+	var line_a_label: Label
+	var line_b_label: Label
+	var text_layer: CatalogCardTextLayer
 	var preview_icon: PartPreviewIconView
 
 	func _ready() -> void:
+		_ensure_card_nodes()
 		_ensure_preview_icon()
 
 	func _notification(what: int) -> void:
 		if what == NOTIFICATION_RESIZED:
+			_layout_card_nodes()
 			_sync_preview_icon()
 
 	func _get_drag_data(_at_position: Vector2):
@@ -1170,6 +1217,7 @@ class PartCatalogCardButton:
 		_apply_card(signature, next_slot, next_part, next_selected, next_language, next_index, next_display_name, next_line_a, next_line_b)
 
 	func _apply_card(signature: String, next_slot: String, next_part: Dictionary, next_selected: bool, next_language: String, next_index: int, next_display_name: String, next_line_a: String, next_line_b: String) -> void:
+		_ensure_card_nodes()
 		if signature == last_card_signature:
 			set_card_noop_count += 1
 			return
@@ -1185,6 +1233,8 @@ class PartCatalogCardButton:
 		data_line_b = next_line_b
 		if text != "":
 			text = ""
+		_apply_card_texts()
+		_layout_card_nodes()
 		_sync_preview_icon(false)
 		queue_redraw()
 
@@ -1227,6 +1277,36 @@ class PartCatalogCardButton:
 	func _art_rect() -> Rect2:
 		var simple_card := data_line_a == "" and data_line_b == ""
 		return Rect2(Vector2(8.0, 6.0), Vector2(size.x - 16.0, maxf(26.0, size.y * (0.56 if simple_card else 0.38))))
+
+	func _ensure_card_nodes() -> void:
+		if text_layer == null:
+			text_layer = CatalogCardTextLayer.new()
+			text_layer.name = "CardTextLayer"
+			add_child(text_layer)
+		_layout_card_nodes()
+
+	func _make_card_label(label_name: String) -> Label:
+		var label := Label.new()
+		label.name = label_name
+		label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		label.clip_text = true
+		label.autowrap_mode = TextServer.AUTOWRAP_OFF
+		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+		label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		return label
+
+	func _layout_card_nodes() -> void:
+		if text_layer == null:
+			return
+		var art_rect := _art_rect()
+		var data_y := art_rect.position.y + art_rect.size.y + 3.0
+		var data_rect := Rect2(Vector2(4.0, data_y), Vector2(size.x - 8.0, size.y - data_y - 4.0))
+		text_layer.position = data_rect.position + Vector2(3.0, 0.0)
+		text_layer.size = data_rect.size - Vector2(6.0, 0.0)
+
+	func _apply_card_texts() -> void:
+		if text_layer != null:
+			text_layer.configure(display_name, data_line_a, data_line_b, selected)
 
 	func _ensure_preview_icon() -> void:
 		if preview_icon != null:
@@ -1288,12 +1368,6 @@ class PartCatalogCardButton:
 		var data_y := art_rect.position.y + art_rect.size.y + 3.0
 		var data_rect := Rect2(Vector2(4.0, data_y), Vector2(size.x - 8.0, size.y - data_y - 4.0))
 		draw_rect(data_rect, Color(0.0, 0.0, 0.0, 0.38), true)
-		var font := ThemeDB.get_fallback_font()
-		var title_color := Color(1.0, 0.92, 0.36, 1.0) if selected else Color(0.9, 0.96, 1.0, 0.98)
-		draw_string(font, Vector2(7.0, data_y + (13.0 if simple_card else 9.0)), _trim(display_name, 17 if simple_card else 14), HORIZONTAL_ALIGNMENT_LEFT, size.x - 14.0, 10 if simple_card else 8, title_color)
-		if not simple_card:
-			draw_string(font, Vector2(7.0, data_y + 18.0), _trim(data_line_a, 15), HORIZONTAL_ALIGNMENT_LEFT, size.x - 14.0, 7, Color(0.78, 0.9, 1.0, 0.95))
-			draw_string(font, Vector2(7.0, minf(data_y + 27.0, size.y - 5.0)), _trim(data_line_b, 15), HORIZONTAL_ALIGNMENT_LEFT, size.x - 14.0, 7, Color(0.72, 0.78, 0.84, 0.95))
 		if selected:
 			draw_circle(Vector2(size.x - 10.0, 10.0), 4.0, Color(1.0, 0.86, 0.24, 1.0))
 

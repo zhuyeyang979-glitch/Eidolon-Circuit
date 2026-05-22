@@ -2285,6 +2285,34 @@ Sync:
 - Implemented in `E:\New project`.
 - Mirror targets remain `C:\Users\Administrator\Documents\New project` and `C:\Users\Administrator\OneDrive\ドキュメント\New project`.
 
+## 2026-05-23 TeamEdit Catalog Card 热路径收束
+
+Rules:
+- TeamEdit catalog 卡片仍是当前 profiler 指出的主热层；不要继续盲目扩 GPU 功能，先压低 8 张可见卡自身的更新/绘制成本。
+- 卡片主体预览继续走 `PartPreviewTextureCache`；selected/pulse 只能作为轻量 overlay，不得让主体贴图 cache miss。
+- Catalog 同页 dirty flush 必须保持 0 卡片更新；翻页只允许更新可见卡池。
+
+Implementation notes:
+- `PartCatalogCardButton` 正文从 Button 主 `_draw()` 拆成 `CatalogCardTextLayer` 子层；主 `_draw()` 只保留轻量背景、边框、尺寸尺、badge 和 selected dot。
+- 先尝试 Label retained 层后，`ui_layout_probe/text_overflow_probe` 表明 Label 会被全局 UI 检查当作独立控件并产生软重叠/溢出；已改为轻量 `Control` text layer，避免污染 UI 控件布局矩阵。
+- `CatalogCardTextLayer` 只在卡片文本或 selected 状态变化时 queue redraw；Card body 继续用缓存 preview icon。
+- Catalog card model/data lines 继续走缓存；`PartPreviewTextureCache` 在 headless 下不排队、不深拷贝零件数据。
+
+Verification:
+- `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 60` passed.
+- Catalog/perf probes passed:
+  - `teamedit_scroll_frame_budget_probe` (`p95=5.72ms`, `same_page_updates=0`, `preview_submit=0`; max still reflects first catalog-card warm spike)
+  - `catalog_card_redraw_budget_probe` (`preview_draw=0`)
+  - `part_preview_texture_cache_probe` (`draw=0`)
+  - `teamedit_trace_profiler_probe` (`hover_p95=0.76ms`, `slider_p95=0.06ms`, `pose_p95=0.14ms`)
+- UI regressions passed:
+  - `teamedit_probe`
+  - `ui_layout_probe`
+  - `text_overflow_probe`
+
+Next direction:
+- If the real window still stutters while paging/scrolling catalog, the remaining hot scope is `teamedit.catalog.cards`; the next step should pre-render the entire visible card row/body texture or replace Button cards with a lighter retained card item, instead of adding more child Controls.
+
 ## 2026-05-22 全游戏热路径与状态层清理
 
 Rules:
