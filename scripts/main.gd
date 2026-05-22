@@ -8430,6 +8430,9 @@ var saved_unit_pending_delete_paths: Array = []
 var saved_unit_library_cache: Array = []
 var saved_unit_library_cache_signature := ""
 var saved_unit_library_cache_dirty := true
+var saved_unit_library_cache_scan_deferred := false
+var saved_unit_library_cache_refresh_queued := false
+var saved_unit_deferred_focus_path := ""
 var saved_unit_legacy_purge_done := false
 var saved_team_legacy_purge_done := false
 var saved_unit_filtered_cache := {}
@@ -8629,12 +8632,15 @@ const EDITOR_DIRTY_ACTION_BUTTONS := 32
 const EDITOR_DIRTY_ROSTER := 64
 const EDITOR_DIRTY_STATS := 128
 const EDITOR_DIRTY_LEGALITY := 256
-const EDITOR_DIRTY_ALL_STRUCTURAL := 511
+const EDITOR_DIRTY_BOARD_UI := 512
+const EDITOR_DIRTY_ALL_STRUCTURAL := 1023
 var editor_dirty_flags := 0
 var editor_dirty_scheduler_flush_count := 0
 var editor_dirty_scheduler_last_usec := 0
 var editor_dirty_scheduler_last_flags := 0
 var editor_dirty_scheduler_skipped_stats_count := 0
+var editor_board_stats_idle_due_msec := -1
+var editor_board_stats_idle_reason := ""
 var editor_full_update_request_count := 0
 var editor_update_ui_last_usec := 0
 var editor_property_write_count := 0
@@ -9832,8 +9838,9 @@ func _show_save_unit_name_dialog() -> void:
 	_refresh_save_unit_name_dialog_text()
 	editor_save_unit_name_panel.visible = true
 	editor_save_unit_name_panel.move_to_front()
-	editor_save_unit_name_edit.grab_focus()
-	editor_save_unit_name_edit.select_all()
+	if editor_save_unit_name_edit.is_inside_tree():
+		editor_save_unit_name_edit.call_deferred("grab_focus")
+		editor_save_unit_name_edit.call_deferred("select_all")
 
 
 func _refresh_save_unit_name_dialog_text() -> void:
@@ -9871,7 +9878,7 @@ func _confirm_save_unit_name_dialog(action_or_text: String = "stay", maybe_actio
 		return
 	saved_unit_focus_path = saved_path
 	if action == "library":
-		_show_saved_units_library(saved_path)
+		_show_saved_units_library(saved_path, "editor", true)
 	elif action == "train":
 		_import_editor_canvas_to_training()
 
@@ -9931,6 +9938,7 @@ func _saved_unit_signature_from_records(records: Array) -> String:
 
 func _invalidate_saved_unit_library_cache() -> void:
 	saved_unit_library_cache_dirty = true
+	saved_unit_library_cache_scan_deferred = false
 	saved_unit_filtered_cache.clear()
 	saved_unit_stats_cache.clear()
 	saved_unit_illegal_cache.clear()
@@ -9939,7 +9947,44 @@ func _invalidate_saved_unit_library_cache() -> void:
 	saved_unit_detail_path = ""
 
 
+func _request_deferred_saved_unit_cache_refresh(focus_path: String = "") -> void:
+	if focus_path != "":
+		saved_unit_deferred_focus_path = focus_path
+	saved_unit_library_cache_scan_deferred = true
+	if saved_unit_library_cache_refresh_queued:
+		return
+	saved_unit_library_cache_refresh_queued = true
+	call_deferred("_flush_deferred_saved_unit_cache_refresh")
+
+
+func _select_saved_unit_focus_path(path: String) -> void:
+	if path == "":
+		return
+	var entries := _saved_unit_filtered_entries()
+	for i in range(entries.size()):
+		if _saved_unit_entry_path(entries[i]) == path:
+			saved_unit_selected_index = i
+			saved_unit_page = int(floor(float(i) / float(maxi(1, saved_unit_buttons.size()))))
+			return
+
+
+func _flush_deferred_saved_unit_cache_refresh() -> void:
+	saved_unit_library_cache_refresh_queued = false
+	if not saved_unit_library_cache_scan_deferred and not saved_unit_library_cache_dirty:
+		return
+	saved_unit_library_cache_scan_deferred = false
+	_ensure_saved_unit_library_cache(false, true)
+	if saved_unit_deferred_focus_path != "":
+		saved_unit_filter = "all"
+		_select_saved_unit_focus_path(saved_unit_deferred_focus_path)
+		saved_unit_deferred_focus_path = ""
+	if game_state == STATE_SAVED_UNITS:
+		_update_saved_units_ui()
+
+
 func _ensure_saved_unit_library_cache(force: bool = false, check_disk: bool = false) -> void:
+	if saved_unit_library_cache_scan_deferred and not force and not check_disk:
+		return
 	if not force and not check_disk and not saved_unit_library_cache_dirty:
 		return
 	var records := _saved_unit_file_records()
@@ -10456,23 +10501,23 @@ func _show_saved_unit_detail(entry: Dictionary) -> void:
 	saved_unit_detail_view.visible = true
 
 
-func _show_saved_units_library(focus_path: String = "", return_context: String = "") -> void:
+func _show_saved_units_library(focus_path: String = "", return_context: String = "", defer_disk_scan: bool = false) -> void:
 	if return_context != "":
 		saved_units_return_context = return_context
 	elif game_state != STATE_SAVED_UNITS:
 		saved_units_return_context = "editor" if game_state == STATE_EDITOR else "menu"
 	game_state = STATE_SAVED_UNITS
 	_hide_match_format_select()
-	_ensure_saved_unit_library_cache(false, true)
+	if defer_disk_scan and saved_unit_library_cache_dirty:
+		_request_deferred_saved_unit_cache_refresh(focus_path)
+	else:
+		saved_unit_library_cache_scan_deferred = false
+		_ensure_saved_unit_library_cache(false, true)
 	saved_unit_focus_path = focus_path
 	if focus_path != "":
 		saved_unit_filter = "all"
-		var entries := _saved_unit_filtered_entries()
-		for i in range(entries.size()):
-			if _saved_unit_entry_path(entries[i]) == focus_path:
-				saved_unit_selected_index = i
-				saved_unit_page = int(floor(float(i) / float(maxi(1, saved_unit_buttons.size()))))
-				break
+		if not saved_unit_library_cache_scan_deferred:
+			_select_saved_unit_focus_path(focus_path)
 	_set_visible_layer(saved_units_layer)
 	_update_saved_units_ui()
 
@@ -14244,7 +14289,7 @@ func _cycle_component(direction: int) -> void:
 			editor_board_hint_label.text = "已选择：%s。可直接拖卡片进画布，也可点击画布放置/替换。" % _pending_canvas_part_name(role_key)
 			_play_sfx_wave("clack", 640.0, 0.04, -18.0)
 			ai_team_manual_lock[player_id] = true
-			_update_editor_ui()
+			_mark_editor_board_interaction_dirty("shop.pending_part", false)
 			return
 		var topology: Dictionary = unit_bp.get("custom_topology", {})
 		var nodes: Array = topology.get("nodes", [])
@@ -15420,6 +15465,55 @@ func _apply_editor_board_dynamic_fields(snapshot: Dictionary, role_key: String, 
 	return snapshot
 
 
+func _editor_fast_enriched_board_node(role_key: String, unit_bp: Dictionary, source_nodes: Array, source_edges: Array, index: int) -> Dictionary:
+	if index < 0 or index >= source_nodes.size() or not (source_nodes[index] is Dictionary):
+		return {}
+	var node: Dictionary = Dictionary(source_nodes[index]).duplicate(false)
+	if not _topology_node_is_component(node):
+		return node
+	var slot_key := _topology_node_slot(node)
+	var part := _topology_node_part(role_key, node, unit_bp)
+	var effective_part := _part_with_effective_terminal_geometry(part, slot_key)
+	var component_node := AssemblyBoardRenderer.part_to_component_node(slot_key, effective_part)
+	for key in component_node.keys():
+		node[key] = component_node[key]
+	node["slot"] = slot_key
+	node["damage_type"] = String(part.get("projectile_damage_type", part.get("damage_type", "blunt")))
+	node["component_length"] = float(effective_part.get("length", 0.0))
+	node["joint_length"] = float(effective_part.get("length", 0.0)) if slot_key == "joint" else 0.0
+	node["muscle_length"] = float(effective_part.get("length", 0.0)) if slot_key == "limb_muscle" else 0.0
+	node["terminal_length"] = float(effective_part.get("length", 0.0)) if slot_key == "muscle" else 0.0
+	node["component_radius"] = maxf(0.012, float(effective_part.get("radius", 0.04)))
+	node["component_mass"] = maxf(0.0, float(part.get("mass", 0.0)))
+	node["component_name"] = String(part.get("name", node.get("label", "")))
+	node["terminal_weapon"] = bool(part.get("terminal_weapon", node.get("terminal_weapon", false)))
+	node["connection_ends"] = int(part.get("connection_ends", node.get("connection_ends", 2)))
+	node["size_class"] = String(part.get("size_class", part.get("slot_volume_tier", "")))
+	node["material_class"] = String(part.get("material_class", slot_key))
+	node["shape"] = String(part.get("shape", node.get("shape", slot_key)))
+	node["projectile"] = bool(part.get("projectile", false))
+	node["is_torso"] = bool(part.get("is_torso", false))
+	node["joint_ports"] = _torso_external_joint_ports(part) if _component_is_torso(part) else int(part.get("joint_ports", part.get("connection_ends", 0)))
+	node["module_slots"] = _torso_software_capacity_for_part(part) if _component_is_torso(part) else int(part.get("module_slots", 0))
+	node["torso_slots"] = _torso_plugin_capacity_for_part(part) if _component_is_torso(part) else int(part.get("torso_slots", 0))
+	if _component_is_torso(part):
+		node["torso_port_directions"] = _torso_port_directions(part)
+		node["occupied_ports"] = _torso_occupied_port_indices(role_key, unit_bp, source_nodes, source_edges, index)
+		node["torso_detail_open"] = index == editor_open_torso_node_index
+		node["torso_hovered"] = false
+	node["edge_extent_units"] = _topology_node_edge_extent_units(role_key, node, unit_bp)
+	node["projectile_damage_type"] = String(part.get("projectile_damage_type", part.get("damage_type", "")))
+	node["projectile_behavior"] = String(part.get("projectile_behavior", part.get("projectile_style", "")))
+	node["range"] = float(part.get("projectile_range", part.get("range", 0.0)))
+	node["material_visual"] = String(part.get("material_visual", part.get("torso_material", "")))
+	node["archetype"] = String(part.get("archetype", ""))
+	node["module_count"] = _module_indices_for_topology_node(node, unit_bp).size()
+	node["label"] = String(node.get("label", _topology_component_label(slot_key, part, index)))
+	if slot_key == "joint":
+		node["downstream_rotation_radius_units"] = _topology_joint_max_rotation_radius_units(role_key, unit_bp, source_nodes, source_edges, index)
+	return node
+
+
 func _refresh_editor_visual_views_fast_drag(changed_nodes: Array = []) -> void:
 	if assembly_board_view == null:
 		return
@@ -15430,11 +15524,11 @@ func _refresh_editor_visual_views_fast_drag(changed_nodes: Array = []) -> void:
 		return
 	var topology: Dictionary = unit_bp.get("custom_topology", {})
 	var source_nodes: Array = Array(topology.get("nodes", []))
+	var source_edges: Array = Array(topology.get("edges", []))
 	var snapshot: Dictionary = editor_board_base_snapshot_cache.duplicate(false)
 	var nodes: Array = Array(snapshot.get("nodes", [])).duplicate(false)
 	if nodes.size() != source_nodes.size():
-		_refresh_editor_visual_views({}, false)
-		return
+		nodes.resize(source_nodes.size())
 	var indices: Array = changed_nodes.duplicate()
 	if indices.is_empty():
 		for i in range(source_nodes.size()):
@@ -15444,15 +15538,27 @@ func _refresh_editor_visual_views_fast_drag(changed_nodes: Array = []) -> void:
 		if index < 0 or index >= nodes.size() or index >= source_nodes.size() or not (source_nodes[index] is Dictionary):
 			continue
 		var source_node: Dictionary = source_nodes[index]
-		var node: Dictionary = Dictionary(nodes[index]).duplicate(false) if nodes[index] is Dictionary else {}
+		var node: Dictionary = Dictionary(nodes[index]).duplicate(false) if nodes[index] is Dictionary else _editor_fast_enriched_board_node(role_key, unit_bp, source_nodes, source_edges, index)
+		if node.is_empty() or not node.has("component_name"):
+			node = _editor_fast_enriched_board_node(role_key, unit_bp, source_nodes, source_edges, index)
 		for pose_key in ["pos", "axis", "rotation", "local_angle", "local_extension", "parent_node", "parent_socket", "root_socket"]:
 			if source_node.has(pose_key):
 				node[pose_key] = source_node[pose_key]
 		nodes[index] = node
 	snapshot["nodes"] = nodes
+	var shallow_edges: Array = []
+	shallow_edges.resize(source_edges.size())
+	for edge_i in range(source_edges.size()):
+		shallow_edges[edge_i] = Dictionary(source_edges[edge_i]).duplicate(false) if source_edges[edge_i] is Dictionary else source_edges[edge_i]
+	snapshot["edges"] = shallow_edges
 	var base_key := String(editor_board_base_snapshot_cache_key)
 	if base_key == "":
 		base_key = _editor_board_snapshot_cache_key(role_key, unit_bp)
+	var current_base_key := _editor_board_snapshot_cache_key(role_key, unit_bp)
+	if current_base_key != "":
+		base_key = current_base_key
+		editor_board_base_snapshot_cache = snapshot.duplicate(false)
+		editor_board_base_snapshot_cache_key = current_base_key
 	snapshot = _apply_editor_board_dynamic_fields(snapshot, role_key, unit_bp, base_key, {})
 	editor_fast_board_revision_counter += 1
 	var fast_revision := "%s|fast:%d:%d:%d:%d" % [
@@ -16116,7 +16222,7 @@ func _topology_socket_pair_can_connect(role_key: String, unit_bp: Dictionary, no
 	return TopologyGeometry.socket_pair_can_connect(source_socket, target_socket)
 
 
-func _topology_socket_candidate_for_pair(role_key: String, unit_bp: Dictionary, nodes: Array, edges: Array, source_index: int, target_index: int, require_snap_threshold: bool = true, include_material: bool = true) -> Dictionary:
+func _topology_socket_candidate_for_pair(role_key: String, unit_bp: Dictionary, nodes: Array, edges: Array, source_index: int, target_index: int, require_snap_threshold: bool = true, include_material: bool = true, occupancy_override: Dictionary = {}, source_specs_override: Array = []) -> Dictionary:
 	if source_index < 0 or target_index < 0 or source_index >= nodes.size() or target_index >= nodes.size() or source_index == target_index:
 		return {}
 	var dragged_node: Dictionary = nodes[source_index]
@@ -16125,17 +16231,15 @@ func _topology_socket_candidate_for_pair(role_key: String, unit_bp: Dictionary, 
 		return {}
 	if _topology_edge_exists(edges, source_index, target_index):
 		return {}
-	if include_material:
-		var material_error := _topology_material_edge_error(role_key, unit_bp, nodes, edges, source_index, target_index)
-		if material_error != "":
-			return {}
 	var terminal_side_error := _topology_terminal_socket_side_error(role_key, unit_bp, nodes, edges, source_index, target_index)
 	if terminal_side_error != "":
 		return {}
 	var best := {}
 	var best_score := 999999.0
-	var occupancy := _topology_socket_occupancy(role_key, unit_bp, nodes, edges)
-	for raw_socket_a in _topology_socket_specs_for_node(role_key, unit_bp, nodes, edges, source_index, target_index):
+	var occupancy := occupancy_override if not occupancy_override.is_empty() else _topology_socket_occupancy(role_key, unit_bp, nodes, edges)
+	var source_specs := source_specs_override if not source_specs_override.is_empty() else _topology_socket_specs_for_node(role_key, unit_bp, nodes, edges, source_index, target_index)
+	var target_specs := _topology_socket_specs_for_node(role_key, unit_bp, nodes, edges, target_index, source_index)
+	for raw_socket_a in source_specs:
 		if not (raw_socket_a is Dictionary):
 			continue
 		var socket_a: Dictionary = raw_socket_a
@@ -16146,7 +16250,7 @@ func _topology_socket_candidate_for_pair(role_key: String, unit_bp: Dictionary, 
 			continue
 		if occupancy.has(source_index) and Dictionary(occupancy[source_index]).has(id_a):
 			continue
-		for raw_socket_b in _topology_socket_specs_for_node(role_key, unit_bp, nodes, edges, target_index, source_index):
+		for raw_socket_b in target_specs:
 			if not (raw_socket_b is Dictionary):
 				continue
 			var socket_b: Dictionary = raw_socket_b
@@ -16176,6 +16280,10 @@ func _topology_socket_candidate_for_pair(role_key: String, unit_bp: Dictionary, 
 					"distance_error": socket_gap,
 					"score": score,
 				}
+	if include_material and not best.is_empty():
+		var material_error := _topology_material_edge_error(role_key, unit_bp, nodes, edges, source_index, target_index)
+		if material_error != "":
+			return {}
 	return best
 
 
@@ -16184,10 +16292,35 @@ func _topology_socket_candidate(role_key: String, unit_bp: Dictionary, nodes: Ar
 		return {}
 	var best := {}
 	var best_score := 999999.0
-	for i in range(nodes.size()):
-		if i == node_index:
+	var occupancy := _topology_socket_occupancy(role_key, unit_bp, nodes, edges)
+	var target_indices: Array = []
+	if require_snap_threshold:
+		var source_pos := _topology_position_to_board_local(_topology_node_position(nodes[node_index]))
+		var zoom := clampf(editor_board_zoom, EDITOR_BOARD_ZOOM_MIN, EDITOR_BOARD_ZOOM_MAX)
+		var snap_threshold := maxf(TOPOLOGY_MAGNET_SNAP_PIXELS, 28.0 * zoom)
+		var near_radius := snap_threshold + 420.0 * zoom
+		for i in range(nodes.size()):
+			if i == node_index:
+				continue
+			var target_pos := _topology_position_to_board_local(_topology_node_position(nodes[i]))
+			var distance := source_pos.distance_to(target_pos)
+			if distance <= near_radius:
+				target_indices.append({"index": i, "distance": distance})
+		target_indices.sort_custom(func(a, b): return float(Dictionary(a).get("distance", 0.0)) < float(Dictionary(b).get("distance", 0.0)))
+	else:
+		for i in range(nodes.size()):
+			if i != node_index:
+				target_indices.append({"index": i, "distance": 0.0})
+	var checked := 0
+	var max_checked := 4 if require_snap_threshold else target_indices.size()
+	for raw_target in target_indices:
+		if checked >= max_checked:
+			break
+		var i := int(Dictionary(raw_target).get("index", -1))
+		if i < 0 or i == node_index:
 			continue
-		var candidate := _topology_socket_candidate_for_pair(role_key, unit_bp, nodes, edges, node_index, i, require_snap_threshold, true)
+		checked += 1
+		var candidate := _topology_socket_candidate_for_pair(role_key, unit_bp, nodes, edges, node_index, i, require_snap_threshold, true, occupancy)
 		if candidate.is_empty():
 			continue
 		var score := float(candidate.get("score", 999999.0))
@@ -16738,15 +16871,21 @@ func _restore_editor_undo_state() -> void:
 
 
 func _drop_catalog_part_on_board(slot_key: String, part_index: int, local_position: Vector2) -> void:
+	if hot_path_profiler != null:
+		hot_path_profiler.scope_begin("drop.place_node")
 	var player_id := _editor_player()
 	var role_key: String = ROLE_ORDER[editor_role_index]
 	var catalog := _catalog_for(role_key, slot_key)
 	if part_index < 0 or part_index >= catalog.size():
+		if hot_path_profiler != null:
+			hot_path_profiler.scope_end("drop.place_node")
 		return
 	var unit_bp: Dictionary = _editor_current_blueprint()
 	var part := _selected_component(role_key, slot_key, part_index)
 	if _part_installs_as_torso_payload(slot_key, part):
 		_add_torso_payload_component(slot_key, part_index, part)
+		if hot_path_profiler != null:
+			hot_path_profiler.scope_end("drop.place_node")
 		return
 	if role_key == "barrier" and not unit_bp.has("custom_topology") and _is_topology_part_slot(slot_key):
 		_record_editor_undo_state("放置结界构件" if _ui_is_zh() else "place barrier part")
@@ -16773,18 +16912,32 @@ func _drop_catalog_part_on_board(slot_key: String, part_index: int, local_positi
 			unit_bp[slot_key] = part_index
 			_trigger_editor_snap(slot_key, String(part.get("name", "")))
 		ai_team_manual_lock[player_id] = true
-		_update_editor_ui()
+		_mark_editor_board_model_dirty("drop.barrier")
+		if hot_path_profiler != null:
+			hot_path_profiler.scope_end("drop.place_node")
 		return
 	if _role_uses_body_board(role_key) and _is_topology_part_slot(slot_key):
 		_ensure_custom_topology(unit_bp)
 		_set_pending_canvas_part(unit_bp, slot_key, part_index)
 		var new_index := _add_topology_node_at(local_position)
 		if new_index >= 0:
-			_try_magnetic_link_for_node(unit_bp, new_index)
+			# Dropping from the catalog is a placement operation; socket linking remains on
+			# board drag/release so catalog drops do not scan the whole topology.
 			editor_dragging_node_index = -1
-		_update_editor_ui()
+			editor_dirty_flags &= ~EDITOR_DIRTY_BOARD
+			_refresh_editor_visual_views_fast_drag([new_index])
+			_schedule_editor_stats_idle_refresh("drop.topology_part")
+			mark_editor_dirty(EDITOR_DIRTY_ACTION_BUTTONS, "drop.topology_part")
+			flush_editor_dirty(600)
+		else:
+			_mark_editor_board_model_dirty("drop.topology_part")
+		if hot_path_profiler != null:
+			hot_path_profiler.scope_end("drop.place_node")
 		return
 	if slot_key == "module" and _role_uses_body_board(role_key):
+		if hot_path_profiler != null:
+			hot_path_profiler.scope_end("drop.place_node")
+			hot_path_profiler.scope_begin("drop.install_module")
 		_record_editor_undo_state("安装行动模块" if _ui_is_zh() else "install action module")
 		unit_bp["blank_canvas"] = false
 		_ensure_custom_topology(unit_bp)
@@ -16802,14 +16955,21 @@ func _drop_catalog_part_on_board(slot_key: String, part_index: int, local_positi
 			unit_bp["module"] = part_index
 		_trigger_editor_snap("module", String(part.get("name", "")))
 		ai_team_manual_lock[player_id] = true
-		_update_editor_ui()
+		_mark_editor_board_model_dirty("drop.module")
+		if hot_path_profiler != null:
+			hot_path_profiler.scope_end("drop.install_module")
 		return
+	if hot_path_profiler != null:
+		hot_path_profiler.scope_end("drop.place_node")
+		hot_path_profiler.scope_begin("drop.install_part")
 	_record_editor_undo_state("安装零件" if _ui_is_zh() else "install part")
 	unit_bp["blank_canvas"] = false
 	unit_bp[slot_key] = part_index
 	_trigger_editor_snap(slot_key, String(part.get("name", "")))
 	ai_team_manual_lock[player_id] = true
-	_update_editor_ui()
+	_mark_editor_board_model_dirty("drop.generic_part")
+	if hot_path_profiler != null:
+		hot_path_profiler.scope_end("drop.install_part")
 
 
 func _handle_editor_board_input(event: InputEvent) -> void:
@@ -16860,7 +17020,7 @@ func _handle_editor_board_input(event: InputEvent) -> void:
 					"已修正拖拽后的接口缝隙；连接重新贴合。" if _ui_is_zh() else "Repaired socket gaps after drag; links are flush again."
 				)
 			else:
-				_update_editor_ui()
+				_mark_editor_board_model_dirty("drag.node_release")
 		elif mouse_event.button_index == MOUSE_BUTTON_LEFT and editor_dragging_whole_unit:
 			editor_dragging_whole_unit = false
 			editor_drag_whole_original_positions = []
@@ -16885,7 +17045,7 @@ func _handle_editor_board_input(event: InputEvent) -> void:
 				editor_snap_part = part_key
 				editor_board_hint_label.text = "已选择插口：%s" % _body_part_label(part_key, unit_bp) if _ui_is_zh() else "Selected socket: %s" % _body_part_label(part_key, unit_bp)
 				ai_team_manual_lock[player_id] = true
-				_update_editor_ui()
+				_mark_editor_board_overlay_dirty("board.legacy_socket_select")
 
 
 func _editor_board_zoom_input_allowed() -> bool:
@@ -16938,8 +17098,7 @@ func _set_editor_board_tool(tool_key: String) -> void:
 	_cancel_editor_pose_drag(false)
 	if editor_board_hint_label != null:
 		editor_board_hint_label.text = "姿态编辑：点击任意已连接肢体或末端武器，只旋转该段及其下游；近端不会被远端拖动。" if editor_board_tool == "pose" and _ui_is_zh() else ("POSE: click any linked limb or terminal; only that part and its downstream chain rotate, ancestors stay fixed." if editor_board_tool == "pose" else ("布局编辑：拖动零件调整拓扑；右键构件或连接线解绑。" if _ui_is_zh() else "LAYOUT: drag parts to edit topology; right-click parts or links to unlink."))
-	_refresh_editor_visual_views()
-	_update_editor_ui()
+	_mark_editor_board_interaction_dirty("board.tool_toggle", false)
 
 
 func _cancel_editor_pose_drag(refresh: bool = true) -> void:
@@ -16973,6 +17132,8 @@ func _board_part_at(local_pos: Vector2) -> String:
 
 
 func _handle_custom_topology_click(mouse_event: InputEventMouseButton, unit_bp: Dictionary) -> void:
+	if hot_path_profiler != null:
+		hot_path_profiler.scope_begin("board_click")
 	_ensure_custom_topology(unit_bp)
 	var role_key: String = ROLE_ORDER[editor_role_index]
 	var topology: Dictionary = unit_bp["custom_topology"]
@@ -16980,36 +17141,50 @@ func _handle_custom_topology_click(mouse_event: InputEventMouseButton, unit_bp: 
 	if not editor_pending_module_binding.is_empty():
 		if mouse_event.button_index == MOUSE_BUTTON_RIGHT:
 			_cancel_editor_module_binding(true)
+			if hot_path_profiler != null:
+				hot_path_profiler.scope_end("board_click")
 			return
 		if mouse_event.button_index == MOUSE_BUTTON_LEFT:
 			var nearest_for_binding := _nearest_custom_node_index(role_key, unit_bp, nodes, mouse_event.position)
 			if nearest_for_binding >= 0:
 				_complete_pending_module_binding_with_selection(unit_bp, [nearest_for_binding])
+				if hot_path_profiler != null:
+					hot_path_profiler.scope_end("board_click")
 				return
 			_start_topology_selection_box(unit_bp, mouse_event.position)
+			if hot_path_profiler != null:
+				hot_path_profiler.scope_end("board_click")
 			return
 	var nearest := _nearest_custom_node_index(role_key, unit_bp, nodes, mouse_event.position)
 	if mouse_event.button_index == MOUSE_BUTTON_RIGHT:
 		var edge_hit := _nearest_topology_edge_hit(unit_bp, mouse_event.position)
 		if not edge_hit.is_empty():
 			_unlink_topology_edge_at_index(unit_bp, int(edge_hit.get("edge_index", -1)))
+			if hot_path_profiler != null:
+				hot_path_profiler.scope_end("board_click")
 			return
 		var clicked_node := nearest if nearest >= 0 and nearest < nodes.size() else (editor_topology_node_index if editor_topology_node_index >= 0 and editor_topology_node_index < nodes.size() else -1)
 		if clicked_node >= 0:
 			_unlink_joint_edges(unit_bp, clicked_node)
+			if hot_path_profiler != null:
+				hot_path_profiler.scope_end("board_click")
 			return
 		if editor_board_hint_label != null:
 			editor_board_hint_label.text = "右键需要点在构件或连接边上才能解绑。" if _ui_is_zh() else "Right-click a component or link edge to unlink."
 		_play_sfx_wave("alarm", 170.0, 0.08, -16.0)
+		if hot_path_profiler != null:
+			hot_path_profiler.scope_end("board_click")
 		return
 	if _has_pending_canvas_part():
 		editor_dragging_node_index = _add_topology_node_at(mouse_event.position)
 		editor_dragging_selected_nodes = false
 		editor_selected_topology_nodes = [editor_dragging_node_index] if editor_dragging_node_index >= 0 else []
 		if editor_dragging_node_index >= 0:
-			_try_magnetic_link_for_node(unit_bp, editor_dragging_node_index)
+			_try_magnetic_link_for_node(unit_bp, editor_dragging_node_index, false)
 			editor_dragging_node_index = -1
-		_update_editor_ui()
+		_mark_editor_board_model_dirty("board.pending_place")
+		if hot_path_profiler != null:
+			hot_path_profiler.scope_end("board_click")
 		return
 	if nearest >= 0:
 		if editor_board_tool == "pose" and mouse_event.button_index == MOUSE_BUTTON_LEFT:
@@ -17020,6 +17195,8 @@ func _handle_custom_topology_click(mouse_event: InputEventMouseButton, unit_bp: 
 			if root_index < 0:
 				root_index = _pose_root_for_click(role_key, unit_bp, nodes, topology.get("edges", []), nearest)
 			if _start_editor_pose_drag(unit_bp, root_index, mouse_event.position, selection):
+				if hot_path_profiler != null:
+					hot_path_profiler.scope_end("board_click")
 				return
 		var dragging_selection := editor_selected_topology_nodes.has(nearest) and editor_selected_topology_nodes.size() > 1
 		editor_topology_node_index = nearest
@@ -17033,7 +17210,9 @@ func _handle_custom_topology_click(mouse_event: InputEventMouseButton, unit_bp: 
 			editor_selecting_topology_box = false
 			_open_editor_torso_detail(nearest)
 			_trigger_editor_snap("torso", "torso detail")
-			_refresh_editor_visual_views()
+			_mark_editor_board_interaction_dirty("board.open_torso_detail", true)
+			if hot_path_profiler != null:
+				hot_path_profiler.scope_end("board_click")
 			return
 		if dragging_selection:
 			if _topology_selection_contains_torso(role_key, unit_bp, nodes, editor_selected_topology_nodes):
@@ -17072,9 +17251,13 @@ func _handle_custom_topology_click(mouse_event: InputEventMouseButton, unit_bp: 
 		_hide_editor_structure_reference()
 		if not nodes.is_empty() and mouse_event.button_index == MOUSE_BUTTON_LEFT:
 			_start_topology_selection_box(unit_bp, mouse_event.position)
+			if hot_path_profiler != null:
+				hot_path_profiler.scope_end("board_click")
 			return
 		editor_board_hint_label.text = "空白位置：从零件库拖入肌肉构件；框选多个节点后可整体拖拽。" if _ui_is_zh() else "Blank canvas: drag in muscle components; box-select several nodes to drag them together."
 		_play_sfx_wave("alarm", 170.0, 0.1, -14.0)
+	if hot_path_profiler != null:
+		hot_path_profiler.scope_end("board_click")
 
 
 func _update_editor_board_torso_hover(local_position: Vector2) -> void:
@@ -17636,10 +17819,14 @@ func _move_custom_topology_by_delta(unit_bp: Dictionary, local_delta: Vector2) -
 
 
 func _finish_rigid_topology_drag(unit_bp: Dictionary, success_message: String, repaired_message: String) -> void:
+	if hot_path_profiler != null:
+		hot_path_profiler.scope_begin("finish_drag")
 	if not unit_bp.has("custom_topology"):
 		if editor_board_hint_label != null:
 			editor_board_hint_label.text = success_message
-		_update_editor_ui()
+		_mark_editor_board_model_dirty("drag.finish_no_topology")
+		if hot_path_profiler != null:
+			hot_path_profiler.scope_end("finish_drag")
 		return
 	var role_key: String = ROLE_ORDER[editor_role_index]
 	var topology: Dictionary = unit_bp.get("custom_topology", {})
@@ -17653,7 +17840,9 @@ func _finish_rigid_topology_drag(unit_bp: Dictionary, success_message: String, r
 	else:
 		if editor_board_hint_label != null:
 			editor_board_hint_label.text = success_message
-	_update_editor_ui()
+	_mark_editor_board_model_dirty("drag.finish")
+	if hot_path_profiler != null:
+		hot_path_profiler.scope_end("finish_drag")
 
 
 func _start_topology_selection_box(unit_bp: Dictionary, local_position: Vector2) -> void:
@@ -17667,7 +17856,7 @@ func _start_topology_selection_box(unit_bp: Dictionary, local_position: Vector2)
 	editor_selection_box_current = local_position
 	if editor_board_hint_label != null:
 		editor_board_hint_label.text = "框选画布：松开鼠标后选中范围内构件；随后拖动任一选中构件即可整体移动。" if _ui_is_zh() else "Box-select canvas: release to select parts; then drag any selected part to move the group."
-	_refresh_editor_visual_views()
+	_mark_editor_board_overlay_dirty("selection_box.start")
 
 
 func _finish_topology_selection_box(unit_bp: Dictionary, local_position: Vector2) -> void:
@@ -17675,7 +17864,7 @@ func _finish_topology_selection_box(unit_bp: Dictionary, local_position: Vector2
 	editor_selection_box_current = local_position
 	if not unit_bp.has("custom_topology"):
 		editor_selected_topology_nodes = []
-		_update_editor_ui()
+		_mark_editor_board_overlay_dirty("selection_box.finish_no_topology")
 		return
 	var rect := _selection_rect_from_points(editor_selection_box_start, editor_selection_box_current)
 	var topology: Dictionary = unit_bp.get("custom_topology", {})
@@ -17720,7 +17909,7 @@ func _finish_topology_selection_box(unit_bp: Dictionary, local_position: Vector2
 				editor_board_hint_label.text = "已框选 %d 个未连接构件：拖动可一起平移。" % editor_selected_topology_nodes.size() if _ui_is_zh() else "Selected %d loose parts: dragging moves them together." % editor_selected_topology_nodes.size()
 	else:
 		editor_board_hint_label.text = "框选为空：请从零件库拖入构件，或框住已有节点。" if _ui_is_zh() else "Empty selection: drag parts from the library or box existing nodes."
-	_update_editor_ui()
+	_mark_editor_board_model_dirty("selection_box.finish")
 
 
 func _selection_rect_from_points(a: Vector2, b: Vector2) -> Rect2:
@@ -18160,12 +18349,16 @@ func _update_editor_pose_drag(unit_bp: Dictionary, local_position: Vector2) -> v
 func _finish_editor_pose_drag(unit_bp: Dictionary) -> void:
 	if not editor_pose_dragging:
 		return
+	if hot_path_profiler != null:
+		hot_path_profiler.scope_begin("pose_commit")
 	_store_entry_pose_from_topology(unit_bp)
 	editor_pose_dragging = false
 	editor_pose_drag_original_positions = []
 	if editor_board_hint_label != null:
 		editor_board_hint_label.text = "入场姿态已更新：保存单位后，训练和战斗入场都会使用该姿态。" if _ui_is_zh() else "Entry pose updated: save the unit to use this pose in training and battle entry."
-	_update_editor_ui()
+	_mark_editor_board_model_dirty("pose.commit")
+	if hot_path_profiler != null:
+		hot_path_profiler.scope_end("pose_commit")
 
 
 func _store_entry_pose_from_topology(unit_bp: Dictionary) -> void:
@@ -18273,12 +18466,18 @@ func _nearest_connected_neighbor_on_edge(unit_bp: Dictionary, joint_index: int, 
 
 
 func _unlink_topology_edge_at_index(unit_bp: Dictionary, edge_index: int) -> bool:
+	if hot_path_profiler != null:
+		hot_path_profiler.scope_begin("unlink_node")
 	if not unit_bp.has("custom_topology"):
+		if hot_path_profiler != null:
+			hot_path_profiler.scope_end("unlink_node")
 		return false
 	var topology: Dictionary = unit_bp.get("custom_topology", {})
 	var nodes: Array = topology.get("nodes", [])
 	var old_edges: Array = Array(topology.get("edges", [])).duplicate(true)
 	if edge_index < 0 or edge_index >= old_edges.size():
+		if hot_path_profiler != null:
+			hot_path_profiler.scope_end("unlink_node")
 		return false
 	var raw_edge = old_edges[edge_index]
 	var a := _topology_edge_node_a(raw_edge)
@@ -18306,16 +18505,24 @@ func _unlink_topology_edge_at_index(unit_bp: Dictionary, edge_index: int) -> boo
 		editor_board_hint_label.text = "已解绑一条接口连接。" if _ui_is_zh() else "Unlinked one socket edge."
 	_play_sfx_wave("clack", 420.0, 0.045, -17.5)
 	ai_team_manual_lock[_editor_player()] = true
-	_update_editor_ui()
+	_mark_editor_board_model_dirty("board.unlink_edge")
+	if hot_path_profiler != null:
+		hot_path_profiler.scope_end("unlink_node")
 	return true
 
 
 func _unlink_joint_edges(unit_bp: Dictionary, joint_index: int, preferred_neighbor: int = -1) -> bool:
+	if hot_path_profiler != null:
+		hot_path_profiler.scope_begin("unlink_node")
 	if not unit_bp.has("custom_topology"):
+		if hot_path_profiler != null:
+			hot_path_profiler.scope_end("unlink_node")
 		return false
 	var topology: Dictionary = unit_bp.get("custom_topology", {})
 	var nodes: Array = topology.get("nodes", [])
 	if joint_index < 0 or joint_index >= nodes.size():
+		if hot_path_profiler != null:
+			hot_path_profiler.scope_end("unlink_node")
 		return false
 	var old_edges: Array = Array(topology.get("edges", [])).duplicate(true)
 	var remove_indices: Array = []
@@ -18333,6 +18540,8 @@ func _unlink_joint_edges(unit_bp: Dictionary, joint_index: int, preferred_neighb
 		if editor_board_hint_label != null:
 			editor_board_hint_label.text = "这个构件当前没有可解绑的连接。" if _ui_is_zh() else "This component has no link to unlink."
 		_play_sfx_wave("alarm", 170.0, 0.08, -16.0)
+		if hot_path_profiler != null:
+			hot_path_profiler.scope_end("unlink_node")
 		return false
 	_record_editor_undo_state("解绑接口" if _ui_is_zh() else "unlink socket")
 	var removed_count := 0
@@ -18353,41 +18562,60 @@ func _unlink_joint_edges(unit_bp: Dictionary, joint_index: int, preferred_neighb
 		editor_board_hint_label.text = "已解绑构件的 %d 条接口连接。" % removed_count if _ui_is_zh() else "Unlinked %d component socket connection(s)." % removed_count
 	_play_sfx_wave("clack", 420.0, 0.045, -17.5)
 	ai_team_manual_lock[_editor_player()] = true
-	_update_editor_ui()
+	_mark_editor_board_model_dirty("board.unlink_joint")
+	if hot_path_profiler != null:
+		hot_path_profiler.scope_end("unlink_node")
 	return true
 
 
-func _try_magnetic_link_for_node(unit_bp: Dictionary, node_index: int) -> bool:
+func _try_magnetic_link_for_node(unit_bp: Dictionary, node_index: int, show_material_warning: bool = true) -> bool:
+	if hot_path_profiler != null:
+		hot_path_profiler.scope_begin("magnetic_link")
 	if not unit_bp.has("custom_topology"):
+		if hot_path_profiler != null:
+			hot_path_profiler.scope_end("magnetic_link")
 		return false
 	var topology: Dictionary = unit_bp.get("custom_topology", {})
 	var nodes: Array = topology.get("nodes", [])
 	if node_index < 0 or node_index >= nodes.size():
+		if hot_path_profiler != null:
+			hot_path_profiler.scope_end("magnetic_link")
 		return false
 	var edges: Array = topology.get("edges", [])
 	if _topology_node_edge_count(edges, node_index) > 0:
+		if hot_path_profiler != null:
+			hot_path_profiler.scope_end("magnetic_link")
 		return false
 	var role_key: String = ROLE_ORDER[editor_role_index]
 	var candidate := _topology_socket_candidate(role_key, unit_bp, nodes, edges, node_index, true)
 	if candidate.is_empty():
-		var material_block := _topology_material_blocked_candidate(role_key, unit_bp, nodes, edges, node_index)
-		if not material_block.is_empty():
-			_show_editor_material_link_warning([node_index, int(material_block.get("target", -1))], String(material_block.get("reason", "")))
+		if show_material_warning:
+			var material_block := _topology_material_blocked_candidate(role_key, unit_bp, nodes, edges, node_index)
+			if not material_block.is_empty():
+				_show_editor_material_link_warning([node_index, int(material_block.get("target", -1))], String(material_block.get("reason", "")))
+		if hot_path_profiler != null:
+			hot_path_profiler.scope_end("magnetic_link")
 		return false
 	var best_index := int(candidate.get("target", -1))
 	if best_index < 0:
+		if hot_path_profiler != null:
+			hot_path_profiler.scope_end("magnetic_link")
 		return false
 	var own_socket_info: Dictionary = candidate.get("socket_a", {})
 	var target_socket_info: Dictionary = candidate.get("socket_b", {})
 	var own_socket := String(own_socket_info.get("id", ""))
 	var target_socket := String(target_socket_info.get("id", ""))
 	if target_socket == "" or own_socket == "":
+		if hot_path_profiler != null:
+			hot_path_profiler.scope_end("magnetic_link")
 		return false
 	var append_error := _topology_socket_edge_error_for_sockets(role_key, unit_bp, nodes, edges, node_index, own_socket, best_index, target_socket)
 	if append_error != "":
 		if editor_board_hint_label != null:
 			editor_board_hint_label.text = "警报：该关节槽已占用，请右键解绑后再连接。" if _ui_is_zh() else "ALARM: socket occupied; right-click unlink before reconnecting."
 		_play_sfx_wave("alarm", 170.0, 0.12, -13.0)
+		if hot_path_profiler != null:
+			hot_path_profiler.scope_end("magnetic_link")
 		return false
 	_record_editor_undo_state("连接节点" if _ui_is_zh() else "link nodes")
 	var connect_result := _topology_try_connect_sockets(role_key, unit_bp, nodes, edges, node_index, own_socket, best_index, target_socket)
@@ -18395,6 +18623,8 @@ func _try_magnetic_link_for_node(unit_bp: Dictionary, node_index: int) -> bool:
 		if editor_board_hint_label != null:
 			editor_board_hint_label.text = "警报：该关节槽已占用，请右键解绑后再连接。" if _ui_is_zh() else "ALARM: socket occupied; right-click unlink before reconnecting."
 		_play_sfx_wave("alarm", 170.0, 0.12, -13.0)
+		if hot_path_profiler != null:
+			hot_path_profiler.scope_end("magnetic_link")
 		return false
 	topology["edges"] = edges
 	var snapped_node: Dictionary = nodes[node_index]
@@ -18411,6 +18641,8 @@ func _try_magnetic_link_for_node(unit_bp: Dictionary, node_index: int) -> bool:
 		editor_board_hint_label.text = "咔哒：节点 %d 的接口已一对一连接节点 %d。" % [node_index + 1, best_index + 1] if _ui_is_zh() else "Click: node %d socket linked one-to-one with node %d." % [node_index + 1, best_index + 1]
 	_play_sfx_wave("clack", 720.0, 0.055, -17.0)
 	ai_team_manual_lock[_editor_player()] = true
+	if hot_path_profiler != null:
+		hot_path_profiler.scope_end("magnetic_link")
 	return true
 
 
@@ -18432,7 +18664,7 @@ func _handle_barrier_board_click(mouse_event: InputEventMouseButton, unit_bp: Di
 		unit_bp["barrier_tiles"] = tiles
 		editor_selected_barrier_cell = -1
 		_trigger_editor_snap("barrier", "removed tile %d" % cell_index)
-		_update_editor_ui()
+		_mark_editor_board_model_dirty("barrier.remove_tile")
 		return
 	var stats := _compute_unit_stats(player_id, "barrier", int(editor_unit_indices["barrier"]))
 	var slot_cap := maxi(1, int(stats.get("material_slots", 4)))
@@ -18441,7 +18673,7 @@ func _handle_barrier_board_click(mouse_event: InputEventMouseButton, unit_bp: Di
 			tile["muscle"] = int(unit_bp.get("muscle", 0))
 			unit_bp["barrier_tiles"] = tiles
 			_trigger_editor_snap("barrier", "replaced tile %d" % cell_index)
-			_update_editor_ui()
+			_mark_editor_board_model_dirty("barrier.replace_tile")
 			return
 	if tiles.size() >= slot_cap:
 		editor_board_hint_label.text = "警报：以太可固定材料已满 %d/%d。" % [tiles.size(), slot_cap] if _ui_is_zh() else "ALARM: ether material slots full %d/%d." % [tiles.size(), slot_cap]
@@ -18449,7 +18681,7 @@ func _handle_barrier_board_click(mouse_event: InputEventMouseButton, unit_bp: Di
 	tiles.append({"index": cell_index, "muscle": int(unit_bp.get("muscle", 0))})
 	unit_bp["barrier_tiles"] = tiles
 	_trigger_editor_snap("barrier", "barrier tile %d" % cell_index)
-	_update_editor_ui()
+	_mark_editor_board_model_dirty("barrier.add_tile")
 
 
 func _barrier_board_cell_index(local_pos: Vector2) -> int:
@@ -18510,14 +18742,14 @@ func _cycle_body_part_component(slot_key: String, direction: int) -> void:
 		unit_bp["blank_canvas"] = false
 		_trigger_editor_snap("node", String(catalog_for_node[next_node_index].get("name", "")))
 		ai_team_manual_lock[player_id] = true
-		_update_editor_ui()
+		_mark_editor_board_interaction_dirty("shop.replace_node_part")
 		return
 	var catalog: Array = _catalog_for(role_key, slot_key)
 	unit_bp[slot_key] = _wrapped_index(int(unit_bp.get(slot_key, 0)) + direction, catalog.size())
 	unit_bp["blank_canvas"] = false
 	_trigger_editor_snap(slot_key, String(catalog[int(unit_bp[slot_key])].get("name", "")))
 	ai_team_manual_lock[player_id] = true
-	_update_editor_ui()
+	_mark_editor_board_interaction_dirty("shop.install_part")
 
 
 func _prepare_blueprint_for_role_conversion(unit_bp: Dictionary, role_key: String) -> Dictionary:
@@ -19754,13 +19986,25 @@ func _editor_action(action_key: String) -> void:
 			editor_summary_label.text = "单位库：点击单位载入当前临时画布；保存当前画布会生成单单位 JSON。" if _ui_is_zh() else "Unit library: click a unit to load this temporary canvas; saving writes a single-unit JSON."
 			_update_editor_ui()
 		"save_canvas":
+			if hot_path_profiler != null:
+				hot_path_profiler.scope_begin("bottom_button.action")
 			_show_save_unit_name_dialog()
+			if hot_path_profiler != null:
+				hot_path_profiler.scope_end("bottom_button.action")
 		"open_saved_units":
-			_show_saved_units_library(saved_unit_focus_path, "editor")
+			if hot_path_profiler != null:
+				hot_path_profiler.scope_begin("bottom_button.action")
+			_show_saved_units_library(saved_unit_focus_path, "editor", true)
+			if hot_path_profiler != null:
+				hot_path_profiler.scope_end("bottom_button.action")
 		"add_to_team":
 			_append_editor_current_unit_to_team()
 		"training_import":
+			if hot_path_profiler != null:
+				hot_path_profiler.scope_begin("bottom_button.action")
 			_import_editor_canvas_to_training()
+			if hot_path_profiler != null:
+				hot_path_profiler.scope_end("bottom_button.action")
 		"import_team":
 			_import_editor_team()
 		"export_team":
@@ -20037,7 +20281,8 @@ func _delete_selected_canvas_part() -> void:
 
 func _add_topology_node() -> void:
 	var index_hint := _node_position_for_index(_custom_node_count_for_current_unit())
-	_add_topology_node_at(_topology_position_to_board_local(index_hint))
+	if _add_topology_node_at(_topology_position_to_board_local(index_hint)) >= 0:
+		flush_editor_dirty(2400)
 
 
 func _custom_node_count_for_current_unit() -> int:
@@ -20083,7 +20328,7 @@ func _add_topology_node_at(local_position: Vector2) -> int:
 	editor_pending_place_index = -1
 	_trigger_editor_snap("node", placed_name)
 	ai_team_manual_lock[player_id] = true
-	_update_editor_ui()
+	_mark_editor_board_model_dirty("board.add_node", false)
 	return index
 
 
@@ -20521,6 +20766,33 @@ func mark_editor_dirty(flags: int, reason: String = "editor") -> void:
 		hot_path_profiler.count("editor.mark_dirty")
 
 
+func _schedule_editor_stats_idle_refresh(reason: String, delay_msec: int = 150) -> void:
+	editor_board_stats_idle_due_msec = Time.get_ticks_msec() + maxi(0, delay_msec)
+	editor_board_stats_idle_reason = reason
+
+
+func _mark_editor_board_interaction_dirty(reason: String, include_stats: bool = false, flush_now: bool = true) -> void:
+	var flags := EDITOR_DIRTY_BOARD_UI | EDITOR_DIRTY_ACTION_BUTTONS
+	if include_stats:
+		flags |= EDITOR_DIRTY_DASHBOARD | EDITOR_DIRTY_STATS | EDITOR_DIRTY_LEGALITY | EDITOR_DIRTY_DETAIL
+	else:
+		_schedule_editor_stats_idle_refresh(reason)
+	mark_editor_dirty(flags, reason)
+	if flush_now:
+		flush_editor_dirty(2400)
+
+
+func _mark_editor_board_overlay_dirty(reason: String, flush_now: bool = true) -> void:
+	mark_editor_dirty(EDITOR_DIRTY_BOARD | EDITOR_DIRTY_ACTION_BUTTONS, reason)
+	if flush_now:
+		flush_editor_dirty(1200)
+
+
+func _mark_editor_board_model_dirty(reason: String, flush_now: bool = true) -> void:
+	_schedule_editor_stats_idle_refresh(reason)
+	_mark_editor_board_overlay_dirty(reason, flush_now)
+
+
 func flush_editor_dirty(budget_usec: int = 0) -> void:
 	if editor_dirty_flags == 0:
 		return
@@ -20549,10 +20821,34 @@ func flush_editor_dirty(budget_usec: int = 0) -> void:
 		editor_hover_popup_view.move_to_front()
 		if hot_path_profiler != null:
 			hot_path_profiler.scope_end("teamedit.flush.hover")
+	if (flags & EDITOR_DIRTY_BOARD_UI) != 0:
+		if hot_path_profiler != null:
+			hot_path_profiler.scope_begin("teamedit.flush.board_ui")
+		var board_ui_stats := stats
+		if board_ui_stats.is_empty() and (flags & (EDITOR_DIRTY_STATS | EDITOR_DIRTY_LEGALITY | EDITOR_DIRTY_DASHBOARD | EDITOR_DIRTY_DETAIL)) == 0:
+			board_ui_stats = {
+				"joint_slot_profiles": [],
+				"swept_collision_count": 0,
+				"cost": 0,
+				"illegal": false,
+				"lightweight": true,
+			}
+		_update_editor_board_ui(role_key, unit_bp, board_ui_stats)
+		if hot_path_profiler != null:
+			hot_path_profiler.scope_end("teamedit.flush.board_ui")
 	if (flags & EDITOR_DIRTY_BOARD) != 0:
 		if hot_path_profiler != null:
 			hot_path_profiler.scope_begin("teamedit.flush.board")
-		_refresh_editor_visual_views(stats, false)
+		var board_visual_stats := stats
+		if board_visual_stats.is_empty() and (flags & (EDITOR_DIRTY_STATS | EDITOR_DIRTY_LEGALITY | EDITOR_DIRTY_DASHBOARD | EDITOR_DIRTY_DETAIL)) == 0:
+			board_visual_stats = {
+				"joint_slot_profiles": [],
+				"swept_collision_count": 0,
+				"cost": 0,
+				"illegal": false,
+				"lightweight": true,
+			}
+		_refresh_editor_visual_views(board_visual_stats, false)
 		if hot_path_profiler != null:
 			hot_path_profiler.scope_end("teamedit.flush.board")
 	if (flags & EDITOR_DIRTY_CATALOG) != 0:
@@ -20607,6 +20903,12 @@ func flush_editor_dirty(budget_usec: int = 0) -> void:
 
 
 func _flush_editor_deferred_ui() -> void:
+	if editor_board_stats_idle_due_msec >= 0 and Time.get_ticks_msec() >= editor_board_stats_idle_due_msec:
+		editor_dashboard_idle_recompute_count += 1
+		var idle_reason := editor_board_stats_idle_reason
+		editor_board_stats_idle_due_msec = -1
+		editor_board_stats_idle_reason = ""
+		mark_editor_dirty(EDITOR_DIRTY_BOARD_UI | EDITOR_DIRTY_DASHBOARD | EDITOR_DIRTY_STATS | EDITOR_DIRTY_LEGALITY | EDITOR_DIRTY_DETAIL | EDITOR_DIRTY_ACTION_BUTTONS, "idle_stats:%s" % idle_reason)
 	if editor_dirty_flags != 0:
 		editor_dirty_flush_count += 1
 		flush_editor_dirty(2400)
@@ -40870,10 +41172,13 @@ func _update_editor_board_ui(role_key: String, unit_bp: Dictionary, precomputed_
 			var selected_node_for_hint: Dictionary = nodes[editor_topology_node_index]
 			node_label = String(selected_node_for_hint.get("label", "NODE %d" % (editor_topology_node_index + 1)))
 			module_count = _module_indices_for_topology_node(selected_node_for_hint, unit_bp).size()
-		var topology_note := _topology_rule_note(unit_bp, role_key, {})
-		var action_note := _action_module_rule_note(unit_bp, role_key)
+		var lightweight_board_ui := bool(precomputed_stats.get("lightweight", false))
+		var topology_note := "" if lightweight_board_ui else _topology_rule_note(unit_bp, role_key, {})
+		var action_note := "" if lightweight_board_ui else _action_module_rule_note(unit_bp, role_key)
 		var rule_short := "规则正常" if _ui_is_zh() else "RULE OK"
-		if topology_note.begins_with("INVALID") and topology_note.find("snap") >= 0:
+		if lightweight_board_ui:
+			rule_short = "编辑中" if _ui_is_zh() else "EDITING"
+		elif topology_note.begins_with("INVALID") and topology_note.find("snap") >= 0:
 			rule_short = "未贴合" if _ui_is_zh() else "SNAP GAP"
 		elif topology_note.begins_with("INVALID"):
 			rule_short = "拓扑非法" if _ui_is_zh() else "INVALID TOPOLOGY"

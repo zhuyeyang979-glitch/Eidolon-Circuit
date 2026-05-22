@@ -3144,6 +3144,45 @@ Findings:
 Sync:
 - Implemented in `E:\New project`; mirror sync and local commit recorded by the surrounding Git history.
 
+## 2026-05-23 TeamEdit Board Assembly and Bottom Button Hot Path Cut
+
+Rules:
+- Dragging a part from the catalog onto the TeamEdit board is a placement operation. It must not scan the saved-unit library, refresh catalog cards, run battle/GPU geometry, or recompute full training legality on the click frame.
+- Socket magnetic linking remains available when manipulating nodes on the board, but catalog drop itself must not run the full topology socket search. This keeps "take part from library to board" responsive.
+- Bottom board buttons must give immediate feedback. Opening the saved-unit page from TeamEdit may use the current summary cache and defer disk scanning to the next idle page update.
+
+Implementation notes:
+- Added deferred saved-unit cache refresh for `open_saved_units` from TeamEdit. The bottom button now switches page without synchronous `user://saved_units` disk scan or JSON/stat recomputation; the page refreshes after deferred cache work.
+- Guarded save-name dialog focus so headless/probe paths no longer call `grab_focus()` on a detached `LineEdit`.
+- Split board placement into a fast visual path: dropping topology parts calls `_refresh_editor_visual_views_fast_drag()` with a lightweight enriched node and no full stats/legal refresh. Full dashboard/legal details are scheduled after idle.
+- Added `_editor_fast_enriched_board_node()` so fast board diffs can append newly placed nodes without rebuilding and enriching the whole topology snapshot.
+- Catalog drops no longer call `_try_magnetic_link_for_node()`; socket snapping/linking remains on board drag/release and explicit board assembly actions.
+- Reduced magnetic-link candidate work by checking only nearby candidate nodes and delaying material checks until an actual near socket candidate exists.
+- Added focused probes for drag-to-board, board assembly hot scopes, bottom buttons, and "no combat compute on board".
+
+Verification:
+- `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120` passed.
+- New hot-path probes passed:
+  - `teamedit_drag_to_board_frame_budget_probe`: `p95=10.33ms`, `max=10.33ms`, `catalog_delta=0`, `stats_delta=0`, `visual_delta=2`.
+  - `teamedit_board_assembly_hot_scope_probe`: `p95=9.43ms`, `max=9.43ms`, `catalog_delta=0`.
+  - `teamedit_bottom_buttons_frame_budget_probe`: `p95=2.17ms`, `max=2.17ms`, `catalog_delta=0`, `visual_delta=0`, `saved_scan_delta=0`.
+  - `teamedit_no_combat_compute_on_board_probe`: CPU pair/precise contact, GPU query, GPU pair, and saved-unit scan counters all remained `0`.
+- Regressions passed:
+  - `teamedit_probe`
+  - `combat_probe`
+  - `catalog_card_page_swap_budget_probe`
+  - `teamedit_scroll_frame_budget_probe`
+  - `ui_layout_probe`
+  - `text_overflow_probe`
+
+Findings:
+- The concrete slow path was not the already-optimized catalog page swap. It was catalog-drop placement still doing magnetic socket search plus full board visual refresh, and `open_saved_units` still forcing synchronous saved-unit cache validation.
+- Before this pass, repeated drag-to-board measured around `p95=227ms` with hot leaves in `magnetic_link` and `teamedit.visual_refresh`. After cutting catalog-drop magnetic linking and using fast board diffs, the same probe reports around `10ms`.
+- If TeamEdit still feels sticky next, profile explicit on-board node drag/release and manual connect/unlink; the catalog-to-board and bottom-button paths are no longer the measured bottleneck.
+
+Sync:
+- Implemented in `E:\New project`; Documents and OneDrive mirrors should be refreshed from this source after commit.
+
 ## 2026-05-23 Catalog Page Chain Cut and Profiler Sample Fix
 
 Rules:
