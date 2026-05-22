@@ -7962,6 +7962,13 @@ var editor_perf_overlay_last_usec := 0
 var editor_preview_pause_until_msec := 0
 var editor_dirty_flush_count := 0
 var editor_full_update_request_count := 0
+var editor_update_ui_last_usec := 0
+var editor_property_write_count := 0
+var editor_property_noop_count := 0
+var editor_visible_control_cached_count := 0
+var editor_visible_control_sample_frame := -1000000
+var editor_deferred_full_refresh_request_count := 0
+var editor_dashboard_idle_recompute_count := 0
 var editor_ammo_size_rank := 1
 var editor_ammo_size_buttons: Array = []
 var editor_sort_menu_open := false
@@ -12023,9 +12030,95 @@ func _find_control_by_name(root: Node, target_name: String) -> Control:
 func _set_named_label(root: Node, target_name: String, value: String) -> void:
 	var control := _find_control_by_name(root, target_name)
 	if control is Label:
-		(control as Label).text = value
+		_set_control_text_if_changed(control as Control, value)
 	elif control is Button:
-		(control as Button).text = value
+		_set_control_text_if_changed(control as Control, value)
+
+
+func _set_control_text_if_changed(control: Control, value: String) -> void:
+	if control == null:
+		return
+	if control is Label:
+		var label := control as Label
+		if label.text == value:
+			editor_property_noop_count += 1
+			return
+		label.text = value
+		editor_property_write_count += 1
+	elif control is Button:
+		var button := control as Button
+		if button.text == value:
+			editor_property_noop_count += 1
+			return
+		button.text = value
+		editor_property_write_count += 1
+	elif control is LineEdit:
+		var line_edit := control as LineEdit
+		if line_edit.text == value:
+			editor_property_noop_count += 1
+			return
+		line_edit.text = value
+		editor_property_write_count += 1
+
+
+func _set_control_tooltip_if_changed(control: Control, value: String) -> void:
+	if control == null:
+		return
+	if control.tooltip_text == value:
+		editor_property_noop_count += 1
+		return
+	control.tooltip_text = value
+	editor_property_write_count += 1
+
+
+func _set_canvas_item_visible_if_changed(item: CanvasItem, value: bool) -> void:
+	if item == null:
+		return
+	if item.visible == value:
+		editor_property_noop_count += 1
+		return
+	item.visible = value
+	editor_property_write_count += 1
+
+
+func _set_canvas_item_modulate_if_changed(item: CanvasItem, value: Color) -> void:
+	if item == null:
+		return
+	if item.modulate.is_equal_approx(value):
+		editor_property_noop_count += 1
+		return
+	item.modulate = value
+	editor_property_write_count += 1
+
+
+func _set_control_position_if_changed(control: Control, value: Vector2) -> void:
+	if control == null:
+		return
+	if control.position.is_equal_approx(value):
+		editor_property_noop_count += 1
+		return
+	control.position = value
+	editor_property_write_count += 1
+
+
+func _set_control_size_if_changed(control: Control, value: Vector2) -> void:
+	if control == null:
+		return
+	if control.size.is_equal_approx(value):
+		editor_property_noop_count += 1
+		return
+	control.size = value
+	editor_property_write_count += 1
+
+
+func _set_button_disabled_if_changed(button: Button, value: bool) -> void:
+	if button == null:
+		return
+	if button.disabled == value:
+		editor_property_noop_count += 1
+		return
+	button.disabled = value
+	editor_property_write_count += 1
 
 
 func _compact_all_ui_text() -> void:
@@ -14323,7 +14416,10 @@ func _finish_engine_momentum_allocation_drag(_entry_id: String = "") -> void:
 func _refresh_editor_dashboard_after_allocation(full_refresh: bool) -> void:
 	if full_refresh:
 		editor_allocation_full_refresh_count += 1
-		_update_editor_ui()
+		editor_deferred_full_refresh_request_count += 1
+		editor_update_ui_deferred = true
+		editor_update_ui_deferred_count += 1
+		_refresh_editor_dashboard_after_allocation(false)
 		return
 	editor_allocation_light_refresh_count += 1
 	var stats := _editor_current_stats()
@@ -19229,9 +19325,12 @@ func _editor_perf_overlay_text() -> String:
 			int(assembly_board_view.root_draw_count),
 			int(assembly_board_view.custom_retained_root_redraw_skip_count),
 		]
-	var visible_controls := 0
-	if editor_layer != null:
-		visible_controls = _visible_control_count(editor_layer)
+	var visible_controls := editor_visible_control_cached_count
+	var frame := Engine.get_process_frames()
+	if editor_layer != null and frame - editor_visible_control_sample_frame >= 30:
+		editor_visible_control_cached_count = _visible_control_count(editor_layer)
+		editor_visible_control_sample_frame = frame
+		visible_controls = editor_visible_control_cached_count
 	var gpu_sync_line := "n/a"
 	if gpu_collision_pipeline != null:
 		gpu_sync_line = "%d last %.2fms total %.2fms" % [
@@ -19242,7 +19341,9 @@ func _editor_perf_overlay_text() -> String:
 	return "\n".join([
 		"TeamEdit PERF",
 		"CPU tick: %.2fms" % (float(editor_perf_overlay_last_usec) / 1000.0),
+		"update_ui: %.2fms count:%d" % [float(editor_update_ui_last_usec) / 1000.0, int(editor_update_ui_count)],
 		"visible controls: %d" % visible_controls,
+		"prop write/noop: %d/%d" % [int(editor_property_write_count), int(editor_property_noop_count)],
 		"board set c/a/n: %s" % board_set,
 		"root redraw/draw/skip: %s" % root_draw,
 		"retained item upd: %s" % item_updates,
@@ -19252,7 +19353,7 @@ func _editor_perf_overlay_text() -> String:
 		"preview hit/miss/q/active: %d/%d/%d/%d" % [int(PartPreviewTextureCache.hit_count), int(PartPreviewTextureCache.miss_count), int(PartPreviewTextureCache.pending_order.size()), 0 if PartPreviewTextureCache.active_request.is_empty() else 1],
 		"preview submit/capture/render/force: %d/%d/%d/%d" % [int(PartPreviewTextureCache.submit_count), int(PartPreviewTextureCache.capture_count), int(PartPreviewTextureCache.render_count), int(PartPreviewTextureCache.force_draw_count)],
 		"preview viewport/process: %d/%d" % [int(PartPreviewTextureCache.subviewport_create_count), int(PartPreviewTextureCache.process_count)],
-		"ui full/deferred flush: %d/%d" % [int(editor_full_update_request_count), int(editor_dirty_flush_count)],
+		"ui full/deferred/alloc: %d/%d/%d" % [int(editor_full_update_request_count), int(editor_dirty_flush_count), int(editor_deferred_full_refresh_request_count)],
 		"stats h/m: %d/%d" % [int(editor_current_stats_cache_hit_count), int(editor_current_stats_cache_miss_count)],
 		"gpu contact/q bytes: %d/%d" % [int(gpu_collision_readback_bytes), int(gpu_geometry_query_readback_bytes)],
 		"gpu query submit/consume: %d/%d" % [int(gpu_geometry_query_submit_count), int(gpu_geometry_query_consume_count)],
@@ -38789,6 +38890,7 @@ func _scout_unit_detail(player_id: int, entry: Dictionary) -> String:
 
 
 func _update_editor_ui(force_now: bool = false) -> void:
+	var update_start_usec := Time.get_ticks_usec()
 	var current_frame := Engine.get_process_frames()
 	var ui_state_signature := "%s|%d|%d|%s|%s|%d|%d|%s|%s" % [
 		editor_panel_mode,
@@ -38828,14 +38930,14 @@ func _update_editor_ui(force_now: bool = false) -> void:
 		var marker := "> " if current_role == role_key else "  "
 		var current_count := role_roster.size()
 		var display_index := 0 if current_count <= 0 else int(editor_unit_indices[current_role]) + 1
-		editor_role_labels[current_role].text = "%s%s %d/%d" % [marker, _role_name(current_role), display_index, current_count]
-		editor_role_labels[current_role].modulate = Color(0.35, 0.95, 1.0, 1.0) if current_role == role_key else Color(0.84, 0.88, 0.92, 1.0)
+		_set_control_text_if_changed(editor_role_labels[current_role], "%s%s %d/%d" % [marker, _role_name(current_role), display_index, current_count])
+		_set_canvas_item_modulate_if_changed(editor_role_labels[current_role], Color(0.35, 0.95, 1.0, 1.0) if current_role == role_key else Color(0.84, 0.88, 0.92, 1.0))
 	for i in range(BUILD_SLOTS.size()):
 		var slot_key: String = BUILD_SLOTS[i]
 		var part := _selected_component(role_key, slot_key, int(unit_bp.get(slot_key, 0)))
 		var marker := "> " if i == editor_slot_index else "  "
-		editor_slot_labels[i].text = "%s%s  %s  [%d]" % [marker, _slot_name(slot_key), _short_part_name(String(part["name"])), int(part["cost"])]
-		editor_slot_labels[i].modulate = Color(1.0, 0.88, 0.32, 1.0) if i == editor_slot_index else Color(0.9, 0.94, 0.98, 1.0)
+		_set_control_text_if_changed(editor_slot_labels[i], "%s%s  %s  [%d]" % [marker, _slot_name(slot_key), _short_part_name(String(part["name"])), int(part["cost"])])
+		_set_canvas_item_modulate_if_changed(editor_slot_labels[i], Color(1.0, 0.88, 0.32, 1.0) if i == editor_slot_index else Color(0.9, 0.94, 0.98, 1.0))
 
 	var summary := _team_summary(player_id)
 	var stats := _editor_current_stats()
@@ -38861,9 +38963,9 @@ func _update_editor_ui(force_now: bool = false) -> void:
 	var current_cost_text := "%s %d" % [current_cost_label, int(stats.get("cost", 0))]
 	var show_team_cost := editor_panel_mode == "load" and editor_load_mode == "team"
 	if _editor_is_blank_work_canvas():
-		editor_unit_label.text = ("P%d 临时%s\n%s" if _ui_is_zh() else "P%d TEMP %s\n%s") % [player_id, _role_short(role_key), current_cost_text]
+		_set_control_text_if_changed(editor_unit_label, ("P%d 临时%s\n%s" if _ui_is_zh() else "P%d TEMP %s\n%s") % [player_id, _role_short(role_key), current_cost_text])
 	else:
-		editor_unit_label.text = ("P%d %s %d/%d\n%s" if _ui_is_zh() else "P%d %s %d/%d\n%s") % [player_id, _role_short(role_key), int(editor_unit_indices[role_key]) + 1, roster.size(), current_cost_text]
+		_set_control_text_if_changed(editor_unit_label, ("P%d %s %d/%d\n%s" if _ui_is_zh() else "P%d %s %d/%d\n%s") % [player_id, _role_short(role_key), int(editor_unit_indices[role_key]) + 1, roster.size(), current_cost_text])
 	var budget_text := ("预算正常" if _ui_is_zh() else "BUDGET OK") if bool(summary.get("budget_valid", true)) else ("预算警告" if _ui_is_zh() else "BUDGET WARN")
 	var valid_text := ("%s合法" % _match_format_short() if _ui_is_zh() else "%s OK" % _match_format_short()) if bool(summary["valid"]) else ("队伍未完成" if _ui_is_zh() else "ROSTER TODO")
 	var length_note_text := _localized_system_text(String(summary["length_note"])) if _ui_is_zh() else String(summary["length_note"])
@@ -38871,8 +38973,8 @@ func _update_editor_ui(force_now: bool = false) -> void:
 	if show_team_cost:
 		unit_line += ("  队伍：%d/%d" if _ui_is_zh() else "  Team: %d/%d") % [int(summary["cost"]), START_BUDGET]
 	var roster_line := ("P%d %s  %s" if _ui_is_zh() else "P%d %s  %s") % [player_id, budget_text, valid_text]
-	editor_summary_label.text = "%s\n%s" % [unit_line, roster_line]
-	editor_stats_label.text = _format_unit_stats(stats)
+	_set_control_text_if_changed(editor_summary_label, "%s\n%s" % [unit_line, roster_line])
+	_set_control_text_if_changed(editor_stats_label, _format_unit_stats(stats))
 	var switch_note: String = " | %s %s" % [_ui_term("shift"), String(selected_component.get("role_switch", "")).to_upper()] if String(selected_component.get("role_switch", "")) != "" else ""
 	var heat_slot_note := " | 英魂热力 %.0f" % float(selected_component.get("soul_heat_capacity", 0.0)) if _ui_is_zh() and selected_component.has("soul_heat_capacity") else (" | Soul Heat %.0f" % float(selected_component.get("soul_heat_capacity", 0.0)) if selected_component.has("soul_heat_capacity") else "")
 	var electronic_armor_slot_note := " | 护盾 %.0f 回%.1f 覆%.2f" % [float(selected_component.get("shield_hp", selected_component.get("electronic_armor_hp", 0.0))), float(selected_component.get("shield_regen", selected_component.get("electronic_armor_regen", 0.0))), float(selected_component.get("shield_coverage", selected_component.get("electronic_armor_coverage", 0.0)))] if _ui_is_zh() and (bool(selected_component.get("electronic_armor", false)) or bool(selected_component.get("shield_payload", false))) else (" | Shield %.0f R%.1f C%.2f" % [float(selected_component.get("shield_hp", selected_component.get("electronic_armor_hp", 0.0))), float(selected_component.get("shield_regen", selected_component.get("electronic_armor_regen", 0.0))), float(selected_component.get("shield_coverage", selected_component.get("electronic_armor_coverage", 0.0)))] if bool(selected_component.get("electronic_armor", false)) or bool(selected_component.get("shield_payload", false)) else "")
@@ -38899,10 +39001,11 @@ func _update_editor_ui(force_now: bool = false) -> void:
 		compact_detail_bits.append(("动力%.0f" if _ui_is_zh() else "PWR%.0f") % _engine_momentum_output_for_part(selected_component))
 	if selected_slot_key in ["engine", "cooling", "booster"] or bool(selected_component.get("torso_slot_payload", false)):
 		compact_detail_bits.append(("槽%s" if _ui_is_zh() else "VOL%s") % _volume_rank_label(_part_slot_volume_rank(selected_component, selected_slot_key)))
-	editor_detail_label.text = "%s\n%s | %s | %s" % [detail_summary, " | ".join(compact_detail_bits), size_label, class_label]
+	var detail_text := "%s\n%s | %s | %s" % [detail_summary, " | ".join(compact_detail_bits), size_label, class_label]
 	if _component_is_gun_muscle(selected_component, selected_slot_key):
 		var gun_ammo_mass := _ammo_capacity_mass(selected_component.get("ammo_capacity", {}))
-		editor_detail_label.text += ("\n射速 %.2f/s | 自带弹药 %d | 弹药质量 %.1f" if _ui_is_zh() else "\nFire %.2f/s | Carried Ammo %d | Ammo Mass %.1f") % [float(selected_component.get("fire_rate", 0.0)), int(selected_component.get("carried_ammo", 0)), gun_ammo_mass]
+		detail_text += ("\n射速 %.2f/s | 自带弹药 %d | 弹药质量 %.1f" if _ui_is_zh() else "\nFire %.2f/s | Carried Ammo %d | Ammo Mass %.1f") % [float(selected_component.get("fire_rate", 0.0)), int(selected_component.get("carried_ammo", 0)), gun_ammo_mass]
+	_set_control_text_if_changed(editor_detail_label, detail_text)
 	_update_editor_art(selected_slot_key, selected_component)
 	_update_editor_board_ui(role_key, unit_bp, stats)
 	_apply_editor_panel_visibility(role_key, unit_bp)
@@ -38911,8 +39014,9 @@ func _update_editor_ui(force_now: bool = false) -> void:
 	_refresh_editor_module_binding_buttons()
 	if editor_action_buttons.has("edit_side"):
 		var side_button: Button = editor_action_buttons["edit_side"]
-		side_button.text = "编辑 P%d" % player_id if _ui_is_zh() else "EDIT P%d" % player_id
-		side_button.modulate = Color(0.35, 0.95, 1.0, 1.0) if player_id == 1 else Color(1.0, 0.34, 0.48, 1.0)
+		_set_control_text_if_changed(side_button, "编辑 P%d" % player_id if _ui_is_zh() else "EDIT P%d" % player_id)
+		_set_canvas_item_modulate_if_changed(side_button, Color(0.35, 0.95, 1.0, 1.0) if player_id == 1 else Color(1.0, 0.34, 0.48, 1.0))
+	editor_update_ui_last_usec = Time.get_ticks_usec() - update_start_usec
 
 
 func _refresh_editor_module_binding_buttons() -> void:
@@ -38924,11 +39028,12 @@ func _refresh_editor_module_binding_buttons() -> void:
 		if not editor_action_buttons.has(button_key):
 			continue
 		var button: Button = editor_action_buttons[button_key]
-		button.visible = target_ready and editor_layer != null and editor_layer.visible
-		button.disabled = not button.visible
-		button.text = "%d %s" % [key_index, _attack_key_label(key_index)]
-		button.tooltip_text = ("绑定到攻击键 %d（键盘 %s）" if _ui_is_zh() else "Bind to attack key %d (keyboard %s)") % [key_index, _attack_key_label(key_index)]
-		button.modulate = Color(1.0, 0.86, 0.22, 1.0) if key_index == selected_key else Color(0.58, 0.82, 1.0, 0.92)
+		var should_show := target_ready and editor_layer != null and editor_layer.visible
+		_set_canvas_item_visible_if_changed(button, should_show)
+		_set_button_disabled_if_changed(button, not should_show)
+		_set_control_text_if_changed(button, "%d %s" % [key_index, _attack_key_label(key_index)])
+		_set_control_tooltip_if_changed(button, ("绑定到攻击键 %d（键盘 %s）" if _ui_is_zh() else "Bind to attack key %d (keyboard %s)") % [key_index, _attack_key_label(key_index)])
+		_set_canvas_item_modulate_if_changed(button, Color(1.0, 0.86, 0.22, 1.0) if key_index == selected_key else Color(0.58, 0.82, 1.0, 0.92))
 		if button.visible:
 			button.move_to_front()
 
@@ -38958,25 +39063,25 @@ func _layout_editor_template_drawer(role_key: String, drawer_visible: bool) -> v
 	var count := BARRIER_TEMPLATE_ORDER.size() if role_key == "barrier" else ARCHETYPE_ORDER.size()
 	var rows := ceili(float(maxi(1, count)) / 2.0)
 	if editor_template_panel != null:
-		editor_template_panel.position = Vector2(932.0, 398.0)
-		editor_template_panel.size = Vector2(278.0, maxf(92.0, 18.0 + float(rows) * 28.0))
-		editor_template_panel.visible = drawer_visible
+		_set_control_position_if_changed(editor_template_panel, Vector2(932.0, 398.0))
+		_set_control_size_if_changed(editor_template_panel, Vector2(278.0, maxf(92.0, 18.0 + float(rows) * 28.0)))
+		_set_canvas_item_visible_if_changed(editor_template_panel, drawer_visible)
 	if editor_section_labels.has("template"):
 		var template_label: Label = editor_section_labels["template"]
-		template_label.position = Vector2(936.0, 374.0)
-		template_label.size = Vector2(270.0, 20.0)
-		template_label.text = _editor_template_category_label(role_key)
-		template_label.visible = drawer_visible
+		_set_control_position_if_changed(template_label, Vector2(936.0, 374.0))
+		_set_control_size_if_changed(template_label, Vector2(270.0, 20.0))
+		_set_control_text_if_changed(template_label, _editor_template_category_label(role_key))
+		_set_canvas_item_visible_if_changed(template_label, drawer_visible)
 	var visible_index := 0
 	for i in range(editor_template_buttons.size()):
 		var template_button: Button = editor_template_buttons[i]
 		var is_barrier_template := i >= ARCHETYPE_ORDER.size()
 		var show_button := drawer_visible and ((is_barrier_template and role_key == "barrier") or ((not is_barrier_template) and body_board_enabled and role_key != "barrier"))
-		template_button.visible = show_button
-		template_button.disabled = not show_button
+		_set_canvas_item_visible_if_changed(template_button, show_button)
+		_set_button_disabled_if_changed(template_button, not show_button)
 		if show_button:
-			template_button.position = Vector2(940.0 + float(visible_index % 2) * 134.0, 406.0 + float(floori(float(visible_index) / 2.0)) * 28.0)
-			template_button.size = Vector2(126.0, 24.0)
+			_set_control_position_if_changed(template_button, Vector2(940.0 + float(visible_index % 2) * 134.0, 406.0 + float(floori(float(visible_index) / 2.0)) * 28.0))
+			_set_control_size_if_changed(template_button, Vector2(126.0, 24.0))
 			visible_index += 1
 
 
@@ -38999,44 +39104,44 @@ func _update_editor_load_card_buttons(role_key: String) -> void:
 	if not load_visible:
 		for hidden_button in editor_load_card_buttons:
 			var button: Button = hidden_button
-			button.visible = false
-			button.disabled = true
+			_set_canvas_item_visible_if_changed(button, false)
+			_set_button_disabled_if_changed(button, true)
 		return
 	var entries := _editor_load_entries()
 	var player_id := _editor_player()
 	var max_page := maxi(0, int(ceilf(float(entries.size()) / float(page_size))) - 1)
 	editor_load_page = clampi(editor_load_page, 0, max_page)
 	if editor_catalog_page_label != null and load_visible:
-		editor_catalog_page_label.position = Vector2(966.0, 654.0)
-		editor_catalog_page_label.size = Vector2(210.0, 22.0)
-		editor_catalog_page_label.text = ("页 %d/%d  %d" if _ui_is_zh() else "P %d/%d  %d") % [editor_load_page + 1, max_page + 1, entries.size()]
+		_set_control_position_if_changed(editor_catalog_page_label, Vector2(966.0, 654.0))
+		_set_control_size_if_changed(editor_catalog_page_label, Vector2(210.0, 22.0))
+		_set_control_text_if_changed(editor_catalog_page_label, ("页 %d/%d  %d" if _ui_is_zh() else "P %d/%d  %d") % [editor_load_page + 1, max_page + 1, entries.size()])
 	if editor_action_buttons.has("prev_catalog") and load_visible:
 		var prev_button: Button = editor_action_buttons["prev_catalog"]
-		prev_button.disabled = editor_load_page <= 0
-		prev_button.text = "<"
+		_set_button_disabled_if_changed(prev_button, editor_load_page <= 0)
+		_set_control_text_if_changed(prev_button, "<")
 	if editor_action_buttons.has("next_catalog") and load_visible:
 		var next_button: Button = editor_action_buttons["next_catalog"]
-		next_button.disabled = editor_load_page >= max_page
-		next_button.text = ">"
+		_set_button_disabled_if_changed(next_button, editor_load_page >= max_page)
+		_set_control_text_if_changed(next_button, ">")
 	for i in range(editor_load_card_buttons.size()):
 		var button: Button = editor_load_card_buttons[i]
 		var actual_index := editor_load_page * page_size + i
 		var show_button := load_visible and actual_index < entries.size()
-		button.visible = show_button
-		button.disabled = not show_button
+		_set_canvas_item_visible_if_changed(button, show_button)
+		_set_button_disabled_if_changed(button, not show_button)
 		if not show_button:
-			button.text = ""
+			_set_control_text_if_changed(button, "")
 			continue
 		var entry: Dictionary = entries[actual_index]
 		if bool(entry.get("empty", false)):
 			var empty_role := String(entry.get("role", ROLE_ORDER[actual_index % ROLE_ORDER.size()]))
-			button.position = Vector2(936.0, 224.0 + float(i) * 34.0)
-			button.size = Vector2(270.0, 30.0)
+			_set_control_position_if_changed(button, Vector2(936.0, 224.0 + float(i) * 34.0))
+			_set_control_size_if_changed(button, Vector2(270.0, 30.0))
 			if _ui_is_zh():
-				button.text = "%02d %s  空  ¥0" % [actual_index + 1, _role_short(empty_role)]
+				_set_control_text_if_changed(button, "%02d %s  空  ¥0" % [actual_index + 1, _role_short(empty_role)])
 			else:
-				button.text = "%02d %s  EMPTY  $0" % [actual_index + 1, _role_short(empty_role)]
-			button.modulate = Color(0.58, 0.64, 0.68, 0.76)
+				_set_control_text_if_changed(button, "%02d %s  EMPTY  $0" % [actual_index + 1, _role_short(empty_role)])
+			_set_canvas_item_modulate_if_changed(button, Color(0.58, 0.64, 0.68, 0.76))
 			continue
 		var entry_role := String(entry.get("role", role_key))
 		var entry_index := int(entry.get("index", 0))
@@ -39045,15 +39150,15 @@ func _update_editor_load_card_buttons(role_key: String) -> void:
 		var prefix := ""
 		if editor_load_mode == "team":
 			prefix = ("队" if _ui_is_zh() else "T")
-			button.position = Vector2(936.0, 224.0 + float(i) * 34.0)
+			_set_control_position_if_changed(button, Vector2(936.0, 224.0 + float(i) * 34.0))
 		else:
 			prefix = ("库" if _ui_is_zh() else "U")
-			button.position = Vector2(936.0, 250.0 + float(i) * 34.0)
-		button.size = Vector2(270.0, 30.0)
+			_set_control_position_if_changed(button, Vector2(936.0, 250.0 + float(i) * 34.0))
+		_set_control_size_if_changed(button, Vector2(270.0, 30.0))
 		var localized_name := _short_part_name(String(stats.get("name", "")))
 		var index_text := ("#%d" % (entry_index + 1)) if entry_index >= 0 else ""
-		button.text = "%s%02d %s%s  %s  ¥%d" % [prefix, actual_index + 1, _role_short(entry_role), index_text, localized_name, int(stats.get("cost", 0))] if _ui_is_zh() else "%s%02d %s%s  %s  $%d" % [prefix, actual_index + 1, _role_short(entry_role), index_text, localized_name, int(stats.get("cost", 0))]
-		button.modulate = Color(0.38, 0.96, 1.0, 1.0) if bool(entry.get("unit_library", false)) else (Color(1.0, 0.86, 0.28, 1.0) if (editor_load_mode == "unit" and entry_index == int(editor_unit_indices.get(entry_role, 0))) else Color(0.84, 0.9, 0.94, 1.0))
+		_set_control_text_if_changed(button, "%s%02d %s%s  %s  ¥%d" % [prefix, actual_index + 1, _role_short(entry_role), index_text, localized_name, int(stats.get("cost", 0))] if _ui_is_zh() else "%s%02d %s%s  %s  $%d" % [prefix, actual_index + 1, _role_short(entry_role), index_text, localized_name, int(stats.get("cost", 0))])
+		_set_canvas_item_modulate_if_changed(button, Color(0.38, 0.96, 1.0, 1.0) if bool(entry.get("unit_library", false)) else (Color(1.0, 0.86, 0.28, 1.0) if (editor_load_mode == "unit" and entry_index == int(editor_unit_indices.get(entry_role, 0))) else Color(0.84, 0.9, 0.94, 1.0)))
 
 
 func _apply_editor_panel_visibility(role_key: String, unit_bp: Dictionary) -> void:
@@ -39070,39 +39175,39 @@ func _apply_editor_panel_visibility(role_key: String, unit_bp: Dictionary) -> vo
 	var panel_texts_en := {"load": "UNITS/TEAMS", "parts": "PARTS"}
 	for panel_key in editor_panel_buttons.keys():
 		var panel_button: Button = editor_panel_buttons[panel_key]
-		panel_button.text = String((panel_texts_zh if _ui_is_zh() else panel_texts_en).get(String(panel_key), String(panel_key).to_upper()))
-		panel_button.modulate = Color(0.35, 0.95, 1.0, 1.0) if String(panel_key) == mode else Color(0.86, 0.9, 0.94, 1.0)
+		_set_control_text_if_changed(panel_button, String((panel_texts_zh if _ui_is_zh() else panel_texts_en).get(String(panel_key), String(panel_key).to_upper())))
+		_set_canvas_item_modulate_if_changed(panel_button, Color(0.35, 0.95, 1.0, 1.0) if String(panel_key) == mode else Color(0.86, 0.9, 0.94, 1.0))
 	for role_key_button in editor_role_buttons.keys():
 		var role_button: Button = editor_role_buttons[role_key_button]
 		var role_visible := load_visible or parts_visible
-		role_button.visible = role_visible
-		role_button.disabled = not role_visible
-		role_button.position = Vector2(936.0 + float(ROLE_ORDER.find(String(role_key_button))) * 92.0, 118.0 if parts_visible else 212.0)
-		role_button.size = Vector2(86.0, 24.0 if parts_visible else 32.0)
-		role_button.text = ("身份:%s" if _ui_is_zh() else "ROLE:%s") % _role_short(String(role_key_button))
-		role_button.modulate = Color(0.35, 0.95, 1.0, 1.0) if String(role_key_button) == role_key else Color(0.84, 0.9, 0.94, 1.0)
+		_set_canvas_item_visible_if_changed(role_button, role_visible)
+		_set_button_disabled_if_changed(role_button, not role_visible)
+		_set_control_position_if_changed(role_button, Vector2(936.0 + float(ROLE_ORDER.find(String(role_key_button))) * 92.0, 118.0 if parts_visible else 212.0))
+		_set_control_size_if_changed(role_button, Vector2(86.0, 24.0 if parts_visible else 32.0))
+		_set_control_text_if_changed(role_button, ("身份:%s" if _ui_is_zh() else "ROLE:%s") % _role_short(String(role_key_button)))
+		_set_canvas_item_modulate_if_changed(role_button, Color(0.35, 0.95, 1.0, 1.0) if String(role_key_button) == role_key else Color(0.84, 0.9, 0.94, 1.0))
 	for group_key in editor_part_group_buttons.keys():
 		var group_button: Button = editor_part_group_buttons[group_key]
 		var group_index := EDITOR_PART_GROUP_ORDER.find(String(group_key))
 		if group_index < 0:
 			group_index = 0
-		group_button.position = Vector2(936.0 + float(group_index % 3) * 90.0, 146.0 + float(floori(float(group_index) / 3.0)) * 26.0)
-		group_button.size = Vector2(84.0, 24.0)
-		group_button.visible = parts_visible
-		group_button.disabled = not parts_visible
-		group_button.text = _part_group_name(String(group_key))
-		group_button.modulate = Color(1.0, 0.86, 0.28, 1.0) if String(group_key) == editor_part_group_mode else Color(0.84, 0.9, 0.94, 1.0)
+		_set_control_position_if_changed(group_button, Vector2(936.0 + float(group_index % 3) * 90.0, 146.0 + float(floori(float(group_index) / 3.0)) * 26.0))
+		_set_control_size_if_changed(group_button, Vector2(84.0, 24.0))
+		_set_canvas_item_visible_if_changed(group_button, parts_visible)
+		_set_button_disabled_if_changed(group_button, not parts_visible)
+		_set_control_text_if_changed(group_button, _part_group_name(String(group_key)))
+		_set_canvas_item_modulate_if_changed(group_button, Color(1.0, 0.86, 0.28, 1.0) if String(group_key) == editor_part_group_mode else Color(0.84, 0.9, 0.94, 1.0))
 	var filter_options := _part_filter_options_for_group(editor_part_group_mode)
 	for i in range(editor_slot_buttons.size()):
 		var button: Button = editor_slot_buttons[i]
 		var slot_visible := false
-		button.visible = slot_visible
-		button.disabled = not slot_visible
+		_set_canvas_item_visible_if_changed(button, slot_visible)
+		_set_button_disabled_if_changed(button, not slot_visible)
 	for i in range(editor_part_filter_buttons.size()):
 		var filter_button: Button = editor_part_filter_buttons[i]
 		var filter_visible := parts_visible and i < filter_options.size()
-		filter_button.visible = filter_visible
-		filter_button.disabled = not filter_visible
+		_set_canvas_item_visible_if_changed(filter_button, filter_visible)
+		_set_button_disabled_if_changed(filter_button, not filter_visible)
 		if filter_visible:
 			var filter_option: Dictionary = filter_options[i]
 			var filter_key := String(filter_option.get("key", "all"))
@@ -39110,20 +39215,20 @@ func _apply_editor_panel_visibility(role_key: String, unit_bp: Dictionary) -> vo
 			var filter_width := 64.0 if editor_part_group_mode == "terminal_weapon" else 84.0
 			var filter_step_x := 68.0 if editor_part_group_mode == "terminal_weapon" else 90.0
 			var filter_step_y := 24.0 if editor_part_group_mode == "terminal_weapon" else 26.0
-			filter_button.position = Vector2(936.0 + float(i % filter_columns) * filter_step_x, 204.0 + float(floori(float(i) / float(filter_columns))) * filter_step_y)
-			filter_button.size = Vector2(filter_width, 22.0)
-			filter_button.text = _part_filter_name(filter_option)
-			filter_button.modulate = Color(1.0, 0.86, 0.28, 1.0) if filter_key == editor_part_filter_mode else Color(0.84, 0.9, 0.94, 1.0)
+			_set_control_position_if_changed(filter_button, Vector2(936.0 + float(i % filter_columns) * filter_step_x, 204.0 + float(floori(float(i) / float(filter_columns))) * filter_step_y))
+			_set_control_size_if_changed(filter_button, Vector2(filter_width, 22.0))
+			_set_control_text_if_changed(filter_button, _part_filter_name(filter_option))
+			_set_canvas_item_modulate_if_changed(filter_button, Color(1.0, 0.86, 0.28, 1.0) if filter_key == editor_part_filter_mode else Color(0.84, 0.9, 0.94, 1.0))
 	var ammo_slider_visible := parts_visible and editor_part_filter_mode == "ammo"
 	for i in range(editor_ammo_size_buttons.size()):
 		var ammo_button: Button = editor_ammo_size_buttons[i]
 		var rank := i + 1
-		ammo_button.visible = ammo_slider_visible
-		ammo_button.disabled = not ammo_slider_visible
-		ammo_button.position = Vector2(936.0 + float(i) * 54.0, 266.0)
-		ammo_button.size = Vector2(50.0, 22.0)
-		ammo_button.text = _volume_rank_label(float(rank))
-		ammo_button.modulate = Color(1.0, 0.86, 0.28, 1.0) if rank == editor_ammo_size_rank else Color(0.76, 0.9, 1.0, 0.82)
+		_set_canvas_item_visible_if_changed(ammo_button, ammo_slider_visible)
+		_set_button_disabled_if_changed(ammo_button, not ammo_slider_visible)
+		_set_control_position_if_changed(ammo_button, Vector2(936.0 + float(i) * 54.0, 266.0))
+		_set_control_size_if_changed(ammo_button, Vector2(50.0, 22.0))
+		_set_control_text_if_changed(ammo_button, _volume_rank_label(float(rank)))
+		_set_canvas_item_modulate_if_changed(ammo_button, Color(1.0, 0.86, 0.28, 1.0) if rank == editor_ammo_size_rank else Color(0.76, 0.9, 1.0, 0.82))
 	var unit_action_keys := ["edit_side", "load_team", "load_unit", "add_to_team", "import_team", "export_team", "clear_team", "toggle_match_format", "copy_ai"]
 	if editor_load_mode == "unit":
 		unit_action_keys.append_array(["duplicate", "delete"])
@@ -39133,92 +39238,94 @@ func _apply_editor_panel_visibility(role_key: String, unit_bp: Dictionary) -> vo
 	for action_key in editor_action_buttons.keys():
 		var action_button: Button = editor_action_buttons[action_key]
 		if board_primary_action_keys.has(String(action_key)):
-			action_button.visible = true
-			action_button.disabled = false
-			action_button.position = Vector2(408.0 + float(board_primary_action_keys.find(String(action_key))) * 122.0, 600.0)
-			action_button.size = Vector2(114.0, 24.0)
+			_set_canvas_item_visible_if_changed(action_button, true)
+			_set_button_disabled_if_changed(action_button, false)
+			_set_control_position_if_changed(action_button, Vector2(408.0 + float(board_primary_action_keys.find(String(action_key))) * 122.0, 600.0))
+			_set_control_size_if_changed(action_button, Vector2(114.0, 24.0))
 			if String(action_key) == "save_canvas":
-				action_button.text = "保存为单位" if _ui_is_zh() else "SAVE UNIT"
-				action_button.modulate = Color(1.0, 0.86, 0.28, 1.0)
+				_set_control_text_if_changed(action_button, "保存为单位" if _ui_is_zh() else "SAVE UNIT")
+				_set_canvas_item_modulate_if_changed(action_button, Color(1.0, 0.86, 0.28, 1.0))
 			elif String(action_key) == "training_import":
-				action_button.text = "训练测试" if _ui_is_zh() else "TEST"
-				action_button.modulate = Color(0.86, 0.68, 1.0, 1.0)
+				_set_control_text_if_changed(action_button, "训练测试" if _ui_is_zh() else "TEST")
+				_set_canvas_item_modulate_if_changed(action_button, Color(0.86, 0.68, 1.0, 1.0))
 			else:
-				action_button.text = "已保存单位" if _ui_is_zh() else "SAVED"
-				action_button.modulate = Color(0.74, 0.92, 1.0, 1.0)
+				_set_control_text_if_changed(action_button, "已保存单位" if _ui_is_zh() else "SAVED")
+				_set_canvas_item_modulate_if_changed(action_button, Color(0.74, 0.92, 1.0, 1.0))
 		elif canvas_action_keys.has(String(action_key)):
-			action_button.visible = true
+			_set_canvas_item_visible_if_changed(action_button, true)
 			if String(action_key) == "board_tool_layout":
-				action_button.text = "布局" if _ui_is_zh() else "LAYOUT"
-				action_button.modulate = Color(1.0, 0.86, 0.28, 1.0) if editor_board_tool == "layout" else Color(0.78, 0.9, 1.0, 0.82)
+				_set_control_text_if_changed(action_button, "布局" if _ui_is_zh() else "LAYOUT")
+				_set_canvas_item_modulate_if_changed(action_button, Color(1.0, 0.86, 0.28, 1.0) if editor_board_tool == "layout" else Color(0.78, 0.9, 1.0, 0.82))
 			elif String(action_key) == "board_tool_pose":
-				action_button.text = "姿态" if _ui_is_zh() else "POSE"
-				action_button.modulate = Color(1.0, 0.86, 0.28, 1.0) if editor_board_tool == "pose" else Color(0.78, 0.9, 1.0, 0.82)
+				_set_control_text_if_changed(action_button, "姿态" if _ui_is_zh() else "POSE")
+				_set_canvas_item_modulate_if_changed(action_button, Color(1.0, 0.86, 0.28, 1.0) if editor_board_tool == "pose" else Color(0.78, 0.9, 1.0, 0.82))
 		elif String(action_key) == "toggle_templates":
-			action_button.visible = false
+			_set_canvas_item_visible_if_changed(action_button, false)
 		elif String(action_key) == "sort_prev":
-			action_button.visible = false
-			action_button.disabled = true
+			_set_canvas_item_visible_if_changed(action_button, false)
+			_set_button_disabled_if_changed(action_button, true)
 		elif String(action_key) == "sort_dir":
-			action_button.visible = parts_visible and editor_sort_menu_open
-			action_button.disabled = not action_button.visible
+			var show_sort_dir := parts_visible and editor_sort_menu_open
+			_set_canvas_item_visible_if_changed(action_button, show_sort_dir)
+			_set_button_disabled_if_changed(action_button, not show_sort_dir)
 		elif String(action_key) in ["prev_catalog", "next_catalog"]:
-			action_button.visible = parts_visible or load_visible
-			action_button.disabled = not action_button.visible
+			var show_page_action := parts_visible or load_visible
+			_set_canvas_item_visible_if_changed(action_button, show_page_action)
+			_set_button_disabled_if_changed(action_button, not show_page_action)
 		elif String(action_key) == "sort_key":
-			action_button.visible = parts_visible
-			action_button.disabled = not parts_visible
+			_set_canvas_item_visible_if_changed(action_button, parts_visible)
+			_set_button_disabled_if_changed(action_button, not parts_visible)
 		else:
 			var show_unit_action := unit_visible and unit_action_keys.has(String(action_key))
-			action_button.visible = show_unit_action
-			action_button.disabled = not show_unit_action
+			_set_canvas_item_visible_if_changed(action_button, show_unit_action)
+			_set_button_disabled_if_changed(action_button, not show_unit_action)
 			if show_unit_action:
-				action_button.position = Vector2(936.0 + float(visible_unit_action_index % 2) * 136.0, 126.0 + float(floori(float(visible_unit_action_index) / 2.0)) * 30.0)
-				action_button.size = Vector2(130.0, 26.0)
+				_set_control_position_if_changed(action_button, Vector2(936.0 + float(visible_unit_action_index % 2) * 136.0, 126.0 + float(floori(float(visible_unit_action_index) / 2.0)) * 30.0))
+				_set_control_size_if_changed(action_button, Vector2(130.0, 26.0))
 				if String(action_key) == "load_team":
-					action_button.text = "队伍编成" if _ui_is_zh() else "TEAM"
-					action_button.modulate = Color(1.0, 0.86, 0.28, 1.0) if editor_load_mode == "team" else Color(0.84, 0.9, 0.94, 1.0)
+					_set_control_text_if_changed(action_button, "队伍编成" if _ui_is_zh() else "TEAM")
+					_set_canvas_item_modulate_if_changed(action_button, Color(1.0, 0.86, 0.28, 1.0) if editor_load_mode == "team" else Color(0.84, 0.9, 0.94, 1.0))
 				elif String(action_key) == "load_unit":
-					action_button.text = "单位库" if _ui_is_zh() else "UNITS"
-					action_button.modulate = Color(1.0, 0.86, 0.28, 1.0) if editor_load_mode == "unit" else Color(0.84, 0.9, 0.94, 1.0)
+					_set_control_text_if_changed(action_button, "单位库" if _ui_is_zh() else "UNITS")
+					_set_canvas_item_modulate_if_changed(action_button, Color(1.0, 0.86, 0.28, 1.0) if editor_load_mode == "unit" else Color(0.84, 0.9, 0.94, 1.0))
 				elif String(action_key) == "save_canvas":
-					action_button.text = "保存单位" if _ui_is_zh() else "SAVE UNIT"
-					action_button.modulate = Color(1.0, 0.86, 0.28, 1.0)
+					_set_control_text_if_changed(action_button, "保存单位" if _ui_is_zh() else "SAVE UNIT")
+					_set_canvas_item_modulate_if_changed(action_button, Color(1.0, 0.86, 0.28, 1.0))
 				elif String(action_key) == "open_saved_units":
-					action_button.text = "已存单位" if _ui_is_zh() else "SAVED"
-					action_button.modulate = Color(0.74, 0.92, 1.0, 1.0)
+					_set_control_text_if_changed(action_button, "已存单位" if _ui_is_zh() else "SAVED")
+					_set_canvas_item_modulate_if_changed(action_button, Color(0.74, 0.92, 1.0, 1.0))
 				elif String(action_key) == "add_to_team":
-					action_button.text = "加入队伍" if _ui_is_zh() else "ADD TEAM"
-					action_button.modulate = Color(0.38, 0.96, 1.0, 1.0)
+					_set_control_text_if_changed(action_button, "加入队伍" if _ui_is_zh() else "ADD TEAM")
+					_set_canvas_item_modulate_if_changed(action_button, Color(0.38, 0.96, 1.0, 1.0))
 				elif String(action_key) == "training_import":
-					action_button.text = "训练导入" if _ui_is_zh() else "TRAIN"
-					action_button.modulate = Color(0.86, 0.68, 1.0, 1.0)
+					_set_control_text_if_changed(action_button, "训练导入" if _ui_is_zh() else "TRAIN")
+					_set_canvas_item_modulate_if_changed(action_button, Color(0.86, 0.68, 1.0, 1.0))
 				elif String(action_key) == "toggle_match_format":
-					action_button.text = _match_format_short()
-					action_button.modulate = Color(0.32, 0.96, 1.0, 1.0)
+					_set_control_text_if_changed(action_button, _match_format_short())
+					_set_canvas_item_modulate_if_changed(action_button, Color(0.32, 0.96, 1.0, 1.0))
 				else:
-					action_button.modulate = Color(0.84, 0.9, 0.94, 1.0)
+					_set_canvas_item_modulate_if_changed(action_button, Color(0.84, 0.9, 0.94, 1.0))
 				visible_unit_action_index += 1
 	if editor_action_buttons.has("sort_key"):
 		var sort_key_button: Button = editor_action_buttons["sort_key"]
 		var sort_names := EDITOR_SORT_KEY_NAMES_ZH if _ui_is_zh() else EDITOR_SORT_KEY_NAMES_EN
-		sort_key_button.text = ("排序：%s" if _ui_is_zh() else "SORT: %s") % String(sort_names.get(editor_catalog_sort_key, editor_catalog_sort_key.to_upper()))
+		_set_control_text_if_changed(sort_key_button, ("排序：%s" if _ui_is_zh() else "SORT: %s") % String(sort_names.get(editor_catalog_sort_key, editor_catalog_sort_key.to_upper())))
 	_refresh_editor_board_zoom_ui()
 	if editor_action_buttons.has("sort_dir"):
 		var sort_dir_button: Button = editor_action_buttons["sort_dir"]
-		sort_dir_button.text = ("正序 ↑" if editor_catalog_sort_ascending else "反序 ↓") if _ui_is_zh() else ("ASC ↑" if editor_catalog_sort_ascending else "DESC ↓")
+		_set_control_text_if_changed(sort_dir_button, ("正序 ↑" if editor_catalog_sort_ascending else "反序 ↓") if _ui_is_zh() else ("ASC ↑" if editor_catalog_sort_ascending else "DESC ↓"))
 	var available_sort_keys := _current_editor_catalog_sort_keys()
 	if not available_sort_keys.has(editor_catalog_sort_key):
 		editor_catalog_sort_key = String(available_sort_keys[0])
 	if editor_action_buttons.has("sort_key"):
 		var refreshed_sort_key_button: Button = editor_action_buttons["sort_key"]
 		var refreshed_sort_names := EDITOR_SORT_KEY_NAMES_ZH if _ui_is_zh() else EDITOR_SORT_KEY_NAMES_EN
-		refreshed_sort_key_button.text = ("排序：%s" if _ui_is_zh() else "SORT: %s") % String(refreshed_sort_names.get(editor_catalog_sort_key, editor_catalog_sort_key.to_upper()))
+		_set_control_text_if_changed(refreshed_sort_key_button, ("排序：%s" if _ui_is_zh() else "SORT: %s") % String(refreshed_sort_names.get(editor_catalog_sort_key, editor_catalog_sort_key.to_upper())))
 	if editor_sort_panel != null:
-		editor_sort_panel.visible = parts_visible and editor_sort_menu_open
+		_set_canvas_item_visible_if_changed(editor_sort_panel, parts_visible and editor_sort_menu_open)
 		if editor_sort_panel.visible:
 			var sort_rows := int(ceilf(float(maxi(1, available_sort_keys.size())) / 3.0))
-			editor_sort_panel.size = Vector2(278.0, 16.0 + float(sort_rows) * 28.0)
+			_set_control_size_if_changed(editor_sort_panel, Vector2(278.0, 16.0 + float(sort_rows) * 28.0))
 			editor_sort_panel.move_to_front()
 	var sort_names_for_options := EDITOR_SORT_KEY_NAMES_ZH if _ui_is_zh() else EDITOR_SORT_KEY_NAMES_EN
 	var visible_sort_index := 0
@@ -39226,76 +39333,76 @@ func _apply_editor_panel_visibility(role_key: String, unit_bp: Dictionary) -> vo
 		var sort_option_button: Button = editor_sort_option_buttons[i]
 		var option_key := String(EDITOR_SORT_KEY_ORDER[i])
 		var show_sort_option := parts_visible and editor_sort_menu_open and available_sort_keys.has(option_key)
-		sort_option_button.visible = show_sort_option
-		sort_option_button.disabled = not show_sort_option
+		_set_canvas_item_visible_if_changed(sort_option_button, show_sort_option)
+		_set_button_disabled_if_changed(sort_option_button, not show_sort_option)
 		if show_sort_option:
-			sort_option_button.position = Vector2(940.0 + float(visible_sort_index % 3) * 88.0, 326.0 + float(floori(float(visible_sort_index) / 3.0)) * 28.0)
-			sort_option_button.text = String(sort_names_for_options.get(option_key, option_key.to_upper()))
-			sort_option_button.modulate = Color(1.0, 0.86, 0.28, 1.0) if option_key == editor_catalog_sort_key else Color(0.84, 0.9, 0.94, 1.0)
+			_set_control_position_if_changed(sort_option_button, Vector2(940.0 + float(visible_sort_index % 3) * 88.0, 326.0 + float(floori(float(visible_sort_index) / 3.0)) * 28.0))
+			_set_control_text_if_changed(sort_option_button, String(sort_names_for_options.get(option_key, option_key.to_upper())))
+			_set_canvas_item_modulate_if_changed(sort_option_button, Color(1.0, 0.86, 0.28, 1.0) if option_key == editor_catalog_sort_key else Color(0.84, 0.9, 0.94, 1.0))
 			sort_option_button.move_to_front()
 			visible_sort_index += 1
 	if parts_visible and editor_sort_menu_open and editor_action_buttons.has("sort_dir"):
 		var sort_dir_front: Button = editor_action_buttons["sort_dir"]
 		sort_dir_front.move_to_front()
 	if editor_unit_label != null:
-		editor_unit_label.visible = unit_visible
+		_set_canvas_item_visible_if_changed(editor_unit_label, unit_visible)
 		if unit_visible:
-			editor_unit_label.position = Vector2(936.0, 186.0)
-			editor_unit_label.size = Vector2(270.0, 52.0)
+			_set_control_position_if_changed(editor_unit_label, Vector2(936.0, 186.0))
+			_set_control_size_if_changed(editor_unit_label, Vector2(270.0, 52.0))
 			if editor_load_mode == "team":
-				editor_unit_label.text = ("队伍 %s" if _ui_is_zh() else "TEAM %s") % _match_format_short()
+				_set_control_text_if_changed(editor_unit_label, ("队伍 %s" if _ui_is_zh() else "TEAM %s") % _match_format_short())
 			else:
-				editor_unit_label.text = "单位库" if _ui_is_zh() else "UNITS"
+				_set_control_text_if_changed(editor_unit_label, "单位库" if _ui_is_zh() else "UNITS")
 	if editor_summary_label != null:
-		editor_summary_label.visible = unit_visible
+		_set_canvas_item_visible_if_changed(editor_summary_label, unit_visible)
 		if unit_visible:
-			editor_summary_label.position = Vector2(936.0, 586.0)
-			editor_summary_label.size = Vector2(270.0, 88.0)
+			_set_control_position_if_changed(editor_summary_label, Vector2(936.0, 586.0))
+			_set_control_size_if_changed(editor_summary_label, Vector2(270.0, 88.0))
 	if editor_stats_label != null:
-		editor_stats_label.visible = stats_visible
+		_set_canvas_item_visible_if_changed(editor_stats_label, stats_visible)
 	if editor_detail_label != null:
-		editor_detail_label.visible = stats_visible
+		_set_canvas_item_visible_if_changed(editor_detail_label, stats_visible)
 	if component_art_view != null:
-		component_art_view.visible = stats_visible
+		_set_canvas_item_visible_if_changed(component_art_view, stats_visible)
 	if editor_battle_preview_view != null:
-		editor_battle_preview_view.visible = stats_visible
+		_set_canvas_item_visible_if_changed(editor_battle_preview_view, stats_visible)
 	if editor_structure_reference_view != null:
 		editor_structure_reference_view.visible = editor_structure_reference_view.visible and stats_visible
 	if editor_structure_reference_label != null:
 		editor_structure_reference_label.visible = editor_structure_reference_label.visible and stats_visible
 	if editor_catalog_page_label != null:
-		editor_catalog_page_label.visible = (parts_visible and not editor_sort_menu_open) or load_visible
+		_set_canvas_item_visible_if_changed(editor_catalog_page_label, (parts_visible and not editor_sort_menu_open) or load_visible)
 	if editor_section_labels.has("catalog") and editor_section_labels["catalog"] is Label:
 		var catalog_title := editor_section_labels["catalog"] as Label
-		catalog_title.visible = parts_visible and not editor_sort_menu_open
+		_set_canvas_item_visible_if_changed(catalog_title, parts_visible and not editor_sort_menu_open)
 	if editor_shop_hint_label != null:
-		editor_shop_hint_label.visible = shop_visible
-		editor_shop_hint_label.text = "流程：1 选构件类型  2 拖卡片进画布  3 磁吸贴合；引擎/散热/行动模块点击安装。" if _ui_is_zh() else "Flow: 1 choose a part type  2 drag a card onto canvas  3 snap it. Engine/cooling/action modules install on click."
+		_set_canvas_item_visible_if_changed(editor_shop_hint_label, shop_visible)
+		_set_control_text_if_changed(editor_shop_hint_label, "流程：1 选构件类型  2 拖卡片进画布  3 磁吸贴合；引擎/散热/行动模块点击安装。" if _ui_is_zh() else "Flow: 1 choose a part type  2 drag a card onto canvas  3 snap it. Engine/cooling/action modules install on click.")
 	if editor_shop_pending_label != null:
-		editor_shop_pending_label.visible = shop_visible
+		_set_canvas_item_visible_if_changed(editor_shop_pending_label, shop_visible)
 		if _has_pending_canvas_part():
-			editor_shop_pending_label.text = "待放置：%s" % _pending_canvas_part_name(role_key) if _ui_is_zh() else "PENDING PLACEMENT: %s" % _pending_canvas_part_name(role_key)
-			editor_shop_pending_label.modulate = Color(1.0, 0.86, 0.24, 1.0)
+			_set_control_text_if_changed(editor_shop_pending_label, "待放置：%s" % _pending_canvas_part_name(role_key) if _ui_is_zh() else "PENDING PLACEMENT: %s" % _pending_canvas_part_name(role_key))
+			_set_canvas_item_modulate_if_changed(editor_shop_pending_label, Color(1.0, 0.86, 0.24, 1.0))
 		else:
-			editor_shop_pending_label.text = "当前没有待放置构件；拖拽或点选肌肉构件后这里会亮起。" if _ui_is_zh() else "No pending physical part; drag or choose a muscle component and this line lights up."
-			editor_shop_pending_label.modulate = Color(0.72, 0.88, 1.0, 0.78)
+			_set_control_text_if_changed(editor_shop_pending_label, "当前没有待放置构件；拖拽或点选肌肉构件后这里会亮起。" if _ui_is_zh() else "No pending physical part; drag or choose a muscle component and this line lights up.")
+			_set_canvas_item_modulate_if_changed(editor_shop_pending_label, Color(0.72, 0.88, 1.0, 0.78))
 	if editor_color_panel != null:
-		editor_color_panel.visible = color_visible
+		_set_canvas_item_visible_if_changed(editor_color_panel, color_visible)
 	if editor_color_label != null:
-		editor_color_label.visible = color_visible
-		editor_color_label.text = "P%d 队伍颜色：%s" % [_editor_player(), _team_color_name(_editor_player())] if _ui_is_zh() else "P%d TEAM COLOR: %s" % [_editor_player(), _team_color_name(_editor_player())]
+		_set_canvas_item_visible_if_changed(editor_color_label, color_visible)
+		_set_control_text_if_changed(editor_color_label, "P%d 队伍颜色：%s" % [_editor_player(), _team_color_name(_editor_player())] if _ui_is_zh() else "P%d TEAM COLOR: %s" % [_editor_player(), _team_color_name(_editor_player())])
 	for i in range(editor_color_buttons.size()):
 		var color_button: Button = editor_color_buttons[i]
-		color_button.visible = color_visible
-		color_button.disabled = not color_visible
+		_set_canvas_item_visible_if_changed(color_button, color_visible)
+		_set_button_disabled_if_changed(color_button, not color_visible)
 		if color_visible and i < TEAM_COLOR_PRESETS.size():
 			var preset: Dictionary = TEAM_COLOR_PRESETS[i]
 			var selected := i == _team_color_index(_editor_player())
 			var preset_name := String(preset.get("name", preset.get("name_en", "颜色"))) if _ui_is_zh() else String(preset.get("name_en", preset.get("name", "COLOR")))
-			color_button.text = "%s%s\n主色/辅色" % ["已选 " if selected else "", preset_name] if _ui_is_zh() else "%s%s\nPRIMARY/ACCENT" % ["* " if selected else "", preset_name]
+			_set_control_text_if_changed(color_button, "%s%s\n主色/辅色" % ["已选 " if selected else "", preset_name] if _ui_is_zh() else "%s%s\nPRIMARY/ACCENT" % ["* " if selected else "", preset_name])
 			var primary: Color = preset.get("primary", Color.WHITE)
 			var accent: Color = preset.get("accent", Color.WHITE)
-			color_button.modulate = primary.lerp(accent, 0.34 if selected else 0.12)
+			_set_canvas_item_modulate_if_changed(color_button, primary.lerp(accent, 0.34 if selected else 0.12))
 	if editor_primary_color_picker != null:
 		editor_primary_color_picker.visible = color_visible
 		editor_primary_color_picker.disabled = not color_visible
@@ -39371,24 +39478,24 @@ func _update_editor_board_ui(role_key: String, unit_bp: Dictionary, precomputed_
 		elif action_note.begins_with("INVALID"):
 			rule_short = "行动绑定非法" if _ui_is_zh() else "INVALID ACTION BIND"
 		var pending_note := "  待放置: %s" % _pending_canvas_part_name(role_key) if _has_pending_canvas_part() else ""
-		editor_board_hint_label.text = "%s  %s %d/%d  %sx%d%s" % [rule_short, _short_part_name(node_label), clampi(editor_topology_node_index + 1, 1, maxi(1, nodes.size())), nodes.size(), "模块" if _ui_is_zh() else "MOD", module_count, pending_note]
+		_set_control_text_if_changed(editor_board_hint_label, "%s  %s %d/%d  %sx%d%s" % [rule_short, _short_part_name(node_label), clampi(editor_topology_node_index + 1, 1, maxi(1, nodes.size())), nodes.size(), "模块" if _ui_is_zh() else "MOD", module_count, pending_note])
 	elif body_board_enabled:
 		_ensure_custom_topology(unit_bp)
-		editor_board_hint_label.text = "自由画布就绪：拖入构件；双击躯干打开详情，单击拖动。" if _ui_is_zh() else "FREE CANVAS READY: drag parts in; double-click torso for details, single-click to drag."
+		_set_control_text_if_changed(editor_board_hint_label, "自由画布就绪：拖入构件；双击躯干打开详情，单击拖动。" if _ui_is_zh() else "FREE CANVAS READY: drag parts in; double-click torso for details, single-click to drag.")
 	elif role_key == "barrier":
 		var tile_count := Array(unit_bp.get("barrier_tiles", [])).size()
 		var stats := precomputed_stats if not precomputed_stats.is_empty() else _editor_current_stats()
-		editor_board_hint_label.text = "以太屏幕蓝图 %d/%d  最大一屏；左键放置 / 右键移除" % [tile_count, maxi(1, int(stats.get("material_slots", 4)))] if _ui_is_zh() else "Ether screen blueprint tiles %d/%d  max one viewport; left place / right remove" % [tile_count, maxi(1, int(stats.get("material_slots", 4)))]
+		_set_control_text_if_changed(editor_board_hint_label, "以太屏幕蓝图 %d/%d  最大一屏；左键放置 / 右键移除" % [tile_count, maxi(1, int(stats.get("material_slots", 4)))] if _ui_is_zh() else "Ether screen blueprint tiles %d/%d  max one viewport; left place / right remove" % [tile_count, maxi(1, int(stats.get("material_slots", 4)))])
 	else:
-		editor_board_hint_label.text = "机体画布未启用" if _ui_is_zh() else "Body board inactive"
+		_set_control_text_if_changed(editor_board_hint_label, "机体画布未启用" if _ui_is_zh() else "Body board inactive")
 	var illegal_parts := _illegal_module_material_parts(unit_bp) if body_board_enabled else {}
 	for part_key in BODY_PART_ORDER:
 		var button: Button = editor_board_labels[part_key]
-		button.disabled = not body_board_enabled
-		button.visible = body_board_enabled and not custom_board_enabled
+		_set_button_disabled_if_changed(button, not body_board_enabled)
+		_set_canvas_item_visible_if_changed(button, body_board_enabled and not custom_board_enabled)
 		var marker := "> " if part_key == editor_selected_body_part and body_board_enabled else ""
 		var alarm := "! " if illegal_parts.has(part_key) else ""
-		button.text = "%s%s%s" % [marker, alarm, _body_part_label(part_key, unit_bp)]
+		_set_control_text_if_changed(button, "%s%s%s" % [marker, alarm, _body_part_label(part_key, unit_bp)])
 	var selected_bp: Dictionary = {}
 	if custom_board_enabled:
 		var topology_for_shop: Dictionary = unit_bp.get("custom_topology", {})
@@ -39398,9 +39505,9 @@ func _update_editor_board_ui(role_key: String, unit_bp: Dictionary, precomputed_
 			selected_bp = nodes_for_shop[editor_topology_node_index]
 	for slot_key in BODY_GROUP_SLOTS:
 		var button: Button = editor_shop_buttons[slot_key]
-		button.disabled = not body_board_enabled
+		_set_button_disabled_if_changed(button, not body_board_enabled)
 		if not body_board_enabled:
-			button.text = "%s 零件库：仅机甲" % _slot_name(slot_key) if _ui_is_zh() else "%s PARTS: mech only" % _slot_name(slot_key)
+			_set_control_text_if_changed(button, "%s 零件库：仅机甲" % _slot_name(slot_key) if _ui_is_zh() else "%s PARTS: mech only" % _slot_name(slot_key))
 			continue
 		var catalog: Array = _catalog_for(role_key, slot_key)
 		var index := int(selected_bp.get(slot_key, 0))
@@ -39416,13 +39523,13 @@ func _update_editor_board_ui(role_key: String, unit_bp: Dictionary, precomputed_
 			volume_note = ("长 %.2f / 接口 %d" if _ui_is_zh() else "L %.2f / ends %d") % [float(part.get("length", 0.0)), int(part.get("connection_ends", 1))]
 		var pending_marker := ("待放置 " if _ui_is_zh() else "PENDING ") if _has_pending_canvas_part() and editor_pending_place_slot == slot_key else ""
 		var selected_marker := ("当前节点 " if _ui_is_zh() else "NODE ") if custom_board_enabled and _topology_node_is_component(selected_bp) and _topology_node_slot(selected_bp) == slot_key else ""
-		button.text = _shop_slot_button_text(slot_key, part, volume_note, pending_marker, selected_marker)
+		_set_control_text_if_changed(button, _shop_slot_button_text(slot_key, part, volume_note, pending_marker, selected_marker))
 		if _has_pending_canvas_part() and editor_pending_place_slot == slot_key:
-			button.modulate = Color(1.0, 0.86, 0.28, 1.0)
+			_set_canvas_item_modulate_if_changed(button, Color(1.0, 0.86, 0.28, 1.0))
 		elif custom_board_enabled and _topology_node_is_component(selected_bp) and _topology_node_slot(selected_bp) == slot_key:
-			button.modulate = Color(0.42, 0.98, 1.0, 1.0)
+			_set_canvas_item_modulate_if_changed(button, Color(0.42, 0.98, 1.0, 1.0))
 		else:
-			button.modulate = Color(0.9, 0.94, 0.98, 1.0)
+			_set_canvas_item_modulate_if_changed(button, Color(0.9, 0.94, 0.98, 1.0))
 	for archetype_key in editor_archetype_buttons.keys():
 		var frame_button: Button = editor_archetype_buttons[archetype_key]
 		frame_button.visible = editor_panel_mode == "load" and editor_template_menu_open and body_board_enabled and role_key != "barrier"

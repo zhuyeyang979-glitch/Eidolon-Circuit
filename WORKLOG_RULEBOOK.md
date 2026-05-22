@@ -2261,6 +2261,56 @@ Sync:
 - Implemented in `E:\New project`.
 - Mirror targets remain `C:\Users\Administrator\Documents\New project` and `C:\Users\Administrator\OneDrive\ドキュメント\New project`.
 
+## 2026-05-22 TeamEdit 单体 UI 管线拆解与真实卡顿定位
+
+Rules:
+- 高频 TeamEdit 输入不得直接造成整页 Control 属性重写；重复同状态刷新必须主要走 no-op setter。
+- Dashboard 动力分配滑块松手后的完整刷新必须延迟到 deferred UI flush；拖动中只保留轻量数值更新。
+- TeamEdit 性能叠层不得每帧递归统计整棵 Control 树；可见控件计数改为低频采样，避免叠层本身制造卡顿。
+- `check-only` 与目标探针继续通过 `tools/run_godot_checked.ps1` 运行；真实窗口性能问题由 headed/perf probes 继续定位。
+
+Implementation notes:
+- 新增 `_set_control_text_if_changed`、`_set_canvas_item_visible_if_changed`、`_set_canvas_item_modulate_if_changed`、`_set_control_position_if_changed`、`_set_control_size_if_changed`、`_set_button_disabled_if_changed` 等 TeamEdit/UI no-op setter。
+- `_update_editor_ui()` 的角色标签、槽位标签、单位/摘要/详情文本、模块绑定按钮、模板抽屉、单位库卡片、部分面板按钮与零件筛选按钮改为 no-op setter，减少 Godot Control 反复 layout/redraw。
+- `_refresh_editor_dashboard_after_allocation(true)` 不再同步调用 `_update_editor_ui()`；现在标记 `editor_update_ui_deferred` 并立即走轻量 dashboard refresh。
+- `_editor_perf_overlay_text()` 增加 `update_ui` 耗时、属性写入/no-op、deferred allocation 计数；可见控件数量使用 30 帧低频缓存。
+- 新增 probes：
+  - `teamedit_update_ui_decomposition_probe`
+  - `teamedit_property_write_budget_probe`
+  - `editor_stats_idle_recompute_probe`
+  - `teamedit_trace_profiler_probe`
+
+Verification:
+- `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120` passed headless.
+- New TeamEdit pipeline probes passed:
+  - `teamedit_update_ui_decomposition_probe`
+  - `teamedit_property_write_budget_probe` (`first=35 repeat_write=30 repeat_noop=452`)
+  - `editor_stats_idle_recompute_probe`
+  - `teamedit_trace_profiler_probe`
+- Existing performance/render probes passed:
+  - `teamedit_real_frame_budget_probe`
+  - `teamedit_hover_frame_budget_probe`
+  - `teamedit_dashboard_slider_frame_budget_probe`
+  - `part_preview_async_bake_probe`
+  - `assembly_board_root_no_redraw_probe`
+  - `edge_socket_overlay_retained_items_probe`
+- Regression probes passed:
+  - `teamedit_probe`
+  - `combat_probe`
+  - `ui_layout_probe`
+  - `text_overflow_probe`
+
+Notes:
+- Repeated full TeamEdit updates still report a small number of guarded writes (`30`), which points to remaining mutually-updated labels/buttons inside the legacy full wrapper. The next performance pass should keep reducing this by moving more panel-specific sections behind revision keys rather than adding more full-page writes.
+- This round does not change combat math, GPU collision behavior, part data, action modules, or save schema.
+
+Sync:
+- Implemented in `E:\New project`.
+- Mirror targets: `C:\Users\Administrator\Documents\New project` and `C:\Users\Administrator\OneDrive\ドキュメント\New project`.
+- Mirror hash check after sync:
+  - `scripts/main.gd` SHA256 prefix `8BD9F40BC25E` on all three copies.
+  - `WORKLOG_RULEBOOK.md` was re-synced with this entry after verification.
+
 ## 2026-05-22 TeamEdit 异步预览烘焙与 GPU buffer 分离
 
 Rules:
