@@ -1891,6 +1891,30 @@ Sync:
   - `tools/module_detail_action_page_probe.gd` = `67B071EB35383E72`
   - `tools/module_detail_payload_hover_probe.gd` = `9142AA5424360EB0`
 
+## 2026-05-22 本轮追踪：runtime geometry probe 自给自足化
+
+Rules:
+- `E:\New project` 继续作为实施源；Documents / OneDrive 只作为同步镜像。
+- 本轮只追补上一轮验证网缺口，不触碰当前已有的性能/主文件 dirty work。
+- `runtime_geometry_identity_probe` 不应强依赖本地 saved unit `2`；保存数据被清理或缺失时必须有自包含 TeamEdit fixture。
+
+Implementation notes:
+- `tools/runtime_geometry_identity_probe.gd` 保留旧 saved unit `2` 优先路径；缺失或无法读取时自动构造一个 hero TeamEdit 拓扑 fixture。
+- 探针改为直接把 TeamEdit stats 喂给 `Fighter` 验证 runtime segment 与 torso polygon collider，不再进入完整训练战斗入口，减少 headless 入口副作用。
+- 未修改 `scripts/main.gd`、`scripts/fighter.gd` 或当前性能相关 dirty files。
+
+Verification:
+- Passed: `runtime_geometry_identity_probe` (`source=user://saved_units/2_1779456829.json`, `segments=3`, `torso_points=28`).
+- Passed regressions: `training_topology_visual_consistency_probe`, `board_battle_art_identity_probe`, `combat_probe`.
+- Headless `--check-only --quit-after 1` passed; ObjectDB cleanup warnings remain teardown noise.
+- Current `no_old_combat_terms_probe` reports pre-existing dirty `scripts/main.gd` references to `reference_damage` at lines around `8796` and `31207`; this was not changed in this probe-only follow-up.
+
+Sync:
+- Implemented in `E:\New project`.
+- Documents mirror sync completed for `tools/runtime_geometry_identity_probe.gd` and this worklog.
+- Verified hash sample before final sync:
+  - `tools/runtime_geometry_identity_probe.gd` = `17BC4EA3207E905E`
+
 ## 2026-05-22 TeamEdit 躯干详情绑定/保存入口/插槽扩容
 
 Rules:
@@ -2260,6 +2284,46 @@ Verification:
 Sync:
 - Implemented in `E:\New project`.
 - Mirror targets remain `C:\Users\Administrator\Documents\New project` and `C:\Users\Administrator\OneDrive\ドキュメント\New project`.
+
+## 2026-05-22 TeamEdit 热路径真实采样与全量刷新收束
+
+Rules:
+- 性能探针必须输出真实交互分布；仅检查计数器存在不再视为足够验证。
+- TeamEdit 高频交互继续走 dirty scheduler；slider drag / hover / preview pulse 不应同步重算完整 stats 或重建 board model。
+- 预览主体贴图不再由选中态或 pulse 打穿缓存；选中和 pulse 由轻量 overlay 表达。
+- GPU deferred contact/query 消费不再显式调用 `rd.sync()`；阻塞同步只允许诊断/非 deferred 旧接口。
+
+Implementation notes:
+- `HotPathProfiler` 新增 interaction samples、p95/max、hot scope 汇总；TeamEdit perf overlay 显示 interactions 行。
+- `_update_editor_ui()`、`_update_editor_board_ui()`、`_refresh_editor_visual_views()`、`_update_editor_catalog_buttons()`、`_editor_current_stats()` 和 dirty flush 均接入 profiler scope。
+- `_update_editor_board_ui()` 增加 revision gate，未变化时跳过 shop/catalog/visual 链路。
+- `_refresh_editor_visual_views()` 去掉热路径 `stats.hash()`，改为小型 stats revision key。
+- Dashboard allocation light refresh 只更新动力分配面板，完整 stats/legal/detail 留到 drag end 或 idle dirty flush。
+- 新增 `editor_property_write_budget_probe.gd`，补齐计划中的属性写入预算探针入口。
+
+Verification:
+- `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120` passed headless.
+- TeamEdit/profiler probes passed:
+  - `teamedit_trace_profiler_probe` (`hover_p95=0.81ms`, `slider_p95=0.05ms`, `pose_p95=0.13ms`, hot scope `teamedit.flush_dirty`)
+  - `teamedit_real_frame_budget_probe`
+  - `teamedit_hover_frame_budget_probe`
+  - `teamedit_dashboard_slider_frame_budget_probe`
+  - `editor_catalog_revision_cache_probe`
+  - `editor_board_model_incremental_probe`
+  - `editor_property_write_budget_probe`
+  - `teamedit_update_ui_dirty_scheduler_probe`
+- Preview/GPU probes passed:
+  - `part_preview_no_force_draw_probe`
+  - `part_preview_async_bake_probe`
+  - `gpu_no_hot_rd_sync_probe`
+  - headed `gpu_query_nonblocking_poll_probe` on NVIDIA GeForce RTX 4080 SUPER.
+- Regressions passed: `teamedit_probe`, `combat_probe`, `ui_layout_probe`, `text_overflow_probe`.
+
+Next direction:
+- If the real window still feels sticky, use the new interaction p95/hot-scope line first. Current likely next targets are `teamedit.flush_dirty` internals, especially remaining board model enrichment and catalog property writes.
+
+Sync:
+- Implemented in `E:\New project`; sync to Documents / OneDrive pending at end of this work batch.
 
 ## 2026-05-22 全游戏状态层与热路径骨架
 

@@ -878,13 +878,16 @@ class PartPreviewTextureCache:
 
 	static func key_for(slot_key: String, part: Dictionary, selected: bool, pulse: float, preview_size: Vector2) -> String:
 		var size_key := "%dx%d" % [maxi(1, int(round(preview_size.x))), maxi(1, int(round(preview_size.y)))]
+		# Selection and pulse are lightweight overlay states. Keeping them out of
+		# the body-art key prevents hover/selection animation from invalidating
+		# the expensive renderer cache while scrolling the catalog.
 		return "%s|%s|%s|%s|%s|%s|%s" % [
 			slot_key,
 			String(part.get("name", "")),
 			String(part.get("size_tier", part.get("size_class", part.get("slot_volume_tier", "")))),
 			String(part.get("material_visual", part.get("material_class", ""))),
 			String(part.get("weapon_family", part.get("gun_kind", ""))),
-			str(snappedf(pulse, 0.02)),
+			"body",
 			size_key,
 		]
 
@@ -942,7 +945,7 @@ class PartPreviewTextureCache:
 			var request: Dictionary = pending_requests[cache_key]
 			pending_requests.erase(cache_key)
 			var request_size: Vector2 = request.get("size", Vector2(64.0, 48.0))
-			if _submit_render(owner, cache_key, String(request.get("slot", "")), Dictionary(request.get("part", {})), bool(request.get("selected", false)), float(request.get("pulse", 0.0)), request_size):
+			if _submit_render(owner, cache_key, String(request.get("slot", "")), Dictionary(request.get("part", {})), false, 0.0, request_size):
 				submitted += 1
 		process_count += captured + submitted
 		return captured
@@ -1046,7 +1049,7 @@ class PartPreviewIconView:
 		var semantic_signature := "%s|%s" % [_preview_signature(next_slot, next_part, next_selected, next_pulse), size_key]
 		# Selection is rendered by the card frame; ignoring it here keeps catalog
 		# paging/selection refreshes from invalidating the expensive preview art.
-		var identity_signature := "%s|%s|%s" % [next_slot, String(next_part.get("name", "")), str(snappedf(next_pulse, 0.02))]
+		var identity_signature := "%s|%s" % [next_slot, String(next_part.get("name", ""))]
 		var signature := explicit_signature if explicit_signature != "" else semantic_signature
 		if signature == last_preview_signature or semantic_signature == last_preview_semantic_signature or identity_signature == last_preview_identity_signature:
 			set_preview_noop_count += 1
@@ -5712,16 +5715,21 @@ class BattleContactVfxPool:
 	var particles: Array[GPUParticles2D] = []
 	var cursor := 0
 	var emitted_count := 0
+	var pool_scale := 1.0
 
-	func setup_pool(size: int = 96) -> void:
-		if not particles.is_empty():
+	func setup_pool(size: int = 96, effect_scale: float = 1.0) -> void:
+		pool_scale = clampf(effect_scale, 0.35, 1.65)
+		if particles.size() >= size:
+			for particle in particles:
+				if particle is GPUParticles2D:
+					(particle as GPUParticles2D).amount = maxi(1, int(roundf(10.0 * pool_scale)))
 			return
-		for i in range(size):
+		for i in range(particles.size(), size):
 			var particle := GPUParticles2D.new()
 			particle.name = "GpuContactVfx%d" % i
 			particle.one_shot = true
 			particle.emitting = false
-			particle.amount = 10
+			particle.amount = maxi(1, int(roundf(10.0 * pool_scale)))
 			particle.lifetime = 0.18
 			particle.explosiveness = 1.0
 			particle.randomness = 0.35
@@ -5749,8 +5757,8 @@ class BattleContactVfxPool:
 		var material := particle.process_material as ParticleProcessMaterial
 		if material != null:
 			var clamped := clampf(strength, 0.1, 4.0)
-			material.initial_velocity_min = 18.0 + clamped * 12.0
-			material.initial_velocity_max = 52.0 + clamped * 26.0
+			material.initial_velocity_min = (18.0 + clamped * 12.0) * pool_scale
+			material.initial_velocity_max = (52.0 + clamped * 26.0) * pool_scale
 			material.color = Color(1.0, 0.84, 0.24, 0.82) if kind == 1 else Color(0.35, 0.9, 1.0, 0.74)
 		particle.visible = true
 		particle.restart()
@@ -6538,6 +6546,56 @@ const SAVED_TEAM_SCHEMA_VERSION = "momentum_chain_v3"
 const SAVED_UNITS_DIR = "user://saved_units"
 const SAVED_UNIT_SCHEMA_VERSION = "momentum_chain_v3"
 const BATTLE_INPUT_BINDINGS_PATH = "user://battle_input_bindings.json"
+const PERFORMANCE_SETTINGS_PATH = "user://performance_settings.json"
+const PERFORMANCE_PROFILE_DEFAULT = "balanced_4080s"
+const PERFORMANCE_PROFILE_ORDER = ["ultra_4080s", "balanced_4080s", "compat_60"]
+const PERFORMANCE_PROFILE_SPECS = {
+	"ultra_4080s": {
+		"name_zh": "4080S 极高",
+		"name_en": "4080S Ultra",
+		"fps_cap": 144,
+		"render_scale": 1.0,
+		"vfx_scale": 1.35,
+		"hit_vfx": true,
+		"board_preview_quality": "ultra",
+		"battle_vfx_budget": 420,
+		"projectile_trace_budget": 180,
+		"hit_effect_budget": 180,
+		"contact_particle_pool": 192,
+		"topology_segment_budget": 900,
+		"gpu_collision_mode": "auto",
+	},
+	"balanced_4080s": {
+		"name_zh": "4080S 平衡",
+		"name_en": "4080S Balanced",
+		"fps_cap": 120,
+		"render_scale": 1.0,
+		"vfx_scale": 1.0,
+		"hit_vfx": true,
+		"board_preview_quality": "high",
+		"battle_vfx_budget": 260,
+		"projectile_trace_budget": 120,
+		"hit_effect_budget": 110,
+		"contact_particle_pool": 128,
+		"topology_segment_budget": 720,
+		"gpu_collision_mode": "auto",
+	},
+	"compat_60": {
+		"name_zh": "兼容 60",
+		"name_en": "Compat 60",
+		"fps_cap": 60,
+		"render_scale": 0.85,
+		"vfx_scale": 0.68,
+		"hit_vfx": true,
+		"board_preview_quality": "standard",
+		"battle_vfx_budget": 120,
+		"projectile_trace_budget": 56,
+		"hit_effect_budget": 52,
+		"contact_particle_pool": 72,
+		"topology_segment_budget": 480,
+		"gpu_collision_mode": "auto",
+	},
+}
 const SORTIE_UNIT_CAP = 6
 const INITIAL_ENTRY_COST_CAP = 200
 const RUNTIME_START_RESOURCE = 200.0
@@ -7679,6 +7737,18 @@ var ai_roster_stats_cache := {}
 var ai_side_swap_active := false
 var ai_side_swap_snapshot := {}
 var heat_hud_enabled := true
+var performance_profile := PERFORMANCE_PROFILE_DEFAULT
+var runtime_quality_config := {}
+var performance_frame_samples: Array = []
+var performance_last_frame_usec := 0
+var performance_last_avg_ms := 0.0
+var performance_last_max_ms := 0.0
+var battle_vfx_spawn_count_this_frame := 0
+var battle_projectile_trace_count_this_frame := 0
+var battle_hit_effect_count_this_frame := 0
+var battle_vfx_budget_drop_count := 0
+var battle_projectile_trace_spawn_count := 0
+var battle_hit_effect_spawn_count := 0
 
 var blueprints := {}
 var active_roster_indices := {}
@@ -8014,6 +8084,11 @@ var editor_catalog_buttons_revision_key := ""
 var editor_catalog_card_signature_cache := {}
 var editor_catalog_revision_skip_count := 0
 var editor_catalog_update_usec := 0
+var editor_catalog_card_update_count := 0
+var editor_board_ui_revision_key := ""
+var editor_board_ui_revision_skip_count := 0
+var editor_board_visual_request_count := 0
+var editor_board_visual_deferred_count := 0
 var editor_visual_revision_key := ""
 var editor_visual_refresh_skip_count := 0
 var editor_board_shallow_node_snapshot_count := 0
@@ -8058,6 +8133,7 @@ var settings_list_container: VBoxContainer
 var settings_rebind_status_label: Label
 var settings_reset_button: Button
 var settings_category_buttons := {}
+var settings_video_buttons := {}
 var settings_rebind_action := ""
 var training_dummy_state := "idle_brake"
 var battle_runtime_menu_panel: Control
@@ -8123,6 +8199,7 @@ func _ready() -> void:
 	_initialize_gpu_collision_pipeline()
 	_register_inputs()
 	_initialize_state()
+	_load_performance_settings()
 	_build_stage()
 	_build_menu_ui()
 	_build_format_select_ui()
@@ -8230,6 +8307,7 @@ func _input(event: InputEvent) -> void:
 
 
 func _process(delta: float) -> void:
+	_begin_runtime_performance_frame(delta)
 	if game_state_store != null:
 		game_state_store.set_app_mode(game_state, "process")
 	var process_scope := "process.%s" % game_state
@@ -8257,6 +8335,62 @@ func _process(delta: float) -> void:
 	if hot_path_profiler != null:
 		hot_path_profiler.scope_end(process_scope)
 		hot_path_profiler.end_frame()
+
+
+func _begin_runtime_performance_frame(delta: float) -> void:
+	_reset_battle_vfx_frame_budget()
+	var sample_ms := delta * 1000.0
+	if sample_ms <= 0.0 and performance_last_frame_usec > 0:
+		sample_ms = float(Time.get_ticks_usec() - performance_last_frame_usec) / 1000.0
+	performance_last_frame_usec = Time.get_ticks_usec()
+	performance_frame_samples.append(sample_ms)
+	while performance_frame_samples.size() > 120:
+		performance_frame_samples.pop_front()
+	var total := 0.0
+	var max_sample := 0.0
+	for raw_sample in performance_frame_samples:
+		var value := float(raw_sample)
+		total += value
+		max_sample = maxf(max_sample, value)
+	if not performance_frame_samples.is_empty():
+		performance_last_avg_ms = total / float(performance_frame_samples.size())
+		performance_last_max_ms = max_sample
+
+
+func _reset_battle_vfx_frame_budget() -> void:
+	battle_vfx_spawn_count_this_frame = 0
+	battle_projectile_trace_count_this_frame = 0
+	battle_hit_effect_count_this_frame = 0
+
+
+func _consume_battle_vfx_budget(kind: String) -> bool:
+	var total_limit := int(_runtime_quality_value("battle_vfx_budget", 260))
+	if total_limit <= 0:
+		battle_vfx_budget_drop_count += 1
+		return false
+	var kind_limit := total_limit
+	match kind:
+		"projectile_trace":
+			kind_limit = int(_runtime_quality_value("projectile_trace_budget", 120))
+		"hit_effect":
+			kind_limit = int(_runtime_quality_value("hit_effect_budget", 110))
+	if battle_vfx_spawn_count_this_frame >= total_limit:
+		battle_vfx_budget_drop_count += 1
+		return false
+	if kind == "projectile_trace" and battle_projectile_trace_count_this_frame >= kind_limit:
+		battle_vfx_budget_drop_count += 1
+		return false
+	if kind == "hit_effect" and battle_hit_effect_count_this_frame >= kind_limit:
+		battle_vfx_budget_drop_count += 1
+		return false
+	battle_vfx_spawn_count_this_frame += 1
+	if kind == "projectile_trace":
+		battle_projectile_trace_count_this_frame += 1
+		battle_projectile_trace_spawn_count += 1
+	elif kind == "hit_effect":
+		battle_hit_effect_count_this_frame += 1
+		battle_hit_effect_spawn_count += 1
+	return true
 
 
 func _initialize_state() -> void:
@@ -8320,6 +8454,91 @@ func _initialize_state() -> void:
 		1: {"hero": null, "puppet": [], "barrier": null},
 		2: {"hero": null, "puppet": [], "barrier": null},
 	}
+	_apply_performance_profile(performance_profile, false)
+
+
+func _performance_profile_spec(profile_key: String) -> Dictionary:
+	var key := profile_key
+	if not PERFORMANCE_PROFILE_SPECS.has(key):
+		key = PERFORMANCE_PROFILE_DEFAULT
+	var spec: Dictionary = PERFORMANCE_PROFILE_SPECS[key]
+	var result := spec.duplicate(true)
+	result["profile"] = key
+	return result
+
+
+func _performance_profile_label(profile_key: String) -> String:
+	var spec := _performance_profile_spec(profile_key)
+	return String(spec.get("name_zh", profile_key)) if _ui_is_zh() else String(spec.get("name_en", profile_key))
+
+
+func _apply_performance_profile(profile_key: String, persist: bool = true) -> void:
+	var spec := _performance_profile_spec(profile_key)
+	performance_profile = String(spec.get("profile", PERFORMANCE_PROFILE_DEFAULT))
+	runtime_quality_config = spec.duplicate(true)
+	Engine.max_fps = int(runtime_quality_config.get("fps_cap", 120))
+	if battle_contact_vfx_pool != null and is_instance_valid(battle_contact_vfx_pool):
+		battle_contact_vfx_pool.setup_pool(int(runtime_quality_config.get("contact_particle_pool", 128)), float(runtime_quality_config.get("vfx_scale", 1.0)))
+	if persist:
+		_save_performance_settings()
+
+
+func _load_performance_settings() -> void:
+	performance_profile = PERFORMANCE_PROFILE_DEFAULT
+	if FileAccess.file_exists(PERFORMANCE_SETTINGS_PATH):
+		var file := FileAccess.open(PERFORMANCE_SETTINGS_PATH, FileAccess.READ)
+		if file != null:
+			var parsed = JSON.parse_string(file.get_as_text())
+			if parsed is Dictionary:
+				var saved: Dictionary = parsed
+				var saved_profile := String(saved.get("performance_profile", PERFORMANCE_PROFILE_DEFAULT))
+				if PERFORMANCE_PROFILE_SPECS.has(saved_profile):
+					performance_profile = saved_profile
+	_apply_performance_profile(performance_profile, false)
+
+
+func _save_performance_settings() -> void:
+	var file := FileAccess.open(PERFORMANCE_SETTINGS_PATH, FileAccess.WRITE)
+	if file == null:
+		return
+	file.store_string(JSON.stringify({"performance_profile": performance_profile}, "\t"))
+
+
+func _cycle_performance_profile(delta: int = 1) -> void:
+	var index := PERFORMANCE_PROFILE_ORDER.find(performance_profile)
+	if index < 0:
+		index = PERFORMANCE_PROFILE_ORDER.find(PERFORMANCE_PROFILE_DEFAULT)
+	index = posmod(index + delta, PERFORMANCE_PROFILE_ORDER.size())
+	_apply_performance_profile(String(PERFORMANCE_PROFILE_ORDER[index]), true)
+	_rebuild_settings_list()
+	_update_settings_ui()
+
+
+func _runtime_quality_value(key: String, fallback = null):
+	if runtime_quality_config.is_empty():
+		_apply_performance_profile(performance_profile, false)
+	return runtime_quality_config.get(key, fallback)
+
+
+func _runtime_quality_summary() -> String:
+	var spec := _performance_profile_spec(performance_profile)
+	if _ui_is_zh():
+		return "%s  FPS %d  渲染 %.0f%%  VFX %.0f%%  预算 %d/%d" % [
+			_performance_profile_label(performance_profile),
+			int(spec.get("fps_cap", 0)),
+			float(spec.get("render_scale", 1.0)) * 100.0,
+			float(spec.get("vfx_scale", 1.0)) * 100.0,
+			int(spec.get("projectile_trace_budget", 0)),
+			int(spec.get("battle_vfx_budget", 0)),
+		]
+	return "%s  FPS %d  Render %.0f%%  VFX %.0f%%  Budget %d/%d" % [
+		_performance_profile_label(performance_profile),
+		int(spec.get("fps_cap", 0)),
+		float(spec.get("render_scale", 1.0)) * 100.0,
+		float(spec.get("vfx_scale", 1.0)) * 100.0,
+		int(spec.get("projectile_trace_budget", 0)),
+		int(spec.get("battle_vfx_budget", 0)),
+	]
 
 
 func _default_player_roster(player_id: int) -> Dictionary:
@@ -8450,6 +8669,8 @@ func _editor_current_blueprint() -> Dictionary:
 
 
 func _editor_current_stats() -> Dictionary:
+	if hot_path_profiler != null:
+		hot_path_profiler.scope_begin("teamedit.stats")
 	var player_id := _editor_player()
 	var role_key: String = ROLE_ORDER[editor_role_index]
 	var unit_index := int(editor_unit_indices.get(role_key, 0))
@@ -8457,10 +8678,16 @@ func _editor_current_stats() -> Dictionary:
 	var cache_key := "%d|%s|%d|%s|%d" % [player_id, role_key, unit_index, str(_editor_is_blank_work_canvas()), hash(unit_bp)]
 	if cache_key == editor_current_stats_cache_key and not editor_current_stats_cache.is_empty():
 		editor_current_stats_cache_hit_count += 1
+		if hot_path_profiler != null:
+			hot_path_profiler.count("teamedit.stats.hit")
+			hot_path_profiler.scope_end("teamedit.stats")
 		return editor_current_stats_cache
 	editor_current_stats_cache_miss_count += 1
 	editor_current_stats_cache_key = cache_key
 	editor_current_stats_cache = _compute_unit_stats(player_id, role_key, unit_index, unit_bp if _editor_is_blank_work_canvas() else {})
+	if hot_path_profiler != null:
+		hot_path_profiler.count("teamedit.stats.miss")
+		hot_path_profiler.scope_end("teamedit.stats")
 	return editor_current_stats_cache
 
 
@@ -12215,6 +12442,79 @@ func _set_button_disabled_if_changed(button: Button, value: bool) -> void:
 	editor_property_write_count += 1
 
 
+func _apply_ui_state(control_map: Dictionary, state: Dictionary) -> void:
+	for key in state.keys():
+		if not control_map.has(key):
+			continue
+		var control = control_map[key]
+		if control == null or not is_instance_valid(control):
+			continue
+		var props_raw = state[key]
+		if not (props_raw is Dictionary):
+			continue
+		var props: Dictionary = props_raw
+		if props.has("text") and control is Control:
+			_set_control_text_if_changed(control as Control, String(props["text"]))
+		if props.has("tooltip") and control is Control:
+			_set_control_tooltip_if_changed(control as Control, String(props["tooltip"]))
+		if props.has("visible") and control is CanvasItem:
+			_set_canvas_item_visible_if_changed(control as CanvasItem, bool(props["visible"]))
+		if props.has("modulate") and control is CanvasItem:
+			_set_canvas_item_modulate_if_changed(control as CanvasItem, props["modulate"])
+		if props.has("disabled") and control is Button:
+			_set_button_disabled_if_changed(control as Button, bool(props["disabled"]))
+		if props.has("position") and control is Control:
+			_set_control_position_if_changed(control as Control, props["position"])
+		if props.has("size") and control is Control:
+			_set_control_size_if_changed(control as Control, props["size"])
+
+
+func _ui_text_state(text: String, modulate: Color = Color(-1.0, -1.0, -1.0, -1.0), visible_value = null, disabled_value = null, tooltip: String = "") -> Dictionary:
+	var state := {"text": text}
+	if modulate.a >= 0.0:
+		state["modulate"] = modulate
+	if visible_value != null:
+		state["visible"] = bool(visible_value)
+	if disabled_value != null:
+		state["disabled"] = bool(disabled_value)
+	if tooltip != "":
+		state["tooltip"] = tooltip
+	return state
+
+
+func build_editor_ui_state() -> Dictionary:
+	return {
+		"panel_mode": editor_panel_mode,
+		"role_index": editor_role_index,
+		"slot_index": editor_slot_index,
+		"catalog_page": editor_catalog_page,
+		"board_tool": editor_board_tool,
+		"language": ui_language,
+		"performance_profile": performance_profile,
+	}
+
+
+func build_battle_hud_state() -> Dictionary:
+	return {
+		"mode": _battle_mode_title(),
+		"message": battle_message,
+		"avg_ms": performance_last_avg_ms,
+		"max_ms": performance_last_max_ms,
+		"performance_profile": performance_profile,
+		"vfx_dropped": battle_vfx_budget_drop_count,
+	}
+
+
+func build_torso_detail_state() -> Dictionary:
+	return {
+		"open_torso": editor_open_torso_node_index,
+		"selected_kind": editor_selected_torso_slot_kind,
+		"selected_index": editor_selected_torso_slot_index,
+		"pending_binding": not editor_pending_module_binding.is_empty(),
+		"performance_profile": performance_profile,
+	}
+
+
 func _compact_all_ui_text() -> void:
 	_compact_control_text(self)
 
@@ -13092,6 +13392,11 @@ func _activate_settings_item(index: int) -> void:
 	if settings_index < 0 or settings_index >= settings_labels.size():
 		return
 	var button: Button = settings_labels[settings_index]
+	if button.has_meta("video_action"):
+		match String(button.get_meta("video_action", "")):
+			"performance_profile":
+				_cycle_performance_profile(1)
+		return
 	var spec_index := int(button.get_meta("spec_index", -1))
 	if spec_index < 0 or spec_index >= battle_input_binding_specs.size():
 		return
@@ -14515,9 +14820,8 @@ func _refresh_editor_dashboard_after_allocation(full_refresh: bool) -> void:
 		_refresh_editor_dashboard_after_allocation(false)
 		return
 	editor_allocation_light_refresh_count += 1
-	var stats := _editor_current_stats()
-	_refresh_editor_stats_rail(stats)
-	_refresh_torso_detail_view()
+	# Slider drag must stay cheap: live allocation numbers update immediately,
+	# while stats/legal/detail recompute is deferred to drag end or idle flush.
 	_refresh_engine_momentum_allocation_view()
 
 
@@ -19393,6 +19697,8 @@ func flush_editor_dirty(budget_usec: int = 0) -> void:
 	if editor_dirty_flags == 0:
 		return
 	var started := Time.get_ticks_usec()
+	if hot_path_profiler != null:
+		hot_path_profiler.scope_begin("teamedit.flush_dirty")
 	var flags := editor_dirty_flags
 	editor_dirty_flags = 0
 	if dirty_graph != null:
@@ -19431,6 +19737,9 @@ func flush_editor_dirty(budget_usec: int = 0) -> void:
 		team_edit_controller.flush_count += 1
 	if budget_usec > 0 and editor_dirty_scheduler_last_usec > budget_usec:
 		editor_dirty_scheduler_skipped_stats_count += 1
+	if hot_path_profiler != null:
+		hot_path_profiler.record_value("teamedit.flush_dirty_usec", editor_dirty_scheduler_last_usec)
+		hot_path_profiler.scope_end("teamedit.flush_dirty")
 
 
 func _flush_editor_deferred_ui() -> void:
@@ -19499,14 +19808,19 @@ func _editor_perf_overlay_text() -> String:
 	if derived_state_cache != null:
 		derived_cache_line = derived_state_cache.summary_line()
 	var hot_path_line := "n/a"
+	var interaction_line := "n/a"
 	if hot_path_profiler != null:
 		hot_path_line = hot_path_profiler.summary_line()
+		var interaction_lines: Array = hot_path_profiler.all_interaction_summary_lines()
+		if not interaction_lines.is_empty():
+			interaction_line = " | ".join(interaction_lines.slice(0, mini(3, interaction_lines.size())))
 	var gpu_service_line := "n/a"
 	if gpu_geometry_service != null:
 		gpu_service_line = gpu_geometry_service.summary_line()
 	return "\n".join([
 		"TeamEdit PERF",
 		"hotpath: %s" % hot_path_line,
+		"interactions: %s" % interaction_line,
 		"state: %s" % state_line,
 		"dirty graph: %s" % dirty_graph_line,
 		"derived: %s" % derived_cache_line,
@@ -19526,6 +19840,7 @@ func _editor_perf_overlay_text() -> String:
 		"ui full/deferred/alloc: %d/%d/%d" % [int(editor_full_update_request_count), int(editor_dirty_flush_count), int(editor_deferred_full_refresh_request_count)],
 		"dirty flush: %d flags:%d %.2fms" % [int(editor_dirty_scheduler_flush_count), int(editor_dirty_scheduler_last_flags), float(editor_dirty_scheduler_last_usec) / 1000.0],
 		"catalog skip/update: %d %.2fms" % [int(editor_catalog_revision_skip_count), float(editor_catalog_update_usec) / 1000.0],
+		"board ui skip/visual req: %d/%d" % [int(editor_board_ui_revision_skip_count), int(editor_board_visual_request_count)],
 		"visual skip/shallow: %d/%d" % [int(editor_visual_refresh_skip_count), int(editor_board_shallow_node_snapshot_count)],
 		"stats h/m: %d/%d" % [int(editor_current_stats_cache_hit_count), int(editor_current_stats_cache_miss_count)],
 		"gpu contact/q bytes: %d/%d" % [int(gpu_collision_readback_bytes), int(gpu_geometry_query_readback_bytes)],
@@ -20241,6 +20556,7 @@ func _delete_roster_unit() -> void:
 
 
 func _tick_battle(delta: float) -> void:
+	_reset_battle_vfx_frame_budget()
 	if game_over:
 		if Input.is_action_just_pressed("menu_confirm"):
 			_show_menu()
@@ -25558,6 +25874,8 @@ func _resolve_runtime_gpu_contact_once(a, raw_collider_a: Dictionary, collider_a
 func _emit_gpu_contact_vfx_descriptor(hit_position: Vector2, normal: Vector2, strength: float, kind: int) -> void:
 	if strength <= 0.0 or battle_contact_vfx_pool == null or not is_instance_valid(battle_contact_vfx_pool):
 		return
+	if not _consume_battle_vfx_budget("contact_particle"):
+		return
 	if not _is_valid_combat_position(hit_position):
 		return
 	var screen := _screen_from_ring(wrapf(hit_position.x, 0.0, RING_LENGTH), clampf(hit_position.y, -BATTLE_HALF_HEIGHT, BATTLE_HALF_HEIGHT))
@@ -30294,6 +30612,8 @@ func _update_web_swings(delta: float) -> void:
 func _spawn_projectile_trace(attacker, event: Dictionary) -> void:
 	if effects_root == null or attacker == null or not is_instance_valid(attacker):
 		return
+	if not _consume_battle_vfx_budget("projectile_trace"):
+		return
 	var collider: Dictionary = _attack_collider_for_event(attacker, event)
 	if collider.is_empty():
 		return
@@ -30328,6 +30648,10 @@ func _spawn_hit_effect(target, counter_tier: int, damage_type: String, nullified
 	if effects_root == null or target == null or not is_instance_valid(target) or not target.visible:
 		return
 	if counter_tier <= 0 and not nullified and projectile_style == "":
+		return
+	if not bool(_runtime_quality_value("hit_vfx", true)):
+		return
+	if not _consume_battle_vfx_budget("hit_effect"):
 		return
 	var effect := HitEffect.new()
 	if _is_valid_combat_position(hit_position_combat):
@@ -30482,7 +30806,7 @@ func _clear_all_units() -> void:
 		effect.queue_free()
 	battle_contact_vfx_pool = BattleContactVfxPool.new()
 	battle_contact_vfx_pool.name = "BattleContactVfxPool"
-	battle_contact_vfx_pool.setup_pool()
+	battle_contact_vfx_pool.setup_pool(int(_runtime_quality_value("contact_particle_pool", 128)), float(_runtime_quality_value("vfx_scale", 1.0)))
 	effects_root.add_child(battle_contact_vfx_pool)
 	all_units.clear()
 	blind_zones.clear()
@@ -37032,7 +37356,7 @@ func _build_stage() -> void:
 	add_child(effects_root)
 	battle_contact_vfx_pool = BattleContactVfxPool.new()
 	battle_contact_vfx_pool.name = "BattleContactVfxPool"
-	battle_contact_vfx_pool.setup_pool()
+	battle_contact_vfx_pool.setup_pool(int(_runtime_quality_value("contact_particle_pool", 128)), float(_runtime_quality_value("vfx_scale", 1.0)))
 	effects_root.add_child(battle_contact_vfx_pool)
 
 
@@ -39065,6 +39389,8 @@ func _scout_unit_detail(player_id: int, entry: Dictionary) -> String:
 
 func _update_editor_ui(force_now: bool = false) -> void:
 	var update_start_usec := Time.get_ticks_usec()
+	if hot_path_profiler != null:
+		hot_path_profiler.scope_begin("teamedit.update_ui")
 	var current_frame := Engine.get_process_frames()
 	var ui_state_signature := "%s|%d|%d|%s|%s|%d|%d|%s|%s" % [
 		editor_panel_mode,
@@ -39080,6 +39406,8 @@ func _update_editor_ui(force_now: bool = false) -> void:
 	if not force_now and editor_update_ui_last_frame == current_frame and ui_state_signature == editor_update_ui_last_state_signature:
 		editor_update_ui_deferred_count += 1
 		mark_editor_dirty(EDITOR_DIRTY_DASHBOARD | EDITOR_DIRTY_HOVER | EDITOR_DIRTY_ACTION_BUTTONS)
+		if hot_path_profiler != null:
+			hot_path_profiler.scope_end("teamedit.update_ui")
 		return
 	editor_update_ui_last_frame = current_frame
 	editor_update_ui_last_state_signature = ui_state_signature
@@ -39191,6 +39519,9 @@ func _update_editor_ui(force_now: bool = false) -> void:
 		_set_control_text_if_changed(side_button, "编辑 P%d" % player_id if _ui_is_zh() else "EDIT P%d" % player_id)
 		_set_canvas_item_modulate_if_changed(side_button, Color(0.35, 0.95, 1.0, 1.0) if player_id == 1 else Color(1.0, 0.34, 0.48, 1.0))
 	editor_update_ui_last_usec = Time.get_ticks_usec() - update_start_usec
+	if hot_path_profiler != null:
+		hot_path_profiler.record_value("teamedit.update_ui_usec", editor_update_ui_last_usec)
+		hot_path_profiler.scope_end("teamedit.update_ui")
 
 
 func _refresh_editor_module_binding_buttons() -> void:
@@ -39628,8 +39959,40 @@ func _apply_editor_panel_visibility(role_key: String, unit_bp: Dictionary) -> vo
 
 
 func _update_editor_board_ui(role_key: String, unit_bp: Dictionary, precomputed_stats: Dictionary = {}) -> void:
+	var board_ui_started := Time.get_ticks_usec()
+	if hot_path_profiler != null:
+		hot_path_profiler.scope_begin("teamedit.board_ui")
 	var body_board_enabled := _role_uses_body_board(role_key)
 	var custom_board_enabled := body_board_enabled and unit_bp.has("custom_topology")
+	var custom_board_cache_key := _editor_board_snapshot_cache_key(role_key, unit_bp) if custom_board_enabled else ""
+	var board_selected_slot: String = BUILD_SLOTS[editor_slot_index]
+	var board_selected_part_index := _editor_selected_part_index_for_slot(unit_bp, role_key, board_selected_slot)
+	var board_ui_revision_key := "%s|%s|%s|%d|%d|%d|%d|%s|%s|%s|%d|%d|%s|%s|%s|%d|%s" % [
+		role_key,
+		editor_panel_mode,
+		str(body_board_enabled),
+		editor_slot_index,
+		board_selected_part_index,
+		editor_topology_node_index,
+		editor_open_torso_node_index,
+		custom_board_cache_key,
+		_editor_board_dynamic_revision_key() if custom_board_enabled else "",
+		editor_part_group_mode,
+		editor_catalog_page,
+		1 if editor_catalog_sort_ascending else 0,
+		editor_catalog_sort_key,
+		editor_part_filter_mode,
+		editor_pending_place_slot,
+		editor_pending_place_index,
+		ui_language,
+	]
+	if board_ui_revision_key == editor_board_ui_revision_key:
+		editor_board_ui_revision_skip_count += 1
+		if hot_path_profiler != null:
+			hot_path_profiler.count("teamedit.board_ui.skip")
+			hot_path_profiler.scope_end("teamedit.board_ui")
+		return
+	editor_board_ui_revision_key = board_ui_revision_key
 	if custom_board_enabled:
 		var topology: Dictionary = unit_bp.get("custom_topology", {})
 		var nodes: Array = topology.get("nodes", [])
@@ -39718,6 +40081,9 @@ func _update_editor_board_ui(role_key: String, unit_bp: Dictionary, precomputed_
 	_layout_editor_template_drawer(role_key, template_drawer_visible)
 	_update_editor_catalog_buttons(role_key, unit_bp)
 	_refresh_editor_visual_views(precomputed_stats)
+	if hot_path_profiler != null:
+		hot_path_profiler.record_value("teamedit.board_ui_usec", Time.get_ticks_usec() - board_ui_started)
+		hot_path_profiler.scope_end("teamedit.board_ui")
 
 
 func _shop_slot_button_text(slot_key: String, part: Dictionary, volume_note: String, pending_marker: String, selected_marker: String) -> String:
@@ -40213,10 +40579,15 @@ func _editor_part_sort_value(slot_key: String, part: Dictionary) -> float:
 
 func _update_editor_catalog_buttons(role_key: String, unit_bp: Dictionary) -> void:
 	var update_started := Time.get_ticks_usec()
+	if hot_path_profiler != null:
+		hot_path_profiler.scope_begin("teamedit.catalog")
 	if editor_panel_mode != "parts":
 		var hidden_revision := "hidden|%s" % editor_panel_mode
 		if editor_catalog_buttons_revision_key == hidden_revision:
 			editor_catalog_revision_skip_count += 1
+			if hot_path_profiler != null:
+				hot_path_profiler.count("teamedit.catalog.skip")
+				hot_path_profiler.scope_end("teamedit.catalog")
 			return
 		editor_catalog_buttons_revision_key = hidden_revision
 		editor_catalog_card_signature_cache.clear()
@@ -40224,6 +40595,8 @@ func _update_editor_catalog_buttons(role_key: String, unit_bp: Dictionary) -> vo
 			var hidden_button: Button = editor_catalog_buttons[i]
 			_set_canvas_item_visible_if_changed(hidden_button, false)
 			_set_button_disabled_if_changed(hidden_button, true)
+		if hot_path_profiler != null:
+			hot_path_profiler.scope_end("teamedit.catalog")
 		return
 	var slot_key: String = BUILD_SLOTS[editor_slot_index]
 	var entries := _editor_catalog_entries(role_key, slot_key)
@@ -40244,6 +40617,9 @@ func _update_editor_catalog_buttons(role_key: String, unit_bp: Dictionary) -> vo
 	]
 	if revision_key == editor_catalog_buttons_revision_key:
 		editor_catalog_revision_skip_count += 1
+		if hot_path_profiler != null:
+			hot_path_profiler.count("teamedit.catalog.skip")
+			hot_path_profiler.scope_end("teamedit.catalog")
 		return
 	editor_catalog_buttons_revision_key = revision_key
 	if editor_catalog_page_label != null:
@@ -40284,15 +40660,21 @@ func _update_editor_catalog_buttons(role_key: String, unit_bp: Dictionary) -> vo
 			continue
 		if button.has_method("set_card"):
 			button.call("set_card", entry_slot, part, selected_card, ui_language, part_index, title, String(data_lines[0]), String(data_lines[1]))
+			editor_catalog_card_update_count += 1
 		else:
 			var marker := ">> " if selected_card else ""
 			_set_control_text_if_changed(button, "%s%d %s" % [marker, part_index + 1, _short_part_name(String(part.get("name", "")))])
+			editor_catalog_card_update_count += 1
 		editor_catalog_card_signature_cache[i] = card_signature
 	if editor_action_buttons.has("prev_catalog"):
 		_set_button_disabled_if_changed(editor_action_buttons["prev_catalog"], editor_catalog_page <= 0)
 	if editor_action_buttons.has("next_catalog"):
 		_set_button_disabled_if_changed(editor_action_buttons["next_catalog"], editor_catalog_page >= max_page)
 	editor_catalog_update_usec = Time.get_ticks_usec() - update_started
+	if hot_path_profiler != null:
+		hot_path_profiler.record_value("teamedit.catalog_usec", editor_catalog_update_usec)
+		hot_path_profiler.count("teamedit.catalog.cards", editor_catalog_card_update_count)
+		hot_path_profiler.scope_end("teamedit.catalog")
 
 
 func _editor_selected_part_index_for_slot(unit_bp: Dictionary, role_key: String, slot_key: String) -> int:
@@ -41436,7 +41818,7 @@ func _editor_visual_revision_signature(role_key: String, unit_bp: Dictionary, st
 		str(snappedf(clampf(editor_snap_timer / 0.28, 0.0, 1.0), 0.01)),
 		str(snappedf(editor_canvas_motion_phase, 0.02)),
 		str(editor_material_warning_nodes.hash()),
-		str(stats.hash()) if not stats.is_empty() else "",
+		_editor_visual_stats_revision_key(stats),
 		1 if update_side_panels else 0,
 		editor_pending_place_slot,
 		str(editor_pending_place_index),
@@ -41446,9 +41828,25 @@ func _editor_visual_revision_signature(role_key: String, unit_bp: Dictionary, st
 	]
 
 
+func _editor_visual_stats_revision_key(stats: Dictionary) -> String:
+	if stats.is_empty():
+		return ""
+	return "%d|%d|%d|%d" % [
+		int(Array(stats.get("joint_slot_profiles", [])).size()),
+		int(stats.get("swept_collision_count", 0)),
+		int(stats.get("cost", 0)),
+		1 if bool(stats.get("illegal", false)) else 0,
+	]
+
+
 func _refresh_editor_visual_views(precomputed_stats: Dictionary = {}, update_side_panels: bool = true) -> void:
+	editor_board_visual_request_count += 1
+	if hot_path_profiler != null:
+		hot_path_profiler.scope_begin("teamedit.visual_refresh")
 	editor_visual_refresh_count += 1
 	if assembly_board_view == null:
+		if hot_path_profiler != null:
+			hot_path_profiler.scope_end("teamedit.visual_refresh")
 		return
 	var player_id := _editor_player()
 	var role_key: String = ROLE_ORDER[editor_role_index]
@@ -41464,6 +41862,9 @@ func _refresh_editor_visual_views(precomputed_stats: Dictionary = {}, update_sid
 		if update_side_panels:
 			_refresh_torso_detail_view()
 			_refresh_engine_momentum_allocation_view()
+		if hot_path_profiler != null:
+			hot_path_profiler.count("teamedit.visual_refresh.skip")
+			hot_path_profiler.scope_end("teamedit.visual_refresh")
 		return
 	editor_visual_revision_key = visual_revision
 	if update_side_panels:
@@ -41650,6 +42051,9 @@ func _refresh_editor_visual_views(precomputed_stats: Dictionary = {}, update_sid
 	if update_side_panels:
 		_refresh_torso_detail_view()
 		_refresh_engine_momentum_allocation_view()
+	if hot_path_profiler != null:
+		hot_path_profiler.record_value("teamedit.visual_refresh_usec", editor_board_snapshot_build_usec)
+		hot_path_profiler.scope_end("teamedit.visual_refresh")
 
 
 func _hide_editor_structure_reference() -> void:
@@ -42035,6 +42439,22 @@ func _settings_add_static_row(title: String, value: String, note: String = "") -
 	settings_list_container.add_child(button)
 
 
+func _settings_add_action_row(action_key: String, title: String, value: String, note: String = "") -> Button:
+	var button := Button.new()
+	button.name = "VideoSetting%s" % action_key.capitalize().replace("_", "")
+	button.custom_minimum_size = Vector2(1028.0, 42.0)
+	button.focus_mode = Control.FOCUS_NONE
+	button.clip_text = true
+	button.set_meta("video_action", action_key)
+	button.text = "%s  =  %s%s" % [title, value, ("  ·  %s" % note) if note != "" else ""]
+	button.mouse_entered.connect(_select_settings_item.bind(settings_labels.size()))
+	button.pressed.connect(_activate_settings_item.bind(settings_labels.size()))
+	settings_list_container.add_child(button)
+	settings_labels.append(button)
+	settings_video_buttons[action_key] = button
+	return button
+
+
 func _rebuild_settings_list() -> void:
 	if settings_list_container == null:
 		return
@@ -42042,6 +42462,7 @@ func _rebuild_settings_list() -> void:
 		settings_list_container.remove_child(child)
 		child.free()
 	settings_labels.clear()
+	settings_video_buttons.clear()
 	battle_input_buttons.clear()
 	battle_input_binding_specs = _battle_input_specs()
 	match settings_category:
@@ -42071,11 +42492,15 @@ func _rebuild_settings_list() -> void:
 			_settings_add_static_row("UI 音" if _ui_is_zh() else "UI SFX", "80%")
 		"video":
 			_settings_add_info_row("画面" if _ui_is_zh() else "VIDEO")
-			_settings_add_static_row("窗口模式" if _ui_is_zh() else "Window Mode", "窗口" if _ui_is_zh() else "Windowed")
-			_settings_add_static_row("UI 缩放" if _ui_is_zh() else "UI Scale", "100%")
-			_settings_add_static_row("特效强度" if _ui_is_zh() else "VFX", "标准" if _ui_is_zh() else "Normal")
-			_settings_add_static_row("背景亮度" if _ui_is_zh() else "Background", "70%")
-			_settings_add_static_row("命中特效" if _ui_is_zh() else "Hit VFX", "清晰" if _ui_is_zh() else "Clear")
+			var spec := _performance_profile_spec(performance_profile)
+			_settings_add_action_row("performance_profile", "性能档" if _ui_is_zh() else "Performance Profile", _performance_profile_label(performance_profile), "点击切换 4080S/兼容档" if _ui_is_zh() else "click to cycle 4080S/compat")
+			_settings_add_static_row("帧率上限" if _ui_is_zh() else "FPS Cap", str(int(spec.get("fps_cap", 120))))
+			_settings_add_static_row("渲染比例" if _ui_is_zh() else "Render Scale", "%.0f%%" % (float(spec.get("render_scale", 1.0)) * 100.0))
+			_settings_add_static_row("特效强度" if _ui_is_zh() else "VFX", "%.0f%%" % (float(spec.get("vfx_scale", 1.0)) * 100.0))
+			_settings_add_static_row("画板预览" if _ui_is_zh() else "Board Preview", String(spec.get("board_preview_quality", "high")).to_upper())
+			_settings_add_static_row("战斗 VFX 预算" if _ui_is_zh() else "Battle VFX Budget", "%d / frame" % int(spec.get("battle_vfx_budget", 260)))
+			_settings_add_static_row("投射轨迹预算" if _ui_is_zh() else "Projectile Trace Budget", "%d / frame" % int(spec.get("projectile_trace_budget", 120)))
+			_settings_add_static_row("GPU 碰撞" if _ui_is_zh() else "GPU Collision", String(spec.get("gpu_collision_mode", "auto")).to_upper(), gpu_collision_status_note)
 		"language":
 			_settings_add_info_row("系统语言" if _ui_is_zh() else "LANGUAGE")
 			var zh_button := Button.new()
@@ -42106,6 +42531,11 @@ func _reset_current_settings_category() -> void:
 	match settings_category:
 		"input":
 			_reset_battle_input_bindings_to_default()
+		"video":
+			_apply_performance_profile(PERFORMANCE_PROFILE_DEFAULT, true)
+			_rebuild_settings_list()
+			if settings_rebind_status_label != null:
+				settings_rebind_status_label.text = "已恢复 4080S 平衡性能档。" if _ui_is_zh() else "Restored the 4080S Balanced performance profile."
 		_:
 			if settings_rebind_status_label != null:
 				settings_rebind_status_label.text = "本页默认值已恢复。" if _ui_is_zh() else "This page was reset to defaults."
@@ -42113,31 +42543,59 @@ func _reset_current_settings_category() -> void:
 
 func _update_settings_ui() -> void:
 	_set_named_label(settings_layer, "SettingsTitle", _settings_category_label(settings_category))
+	var category_controls := {}
+	var category_state := {}
 	for category_key in settings_category_buttons.keys():
 		var category_button: Button = settings_category_buttons[category_key]
-		category_button.text = _settings_category_label(String(category_key))
-		category_button.modulate = Color(0.35, 0.95, 1.0, 1.0) if String(category_key) == settings_category else Color(0.86, 0.9, 0.94, 1.0)
+		category_controls[category_key] = category_button
+		category_state[category_key] = _ui_text_state(
+			_settings_category_label(String(category_key)),
+			Color(0.35, 0.95, 1.0, 1.0) if String(category_key) == settings_category else Color(0.86, 0.9, 0.94, 1.0)
+		)
+	_apply_ui_state(category_controls, category_state)
+	var input_controls := {}
+	var input_state := {}
 	for i in range(settings_labels.size()):
 		var button: Button = settings_labels[i]
+		if button.has_meta("video_action"):
+			var selected_video := i == settings_index
+			input_controls["video_%d" % i] = button
+			input_state["video_%d" % i] = _ui_text_state(
+				String(button.text),
+				Color(0.35, 0.95, 1.0, 1.0) if selected_video else Color(0.86, 0.9, 0.94, 1.0),
+				null,
+				false,
+				"点击切换性能档" if _ui_is_zh() else "Click to cycle performance profile"
+			)
+			continue
 		var spec_index := int(button.get_meta("spec_index", -1))
 		var spec: Dictionary = battle_input_binding_specs[spec_index] if spec_index >= 0 and spec_index < battle_input_binding_specs.size() else {}
 		var label := String(spec.get("zh", "")) if _ui_is_zh() else String(spec.get("en", spec.get("zh", "")))
 		var action_name := String(spec.get("action", ""))
 		var binding_text := _action_binding_label(action_name)
 		var prefix := "> " if i == settings_index else "  "
+		var next_text := ""
+		var next_color := Color(0.86, 0.9, 0.94, 1.0)
 		if settings_rebind_action == action_name:
-			button.text = "%s%s  [%s]" % [prefix, label, "监听中..." if _ui_is_zh() else "LISTENING..."]
-			button.modulate = Color(1.0, 0.86, 0.28, 1.0)
+			next_text = "%s%s  [%s]" % [prefix, label, "监听中..." if _ui_is_zh() else "LISTENING..."]
+			next_color = Color(1.0, 0.86, 0.28, 1.0)
 		else:
-			button.text = "%s%s  =  %s" % [prefix, label, binding_text]
-			button.modulate = Color(0.35, 0.95, 1.0, 1.0) if i == settings_index else Color(0.86, 0.9, 0.94, 1.0)
+			next_text = "%s%s  =  %s" % [prefix, label, binding_text]
+			next_color = Color(0.35, 0.95, 1.0, 1.0) if i == settings_index else Color(0.86, 0.9, 0.94, 1.0)
+		input_controls["input_%d" % i] = button
+		input_state["input_%d" % i] = _ui_text_state(next_text, next_color)
+	_apply_ui_state(input_controls, input_state)
 	if settings_rebind_status_label != null and settings_rebind_action == "":
+		var status_text := ""
 		if settings_category == "input":
-			settings_rebind_status_label.text = "点击一项后按键盘键或手柄输入来重绑定。Boost 默认由方向键双击触发。" if _ui_is_zh() else "Click an item, then press a keyboard or controller input. Boost is direction double-tap by default."
+			status_text = "点击一项后按键盘键或手柄输入来重绑定。Boost 默认由方向键双击触发。" if _ui_is_zh() else "Click an item, then press a keyboard or controller input. Boost is direction double-tap by default."
+		elif settings_category == "video":
+			status_text = _runtime_quality_summary()
 		else:
-			settings_rebind_status_label.text = "设置页已分为声音、画面、系统语言和按键绑定；具体说明在滚动面板内。" if _ui_is_zh() else "Settings are split into sound, video, language, and input pages; details are in the scroll panel."
+			status_text = "设置页已分为声音、画面、系统语言和按键绑定；具体说明在滚动面板内。" if _ui_is_zh() else "Settings are split into sound, video, language, and input pages; details are in the scroll panel."
+		_apply_ui_state({"status": settings_rebind_status_label}, {"status": _ui_text_state(status_text)})
 	if settings_reset_button != null:
-		settings_reset_button.text = ("恢复本页默认" if settings_category != "root" else "恢复全部默认") if _ui_is_zh() else ("RESET PAGE" if settings_category != "root" else "RESET ALL")
+		_apply_ui_state({"reset": settings_reset_button}, {"reset": _ui_text_state(("恢复本页默认" if settings_category != "root" else "恢复全部默认") if _ui_is_zh() else ("RESET PAGE" if settings_category != "root" else "RESET ALL"))})
 
 
 func _controlled_player_id_for_battle_gauge() -> int:
@@ -42212,15 +42670,22 @@ func _update_battle_ui() -> void:
 	var heavy_update := now_msec - battle_ui_last_heavy_msec >= 160
 	if heavy_update:
 		battle_ui_last_heavy_msec = now_msec
-		battle_mode_label.text = _battle_mode_title()
+		var hud_controls := {}
+		var hud_state := {}
+		hud_controls["mode"] = battle_mode_label
+		hud_state["mode"] = _ui_text_state(_battle_mode_title())
 		var minutes := int(floorf(match_time_remaining / 60.0))
 		var seconds := int(floorf(fmod(match_time_remaining, 60.0)))
-		match_timer_label.text = "%02d:%02d" % [minutes, seconds]
+		hud_controls["timer"] = match_timer_label
+		hud_state["timer"] = _ui_text_state("%02d:%02d" % [minutes, seconds])
 		for player_id in [1, 2]:
-			resource_labels[player_id].text = "P%d %s %d" % [player_id, _ui_term("resource"), int(runtime_resource[player_id])]
-			victory_labels[player_id].text = "%s %d/%d" % [_ui_term("victory_points"), int(victory_points[player_id]), WIN_POINTS]
+			hud_controls["p%d_resource" % player_id] = resource_labels[player_id]
+			hud_state["p%d_resource" % player_id] = _ui_text_state("P%d %s %d" % [player_id, _ui_term("resource"), int(runtime_resource[player_id])])
+			hud_controls["p%d_victory" % player_id] = victory_labels[player_id]
+			hud_state["p%d_victory" % player_id] = _ui_text_state("%s %d/%d" % [_ui_term("victory_points"), int(victory_points[player_id]), WIN_POINTS])
 			var portal: Dictionary = PORTALS[int(portal_index[player_id])]
-			portal_labels[player_id].text = "%s %s  %s" % [_ui_term("portal"), String(portal["name"]), _sortie_discount_status(player_id, 3)]
+			hud_controls["p%d_portal" % player_id] = portal_labels[player_id]
+			hud_state["p%d_portal" % player_id] = _ui_text_state("%s %s  %s" % [_ui_term("portal"), String(portal["name"]), _sortie_discount_status(player_id, 3)])
 			var statuses := [
 				_role_status_text(player_id, "hero"),
 				_role_status_text(player_id, "puppet"),
@@ -42236,25 +42701,28 @@ func _update_battle_ui() -> void:
 				if role_shield_fills[player_id][role_key] != null:
 					role_shield_fills[player_id][role_key].color = _shield_bar_color(player_id)
 				if role_key == "puppet":
-					role_health_fills[player_id][role_key].visible = false
-					role_shield_fills[player_id][role_key].visible = false
+					_set_canvas_item_visible_if_changed(role_health_fills[player_id][role_key], false)
+					_set_canvas_item_visible_if_changed(role_shield_fills[player_id][role_key], false)
 					_set_puppet_segment_bar(player_id, 330.0)
 				else:
 					_set_corner_bar(role_health_fills[player_id][role_key], player_id, 330.0, hp_ratio)
 					_set_shield_corner_bar(role_shield_fills[player_id][role_key], player_id, 330.0, shield_ratio)
-					role_shield_fills[player_id][role_key].visible = shield_ratio > 0.001
+					_set_canvas_item_visible_if_changed(role_shield_fills[player_id][role_key], shield_ratio > 0.001)
 				_set_corner_bar(role_heat_fills[player_id][role_key], player_id, 330.0, heat_ratio)
-				role_bar_labels[player_id][role_key].text = _role_bar_text(player_id, role_key)
-				unit_status_labels[player_id][i].text = statuses[i]
+				hud_controls["p%d_%s_bar" % [player_id, role_key]] = role_bar_labels[player_id][role_key]
+				hud_state["p%d_%s_bar" % [player_id, role_key]] = _ui_text_state(_role_bar_text(player_id, role_key))
+				hud_controls["p%d_status_%d" % [player_id, i]] = unit_status_labels[player_id][i]
+				hud_state["p%d_status_%d" % [player_id, i]] = _ui_text_state(statuses[i])
 			var hero = active_units[player_id]["hero"]
 			if hero_ammo_labels.get(player_id, null) != null:
 				var ammo_display := _unit_ammo_display_text(hero) if _is_live_unit(hero) else ""
-				hero_ammo_labels[player_id].text = ammo_display
-				hero_ammo_labels[player_id].visible = ammo_display != ""
+				hud_controls["p%d_hero_ammo" % player_id] = hero_ammo_labels[player_id]
+				hud_state["p%d_hero_ammo" % player_id] = _ui_text_state(ammo_display, Color(-1.0, -1.0, -1.0, -1.0), ammo_display != "")
+		_apply_ui_state(hud_controls, hud_state)
 	if now_msec - battle_ui_last_sortie_msec >= 5000:
 		battle_ui_last_sortie_msec = now_msec
 		_update_sortie_thumbnails()
-	battle_message_label.text = battle_message
+	_apply_ui_state({"message": battle_message_label}, {"message": _ui_text_state(battle_message)})
 	_update_battle_instrument_gauge()
 
 

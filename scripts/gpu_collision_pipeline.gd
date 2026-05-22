@@ -332,7 +332,7 @@ func _consume_pending_contact_frame(blocking: bool = true) -> Array:
 		return []
 	_pending_contact_frame = {}
 	deferred_contact_pending = false
-	_sync_and_measure()
+	_record_deferred_readback_without_sync()
 	deferred_contact_consume_count += 1
 	var counter_bytes_size := int(frame.get("counter_bytes", 16))
 	var out_counter_bytes := rd.buffer_get_data(frame.get("counter_buffer", RID()), 0, counter_bytes_size)
@@ -531,7 +531,7 @@ func _consume_pending_query_frame(blocking: bool = true) -> Array:
 		return []
 	_pending_query_frame = {}
 	deferred_query_pending = false
-	_sync_and_measure()
+	_record_deferred_readback_without_sync()
 	deferred_query_consume_count += 1
 	var counter_bytes_size := int(frame.get("counter_bytes", 16))
 	var out_counter_bytes := rd.buffer_get_data(frame.get("query_counter_buffer", RID()), 0, counter_bytes_size)
@@ -587,6 +587,11 @@ func _sync_and_measure() -> void:
 	total_sync_wait_usec += last_sync_wait_usec
 	sync_count += 1
 	current_frame_sync_count += 1
+
+
+func _record_deferred_readback_without_sync() -> void:
+	last_sync_wait_usec = 0
+	current_frame_sync_count = 0
 
 
 func _ensure_collision_buffers(collider_bytes: int, candidate_bytes: int, counter_bytes: int, param_bytes: int, response_bytes: int) -> void:
