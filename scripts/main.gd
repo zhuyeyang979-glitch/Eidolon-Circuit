@@ -846,9 +846,18 @@ class PartPreviewTextureRenderCanvas:
 
 class PartPreviewTextureCache:
 	static var textures := {}
+	static var pending_requests := {}
+	static var pending_order: Array = []
+	static var lru_order: Array = []
 	static var hit_count := 0
 	static var miss_count := 0
 	static var render_count := 0
+	static var queue_hit_count := 0
+	static var process_count := 0
+	static var subviewport_create_count := 0
+	static var max_entries := 256
+	static var render_viewport: SubViewport
+	static var render_canvas: PartPreviewTextureRenderCanvas
 
 	static func key_for(slot_key: String, part: Dictionary, selected: bool, pulse: float, preview_size: Vector2) -> String:
 		var size_key := "%dx%d" % [maxi(1, int(round(preview_size.x))), maxi(1, int(round(preview_size.y)))]
@@ -863,43 +872,114 @@ class PartPreviewTextureCache:
 		]
 
 	static func get_or_create(owner: Node, slot_key: String, part: Dictionary, selected: bool, pulse: float, preview_size: Vector2) -> Texture2D:
+		return request_preview(owner, slot_key, part, selected, pulse, preview_size)
+
+	static func request_preview(_owner: Node, slot_key: String, part: Dictionary, selected: bool, pulse: float, preview_size: Vector2) -> Texture2D:
 		var safe_size := Vector2(maxf(8.0, preview_size.x), maxf(8.0, preview_size.y))
 		var cache_key := key_for(slot_key, part, selected, pulse, safe_size)
 		if textures.has(cache_key):
 			hit_count += 1
+			_touch_lru(cache_key)
 			return textures[cache_key]
 		miss_count += 1
-		var texture := _render_texture(owner, slot_key, part, selected, pulse, safe_size)
-		if texture != null:
-			textures[cache_key] = texture
-		return texture
+		if pending_requests.has(cache_key):
+			queue_hit_count += 1
+			return null
+		pending_requests[cache_key] = {
+			"slot": slot_key,
+			"part": part.duplicate(true),
+			"selected": selected,
+			"pulse": pulse,
+			"size": safe_size,
+		}
+		pending_order.append(cache_key)
+		return null
+
+	static func peek_preview(slot_key: String, part: Dictionary, selected: bool, pulse: float, preview_size: Vector2) -> Texture2D:
+		var safe_size := Vector2(maxf(8.0, preview_size.x), maxf(8.0, preview_size.y))
+		var cache_key := key_for(slot_key, part, selected, pulse, safe_size)
+		if textures.has(cache_key):
+			_touch_lru(cache_key)
+			return textures[cache_key]
+		return null
+
+	static func process_queue(owner: Node, budget: int = 2) -> int:
+		if budget <= 0 or pending_order.is_empty():
+			return 0
+		if DisplayServer.get_name().to_lower() == "headless":
+			pending_requests.clear()
+			pending_order.clear()
+			return 0
+		var processed := 0
+		while processed < budget and not pending_order.is_empty():
+			var cache_key := String(pending_order.pop_front())
+			if not pending_requests.has(cache_key):
+				continue
+			if textures.has(cache_key):
+				pending_requests.erase(cache_key)
+				_touch_lru(cache_key)
+				continue
+			var request: Dictionary = pending_requests[cache_key]
+			pending_requests.erase(cache_key)
+			var request_size: Vector2 = request.get("size", Vector2(64.0, 48.0))
+			var texture := _render_texture(owner, String(request.get("slot", "")), Dictionary(request.get("part", {})), bool(request.get("selected", false)), float(request.get("pulse", 0.0)), request_size)
+			if texture != null:
+				textures[cache_key] = texture
+				_touch_lru(cache_key)
+				_prune_lru()
+			processed += 1
+		process_count += processed
+		return processed
+
+	static func _touch_lru(cache_key: String) -> void:
+		lru_order.erase(cache_key)
+		lru_order.append(cache_key)
+
+	static func _prune_lru() -> void:
+		while lru_order.size() > max_entries:
+			var old_key := String(lru_order.pop_front())
+			textures.erase(old_key)
 
 	static func _render_texture(owner: Node, slot_key: String, part: Dictionary, selected: bool, pulse: float, preview_size: Vector2) -> Texture2D:
 		if DisplayServer.get_name().to_lower() == "headless":
 			return null
-		var tree := Engine.get_main_loop() as SceneTree
+		var tree: SceneTree = null
+		if owner != null and owner.is_inside_tree():
+			tree = owner.get_tree()
+		else:
+			tree = Engine.get_main_loop() as SceneTree
 		if tree == null or tree.root == null:
 			return null
-		var viewport := SubViewport.new()
-		viewport.disable_3d = true
-		viewport.transparent_bg = true
-		viewport.size = Vector2i(maxi(8, int(ceil(preview_size.x))), maxi(8, int(ceil(preview_size.y))))
-		viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
-		var canvas := PartPreviewTextureRenderCanvas.new()
-		canvas.configure(slot_key, part, selected, pulse, preview_size)
-		viewport.add_child(canvas)
-		tree.root.add_child(viewport)
+		_ensure_renderer(tree, preview_size)
+		if render_viewport == null or render_canvas == null:
+			return null
+		var viewport_size := Vector2i(maxi(8, int(ceil(preview_size.x))), maxi(8, int(ceil(preview_size.y))))
+		if render_viewport.size != viewport_size:
+			render_viewport.size = viewport_size
+		render_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
+		render_canvas.configure(slot_key, part, selected, pulse, preview_size)
 		RenderingServer.force_draw(false)
-		var viewport_texture := viewport.get_texture()
+		var viewport_texture := render_viewport.get_texture()
 		if viewport_texture == null:
-			viewport.queue_free()
 			return null
 		var image := viewport_texture.get_image()
-		viewport.queue_free()
 		if image == null or image.is_empty():
 			return null
 		render_count += 1
 		return ImageTexture.create_from_image(image)
+
+	static func _ensure_renderer(tree: SceneTree, preview_size: Vector2) -> void:
+		if render_viewport != null and is_instance_valid(render_viewport) and render_canvas != null and is_instance_valid(render_canvas):
+			return
+		render_viewport = SubViewport.new()
+		render_viewport.disable_3d = true
+		render_viewport.transparent_bg = true
+		render_viewport.size = Vector2i(maxi(8, int(ceil(preview_size.x))), maxi(8, int(ceil(preview_size.y))))
+		render_viewport.render_target_update_mode = SubViewport.UPDATE_DISABLED
+		render_canvas = PartPreviewTextureRenderCanvas.new()
+		render_viewport.add_child(render_canvas)
+		tree.root.add_child(render_viewport)
+		subviewport_create_count += 1
 
 
 class PartPreviewIconView:
@@ -966,13 +1046,13 @@ class PartPreviewIconView:
 	func _draw() -> void:
 		if not visible or part.is_empty() or slot_key == "":
 			return
+		if preview_texture == null:
+			preview_texture = PartPreviewTextureCache.peek_preview(slot_key, part, selected, pulse, size)
 		if preview_texture != null:
 			draw_texture_rect(preview_texture, Rect2(Vector2.ZERO, size), false)
 			return
-		renderer_draw_count += 1
-		if not AssemblyBoardRenderer.draw_part_preview(self, Rect2(Vector2.ZERO, size), slot_key, part, selected, pulse):
-			draw_rect(Rect2(Vector2.ZERO, size).grow(-4.0), Color(0.08, 0.12, 0.16, 0.8), true)
-			draw_rect(Rect2(Vector2.ZERO, size).grow(-4.0), Color(0.48, 0.66, 0.78, 0.45), false, 1.2)
+		draw_rect(Rect2(Vector2.ZERO, size).grow(-4.0), Color(0.08, 0.12, 0.16, 0.8), true)
+		draw_rect(Rect2(Vector2.ZERO, size).grow(-4.0), Color(0.48, 0.66, 0.78, 0.45), false, 1.2)
 
 	func _preview_signature(next_slot: String, next_part: Dictionary, next_selected: bool, next_pulse: float) -> String:
 		return "%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s" % [
@@ -1163,9 +1243,8 @@ class PartCatalogCardButton:
 
 	func _draw_art(rect: Rect2) -> void:
 		_draw_size_ruler(rect, _thumbnail_size_scale())
-		if not AssemblyBoardRenderer.draw_part_preview(self, rect, slot_key, part, selected, 0.0):
-			draw_rect(rect.grow(-4.0), _slot_color().darkened(0.25), true)
-			draw_rect(rect.grow(-4.0), _slot_color().lerp(Color.WHITE, 0.28), false, 1.2)
+		draw_rect(rect.grow(-4.0), _slot_color().darkened(0.25), true)
+		draw_rect(rect.grow(-4.0), _slot_color().lerp(Color.WHITE, 0.28), false, 1.2)
 
 	func _slot_color() -> Color:
 		match slot_key:
@@ -4039,6 +4118,29 @@ class AssemblyBoardView:
 		else:
 			root_redraw_request_count += 1
 			queue_redraw()
+
+	func apply_board_diff(diff: Dictionary, revision_key: String) -> void:
+		var next_snapshot: Dictionary = board_snapshot
+		if diff.has("snapshot"):
+			next_snapshot = Dictionary(diff.get("snapshot", {}))
+		if diff.has("nodes"):
+			next_snapshot["nodes"] = diff.get("nodes", [])
+		if diff.has("edges"):
+			next_snapshot["edges"] = diff.get("edges", [])
+		if diff.has("edge_states"):
+			next_snapshot["edge_states"] = diff.get("edge_states", {})
+		if diff.has("socket_markers"):
+			next_snapshot["socket_markers"] = diff.get("socket_markers", [])
+		if diff.has("material_highlights"):
+			next_snapshot["material_highlights"] = diff.get("material_highlights", {})
+		var next_selected := String(diff.get("selected_part", selected_part))
+		var next_illegal: Dictionary = diff.get("illegal_parts", illegal_parts)
+		var next_snap_part := String(diff.get("snap_part", snap_part))
+		var next_snap_amount := float(diff.get("snap_amount", snap_amount))
+		var next_mode := String(diff.get("mode", board_mode))
+		var next_language := String(diff.get("language", ui_language))
+		var next_motion_phase := float(diff.get("motion_phase", motion_phase))
+		set_board(next_snapshot, next_selected, next_illegal, next_snap_part, next_snap_amount, next_mode, next_language, next_motion_phase, revision_key)
 
 	func _notification(what: int) -> void:
 		if what == NOTIFICATION_RESIZED:
@@ -19015,6 +19117,9 @@ func _show_editor_material_link_warning(node_indices: Array, reason: String = ""
 func _tick_editor_visuals(delta: float) -> void:
 	var tick_start := Time.get_ticks_usec()
 	var visual_dirty := false
+	var preview_processed := PartPreviewTextureCache.process_queue(self, 2)
+	if preview_processed > 0:
+		_queue_editor_preview_icon_redraws()
 	if editor_snap_timer > 0.0:
 		editor_canvas_motion_phase = fmod(editor_canvas_motion_phase + delta * 0.25, 1.0)
 		editor_snap_timer = maxf(0.0, editor_snap_timer - delta)
@@ -19039,6 +19144,20 @@ func _tick_editor_visuals(delta: float) -> void:
 	if editor_perf_overlay_enabled:
 		editor_perf_overlay_last_usec = Time.get_ticks_usec() - tick_start
 		_update_editor_perf_overlay()
+
+
+func _queue_editor_preview_icon_redraws() -> void:
+	for raw_button in editor_catalog_buttons:
+		if raw_button == null:
+			continue
+		var button = raw_button
+		if button.preview_icon != null and button.preview_icon.visible:
+			button.preview_icon.preview_texture = PartPreviewTextureCache.peek_preview(button.preview_icon.slot_key, button.preview_icon.part, button.preview_icon.selected, button.preview_icon.pulse, button.preview_icon.size)
+			button.preview_icon.queue_redraw()
+	if editor_hover_popup_view != null and editor_hover_popup_view.preview_icon != null and editor_hover_popup_view.preview_icon.visible:
+		var hover_icon: PartPreviewIconView = editor_hover_popup_view.preview_icon
+		hover_icon.preview_texture = PartPreviewTextureCache.peek_preview(hover_icon.slot_key, hover_icon.part, hover_icon.selected, hover_icon.pulse, hover_icon.size)
+		hover_icon.queue_redraw()
 
 
 func _flush_editor_deferred_ui() -> void:
@@ -19082,6 +19201,13 @@ func _editor_perf_overlay_text() -> String:
 	var visible_controls := 0
 	if editor_layer != null:
 		visible_controls = _visible_control_count(editor_layer)
+	var gpu_sync_line := "n/a"
+	if gpu_collision_pipeline != null:
+		gpu_sync_line = "%d last %.2fms total %.2fms" % [
+			int(gpu_collision_pipeline.sync_count),
+			float(gpu_collision_pipeline.last_sync_wait_usec) / 1000.0,
+			float(gpu_collision_pipeline.total_sync_wait_usec) / 1000.0,
+		]
 	return "\n".join([
 		"TeamEdit PERF",
 		"CPU tick: %.2fms" % (float(editor_perf_overlay_last_usec) / 1000.0),
@@ -19092,10 +19218,12 @@ func _editor_perf_overlay_text() -> String:
 		"snapshot b h/r: %d/%d  dyn:%d" % [int(editor_board_base_snapshot_hit_count), int(editor_board_base_snapshot_rebuild_count), int(editor_board_dynamic_overlay_apply_count)],
 		"snapshot build: %.2fms nodes:%d" % [float(editor_board_snapshot_build_usec) / 1000.0, int(editor_board_node_enrich_count)],
 		"side preview u/n: %d/%d" % [int(editor_side_preview_update_count), int(editor_side_preview_noop_count)],
-		"preview hit/miss: %d/%d" % [int(PartPreviewTextureCache.hit_count), int(PartPreviewTextureCache.miss_count)],
+		"preview hit/miss/q/render: %d/%d/%d/%d" % [int(PartPreviewTextureCache.hit_count), int(PartPreviewTextureCache.miss_count), int(PartPreviewTextureCache.pending_order.size()), int(PartPreviewTextureCache.render_count)],
+		"preview viewport/process: %d/%d" % [int(PartPreviewTextureCache.subviewport_create_count), int(PartPreviewTextureCache.process_count)],
 		"stats h/m: %d/%d" % [int(editor_current_stats_cache_hit_count), int(editor_current_stats_cache_miss_count)],
 		"gpu contact/q bytes: %d/%d" % [int(gpu_collision_readback_bytes), int(gpu_geometry_query_readback_bytes)],
 		"gpu query submit/consume: %d/%d" % [int(gpu_geometry_query_submit_count), int(gpu_geometry_query_consume_count)],
+		"gpu sync: %s" % gpu_sync_line,
 	])
 
 

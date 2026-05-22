@@ -2261,6 +2261,65 @@ Sync:
 - Implemented in `E:\New project`.
 - Mirror targets remain `C:\Users\Administrator\Documents\New project` and `C:\Users\Administrator\OneDrive\ドキュメント\New project`.
 
+## 2026-05-22 TeamEdit 预览队列与性能验证修正
+
+Rules:
+- 性能 probe 必须显式用 wrapper 的 probe/script 路径运行；不得把 `-Probe` 误跑成默认 `--check-only`。
+- 零件卡、hover、拖拽幽灵和 payload 图标的 `_draw()` 不得创建 `SubViewport`、不得 `force_draw`、不得直接调用完整 `AssemblyBoardRenderer.draw_part_preview()`。
+- 预览贴图 miss 只进入队列；TeamEdit 每帧按预算处理少量预览，复用一个长期离屏 `SubViewport`。
+- GPU sync 必须可观测：每次 `rd.sync()` 记录次数、最近等待与累计等待，方便真实窗口叠层判断是否仍有同步尖峰。
+
+Implementation notes:
+- `tools/run_godot_checked.ps1` 增加 `-Probe` 参数，等价于 `-Script <probe>.gd`，并自动补 `.gd` 后缀。
+- `PartPreviewTextureCache` 改为 `request_preview / process_queue / peek_preview` 模型：缓存命中立即返回，未命中排队；headed/Forward+ 下复用持久 `PartPreviewTextureRenderCanvas + SubViewport` 批量生成贴图；headless 清空队列但不生成纹理。
+- `PartPreviewIconView._draw()` 现在只绘制缓存 texture 或轻量占位，不再兜底跑完整 renderer。`PartCatalogCardButton._draw_art()` 的旧热路径 renderer 分支也已断开。
+- `_tick_editor_visuals()` 每帧处理最多 2 个预览队列项，并在贴图生成后只重绘可见预览 icon。
+- `AssemblyBoardView.apply_board_diff(diff, revision_key)` 加入为 retained board 增量入口；现有 `set_board()` 保持兼容。
+- `GpuCollisionPipeline` 增加 sync 计数与等待时间统计；TeamEdit perf overlay 显示 preview queue/render/viewport 与 GPU sync 数据。
+
+Verification:
+- `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120` passed.
+- Wrapper/probe verification:
+  - `run_wrapper_probe_alias_probe`
+- TeamEdit/preview probes passed:
+  - `part_preview_no_subviewport_per_draw_probe`
+  - `part_preview_texture_cache_probe`
+  - `part_preview_actual_texture_cache_probe` headless and headed
+  - headed `part_preview_queue_render_probe` (`processed=4 viewports=1 renders=4`)
+  - `preview_sync_not_in_draw_probe`
+  - `part_catalog_thumbnail_renderer_probe`
+  - `teamedit_live_perf_overlay_probe`
+  - `teamedit_real_frame_budget_probe`
+  - `teamedit_hover_frame_budget_probe`
+  - `teamedit_pose_edit_frame_budget_probe`
+  - `teamedit_dashboard_slider_frame_budget_probe`
+  - `assembly_board_root_no_redraw_probe`
+  - `edge_socket_overlay_retained_items_probe`
+  - `board_segment_dirty_update_probe`
+- GPU/runtime probes passed:
+  - headed `gpu_async_readback_probe`
+  - headed `gpu_geometry_query_async_probe`
+  - headed `gpu_broadphase_compaction_probe`
+  - headed `gpu_response_impulse_probe`
+  - `gpu_no_hot_rd_sync_probe`
+  - `runtime_no_cpu_geometry_probe`
+- Core regressions passed:
+  - `teamedit_probe`
+  - `combat_probe`
+  - `board_battle_art_identity_probe`
+  - `runtime_contact_damage_probe`
+  - `ui_layout_probe`
+  - `text_overflow_probe`
+
+Notes:
+- This pass fixes a real measurement bug: previous ad hoc `-Probe` invocations were silently behaving like check-only because the wrapper did not define that parameter.
+- Headed preview generation on RTX 4080 SUPER now confirms reuse of one persistent `SubViewport` for a batch instead of one viewport per card miss.
+- ObjectDB leak warnings still appear on some script-probe exits; all listed probes returned exit 0 and produced expected OK markers.
+
+Sync:
+- Implemented in `E:\New project`.
+- Mirror sync to Documents and OneDrive is required after commit for this section.
+
 ## 2026-05-22 工作树脏改收束与探针归档
 
 Rules:

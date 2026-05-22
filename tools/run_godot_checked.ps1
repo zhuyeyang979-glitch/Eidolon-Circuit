@@ -2,6 +2,7 @@ param(
     [switch]$CheckOnly,
     [switch]$SelfTest,
     [switch]$Headed,
+    [string]$Probe = "",
     [string]$Script = "",
     [string]$ProjectPath = "",
     [string]$Godot = "",
@@ -121,6 +122,10 @@ if ($SelfTest) {
     exit 0
 }
 
+if (-not [string]::IsNullOrWhiteSpace($Probe) -and [string]::IsNullOrWhiteSpace($Script)) {
+    $Script = $Probe
+}
+
 if (-not $CheckOnly -and [string]::IsNullOrWhiteSpace($Script)) {
     $CheckOnly = $true
 }
@@ -158,7 +163,12 @@ if (-not [string]::IsNullOrWhiteSpace($Script)) {
         if ($scriptPath.StartsWith("tools/")) {
             $scriptPath = $scriptPath.Substring(6)
         }
+        if (-not $scriptPath.EndsWith(".gd")) {
+            $scriptPath = "$scriptPath.gd"
+        }
         $scriptPath = "res://tools/$scriptPath"
+    } elseif (-not $scriptPath.EndsWith(".gd")) {
+        $scriptPath = "$scriptPath.gd"
     }
     $scriptArgs = if ($Headed) { "--path `"$RootPath`" --script $scriptPath" } else { "--headless --path `"$RootPath`" --script $scriptPath" }
     $scriptLabel = if ($Headed) { "headed-script-$scriptPath" } else { "script-$scriptPath" }

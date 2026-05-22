@@ -55,6 +55,10 @@ var deferred_query_pending := false
 var last_deferred_query_readback := false
 var _pending_query_frame: Dictionary = {}
 var _last_consumed_query_stats: Dictionary = {}
+var sync_count := 0
+var last_sync_wait_usec := 0
+var total_sync_wait_usec := 0
+var current_frame_sync_count := 0
 
 var collider_buffer_rid: RID
 var candidate_buffer_rid: RID
@@ -252,7 +256,7 @@ func compute_contact_responses(colliders: Array, required_overlap: float = 0.0, 
 		last_readback_bytes = int(deferred_stats.get("readback_bytes", 0))
 		return deferred_records
 	last_deferred_readback = false
-	rd.sync()
+	_sync_and_measure()
 
 	var out_counter_bytes := rd.buffer_get_data(counter_buffer_rid, 0, counter_bytes.size())
 	last_candidate_count = int(out_counter_bytes.decode_u32(0))
@@ -315,7 +319,7 @@ func _consume_pending_contact_frame() -> Array:
 	var frame := _pending_contact_frame
 	_pending_contact_frame = {}
 	deferred_contact_pending = false
-	rd.sync()
+	_sync_and_measure()
 	deferred_contact_consume_count += 1
 	var counter_bytes_size := int(frame.get("counter_bytes", 16))
 	var out_counter_bytes := rd.buffer_get_data(frame.get("counter_buffer", RID()), 0, counter_bytes_size)
@@ -464,7 +468,7 @@ func compute_geometry_queries(colliders: Array, queries: Array, delta: float = 0
 		last_readback_bytes = int(deferred_stats.get("readback_bytes", 0))
 		return deferred_hits
 	last_deferred_query_readback = false
-	rd.sync()
+	_sync_and_measure()
 
 	var out_counter_bytes := rd.buffer_get_data(query_counter_buffer_rid, 0, counter_bytes.size())
 	var hit_count := int(out_counter_bytes.decode_u32(0))
@@ -507,7 +511,7 @@ func _consume_pending_query_frame() -> Array:
 	var frame := _pending_query_frame
 	_pending_query_frame = {}
 	deferred_query_pending = false
-	rd.sync()
+	_sync_and_measure()
 	deferred_query_consume_count += 1
 	var counter_bytes_size := int(frame.get("counter_bytes", 16))
 	var out_counter_bytes := rd.buffer_get_data(frame.get("query_counter_buffer", RID()), 0, counter_bytes_size)
@@ -552,6 +556,17 @@ func _parse_query_hit_floats(out_floats: PackedFloat32Array, parse_count: int) -
 			"vfx_kind": int(roundf(out_floats[base + 10])),
 		})
 	return hits
+
+
+func _sync_and_measure() -> void:
+	if rd == null:
+		return
+	var started := Time.get_ticks_usec()
+	rd.sync()
+	last_sync_wait_usec = Time.get_ticks_usec() - started
+	total_sync_wait_usec += last_sync_wait_usec
+	sync_count += 1
+	current_frame_sync_count += 1
 
 
 func _ensure_collision_buffers(collider_bytes: int, candidate_bytes: int, counter_bytes: int, param_bytes: int, response_bytes: int) -> void:
