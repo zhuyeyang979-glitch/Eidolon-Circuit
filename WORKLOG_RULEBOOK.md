@@ -2313,6 +2313,34 @@ Verification:
 Next direction:
 - If the real window still stutters while paging/scrolling catalog, the remaining hot scope is `teamedit.catalog.cards`; the next step should pre-render the entire visible card row/body texture or replace Button cards with a lighter retained card item, instead of adding more child Controls.
 
+## 2026-05-23 TeamEdit Catalog Card Body Texture 化
+
+Rules:
+- Catalog card Button 只负责输入、拖拽和极轻 overlay；卡片正文/文字主体不得继续堆在 Button 主 `_draw()` 里。
+- 整张可见卡由两层缓存纹理组成：零件预览 texture + card body texture。Selected/pulse 仍只能作为轻量状态，不得让零件主体预览 miss。
+- Headless 不生成 card body texture，使用轻量 fallback；headed/Forward+ 才走异步 SubViewport 烘焙。
+
+Implementation notes:
+- 新增 `CatalogCardBodyTextureCache` 和 `CatalogCardBodyTextureRenderCanvas`，复用持久 SubViewport，按卡片正文 key 异步提交/下一帧捕获。
+- `CatalogCardTextLayer` 变成 card body layer：有 texture 时只 `draw_texture_rect()`，否则 fallback 绘制三行正文。
+- `_tick_editor_visuals()` 同时处理 part preview cache 与 card body cache；card body 捕获后只重绘命中的可见卡。
+- 保留 `PartCatalogCardButton` 的点击/拖拽语义；主 `_draw()` 只画背景、边框、尺寸尺、badge 和 selected dot。
+- Label retained 尝试会污染 `ui_layout_probe/text_overflow_probe`，已删除不用；使用单个轻量 Control 作为正文层。
+
+Verification:
+- `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 60` passed.
+- Catalog/UI probes passed:
+  - `teamedit_scroll_frame_budget_probe` (`p95=5.99ms`, `same_page_updates=0`, `preview_submit=0`)
+  - `catalog_card_redraw_budget_probe` (`preview_draw=0`)
+  - `part_preview_texture_cache_probe`
+  - `teamedit_trace_profiler_probe`
+  - `teamedit_probe`
+  - `ui_layout_probe`
+  - `text_overflow_probe`
+
+Next direction:
+- If real headed catalog paging still stutters, instrument `CatalogCardBodyTextureCache` with headed hit/miss/capture timings and then prewarm visible-neighbor card body textures during idle.
+
 ## 2026-05-22 全游戏热路径与状态层清理
 
 Rules:

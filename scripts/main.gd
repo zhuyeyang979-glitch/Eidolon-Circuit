@@ -1117,25 +1117,81 @@ class PartPreviewIconView:
 class CatalogCardTextLayer:
 	extends Control
 
+	const CACHE_MAX_ENTRIES := 192
+
 	var display_name := ""
 	var data_line_a := ""
 	var data_line_b := ""
+	var slot_key := ""
+	var part := {}
 	var selected := false
 	var last_text_signature := ""
+	var body_texture: Texture2D
 
 	func _init() -> void:
 		mouse_filter = Control.MOUSE_FILTER_IGNORE
 		focus_mode = Control.FOCUS_NONE
 
-	func configure(next_display_name: String, next_line_a: String, next_line_b: String, next_selected: bool) -> void:
-		var signature := "%s|%s|%s|%s" % [next_display_name, next_line_a, next_line_b, str(next_selected)]
+	func configure(next_slot: String, next_part: Dictionary, next_display_name: String, next_line_a: String, next_line_b: String, next_selected: bool) -> void:
+		var size_key := "%dx%d" % [maxi(1, int(round(size.x))), maxi(1, int(round(size.y)))]
+		var signature := "%s|%s|%s|%s|%s|%s|%s" % [
+			next_slot,
+			String(next_part.get("stable_key", next_part.get("name", ""))),
+			next_display_name,
+			next_line_a,
+			next_line_b,
+			str(next_selected),
+			size_key,
+		]
 		if signature == last_text_signature:
 			return
 		last_text_signature = signature
+		slot_key = next_slot
+		part = next_part
 		display_name = next_display_name
 		data_line_a = next_line_a
 		data_line_b = next_line_b
 		selected = next_selected
+		body_texture = CatalogCardBodyTextureCache.request_preview(self, slot_key, part, display_name, data_line_a, data_line_b, selected, size)
+		queue_redraw()
+
+	func _draw() -> void:
+		if body_texture == null:
+			body_texture = CatalogCardBodyTextureCache.peek_preview(slot_key, part, display_name, data_line_a, data_line_b, selected, size)
+		if body_texture != null:
+			draw_texture_rect(body_texture, Rect2(Vector2.ZERO, size), false)
+			return
+		var font := ThemeDB.get_fallback_font()
+		var simple_card := data_line_a == "" and data_line_b == ""
+		var title_color := Color(1.0, 0.92, 0.36, 1.0) if selected else Color(0.9, 0.96, 1.0, 0.98)
+		draw_string(font, Vector2(0.0, 12.0 if simple_card else 8.0), _card_trim(display_name, 17 if simple_card else 14), HORIZONTAL_ALIGNMENT_LEFT, size.x, 10 if simple_card else 8, title_color)
+		if not simple_card:
+			draw_string(font, Vector2(0.0, 17.0), _card_trim(data_line_a, 15), HORIZONTAL_ALIGNMENT_LEFT, size.x, 7, Color(0.78, 0.9, 1.0, 0.95))
+			draw_string(font, Vector2(0.0, minf(26.0, size.y - 2.0)), _card_trim(data_line_b, 15), HORIZONTAL_ALIGNMENT_LEFT, size.x, 7, Color(0.72, 0.78, 0.84, 0.95))
+
+	func _card_trim(value: String, max_chars: int) -> String:
+		if value.length() <= max_chars:
+			return value
+		return value.substr(0, max(0, max_chars - 1)) + "."
+
+
+class CatalogCardBodyTextureRenderCanvas:
+	extends Control
+
+	var display_name := ""
+	var data_line_a := ""
+	var data_line_b := ""
+	var selected := false
+
+	func _init() -> void:
+		mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	func configure(next_display_name: String, next_line_a: String, next_line_b: String, next_selected: bool, next_size: Vector2) -> void:
+		display_name = next_display_name
+		data_line_a = next_line_a
+		data_line_b = next_line_b
+		selected = next_selected
+		size = next_size
 		queue_redraw()
 
 	func _draw() -> void:
@@ -1151,6 +1207,158 @@ class CatalogCardTextLayer:
 		if value.length() <= max_chars:
 			return value
 		return value.substr(0, max(0, max_chars - 1)) + "."
+
+
+class CatalogCardBodyTextureCache:
+	static var textures := {}
+	static var pending_requests := {}
+	static var pending_order: Array = []
+	static var lru_order: Array = []
+	static var active_request := {}
+	static var render_viewport: SubViewport
+	static var render_canvas: CatalogCardBodyTextureRenderCanvas
+	static var max_entries := 256
+	static var submit_count := 0
+	static var capture_count := 0
+	static var hit_count := 0
+	static var miss_count := 0
+	static var queue_hit_count := 0
+	static var last_captured_keys: Array = []
+
+	static func key_for(slot_key: String, part: Dictionary, display_name: String, line_a: String, line_b: String, selected: bool, preview_size: Vector2) -> String:
+		var size_key := "%dx%d" % [maxi(1, int(round(preview_size.x))), maxi(1, int(round(preview_size.y)))]
+		return "%s|%s|%s|%s|%s|%s|%s" % [
+			slot_key,
+			String(part.get("stable_key", part.get("name", ""))),
+			display_name,
+			line_a,
+			line_b,
+			str(selected),
+			size_key,
+		]
+
+	static func request_preview(owner: Node, slot_key: String, part: Dictionary, display_name: String, line_a: String, line_b: String, selected: bool, preview_size: Vector2) -> Texture2D:
+		if DisplayServer.get_name().to_lower() == "headless":
+			return null
+		var safe_size := Vector2(maxf(8.0, preview_size.x), maxf(8.0, preview_size.y))
+		var cache_key := key_for(slot_key, part, display_name, line_a, line_b, selected, safe_size)
+		if textures.has(cache_key):
+			hit_count += 1
+			_touch_lru(cache_key)
+			return textures[cache_key]
+		miss_count += 1
+		if pending_requests.has(cache_key):
+			queue_hit_count += 1
+			return null
+		pending_requests[cache_key] = {
+			"display_name": display_name,
+			"line_a": line_a,
+			"line_b": line_b,
+			"selected": selected,
+			"size": safe_size,
+		}
+		pending_order.append(cache_key)
+		return null
+
+	static func peek_preview(slot_key: String, part: Dictionary, display_name: String, line_a: String, line_b: String, selected: bool, preview_size: Vector2) -> Texture2D:
+		var safe_size := Vector2(maxf(8.0, preview_size.x), maxf(8.0, preview_size.y))
+		var cache_key := key_for(slot_key, part, display_name, line_a, line_b, selected, safe_size)
+		if textures.has(cache_key):
+			_touch_lru(cache_key)
+			return textures[cache_key]
+		return null
+
+	static func process_queue(owner: Node, budget: int = 1) -> int:
+		last_captured_keys = []
+		if DisplayServer.get_name().to_lower() == "headless":
+			active_request = {}
+			pending_requests.clear()
+			pending_order.clear()
+			return 0
+		var captured := _capture_active_request()
+		if budget <= 0:
+			return captured
+		var submitted := 0
+		while active_request.is_empty() and submitted < budget and not pending_order.is_empty():
+			var cache_key := String(pending_order.pop_front())
+			if not pending_requests.has(cache_key):
+				continue
+			if textures.has(cache_key):
+				pending_requests.erase(cache_key)
+				_touch_lru(cache_key)
+				continue
+			var request: Dictionary = pending_requests[cache_key]
+			pending_requests.erase(cache_key)
+			var request_size: Vector2 = request.get("size", Vector2(96.0, 32.0))
+			if _submit_render(owner, cache_key, String(request.get("display_name", "")), String(request.get("line_a", "")), String(request.get("line_b", "")), bool(request.get("selected", false)), request_size):
+				submitted += 1
+		return captured + submitted
+
+	static func _submit_render(owner: Node, cache_key: String, display_name: String, line_a: String, line_b: String, selected: bool, preview_size: Vector2) -> bool:
+		var tree: SceneTree = null
+		if owner != null and owner.is_inside_tree():
+			tree = owner.get_tree()
+		else:
+			tree = Engine.get_main_loop() as SceneTree
+		if tree == null or tree.root == null:
+			return false
+		_ensure_renderer(tree, preview_size)
+		if render_viewport == null or render_canvas == null:
+			return false
+		var viewport_size := Vector2i(maxi(8, int(ceil(preview_size.x))), maxi(8, int(ceil(preview_size.y))))
+		if render_viewport.size != viewport_size:
+			render_viewport.size = viewport_size
+		render_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
+		render_canvas.configure(display_name, line_a, line_b, selected, preview_size)
+		active_request = {
+			"key": cache_key,
+			"submit_frame": Engine.get_process_frames(),
+		}
+		submit_count += 1
+		return true
+
+	static func _capture_active_request() -> int:
+		if active_request.is_empty() or render_viewport == null:
+			return 0
+		if Engine.get_process_frames() <= int(active_request.get("submit_frame", -1)):
+			return 0
+		var cache_key := String(active_request.get("key", ""))
+		active_request = {}
+		if cache_key == "" or textures.has(cache_key):
+			return 0
+		var viewport_texture := render_viewport.get_texture()
+		if viewport_texture == null:
+			return 0
+		var image := viewport_texture.get_image()
+		if image == null or image.is_empty():
+			return 0
+		textures[cache_key] = ImageTexture.create_from_image(image)
+		capture_count += 1
+		_touch_lru(cache_key)
+		_prune_lru()
+		last_captured_keys.append(cache_key)
+		return 1
+
+	static func _ensure_renderer(tree: SceneTree, preview_size: Vector2) -> void:
+		if render_viewport != null and is_instance_valid(render_viewport) and render_canvas != null and is_instance_valid(render_canvas):
+			return
+		render_viewport = SubViewport.new()
+		render_viewport.disable_3d = true
+		render_viewport.transparent_bg = true
+		render_viewport.size = Vector2i(maxi(8, int(ceil(preview_size.x))), maxi(8, int(ceil(preview_size.y))))
+		render_viewport.render_target_update_mode = SubViewport.UPDATE_DISABLED
+		render_canvas = CatalogCardBodyTextureRenderCanvas.new()
+		render_viewport.add_child(render_canvas)
+		tree.root.add_child(render_viewport)
+
+	static func _touch_lru(cache_key: String) -> void:
+		lru_order.erase(cache_key)
+		lru_order.append(cache_key)
+
+	static func _prune_lru() -> void:
+		while lru_order.size() > max_entries:
+			var old_key := String(lru_order.pop_front())
+			textures.erase(old_key)
 
 
 class PartCatalogCardButton:
@@ -1179,11 +1387,6 @@ class PartCatalogCardButton:
 	var set_card_call_count := 0
 	var set_card_apply_count := 0
 	var set_card_noop_count := 0
-	var art_back: ColorRect
-	var data_back: ColorRect
-	var title_label: Label
-	var line_a_label: Label
-	var line_b_label: Label
 	var text_layer: CatalogCardTextLayer
 	var preview_icon: PartPreviewIconView
 
@@ -1285,16 +1488,6 @@ class PartCatalogCardButton:
 			add_child(text_layer)
 		_layout_card_nodes()
 
-	func _make_card_label(label_name: String) -> Label:
-		var label := Label.new()
-		label.name = label_name
-		label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		label.clip_text = true
-		label.autowrap_mode = TextServer.AUTOWRAP_OFF
-		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
-		label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		return label
-
 	func _layout_card_nodes() -> void:
 		if text_layer == null:
 			return
@@ -1306,7 +1499,7 @@ class PartCatalogCardButton:
 
 	func _apply_card_texts() -> void:
 		if text_layer != null:
-			text_layer.configure(display_name, data_line_a, data_line_b, selected)
+			text_layer.configure(slot_key, part, display_name, data_line_a, data_line_b, selected)
 
 	func _ensure_preview_icon() -> void:
 		if preview_icon != null:
@@ -19861,6 +20054,9 @@ func _tick_editor_visuals(delta: float) -> void:
 	var preview_processed := PartPreviewTextureCache.process_queue(self, preview_budget)
 	if preview_processed > 0:
 		_queue_editor_preview_icon_redraws()
+	var card_body_processed := CatalogCardBodyTextureCache.process_queue(self, preview_budget)
+	if card_body_processed > 0:
+		_queue_editor_catalog_card_body_redraws()
 	if editor_snap_timer > 0.0:
 		editor_canvas_motion_phase = fmod(editor_canvas_motion_phase + delta * 0.25, 1.0)
 		editor_snap_timer = maxf(0.0, editor_snap_timer - delta)
@@ -19910,6 +20106,25 @@ func _queue_editor_preview_icon_redraws() -> void:
 			return
 		hover_icon.preview_texture = PartPreviewTextureCache.peek_preview(hover_icon.slot_key, hover_icon.part, hover_icon.selected, hover_icon.pulse, hover_icon.size)
 		hover_icon.queue_redraw()
+
+
+func _queue_editor_catalog_card_body_redraws() -> void:
+	var captured := {}
+	for raw_key in CatalogCardBodyTextureCache.last_captured_keys:
+		captured[String(raw_key)] = true
+	if captured.is_empty():
+		return
+	for raw_button in editor_catalog_buttons:
+		if raw_button == null or not (raw_button is PartCatalogCardButton):
+			continue
+		var button: PartCatalogCardButton = raw_button
+		if button.text_layer == null or not button.text_layer.visible:
+			continue
+		var body_key := CatalogCardBodyTextureCache.key_for(button.text_layer.slot_key, button.text_layer.part, button.text_layer.display_name, button.text_layer.data_line_a, button.text_layer.data_line_b, button.text_layer.selected, button.text_layer.size)
+		if not captured.has(body_key):
+			continue
+		button.text_layer.body_texture = CatalogCardBodyTextureCache.peek_preview(button.text_layer.slot_key, button.text_layer.part, button.text_layer.display_name, button.text_layer.data_line_a, button.text_layer.data_line_b, button.text_layer.selected, button.text_layer.size)
+		button.text_layer.queue_redraw()
 
 
 func mark_editor_dirty(flags: int, reason: String = "editor") -> void:
