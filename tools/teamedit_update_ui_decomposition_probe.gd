@@ -36,8 +36,8 @@ func _init() -> void:
 	if dashboard_block.contains("_update_editor_ui()") or dashboard_block.contains("_update_editor_ui(true)"):
 		_fail("Dashboard allocation full refresh still calls _update_editor_ui synchronously.")
 		return
-	if not dashboard_block.contains("editor_update_ui_deferred = true"):
-		_fail("Dashboard allocation full refresh is not deferred.")
+	if not dashboard_block.contains("mark_editor_dirty") or not source.contains("func flush_editor_dirty"):
+		_fail("Dashboard allocation full refresh is not routed through the dirty scheduler.")
 		return
 	if not overlay_block.contains("editor_visible_control_cached_count") or not overlay_block.contains("editor_visible_control_sample_frame"):
 		_fail("Perf overlay still lacks cached visible-control sampling.")

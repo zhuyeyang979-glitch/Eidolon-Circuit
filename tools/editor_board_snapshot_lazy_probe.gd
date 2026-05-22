@@ -28,7 +28,7 @@ func _init() -> void:
 	main._refresh_editor_visual_views(stats)
 	if int(main.editor_board_snapshot_rebuild_count) != 0:
 		_fail("Identical visual refresh rebuilt board snapshot %d time(s)." % int(main.editor_board_snapshot_rebuild_count))
-	if int(main.editor_board_snapshot_cache_hit_count) < 2:
-		_fail("Identical visual refresh did not hit board snapshot cache enough: %d" % int(main.editor_board_snapshot_cache_hit_count))
-	print("EDITOR_BOARD_SNAPSHOT_LAZY_PROBE ok hits=%d rebuild=%d" % [int(main.editor_board_snapshot_cache_hit_count), int(main.editor_board_snapshot_rebuild_count)])
+	if int(main.editor_board_snapshot_cache_hit_count) + int(main.editor_visual_refresh_skip_count) < 2:
+		_fail("Identical visual refresh did not skip or hit board snapshot cache enough: hits=%d skips=%d" % [int(main.editor_board_snapshot_cache_hit_count), int(main.editor_visual_refresh_skip_count)])
+	print("EDITOR_BOARD_SNAPSHOT_LAZY_PROBE ok hits=%d skips=%d rebuild=%d" % [int(main.editor_board_snapshot_cache_hit_count), int(main.editor_visual_refresh_skip_count), int(main.editor_board_snapshot_rebuild_count)])
 	quit()

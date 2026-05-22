@@ -2261,6 +2261,124 @@ Sync:
 - Implemented in `E:\New project`.
 - Mirror targets remain `C:\Users\Administrator\Documents\New project` and `C:\Users\Administrator\OneDrive\ドキュメント\New project`.
 
+## 2026-05-22 全游戏状态层与热路径骨架
+
+Rules:
+- 全游戏热路径必须有统一状态坐标：`GameStateStore` 记录 app/domain revision 与 dirty flags，`DirtyGraph` 记录刷新域，`DerivedStateCache` 记录派生数据缓存，`HotPathProfiler` 记录 scope/counter。
+- `main.gd` 进入 adapter 过渡期：业务仍暂存在 `main.gd`，但 TeamEdit/Battle/SavedUnits/Settings/Scout/Menu 都有 controller adapter 入口，后续迁移不得再新增孤立全局刷新路径。
+- TeamEdit 鼠标移动、hover、滑块拖动继续走 dirty scheduler；禁止回到直接全页 `_update_editor_ui()`。
+- GPU geometry 继续由 `GpuGeometryService` 包装 `GpuCollisionPipeline`，正常 runtime 入口保持 deferred/compact query-contact 模式。
+
+Implementation notes:
+- 新增状态层脚本：
+  - `scripts/state/game_state_store.gd`
+  - `scripts/state/dirty_graph.gd`
+  - `scripts/state/derived_state_cache.gd`
+  - `scripts/perf/hot_path_profiler.gd`
+- 新增 service/controller adapter：
+  - `scripts/services/gpu_geometry_service.gd`
+  - `scripts/services/part_catalog_service.gd`
+  - `scripts/services/unit_stats_service.gd`
+  - `scripts/controllers/team_edit_controller.gd`
+  - `scripts/controllers/battle_controller.gd`
+  - `scripts/controllers/saved_units_controller.gd`
+  - `scripts/controllers/settings_controller.gd`
+  - `scripts/controllers/scout_controller.gd`
+  - `scripts/controllers/menu_controller.gd`
+- `main.gd` 新增 `_initialize_hot_path_state_layer()`，在 `_ready()` 早期装配 state/cache/profiler/service/controller，并把 GPU pipeline 绑定给 `GpuGeometryService`。
+- `mark_editor_dirty()` 与 `flush_editor_dirty()` 现在同时写入本地 editor dirty flags、`GameStateStore` 和 `DirtyGraph`，性能叠层新增 `hotpath/state/dirty graph/derived/gpu service` 行。
+- `_process()` 用 `HotPathProfiler` 记录当前 mode scope，并同步 `GameStateStore.app_mode`；Battle tick 通过 `BattleController.note_tick()` 计数。
+
+New probes:
+- `state_store_revision_probe.gd`
+- `dirty_graph_budget_flush_probe.gd`
+- `derived_state_cache_probe.gd`
+- `main_controller_boundary_probe.gd`
+- `no_direct_full_refresh_probe.gd`
+- `global_hot_path_overlay_probe.gd`
+- `saved_units_trace_profiler_probe.gd`
+
+Verification:
+- `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120` passed headless.
+- New state/hot-path probes passed:
+  - `state_store_revision_probe`
+  - `dirty_graph_budget_flush_probe`
+  - `derived_state_cache_probe`
+  - `main_controller_boundary_probe`
+  - `no_direct_full_refresh_probe`
+  - `global_hot_path_overlay_probe`
+  - `saved_units_trace_profiler_probe`
+- Regression probes passed:
+  - `teamedit_update_ui_dirty_scheduler_probe`
+  - `teamedit_real_frame_budget_probe`
+  - `teamedit_probe`
+  - `combat_probe`
+  - `ui_layout_probe`
+  - `text_overflow_probe`
+  - `gpu_no_hot_rd_sync_probe`
+
+Notes:
+- 本轮是状态层与 controller/service adapter 的落地，不是一次性物理拆完 `main.gd`。后续拆分必须以这些 adapter 为边界，逐步把 TeamEdit/Battle/SavedUnits 的大函数迁出。
+- `GameStateStore`/`DirtyGraph` 已经接进 TeamEdit dirty 与性能叠层；`DerivedStateCache` 和 `UnitStatsService` 先提供统一接口，后续把 stats/legality/catalog/saved-unit summaries 逐项迁入。
+- 实施时发现 Codex 当前工作目录是 Documents 镜像，第一次 patch 写错副本；已重新落到 `E:\New project`，后续同步以 E 盘 Git 源为准。
+
+Sync:
+- Implemented in `E:\New project`.
+- Mirror targets remain `C:\Users\Administrator\Documents\New project` and `C:\Users\Administrator\OneDrive\ドキュメント\New project`.
+
+## 2026-05-22 TeamEdit Dirty Scheduler 与 GPU Query 延迟收束
+
+Rules:
+- TeamEdit 高频交互不再直接刷新整页。鼠标移动、重复 hover、Dashboard 滑块释放后的全量同步，都必须先进入 `mark_editor_dirty()`，再由每帧 `flush_editor_dirty()` 按域刷新。
+- 零件库卡片只在 revision key 变化时更新；相同筛选、页码、语言、选中状态下重复调用要直接跳过。
+- 画板正常刷新路径不得再 `topology.duplicate(true)` 深拷贝完整拓扑；base model 只做节点/边浅拷贝并缓存。
+- GPU contact/query 非阻塞消费至少延迟 2 帧；当前帧 pending 结果不得立刻 `rd.sync()`。
+
+Implementation notes:
+- `main.gd` 新增 TeamEdit dirty flags：catalog、board、dashboard、detail、hover、action buttons、roster、stats、legality，并在性能叠层显示 dirty flush 耗时和 flags。
+- `_refresh_editor_dashboard_after_allocation(true)` 改为 dirty 调度，不再同步调用 `_update_editor_ui()`；滑块轻量刷新仍保持实时预算数字。
+- `_update_editor_catalog_buttons()` 新增整体 revision key 和每张卡片 signature；隐藏/可见、disabled、文本写入全部走 no-op setter。
+- `_refresh_editor_visual_views()` 新增 visual revision skip，并把 TeamEdit custom topology 的 base build 从 `duplicate(true)` 改为节点/边浅拷贝。
+- `GpuCollisionPipeline` 新增 `DEFERRED_READBACK_MIN_FRAME_DELAY`、contact/query poll skip counters 和 `nonblocking_sync_skip_count`，降低当前帧 GPU 同步尖峰。
+
+Verification:
+- `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120` passed headless.
+- New/updated TeamEdit probes passed:
+  - `teamedit_update_ui_dirty_scheduler_probe`
+  - `editor_visual_refresh_no_deep_snapshot_probe`
+  - `editor_catalog_revision_cache_probe`
+  - `editor_board_model_incremental_probe`
+  - `editor_board_snapshot_incremental_probe`
+  - `editor_board_snapshot_lazy_probe`
+  - `teamedit_update_ui_decomposition_probe`
+  - `editor_stats_idle_recompute_probe`
+  - `teamedit_real_frame_budget_probe`
+  - `teamedit_hover_frame_budget_probe`
+  - `teamedit_dashboard_slider_frame_budget_probe`
+  - `teamedit_property_write_budget_probe`
+  - `teamedit_trace_profiler_probe`
+- GPU/runtime probes passed:
+  - `gpu_query_nonblocking_poll_probe`
+  - `gpu_no_hot_rd_sync_probe`
+  - `combat_probe`
+- UI/render regressions passed:
+  - `assembly_board_root_no_redraw_probe`
+  - `edge_socket_overlay_retained_items_probe`
+  - `board_segment_dirty_update_probe`
+  - `part_preview_async_bake_probe`
+  - `part_preview_texture_cache_probe`
+  - `teamedit_probe`
+  - `ui_layout_probe`
+  - `text_overflow_probe`
+
+Notes:
+- `ui_layout_probe` and `text_overflow_probe` remain heavy by design, each taking about one minute headless in this workspace.
+- This round reduces the remaining all-page refresh and topology deep-copy paths. If real-window TeamEdit still stutters, next target is the remaining full `_update_editor_ui(true)` structural wrapper and splitting side-panel/roster/action-button writes into separate deferred domains.
+
+Sync:
+- Implemented in `E:\New project`.
+- Mirror targets: `C:\Users\Administrator\Documents\New project` and `C:\Users\Administrator\OneDrive\ドキュメント\New project`.
+
 ## 2026-05-22 TeamEdit 单体 UI 管线拆解与真实卡顿定位
 
 Rules:

@@ -5,6 +5,19 @@ const PartArt = preload("res://scripts/part_art.gd")
 const TopologyGeometry = preload("res://scripts/topology_geometry.gd")
 const AssemblyBoardRenderer = preload("res://scripts/assembly_board_renderer.gd")
 const GpuCollisionPipeline = preload("res://scripts/gpu_collision_pipeline.gd")
+const GameStateStore = preload("res://scripts/state/game_state_store.gd")
+const DirtyGraph = preload("res://scripts/state/dirty_graph.gd")
+const DerivedStateCache = preload("res://scripts/state/derived_state_cache.gd")
+const HotPathProfiler = preload("res://scripts/perf/hot_path_profiler.gd")
+const GpuGeometryService = preload("res://scripts/services/gpu_geometry_service.gd")
+const PartCatalogService = preload("res://scripts/services/part_catalog_service.gd")
+const UnitStatsService = preload("res://scripts/services/unit_stats_service.gd")
+const TeamEditController = preload("res://scripts/controllers/team_edit_controller.gd")
+const BattleController = preload("res://scripts/controllers/battle_controller.gd")
+const SavedUnitsController = preload("res://scripts/controllers/saved_units_controller.gd")
+const SettingsController = preload("res://scripts/controllers/settings_controller.gd")
+const ScoutController = preload("res://scripts/controllers/scout_controller.gd")
+const MenuController = preload("res://scripts/controllers/menu_controller.gd")
 
 class BackdropView:
 	extends Control
@@ -7955,12 +7968,40 @@ var gpu_geometry_query_submit_count := 0
 var gpu_geometry_query_consume_count := 0
 var gpu_geometry_query_readback_bytes := 0
 var gpu_geometry_query_last_hits: Array = []
+var game_state_store: GameStateStore
+var dirty_graph: DirtyGraph
+var derived_state_cache: DerivedStateCache
+var hot_path_profiler: HotPathProfiler
+var gpu_geometry_service: GpuGeometryService
+var part_catalog_service: PartCatalogService
+var unit_stats_service: UnitStatsService
+var team_edit_controller: TeamEditController
+var battle_controller: BattleController
+var saved_units_controller: SavedUnitsController
+var settings_controller: SettingsController
+var scout_controller: ScoutController
+var menu_controller: MenuController
 var editor_perf_overlay_enabled := false
 var editor_perf_overlay_label: Label
 var editor_perf_overlay_frame_samples: Array = []
 var editor_perf_overlay_last_usec := 0
 var editor_preview_pause_until_msec := 0
 var editor_dirty_flush_count := 0
+const EDITOR_DIRTY_CATALOG := 1
+const EDITOR_DIRTY_BOARD := 2
+const EDITOR_DIRTY_DASHBOARD := 4
+const EDITOR_DIRTY_DETAIL := 8
+const EDITOR_DIRTY_HOVER := 16
+const EDITOR_DIRTY_ACTION_BUTTONS := 32
+const EDITOR_DIRTY_ROSTER := 64
+const EDITOR_DIRTY_STATS := 128
+const EDITOR_DIRTY_LEGALITY := 256
+const EDITOR_DIRTY_ALL_STRUCTURAL := 511
+var editor_dirty_flags := 0
+var editor_dirty_scheduler_flush_count := 0
+var editor_dirty_scheduler_last_usec := 0
+var editor_dirty_scheduler_last_flags := 0
+var editor_dirty_scheduler_skipped_stats_count := 0
 var editor_full_update_request_count := 0
 var editor_update_ui_last_usec := 0
 var editor_property_write_count := 0
@@ -7969,6 +8010,14 @@ var editor_visible_control_cached_count := 0
 var editor_visible_control_sample_frame := -1000000
 var editor_deferred_full_refresh_request_count := 0
 var editor_dashboard_idle_recompute_count := 0
+var editor_catalog_buttons_revision_key := ""
+var editor_catalog_card_signature_cache := {}
+var editor_catalog_revision_skip_count := 0
+var editor_catalog_update_usec := 0
+var editor_visual_revision_key := ""
+var editor_visual_refresh_skip_count := 0
+var editor_board_shallow_node_snapshot_count := 0
+var editor_board_model_incremental_count := 0
 var editor_ammo_size_rank := 1
 var editor_ammo_size_buttons: Array = []
 var editor_sort_menu_open := false
@@ -8070,6 +8119,7 @@ func _ready() -> void:
 	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
 	combat_vfx_texture = _load_generated_texture("res://assets/generated/combat_vfx_atlas.png")
 	space_backdrop_texture = _load_generated_texture("res://assets/generated/space_battle_backdrop.png")
+	_initialize_hot_path_state_layer()
 	_initialize_gpu_collision_pipeline()
 	_register_inputs()
 	_initialize_state()
@@ -8088,14 +8138,43 @@ func _ready() -> void:
 	_show_menu()
 
 
+func _initialize_hot_path_state_layer() -> void:
+	game_state_store = GameStateStore.new()
+	dirty_graph = DirtyGraph.new()
+	derived_state_cache = DerivedStateCache.new()
+	hot_path_profiler = HotPathProfiler.new()
+	gpu_geometry_service = GpuGeometryService.new()
+	part_catalog_service = PartCatalogService.new()
+	part_catalog_service.bind(self)
+	unit_stats_service = UnitStatsService.new()
+	unit_stats_service.bind(self, derived_state_cache)
+	team_edit_controller = TeamEditController.new()
+	team_edit_controller.bind(self, game_state_store, dirty_graph, derived_state_cache, hot_path_profiler)
+	battle_controller = BattleController.new()
+	battle_controller.bind(self, game_state_store, dirty_graph, derived_state_cache, hot_path_profiler, gpu_geometry_service)
+	saved_units_controller = SavedUnitsController.new()
+	saved_units_controller.bind(self, game_state_store, dirty_graph, derived_state_cache, hot_path_profiler)
+	settings_controller = SettingsController.new()
+	settings_controller.bind(self, game_state_store, dirty_graph, derived_state_cache, hot_path_profiler)
+	scout_controller = ScoutController.new()
+	scout_controller.bind(self, game_state_store, dirty_graph, derived_state_cache, hot_path_profiler)
+	menu_controller = MenuController.new()
+	menu_controller.bind(self, game_state_store, dirty_graph, derived_state_cache, hot_path_profiler)
+	game_state_store.set_app_mode(game_state, "ready")
+
+
 func _initialize_gpu_collision_pipeline() -> void:
 	if DisplayServer.get_name().to_lower().contains("headless"):
 		gpu_collision_enabled = false
 		gpu_collision_status_note = "Headless display server has no GPU compute device."
+		if gpu_geometry_service != null:
+			gpu_geometry_service.bind_pipeline(null)
 		return
 	gpu_collision_pipeline = GpuCollisionPipeline.new()
 	gpu_collision_enabled = gpu_collision_pipeline.initialize()
 	gpu_collision_status_note = String(gpu_collision_pipeline.status_note)
+	if gpu_geometry_service != null:
+		gpu_geometry_service.bind_pipeline(gpu_collision_pipeline)
 	if not gpu_collision_enabled:
 		push_warning("GPU collision unavailable: %s" % gpu_collision_status_note)
 
@@ -8124,7 +8203,11 @@ func _warn_gpu_collision_unavailable() -> void:
 func _submit_gpu_geometry_queries_deferred(colliders: Array, queries: Array, delta: float = 0.0) -> Array:
 	if gpu_collision_pipeline == null or not _gpu_collision_available():
 		return []
-	var hits := gpu_collision_pipeline.compute_geometry_queries_deferred(colliders, queries, delta)
+	var hits := []
+	if gpu_geometry_service != null:
+		hits = gpu_geometry_service.compute_geometry_queries_deferred(colliders, queries, delta)
+	else:
+		hits = gpu_collision_pipeline.compute_geometry_queries_deferred(colliders, queries, delta)
 	gpu_geometry_query_submit_count += 1
 	if not hits.is_empty():
 		gpu_geometry_query_consume_count += 1
@@ -8147,6 +8230,12 @@ func _input(event: InputEvent) -> void:
 
 
 func _process(delta: float) -> void:
+	if game_state_store != null:
+		game_state_store.set_app_mode(game_state, "process")
+	var process_scope := "process.%s" % game_state
+	if hot_path_profiler != null:
+		hot_path_profiler.begin_frame(Time.get_ticks_usec())
+		hot_path_profiler.scope_begin(process_scope)
 	match game_state:
 		STATE_MENU:
 			_handle_menu_input()
@@ -8161,8 +8250,13 @@ func _process(delta: float) -> void:
 		STATE_SETTINGS:
 			_handle_settings_input()
 		STATE_BATTLE:
+			if battle_controller != null:
+				battle_controller.note_tick()
 			_tick_battle(delta)
 	_update_music()
+	if hot_path_profiler != null:
+		hot_path_profiler.scope_end(process_scope)
+		hot_path_profiler.end_frame()
 
 
 func _initialize_state() -> void:
@@ -14417,8 +14511,7 @@ func _refresh_editor_dashboard_after_allocation(full_refresh: bool) -> void:
 	if full_refresh:
 		editor_allocation_full_refresh_count += 1
 		editor_deferred_full_refresh_request_count += 1
-		editor_update_ui_deferred = true
-		editor_update_ui_deferred_count += 1
+		mark_editor_dirty(EDITOR_DIRTY_DASHBOARD | EDITOR_DIRTY_STATS | EDITOR_DIRTY_LEGALITY | EDITOR_DIRTY_DETAIL | EDITOR_DIRTY_ACTION_BUTTONS)
 		_refresh_editor_dashboard_after_allocation(false)
 		return
 	editor_allocation_light_refresh_count += 1
@@ -19286,7 +19379,64 @@ func _queue_editor_preview_icon_redraws() -> void:
 		hover_icon.queue_redraw()
 
 
+func mark_editor_dirty(flags: int, reason: String = "editor") -> void:
+	editor_dirty_flags |= flags
+	if team_edit_controller != null:
+		team_edit_controller.mark_dirty(flags, reason)
+	elif game_state_store != null:
+		game_state_store.mark_dirty(GameStateStore.DOMAIN_EDITOR, flags, reason)
+	if hot_path_profiler != null:
+		hot_path_profiler.count("editor.mark_dirty")
+
+
+func flush_editor_dirty(budget_usec: int = 0) -> void:
+	if editor_dirty_flags == 0:
+		return
+	var started := Time.get_ticks_usec()
+	var flags := editor_dirty_flags
+	editor_dirty_flags = 0
+	if dirty_graph != null:
+		dirty_graph.begin_flush(GameStateStore.DOMAIN_EDITOR)
+	editor_dirty_scheduler_flush_count += 1
+	editor_dirty_scheduler_last_flags = flags
+	var role_key: String = ROLE_ORDER[editor_role_index]
+	var unit_bp: Dictionary = _editor_current_blueprint()
+	var stats := {}
+	var needs_stats := (flags & (EDITOR_DIRTY_DASHBOARD | EDITOR_DIRTY_STATS | EDITOR_DIRTY_LEGALITY | EDITOR_DIRTY_DETAIL)) != 0
+	if needs_stats:
+		stats = _editor_current_stats()
+	if (flags & EDITOR_DIRTY_HOVER) != 0 and editor_hover_popup_view != null:
+		editor_hover_popup_view.move_to_front()
+	if (flags & EDITOR_DIRTY_BOARD) != 0:
+		_refresh_editor_visual_views(stats, false)
+	if (flags & EDITOR_DIRTY_CATALOG) != 0:
+		_update_editor_catalog_buttons(role_key, unit_bp)
+	if (flags & (EDITOR_DIRTY_DASHBOARD | EDITOR_DIRTY_STATS | EDITOR_DIRTY_LEGALITY)) != 0:
+		if stats.is_empty():
+			stats = _editor_current_stats()
+		_refresh_editor_stats_rail(stats)
+	if (flags & EDITOR_DIRTY_DETAIL) != 0:
+		_refresh_torso_detail_view()
+		_refresh_engine_momentum_allocation_view()
+	if (flags & EDITOR_DIRTY_ACTION_BUTTONS) != 0:
+		_refresh_editor_module_binding_buttons()
+	if (flags & EDITOR_DIRTY_ROSTER) != 0:
+		_update_editor_roster_overview()
+	editor_dirty_scheduler_last_usec = Time.get_ticks_usec() - started
+	if game_state_store != null:
+		game_state_store.clear_dirty(GameStateStore.DOMAIN_EDITOR, flags)
+	if dirty_graph != null:
+		dirty_graph.finish_flush(GameStateStore.DOMAIN_EDITOR, started, flags)
+	if team_edit_controller != null:
+		team_edit_controller.flush_count += 1
+	if budget_usec > 0 and editor_dirty_scheduler_last_usec > budget_usec:
+		editor_dirty_scheduler_skipped_stats_count += 1
+
+
 func _flush_editor_deferred_ui() -> void:
+	if editor_dirty_flags != 0:
+		editor_dirty_flush_count += 1
+		flush_editor_dirty(2400)
 	if not editor_update_ui_deferred:
 		return
 	var frame := Engine.get_process_frames()
@@ -19333,13 +19483,33 @@ func _editor_perf_overlay_text() -> String:
 		visible_controls = editor_visible_control_cached_count
 	var gpu_sync_line := "n/a"
 	if gpu_collision_pipeline != null:
-		gpu_sync_line = "%d last %.2fms total %.2fms" % [
+		gpu_sync_line = "%d last %.2fms total %.2fms skip %d" % [
 			int(gpu_collision_pipeline.sync_count),
 			float(gpu_collision_pipeline.last_sync_wait_usec) / 1000.0,
 			float(gpu_collision_pipeline.total_sync_wait_usec) / 1000.0,
+			int(gpu_collision_pipeline.nonblocking_sync_skip_count),
 		]
+	var state_line := "n/a"
+	if game_state_store != null:
+		state_line = game_state_store.snapshot_summary()
+	var dirty_graph_line := "n/a"
+	if dirty_graph != null:
+		dirty_graph_line = dirty_graph.summary_line()
+	var derived_cache_line := "n/a"
+	if derived_state_cache != null:
+		derived_cache_line = derived_state_cache.summary_line()
+	var hot_path_line := "n/a"
+	if hot_path_profiler != null:
+		hot_path_line = hot_path_profiler.summary_line()
+	var gpu_service_line := "n/a"
+	if gpu_geometry_service != null:
+		gpu_service_line = gpu_geometry_service.summary_line()
 	return "\n".join([
 		"TeamEdit PERF",
+		"hotpath: %s" % hot_path_line,
+		"state: %s" % state_line,
+		"dirty graph: %s" % dirty_graph_line,
+		"derived: %s" % derived_cache_line,
 		"CPU tick: %.2fms" % (float(editor_perf_overlay_last_usec) / 1000.0),
 		"update_ui: %.2fms count:%d" % [float(editor_update_ui_last_usec) / 1000.0, int(editor_update_ui_count)],
 		"visible controls: %d" % visible_controls,
@@ -19354,9 +19524,13 @@ func _editor_perf_overlay_text() -> String:
 		"preview submit/capture/render/force: %d/%d/%d/%d" % [int(PartPreviewTextureCache.submit_count), int(PartPreviewTextureCache.capture_count), int(PartPreviewTextureCache.render_count), int(PartPreviewTextureCache.force_draw_count)],
 		"preview viewport/process: %d/%d" % [int(PartPreviewTextureCache.subviewport_create_count), int(PartPreviewTextureCache.process_count)],
 		"ui full/deferred/alloc: %d/%d/%d" % [int(editor_full_update_request_count), int(editor_dirty_flush_count), int(editor_deferred_full_refresh_request_count)],
+		"dirty flush: %d flags:%d %.2fms" % [int(editor_dirty_scheduler_flush_count), int(editor_dirty_scheduler_last_flags), float(editor_dirty_scheduler_last_usec) / 1000.0],
+		"catalog skip/update: %d %.2fms" % [int(editor_catalog_revision_skip_count), float(editor_catalog_update_usec) / 1000.0],
+		"visual skip/shallow: %d/%d" % [int(editor_visual_refresh_skip_count), int(editor_board_shallow_node_snapshot_count)],
 		"stats h/m: %d/%d" % [int(editor_current_stats_cache_hit_count), int(editor_current_stats_cache_miss_count)],
 		"gpu contact/q bytes: %d/%d" % [int(gpu_collision_readback_bytes), int(gpu_geometry_query_readback_bytes)],
 		"gpu query submit/consume: %d/%d" % [int(gpu_geometry_query_submit_count), int(gpu_geometry_query_consume_count)],
+		"gpu service: %s" % gpu_service_line,
 		"gpu sync: %s" % gpu_sync_line,
 	])
 
@@ -38904,8 +39078,8 @@ func _update_editor_ui(force_now: bool = false) -> void:
 		ui_language,
 	]
 	if not force_now and editor_update_ui_last_frame == current_frame and ui_state_signature == editor_update_ui_last_state_signature:
-		editor_update_ui_deferred = true
 		editor_update_ui_deferred_count += 1
+		mark_editor_dirty(EDITOR_DIRTY_DASHBOARD | EDITOR_DIRTY_HOVER | EDITOR_DIRTY_ACTION_BUTTONS)
 		return
 	editor_update_ui_last_frame = current_frame
 	editor_update_ui_last_state_signature = ui_state_signature
@@ -40038,31 +40212,56 @@ func _editor_part_sort_value(slot_key: String, part: Dictionary) -> float:
 
 
 func _update_editor_catalog_buttons(role_key: String, unit_bp: Dictionary) -> void:
+	var update_started := Time.get_ticks_usec()
 	if editor_panel_mode != "parts":
-		for catalog_button in editor_catalog_buttons:
-			var hidden_button: Button = catalog_button
-			hidden_button.visible = false
-			hidden_button.disabled = true
+		var hidden_revision := "hidden|%s" % editor_panel_mode
+		if editor_catalog_buttons_revision_key == hidden_revision:
+			editor_catalog_revision_skip_count += 1
+			return
+		editor_catalog_buttons_revision_key = hidden_revision
+		editor_catalog_card_signature_cache.clear()
+		for i in range(editor_catalog_buttons.size()):
+			var hidden_button: Button = editor_catalog_buttons[i]
+			_set_canvas_item_visible_if_changed(hidden_button, false)
+			_set_button_disabled_if_changed(hidden_button, true)
 		return
 	var slot_key: String = BUILD_SLOTS[editor_slot_index]
 	var entries := _editor_catalog_entries(role_key, slot_key)
 	var page_size: int = max(1, editor_catalog_buttons.size())
 	var max_page: int = maxi(0, int(ceilf(float(entries.size()) / float(page_size))) - 1)
 	editor_catalog_page = clampi(editor_catalog_page, 0, max_page)
+	var selected_index := _editor_selected_part_index_for_slot(unit_bp, role_key, slot_key)
+	var revision_key := "%s|%s|%s|%s|%s|%d|%d|%d|%d" % [
+		role_key,
+		slot_key,
+		editor_part_group_mode,
+		editor_part_filter_mode,
+		editor_catalog_sort_key,
+		1 if editor_catalog_sort_ascending else 0,
+		editor_catalog_page,
+		entries.size(),
+		selected_index,
+	]
+	if revision_key == editor_catalog_buttons_revision_key:
+		editor_catalog_revision_skip_count += 1
+		return
+	editor_catalog_buttons_revision_key = revision_key
 	if editor_catalog_page_label != null:
-		editor_catalog_page_label.position = Vector2(1110.0, 330.0)
-		editor_catalog_page_label.size = Vector2(96.0, 20.0)
-		editor_catalog_page_label.text = ("页 %d/%d  %d" if _ui_is_zh() else "P %d/%d %d") % [editor_catalog_page + 1, max_page + 1, entries.size()]
+		_set_control_position_if_changed(editor_catalog_page_label, Vector2(1110.0, 330.0))
+		_set_control_size_if_changed(editor_catalog_page_label, Vector2(96.0, 20.0))
+		_set_control_text_if_changed(editor_catalog_page_label, ("页 %d/%d  %d" if _ui_is_zh() else "P %d/%d %d") % [editor_catalog_page + 1, max_page + 1, entries.size()])
 	for i in range(editor_catalog_buttons.size()):
 		var button: Button = editor_catalog_buttons[i]
 		var actual_index: int = editor_catalog_page * page_size + i
 		var visible_item: bool = actual_index < entries.size()
-		button.visible = visible_item
-		button.disabled = not visible_item
+		_set_canvas_item_visible_if_changed(button, visible_item)
+		_set_button_disabled_if_changed(button, not visible_item)
 		if not visible_item:
-			button.text = ""
-			if button.has_method("set_card"):
+			_set_control_text_if_changed(button, "")
+			var hidden_sig := "hidden|%d" % i
+			if button.has_method("set_card") and String(editor_catalog_card_signature_cache.get(i, "")) != hidden_sig:
 				button.call("set_card", slot_key, {}, false, ui_language, actual_index, "", "", "")
+				editor_catalog_card_signature_cache[i] = hidden_sig
 			continue
 		var entry: Dictionary = entries[actual_index]
 		var entry_slot := String(entry.get("slot", slot_key))
@@ -40070,15 +40269,30 @@ func _update_editor_catalog_buttons(role_key: String, unit_bp: Dictionary) -> vo
 		var part: Dictionary = _catalog_display_part(entry_slot, entry.get("part", _selected_component(role_key, entry_slot, part_index)))
 		var selected_card := part_index == _editor_selected_part_index_for_slot(unit_bp, role_key, entry_slot)
 		var data_lines := _catalog_card_data_lines(entry_slot, part)
+		var title := _catalog_card_title(entry_slot, part, part_index, selected_card)
+		var card_signature := "%s|%d|%s|%s|%s|%s|%s|%s" % [
+			entry_slot,
+			part_index,
+			String(part.get("stable_key", part.get("name", ""))),
+			str(selected_card),
+			ui_language,
+			title,
+			String(data_lines[0]),
+			String(data_lines[1]),
+		]
+		if String(editor_catalog_card_signature_cache.get(i, "")) == card_signature:
+			continue
 		if button.has_method("set_card"):
-			button.call("set_card", entry_slot, part, selected_card, ui_language, part_index, _catalog_card_title(entry_slot, part, part_index, selected_card), String(data_lines[0]), String(data_lines[1]))
+			button.call("set_card", entry_slot, part, selected_card, ui_language, part_index, title, String(data_lines[0]), String(data_lines[1]))
 		else:
 			var marker := ">> " if selected_card else ""
-			button.text = "%s%d %s" % [marker, part_index + 1, _short_part_name(String(part.get("name", "")))]
+			_set_control_text_if_changed(button, "%s%d %s" % [marker, part_index + 1, _short_part_name(String(part.get("name", "")))])
+		editor_catalog_card_signature_cache[i] = card_signature
 	if editor_action_buttons.has("prev_catalog"):
-		editor_action_buttons["prev_catalog"].disabled = editor_catalog_page <= 0
+		_set_button_disabled_if_changed(editor_action_buttons["prev_catalog"], editor_catalog_page <= 0)
 	if editor_action_buttons.has("next_catalog"):
-		editor_action_buttons["next_catalog"].disabled = editor_catalog_page >= max_page
+		_set_button_disabled_if_changed(editor_action_buttons["next_catalog"], editor_catalog_page >= max_page)
+	editor_catalog_update_usec = Time.get_ticks_usec() - update_started
 
 
 func _editor_selected_part_index_for_slot(unit_bp: Dictionary, role_key: String, slot_key: String) -> int:
@@ -41211,9 +41425,29 @@ func _refresh_editor_selected_part_preview(slot_key: String, part: Dictionary, s
 			editor_structure_reference_label.text = ""
 
 
+func _editor_visual_revision_signature(role_key: String, unit_bp: Dictionary, stats: Dictionary, custom_board_cache_key: String, update_side_panels: bool) -> String:
+	return "%s|%s|%s|%d|%d|%s|%s|%s|%s|%s|%d|%s|%s|%s|%s|%s" % [
+		role_key,
+		custom_board_cache_key,
+		editor_selected_body_part,
+		editor_topology_node_index,
+		editor_open_torso_node_index,
+		editor_snap_part,
+		str(snappedf(clampf(editor_snap_timer / 0.28, 0.0, 1.0), 0.01)),
+		str(snappedf(editor_canvas_motion_phase, 0.02)),
+		str(editor_material_warning_nodes.hash()),
+		str(stats.hash()) if not stats.is_empty() else "",
+		1 if update_side_panels else 0,
+		editor_pending_place_slot,
+		str(editor_pending_place_index),
+		str(editor_selected_topology_nodes.hash()),
+		str(snappedf(editor_board_zoom, 0.001)),
+		str(editor_board_view_offset),
+	]
+
+
 func _refresh_editor_visual_views(precomputed_stats: Dictionary = {}, update_side_panels: bool = true) -> void:
 	editor_visual_refresh_count += 1
-	_refresh_editor_selected_part_preview(BUILD_SLOTS[editor_slot_index], selected_component, clampf(editor_snap_timer / 0.28, 0.0, 1.0))
 	if assembly_board_view == null:
 		return
 	var player_id := _editor_player()
@@ -41224,6 +41458,16 @@ func _refresh_editor_visual_views(precomputed_stats: Dictionary = {}, update_sid
 	var board_mode := role_key
 	var visual_stats := precomputed_stats
 	var custom_board_cache_key := _editor_board_snapshot_cache_key(role_key, unit_bp)
+	var visual_revision := _editor_visual_revision_signature(role_key, unit_bp, visual_stats, custom_board_cache_key, update_side_panels)
+	if visual_revision == editor_visual_revision_key:
+		editor_visual_refresh_skip_count += 1
+		if update_side_panels:
+			_refresh_torso_detail_view()
+			_refresh_engine_momentum_allocation_view()
+		return
+	editor_visual_revision_key = visual_revision
+	if update_side_panels:
+		_refresh_editor_selected_part_preview(BUILD_SLOTS[editor_slot_index], selected_component, clampf(editor_snap_timer / 0.28, 0.0, 1.0))
 	if custom_board_cache_key != "" and custom_board_cache_key == editor_board_base_snapshot_cache_key and not editor_board_base_snapshot_cache.is_empty():
 		editor_board_base_snapshot_hit_count += 1
 		editor_board_snapshot_cache_hit_count += 1
@@ -41232,7 +41476,18 @@ func _refresh_editor_visual_views(precomputed_stats: Dictionary = {}, update_sid
 	elif _role_uses_body_board(role_key) and unit_bp.has("custom_topology"):
 		var snapshot_build_start := Time.get_ticks_usec()
 		var topology: Dictionary = unit_bp.get("custom_topology", {})
-		snapshot = topology.duplicate(true)
+		var source_nodes_raw: Array = Array(topology.get("nodes", []))
+		var source_edges_raw: Array = Array(topology.get("edges", []))
+		var shallow_nodes: Array = []
+		shallow_nodes.resize(source_nodes_raw.size())
+		for node_i in range(source_nodes_raw.size()):
+			shallow_nodes[node_i] = Dictionary(source_nodes_raw[node_i]).duplicate(false) if source_nodes_raw[node_i] is Dictionary else source_nodes_raw[node_i]
+		var shallow_edges: Array = []
+		shallow_edges.resize(source_edges_raw.size())
+		for edge_i in range(source_edges_raw.size()):
+			shallow_edges[edge_i] = Dictionary(source_edges_raw[edge_i]).duplicate(false) if source_edges_raw[edge_i] is Dictionary else source_edges_raw[edge_i]
+		snapshot = {"nodes": shallow_nodes, "edges": shallow_edges}
+		editor_board_shallow_node_snapshot_count += 1
 		snapshot["distance_scale"] = TOPOLOGY_BOARD_PHYSICAL_UNITS
 		if visual_stats.is_empty():
 			visual_stats = _compute_unit_stats(player_id, role_key, -1, unit_bp)

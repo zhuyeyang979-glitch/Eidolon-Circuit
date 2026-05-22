@@ -14,6 +14,7 @@ const MAX_QUERY_HITS := 4096
 const BROADPHASE_SHADER_PATH := "res://shaders/gpu_collision_broadphase.glsl"
 const NARROWPHASE_SHADER_PATH := "res://shaders/gpu_collision_narrowphase.glsl"
 const GEOMETRY_QUERY_SHADER_PATH := "res://shaders/gpu_geometry_query.glsl"
+const DEFERRED_READBACK_MIN_FRAME_DELAY := 2
 
 const FLAG_ANCHORED := 1
 
@@ -59,6 +60,9 @@ var sync_count := 0
 var last_sync_wait_usec := 0
 var total_sync_wait_usec := 0
 var current_frame_sync_count := 0
+var deferred_contact_poll_skip_count := 0
+var deferred_query_poll_skip_count := 0
+var nonblocking_sync_skip_count := 0
 
 var collider_buffer_rid: RID
 var candidate_buffer_rid: RID
@@ -321,8 +325,10 @@ func _consume_pending_contact_frame(blocking: bool = true) -> Array:
 		deferred_contact_pending = false
 		return []
 	var frame := _pending_contact_frame
-	if not blocking and Engine.get_process_frames() <= int(frame.get("submit_frame", -1)):
+	if not blocking and Engine.get_process_frames() - int(frame.get("submit_frame", -1)) < DEFERRED_READBACK_MIN_FRAME_DELAY:
 		deferred_contact_pending = true
+		deferred_contact_poll_skip_count += 1
+		nonblocking_sync_skip_count += 1
 		return []
 	_pending_contact_frame = {}
 	deferred_contact_pending = false
@@ -518,8 +524,10 @@ func _consume_pending_query_frame(blocking: bool = true) -> Array:
 		deferred_query_pending = false
 		return []
 	var frame := _pending_query_frame
-	if not blocking and Engine.get_process_frames() <= int(frame.get("submit_frame", -1)):
+	if not blocking and Engine.get_process_frames() - int(frame.get("submit_frame", -1)) < DEFERRED_READBACK_MIN_FRAME_DELAY:
 		deferred_query_pending = true
+		deferred_query_poll_skip_count += 1
+		nonblocking_sync_skip_count += 1
 		return []
 	_pending_query_frame = {}
 	deferred_query_pending = false
