@@ -1440,8 +1440,8 @@ class CatalogCardRetainedItem:
 		display_name = next_display_name
 		data_line_a = next_line_a
 		data_line_b = next_line_b
-		preview_texture = null
-		body_texture = null
+		preview_texture = PartPreviewTextureCache.peek_preview(slot_key, part, false, 0.0, _art_rect().size)
+		body_texture = CatalogCardBodyTextureCache.peek_preview(slot_key, part, display_name, data_line_a, data_line_b, false, _body_texture_rect().size)
 		if not defer_texture_requests:
 			_request_textures()
 		queue_redraw()
@@ -1459,14 +1459,16 @@ class CatalogCardRetainedItem:
 
 	func _request_textures() -> void:
 		textures_requested_signature = content_signature
-		preview_texture = null
-		body_texture = null
 		if slot_key == "" or part.is_empty() or size.x <= 0.0 or size.y <= 0.0:
 			return
 		var art_rect := _art_rect()
 		var body_rect := _body_texture_rect()
-		preview_texture = PartPreviewTextureCache.request_preview(self, slot_key, part, false, 0.0, art_rect.size)
-		body_texture = CatalogCardBodyTextureCache.request_preview(self, slot_key, part, display_name, data_line_a, data_line_b, false, body_rect.size)
+		var next_preview := PartPreviewTextureCache.request_preview(self, slot_key, part, false, 0.0, art_rect.size)
+		var next_body := CatalogCardBodyTextureCache.request_preview(self, slot_key, part, display_name, data_line_a, data_line_b, false, body_rect.size)
+		if next_preview != null:
+			preview_texture = next_preview
+		if next_body != null:
+			body_texture = next_body
 		preview_request_count += 1
 		body_request_count += 1
 
@@ -1671,12 +1673,14 @@ class PartCatalogCardButton:
 	func _ready() -> void:
 		flat = true
 		_ensure_card_nodes()
-		_ensure_preview_icon()
+		if DisplayServer.get_name().to_lower() == "headless":
+			_ensure_preview_icon()
 
 	func _notification(what: int) -> void:
 		if what == NOTIFICATION_RESIZED:
 			_layout_card_nodes()
-			_sync_preview_icon()
+			if preview_icon != null:
+				_sync_preview_icon()
 
 	func _get_drag_data(_at_position: Vector2):
 		if part.is_empty() or slot_key == "":
@@ -1688,13 +1692,15 @@ class PartCatalogCardButton:
 		return {"kind": "editor_catalog_part", "slot": slot_key, "index": part_index}
 
 	func set_card(next_slot: String, next_part: Dictionary, next_selected: bool, next_language: String, next_index: int, next_display_name: String, next_line_a: String, next_line_b: String) -> void:
-		_ensure_preview_icon()
+		if DisplayServer.get_name().to_lower() == "headless":
+			_ensure_preview_icon()
 		set_card_call_count += 1
 		var signature := _card_signature(next_slot, next_part, next_selected, next_language, next_index, next_display_name, next_line_a, next_line_b)
 		_apply_card(signature, next_slot, next_part, next_selected, next_language, next_index, next_display_name, next_line_a, next_line_b)
 
 	func set_card_with_signature(signature: String, next_slot: String, next_part: Dictionary, next_selected: bool, next_language: String, next_index: int, next_display_name: String, next_line_a: String, next_line_b: String) -> void:
-		_ensure_preview_icon()
+		if DisplayServer.get_name().to_lower() == "headless":
+			_ensure_preview_icon()
 		set_card_call_count += 1
 		_apply_card(signature, next_slot, next_part, next_selected, next_language, next_index, next_display_name, next_line_a, next_line_b)
 
@@ -1717,7 +1723,8 @@ class PartCatalogCardButton:
 			text = ""
 		_apply_card_texts()
 		_layout_card_nodes()
-		_sync_preview_icon(false)
+		if preview_icon != null:
+			_sync_preview_icon(false)
 
 	func set_art_sheets(next_asset: Texture2D, next_joint: Texture2D, next_limb: Texture2D, next_blade: Texture2D, next_blunt: Texture2D, next_pierce: Texture2D, next_torso: Texture2D, next_booster: Texture2D, next_engine: Texture2D, next_projectile: Texture2D) -> void:
 		# Thumbnail art is now renderer-driven; sheet arguments stay only for old call-site compatibility.
@@ -8543,6 +8550,7 @@ var editor_catalog_raw_cache := {}
 var editor_catalog_entries_cache := {}
 var editor_catalog_sort_keys_cache := {}
 var editor_catalog_card_model_cache := {}
+var editor_catalog_page_model_cache := {}
 var editor_load_entry_stats_cache := {}
 var editor_catalog_cache_hit_count := 0
 var editor_catalog_cache_miss_count := 0
@@ -20471,31 +20479,34 @@ func _prewarm_adjacent_catalog_card_bodies() -> void:
 		pages.append(editor_catalog_page + 1)
 	if editor_catalog_page - 1 >= 0:
 		pages.append(editor_catalog_page - 1)
+	var role_key_for_page: String = ROLE_ORDER[editor_role_index]
+	var unit_bp := _editor_current_blueprint()
 	for raw_page in pages:
 		var page := int(raw_page)
-		for i in range(page_size):
-			var actual_index := page * page_size + i
-			if actual_index < 0 or actual_index >= entries.size():
+		var page_models := _editor_catalog_page_models(role_key_for_page, slot_key, unit_bp, entries, page, page_size)
+		for raw_model in page_models:
+			if not (raw_model is Dictionary):
 				continue
-			var entry: Dictionary = entries[actual_index]
-			var entry_slot := String(entry.get("slot", slot_key))
-			var part_index := int(entry.get("index", 0))
-			var part: Dictionary = _catalog_display_part(entry_slot, entry.get("part", _selected_component(role_key, entry_slot, part_index)))
-			var selected_card := part_index == _editor_selected_part_index_for_slot(_editor_current_blueprint(), role_key, entry_slot)
-			var card_model := _catalog_card_cached_model(entry_slot, part, part_index)
-			var marker := "已装 " if _ui_is_zh() and selected_card else ("IN " if selected_card else "")
-			if entry_slot in ["joint", "limb_muscle", "muscle"]:
-				marker = "待选 " if _ui_is_zh() and selected_card and _has_pending_canvas_part() else marker
-			var title := "%s%s" % [marker, String(card_model.get("title_base", ""))]
-			var line_a := String(card_model.get("line_a", ""))
-			var line_b := String(card_model.get("line_b", ""))
+			var model: Dictionary = raw_model
+			var entry_slot := String(model.get("slot", slot_key))
+			var part: Dictionary = model.get("part", {})
+			var title := String(model.get("title", ""))
+			var line_a := String(model.get("line_a", ""))
+			var line_b := String(model.get("line_b", ""))
+			var selected_card := bool(model.get("selected", false))
+			var art_size := Vector2(116.0, 44.0)
 			var preview_size := Vector2(116.0, 30.0)
 			if not editor_catalog_buttons.is_empty() and editor_catalog_buttons[0] is PartCatalogCardButton:
 				var button: PartCatalogCardButton = editor_catalog_buttons[0]
 				if button.retained_item != null:
+					art_size = button.retained_item._art_rect().size
 					preview_size = button.retained_item._body_texture_rect().size
 				elif button.text_layer != null:
 					preview_size = button.text_layer.size
+			var preview_pending_before := PartPreviewTextureCache.pending_order.size()
+			var preview_texture := PartPreviewTextureCache.request_preview(self, entry_slot, part, false, 0.0, art_size)
+			if preview_texture == null and PartPreviewTextureCache.pending_order.size() > preview_pending_before:
+				return
 			if CatalogCardBodyTextureCache.prewarm(self, entry_slot, part, title, line_a, line_b, selected_card, preview_size):
 				return
 
@@ -41025,7 +41036,7 @@ func _catalog_card_cached_model(slot_key: String, part: Dictionary, actual_index
 		ui_language,
 	]
 	if editor_catalog_card_model_cache.has(cache_key):
-		return Dictionary(editor_catalog_card_model_cache[cache_key])
+		return editor_catalog_card_model_cache[cache_key]
 	var data_lines := _catalog_card_data_lines(slot_key, part)
 	var size_suffix := " %s" % String(part.get("ammo_size_tier", "")) if slot_key == "muscle" and _part_is_ammo_payload(part) else ""
 	var base_title := "%02d %s%s" % [actual_index + 1, _short_part_name(String(part.get("name", ""))), size_suffix]
@@ -41206,6 +41217,7 @@ func _invalidate_editor_catalog_cache() -> void:
 	editor_catalog_entries_cache.clear()
 	editor_catalog_sort_keys_cache.clear()
 	editor_catalog_card_model_cache.clear()
+	editor_catalog_page_model_cache.clear()
 	editor_load_entry_stats_cache.clear()
 
 
@@ -41213,7 +41225,7 @@ func _editor_catalog_raw_entries(role_key: String, slot_key: String) -> Array:
 	var cache_key := _editor_catalog_raw_cache_key(role_key, slot_key)
 	if editor_catalog_raw_cache.has(cache_key):
 		editor_catalog_cache_hit_count += 1
-		return Array(editor_catalog_raw_cache[cache_key]).duplicate()
+		return editor_catalog_raw_cache[cache_key]
 	editor_catalog_cache_miss_count += 1
 	var entries: Array = []
 	for entry_slot in _editor_catalog_slots_for_active_filter(slot_key):
@@ -41221,8 +41233,13 @@ func _editor_catalog_raw_entries(role_key: String, slot_key: String) -> Array:
 		for i in range(catalog.size()):
 			var part := _selected_component(role_key, String(entry_slot), i)
 			if _editor_catalog_part_passes_filter(String(entry_slot), part):
-				entries.append({"slot": String(entry_slot), "index": i, "part": part})
-	editor_catalog_raw_cache[cache_key] = entries.duplicate()
+				entries.append({
+					"slot": String(entry_slot),
+					"index": i,
+					"part": part,
+					"display_part": _catalog_display_part(String(entry_slot), part),
+				})
+	editor_catalog_raw_cache[cache_key] = entries
 	return entries
 
 
@@ -41230,7 +41247,7 @@ func _editor_catalog_entries(role_key: String, slot_key: String) -> Array:
 	var cache_key := _editor_catalog_entries_cache_key(role_key, slot_key)
 	if editor_catalog_entries_cache.has(cache_key):
 		editor_catalog_cache_hit_count += 1
-		return Array(editor_catalog_entries_cache[cache_key])
+		return editor_catalog_entries_cache[cache_key]
 	var entries := _editor_catalog_raw_entries(role_key, slot_key)
 	var available_sort_keys := _editor_available_sort_keys_from_entries(entries)
 	if not available_sort_keys.has(editor_catalog_sort_key):
@@ -41238,7 +41255,7 @@ func _editor_catalog_entries(role_key: String, slot_key: String) -> Array:
 		cache_key = _editor_catalog_entries_cache_key(role_key, slot_key)
 		if editor_catalog_entries_cache.has(cache_key):
 			editor_catalog_cache_hit_count += 1
-			return Array(editor_catalog_entries_cache[cache_key])
+			return editor_catalog_entries_cache[cache_key]
 	_sort_editor_catalog_entries(entries, slot_key)
 	editor_catalog_cache_miss_count += 1
 	editor_catalog_entries_cache[cache_key] = entries
@@ -41265,7 +41282,7 @@ func _editor_available_sort_keys_from_entries(entries: Array) -> Array:
 			if not (raw_entry is Dictionary):
 				continue
 			var entry: Dictionary = raw_entry
-			var part: Dictionary = entry.get("part", {})
+			var part: Dictionary = entry.get("display_part", entry.get("part", {}))
 			if _editor_part_has_sort_property(String(entry.get("slot", "")), part, key):
 				has_key = true
 				break
@@ -41435,6 +41452,89 @@ func _editor_catalog_part_passes_filter(slot_key: String, part: Dictionary) -> b
 	return true
 
 
+func _editor_catalog_page_selection_key(unit_bp: Dictionary, role_key: String, page_entries: Array) -> String:
+	var slots := {}
+	for raw_entry in page_entries:
+		if raw_entry is Dictionary:
+			var entry: Dictionary = raw_entry
+			slots[String(entry.get("slot", ""))] = true
+	var pieces: Array = []
+	for raw_slot in slots.keys():
+		var entry_slot := String(raw_slot)
+		pieces.append("%s:%d" % [entry_slot, _editor_selected_part_index_for_slot(unit_bp, role_key, entry_slot)])
+	pieces.sort()
+	pieces.append("pending:%s:%d:%d" % [
+		editor_pending_place_slot,
+		editor_pending_place_index,
+		1 if _has_pending_canvas_part() else 0,
+	])
+	return ",".join(pieces)
+
+
+func _editor_catalog_page_models(role_key: String, slot_key: String, unit_bp: Dictionary, entries: Array, page: int, page_size: int) -> Array:
+	var start_index := page * page_size
+	var end_index := mini(entries.size(), start_index + page_size)
+	if start_index < 0 or start_index >= entries.size() or page_size <= 0:
+		return []
+	var page_entries := entries.slice(start_index, end_index)
+	var cache_key := "%s|page:%d|size:%d|lang:%s|sel:%s" % [
+		_editor_catalog_entries_cache_key(role_key, slot_key),
+		page,
+		page_size,
+		ui_language,
+		_editor_catalog_page_selection_key(unit_bp, role_key, page_entries),
+	]
+	if editor_catalog_page_model_cache.has(cache_key):
+		return editor_catalog_page_model_cache[cache_key]
+	var selected_by_slot := {}
+	for raw_entry in page_entries:
+		if raw_entry is Dictionary:
+			var entry: Dictionary = raw_entry
+			var entry_slot := String(entry.get("slot", slot_key))
+			if not selected_by_slot.has(entry_slot):
+				selected_by_slot[entry_slot] = _editor_selected_part_index_for_slot(unit_bp, role_key, entry_slot)
+	var models: Array = []
+	for raw_entry in page_entries:
+		if not (raw_entry is Dictionary):
+			continue
+		var entry: Dictionary = raw_entry
+		var entry_slot := String(entry.get("slot", slot_key))
+		var part_index := int(entry.get("index", 0))
+		var part: Dictionary = entry.get("display_part", {})
+		if part.is_empty():
+			part = _catalog_display_part(entry_slot, entry.get("part", _selected_component(role_key, entry_slot, part_index)))
+		var selected_card := part_index == int(selected_by_slot.get(entry_slot, -1))
+		var card_model := _catalog_card_cached_model(entry_slot, part, part_index)
+		var marker := "已装 " if _ui_is_zh() and selected_card else ("IN " if selected_card else "")
+		if entry_slot in ["joint", "limb_muscle", "muscle"]:
+			marker = "待选 " if _ui_is_zh() and selected_card and _has_pending_canvas_part() else marker
+		var title := "%s%s" % [marker, String(card_model.get("title_base", ""))]
+		var line_a := String(card_model.get("line_a", ""))
+		var line_b := String(card_model.get("line_b", ""))
+		var card_signature := "%s|%d|%s|%s|%s|%s|%s|%s" % [
+			entry_slot,
+			part_index,
+			String(part.get("stable_key", part.get("name", ""))),
+			str(selected_card),
+			ui_language,
+			title,
+			line_a,
+			line_b,
+		]
+		models.append({
+			"slot": entry_slot,
+			"part_index": part_index,
+			"part": part,
+			"selected": selected_card,
+			"title": title,
+			"line_a": line_a,
+			"line_b": line_b,
+			"signature": card_signature,
+		})
+	editor_catalog_page_model_cache[cache_key] = models
+	return models
+
+
 func _sort_editor_catalog_entries(entries: Array, slot_key: String) -> void:
 	for i in range(entries.size()):
 		var best := i
@@ -41443,8 +41543,8 @@ func _sort_editor_catalog_entries(entries: Array, slot_key: String) -> void:
 			var entry_next: Dictionary = entries[j]
 			var best_slot := String(entry_best.get("slot", slot_key))
 			var next_slot := String(entry_next.get("slot", slot_key))
-			var value_best := _editor_part_sort_value(best_slot, entry_best.get("part", {}))
-			var value_next := _editor_part_sort_value(next_slot, entry_next.get("part", {}))
+			var value_best := _editor_part_sort_value(best_slot, entry_best.get("display_part", entry_best.get("part", {})))
+			var value_next := _editor_part_sort_value(next_slot, entry_next.get("display_part", entry_next.get("part", {})))
 			var should_swap := value_next < value_best if editor_catalog_sort_ascending else value_next > value_best
 			if is_equal_approx(value_next, value_best):
 				should_swap = int(entry_next.get("index", 0)) < int(entry_best.get("index", 0))
@@ -41457,7 +41557,6 @@ func _sort_editor_catalog_entries(entries: Array, slot_key: String) -> void:
 
 
 func _editor_part_sort_value(slot_key: String, part: Dictionary) -> float:
-	part = _catalog_display_part(slot_key, part)
 	match editor_catalog_sort_key:
 		"cost":
 			return float(part.get("cost", 0.0))
@@ -41520,7 +41619,9 @@ func _update_editor_catalog_buttons(role_key: String, unit_bp: Dictionary) -> vo
 	var page_size: int = max(1, editor_catalog_buttons.size())
 	var max_page: int = maxi(0, int(ceilf(float(entries.size()) / float(page_size))) - 1)
 	editor_catalog_page = clampi(editor_catalog_page, 0, max_page)
-	var selected_index := _editor_selected_part_index_for_slot(unit_bp, role_key, slot_key)
+	var page_start := editor_catalog_page * page_size
+	var page_end := mini(entries.size(), page_start + page_size)
+	var page_selection_key := _editor_catalog_page_selection_key(unit_bp, role_key, entries.slice(page_start, page_end))
 	var revision_key := "%s|%s|%s|%s|%s|%d|%d|%d|%d" % [
 		role_key,
 		slot_key,
@@ -41530,7 +41631,7 @@ func _update_editor_catalog_buttons(role_key: String, unit_bp: Dictionary) -> vo
 		1 if editor_catalog_sort_ascending else 0,
 		editor_catalog_page,
 		entries.size(),
-		selected_index,
+		page_selection_key.hash(),
 	]
 	if revision_key == editor_catalog_buttons_revision_key:
 		editor_catalog_revision_skip_count += 1
@@ -41549,49 +41650,56 @@ func _update_editor_catalog_buttons(role_key: String, unit_bp: Dictionary) -> vo
 		hot_path_profiler.scope_end("teamedit.catalog.page_label")
 		hot_path_profiler.scope_begin("teamedit.catalog.cards")
 	CatalogCardRetainedItem.defer_texture_requests = Time.get_ticks_msec() < editor_preview_pause_until_msec
+	if hot_path_profiler != null:
+		hot_path_profiler.scope_begin("teamedit.catalog.page_models")
+	var page_models := _editor_catalog_page_models(role_key, slot_key, unit_bp, entries, editor_catalog_page, page_size)
+	if hot_path_profiler != null:
+		hot_path_profiler.scope_end("teamedit.catalog.page_models")
 	for i in range(editor_catalog_buttons.size()):
 		var button: Button = editor_catalog_buttons[i]
-		var actual_index: int = editor_catalog_page * page_size + i
-		var visible_item: bool = actual_index < entries.size()
+		var visible_item: bool = i < page_models.size()
+		if hot_path_profiler != null:
+			hot_path_profiler.scope_begin("teamedit.catalog.card_state")
 		_set_canvas_item_visible_if_changed(button, visible_item)
 		_set_button_disabled_if_changed(button, not visible_item)
+		if hot_path_profiler != null:
+			hot_path_profiler.scope_end("teamedit.catalog.card_state")
 		if not visible_item:
 			_set_control_text_if_changed(button, "")
 			var hidden_sig := "hidden|%d" % i
 			if button is PartCatalogCardButton and String(editor_catalog_card_signature_cache.get(i, "")) != hidden_sig:
-				(button as PartCatalogCardButton).set_card_with_signature(hidden_sig, slot_key, {}, false, ui_language, actual_index, "", "", "")
+				if hot_path_profiler != null:
+					hot_path_profiler.scope_begin("teamedit.catalog.card_set")
+				(button as PartCatalogCardButton).set_card_with_signature(hidden_sig, slot_key, {}, false, ui_language, -1, "", "", "")
+				if hot_path_profiler != null:
+					hot_path_profiler.scope_end("teamedit.catalog.card_set")
 				editor_catalog_card_signature_cache[i] = hidden_sig
 			continue
-		var entry: Dictionary = entries[actual_index]
-		var entry_slot := String(entry.get("slot", slot_key))
-		var part_index := int(entry.get("index", 0))
-		var part: Dictionary = _catalog_display_part(entry_slot, entry.get("part", _selected_component(role_key, entry_slot, part_index)))
-		var selected_card := part_index == _editor_selected_part_index_for_slot(unit_bp, role_key, entry_slot)
-		var card_model := _catalog_card_cached_model(entry_slot, part, part_index)
-		var marker := "已装 " if _ui_is_zh() and selected_card else ("IN " if selected_card else "")
-		if entry_slot in ["joint", "limb_muscle", "muscle"]:
-			marker = "待选 " if _ui_is_zh() and selected_card and _has_pending_canvas_part() else marker
-		var title := "%s%s" % [marker, String(card_model.get("title_base", ""))]
-		var line_a := String(card_model.get("line_a", ""))
-		var line_b := String(card_model.get("line_b", ""))
-		var card_signature := "%s|%d|%s|%s|%s|%s|%s|%s" % [
-			entry_slot,
-			part_index,
-			String(part.get("stable_key", part.get("name", ""))),
-			str(selected_card),
-			ui_language,
-			title,
-			line_a,
-			line_b,
-		]
+		var page_model: Dictionary = page_models[i]
+		var entry_slot := String(page_model.get("slot", slot_key))
+		var part_index := int(page_model.get("part_index", 0))
+		var part: Dictionary = page_model.get("part", {})
+		var selected_card := bool(page_model.get("selected", false))
+		var title := String(page_model.get("title", ""))
+		var line_a := String(page_model.get("line_a", ""))
+		var line_b := String(page_model.get("line_b", ""))
+		var card_signature := String(page_model.get("signature", ""))
 		if String(editor_catalog_card_signature_cache.get(i, "")) == card_signature:
 			continue
 		if button is PartCatalogCardButton:
+			if hot_path_profiler != null:
+				hot_path_profiler.scope_begin("teamedit.catalog.card_set")
 			(button as PartCatalogCardButton).set_card_with_signature(card_signature, entry_slot, part, selected_card, ui_language, part_index, title, line_a, line_b)
+			if hot_path_profiler != null:
+				hot_path_profiler.scope_end("teamedit.catalog.card_set")
 			editor_catalog_card_update_count += 1
 		else:
 			var fallback_marker := ">> " if selected_card else ""
+			if hot_path_profiler != null:
+				hot_path_profiler.scope_begin("teamedit.catalog.card_set")
 			_set_control_text_if_changed(button, "%s%d %s" % [fallback_marker, part_index + 1, _short_part_name(String(part.get("name", "")))])
+			if hot_path_profiler != null:
+				hot_path_profiler.scope_end("teamedit.catalog.card_set")
 			editor_catalog_card_update_count += 1
 		editor_catalog_card_signature_cache[i] = card_signature
 	CatalogCardRetainedItem.defer_texture_requests = false
@@ -41644,7 +41752,9 @@ func _hover_catalog_component(component_index: int) -> void:
 	var entry: Dictionary = entries[actual_entry_index]
 	var part_index := int(entry.get("index", 0))
 	var entry_slot := String(entry.get("slot", slot_key))
-	var part: Dictionary = _catalog_display_part(entry_slot, entry.get("part", _selected_component(role_key, entry_slot, part_index)))
+	var part: Dictionary = entry.get("display_part", {})
+	if part.is_empty():
+		part = _catalog_display_part(entry_slot, entry.get("part", _selected_component(role_key, entry_slot, part_index)))
 	_show_editor_part_hover(entry_slot, part_index, part)
 
 

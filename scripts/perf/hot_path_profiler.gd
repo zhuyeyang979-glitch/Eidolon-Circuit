@@ -79,8 +79,10 @@ func end_interaction(name: String) -> void:
 	if not _active_interactions.has(name):
 		return
 	var started := int(_active_interactions.get(name, Time.get_ticks_usec()))
+	var had_frame_samples := _interaction_samples.has(name) and not Array(_interaction_samples.get(name, [])).is_empty()
 	_active_interactions.erase(name)
-	record_interaction_sample(name, Time.get_ticks_usec() - started, scope_stats())
+	if not had_frame_samples:
+		record_interaction_sample(name, Time.get_ticks_usec() - started, scope_stats())
 
 
 func record_interaction_sample(name: String, frame_usec: int, scopes: Dictionary = {}) -> void:

@@ -3143,3 +3143,38 @@ Findings:
 
 Sync:
 - Implemented in `E:\New project`; mirror sync and local commit recorded by the surrounding Git history.
+
+## 2026-05-23 Catalog Page Chain Cut and Profiler Sample Fix
+
+Rules:
+- Catalog page swaps must use precomputed page card models; a page button should not normalize every visible part or rebuild long card strings on the click frame.
+- Catalog entry/model caches are treated as read-only references on hot paths. Do not duplicate large arrays or dictionaries merely to read them.
+- Profiler interaction p95/max must represent real frame samples. If an interaction already recorded per-frame samples, `end_interaction()` must not add the whole interaction duration as a fake frame sample.
+
+Implementation notes:
+- `editor_catalog_raw_cache`, `editor_catalog_entries_cache`, and `editor_catalog_card_model_cache` now return cached references for read-only hot paths instead of cloning arrays/dictionaries.
+- Catalog entries now cache `display_part` once after filtering. Sorting and page card models read the cached display part, avoiding repeated `_catalog_display_part()` deep normalization during page swaps.
+- Added `editor_catalog_page_model_cache` and `_editor_catalog_page_models()`. Current and adjacent pages reuse prebuilt 8-card models including display part, title, data lines, selection state, and card signature.
+- Adjacent page prewarm now reuses page models and prewarms both part preview and card body textures. Visible retained cards immediately `peek` cached textures on configure, then request only missing textures when idle.
+- Headed `PartCatalogCardButton` no longer creates or maintains the old hidden `PartPreviewIconView`; that compatibility child remains headless/probe-only.
+- `HotPathProfiler.end_interaction()` no longer adds total interaction duration as a frame sample when per-frame samples already exist. This fixed inflated p95 values in page-swap probes.
+
+Verification:
+- `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120` passed.
+- Headed RTX 4080 SUPER probes:
+  - `catalog_card_page_swap_budget_probe`: `p95=1.29ms`, `updates=96`, `body_submit=0`.
+  - `teamedit_scroll_frame_budget_probe`: `p95=1.81ms`, `max=1.91ms`, `preview_submit=0`.
+  - `teamedit_click_frame_budget_probe`: `p95=2.63ms`.
+  - `teamedit_assembly_frame_budget_probe`: `p95=1.78ms`, `catalog_delta=0`.
+  - `teamedit_trace_profiler_probe`: hover `p95=1.24ms`, slider `p95=1.15ms`, pose `p95=1.18ms`.
+- Headed regressions passed:
+  - `teamedit_probe`
+  - `combat_probe`
+
+Findings:
+- The previous catalog page p95 around 23-31ms was partly a profiler artifact: `end_interaction()` recorded total interaction duration into the same frame sample series. After the profiler fix, page swap frame samples show the catalog card/data path under 2ms p95.
+- The real remaining hot leaves in scroll are now cumulative totals, not per-frame spikes: `teamedit.catalog.cards` and `teamedit.catalog.entries` are each roughly 36-39ms accumulated across the whole interaction. This is acceptable for current headed probes.
+- If the player-facing window still feels slow after this commit, the next investigation should be outside the now-measured catalog/card path: Godot window frame pacing, VSync, OS/GPU driver overlays, input event frequency, or another interaction path not covered by current probes.
+
+Sync:
+- Implemented in `E:\New project`; mirror sync and local commit recorded by the surrounding Git history.

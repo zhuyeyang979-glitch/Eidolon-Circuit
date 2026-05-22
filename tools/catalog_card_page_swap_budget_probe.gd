@@ -38,6 +38,11 @@ func _init() -> void:
 		main.hot_path_profiler.end_frame()
 	main.hot_path_profiler.end_interaction("catalog.page_swap")
 	var stats: Dictionary = main.hot_path_profiler.interaction_stats("catalog.page_swap")
+	var leaves: Array = main.hot_path_profiler.interaction_hot_scopes("catalog.page_swap", 4, true)
+	var leaf_texts: Array = []
+	for leaf in leaves:
+		if leaf is Dictionary:
+			leaf_texts.append("%s:%.2fms" % [String(Dictionary(leaf).get("name", "")), float(Dictionary(leaf).get("usec", 0)) / 1000.0])
 	var updates := int(main.editor_catalog_card_update_count) - before_updates
 	var preview_submit := int(MainScene.PartPreviewTextureCache.submit_count) - before_preview_submit
 	var body_submit := int(MainScene.CatalogCardBodyTextureCache.submit_count) - before_body_submit
@@ -50,11 +55,13 @@ func _init() -> void:
 	var p95_ms := float(stats.get("p95_usec", 0.0)) / 1000.0
 	var p95_limit := 120.0 if DisplayServer.get_name().to_lower() == "headless" else 90.0
 	if p95_ms > p95_limit:
-		_fail("Page swap p95 too high: %.2fms hot=%s" % [float(stats.get("p95_usec", 0.0)) / 1000.0, String(stats.get("hot_scope", ""))])
+		_fail("Page swap p95 too high: %.2fms hot=%s leaf=%s" % [float(stats.get("p95_usec", 0.0)) / 1000.0, String(stats.get("hot_scope", "")), ",".join(leaf_texts)])
 		return
-	print("CATALOG_CARD_PAGE_SWAP_BUDGET_PROBE ok p95=%.2fms updates=%d body_submit=%d" % [
+	print("CATALOG_CARD_PAGE_SWAP_BUDGET_PROBE ok p95=%.2fms updates=%d body_submit=%d hot=%s leaf=%s" % [
 		float(stats.get("p95_usec", 0.0)) / 1000.0,
 		updates,
 		body_submit,
+		String(stats.get("hot_scope", "")),
+		",".join(leaf_texts),
 	])
 	quit(0)
