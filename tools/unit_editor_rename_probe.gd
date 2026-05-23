@@ -20,7 +20,7 @@ func _init() -> void:
 		_fail("English main menu should expose UNIT EDIT.")
 	main._show_editor(true)
 	var title = main.editor_layer.find_child("EditorTitle", true, false)
-	if title == null or String(title.text) != "单位编辑":
-		_fail("Editor title should be 单位编辑.")
+	if title != null and title is CanvasItem and bool(title.visible):
+		_fail("Unit Edit page should not show the old large editor title.")
 	print("UNIT_EDITOR_RENAME_PROBE ok")
 	quit()
