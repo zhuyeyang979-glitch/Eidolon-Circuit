@@ -18,6 +18,7 @@ const SavedUnitsController = preload("res://scripts/controllers/saved_units_cont
 const SettingsController = preload("res://scripts/controllers/settings_controller.gd")
 const ScoutController = preload("res://scripts/controllers/scout_controller.gd")
 const MenuController = preload("res://scripts/controllers/menu_controller.gd")
+const LoadingController = preload("res://scripts/controllers/loading_controller.gd")
 
 class BackdropView:
 	extends Control
@@ -1054,7 +1055,7 @@ class PartPreviewIconView:
 		var semantic_signature := "%s|%s" % [_preview_signature(next_slot, next_part, next_selected, next_pulse), size_key]
 		# Selection is rendered by the card frame; ignoring it here keeps catalog
 		# paging/selection refreshes from invalidating the expensive preview art.
-		var identity_signature := "%s|%s" % [next_slot, String(next_part.get("name", ""))]
+		var identity_signature := "%s|%s|%s" % [next_slot, String(next_part.get("name", "")), PartArt.normalized_size_tier(next_part)]
 		var signature := explicit_signature if explicit_signature != "" else semantic_signature
 		if signature == last_preview_signature or semantic_signature == last_preview_semantic_signature or identity_signature == last_preview_identity_signature:
 			set_preview_noop_count += 1
@@ -1093,15 +1094,26 @@ class PartPreviewIconView:
 			preview_texture = PartPreviewTextureCache.peek_preview(slot_key, part, selected, pulse, size)
 		if preview_texture != null:
 			draw_texture_rect(preview_texture, Rect2(Vector2.ZERO, size), false)
+		else:
+			draw_rect(Rect2(Vector2.ZERO, size).grow(-4.0), Color(0.08, 0.12, 0.16, 0.8), true)
+			draw_rect(Rect2(Vector2.ZERO, size).grow(-4.0), Color(0.48, 0.66, 0.78, 0.45), false, 1.2)
+		_draw_size_badge(Rect2(Vector2.ZERO, size))
+
+	func _draw_size_badge(rect: Rect2) -> void:
+		var tier := PartArt.normalized_size_tier(part)
+		if tier == "":
 			return
-		draw_rect(Rect2(Vector2.ZERO, size).grow(-4.0), Color(0.08, 0.12, 0.16, 0.8), true)
-		draw_rect(Rect2(Vector2.ZERO, size).grow(-4.0), Color(0.48, 0.66, 0.78, 0.45), false, 1.2)
+		var font := ThemeDB.get_fallback_font()
+		var badge_rect := Rect2(rect.position + Vector2(rect.size.x - 34.0, 6.0), Vector2(28.0, 14.0))
+		draw_rect(badge_rect, Color(0.0, 0.0, 0.0, 0.52), true)
+		draw_rect(badge_rect, Color(0.86, 0.96, 1.0, 0.3), false, 1.0)
+		draw_string(font, badge_rect.position + Vector2(4.0, 10.0), tier.substr(0, 2), HORIZONTAL_ALIGNMENT_LEFT, badge_rect.size.x, 9, Color(0.9, 0.98, 1.0, 0.92))
 
 	func _preview_signature(next_slot: String, next_part: Dictionary, next_selected: bool, next_pulse: float) -> String:
 		return "%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s" % [
 			next_slot,
 			String(next_part.get("name", "")),
-			String(next_part.get("size_tier", next_part.get("size_class", next_part.get("slot_volume_tier", "")))),
+			PartArt.normalized_size_tier(next_part),
 			String(next_part.get("shape", "")),
 			String(next_part.get("material_visual", next_part.get("material_class", ""))),
 			String(next_part.get("damage_type", next_part.get("projectile_damage_type", ""))),
@@ -1617,8 +1629,8 @@ class CatalogCardRetainedItem:
 		return Color(0.72, 0.82, 0.9, 1.0)
 
 	func _thumbnail_size_scale() -> float:
-		var tier := String(part.get("size_tier", part.get("size_class", part.get("slot_volume_tier", "M")))).to_upper()
-		return float({"XS": 0.42, "S": 0.58, "M": 0.76, "L": 0.92, "XL": 1.0}.get(tier, 0.72))
+		var scale := PartArt.size_scale_for(part)
+		return clampf(scale / 1.82, 0.32, 1.0)
 
 	func _draw_size_ruler(rect: Rect2, scale_value: float) -> void:
 		var y := rect.position.y + rect.size.y - 4.0
@@ -1630,7 +1642,7 @@ class CatalogCardRetainedItem:
 		draw_line(end + Vector2(0.0, -3.0), end + Vector2(0.0, 3.0), Color(0.86, 0.96, 1.0, 0.38), 1.0)
 
 	func _draw_size_badge(rect: Rect2) -> void:
-		var tier := String(part.get("size_tier", part.get("size_class", part.get("slot_volume_tier", "")))).to_upper()
+		var tier := PartArt.normalized_size_tier(part)
 		if tier == "":
 			return
 		var font := ThemeDB.get_fallback_font()
@@ -1752,7 +1764,7 @@ class PartCatalogCardButton:
 			next_line_a,
 			next_line_b,
 			String(next_part.get("name", "")),
-			String(next_part.get("size_tier", next_part.get("size_class", next_part.get("slot_volume_tier", "")))),
+			PartArt.normalized_size_tier(next_part),
 			String(next_part.get("shape", "")),
 			String(next_part.get("material_visual", next_part.get("material_class", ""))),
 			String(next_part.get("damage_type", next_part.get("projectile_damage_type", ""))),
@@ -2628,7 +2640,7 @@ class EditorPartHoverPopupView:
 			var signature := "%s|%s|%s|%s|%s|%s" % [
 				slot_key,
 				String(part.get("name", "")),
-				String(part.get("size_tier", part.get("size_class", part.get("slot_volume_tier", "")))),
+				PartArt.normalized_size_tier(part),
 				String(part.get("shape", "")),
 				String(part.get("material_visual", part.get("material_class", ""))),
 				String(part.get("damage_type", part.get("projectile_damage_type", ""))),
@@ -4672,6 +4684,9 @@ class AssemblyBoardView:
 	var retained_component_update_count := 0
 	var retained_component_noop_count := 0
 	var retained_component_remove_count := 0
+	var retained_component_defer_count := 0
+	var retained_component_deferred_flush_count := 0
+	var retained_deferred_component_indices: Array = []
 	var retained_edge_update_count := 0
 	var retained_edge_noop_count := 0
 	var retained_edge_remove_count := 0
@@ -4738,7 +4753,48 @@ class AssemblyBoardView:
 		var next_mode := String(diff.get("mode", board_mode))
 		var next_language := String(diff.get("language", ui_language))
 		var next_motion_phase := float(diff.get("motion_phase", motion_phase))
+		if next_mode == "custom" and bool(diff.get("component_only", false)) and diff.has("changed_nodes"):
+			_ensure_retained_render_layer()
+		if next_mode == "custom" and retained_render_layer != null and bool(diff.get("component_only", false)) and diff.has("changed_nodes"):
+			last_board_signature = revision_key
+			board_snapshot = next_snapshot.duplicate(false)
+			selected_part = next_selected
+			illegal_parts = next_illegal.duplicate(false)
+			snap_part = next_snap_part
+			snap_amount = next_snap_amount
+			board_mode = next_mode
+			ui_language = next_language
+			motion_phase = next_motion_phase
+			var changed := Array(diff.get("changed_nodes", []))
+			if bool(diff.get("defer_component_draw", false)):
+				_defer_retained_components(changed)
+			else:
+				_submit_retained_components_for_indices(changed)
+				_submit_retained_layer(retained_selection_layer, "selection|" + _retained_selection_signature())
+				_submit_retained_layer(retained_hint_layer, "hint|" + revision_key + "|" + ui_language)
+			custom_retained_root_redraw_skip_count += 1
+			return
 		set_board(next_snapshot, next_selected, next_illegal, next_snap_part, next_snap_amount, next_mode, next_language, next_motion_phase, revision_key)
+
+	func apply_component_node_diff(node_index: int, node: Dictionary, revision_key: String, defer_draw: bool = true) -> void:
+		if node_index < 0 or node.is_empty():
+			return
+		_ensure_retained_render_layer()
+		board_mode = "custom"
+		if retained_render_layer != null:
+			retained_render_layer.visible = true
+		var nodes: Array = Array(board_snapshot.get("nodes", [])).duplicate(false)
+		if nodes.size() <= node_index:
+			nodes.resize(node_index + 1)
+		nodes[node_index] = node
+		board_snapshot["nodes"] = nodes
+		board_snapshot["revision_key"] = revision_key
+		last_board_signature = revision_key
+		if defer_draw:
+			_defer_retained_components([node_index])
+		else:
+			_submit_retained_components_for_indices([node_index])
+		custom_retained_root_redraw_skip_count += 1
 
 	func _notification(what: int) -> void:
 		if what == NOTIFICATION_RESIZED:
@@ -5060,6 +5116,50 @@ class AssemblyBoardView:
 				old_item.queue_free()
 			retained_component_items.erase(index)
 			retained_component_remove_count += 1
+
+	func _submit_retained_components_for_indices(indices: Array) -> void:
+		_ensure_retained_render_layer()
+		var nodes: Array = board_snapshot.get("nodes", [])
+		for raw_index in indices:
+			var i := int(raw_index)
+			if i < 0 or i >= nodes.size():
+				continue
+			var item: AssemblyBoardRenderComponentItem = retained_component_items.get(i, null)
+			if item == null:
+				item = AssemblyBoardRenderComponentItem.new()
+				item.name = "Component_%d" % i
+				item.configure(self, i)
+				retained_component_items[i] = item
+				if retained_component_layer != null:
+					retained_component_layer.add_child(item)
+			item.position = Vector2.ZERO
+			item.size = size
+			var signature := _retained_component_signature(i)
+			if item.submit(signature):
+				retained_component_update_count += 1
+			else:
+				retained_component_noop_count += 1
+
+	func _defer_retained_components(indices: Array) -> void:
+		for raw_index in indices:
+			var i := int(raw_index)
+			if i < 0:
+				continue
+			if not retained_deferred_component_indices.has(i):
+				retained_deferred_component_indices.append(i)
+				retained_component_defer_count += 1
+
+	func flush_deferred_retained_components(max_items: int = 2) -> int:
+		if retained_deferred_component_indices.is_empty():
+			return 0
+		var batch: Array = []
+		while not retained_deferred_component_indices.is_empty() and batch.size() < maxi(1, max_items):
+			batch.append(retained_deferred_component_indices.pop_front())
+		_submit_retained_components_for_indices(batch)
+		_submit_retained_layer(retained_selection_layer, "selection|" + _retained_selection_signature())
+		_submit_retained_layer(retained_hint_layer, "hint|" + last_board_signature + "|" + ui_language)
+		retained_component_deferred_flush_count += batch.size()
+		return batch.size()
 
 	func _retained_vec_key(value: Vector2, scale: float = 10.0) -> String:
 		return "%d,%d" % [roundi(value.x * scale), roundi(value.y * scale)]
@@ -7087,6 +7187,7 @@ const STATE_SAVED_UNITS = "saved_units"
 const STATE_SCOUT = "scout"
 const STATE_SETTINGS = "settings"
 const STATE_BATTLE = "battle"
+const STATE_LOADING = "loading"
 
 const GAME_TITLE = "星魂回路"
 const GAME_SUBTITLE = "莫比乌斯武装"
@@ -7109,6 +7210,10 @@ const BATTLE_INPUT_BINDINGS_PATH = "user://battle_input_bindings.json"
 const PERFORMANCE_SETTINGS_PATH = "user://performance_settings.json"
 const PERFORMANCE_PROFILE_DEFAULT = "balanced_4080s"
 const PERFORMANCE_PROFILE_ORDER = ["ultra_4080s", "balanced_4080s", "compat_60"]
+const DISPLAY_MODE_DEFAULT = "windowed"
+const DISPLAY_MODE_ORDER = ["windowed", "borderless_fullscreen", "fullscreen"]
+const WINDOW_SIZE_DEFAULT = "1280x720"
+const WINDOW_SIZE_ORDER = ["1280x720", "1600x900", "1920x1080", "native"]
 const PERFORMANCE_PROFILE_SPECS = {
 	"ultra_4080s": {
 		"name_zh": "4080S 极高",
@@ -8399,6 +8504,11 @@ var saved_units_layer: CanvasLayer
 var scout_layer: CanvasLayer
 var settings_layer: CanvasLayer
 var hud_layer: CanvasLayer
+var loading_layer: CanvasLayer
+var loading_title_label: Label
+var loading_stage_label: Label
+var loading_progress_bar: ProgressBar
+var loading_percent_label: Label
 
 var menu_buttons: Array = []
 var menu_ai_seat_panel: ColorRect
@@ -8494,7 +8604,13 @@ var editor_pose_root_node := -1
 var editor_pose_downstream_nodes: Array = []
 var editor_pose_drag_start_angle := 0.0
 var editor_pose_drag_original_positions: Array = []
+var editor_pose_original_entry_pose := {}
 var editor_pose_pivot := Vector2.ZERO
+var editor_pose_pending_local_position := Vector2.ZERO
+var editor_pose_pending_update := false
+var editor_pose_last_applied_angle := INF
+var editor_pose_drag_apply_count := 0
+var editor_pose_drag_coalesced_count := 0
 var editor_dragging_node_index := -1
 var editor_dragging_selected_nodes := false
 var editor_dragging_whole_unit := false
@@ -8502,6 +8618,13 @@ var editor_drag_whole_start := Vector2.ZERO
 var editor_drag_whole_original_positions: Array = []
 var editor_group_drag_start := Vector2.ZERO
 var editor_group_drag_original_positions: Array = []
+var editor_cached_socket_candidate := {}
+var editor_cached_socket_candidate_node := -1
+var editor_cached_socket_candidate_pos := Vector2.INF
+var editor_cached_socket_candidate_msec := -1000000
+var editor_socket_candidate_update_count := 0
+var editor_socket_candidate_consume_count := 0
+var editor_socket_candidate_cache_hit_count := 0
 var editor_selecting_topology_box := false
 var editor_selection_box_start := Vector2.ZERO
 var editor_selection_box_current := Vector2.ZERO
@@ -8617,6 +8740,31 @@ var saved_units_controller: SavedUnitsController
 var settings_controller: SettingsController
 var scout_controller: ScoutController
 var menu_controller: MenuController
+var loading_controller: LoadingController
+var loading_auto_transitions_enabled := true
+var loading_transition_applying := false
+var loading_pending_callback := Callable()
+var loading_pending_target_state := ""
+var loading_pending_reason := ""
+var loading_task_budget_usec := 6000
+const STARTUP_LOADING_BUDGET_SEC := 20.0
+const PAGE_LOADING_BUDGET_SEC := 10.0
+const STARTUP_MIN_VISIBLE_SEC := 2.0
+const PAGE_MIN_VISIBLE_SEC := 0.75
+const POST_LOADING_FIRST_INTERACTION_WINDOW := 3
+var loading_idle_tasks: Array = []
+var loading_idle_task_budget_usec := 3500
+var loading_last_max_duration_sec := 0.0
+var loading_last_min_visible_sec := 0.0
+var loading_transition_count := 0
+var loading_completed_count := 0
+var loading_last_progress := 0.0
+var loading_last_task_label := ""
+var post_loading_watch_remaining := 0
+var post_loading_interaction_count := 0
+var post_loading_miss_count := 0
+var post_loading_miss_log: Array = []
+var post_loading_baseline := {}
 var editor_perf_overlay_enabled := false
 var editor_perf_overlay_label: Label
 var editor_perf_overlay_frame_samples: Array = []
@@ -8676,6 +8824,18 @@ var editor_open_torso_node_index := -1
 var editor_selected_torso_slot_index := -1
 var editor_selected_torso_slot_kind := ""
 var editor_pending_module_binding := {}
+var editor_torso_detail_refresh_count := 0
+var editor_torso_detail_cache_miss_count := 0
+var editor_torso_detail_template_cache := {}
+var teamedit_placement_template_cache := {}
+var teamedit_placement_template_index_cache := {}
+var editor_drop_template_miss_count := 0
+var editor_drop_template_hit_count := 0
+var editor_undo_light_command_count := 0
+var editor_undo_full_snapshot_count := 0
+var editor_last_added_topology_node_index := -1
+var editor_last_added_topology_node_snapshot := {}
+var editor_deferred_sfx_queue: Array = []
 var editor_engine_allocation_payload_index := -1
 var editor_engine_allocation_torso_node_index := -1
 var editor_engine_allocation_undo_recorded := false
@@ -8706,6 +8866,8 @@ var settings_reset_button: Button
 var settings_category_buttons := {}
 var settings_video_buttons := {}
 var settings_rebind_action := ""
+var display_mode_setting := DISPLAY_MODE_DEFAULT
+var window_size_setting := WINDOW_SIZE_DEFAULT
 var training_dummy_state := "idle_brake"
 var battle_runtime_menu_panel: Control
 var battle_runtime_menu_buttons := {}
@@ -8780,6 +8942,7 @@ func _ready() -> void:
 	_build_settings_ui()
 	_build_battle_ui()
 	_build_page_options_ui()
+	_build_loading_ui()
 	_enable_mouse_for_buttons(self)
 	_compact_all_ui_text()
 	_build_music_system()
@@ -8808,6 +8971,9 @@ func _initialize_hot_path_state_layer() -> void:
 	scout_controller.bind(self, game_state_store, dirty_graph, derived_state_cache, hot_path_profiler)
 	menu_controller = MenuController.new()
 	menu_controller.bind(self, game_state_store, dirty_graph, derived_state_cache, hot_path_profiler)
+	loading_controller = LoadingController.new()
+	loading_controller.bind(game_state_store, dirty_graph, hot_path_profiler)
+	loading_auto_transitions_enabled = DisplayServer.get_name().to_lower() != "headless"
 	game_state_store.set_app_mode(game_state, "ready")
 
 
@@ -8867,6 +9033,8 @@ func _submit_gpu_geometry_queries_deferred(colliders: Array, queries: Array, del
 func _input(event: InputEvent) -> void:
 	if game_state == STATE_EDITOR and (event is InputEventMouseMotion or event is InputEventMouseButton):
 		editor_preview_pause_until_msec = Time.get_ticks_msec() + 150
+	if event is InputEventMouseButton and (event as InputEventMouseButton).pressed:
+		_record_post_loading_interaction("mouse_button:%s" % game_state)
 	if settings_rebind_action != "" and _handle_battle_input_rebind_event(event):
 		get_viewport().set_input_as_handled()
 		return
@@ -8902,6 +9070,11 @@ func _process(delta: float) -> void:
 			if battle_controller != null:
 				battle_controller.note_tick()
 			_tick_battle(delta)
+		STATE_LOADING:
+			tick_loading_tasks(delta, loading_task_budget_usec)
+	if game_state != STATE_LOADING:
+		_tick_post_loading_idle_tasks(delta)
+		_sample_post_loading_misses("process")
 	_update_music()
 	if hot_path_profiler != null:
 		hot_path_profiler.scope_end(process_scope)
@@ -9056,6 +9229,8 @@ func _apply_performance_profile(profile_key: String, persist: bool = true) -> vo
 
 func _load_performance_settings() -> void:
 	performance_profile = PERFORMANCE_PROFILE_DEFAULT
+	display_mode_setting = DISPLAY_MODE_DEFAULT
+	window_size_setting = WINDOW_SIZE_DEFAULT
 	if FileAccess.file_exists(PERFORMANCE_SETTINGS_PATH):
 		var file := FileAccess.open(PERFORMANCE_SETTINGS_PATH, FileAccess.READ)
 		if file != null:
@@ -9065,14 +9240,25 @@ func _load_performance_settings() -> void:
 				var saved_profile := String(saved.get("performance_profile", PERFORMANCE_PROFILE_DEFAULT))
 				if PERFORMANCE_PROFILE_SPECS.has(saved_profile):
 					performance_profile = saved_profile
+				var saved_display_mode := String(saved.get("display_mode", DISPLAY_MODE_DEFAULT))
+				if DISPLAY_MODE_ORDER.has(saved_display_mode):
+					display_mode_setting = saved_display_mode
+				var saved_window_size := String(saved.get("window_size", WINDOW_SIZE_DEFAULT))
+				if WINDOW_SIZE_ORDER.has(saved_window_size):
+					window_size_setting = saved_window_size
 	_apply_performance_profile(performance_profile, false)
+	_apply_display_mode_setting(display_mode_setting, window_size_setting, false)
 
 
 func _save_performance_settings() -> void:
 	var file := FileAccess.open(PERFORMANCE_SETTINGS_PATH, FileAccess.WRITE)
 	if file == null:
 		return
-	file.store_string(JSON.stringify({"performance_profile": performance_profile}, "\t"))
+	file.store_string(JSON.stringify({
+		"performance_profile": performance_profile,
+		"display_mode": display_mode_setting,
+		"window_size": window_size_setting,
+	}, "\t"))
 
 
 func _cycle_performance_profile(delta: int = 1) -> void:
@@ -9085,6 +9271,97 @@ func _cycle_performance_profile(delta: int = 1) -> void:
 	_update_settings_ui()
 
 
+func _display_mode_label(mode_key: String) -> String:
+	match mode_key:
+		"windowed":
+			return "窗口" if _ui_is_zh() else "Window"
+		"borderless_fullscreen":
+			return "无边框全屏" if _ui_is_zh() else "Borderless"
+		"fullscreen":
+			return "全屏" if _ui_is_zh() else "Fullscreen"
+	return mode_key
+
+
+func _window_size_label(size_key: String) -> String:
+	if size_key == "native":
+		return "当前显示器" if _ui_is_zh() else "Native"
+	return size_key
+
+
+func _window_size_for_key(size_key: String) -> Vector2i:
+	if size_key == "1600x900":
+		return Vector2i(1600, 900)
+	if size_key == "1920x1080":
+		return Vector2i(1920, 1080)
+	if size_key == "native" and DisplayServer.get_name().to_lower() != "headless":
+		var screen := DisplayServer.window_get_current_screen()
+		return DisplayServer.screen_get_size(screen)
+	return Vector2i(1280, 720)
+
+
+func _apply_display_mode_setting(mode_key: String, size_key: String, persist: bool = true) -> void:
+	if not DISPLAY_MODE_ORDER.has(mode_key):
+		mode_key = DISPLAY_MODE_DEFAULT
+	if not WINDOW_SIZE_ORDER.has(size_key):
+		size_key = WINDOW_SIZE_DEFAULT
+	display_mode_setting = mode_key
+	window_size_setting = size_key
+	if DisplayServer.get_name().to_lower() != "headless":
+		var screen := DisplayServer.window_get_current_screen()
+		var screen_pos := DisplayServer.screen_get_position(screen)
+		var screen_size := DisplayServer.screen_get_size(screen)
+		if mode_key == "fullscreen":
+			DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_BORDERLESS, false)
+			DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN)
+		elif mode_key == "borderless_fullscreen":
+			DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
+			DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_BORDERLESS, true)
+			DisplayServer.window_set_position(screen_pos)
+			DisplayServer.window_set_size(screen_size)
+		else:
+			var target_size := _window_size_for_key(size_key)
+			DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
+			DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_BORDERLESS, false)
+			DisplayServer.window_set_size(target_size)
+			var centered := screen_pos + Vector2i((screen_size.x - target_size.x) / 2, (screen_size.y - target_size.y) / 2)
+			DisplayServer.window_set_position(centered)
+	if persist:
+		_save_performance_settings()
+
+
+func _cycle_display_mode_setting(delta: int = 1) -> void:
+	var index := DISPLAY_MODE_ORDER.find(display_mode_setting)
+	if index < 0:
+		index = DISPLAY_MODE_ORDER.find(DISPLAY_MODE_DEFAULT)
+	index = posmod(index + delta, DISPLAY_MODE_ORDER.size())
+	_apply_display_mode_setting(String(DISPLAY_MODE_ORDER[index]), window_size_setting, true)
+	_rebuild_settings_list()
+	_update_settings_ui()
+
+
+func _cycle_window_size_setting(delta: int = 1) -> void:
+	var index := WINDOW_SIZE_ORDER.find(window_size_setting)
+	if index < 0:
+		index = WINDOW_SIZE_ORDER.find(WINDOW_SIZE_DEFAULT)
+	index = posmod(index + delta, WINDOW_SIZE_ORDER.size())
+	_apply_display_mode_setting(display_mode_setting, String(WINDOW_SIZE_ORDER[index]), true)
+	_rebuild_settings_list()
+	_update_settings_ui()
+
+
+func _catalog_part_size_badge(slot_key: String, part: Dictionary) -> String:
+	var tier := PartArt.normalized_size_tier(part)
+	if tier != "":
+		return tier
+	if part.has("ammo_size_tier"):
+		return String(part.get("ammo_size_tier", "")).strip_edges().to_upper()
+	if part.has("slot_volume_tier"):
+		return String(part.get("slot_volume_tier", "")).strip_edges().to_upper()
+	if slot_key != "":
+		return _volume_rank_label(float(_part_slot_volume_rank(part, slot_key)))
+	return ""
+
+
 func _runtime_quality_value(key: String, fallback = null):
 	if runtime_quality_config.is_empty():
 		_apply_performance_profile(performance_profile, false)
@@ -9094,16 +9371,20 @@ func _runtime_quality_value(key: String, fallback = null):
 func _runtime_quality_summary() -> String:
 	var spec := _performance_profile_spec(performance_profile)
 	if _ui_is_zh():
-		return "%s  FPS %d  渲染 %.0f%%  VFX %.0f%%  预算 %d/%d" % [
+		return "%s  %s/%s  FPS %d  渲染 %.0f%%  VFX %.0f%%  预算 %d/%d" % [
 			_performance_profile_label(performance_profile),
+			_display_mode_label(display_mode_setting),
+			_window_size_label(window_size_setting),
 			int(spec.get("fps_cap", 0)),
 			float(spec.get("render_scale", 1.0)) * 100.0,
 			float(spec.get("vfx_scale", 1.0)) * 100.0,
 			int(spec.get("projectile_trace_budget", 0)),
 			int(spec.get("battle_vfx_budget", 0)),
 		]
-	return "%s  FPS %d  Render %.0f%%  VFX %.0f%%  Budget %d/%d" % [
+	return "%s  %s/%s  FPS %d  Render %.0f%%  VFX %.0f%%  Budget %d/%d" % [
 		_performance_profile_label(performance_profile),
+		_display_mode_label(display_mode_setting),
+		_window_size_label(window_size_setting),
 		int(spec.get("fps_cap", 0)),
 		float(spec.get("render_scale", 1.0)) * 100.0,
 		float(spec.get("vfx_scale", 1.0)) * 100.0,
@@ -9599,6 +9880,40 @@ func _entry_pose_from_topology(unit_bp: Dictionary) -> Dictionary:
 			"root_socket": String(node.get("root_socket", "")),
 		}
 	return pose
+
+
+func _entry_pose_for_topology_nodes(unit_bp: Dictionary, target_nodes: Array) -> Dictionary:
+	var pose := {}
+	if not unit_bp.has("custom_topology"):
+		return pose
+	var topology: Dictionary = unit_bp.get("custom_topology", {})
+	var nodes: Array = Array(topology.get("nodes", []))
+	for raw_index in target_nodes:
+		var i := int(raw_index)
+		if i < 0 or i >= nodes.size() or not (nodes[i] is Dictionary):
+			continue
+		var node: Dictionary = nodes[i]
+		if not _topology_node_is_component(node):
+			continue
+		pose[str(i)] = {
+			"axis": _topology_node_axis(node),
+			"rotation": _topology_node_axis(node).angle(),
+			"extension": float(node.get("entry_extension", node.get("extension", 0.0))),
+			"local_angle": float(node.get("local_angle", 0.0)),
+			"local_extension": float(node.get("local_extension", 0.0)),
+			"parent_node": int(node.get("parent_node", -1)),
+			"parent_socket": String(node.get("parent_socket", "")),
+			"root_socket": String(node.get("root_socket", "")),
+		}
+	return pose
+
+
+func _store_entry_pose_for_nodes(unit_bp: Dictionary, target_nodes: Array) -> void:
+	var pose: Dictionary = Dictionary(unit_bp.get("entry_pose", {})).duplicate(true)
+	var partial := _entry_pose_for_topology_nodes(unit_bp, target_nodes)
+	for key in partial.keys():
+		pose[key] = partial[key]
+	unit_bp["entry_pose"] = pose
 
 
 func _apply_entry_pose_to_blueprint(unit_bp: Dictionary) -> void:
@@ -10501,7 +10816,10 @@ func _show_saved_unit_detail(entry: Dictionary) -> void:
 	saved_unit_detail_view.visible = true
 
 
-func _show_saved_units_library(focus_path: String = "", return_context: String = "", defer_disk_scan: bool = false) -> void:
+func _show_saved_units_library(focus_path: String = "", return_context: String = "", defer_disk_scan: bool = false, preloaded: bool = false) -> void:
+	if not preloaded and _should_queue_loading_transition(STATE_SAVED_UNITS):
+		queue_loading_transition(STATE_SAVED_UNITS, "saved_units", preload_saved_units_content(), Callable(self, "_show_saved_units_library").bind(focus_path, return_context, defer_disk_scan, true))
+		return
 	if return_context != "":
 		saved_units_return_context = return_context
 	elif game_state != STATE_SAVED_UNITS:
@@ -12507,7 +12825,10 @@ func _update_sortie_after_delete(player_id: int, role_key: String, deleted_index
 	initial_sortie_slot[player_id] = 0 if fixed.is_empty() else clampi(int(initial_sortie_slot.get(player_id, 0)), 0, fixed.size() - 1)
 
 
-func _show_menu() -> void:
+func _show_menu(preloaded: bool = false) -> void:
+	if not preloaded and _should_queue_loading_transition(STATE_MENU):
+		queue_loading_transition(STATE_MENU, "menu", preload_menu_content(), Callable(self, "_show_menu").bind(true))
+		return
 	_restore_ai_side_roster_mapping()
 	game_state = STATE_MENU
 	_clear_all_units()
@@ -12589,7 +12910,10 @@ func _show_editor_for_player(player_id: int) -> void:
 	_show_editor()
 
 
-func _show_editor() -> void:
+func _show_editor(preloaded: bool = false) -> void:
+	if not preloaded and _should_queue_loading_transition(STATE_EDITOR):
+		queue_loading_transition(STATE_EDITOR, "teamedit", preload_teamedit_content(), Callable(self, "_show_editor").bind(true))
+		return
 	game_state = STATE_EDITOR
 	_hide_match_format_select()
 	editor_board_zoom = 1.0
@@ -12600,7 +12924,10 @@ func _show_editor() -> void:
 	_update_editor_ui()
 
 
-func _show_editor_preserve_canvas() -> void:
+func _show_editor_preserve_canvas(preloaded: bool = false) -> void:
+	if not preloaded and _should_queue_loading_transition(STATE_EDITOR):
+		queue_loading_transition(STATE_EDITOR, "teamedit_preserve", preload_teamedit_content(), Callable(self, "_show_editor_preserve_canvas").bind(true))
+		return
 	game_state = STATE_EDITOR
 	_hide_match_format_select()
 	_refresh_editor_board_zoom_ui()
@@ -12650,7 +12977,10 @@ func _update_match_format_select_ui() -> void:
 		button.text = "%s\n%s" % [String(texts[i][0]), String(texts[i][1])]
 
 
-func _show_settings() -> void:
+func _show_settings(preloaded: bool = false) -> void:
+	if not preloaded and _should_queue_loading_transition(STATE_SETTINGS):
+		queue_loading_transition(STATE_SETTINGS, "settings", preload_settings_content(), Callable(self, "_show_settings").bind(true))
+		return
 	settings_category = "root"
 	game_state = STATE_SETTINGS
 	_set_visible_layer(settings_layer)
@@ -12682,7 +13012,11 @@ func _show_training_config(clear_imports: bool = false) -> void:
 	_show_scout(MODE_TRAINING)
 
 
-func _show_scout(mode: String) -> void:
+func _show_scout(mode: String, preloaded: bool = false) -> void:
+	if not preloaded and _should_queue_loading_transition(STATE_SCOUT):
+		pending_battle_mode = mode
+		queue_loading_transition(STATE_SCOUT, "scout:%s" % mode, preload_scout_content(), Callable(self, "_show_scout").bind(mode, true))
+		return
 	_restore_ai_side_roster_mapping()
 	pending_battle_mode = mode
 	if mode == MODE_TRAINING:
@@ -13404,13 +13738,16 @@ func _prepare_training_battle_loadouts() -> bool:
 	return true
 
 
-func _start_battle(mode: String) -> void:
+func _start_battle(mode: String, preloaded: bool = false) -> void:
+	if not preloaded and _should_queue_loading_transition(STATE_SCOUT):
+		queue_loading_transition(STATE_SCOUT, "battle_entry:%s" % mode, preload_scout_content(), Callable(self, "_start_battle").bind(mode, true))
+		return
 	if mode == MODE_AI:
 		_prepare_ai_battle_rosters()
 	_ensure_summon_pair_bindings(1)
 	_ensure_summon_pair_bindings(2)
 	if mode != MODE_TRAINING:
-		_show_scout(mode)
+		_show_scout(mode, true)
 		return
 	if not _prepare_training_battle_loadouts():
 		var note := training_import_error_note if training_import_error_note != "" else "INVALID: training import failed."
@@ -13418,7 +13755,7 @@ func _start_battle(mode: String) -> void:
 			editor_summary_label.text = "训练导入被拦截：%s" % _localized_system_text(note) if _ui_is_zh() else "Training import blocked: %s" % note
 		_play_sfx_wave("alarm", 170.0, 0.08, -16.0)
 		return
-	_show_scout(mode)
+	_show_scout(mode, true)
 	return
 	if _team_sortie_order(1).is_empty():
 		sortie_loadouts[1] = _build_ai_sortie_loadout(1)
@@ -13430,7 +13767,10 @@ func _start_battle(mode: String) -> void:
 	_begin_battle(mode)
 
 
-func _begin_battle(mode: String) -> void:
+func _begin_battle(mode: String, preloaded: bool = false) -> void:
+	if not preloaded and _should_queue_loading_transition(STATE_BATTLE):
+		queue_loading_transition(STATE_BATTLE, "battle:%s" % mode, preload_battle_content(mode), Callable(self, "_begin_battle").bind(mode, true))
+		return
 	battle_mode = mode
 	game_state = STATE_BATTLE
 	game_over = false
@@ -13515,9 +13855,595 @@ func _begin_battle(mode: String) -> void:
 
 func _set_visible_layer(layer: CanvasLayer) -> void:
 	_hide_page_options()
-	for candidate in [menu_layer, editor_layer, saved_units_layer, scout_layer, settings_layer, hud_layer, format_select_layer]:
+	for candidate in [menu_layer, editor_layer, saved_units_layer, scout_layer, settings_layer, hud_layer, format_select_layer, loading_layer]:
 		if candidate != null:
 			candidate.visible = candidate == layer
+
+
+func _should_queue_loading_transition(target_state: String) -> bool:
+	if not loading_auto_transitions_enabled:
+		return false
+	if loading_transition_applying:
+		return false
+	if loading_controller == null:
+		return false
+	if game_state == STATE_LOADING and loading_controller.active:
+		return false
+	return target_state != STATE_LOADING
+
+
+func queue_loading_transition(target_state: String, reason: String, tasks: Array, completion: Callable = Callable()) -> void:
+	if loading_controller == null:
+		if completion.is_valid():
+			completion.call()
+		return
+	loading_transition_count += 1
+	loading_pending_target_state = target_state
+	loading_pending_reason = reason
+	loading_pending_callback = completion
+	loading_last_max_duration_sec = _loading_max_duration_for(target_state, reason)
+	loading_last_min_visible_sec = _loading_min_visible_for(target_state, reason)
+	loading_controller.begin(target_state, reason, loading_last_max_duration_sec, loading_last_min_visible_sec)
+	for raw_task in tasks:
+		if not (raw_task is Dictionary):
+			continue
+		var task: Dictionary = raw_task
+		register_loading_task(
+			String(task.get("id", "task_%d" % loading_controller.tasks.size())),
+			String(task.get("label", "Loading")),
+			float(task.get("weight", 1.0)),
+			task.get("callable", Callable()),
+			bool(task.get("essential", true)),
+			bool(task.get("first_interaction_critical", true)),
+			bool(task.get("idle_optional", false))
+		)
+	game_state = STATE_LOADING
+	if game_state_store != null:
+		game_state_store.set_app_mode(STATE_LOADING, "loading:%s" % reason)
+	if dirty_graph != null:
+		dirty_graph.mark(GameStateStore.DOMAIN_GLOBAL, 1, "loading:%s" % reason)
+	_set_visible_layer(loading_layer)
+	_update_loading_overlay()
+
+
+func register_loading_task(id: String, label: String, weight: float, task_callable: Callable, essential: bool = true, first_interaction_critical: bool = true, idle_optional: bool = false) -> void:
+	if loading_controller == null:
+		return
+	loading_controller.add_task(id, label, weight, task_callable, essential, first_interaction_critical, idle_optional)
+
+
+func tick_loading_tasks(_delta: float, budget_usec: int = 6000) -> void:
+	if loading_controller == null:
+		return
+	var complete := loading_controller.tick(budget_usec, _delta)
+	_update_loading_overlay()
+	if not complete:
+		return
+	_queue_deferred_loading_idle_tasks(loading_controller.take_deferred_tasks())
+	var callback := loading_pending_callback
+	loading_pending_callback = Callable()
+	loading_completed_count += 1
+	loading_transition_applying = true
+	if callback.is_valid():
+		callback.call()
+	loading_transition_applying = false
+	_begin_post_loading_interaction_window("loading:%s" % loading_pending_reason)
+
+
+func _update_loading_overlay() -> void:
+	if loading_controller == null:
+		return
+	loading_last_progress = loading_controller.progress()
+	loading_last_task_label = String(loading_controller.current_label)
+	var title := "加载中" if _ui_is_zh() else "LOADING"
+	var target_label := _loading_target_label(loading_pending_target_state)
+	if target_label != "":
+		title = "%s / %s" % [title, target_label]
+	if loading_title_label != null:
+		loading_title_label.text = title
+	var stage := loading_last_task_label
+	if stage == "":
+		stage = "准备页面" if _ui_is_zh() else "Preparing page"
+	if loading_stage_label != null:
+		loading_stage_label.text = stage
+	if loading_progress_bar != null:
+		loading_progress_bar.value = loading_last_progress * 100.0
+	if loading_percent_label != null:
+		loading_percent_label.text = "%d%%" % int(round(loading_last_progress * 100.0))
+	if hot_path_profiler != null:
+		hot_path_profiler.record_value("loading.progress", loading_last_progress)
+		hot_path_profiler.record_value("loading.pending", loading_controller.pending_count())
+		hot_path_profiler.record_value("loading.max_sec", loading_last_max_duration_sec)
+		hot_path_profiler.record_value("loading.min_visible_sec", loading_last_min_visible_sec)
+
+
+func _loading_max_duration_for(target_state: String, _reason: String = "") -> float:
+	if target_state == STATE_MENU:
+		return STARTUP_LOADING_BUDGET_SEC
+	return PAGE_LOADING_BUDGET_SEC
+
+
+func _loading_min_visible_for(target_state: String, _reason: String = "") -> float:
+	if target_state == STATE_MENU:
+		return STARTUP_MIN_VISIBLE_SEC
+	return PAGE_MIN_VISIBLE_SEC
+
+
+func _queue_deferred_loading_idle_tasks(tasks: Array) -> void:
+	for raw_task in tasks:
+		if raw_task is Dictionary:
+			loading_idle_tasks.append(raw_task)
+	if hot_path_profiler != null and not tasks.is_empty():
+		hot_path_profiler.record_value("loading.idle_deferred", loading_idle_tasks.size())
+
+
+func _tick_post_loading_idle_tasks(_delta: float) -> void:
+	if loading_idle_tasks.is_empty():
+		return
+	if game_state == STATE_EDITOR and Time.get_ticks_msec() < editor_preview_pause_until_msec:
+		return
+	var started := Time.get_ticks_usec()
+	var processed := 0
+	while not loading_idle_tasks.is_empty():
+		var task: Dictionary = loading_idle_tasks[0]
+		var callable: Callable = task.get("callable", Callable())
+		var done := true
+		if callable.is_valid():
+			var result = callable.call()
+			if result is bool:
+				done = bool(result)
+		if done:
+			loading_idle_tasks.pop_front()
+			processed += 1
+		if Time.get_ticks_usec() - started >= loading_idle_task_budget_usec:
+			break
+	if hot_path_profiler != null and processed > 0:
+		hot_path_profiler.count("loading.idle_task")
+		hot_path_profiler.record_value("loading.idle_pending", loading_idle_tasks.size())
+
+
+func _begin_post_loading_interaction_window(reason: String = "") -> void:
+	post_loading_watch_remaining = POST_LOADING_FIRST_INTERACTION_WINDOW
+	post_loading_interaction_count = 0
+	post_loading_baseline = _post_loading_counter_snapshot()
+	if hot_path_profiler != null:
+		hot_path_profiler.count("loading.post_window")
+		hot_path_profiler.record_value("loading.post_watch_remaining", post_loading_watch_remaining)
+	if reason != "":
+		_record_post_loading_miss("window_start", reason, "baseline", false)
+
+
+func _record_post_loading_interaction(kind: String) -> void:
+	if post_loading_watch_remaining <= 0:
+		return
+	post_loading_interaction_count += 1
+	post_loading_watch_remaining -= 1
+	if hot_path_profiler != null:
+		hot_path_profiler.count("loading.first_interaction")
+		hot_path_profiler.record_value("loading.post_watch_remaining", post_loading_watch_remaining)
+	_sample_post_loading_misses(kind)
+
+
+func _sample_post_loading_misses(reason: String) -> void:
+	if post_loading_watch_remaining <= 0 and post_loading_interaction_count <= 0:
+		return
+	if post_loading_baseline.is_empty():
+		post_loading_baseline = _post_loading_counter_snapshot()
+		return
+	var now := _post_loading_counter_snapshot()
+	for key in now.keys():
+		var delta := int(now.get(key, 0)) - int(post_loading_baseline.get(key, 0))
+		if delta > 0:
+			_record_post_loading_miss(key, reason, "delta:%d" % delta)
+	post_loading_baseline = now
+
+
+func _record_post_loading_miss(kind: String, reason: String, detail: String = "", count_as_miss: bool = true) -> void:
+	if count_as_miss:
+		post_loading_miss_count += 1
+	var entry := {
+		"kind": kind,
+		"reason": reason,
+		"detail": detail,
+		"frame": Engine.get_process_frames(),
+		"msec": Time.get_ticks_msec(),
+	}
+	post_loading_miss_log.append(entry)
+	while post_loading_miss_log.size() > 32:
+		post_loading_miss_log.pop_front()
+	if hot_path_profiler != null and count_as_miss:
+		hot_path_profiler.count("loading.post_miss.%s" % kind)
+
+
+func _post_loading_counter_snapshot() -> Dictionary:
+	var gpu_recreates := 0
+	if gpu_collision_pipeline != null:
+		gpu_recreates = int(gpu_collision_pipeline.buffer_recreate_count)
+	return {
+		"preview_miss": int(PartPreviewTextureCache.miss_count),
+		"card_body_miss": int(CatalogCardBodyTextureCache.miss_count),
+		"board_rebuild": int(editor_board_snapshot_rebuild_count) + int(editor_board_base_snapshot_rebuild_count),
+		"torso_detail_miss": int(editor_torso_detail_cache_miss_count),
+		"drop_template_miss": int(editor_drop_template_miss_count),
+		"gpu_buffer_recreate": gpu_recreates,
+		"saved_unit_scan": int(saved_unit_cache_disk_scan_count),
+	}
+
+
+func _loading_target_label(target_state: String) -> String:
+	match target_state:
+		STATE_MENU:
+			return "主菜单" if _ui_is_zh() else "Main Menu"
+		STATE_EDITOR:
+			return "队伍编辑" if _ui_is_zh() else "TeamEdit"
+		STATE_SAVED_UNITS:
+			return "已保存单位" if _ui_is_zh() else "Saved Units"
+		STATE_SETTINGS:
+			return "设置" if _ui_is_zh() else "Settings"
+		STATE_SCOUT:
+			return "训练配置" if _ui_is_zh() and pending_battle_mode == MODE_TRAINING else ("Scout" if not _ui_is_zh() else "赛前侦查")
+		STATE_BATTLE:
+			return "战斗" if _ui_is_zh() else "Battle"
+	return ""
+
+
+func _loading_task(id: String, label_zh: String, label_en: String, weight: float, callable: Callable, essential: bool = true, first_interaction_critical: bool = true, idle_optional: bool = false) -> Dictionary:
+	return {
+		"id": id,
+		"label": label_zh if _ui_is_zh() else label_en,
+		"weight": weight,
+		"callable": callable,
+		"essential": essential,
+		"first_interaction_critical": first_interaction_critical,
+		"idle_optional": idle_optional,
+	}
+
+
+func preload_menu_content() -> Array:
+	return [
+		_loading_task("startup_assets", "启动资源", "Startup assets", 1.0, Callable(self, "_preload_global_assets_task")),
+		_loading_task("startup_catalog_index", "零件索引", "Part catalog index", 1.1, Callable(self, "_preload_global_catalog_index_task")),
+		_loading_task("startup_preview_common", "常用缩略图", "Common previews", 1.0, Callable(self, "_preload_global_preview_task"), false, false, true),
+		_loading_task("startup_saved_summary", "保存摘要", "Saved summaries", 0.9, Callable(self, "_preload_saved_units_summary_task"), false, false, true),
+		_loading_task("menu_ui", "主菜单骨架", "Menu UI skeleton", 0.6, Callable(self, "_preload_menu_ui_task")),
+	]
+
+
+func preload_teamedit_content() -> Array:
+	return [
+		_loading_task("teamedit_catalog", "零件卡预热", "Part card preload", 1.2, Callable(self, "_preload_teamedit_catalog_task")),
+		_loading_task("teamedit_adjacent_cards", "相邻卡片", "Adjacent cards", 0.9, Callable(self, "_preload_teamedit_adjacent_cards_task"), false, true, false),
+		_loading_task("teamedit_drag_assets", "拖拽资源", "Drag resources", 0.7, Callable(self, "_preload_teamedit_drag_task"), false, true, false),
+		_loading_task("teamedit_drop_templates", "放置模板", "Drop templates", 0.8, Callable(self, "_preload_teamedit_drop_templates_task"), false, true, false),
+		_loading_task("teamedit_board", "画板模型", "Board base model", 1.0, Callable(self, "_preload_teamedit_board_task")),
+		_loading_task("teamedit_socket_index", "连接候选", "Socket candidates", 0.7, Callable(self, "_preload_teamedit_socket_task"), false, true, false),
+		_loading_task("teamedit_dashboard", "Dashboard 数值", "Dashboard stats", 0.8, Callable(self, "_preload_teamedit_dashboard_task")),
+		_loading_task("teamedit_torso_detail_templates", "躯干详情模板", "Torso detail templates", 0.6, Callable(self, "_preload_teamedit_torso_templates_task"), false, true, false),
+		_loading_task("teamedit_torso_detail", "躯干详情", "Torso detail", 0.8, Callable(self, "_preload_teamedit_torso_detail_task"), false, true, false),
+		_loading_task("teamedit_texture_queue", "贴图捕获", "Texture capture", 0.8, Callable(self, "_preload_teamedit_texture_queue_task"), false, false, true),
+	]
+
+
+func preload_saved_units_content() -> Array:
+	return [
+		_loading_task("saved_summary", "单位摘要", "Unit summaries", 1.4, Callable(self, "_preload_saved_units_summary_task")),
+		_loading_task("saved_page", "当前页缓存", "Current page cache", 0.8, Callable(self, "_preload_saved_units_page_task")),
+		_loading_task("saved_hover_detail", "首个详情", "First detail", 0.6, Callable(self, "_preload_saved_units_first_detail_task"), false, true, false),
+	]
+
+
+func preload_settings_content() -> Array:
+	return [
+		_loading_task("settings_config", "设置配置", "Settings config", 0.7, Callable(self, "_preload_settings_task")),
+		_loading_task("settings_pages", "设置页面", "Settings pages", 0.8, Callable(self, "_preload_settings_pages_task"), false, true, false),
+	]
+
+
+func preload_scout_content() -> Array:
+	return [
+		_loading_task("scout_rosters", "队伍摘要", "Roster summaries", 1.0, Callable(self, "_preload_scout_task")),
+	]
+
+
+func preload_battle_content(mode: String) -> Array:
+	return [
+		_loading_task("battle_gpu", "GPU 几何", "GPU geometry", 1.0, Callable(self, "_preload_battle_gpu_task")),
+		_loading_task("battle_gpu_capacity", "GPU Buffer", "GPU buffers", 1.2, Callable(self, "_preload_battle_gpu_capacity_task").bind(mode)),
+		_loading_task("battle_units", "单位几何", "Unit geometry", 1.2, Callable(self, "_preload_battle_units_task").bind(mode)),
+		_loading_task("battle_hud", "战斗 HUD", "Battle HUD", 0.6, Callable(self, "_preload_battle_hud_task")),
+		_loading_task("battle_vfx_pool", "VFX 池", "VFX pool", 0.7, Callable(self, "_preload_battle_vfx_task"), false, true, false),
+	]
+
+
+func _preload_global_assets_task() -> bool:
+	if combat_vfx_texture == null:
+		combat_vfx_texture = _load_generated_texture("res://assets/generated/combat_vfx_atlas.png")
+	if space_backdrop_texture == null:
+		space_backdrop_texture = _load_generated_texture("res://assets/generated/space_battle_backdrop.png")
+	if gpu_collision_pipeline == null and DisplayServer.get_name().to_lower() != "headless":
+		_initialize_gpu_collision_pipeline()
+	return true
+
+
+func _preload_global_catalog_index_task() -> bool:
+	var role_key: String = ROLE_ORDER[editor_role_index]
+	for raw_slot in BUILD_SLOTS:
+		var slot_key := String(raw_slot)
+		_editor_catalog_entries(role_key, slot_key)
+	if hot_path_profiler != null:
+		hot_path_profiler.count("loading.preload.catalog_index")
+	return true
+
+
+func _preload_global_preview_task() -> bool:
+	var role_key: String = ROLE_ORDER[editor_role_index]
+	var unit_bp := _editor_current_blueprint()
+	var warmed := 0
+	for raw_slot in BUILD_SLOTS:
+		if warmed >= 10:
+			break
+		var slot_key := String(raw_slot)
+		var entries := _editor_catalog_entries(role_key, slot_key)
+		var models := _editor_catalog_page_models(role_key, slot_key, unit_bp, entries, 0, mini(2, maxi(1, entries.size())))
+		for raw_model in models:
+			if warmed >= 10:
+				break
+			if not (raw_model is Dictionary):
+				continue
+			var model: Dictionary = raw_model
+			var part: Dictionary = model.get("part", {})
+			PartPreviewTextureCache.request_preview(self, String(model.get("slot", slot_key)), part, false, 0.0, Vector2(116.0, 44.0))
+			CatalogCardBodyTextureCache.prewarm(self, String(model.get("slot", slot_key)), part, String(model.get("title", "")), String(model.get("line_a", "")), String(model.get("line_b", "")), false, Vector2(116.0, 30.0))
+			warmed += 1
+	return _process_preload_texture_queues(1, false)
+
+
+func _preload_menu_ui_task() -> bool:
+	if menu_layer != null:
+		_update_menu_ui()
+	if menu_controller != null and hot_path_profiler != null:
+		hot_path_profiler.count("loading.preload.menu")
+	return true
+
+
+func _preload_teamedit_catalog_task() -> bool:
+	var role_key: String = ROLE_ORDER[editor_role_index]
+	var slot_key: String = BUILD_SLOTS[editor_slot_index]
+	var entries := _editor_catalog_entries(role_key, slot_key)
+	var page_size := maxi(1, editor_catalog_buttons.size())
+	var page_models := _editor_catalog_page_models(role_key, slot_key, _editor_current_blueprint(), entries, editor_catalog_page, page_size)
+	for raw_model in page_models:
+		if not (raw_model is Dictionary):
+			continue
+		var model: Dictionary = raw_model
+		var entry_slot := String(model.get("slot", slot_key))
+		var part: Dictionary = model.get("part", {})
+		var title := String(model.get("title", ""))
+		var line_a := String(model.get("line_a", ""))
+		var line_b := String(model.get("line_b", ""))
+		PartPreviewTextureCache.request_preview(self, entry_slot, part, false, 0.0, Vector2(116.0, 44.0))
+		CatalogCardBodyTextureCache.prewarm(self, entry_slot, part, title, line_a, line_b, false, Vector2(116.0, 30.0))
+		_prewarm_torso_detail_template(part)
+	_prewarm_adjacent_catalog_card_bodies()
+	return true
+
+
+func _preload_teamedit_adjacent_cards_task() -> bool:
+	_prewarm_adjacent_catalog_card_bodies()
+	return _process_preload_texture_queues(1, false)
+
+
+func _preload_teamedit_drag_task() -> bool:
+	var role_key: String = ROLE_ORDER[editor_role_index]
+	var slot_key: String = BUILD_SLOTS[editor_slot_index]
+	var entries := _editor_catalog_entries(role_key, slot_key)
+	var page_size := maxi(1, editor_catalog_buttons.size())
+	var page_models := _editor_catalog_page_models(role_key, slot_key, _editor_current_blueprint(), entries, editor_catalog_page, page_size)
+	for raw_model in page_models:
+		if not (raw_model is Dictionary):
+			continue
+		var model: Dictionary = raw_model
+		var part := Dictionary(model.get("part", {}))
+		PartPreviewTextureCache.request_preview(self, String(model.get("slot", slot_key)), part, false, 0.0, Vector2(128.0, 72.0))
+		_prewarm_torso_detail_template(part)
+	return _process_preload_texture_queues(1, false)
+
+
+func _preload_teamedit_drop_templates_task() -> bool:
+	var role_key: String = ROLE_ORDER[editor_role_index]
+	var warmed := 0
+	for raw_slot in BUILD_SLOTS:
+		var slot_key := String(raw_slot)
+		if not _is_topology_part_slot(slot_key):
+			continue
+		var catalog := _catalog_for(role_key, slot_key)
+		for index in range(catalog.size()):
+			var part := _selected_component(role_key, slot_key, index)
+			if _prewarm_placement_template(slot_key, index, part):
+				warmed += 1
+	if hot_path_profiler != null:
+		hot_path_profiler.record_value("loading.teamedit_drop_templates", warmed)
+	return true
+
+
+func _preload_teamedit_board_task() -> bool:
+	var stats := {
+		"joint_slot_profiles": [],
+		"swept_collision_count": 0,
+		"cost": 0,
+		"illegal": false,
+		"lightweight": true,
+	}
+	_refresh_editor_visual_views(stats, false)
+	return true
+
+
+func _preload_teamedit_socket_task() -> bool:
+	var role_key: String = ROLE_ORDER[editor_role_index]
+	var unit_bp: Dictionary = _editor_current_blueprint()
+	var topology: Dictionary = unit_bp.get("custom_topology", {})
+	var nodes: Array = topology.get("nodes", [])
+	for i in range(nodes.size()):
+		var node: Dictionary = nodes[i]
+		if String(node.get("slot", "")) != "body":
+			_queue_board_socket_candidate_update(i, "loading:first_interaction")
+			return true
+	_clear_cached_board_socket_candidate()
+	return true
+
+
+func _preload_teamedit_dashboard_task() -> bool:
+	_editor_current_stats()
+	mark_editor_dirty(EDITOR_DIRTY_DASHBOARD | EDITOR_DIRTY_ACTION_BUTTONS, "loading:teamedit_dashboard")
+	return true
+
+
+func _preload_teamedit_torso_templates_task() -> bool:
+	for raw_part in COMMON_CATALOG.get("muscle", []):
+		if raw_part is Dictionary:
+			_prewarm_torso_detail_template(Dictionary(raw_part))
+	return true
+
+
+func _preload_teamedit_torso_detail_task() -> bool:
+	var torso_index := editor_open_torso_node_index
+	if torso_index < 0:
+		torso_index = _first_editor_torso_node_index()
+	if torso_index >= 0:
+		var previous := editor_open_torso_node_index
+		var previous_visible := editor_torso_detail_view != null and editor_torso_detail_view.visible
+		editor_open_torso_node_index = torso_index
+		_refresh_torso_detail_view()
+		editor_open_torso_node_index = previous
+		if editor_torso_detail_view != null and not previous_visible:
+			editor_torso_detail_view.visible = false
+	return true
+
+
+func _preload_teamedit_texture_queue_task() -> bool:
+	return _process_preload_texture_queues(2, true)
+
+
+func _preload_saved_units_summary_task() -> bool:
+	_ensure_saved_unit_library_cache(false, true)
+	return true
+
+
+func _preload_saved_units_page_task() -> bool:
+	var entries := _saved_unit_filtered_entries()
+	var page_size := maxi(1, saved_unit_buttons.size())
+	var page_start := clampi(saved_unit_page, 0, maxi(0, int(ceil(float(entries.size()) / float(page_size))) - 1)) * page_size
+	var page_end := mini(entries.size(), page_start + page_size)
+	for i in range(page_start, page_end):
+		var entry: Dictionary = entries[i]
+		_saved_unit_entry_stats(entry)
+		_saved_unit_entry_illegal_note(entry)
+	return true
+
+
+func _preload_saved_units_first_detail_task() -> bool:
+	var entries := _saved_unit_filtered_entries()
+	if entries.is_empty():
+		return true
+	var entry: Dictionary = entries[0]
+	_saved_unit_entry_stats(entry)
+	_saved_unit_entry_illegal_note(entry)
+	_show_saved_unit_detail(entry)
+	return true
+
+
+func _preload_settings_task() -> bool:
+	_load_performance_settings()
+	if settings_layer != null:
+		_rebuild_settings_list()
+	return true
+
+
+func _preload_settings_pages_task() -> bool:
+	var previous := settings_category
+	for category in ["sound", "video", "language", "input"]:
+		settings_category = category
+		_rebuild_settings_list()
+	settings_category = previous
+	_rebuild_settings_list()
+	return true
+
+
+func _preload_scout_task() -> bool:
+	_all_roster_order(1)
+	_all_roster_order(2)
+	return true
+
+
+func _preload_battle_gpu_task() -> bool:
+	if DisplayServer.get_name().to_lower() != "headless":
+		_gpu_collision_available()
+	return true
+
+
+func _preload_battle_gpu_capacity_task(_mode: String) -> bool:
+	if DisplayServer.get_name().to_lower() == "headless":
+		return true
+	if not _gpu_collision_available() or gpu_collision_pipeline == null:
+		return true
+	var estimated_colliders := 192
+	var estimated_queries := 64
+	if all_units.size() > 0:
+		estimated_colliders = maxi(estimated_colliders, all_units.size() * 24)
+	gpu_collision_pipeline.prewarm_capacity(estimated_colliders, estimated_queries)
+	return true
+
+
+func _preload_battle_units_task(mode: String) -> bool:
+	_ensure_summon_pair_bindings(1)
+	_ensure_summon_pair_bindings(2)
+	if mode != MODE_TRAINING:
+		_normalize_initial_sortie_for_cost(1)
+		_normalize_initial_sortie_for_cost(2)
+	for player_id in [1, 2]:
+		var starter := _starter_sortie_entry(player_id)
+		if starter is Dictionary and not starter.is_empty():
+			var role_key := String(starter.get("role", "hero"))
+			var index := int(starter.get("index", 0))
+			_compute_unit_stats(player_id, role_key, index)
+	return true
+
+
+func _preload_battle_hud_task() -> bool:
+	if hud_layer != null:
+		_update_battle_ui()
+	return true
+
+
+func _preload_battle_vfx_task() -> bool:
+	if battle_contact_vfx_pool != null and is_instance_valid(battle_contact_vfx_pool):
+		battle_contact_vfx_pool.setup_pool(int(_runtime_quality_value("contact_particle_pool", 128)), float(_runtime_quality_value("vfx_scale", 1.0)))
+	return true
+
+
+func _process_preload_texture_queues(budget: int, require_empty: bool) -> bool:
+	var processed := 0
+	processed += PartPreviewTextureCache.process_queue(self, budget)
+	processed += CatalogCardBodyTextureCache.process_queue(self, budget)
+	if hot_path_profiler != null:
+		hot_path_profiler.record_value("loading.texture_processed", processed)
+	if not require_empty:
+		return true
+	return PartPreviewTextureCache.pending_order.is_empty() \
+		and PartPreviewTextureCache.active_request.is_empty() \
+		and CatalogCardBodyTextureCache.pending_order.is_empty() \
+		and CatalogCardBodyTextureCache.active_request.is_empty()
+
+
+func _first_editor_torso_node_index() -> int:
+	var unit_bp: Dictionary = _editor_current_blueprint()
+	var topology: Dictionary = unit_bp.get("custom_topology", {})
+	var nodes: Array = topology.get("nodes", [])
+	for i in range(nodes.size()):
+		var node: Dictionary = nodes[i]
+		if String(node.get("slot", "")) == "body":
+			return i
+	return -1
 
 
 func _handle_menu_input() -> void:
@@ -14016,6 +14942,10 @@ func _activate_settings_item(index: int) -> void:
 		match String(button.get_meta("video_action", "")):
 			"performance_profile":
 				_cycle_performance_profile(1)
+			"display_mode":
+				_cycle_display_mode_setting(1)
+			"window_size":
+				_cycle_window_size_setting(1)
 		return
 	var spec_index := int(button.get_meta("spec_index", -1))
 	if spec_index < 0 or spec_index >= battle_input_binding_specs.size():
@@ -15473,26 +16403,28 @@ func _editor_fast_enriched_board_node(role_key: String, unit_bp: Dictionary, sou
 		return node
 	var slot_key := _topology_node_slot(node)
 	var part := _topology_node_part(role_key, node, unit_bp)
+	var part_index := int(node.get("part_index", -1))
+	var template := _placement_template_for_part(slot_key, part_index, false)
 	var effective_part := _part_with_effective_terminal_geometry(part, slot_key)
-	var component_node := AssemblyBoardRenderer.part_to_component_node(slot_key, effective_part)
+	var component_node := Dictionary(template.get("component_node", {})) if not template.is_empty() else AssemblyBoardRenderer.part_to_component_node(slot_key, effective_part)
 	for key in component_node.keys():
 		node[key] = component_node[key]
 	node["slot"] = slot_key
 	node["damage_type"] = String(part.get("projectile_damage_type", part.get("damage_type", "blunt")))
-	node["component_length"] = float(effective_part.get("length", 0.0))
+	node["component_length"] = float(template.get("component_length", effective_part.get("length", 0.0)))
 	node["joint_length"] = float(effective_part.get("length", 0.0)) if slot_key == "joint" else 0.0
 	node["muscle_length"] = float(effective_part.get("length", 0.0)) if slot_key == "limb_muscle" else 0.0
 	node["terminal_length"] = float(effective_part.get("length", 0.0)) if slot_key == "muscle" else 0.0
-	node["component_radius"] = maxf(0.012, float(effective_part.get("radius", 0.04)))
-	node["component_mass"] = maxf(0.0, float(part.get("mass", 0.0)))
-	node["component_name"] = String(part.get("name", node.get("label", "")))
-	node["terminal_weapon"] = bool(part.get("terminal_weapon", node.get("terminal_weapon", false)))
-	node["connection_ends"] = int(part.get("connection_ends", node.get("connection_ends", 2)))
-	node["size_class"] = String(part.get("size_class", part.get("slot_volume_tier", "")))
-	node["material_class"] = String(part.get("material_class", slot_key))
-	node["shape"] = String(part.get("shape", node.get("shape", slot_key)))
-	node["projectile"] = bool(part.get("projectile", false))
-	node["is_torso"] = bool(part.get("is_torso", false))
+	node["component_radius"] = maxf(0.012, float(template.get("component_radius", effective_part.get("radius", 0.04))))
+	node["component_mass"] = maxf(0.0, float(template.get("component_mass", part.get("mass", 0.0))))
+	node["component_name"] = String(template.get("part_name", part.get("name", node.get("label", ""))))
+	node["terminal_weapon"] = bool(template.get("terminal_weapon", part.get("terminal_weapon", node.get("terminal_weapon", false))))
+	node["connection_ends"] = int(template.get("connection_ends", part.get("connection_ends", node.get("connection_ends", 2))))
+	node["size_class"] = String(template.get("size_class", part.get("size_class", part.get("slot_volume_tier", ""))))
+	node["material_class"] = String(template.get("material_class", part.get("material_class", slot_key)))
+	node["shape"] = String(template.get("shape", part.get("shape", node.get("shape", slot_key))))
+	node["projectile"] = bool(template.get("projectile", part.get("projectile", false)))
+	node["is_torso"] = bool(template.get("is_torso", part.get("is_torso", false)))
 	node["joint_ports"] = _torso_external_joint_ports(part) if _component_is_torso(part) else int(part.get("joint_ports", part.get("connection_ends", 0)))
 	node["module_slots"] = _torso_software_capacity_for_part(part) if _component_is_torso(part) else int(part.get("module_slots", 0))
 	node["torso_slots"] = _torso_plugin_capacity_for_part(part) if _component_is_torso(part) else int(part.get("torso_slots", 0))
@@ -15514,7 +16446,7 @@ func _editor_fast_enriched_board_node(role_key: String, unit_bp: Dictionary, sou
 	return node
 
 
-func _refresh_editor_visual_views_fast_drag(changed_nodes: Array = []) -> void:
+func _refresh_editor_visual_views_fast_drag(changed_nodes: Array = [], component_only: bool = false) -> void:
 	if assembly_board_view == null:
 		return
 	var role_key: String = ROLE_ORDER[editor_role_index]
@@ -15545,6 +16477,10 @@ func _refresh_editor_visual_views_fast_drag(changed_nodes: Array = []) -> void:
 			if source_node.has(pose_key):
 				node[pose_key] = source_node[pose_key]
 		nodes[index] = node
+	for i in range(source_nodes.size()):
+		if i >= nodes.size() or nodes[i] is Dictionary:
+			continue
+		nodes[i] = _editor_fast_enriched_board_node(role_key, unit_bp, source_nodes, source_edges, i)
 	snapshot["nodes"] = nodes
 	var shallow_edges: Array = []
 	shallow_edges.resize(source_edges.size())
@@ -15571,6 +16507,9 @@ func _refresh_editor_visual_views_fast_drag(changed_nodes: Array = []) -> void:
 	snapshot["revision_key"] = fast_revision
 	assembly_board_view.apply_board_diff({
 		"snapshot": snapshot,
+		"changed_nodes": indices,
+		"component_only": component_only,
+		"defer_component_draw": component_only,
 		"selected_part": editor_selected_body_part,
 		"illegal_parts": {},
 		"snap_part": editor_snap_part,
@@ -15579,6 +16518,31 @@ func _refresh_editor_visual_views_fast_drag(changed_nodes: Array = []) -> void:
 		"language": ui_language,
 		"motion_phase": editor_canvas_motion_phase,
 	}, fast_revision)
+
+
+func _apply_editor_component_node_direct(node_index: int, defer_draw: bool = true) -> bool:
+	if assembly_board_view == null or node_index < 0:
+		return false
+	var role_key: String = ROLE_ORDER[editor_role_index]
+	var unit_bp: Dictionary = _editor_current_blueprint()
+	if not _role_uses_body_board(role_key) or not unit_bp.has("custom_topology"):
+		return false
+	var topology: Dictionary = unit_bp.get("custom_topology", {})
+	var source_nodes: Array = Array(topology.get("nodes", []))
+	var source_edges: Array = Array(topology.get("edges", []))
+	if node_index >= source_nodes.size():
+		return false
+	var node := Dictionary(editor_last_added_topology_node_snapshot).duplicate(false) if node_index == editor_last_added_topology_node_index and not editor_last_added_topology_node_snapshot.is_empty() else _editor_fast_enriched_board_node(role_key, unit_bp, source_nodes, source_edges, node_index)
+	if node.is_empty():
+		return false
+	editor_fast_board_revision_counter += 1
+	var fast_revision := "component:%d:%d:%s" % [
+		node_index,
+		editor_fast_board_revision_counter,
+		_editor_board_dynamic_revision_key(),
+	]
+	assembly_board_view.apply_component_node_diff(node_index, node, fast_revision, defer_draw)
+	return true
 
 
 func _record_engine_allocation_undo_once() -> void:
@@ -16757,17 +17721,144 @@ func _topology_component_label(slot_key: String, part: Dictionary, node_index: i
 	return "%s%02d %s" % [prefix, node_index + 1, name]
 
 
+func _placement_template_key(slot_key: String, part_index: int, part: Dictionary) -> String:
+	var stable := String(part.get("stable_key", part.get("key", part.get("id", part.get("name", "")))))
+	if stable == "":
+		stable = "%s_%d" % [slot_key, part_index]
+	return "%s:%d:%s" % [slot_key, part_index, stable]
+
+
+func _placement_template_index_key(slot_key: String, part_index: int) -> String:
+	return "%s:%d" % [slot_key, part_index]
+
+
+func _topology_component_label_from_short_name(slot_key: String, short_name: String, node_index: int) -> String:
+	var prefix := "M"
+	if slot_key == "limb_muscle":
+		prefix = "L"
+	elif slot_key == "joint":
+		prefix = "OLD"
+	return "%s%02d %s" % [prefix, node_index + 1, short_name]
+
+
+func _build_placement_template(slot_key: String, part_index: int, part: Dictionary) -> Dictionary:
+	if part.is_empty() or part_index < 0:
+		return {}
+	var effective_part := _part_with_effective_terminal_geometry(part, slot_key)
+	var component_node := AssemblyBoardRenderer.part_to_component_node(slot_key, effective_part)
+	var short_name := _short_part_name(String(part.get("name", slot_key.to_upper())))
+	var node_base := component_node.duplicate(true)
+	node_base["slot"] = slot_key
+	node_base["part_index"] = part_index
+	node_base["part_name"] = String(part.get("name", ""))
+	node_base["size_tier"] = PartArt.normalized_size_tier(part)
+	node_base["label_short_name"] = short_name
+	node_base["component_length"] = float(effective_part.get("length", 0.0))
+	node_base["component_radius"] = maxf(0.012, float(effective_part.get("radius", 0.04)))
+	node_base["component_mass"] = maxf(0.0, float(part.get("mass", 0.0)))
+	node_base["damage_type"] = String(part.get("projectile_damage_type", part.get("damage_type", "blunt")))
+	node_base["material_class"] = String(part.get("material_class", slot_key))
+	node_base["material_visual"] = String(part.get("material_visual", part.get("torso_material", "")))
+	node_base["projectile_damage_type"] = String(part.get("projectile_damage_type", part.get("damage_type", "")))
+	node_base["projectile_behavior"] = String(part.get("projectile_behavior", part.get("projectile_style", "")))
+	node_base["range"] = float(part.get("projectile_range", part.get("range", 0.0)))
+	node_base["archetype"] = String(part.get("archetype", ""))
+	node_base["terminal_weapon"] = bool(part.get("terminal_weapon", false))
+	node_base["connection_ends"] = int(part.get("connection_ends", 2))
+	node_base["size_class"] = String(part.get("size_class", part.get("slot_volume_tier", "")))
+	node_base["shape"] = String(part.get("shape", component_node.get("shape", slot_key)))
+	node_base["projectile"] = bool(part.get("projectile", false))
+	node_base["is_torso"] = bool(part.get("is_torso", false)) or _component_is_torso(part)
+	return {
+		"slot": slot_key,
+		"part_index": part_index,
+		"key": _placement_template_key(slot_key, part_index, part),
+		"part_name": String(part.get("name", "")),
+		"label_short_name": short_name,
+		"size_tier": PartArt.normalized_size_tier(part),
+		"component_node": component_node.duplicate(true),
+		"node_base": node_base,
+		"component_length": float(effective_part.get("length", 0.0)),
+		"component_radius": maxf(0.012, float(effective_part.get("radius", 0.04))),
+		"component_mass": maxf(0.0, float(part.get("mass", 0.0))),
+		"damage_type": String(part.get("projectile_damage_type", part.get("damage_type", "blunt"))),
+		"material_class": String(part.get("material_class", slot_key)),
+		"material_visual": String(part.get("material_visual", part.get("torso_material", ""))),
+		"projectile_damage_type": String(part.get("projectile_damage_type", part.get("damage_type", ""))),
+		"projectile_behavior": String(part.get("projectile_behavior", part.get("projectile_style", ""))),
+		"range": float(part.get("projectile_range", part.get("range", 0.0))),
+		"archetype": String(part.get("archetype", "")),
+		"terminal_weapon": bool(part.get("terminal_weapon", false)),
+		"connection_ends": int(part.get("connection_ends", 2)),
+		"size_class": String(part.get("size_class", part.get("slot_volume_tier", ""))),
+		"shape": String(part.get("shape", component_node.get("shape", slot_key))),
+		"projectile": bool(part.get("projectile", false)),
+		"is_torso": bool(part.get("is_torso", false)) or _component_is_torso(part),
+	}
+
+
+func _prewarm_placement_template(slot_key: String, part_index: int, part: Dictionary) -> bool:
+	var index_key := _placement_template_index_key(slot_key, part_index)
+	if teamedit_placement_template_index_cache.has(index_key):
+		return false
+	var key := _placement_template_key(slot_key, part_index, part)
+	if teamedit_placement_template_cache.has(key):
+		teamedit_placement_template_index_cache[index_key] = key
+		return false
+	var template := _build_placement_template(slot_key, part_index, part)
+	if template.is_empty():
+		return false
+	teamedit_placement_template_cache[key] = template
+	teamedit_placement_template_index_cache[index_key] = key
+	return true
+
+
+func _placement_template_for_part(slot_key: String, part_index: int, count_miss: bool = true) -> Dictionary:
+	if part_index < 0:
+		return {}
+	var index_key := _placement_template_index_key(slot_key, part_index)
+	if teamedit_placement_template_index_cache.has(index_key):
+		var cached_key := String(teamedit_placement_template_index_cache[index_key])
+		if teamedit_placement_template_cache.has(cached_key):
+			editor_drop_template_hit_count += 1
+			return teamedit_placement_template_cache[cached_key]
+	var role_key: String = ROLE_ORDER[editor_role_index]
+	var part := _selected_component(role_key, slot_key, part_index)
+	var key := _placement_template_key(slot_key, part_index, part)
+	if teamedit_placement_template_cache.has(key):
+		editor_drop_template_hit_count += 1
+		teamedit_placement_template_index_cache[index_key] = key
+		return teamedit_placement_template_cache[key]
+	if count_miss:
+		editor_drop_template_miss_count += 1
+		_record_post_loading_miss("drop_template_miss", key)
+	var template := _build_placement_template(slot_key, part_index, part)
+	if not template.is_empty():
+		teamedit_placement_template_cache[key] = template
+		teamedit_placement_template_index_cache[index_key] = key
+	return template
+
+
 func _set_pending_canvas_part(unit_bp: Dictionary, slot_key: String, part_index: int) -> void:
 	if not _is_topology_part_slot(slot_key):
 		return
 	editor_pending_place_slot = slot_key
 	editor_pending_place_index = part_index
-	var purchased: Dictionary = Dictionary(unit_bp.get("purchased_parts", {})).duplicate(true)
-	var list: Array = Array(purchased.get(slot_key, [])).duplicate(true)
+
+
+func _commit_pending_canvas_part_purchase(unit_bp: Dictionary, slot_key: String, part_index: int) -> Dictionary:
+	var purchased: Dictionary = Dictionary(unit_bp.get("purchased_parts", {})).duplicate(false)
+	var had_slot := purchased.has(slot_key)
+	var previous_list: Array = Array(purchased.get(slot_key, [])).duplicate(true)
+	var list: Array = previous_list.duplicate()
 	if not list.has(part_index):
 		list.append(part_index)
 	purchased[slot_key] = list
 	unit_bp["purchased_parts"] = purchased
+	return {
+		"had_slot": had_slot,
+		"previous_list": previous_list,
+	}
 
 
 func _has_pending_canvas_part() -> bool:
@@ -16782,6 +17873,7 @@ func _pending_canvas_part_name(role_key: String) -> String:
 
 
 func _record_editor_undo_state(label: String = "") -> void:
+	editor_undo_full_snapshot_count += 1
 	var player_id := _editor_player()
 	var role_key: String = ROLE_ORDER[editor_role_index]
 	if _editor_is_blank_work_canvas():
@@ -16813,12 +17905,150 @@ func _record_editor_undo_state(label: String = "") -> void:
 		editor_undo_stack.remove_at(0)
 
 
+func _push_editor_undo_command(command: Dictionary) -> void:
+	var player_id := _editor_player()
+	var role_key: String = ROLE_ORDER[editor_role_index]
+	var enriched := command.duplicate(true)
+	enriched["player"] = player_id
+	enriched["role"] = role_key
+	enriched["index"] = int(editor_unit_indices.get(role_key, 0))
+	enriched["blank_work"] = _editor_is_blank_work_canvas()
+	editor_undo_light_command_count += 1
+	editor_undo_stack.append(enriched)
+	while editor_undo_stack.size() > 32:
+		editor_undo_stack.remove_at(0)
+
+
+func _restore_editor_undo_command(command: Dictionary) -> bool:
+	var command_type := String(command.get("command_type", ""))
+	if command_type == "":
+		return false
+	var player_id := int(command.get("player", _editor_player()))
+	var role_key := String(command.get("role", ROLE_ORDER[editor_role_index]))
+	if not ROLE_ORDER.has(role_key):
+		return false
+	editor_player_id = player_id
+	editor_role_index = ROLE_ORDER.find(role_key)
+	if bool(command.get("blank_work", false)):
+		editor_canvas_mode = "blank"
+		editor_working_role_key = role_key
+	var unit_bp := _editor_current_blueprint()
+	_ensure_custom_topology(unit_bp)
+	var topology: Dictionary = unit_bp.get("custom_topology", {})
+	var nodes: Array = Array(topology.get("nodes", []))
+	var edges: Array = Array(topology.get("edges", []))
+	match command_type:
+		"remove_node":
+			var node_index := int(command.get("node_index", -1))
+			if node_index < 0 or node_index >= nodes.size():
+				return false
+			nodes.remove_at(node_index)
+			var remapped_edges: Array = []
+			for raw_edge in edges:
+				var a := _topology_edge_node_a(raw_edge)
+				var b := _topology_edge_node_b(raw_edge)
+				if a == node_index or b == node_index:
+					continue
+				if raw_edge is Dictionary:
+					var edge_dict := Dictionary(raw_edge).duplicate(true)
+					if a > node_index:
+						edge_dict["a_node"] = a - 1
+						edge_dict["a"] = a - 1
+					if b > node_index:
+						edge_dict["b_node"] = b - 1
+						edge_dict["b"] = b - 1
+					remapped_edges.append(edge_dict)
+				elif raw_edge is Array:
+					var edge_array := Array(raw_edge).duplicate(true)
+					if edge_array.size() >= 2:
+						if a > node_index:
+							edge_array[0] = a - 1
+						if b > node_index:
+							edge_array[1] = b - 1
+					remapped_edges.append(edge_array)
+			topology["nodes"] = nodes
+			topology["edges"] = remapped_edges
+			unit_bp["custom_topology"] = topology
+			unit_bp["blank_canvas"] = bool(command.get("previous_blank_canvas", unit_bp.get("blank_canvas", false)))
+			var slot_key := String(command.get("slot_key", ""))
+			if slot_key != "":
+				var purchased: Dictionary = Dictionary(unit_bp.get("purchased_parts", {})).duplicate(false)
+				if bool(command.get("previous_purchased_had_slot", false)):
+					purchased[slot_key] = Array(command.get("previous_purchased_list", [])).duplicate(true)
+				else:
+					purchased.erase(slot_key)
+				unit_bp["purchased_parts"] = purchased
+			editor_topology_node_index = clampi(int(command.get("previous_topology_node_index", node_index - 1)), -1, nodes.size() - 1)
+			editor_selected_topology_nodes = Array(command.get("previous_selected_topology_nodes", [])).duplicate()
+			editor_pending_place_slot = String(command.get("previous_pending_slot", ""))
+			editor_pending_place_index = int(command.get("previous_pending_index", -1))
+		"remove_edge":
+			var edge_index := int(command.get("edge_index", -1))
+			if edge_index >= 0 and edge_index < edges.size():
+				edges.remove_at(edge_index)
+			else:
+				var remove_a := int(command.get("a", -1))
+				var remove_b := int(command.get("b", -1))
+				for i in range(edges.size() - 1, -1, -1):
+					var a := _topology_edge_node_a(edges[i])
+					var b := _topology_edge_node_b(edges[i])
+					if (a == remove_a and b == remove_b) or (a == remove_b and b == remove_a):
+						edges.remove_at(i)
+						break
+			topology["edges"] = edges
+			unit_bp["custom_topology"] = topology
+			editor_topology_node_index = int(command.get("previous_topology_node_index", editor_topology_node_index))
+		"restore_edges":
+			var restored_edges: Array = Array(command.get("edges", [])).duplicate(true)
+			topology["edges"] = restored_edges
+			unit_bp["custom_topology"] = topology
+			editor_topology_node_index = int(command.get("previous_topology_node_index", editor_topology_node_index))
+		"restore_pose":
+			var restore_nodes: Array = Array(command.get("nodes", [])).duplicate(true)
+			for raw_node in restore_nodes:
+				if not (raw_node is Dictionary):
+					continue
+				var item: Dictionary = raw_node
+				var index := int(item.get("index", -1))
+				if index < 0 or index >= nodes.size():
+					continue
+				var node: Dictionary = nodes[index]
+				for key in ["pos", "axis", "rotation", "local_angle", "local_extension", "parent_node", "parent_socket", "root_socket"]:
+					if item.has(key):
+						node[key] = item[key]
+					elif node.has(key):
+						node.erase(key)
+				nodes[index] = node
+			topology["nodes"] = nodes
+			unit_bp["custom_topology"] = topology
+			unit_bp["entry_pose"] = Dictionary(command.get("previous_entry_pose", {})).duplicate(true)
+			editor_topology_node_index = int(command.get("previous_topology_node_index", editor_topology_node_index))
+			editor_selected_topology_nodes = Array(command.get("previous_selected_topology_nodes", [])).duplicate()
+		_:
+			return false
+	editor_dragging_node_index = -1
+	editor_dragging_selected_nodes = false
+	editor_dragging_whole_unit = false
+	editor_selecting_topology_box = false
+	ai_team_manual_lock[player_id] = true
+	if editor_board_hint_label != null:
+		var label := String(command.get("label", "画布操作" if _ui_is_zh() else "canvas edit"))
+		editor_board_hint_label.text = "已退回上一步：%s。" % label if _ui_is_zh() else "Undid previous step: %s." % label
+	_refresh_editor_visual_views_fast_drag()
+	_schedule_editor_stats_idle_refresh("undo.command")
+	mark_editor_dirty(EDITOR_DIRTY_ACTION_BUTTONS, "undo.command")
+	flush_editor_dirty(900)
+	return true
+
+
 func _restore_editor_undo_state() -> void:
 	if editor_undo_stack.is_empty():
 		editor_board_hint_label.text = "没有可退回的画布操作。" if _ui_is_zh() else "No canvas step to undo."
 		_play_sfx_wave("alarm", 170.0, 0.08, -16.0)
 		return
 	var state: Dictionary = editor_undo_stack.pop_back()
+	if state.has("command_type") and _restore_editor_undo_command(state):
+		return
 	var player_id := int(state.get("player", _editor_player()))
 	var role_key := String(state.get("role", ROLE_ORDER[editor_role_index]))
 	var unit_index := int(state.get("index", 0))
@@ -16918,14 +18148,24 @@ func _drop_catalog_part_on_board(slot_key: String, part_index: int, local_positi
 		return
 	if _role_uses_body_board(role_key) and _is_topology_part_slot(slot_key):
 		_ensure_custom_topology(unit_bp)
+		if hot_path_profiler != null:
+			hot_path_profiler.scope_begin("drop.pending_part")
 		_set_pending_canvas_part(unit_bp, slot_key, part_index)
+		if hot_path_profiler != null:
+			hot_path_profiler.scope_end("drop.pending_part")
 		var new_index := _add_topology_node_at(local_position)
 		if new_index >= 0:
 			# Dropping from the catalog is a placement operation; socket linking remains on
 			# board drag/release so catalog drops do not scan the whole topology.
 			editor_dragging_node_index = -1
+			editor_preview_pause_until_msec = max(editor_preview_pause_until_msec, Time.get_ticks_msec() + 120)
 			editor_dirty_flags &= ~EDITOR_DIRTY_BOARD
-			_refresh_editor_visual_views_fast_drag([new_index])
+			if hot_path_profiler != null:
+				hot_path_profiler.scope_begin("drop.fast_board_diff")
+			if not _apply_editor_component_node_direct(new_index, true):
+				_refresh_editor_visual_views_fast_drag([new_index], true)
+			if hot_path_profiler != null:
+				hot_path_profiler.scope_end("drop.fast_board_diff")
 			_schedule_editor_stats_idle_refresh("drop.topology_part")
 			mark_editor_dirty(EDITOR_DIRTY_ACTION_BUTTONS, "drop.topology_part")
 			flush_editor_dirty(600)
@@ -17008,6 +18248,8 @@ func _handle_editor_board_input(event: InputEvent) -> void:
 			return
 		if mouse_event.button_index == MOUSE_BUTTON_LEFT and editor_dragging_node_index >= 0:
 			var was_group_dragging := editor_dragging_selected_nodes
+			var released_node_index := editor_dragging_node_index
+			var released_group_nodes := editor_selected_topology_nodes.duplicate()
 			if not was_group_dragging and _topology_node_edge_count(Array(Dictionary(unit_bp.get("custom_topology", {})).get("edges", [])), editor_dragging_node_index) <= 0:
 				_try_magnetic_link_for_node(unit_bp, editor_dragging_node_index)
 			editor_dragging_selected_nodes = false
@@ -17017,17 +18259,30 @@ func _handle_editor_board_input(event: InputEvent) -> void:
 				_finish_rigid_topology_drag(
 					unit_bp,
 					"连接岛已刚性平移；接口保持零余量贴合。" if _ui_is_zh() else "Connected island moved rigidly; sockets remain flush with zero gap.",
-					"已修正拖拽后的接口缝隙；连接重新贴合。" if _ui_is_zh() else "Repaired socket gaps after drag; links are flush again."
+					"已修正拖拽后的接口缝隙；连接重新贴合。" if _ui_is_zh() else "Repaired socket gaps after drag; links are flush again.",
+					true,
+					released_group_nodes
 				)
 			else:
-				_mark_editor_board_model_dirty("drag.node_release")
+				_refresh_editor_visual_views_fast_drag([released_node_index])
+				_schedule_editor_stats_idle_refresh("drag.node_release")
+				mark_editor_dirty(EDITOR_DIRTY_ACTION_BUTTONS, "drag.node_release")
+				flush_editor_dirty(600)
+			_clear_cached_board_socket_candidate()
 		elif mouse_event.button_index == MOUSE_BUTTON_LEFT and editor_dragging_whole_unit:
+			var whole_changed_nodes: Array = []
+			var whole_topology: Dictionary = unit_bp.get("custom_topology", {})
+			var whole_nodes: Array = whole_topology.get("nodes", [])
+			for i in range(whole_nodes.size()):
+				whole_changed_nodes.append(i)
 			editor_dragging_whole_unit = false
 			editor_drag_whole_original_positions = []
 			_finish_rigid_topology_drag(
 				unit_bp,
 				"整机/结界画布已刚性平移；连接保持零余量贴合。" if _ui_is_zh() else "Whole unit/barrier canvas moved rigidly; links remain flush with zero gap.",
-				"已修正整机平移后的接口缝隙；连接重新贴合。" if _ui_is_zh() else "Repaired socket gaps after whole-unit drag; links are flush again."
+				"已修正整机平移后的接口缝隙；连接重新贴合。" if _ui_is_zh() else "Repaired socket gaps after whole-unit drag; links are flush again.",
+				true,
+				whole_changed_nodes
 			)
 		return
 	if role_key == "barrier" and not unit_bp.has("custom_topology"):
@@ -17774,6 +19029,62 @@ func _move_custom_node_to(unit_bp: Dictionary, node_index: int, local_position: 
 		editor_board_hint_label.text = "刚性拖拽节点 %d：已连接部件会保持固定贴合距离。" % (node_index + 1) if _ui_is_zh() else "Rigid snap node %d: linked parts stay at one exact contact distance." % (node_index + 1)
 	ai_team_manual_lock[_editor_player()] = true
 	_refresh_editor_visual_views_fast_drag([node_index])
+	_queue_board_socket_candidate_update(node_index, "drag.move")
+
+
+func _clear_cached_board_socket_candidate() -> void:
+	editor_cached_socket_candidate = {}
+	editor_cached_socket_candidate_node = -1
+	editor_cached_socket_candidate_pos = Vector2.INF
+	editor_cached_socket_candidate_msec = -1000000
+
+
+func _queue_board_socket_candidate_update(node_index: int, reason: String = "drag") -> void:
+	var role_key: String = ROLE_ORDER[editor_role_index]
+	var unit_bp: Dictionary = _editor_current_blueprint()
+	if not _role_uses_body_board(role_key) or not unit_bp.has("custom_topology"):
+		_clear_cached_board_socket_candidate()
+		return
+	var topology: Dictionary = unit_bp.get("custom_topology", {})
+	var nodes: Array = topology.get("nodes", [])
+	var edges: Array = topology.get("edges", [])
+	if node_index < 0 or node_index >= nodes.size() or _topology_node_edge_count(edges, node_index) > 0:
+		_clear_cached_board_socket_candidate()
+		return
+	var node_pos := _topology_node_position(nodes[node_index])
+	var now := Time.get_ticks_msec()
+	if editor_cached_socket_candidate_node == node_index \
+			and editor_cached_socket_candidate_pos.distance_to(node_pos) < 0.04 \
+			and now - editor_cached_socket_candidate_msec < 90:
+		return
+	if hot_path_profiler != null:
+		hot_path_profiler.scope_begin("magnetic_link.prepare")
+	editor_cached_socket_candidate = _topology_socket_candidate(role_key, unit_bp, nodes, edges, node_index, true)
+	editor_cached_socket_candidate_node = node_index
+	editor_cached_socket_candidate_pos = node_pos
+	editor_cached_socket_candidate_msec = now
+	editor_socket_candidate_update_count += 1
+	if hot_path_profiler != null:
+		hot_path_profiler.scope_end("magnetic_link.prepare")
+
+
+func _consume_cached_board_socket_candidate(node_index: int) -> Dictionary:
+	editor_socket_candidate_consume_count += 1
+	if editor_cached_socket_candidate_node != node_index:
+		return {}
+	var role_key: String = ROLE_ORDER[editor_role_index]
+	var unit_bp: Dictionary = _editor_current_blueprint()
+	if not _role_uses_body_board(role_key) or not unit_bp.has("custom_topology"):
+		return {}
+	var topology: Dictionary = unit_bp.get("custom_topology", {})
+	var nodes: Array = topology.get("nodes", [])
+	if node_index < 0 or node_index >= nodes.size():
+		return {}
+	var node_pos := _topology_node_position(nodes[node_index])
+	if editor_cached_socket_candidate_pos.distance_to(node_pos) > 0.08:
+		return {}
+	editor_socket_candidate_cache_hit_count += 1
+	return editor_cached_socket_candidate.duplicate(true)
 
 
 func _start_whole_topology_drag(unit_bp: Dictionary, local_position: Vector2) -> void:
@@ -17818,13 +19129,23 @@ func _move_custom_topology_by_delta(unit_bp: Dictionary, local_delta: Vector2) -
 	_refresh_editor_visual_views_fast_drag()
 
 
-func _finish_rigid_topology_drag(unit_bp: Dictionary, success_message: String, repaired_message: String) -> void:
+func _finish_rigid_topology_drag(unit_bp: Dictionary, success_message: String, repaired_message: String, skip_gap_scan: bool = false, changed_nodes: Array = []) -> void:
 	if hot_path_profiler != null:
 		hot_path_profiler.scope_begin("finish_drag")
 	if not unit_bp.has("custom_topology"):
 		if editor_board_hint_label != null:
 			editor_board_hint_label.text = success_message
 		_mark_editor_board_model_dirty("drag.finish_no_topology")
+		if hot_path_profiler != null:
+			hot_path_profiler.scope_end("finish_drag")
+		return
+	if skip_gap_scan:
+		if editor_board_hint_label != null:
+			editor_board_hint_label.text = success_message
+		_refresh_editor_visual_views_fast_drag(changed_nodes)
+		_schedule_editor_stats_idle_refresh("drag.finish_light")
+		mark_editor_dirty(EDITOR_DIRTY_ACTION_BUTTONS, "drag.finish_light")
+		flush_editor_dirty(600)
 		if hot_path_profiler != null:
 			hot_path_profiler.scope_end("finish_drag")
 		return
@@ -18262,6 +19583,41 @@ func _pose_selection_is_single_downstream_chain(role_key: String, unit_bp: Dicti
 	return true
 
 
+func _topology_pose_node_snapshot(nodes: Array, index: int) -> Dictionary:
+	var item := {"index": index}
+	if index < 0 or index >= nodes.size() or not (nodes[index] is Dictionary):
+		return item
+	var node: Dictionary = nodes[index]
+	for key in ["pos", "axis", "rotation", "local_angle", "local_extension", "parent_node", "parent_socket", "root_socket"]:
+		if node.has(key):
+			item[key] = node[key]
+	return item
+
+
+func _topology_update_local_pose_fields_for_nodes(role_key: String, unit_bp: Dictionary, target_nodes: Array) -> void:
+	if target_nodes.is_empty() or not unit_bp.has("custom_topology"):
+		return
+	var topology: Dictionary = unit_bp.get("custom_topology", {})
+	var nodes: Array = topology.get("nodes", [])
+	var edges: Array = topology.get("edges", [])
+	for raw_index in target_nodes:
+		var index := int(raw_index)
+		if index < 0 or index >= nodes.size() or not (nodes[index] is Dictionary):
+			continue
+		var node: Dictionary = nodes[index]
+		var parent_index := _topology_parent_index_for_node(role_key, unit_bp, nodes, edges, index)
+		if parent_index >= 0 and parent_index < nodes.size():
+			var parent_pos := _topology_node_position(nodes[parent_index])
+			var node_pos := _topology_node_position(node)
+			node["local_angle"] = (node_pos - parent_pos).angle()
+			node["parent_node"] = parent_index
+		elif not node.has("local_angle"):
+			node["local_angle"] = _topology_endpoint_axis_for_node(index, nodes, edges).angle()
+		nodes[index] = node
+	topology["nodes"] = nodes
+	unit_bp["custom_topology"] = topology
+
+
 func _start_editor_pose_drag(unit_bp: Dictionary, root_index: int, local_position: Vector2, selected_hint: Array = []) -> bool:
 	if not unit_bp.has("custom_topology"):
 		return false
@@ -18277,6 +19633,8 @@ func _start_editor_pose_drag(unit_bp: Dictionary, root_index: int, local_positio
 			editor_board_hint_label.text = "姿态编辑需要点击带根部关节的肢体或末端武器。" if _ui_is_zh() else "Pose editing needs a limb or terminal weapon with a root joint."
 		_play_sfx_wave("alarm", 170.0, 0.08, -16.0)
 		return false
+	if not downstream.has(root_index):
+		downstream.push_front(root_index)
 	if not selected_hint.is_empty() and not _pose_selection_is_single_downstream_chain(role_key, unit_bp, nodes, edges, root_index, selected_hint):
 		if editor_board_hint_label != null:
 			editor_board_hint_label.text = "框选内容不在同一条下游肢体链中，不能作为一个姿态整体旋转。" if _ui_is_zh() else "The selection is not one downstream limb chain, so it cannot rotate as one pose subtree."
@@ -18289,24 +19647,58 @@ func _start_editor_pose_drag(unit_bp: Dictionary, root_index: int, local_positio
 		start_vec = _topology_endpoint_axis_for_node(root_index, nodes, edges)
 	if start_vec.length() < 0.0001:
 		start_vec = Vector2.RIGHT
-	_record_editor_undo_state("编辑入场姿态" if _ui_is_zh() else "edit entry pose")
-	_topology_update_local_pose_fields(role_key, unit_bp)
+	if hot_path_profiler != null:
+		hot_path_profiler.scope_begin("pose.start.local_pose")
+	var needs_local_pose := false
+	for raw_index in downstream:
+		var pose_index := int(raw_index)
+		if pose_index >= 0 and pose_index < nodes.size() and nodes[pose_index] is Dictionary and not Dictionary(nodes[pose_index]).has("local_angle"):
+			needs_local_pose = true
+			break
+	if needs_local_pose:
+		_topology_update_local_pose_fields_for_nodes(role_key, unit_bp, downstream)
+	if hot_path_profiler != null:
+		hot_path_profiler.scope_end("pose.start.local_pose")
 	topology = unit_bp.get("custom_topology", {})
 	nodes = topology.get("nodes", [])
 	edges = topology.get("edges", [])
+	if hot_path_profiler != null:
+		hot_path_profiler.scope_begin("pose.start.undo")
+	var pose_restore_nodes: Array = []
+	for raw_index in downstream:
+		pose_restore_nodes.append(_topology_pose_node_snapshot(nodes, int(raw_index)))
+	_push_editor_undo_command({
+		"command_type": "restore_pose",
+		"label": "编辑入场姿态" if _ui_is_zh() else "edit entry pose",
+		"nodes": pose_restore_nodes,
+		"previous_entry_pose": Dictionary(unit_bp.get("entry_pose", {})).duplicate(true),
+		"previous_topology_node_index": editor_topology_node_index,
+		"previous_selected_topology_nodes": editor_selected_topology_nodes.duplicate(),
+	})
+	if hot_path_profiler != null:
+		hot_path_profiler.scope_end("pose.start.undo")
 	editor_pose_dragging = true
 	editor_pose_root_node = root_index
 	editor_pose_downstream_nodes = downstream
+	editor_pose_original_entry_pose = Dictionary(unit_bp.get("entry_pose", {})).duplicate(true)
 	editor_pose_pivot = pivot
 	editor_pose_drag_start_angle = start_vec.angle()
+	editor_pose_pending_local_position = local_position
+	editor_pose_pending_update = false
+	editor_pose_last_applied_angle = INF
 	editor_pose_drag_original_positions = []
-	var root_node: Dictionary = nodes[root_index]
-	editor_pose_drag_original_positions.append({
-		"index": root_index,
-		"local_angle": float(root_node.get("local_angle", 0.0)),
-		"pos": _topology_node_position(root_node),
-		"axis": _topology_endpoint_axis_for_node(root_index, nodes, edges),
-	})
+	for raw_index in downstream:
+		var pose_index := int(raw_index)
+		if pose_index < 0 or pose_index >= nodes.size() or not (nodes[pose_index] is Dictionary):
+			continue
+		var pose_node: Dictionary = nodes[pose_index]
+		editor_pose_drag_original_positions.append({
+			"index": pose_index,
+			"local_angle": float(pose_node.get("local_angle", 0.0)),
+			"pos": _topology_node_position(pose_node),
+			"axis": _topology_endpoint_axis_for_node(pose_index, nodes, edges),
+			"is_root": pose_index == root_index,
+		})
 	editor_topology_node_index = root_index
 	editor_selected_topology_nodes = downstream.duplicate()
 	editor_dragging_node_index = -1
@@ -18316,34 +19708,65 @@ func _start_editor_pose_drag(unit_bp: Dictionary, root_index: int, local_positio
 	if editor_board_hint_label != null:
 		editor_board_hint_label.text = "正在姿态编辑：当前构件带动 %d 个下游构件随动，上游近端保持静止。" % downstream.size() if _ui_is_zh() else "Pose edit: this part drives %d downstream part(s); upstream ancestors stay fixed." % downstream.size()
 	ai_team_manual_lock[_editor_player()] = true
-	_refresh_editor_visual_views()
+	_refresh_editor_visual_views_fast_drag(editor_pose_downstream_nodes)
 	return true
 
 
 func _update_editor_pose_drag(unit_bp: Dictionary, local_position: Vector2) -> void:
+	if not editor_pose_dragging:
+		return
+	editor_pose_pending_local_position = local_position
+	editor_pose_pending_update = true
+	editor_pose_drag_coalesced_count += 1
+
+
+func _apply_editor_pose_drag_pending(unit_bp: Dictionary) -> void:
 	if not editor_pose_dragging or not unit_bp.has("custom_topology"):
 		return
+	if not editor_pose_pending_update:
+		return
+	editor_pose_pending_update = false
+	editor_pose_drag_apply_count += 1
 	var topology: Dictionary = unit_bp.get("custom_topology", {})
 	var nodes: Array = topology.get("nodes", [])
 	if editor_pose_drag_original_positions.is_empty() or nodes.is_empty():
 		return
-	var mouse_topology := _board_position_to_topology(local_position)
+	var mouse_topology := _board_position_to_topology(editor_pose_pending_local_position)
 	var current_vec := mouse_topology - editor_pose_pivot
 	if current_vec.length() < 0.0001:
 		return
 	var delta_angle := current_vec.angle() - editor_pose_drag_start_angle
-	var root_item: Dictionary = editor_pose_drag_original_positions[0]
-	var root_index := int(root_item.get("index", editor_pose_root_node))
-	if root_index < 0 or root_index >= nodes.size():
+	if editor_pose_last_applied_angle != INF and absf(delta_angle - editor_pose_last_applied_angle) < deg_to_rad(0.25):
 		return
-	var root_node: Dictionary = nodes[root_index]
-	root_node["local_angle"] = wrapf(float(root_item.get("local_angle", 0.0)) + delta_angle, -PI, PI)
-	nodes[root_index] = root_node
+	editor_pose_last_applied_angle = delta_angle
+	if hot_path_profiler != null:
+		hot_path_profiler.scope_begin("pose.drag.fk")
+	for raw_item in editor_pose_drag_original_positions:
+		if not (raw_item is Dictionary):
+			continue
+		var item: Dictionary = raw_item
+		var index := int(item.get("index", -1))
+		if index < 0 or index >= nodes.size() or not (nodes[index] is Dictionary):
+			continue
+		var node: Dictionary = nodes[index]
+		var original_pos: Vector2 = item.get("pos", _topology_node_position(node))
+		var original_axis: Vector2 = item.get("axis", _topology_endpoint_axis_for_node(index, nodes, []))
+		node["pos"] = _clamp_topology_position(editor_pose_pivot + (original_pos - editor_pose_pivot).rotated(delta_angle))
+		if original_axis.length() > 0.001:
+			node["axis"] = original_axis.normalized().rotated(delta_angle).normalized()
+		if bool(item.get("is_root", false)):
+			node["local_angle"] = wrapf(float(item.get("local_angle", 0.0)) + delta_angle, -PI, PI)
+		nodes[index] = node
 	topology["nodes"] = nodes
 	unit_bp["custom_topology"] = topology
-	_topology_apply_local_fk(ROLE_ORDER[editor_role_index], unit_bp, root_index)
+	if hot_path_profiler != null:
+		hot_path_profiler.scope_end("pose.drag.fk")
 	ai_team_manual_lock[_editor_player()] = true
+	if hot_path_profiler != null:
+		hot_path_profiler.scope_begin("pose.drag.visual_diff")
 	_refresh_editor_visual_views_fast_drag(editor_pose_downstream_nodes)
+	if hot_path_profiler != null:
+		hot_path_profiler.scope_end("pose.drag.visual_diff")
 
 
 func _finish_editor_pose_drag(unit_bp: Dictionary) -> void:
@@ -18351,12 +19774,26 @@ func _finish_editor_pose_drag(unit_bp: Dictionary) -> void:
 		return
 	if hot_path_profiler != null:
 		hot_path_profiler.scope_begin("pose_commit")
-	_store_entry_pose_from_topology(unit_bp)
+	_apply_editor_pose_drag_pending(unit_bp)
+	if hot_path_profiler != null:
+		hot_path_profiler.scope_begin("pose.commit.entry_pose")
+	_store_entry_pose_for_nodes(unit_bp, editor_pose_downstream_nodes)
+	if hot_path_profiler != null:
+		hot_path_profiler.scope_end("pose.commit.entry_pose")
 	editor_pose_dragging = false
+	editor_pose_pending_update = false
 	editor_pose_drag_original_positions = []
+	editor_pose_original_entry_pose = {}
 	if editor_board_hint_label != null:
 		editor_board_hint_label.text = "入场姿态已更新：保存单位后，训练和战斗入场都会使用该姿态。" if _ui_is_zh() else "Entry pose updated: save the unit to use this pose in training and battle entry."
-	_mark_editor_board_model_dirty("pose.commit")
+	_refresh_editor_visual_views_fast_drag(editor_pose_downstream_nodes)
+	if hot_path_profiler != null:
+		hot_path_profiler.scope_begin("pose.commit.idle_dirty")
+	_schedule_editor_stats_idle_refresh("pose.commit")
+	mark_editor_dirty(EDITOR_DIRTY_ACTION_BUTTONS, "pose.commit")
+	flush_editor_dirty(600)
+	if hot_path_profiler != null:
+		hot_path_profiler.scope_end("pose.commit.idle_dirty")
 	if hot_path_profiler != null:
 		hot_path_profiler.scope_end("pose_commit")
 
@@ -18505,7 +19942,11 @@ func _unlink_topology_edge_at_index(unit_bp: Dictionary, edge_index: int) -> boo
 		editor_board_hint_label.text = "已解绑一条接口连接。" if _ui_is_zh() else "Unlinked one socket edge."
 	_play_sfx_wave("clack", 420.0, 0.045, -17.5)
 	ai_team_manual_lock[_editor_player()] = true
-	_mark_editor_board_model_dirty("board.unlink_edge")
+	_clear_cached_board_socket_candidate()
+	_refresh_editor_visual_views_fast_drag([a, b, focus])
+	_schedule_editor_stats_idle_refresh("board.unlink_edge")
+	mark_editor_dirty(EDITOR_DIRTY_ACTION_BUTTONS, "board.unlink_edge")
+	flush_editor_dirty(600)
 	if hot_path_profiler != null:
 		hot_path_profiler.scope_end("unlink_node")
 	return true
@@ -18544,6 +19985,15 @@ func _unlink_joint_edges(unit_bp: Dictionary, joint_index: int, preferred_neighb
 			hot_path_profiler.scope_end("unlink_node")
 		return false
 	_record_editor_undo_state("解绑接口" if _ui_is_zh() else "unlink socket")
+	var changed_nodes: Array = [joint_index]
+	for raw_remove_index in remove_indices:
+		var edge_for_change = old_edges[int(raw_remove_index)]
+		var edge_a := _topology_edge_node_a(edge_for_change)
+		var edge_b := _topology_edge_node_b(edge_for_change)
+		if edge_a == joint_index and not changed_nodes.has(edge_b):
+			changed_nodes.append(edge_b)
+		elif edge_b == joint_index and not changed_nodes.has(edge_a):
+			changed_nodes.append(edge_a)
 	var removed_count := 0
 	for i in range(remove_indices.size() - 1, -1, -1):
 		old_edges.remove_at(int(remove_indices[i]))
@@ -18562,7 +20012,11 @@ func _unlink_joint_edges(unit_bp: Dictionary, joint_index: int, preferred_neighb
 		editor_board_hint_label.text = "已解绑构件的 %d 条接口连接。" % removed_count if _ui_is_zh() else "Unlinked %d component socket connection(s)." % removed_count
 	_play_sfx_wave("clack", 420.0, 0.045, -17.5)
 	ai_team_manual_lock[_editor_player()] = true
-	_mark_editor_board_model_dirty("board.unlink_joint")
+	_clear_cached_board_socket_candidate()
+	_refresh_editor_visual_views_fast_drag(changed_nodes)
+	_schedule_editor_stats_idle_refresh("board.unlink_joint")
+	mark_editor_dirty(EDITOR_DIRTY_ACTION_BUTTONS, "board.unlink_joint")
+	flush_editor_dirty(600)
 	if hot_path_profiler != null:
 		hot_path_profiler.scope_end("unlink_node")
 	return true
@@ -18587,7 +20041,9 @@ func _try_magnetic_link_for_node(unit_bp: Dictionary, node_index: int, show_mate
 			hot_path_profiler.scope_end("magnetic_link")
 		return false
 	var role_key: String = ROLE_ORDER[editor_role_index]
-	var candidate := _topology_socket_candidate(role_key, unit_bp, nodes, edges, node_index, true)
+	var candidate := _consume_cached_board_socket_candidate(node_index)
+	if candidate.is_empty():
+		candidate = _topology_socket_candidate(role_key, unit_bp, nodes, edges, node_index, true)
 	if candidate.is_empty():
 		if show_material_warning:
 			var material_block := _topology_material_blocked_candidate(role_key, unit_bp, nodes, edges, node_index)
@@ -18641,6 +20097,11 @@ func _try_magnetic_link_for_node(unit_bp: Dictionary, node_index: int, show_mate
 		editor_board_hint_label.text = "咔哒：节点 %d 的接口已一对一连接节点 %d。" % [node_index + 1, best_index + 1] if _ui_is_zh() else "Click: node %d socket linked one-to-one with node %d." % [node_index + 1, best_index + 1]
 	_play_sfx_wave("clack", 720.0, 0.055, -17.0)
 	ai_team_manual_lock[_editor_player()] = true
+	_clear_cached_board_socket_candidate()
+	_refresh_editor_visual_views_fast_drag([node_index, best_index])
+	_schedule_editor_stats_idle_refresh("board.magnetic_link")
+	mark_editor_dirty(EDITOR_DIRTY_ACTION_BUTTONS, "board.magnetic_link")
+	flush_editor_dirty(600)
 	if hot_path_profiler != null:
 		hot_path_profiler.scope_end("magnetic_link")
 	return true
@@ -19087,10 +20548,11 @@ func _select_catalog_component(component_index: int) -> void:
 		_ensure_custom_topology(unit_bp)
 		if _is_topology_part_slot(slot_key):
 			_set_pending_canvas_part(unit_bp, slot_key, actual_index)
-			editor_board_hint_label.text = "已选择：%s。可直接拖卡片进画布，也可点击画布放置/替换。" % _pending_canvas_part_name(role_key)
+			_set_control_text_if_changed(editor_board_hint_label, "已选择：%s。可直接拖卡片进画布，也可点击画布放置/替换。" % _pending_canvas_part_name(role_key))
 			_play_sfx_wave("clack", 640.0, 0.04, -18.0)
 			ai_team_manual_lock[player_id] = true
-			_update_editor_ui()
+			mark_editor_dirty(EDITOR_DIRTY_ACTION_BUTTONS, "catalog.pending_canvas_part")
+			flush_editor_dirty(600)
 			if hot_path_profiler != null:
 				hot_path_profiler.scope_end("install_part")
 			return
@@ -20075,15 +21537,19 @@ func _editor_action(action_key: String) -> void:
 		"prev_catalog":
 			if editor_panel_mode == "load":
 				editor_load_page = max(0, editor_load_page - 1)
+				_update_editor_ui()
 			else:
 				editor_catalog_page = max(0, editor_catalog_page - 1)
-			_update_editor_ui()
+				mark_editor_dirty(EDITOR_DIRTY_CATALOG | EDITOR_DIRTY_ACTION_BUTTONS, "catalog.prev_page")
+				flush_editor_dirty(1200)
 		"next_catalog":
 			if editor_panel_mode == "load":
 				editor_load_page += 1
+				_update_editor_ui()
 			else:
 				editor_catalog_page += 1
-			_update_editor_ui()
+				mark_editor_dirty(EDITOR_DIRTY_CATALOG | EDITOR_DIRTY_ACTION_BUTTONS, "catalog.next_page")
+				flush_editor_dirty(1200)
 		"toggle_templates":
 			editor_template_menu_open = not editor_template_menu_open
 			_update_editor_ui()
@@ -20289,7 +21755,11 @@ func _custom_node_count_for_current_unit() -> int:
 	var player_id := _editor_player()
 	var role_key: String = ROLE_ORDER[editor_role_index]
 	var unit_bp: Dictionary = _editor_current_blueprint()
+	if hot_path_profiler != null:
+		hot_path_profiler.scope_begin("drop.ensure_topology")
 	_ensure_custom_topology(unit_bp)
+	if hot_path_profiler != null:
+		hot_path_profiler.scope_end("drop.ensure_topology")
 	var topology: Dictionary = unit_bp["custom_topology"]
 	var nodes: Array = topology.get("nodes", [])
 	return nodes.size()
@@ -20315,20 +21785,66 @@ func _add_topology_node_at(local_position: Vector2) -> int:
 		editor_board_hint_label.text = "警报：先从零件库拖入或点选一个有体积的肌肉构件。" if _ui_is_zh() else "ALARM: drag or choose a physical muscle component from Parts first."
 		_play_sfx_wave("alarm", 170.0, 0.1, -14.0)
 		return -1
-	_record_editor_undo_state("放置构件" if _ui_is_zh() else "place part")
+	var previous_blank := bool(unit_bp.get("blank_canvas", false))
+	var previous_pending_slot := editor_pending_place_slot
+	var previous_pending_index := editor_pending_place_index
+	if hot_path_profiler != null:
+		hot_path_profiler.scope_begin("drop.purchase_commit")
+	var purchase_restore := _commit_pending_canvas_part_purchase(unit_bp, previous_pending_slot, previous_pending_index)
+	if hot_path_profiler != null:
+		hot_path_profiler.scope_end("drop.purchase_commit")
 	unit_bp["blank_canvas"] = false
 	var index := nodes.size()
-	nodes.append(_make_topology_node(unit_bp, index, _board_position_to_topology(local_position), editor_pending_place_slot, editor_pending_place_index))
+	if hot_path_profiler != null:
+		hot_path_profiler.scope_begin("drop.make_node")
+	var new_node := _make_topology_node(unit_bp, index, _board_position_to_topology(local_position), editor_pending_place_slot, editor_pending_place_index)
+	if hot_path_profiler != null:
+		hot_path_profiler.scope_begin("drop.append_node")
+	nodes.append(new_node)
+	editor_last_added_topology_node_index = index
+	editor_last_added_topology_node_snapshot = new_node.duplicate(false)
 	topology["nodes"] = nodes
 	unit_bp["custom_topology"] = topology
+	if hot_path_profiler != null:
+		hot_path_profiler.scope_end("drop.append_node")
+	if hot_path_profiler != null:
+		hot_path_profiler.scope_end("drop.make_node")
+	if hot_path_profiler != null:
+		hot_path_profiler.scope_begin("drop.undo.light")
+	_push_editor_undo_command({
+		"command_type": "remove_node",
+		"label": "放置构件" if _ui_is_zh() else "place part",
+		"node_index": index,
+		"slot_key": previous_pending_slot,
+		"part_index": previous_pending_index,
+		"previous_blank_canvas": previous_blank,
+		"previous_purchased_had_slot": bool(purchase_restore.get("had_slot", false)),
+		"previous_purchased_list": Array(purchase_restore.get("previous_list", [])).duplicate(true),
+		"previous_pending_slot": "",
+		"previous_pending_index": -1,
+		"previous_topology_node_index": editor_topology_node_index,
+		"previous_selected_topology_nodes": editor_selected_topology_nodes.duplicate(),
+	})
+	if hot_path_profiler != null:
+		hot_path_profiler.scope_end("drop.undo.light")
 	editor_topology_node_index = index
 	editor_selected_body_part = BODY_PART_ORDER[index % BODY_PART_ORDER.size()]
-	var placed_name := _pending_canvas_part_name(role_key)
+	if hot_path_profiler != null:
+		hot_path_profiler.scope_begin("drop.snap_hint")
+	var placed_name := String(new_node.get("part_name", ""))
+	if placed_name == "":
+		placed_name = String(new_node.get("label_short_name", "NODE"))
 	editor_pending_place_slot = ""
 	editor_pending_place_index = -1
-	_trigger_editor_snap("node", placed_name)
+	_trigger_editor_node_drop_snap(placed_name, true)
+	if hot_path_profiler != null:
+		hot_path_profiler.scope_end("drop.snap_hint")
+	if hot_path_profiler != null:
+		hot_path_profiler.scope_begin("drop.mark_dirty")
 	ai_team_manual_lock[player_id] = true
 	_mark_editor_board_model_dirty("board.add_node", false)
+	if hot_path_profiler != null:
+		hot_path_profiler.scope_end("drop.mark_dirty")
 	return index
 
 
@@ -20431,10 +21947,76 @@ func _ensure_custom_topology(unit_bp: Dictionary) -> void:
 func _make_topology_node(unit_bp: Dictionary, index: int, pos: Vector2, slot_key: String = "", part_index: int = -1) -> Dictionary:
 	var resolved_slot := slot_key if _is_topology_part_slot(slot_key) else "limb_muscle"
 	var resolved_index := part_index if part_index >= 0 else int(unit_bp.get(resolved_slot, 0))
-	var part := _selected_component(ROLE_ORDER[editor_role_index], resolved_slot, resolved_index)
 	var module_index := int(unit_bp.get("module", 0))
 	var modules: Array = []
-	return _topology_component_node(index, _topology_component_label(resolved_slot, part, index), pos, resolved_slot, resolved_index, module_index if not modules.is_empty() else -1, modules)
+	if hot_path_profiler != null:
+		hot_path_profiler.scope_begin("drop.component_template")
+	var template := _placement_template_for_part(resolved_slot, resolved_index, true)
+	if hot_path_profiler != null:
+		hot_path_profiler.scope_end("drop.component_template")
+	if not template.is_empty() and template.has("node_base"):
+		var node := Dictionary(template.get("node_base", {})).duplicate(false)
+		node["id"] = index
+		node["label"] = _topology_component_label_from_short_name(resolved_slot, String(template.get("label_short_name", template.get("part_name", resolved_slot.to_upper()))), index)
+		node["pos"] = pos
+		node["slot"] = resolved_slot
+		node["part_index"] = resolved_index
+		if module_index >= 0 or not modules.is_empty():
+			var module_list := modules.duplicate(true)
+			if module_list.is_empty() and module_index >= 0:
+				module_list.append(module_index)
+			if not module_list.is_empty():
+				node["module"] = module_index if module_index >= 0 else int(module_list[0])
+				node["modules"] = module_list
+		return node
+	var part := _selected_component(ROLE_ORDER[editor_role_index], resolved_slot, resolved_index)
+	var node := {
+		"id": index,
+		"label": _topology_component_label(resolved_slot, part, index),
+		"pos": pos,
+		"slot": resolved_slot,
+		"part_index": resolved_index,
+		"part_name": String(part.get("name", "")),
+		"size_tier": PartArt.normalized_size_tier(part),
+	}
+	if resolved_slot == "muscle" and _component_is_torso(part):
+		node["is_torso"] = true
+		node["material_class"] = "torso"
+	if resolved_slot == "muscle" and _part_counts_as_terminal_weapon(part, "muscle"):
+		node["terminal_weapon"] = true
+		node["terminal_weapon_kind"] = _terminal_weapon_kind_for_part(part, "muscle")
+		node["projectile"] = _terminal_weapon_kind_for_part(part, "muscle") == "ranged" and bool(part.get("projectile", false))
+	if module_index >= 0 or not modules.is_empty():
+		var module_list := modules.duplicate(true)
+		if module_list.is_empty() and module_index >= 0:
+			module_list.append(module_index)
+		if not module_list.is_empty():
+			node["module"] = module_index if module_index >= 0 else int(module_list[0])
+			node["modules"] = module_list
+	if not template.is_empty():
+		var component_node := Dictionary(template.get("component_node", {}))
+		for key in component_node.keys():
+			node[key] = component_node[key]
+		node["slot"] = resolved_slot
+		node["part_name"] = String(template.get("part_name", node.get("part_name", "")))
+		node["size_tier"] = String(template.get("size_tier", node.get("size_tier", "")))
+		node["component_length"] = float(template.get("component_length", 0.0))
+		node["component_radius"] = maxf(0.012, float(template.get("component_radius", node.get("component_radius", 0.04))))
+		node["component_mass"] = maxf(0.0, float(template.get("component_mass", node.get("component_mass", 0.0))))
+		node["damage_type"] = String(template.get("damage_type", node.get("damage_type", "")))
+		node["material_class"] = String(template.get("material_class", node.get("material_class", resolved_slot)))
+		node["material_visual"] = String(template.get("material_visual", node.get("material_visual", "")))
+		node["projectile_damage_type"] = String(template.get("projectile_damage_type", node.get("projectile_damage_type", "")))
+		node["projectile_behavior"] = String(template.get("projectile_behavior", node.get("projectile_behavior", "")))
+		node["range"] = float(template.get("range", node.get("range", 0.0)))
+		node["archetype"] = String(template.get("archetype", node.get("archetype", "")))
+		node["terminal_weapon"] = bool(template.get("terminal_weapon", node.get("terminal_weapon", false)))
+		node["connection_ends"] = int(template.get("connection_ends", node.get("connection_ends", 2)))
+		node["size_class"] = String(template.get("size_class", node.get("size_class", "")))
+		node["shape"] = String(template.get("shape", node.get("shape", resolved_slot)))
+		node["projectile"] = bool(template.get("projectile", node.get("projectile", false)))
+		node["is_torso"] = bool(template.get("is_torso", node.get("is_torso", false)))
+	return node
 
 
 func _archetype_layout(archetype_key: String) -> Array:
@@ -20573,17 +22155,49 @@ func _apply_barrier_template(template_key: String) -> void:
 	_update_editor_ui()
 
 
-func _trigger_editor_snap(slot_key: String, part_name: String) -> void:
+func _queue_editor_sfx(kind: String, pitch: float, duration: float, volume_db: float = -12.0) -> void:
+	editor_deferred_sfx_queue.append({
+		"kind": kind,
+		"pitch": pitch,
+		"duration": duration,
+		"volume_db": volume_db,
+	})
+
+
+func _flush_editor_deferred_sfx(max_count: int = 1) -> int:
+	var played := 0
+	while not editor_deferred_sfx_queue.is_empty() and played < maxi(1, max_count):
+		var event: Dictionary = editor_deferred_sfx_queue.pop_front()
+		_play_sfx_wave(String(event.get("kind", "clack")), float(event.get("pitch", 760.0)), float(event.get("duration", 0.055)), float(event.get("volume_db", -17.0)))
+		played += 1
+	return played
+
+
+func _trigger_editor_snap(slot_key: String, part_name: String, defer_sfx: bool = false) -> void:
 	editor_snap_timer = 0.28
 	editor_snap_part = slot_key if slot_key == "barrier" else editor_selected_body_part
 	if slot_key in ["node", "link", "frame", "barrier", "blank", "joint", "limb_muscle", "muscle", "module"]:
-		_play_sfx_wave("clack", 760.0, 0.055, -17.0)
+		if defer_sfx:
+			_queue_editor_sfx("clack", 760.0, 0.055, -17.0)
+		else:
+			_play_sfx_wave("clack", 760.0, 0.055, -17.0)
 	var role_key: String = ROLE_ORDER[editor_role_index]
 	var unit_bp: Dictionary = _editor_current_blueprint()
 	if role_key == "barrier" or slot_key == "barrier":
 		editor_board_hint_label.text = "咔哒：%s 已磁吸进结界自由画布。" % part_name if _ui_is_zh() else "CLACK: %s magnet-locked into barrier free canvas." % part_name
 	else:
 		editor_board_hint_label.text = "咔哒：%s 已磁吸到 %s。" % [part_name, _body_part_label(editor_selected_body_part, unit_bp)] if _ui_is_zh() else "CLACK: %s magnet-locked into %s." % [part_name, _body_part_label(editor_selected_body_part, unit_bp)]
+
+
+func _trigger_editor_node_drop_snap(part_name: String, defer_sfx: bool = true) -> void:
+	editor_snap_timer = 0.28
+	editor_snap_part = editor_selected_body_part
+	if defer_sfx:
+		_queue_editor_sfx("clack", 760.0, 0.055, -17.0)
+	else:
+		_play_sfx_wave("clack", 760.0, 0.055, -17.0)
+	if editor_board_hint_label != null:
+		editor_board_hint_label.text = "咔哒：%s 已放置。" % part_name if _ui_is_zh() else "CLACK: %s placed." % part_name
 
 
 func _show_editor_material_link_warning(node_indices: Array, reason: String = "") -> void:
@@ -20604,6 +22218,8 @@ func _tick_editor_visuals(delta: float) -> void:
 	var tick_start := Time.get_ticks_usec()
 	var visual_dirty := false
 	var preview_budget := 1
+	if editor_pose_dragging and editor_pose_pending_update:
+		_apply_editor_pose_drag_pending(_editor_current_blueprint())
 	if Time.get_ticks_msec() < editor_preview_pause_until_msec or editor_pose_dragging or editor_drag_catalog_active or editor_drag_catalog_started or editor_dragging_node_index >= 0 or editor_dragging_selected_nodes or editor_dragging_whole_unit:
 		preview_budget = 0
 	var preview_processed := PartPreviewTextureCache.process_queue(self, preview_budget)
@@ -20634,8 +22250,21 @@ func _tick_editor_visuals(delta: float) -> void:
 			editor_save_unit_feedback_label.modulate = Color(0.45 + pulse * 0.25, 1.0, 0.62 + pulse * 0.2, 0.78 + pulse * 0.22)
 	elif editor_save_unit_feedback_label != null and editor_save_unit_feedback_label.visible:
 		editor_save_unit_feedback_label.visible = false
+	if preview_budget > 0 and assembly_board_view != null:
+		var flushed_components := assembly_board_view.flush_deferred_retained_components(2)
+		if hot_path_profiler != null and flushed_components > 0:
+			hot_path_profiler.record_value("teamedit.retained_component_deferred_flush", flushed_components)
+	if preview_budget > 0 and not editor_deferred_sfx_queue.is_empty():
+		var played_sfx := _flush_editor_deferred_sfx(1)
+		if hot_path_profiler != null and played_sfx > 0:
+			hot_path_profiler.record_value("teamedit.deferred_sfx_flush", played_sfx)
 	if visual_dirty:
-		_refresh_editor_visual_views({}, false)
+		var role_key: String = ROLE_ORDER[editor_role_index]
+		var unit_bp: Dictionary = _editor_current_blueprint()
+		if game_state == STATE_EDITOR and _role_uses_body_board(role_key) and unit_bp.has("custom_topology") and not editor_board_base_snapshot_cache.is_empty():
+			_refresh_editor_visual_views_fast_drag()
+		else:
+			_refresh_editor_visual_views({}, false)
 	if editor_perf_overlay_enabled:
 		editor_perf_overlay_last_usec = Time.get_ticks_usec() - tick_start
 		_update_editor_perf_overlay()
@@ -39276,6 +40905,40 @@ func _build_editor_ui() -> void:
 		editor_catalog_buttons.append(catalog_button)
 
 
+func _build_loading_ui() -> void:
+	loading_layer = CanvasLayer.new()
+	loading_layer.name = "LoadingLayer"
+	loading_layer.visible = false
+	add_child(loading_layer)
+	var root := Control.new()
+	root.name = "LoadingRoot"
+	root.set_anchors_preset(Control.PRESET_FULL_RECT)
+	loading_layer.add_child(root)
+	var dim := ColorRect.new()
+	dim.name = "LoadingDim"
+	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
+	dim.color = Color(0.01, 0.014, 0.02, 0.92)
+	root.add_child(dim)
+	var panel := ColorRect.new()
+	panel.name = "LoadingPanel"
+	panel.position = Vector2(346.0, 264.0)
+	panel.size = Vector2(588.0, 172.0)
+	panel.color = Color(0.035, 0.048, 0.068, 0.94)
+	root.add_child(panel)
+	loading_title_label = _make_label(root, "LoadingTitle", "加载中", Vector2(380.0, 292.0), Vector2(520.0, 34.0), 24, Color(0.88, 0.96, 1.0, 1.0), HORIZONTAL_ALIGNMENT_CENTER)
+	loading_stage_label = _make_label(root, "LoadingStage", "准备页面", Vector2(392.0, 336.0), Vector2(496.0, 28.0), 16, Color(0.72, 0.84, 0.94, 1.0), HORIZONTAL_ALIGNMENT_CENTER)
+	loading_progress_bar = ProgressBar.new()
+	loading_progress_bar.name = "LoadingProgress"
+	loading_progress_bar.position = Vector2(424.0, 380.0)
+	loading_progress_bar.size = Vector2(432.0, 18.0)
+	loading_progress_bar.min_value = 0.0
+	loading_progress_bar.max_value = 100.0
+	loading_progress_bar.value = 0.0
+	root.add_child(loading_progress_bar)
+	loading_percent_label = _make_label(root, "LoadingPercent", "0%", Vector2(424.0, 404.0), Vector2(432.0, 20.0), 13, Color(0.86, 0.92, 0.98, 0.96), HORIZONTAL_ALIGNMENT_CENTER)
+	_update_loading_overlay()
+
+
 func _load_generated_asset_sheet() -> Texture2D:
 	return null
 
@@ -43060,7 +44723,83 @@ func _append_editor_balance_stat(entries: Array, label: String, current_stats: D
 	})
 
 
+func _torso_detail_template_key(part: Dictionary) -> String:
+	return "%s|%s|%s|%d|%d|%s" % [
+		ui_language,
+		String(part.get("stable_key", part.get("name", ""))),
+		PartArt.normalized_size_tier(part),
+		_torso_plugin_capacity_for_part(part),
+		_torso_software_capacity_for_part(part),
+		String(part.get("material_visual", part.get("material_class", ""))),
+	]
+
+
+func _empty_torso_plugin_entries(torso_part: Dictionary, capacity: int) -> Array:
+	var display: Array = []
+	var slot_sizes := _torso_internal_slot_size_ranks(torso_part)
+	for i in range(capacity):
+		var label := _volume_rank_label(float(slot_sizes[i])) if i < slot_sizes.size() else "-"
+		display.append({"empty": true, "slot_size_label": label})
+	return display
+
+
+func _empty_torso_software_entries(capacity: int) -> Array:
+	var display: Array = []
+	for _i in range(capacity):
+		display.append({"empty": true})
+	return display
+
+
+func _build_torso_detail_template(part: Dictionary) -> Dictionary:
+	var plugin_capacity := _torso_plugin_capacity_for_part(part)
+	var software_capacity := _torso_software_capacity_for_part(part)
+	var title := _zh_part_name(String(part.get("name", "TORSO"))) if _ui_is_zh() else String(part.get("name", "TORSO"))
+	var subtitle := ("接口 %d  机内插件槽 %d/%d  软件槽 %d/%d" if _ui_is_zh() else "Ports %d  Internal %d/%d  Software %d/%d") % [
+		int(part.get("joint_ports", part.get("connection_ends", 0))),
+		0,
+		plugin_capacity,
+		0,
+		software_capacity,
+	]
+	return {
+		"title": title,
+		"subtitle": subtitle,
+		"plugin_display": _empty_torso_plugin_entries(part, plugin_capacity),
+		"plugin_capacity": plugin_capacity,
+		"software_display": _empty_torso_software_entries(software_capacity),
+		"software_capacity": software_capacity,
+	}
+
+
+func _prewarm_torso_detail_template(part: Dictionary) -> bool:
+	if part.is_empty() or not _component_is_torso(part):
+		return false
+	var key := _torso_detail_template_key(part)
+	if editor_torso_detail_template_cache.has(key):
+		return false
+	editor_torso_detail_template_cache[key] = _build_torso_detail_template(part)
+	return true
+
+
+func _apply_torso_detail_template(state: Dictionary) -> void:
+	if editor_torso_detail_view == null:
+		return
+	editor_torso_detail_view.set_detail(
+		String(state.get("title", "")),
+		String(state.get("subtitle", "")),
+		Array(state.get("plugin_display", [])),
+		int(state.get("plugin_capacity", 0)),
+		Array(state.get("software_display", [])),
+		int(state.get("software_capacity", 0)),
+		editor_selected_torso_slot_kind,
+		editor_selected_torso_slot_index,
+		ui_language
+	)
+	editor_torso_detail_view.set_binding_state(false)
+
+
 func _refresh_torso_detail_view() -> void:
+	editor_torso_detail_refresh_count += 1
 	if editor_torso_detail_view == null:
 		return
 	var role_key: String = ROLE_ORDER[editor_role_index]
@@ -43078,6 +44817,19 @@ func _refresh_torso_detail_view() -> void:
 	var software_capacity := _torso_software_capacity_for_part(part)
 	var plugins := _torso_plugin_slot_summary(unit_bp, editor_open_torso_node_index)
 	var software := _torso_software_slot_summary(unit_bp, editor_open_torso_node_index)
+	var can_use_template := plugins.is_empty() \
+		and software.is_empty() \
+		and editor_pending_module_binding.is_empty() \
+		and editor_selected_torso_slot_kind == "" \
+		and editor_selected_torso_slot_index < 0
+	if can_use_template:
+		var template_key := _torso_detail_template_key(part)
+		if not editor_torso_detail_template_cache.has(template_key):
+			editor_torso_detail_cache_miss_count += 1
+			_prewarm_torso_detail_template(part)
+		if editor_torso_detail_template_cache.has(template_key):
+			_apply_torso_detail_template(Dictionary(editor_torso_detail_template_cache[template_key]))
+			return
 	var plugin_display := _torso_detail_display_entries(unit_bp, editor_open_torso_node_index, "plugin", plugin_capacity, part)
 	var software_display := _torso_detail_display_entries(unit_bp, editor_open_torso_node_index, "software", software_capacity, part)
 	var title := _zh_part_name(String(part.get("name", "TORSO"))) if _ui_is_zh() else String(part.get("name", "TORSO"))
@@ -43843,6 +45595,8 @@ func _rebuild_settings_list() -> void:
 			_settings_add_info_row("画面" if _ui_is_zh() else "VIDEO")
 			var spec := _performance_profile_spec(performance_profile)
 			_settings_add_action_row("performance_profile", "性能档" if _ui_is_zh() else "Performance Profile", _performance_profile_label(performance_profile), "点击切换 4080S/兼容档" if _ui_is_zh() else "click to cycle 4080S/compat")
+			_settings_add_action_row("display_mode", "显示模式" if _ui_is_zh() else "Display Mode", _display_mode_label(display_mode_setting), "窗口/无边框/全屏" if _ui_is_zh() else "window/borderless/full")
+			_settings_add_action_row("window_size", "窗口大小" if _ui_is_zh() else "Window Size", _window_size_label(window_size_setting), "窗口模式生效" if _ui_is_zh() else "used in window mode")
 			_settings_add_static_row("帧率上限" if _ui_is_zh() else "FPS Cap", str(int(spec.get("fps_cap", 120))))
 			_settings_add_static_row("渲染比例" if _ui_is_zh() else "Render Scale", "%.0f%%" % (float(spec.get("render_scale", 1.0)) * 100.0))
 			_settings_add_static_row("特效强度" if _ui_is_zh() else "VFX", "%.0f%%" % (float(spec.get("vfx_scale", 1.0)) * 100.0))
@@ -43882,9 +45636,10 @@ func _reset_current_settings_category() -> void:
 			_reset_battle_input_bindings_to_default()
 		"video":
 			_apply_performance_profile(PERFORMANCE_PROFILE_DEFAULT, true)
+			_apply_display_mode_setting(DISPLAY_MODE_DEFAULT, WINDOW_SIZE_DEFAULT, true)
 			_rebuild_settings_list()
 			if settings_rebind_status_label != null:
-				settings_rebind_status_label.text = "已恢复 4080S 平衡性能档。" if _ui_is_zh() else "Restored the 4080S Balanced performance profile."
+				settings_rebind_status_label.text = "已恢复画面默认设置。" if _ui_is_zh() else "Restored default video settings."
 		_:
 			if settings_rebind_status_label != null:
 				settings_rebind_status_label.text = "本页默认值已恢复。" if _ui_is_zh() else "This page was reset to defaults."
@@ -43908,13 +45663,21 @@ func _update_settings_ui() -> void:
 		var button: Button = settings_labels[i]
 		if button.has_meta("video_action"):
 			var selected_video := i == settings_index
+			var action_note := "点击切换画面设置" if _ui_is_zh() else "Click to cycle video setting"
+			match String(button.get_meta("video_action", "")):
+				"performance_profile":
+					action_note = "点击切换性能档" if _ui_is_zh() else "Click to cycle performance profile"
+				"display_mode":
+					action_note = "窗口 / 无边框全屏 / 全屏" if _ui_is_zh() else "Window / Borderless / Fullscreen"
+				"window_size":
+					action_note = "窗口尺寸；无边框全屏会使用当前显示器" if _ui_is_zh() else "Window size; borderless uses the current display"
 			input_controls["video_%d" % i] = button
 			input_state["video_%d" % i] = _ui_text_state(
 				String(button.text),
 				Color(0.35, 0.95, 1.0, 1.0) if selected_video else Color(0.86, 0.9, 0.94, 1.0),
 				null,
 				false,
-				"点击切换性能档" if _ui_is_zh() else "Click to cycle performance profile"
+				action_note
 			)
 			continue
 		var spec_index := int(button.get_meta("spec_index", -1))

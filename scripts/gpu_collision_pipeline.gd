@@ -152,6 +152,26 @@ func is_available() -> bool:
 	return available or initialize()
 
 
+func prewarm_capacity(collider_count: int, query_count: int = 0) -> bool:
+	if not is_available():
+		return false
+	var safe_colliders := clampi(collider_count, 2, MAX_COLLIDERS)
+	var pair_count := int(maxi(0, safe_colliders * (safe_colliders - 1) / 2))
+	var max_candidates := maxi(1, mini(MAX_CANDIDATES, pair_count))
+	var max_responses := maxi(1, mini(MAX_RESPONSES, max_candidates))
+	var collider_bytes := safe_colliders * COLLIDER_FLOATS * 4
+	var counter_bytes := 4 * 4
+	var param_bytes := 6 * 4
+	last_buffer_recreate_count = 0
+	last_buffer_reuse_count = 0
+	_ensure_collision_buffers(collider_bytes, max_candidates * 2 * 4, counter_bytes, param_bytes, max_responses * RESPONSE_FLOATS * 4)
+	if query_count > 0:
+		var safe_queries := clampi(query_count, 1, MAX_QUERIES)
+		_ensure_query_buffers(collider_bytes, safe_queries * QUERY_FLOATS * 4, 4 * 4, 4 * 4, MAX_QUERY_HITS * QUERY_HIT_FLOATS * 4)
+	status_note = "GPU collision buffers prewarmed for %d colliders / %d queries." % [safe_colliders, query_count]
+	return true
+
+
 func compute_contacts(colliders: Array, required_overlap: float = 0.0, delta: float = 0.0) -> Array:
 	return compute_contact_responses(colliders, required_overlap, delta)
 

@@ -11,6 +11,7 @@ func _run() -> void:
 	var main = MainScene.instantiate()
 	root.add_child(main)
 	await process_frame
+	main.loading_auto_transitions_enabled = false
 	var reports: Array = []
 	for language in ["zh", "en"]:
 		main.ui_language = language

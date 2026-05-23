@@ -3144,6 +3144,304 @@ Findings:
 Sync:
 - Implemented in `E:\New project`; mirror sync and local commit recorded by the surrounding Git history.
 
+## 2026-05-23 Real Gesture Profiler and Dirty Probe Consolidation
+
+Rules:
+- Performance probes must sample real gestures and print p95/max frame cost plus hot scopes. A probe that only verifies counters is not sufficient evidence that TeamEdit feels smooth.
+- Do not continue optimizing `bound_pose_drag` unless the real gesture matrix points to it again. The isolated bound-pose path is currently low cost; the remaining heat belongs to catalog/drop and structure-edit paths.
+- Keep useful dirty work and probes that are referenced by the current worklog/test matrix. Delete only stale probes that point later work back to old action groups, old damage-unit gates, old CPU geometry main paths, or other deprecated systems.
+
+Implementation notes:
+- Replaced the misleading old `performance_profile_4080s_probe` behavior. It now runs a real headed gesture matrix: catalog click/page, catalog-to-board drop, existing node release, manual unlink, bottom buttons, bound pose drag, saved-unit page/hover, and battle tick sampling.
+- The profiler line for every gesture now includes p95/max, hot scope, UI writes, catalog card updates, visual refresh count, stats recompute count, saved-unit scans, GPU query submits, GPU sync wait, and top leaf scopes.
+- Fixed the catalog page/click hot path found by the new matrix. `prev_catalog` / `next_catalog` now dirty only the catalog/action-button domains instead of calling full `_update_editor_ui()`.
+- Clicking a topology catalog card now only sets the pending canvas part, updates the hint, and dirties action buttons. It no longer refreshes the full TeamEdit page just to prepare a later board drop.
+- Added `battle_gpu_frame_budget_probe` so the probe matrix entry in the worklog now has a concrete file.
+- Reviewed current dirty/untracked files:
+  - Keep: `scripts/controllers/loading_controller.gd`, Loading probes, video display mode probe, catalog size badge probe, saved-unit preload/profiler probes, post-loading miss probes, TeamEdit drag/manual-connect/pose probes, GPU/battle probes, and the retained/preview/card performance code.
+  - Delete: none in this pass. The untracked files were all current-system probes or controller code referenced by recent worklog/test plans.
+  - Review/renamed behavior: `performance_profile_4080s_probe` kept its filename for test-plan continuity but its content now matches the real 4080S gesture-profile meaning.
+
+Verification:
+- `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120` passed.
+- Real gesture matrix:
+  - `performance_profile_4080s_probe`: catalog click/page `p95=5.72ms`; drag-to-board `p95=13.29ms` with hot scope `drop.place_node`; existing node release `p95=1.83ms`; manual unlink `p95=1.86ms`; bottom buttons `p95=2.16ms`; bound pose drag `p95=2.14ms`; saved units page/hover `p95=0.55ms`; battle tick `p95=0.11ms`.
+- Focused probes passed:
+  - `teamedit_drag_to_board_frame_budget_probe`: `p95=13.27ms`, `catalog_delta=0`, `stats_delta=0`, `gpu_delta=0`.
+  - `teamedit_existing_node_drag_release_budget_probe`: `p95=1.85ms`, `catalog_delta=0`, `stats_delta=0`.
+  - `teamedit_manual_connect_unlink_budget_probe`: `p95=1.99ms`, `catalog_delta=0`, `gpu_delta=0`.
+  - `teamedit_bound_pose_drag_frame_budget_probe`: `p95=2.07ms`, `catalog_delta=0`, `stats_delta=0`, `gpu_delta=0`, `full_undo_delta=0`.
+  - `saved_units_trace_profiler_probe`: page `p95=0.46ms`, hover `p95=0.01ms`.
+  - `battle_gpu_frame_budget_probe`: `p95=0.14ms`, `gpu_sync_usec=0`.
+  - `runtime_no_cpu_geometry_probe`, `gpu_no_hot_rd_sync_probe`, `direct_ui_write_hotpath_probe`, `editor_catalog_revision_cache_probe`, `teamedit_no_combat_compute_on_board_probe`, and `pose_drag_no_full_refresh_probe` passed.
+- Regressions passed:
+  - `teamedit_probe`
+  - `combat_probe`
+  - `ui_layout_probe`
+  - `text_overflow_probe`
+
+Findings:
+- The old `performance_profile_4080s_probe` name was actively misleading: it only checked quality profile settings. It now measures the actual interactions the player reports.
+- Catalog click/page was still doing a full editor UI refresh and board UI refresh. That went from roughly `p95=299ms` before the fix to `p95=5.72ms`.
+- Bound pose drag is no longer a credible next target: isolated real sampling reports roughly `2ms`.
+- The remaining measured hot path is catalog-to-board drop (`p95` around `13ms`) with heat inside `drop.place_node`. The next edit should focus only on the new-node placement command path, especially retained component item creation/submission and `_make_topology_node()`/placement-template overhead.
+
+Sync:
+- Implemented in `E:\New project`.
+- Documents and OneDrive mirrors must be synced from this source after this section and the local commit are finalized.
+- Local Git commit id: recorded after commit in the assistant close-out; this section is part of that local commit.
+
+## 2026-05-23 TeamEdit Drop Placement First-Frame Cut
+
+Rules:
+- Dropping a catalog part onto the TeamEdit board must not synchronously build retained component visuals, play generated audio, refresh catalog cards, recompute full stats/legal, or enter battle/GPU geometry.
+- Loading/prewarm should prepare placement templates by stable `slot:index` so the first real drop reads cached component data instead of re-entering catalog normalization.
+- Newly placed board components may show their retained body on a deferred idle flush; the click frame should commit topology and show lightweight overlay feedback first.
+
+Implementation notes:
+- Added `teamedit_placement_template_index_cache` so placement uses a direct `slot:index -> template` hit. `_make_topology_node()` now reads prewarmed node base data and precomputed short labels without re-querying the catalog on the hot path.
+- Added `AssemblyBoardView.apply_component_node_diff()` and deferred retained component flushing. Catalog drops now append a single component diff and defer the retained component item draw/submit to idle frames.
+- Replaced the catalog-drop snap path with `_trigger_editor_node_drop_snap()`, using a short hint and deferred SFX. The old `_play_sfx_wave()` buffer generation no longer runs inside the drop frame.
+- Kept catalog/stat/visual safeguards: drag-to-board reports `catalog_delta=0`, `stats_delta=0`, `visual_delta=0`.
+
+Verification:
+- `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 60` passed; the game opens again after the previous partial edit.
+- Headed RTX 4080 SUPER probes:
+  - `teamedit_drag_to_board_frame_budget_probe`: improved from about `p95=18.30ms` to `p95=12.45ms`, `max=12.45ms`, `catalog_delta=0`, `stats_delta=0`, `visual_delta=0`.
+  - `post_loading_real_interaction_miss_probe`: `misses=0`, `delta=0`, `log=[]`.
+  - `teamedit_existing_node_drag_release_budget_probe`: `p95=0.27ms`, `max=0.27ms`.
+  - `teamedit_no_combat_compute_on_board_probe`: CPU contact, GPU query, GPU pair, and saved-unit scan counters all stayed `0`.
+
+Findings:
+- The board, catalog, saved-unit, and combat/GPU paths are no longer the measured hot layers for catalog-to-board placement.
+- Remaining measured cost is still inside `drop.place_node`, but the named leaves are now small: `drop.make_node` around `2.3ms` cumulative and `drop.component_template` around `2.0ms` cumulative for the probe run. The next cut, if the real window still feels sticky, should split the remaining unscoped topology mutation/purchase/undo work inside `drop.place_node` and convert that state mutation into an even smaller batched command.
+
+Sync:
+- Implemented in `E:\New project`; Documents and OneDrive mirrors should be refreshed from this source after verification.
+
+## 2026-05-23 TeamEdit Bound Pose Drag Hot Path Cut
+
+Rules:
+- Pose editing for bound limbs is an editor-only transform operation. It must not refresh catalog cards, scan saved units, submit battle/GPU geometry, or recompute full stats/legal on mouse-move frames.
+- Mouse motion during pose drag is coalesced. A frame consumes only the latest pointer position, and tiny angle changes are ignored.
+- Pose undo is a light command over affected downstream nodes and entry-pose fragments. Full blueprint snapshots are reserved for large structural operations.
+
+Implementation notes:
+- Added pending pose input state and per-frame application. `_update_editor_pose_drag()` now records the latest local pointer position; `_tick_editor_visuals()` applies at most one pose update.
+- Replaced per-frame `_topology_apply_local_fk()` with a pose-session rigid subtree transform using the stored pivot, original node positions, original axes, and downstream node list. This keeps ancestors fixed and avoids whole-topology FK scans.
+- `_start_editor_pose_drag()` now captures affected-node pose snapshots and pushes a `restore_pose` light undo command instead of deep-copying the whole blueprint.
+- `_finish_editor_pose_drag()` writes entry pose only for downstream nodes and defers Dashboard/legal/detail refresh to idle.
+- Fast board diffs now fill missing retained nodes when the base cache was created from an earlier empty board, preventing nil retained edge/component submissions.
+- Added probes for bound pose drag budget, input coalescing, light undo, and no full visual/catalog refresh.
+
+Verification:
+- `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 60` passed.
+- Headed RTX 4080 SUPER:
+  - `teamedit_bound_pose_drag_frame_budget_probe`: `p95=2.09ms`, `max=2.09ms`, `catalog_delta=0`, `stats_delta=0`, `gpu_delta=0`, `full_undo_delta=0`, `apply=12`, `coalesced=36`.
+- New focused probes passed:
+  - `teamedit_pose_input_coalescing_probe`
+  - `pose_drag_light_undo_probe`
+  - `pose_drag_no_full_refresh_probe`
+- Pose correctness regressions passed:
+  - `pose_distal_limb_independent_probe`
+  - `pose_terminal_independent_probe`
+  - `pose_rotate_each_torso_port_no_torso_drift_probe`
+- General regressions passed:
+  - `teamedit_probe`
+  - `ui_layout_probe`
+  - `text_overflow_probe`
+
+Findings:
+- The real bound-pose hot layer was not catalog, stats, GPU, or UI writes. It was `_topology_apply_local_fk()` inside pose dragging. Replacing it with a session-local rigid subtree transform dropped the measured bound pose drag frame to about `2ms`.
+- If TeamEdit still feels sticky after this pass, the next target should be exact real-window input cadence or another unprofiled gesture, not the bound pose drag path.
+
+Sync:
+- Implemented in `E:\New project`; Documents and OneDrive mirrors should be refreshed from this source after verification.
+
+## 2026-05-23 Startup Fix and TeamEdit Drop Template Preload
+
+Rules:
+- A loading/preload task must never call a helper that is not already implemented. Parse errors are treated as release blockers because they prevent the game from opening.
+- TeamEdit catalog-to-board drop must use prewarmed placement templates. Loading should cover the actual raw catalog part indices used by drag/drop, not only the currently visible sorted card page.
+- Catalog-to-board drop is still an editor data operation, not a battle operation. It must not scan saved units, run training import, or call battle/GPU geometry.
+
+Implementation notes:
+- Fixed the immediate launch blocker by adding the missing placement-template cache helpers used by `teamedit_drop_templates`.
+- `teamedit_drop_templates` now prewarms all topology-capable raw catalog parts for the active role, so first drag/drop and first torso detail no longer produce post-loading resource misses.
+- Added `teamedit_placement_template_cache` plus hit/miss counters and `drop_template_miss` logging.
+- `_make_topology_node()` and fast board enrichment now reuse cached component nodes/effective geometry instead of recomputing renderer component metadata on the drop path.
+- `_set_pending_canvas_part()` no longer deep-copies `purchased_parts` on drag start; the actual slot-list write happens only at drop commit.
+- Added lightweight undo commands for common placement undo, keeping full blueprint snapshots for low-frequency large operations.
+
+Verification:
+- `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 60` passed after the parse fix.
+- `post_loading_real_interaction_miss_probe`: `misses=0`, `delta=0`, `log=[]`.
+- Headed `teamedit_drag_to_board_frame_budget_probe`: `catalog_delta=0`, `stats_delta=0`, `visual_delta=2`; remaining cumulative hot leaves are `drop.fast_board_diff`, `drop.make_node`, and `drop.component_template`.
+- Headed `teamedit_existing_node_drag_release_budget_probe`: `p95=0.25ms`, `catalog_delta=0`.
+- Headed `teamedit_bottom_buttons_frame_budget_probe`: `p95=1.81ms`, `catalog_delta=0`, `visual_delta=0`, `saved_scan_delta=0`.
+- `teamedit_no_combat_compute_on_board_probe`, `teamedit_probe`, `ui_layout_probe`, and `text_overflow_probe` passed.
+
+Findings:
+- The game-not-opening report was caused by a parse error from an unfinished helper, not by Godot or the desktop shortcut path.
+- Loading was present but not precise enough: the first real drop used a raw torso catalog index that the visible-page preload did not cover. Raw topology-part preload fixed that miss.
+- Current measured slow path is narrower than before: existing-node release and bottom buttons are light; the remaining catalog-to-board drop work is in retained component submission / new-node construction. The next modification should prebuild retained component items or defer the first component draw, instead of revisiting catalog, saved units, or GPU collision.
+
+Sync:
+- Implemented in `E:\New project`; Documents and OneDrive mirrors should be refreshed from this source after this repair pass.
+
+## 2026-05-23 Post-Loading First Interaction Miss Closure
+
+Rules:
+- `post_loading_miss_log` must be driven by real first interactions, not by empty counter probes. TeamEdit first-drag and first-open-detail are now covered by a real interaction probe.
+- A normal edit operation may create new topology, but it must not cause first-use resource misses for predictable UI shells. For TeamEdit, torso detail templates are page preload resources.
+- The post-loading sampler should track actual cache misses, not ordinary refresh calls. Torso detail now reports `torso_detail_miss` from the template/cache miss counter instead of raw refresh count.
+
+Implementation notes:
+- Added `teamedit_torso_detail_templates` to the TeamEdit Loading manifest. It prewarms all current torso detail templates from the torso catalog so opening the first newly placed torso can reuse the prepared detail shell.
+- Added `editor_torso_detail_template_cache` and `editor_torso_detail_cache_miss_count`. Empty/default torso details now use the cached template; missing templates are counted as a true post-loading miss.
+- Added `post_loading_real_interaction_miss_probe`, which enters TeamEdit through Loading, places a torso on the board, opens the torso detail panel, then checks `post_loading_miss_log`.
+- The concrete miss found before the fix was `torso_detail_miss` during `probe:first_open_torso_detail`; after adding the exact manifest key, the log is empty.
+
+Verification:
+- `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120` passed.
+- `post_loading_real_interaction_miss_probe`: `misses=0`, `delta=0`, `log=[]`.
+- Headed `post_loading_real_interaction_miss_probe` on RTX 4080 SUPER / Forward+ also returned `misses=0`, confirming preview/card render paths did not add first-interaction misses.
+- `teamedit_page_deep_preload_probe` passed and now asserts torso detail templates are warmed.
+- `loading_budget_duration_probe` passed.
+- `startup_deep_preload_probe` passed.
+- `teamedit_preload_cache_probe` passed.
+- `page_loading_transition_probe` passed.
+
+Next direction:
+- If first interaction still feels slow in the real window, inspect new `post_loading_miss_log` entries first. If it remains empty, the next target is not Loading; profile the interaction's hot scope directly, likely board diff/property writes or OS frame pacing.
+
+## 2026-05-23 Loading Budget Extension and First-Interaction Preload
+
+Rules:
+- Startup Loading may spend up to `20s` on global preload work. Page Loading may spend up to `10s` on page-local first-interaction preload work.
+- Loading is not allowed to empty-wait. It finishes early when essential and first-interaction critical work is complete, after the minimum visible interval.
+- Loading may defer non-critical optional work to the post-page idle queue; interaction frames pause optional preview baking.
+- After each Loading transition, the first three real interactions are watched for cache misses: preview/card texture miss, board rebuild, torso detail rebuild, GPU buffer recreate, and saved-unit disk scan.
+
+Implementation notes:
+- `LoadingController` now tracks max duration, minimum visible time, first-interaction-critical tasks, optional idle tasks, and forced finish counts.
+- `main.gd` now configures `20.0s / 2.0s` startup Loading and `10.0s / 0.75s` page Loading, with deferred idle-task draining outside the Loading state.
+- Startup preload now warms global assets, catalog indices, common preview/card textures, GPU pipeline setup, and saved-unit summaries.
+- TeamEdit preload now warms current and adjacent catalog card bodies, drag preview assets, board visual cache, socket candidate cache, Dashboard stats, and the torso-detail path.
+- Saved Units preload now warms first-page stats/illegal details; Settings prebuilds all four settings subpages; Battle preload now prewarms GPU collision/query buffers and VFX pool.
+- `GpuCollisionPipeline.prewarm_capacity()` was added so battle Loading can allocate collider/candidate/response/query buffers before the first physics tick.
+- Added `post_loading_miss_log` and counters so the next pass can move any first-interaction miss directly into the appropriate manifest.
+
+Verification:
+- `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120` passed.
+- New probes passed:
+  - `loading_budget_duration_probe`
+  - `startup_deep_preload_probe`
+  - `teamedit_page_deep_preload_probe`
+  - `battle_loading_gpu_capacity_probe`
+  - `post_loading_first_interaction_miss_probe`
+- Existing Loading/preload probes passed:
+  - `startup_loading_stage_probe`
+  - `page_loading_transition_probe`
+  - `teamedit_preload_cache_probe`
+  - `saved_units_preload_probe`
+  - `battle_preload_gpu_probe`
+  - `loading_budget_probe`
+- Regressions passed:
+  - `teamedit_probe`
+  - `combat_probe`
+  - `ui_layout_probe`
+  - `text_overflow_probe`
+
+Findings:
+- The longer Loading stage is now real preload work, not an empty delay. It warms the currently predicted first-interaction resources and records any missed key after page entry.
+- UI layout probes had to disable automatic Loading transitions because their purpose is direct page layout scanning, not page transition timing.
+- If the game still stalls after Loading, the next action is to inspect `post_loading_miss_log` for the missing resource key instead of adding broad GPU or cache work.
+
+Sync:
+- Implemented in `E:\New project`; Documents and OneDrive mirrors should be refreshed from this source after verification.
+
+## 2026-05-23 Startup and Page Loading / Preload Stage
+
+Rules:
+- Opening the game and entering major subwindows must go through a visible Loading stage in real headed play. Headless probes keep direct page entry by default so existing regression probes can keep calling `_show_editor()` and friends synchronously.
+- Loading is page-level only. Hover, small popups, slider drags, and button microstates must not trigger a page preload.
+- Loading tasks use a per-frame budget. Essential tasks finish before the target page appears; optional preview/card prewarming can continue through the existing idle queues after entry.
+
+Implementation notes:
+- Added `scripts/controllers/loading_controller.gd` and wired it into `main.gd` beside the existing state/dirty/profiler controllers.
+- Added `STATE_LOADING`, `loading_layer`, a compact Loading overlay, `queue_loading_transition()`, `register_loading_task()`, and `tick_loading_tasks()`.
+- Real-window transitions for menu, TeamEdit, saved units, settings, Scout/training config, and battle now queue loading tasks before applying the target page. The completion callback re-enters the original page function with a `preloaded=true` guard to avoid recursion.
+- Added preload entry points:
+  - `preload_menu_content()`
+  - `preload_teamedit_content()`
+  - `preload_saved_units_content()`
+  - `preload_settings_content()`
+  - `preload_scout_content()`
+  - `preload_battle_content(mode)`
+- TeamEdit preload warms catalog entries/page models, preview/card-body texture requests, board visual cache, and Dashboard stats. Saved Units preload validates the saved-unit summary cache and current page stats/illegal notes. Battle preload initializes GPU availability, starter unit stats, and HUD resources.
+- Loading progress and task timing are recorded through `HotPathProfiler`; `GameStateStore`/`DirtyGraph` are marked during loading transitions.
+
+Verification:
+- `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120` passed.
+- New loading probes passed:
+  - `startup_loading_stage_probe`
+  - `page_loading_transition_probe`
+  - `teamedit_preload_cache_probe`
+  - `saved_units_preload_probe`
+  - `battle_preload_gpu_probe`
+  - `loading_budget_probe`
+- Core regressions passed:
+  - `teamedit_probe`
+  - `combat_probe`
+
+Findings:
+- The new Loading layer does not fix an arbitrary hot path by itself; it prevents page entry from paying first-use costs on the first click or hover. Remaining true interaction stutter should still be handled by the hot-path profiler at the exact interaction scope.
+- Headless keeps synchronous page entry because many existing probes instantiate the scene and immediately call page functions. New Loading probes explicitly enable `loading_auto_transitions_enabled` to test the loading path.
+
+Sync:
+- Implemented in `E:\New project`; Documents and OneDrive mirrors should be refreshed from this source after final verification.
+
+## 2026-05-23 TeamEdit Existing-Node Drag, Size Badge, and Video Mode Settings
+
+Rules:
+- Dragging an already placed TeamEdit node, releasing a rigid selected island, manually unlinking, or committing a pose must not refresh catalog cards, scan saved units, run training import checks, or submit battle/GPU geometry queries.
+- Magnetic socket search for existing nodes is split into a low-frequency drag candidate cache and a release-time consumer. Release should not start a fresh whole-topology search when a recent candidate is available.
+- Catalog size and volume badges are a lightweight overlay. They must be drawn independently of retained card body textures, preview texture misses, selected/pulse state, hover previews, or drag ghosts.
+- Video settings now own display mode/window size. Windowed, borderless fullscreen, and fullscreen apply immediately and persist through `user://performance_settings.json`.
+
+Implementation notes:
+- Added cached socket candidate state plus `_queue_board_socket_candidate_update()` and `_consume_cached_board_socket_candidate()`. Drag motion refreshes candidates only after movement/time thresholds; release consumes the cache.
+- Existing node release, manual unlink, pose commit, and rigid drag finish now use fast board diffs and defer full stats/legal/dashboard recomputation to idle. Immediate work is limited to board visuals, hints, and action-button state.
+- `_finish_rigid_topology_drag()` accepts a light release path so rigid island/whole-unit moves skip the full topology gap scan.
+- Retained catalog cards and hover/preview icons now use `PartArt.normalized_size_tier()` for size/volume badges, covering ammo, engine, cooling, thruster, module, and normal volume parts consistently.
+- Added video settings rows for `显示模式 / Display Mode` and `窗口大小 / Window Size`, with helpers `_apply_display_mode_setting()`, `_cycle_display_mode_setting()`, and `_cycle_window_size_setting()`.
+
+Verification:
+- `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120` passed.
+- New probes passed:
+  - `teamedit_existing_node_drag_release_budget_probe`: `p95=1.89ms`, `max=1.89ms`, `catalog_delta=0`, `stats_delta=0`, `socket_updates=4`, `socket_hits=1`.
+  - `teamedit_manual_connect_unlink_budget_probe`: `p95=1.92ms`, `max=1.92ms`, `catalog_delta=0`, `gpu_delta=0`.
+  - `teamedit_pose_commit_budget_probe`: `p95=1.97ms`, `max=1.97ms`, `catalog_delta=0`, `gpu_delta=0`.
+  - `catalog_card_size_badge_probe`: all sampled catalog/hover/preview paths produced badges.
+  - `video_display_mode_settings_probe`: video rows exist and apply windowed/borderless/fullscreen settings.
+- Regressions passed:
+  - `teamedit_drag_to_board_frame_budget_probe`
+  - `catalog_card_page_swap_budget_probe`
+  - `teamedit_bottom_buttons_frame_budget_probe`
+  - `teamedit_no_combat_compute_on_board_probe`
+  - `teamedit_probe`
+  - `combat_probe`
+  - `ui_layout_probe`
+  - `text_overflow_probe`
+
+Findings:
+- The concrete remaining slow chain the player described was not the catalog page renderer anymore. It was existing-node release and unlink/pose commit still marking Dashboard/stat domains for immediate recomputation. Removing that immediate Dashboard dirty from the click frame reduced these probes from roughly 8-13ms to roughly 2ms.
+- If the real window still feels slow, the next probe should focus on OS/window frame pacing and actual pointer event frequency in fullscreen vs windowed, plus any unprofiled path in the exact gesture that still feels delayed.
+
+Sync:
+- Implemented in `E:\New project`; Documents and OneDrive mirrors should be refreshed from this source after commit.
+
 ## 2026-05-23 TeamEdit Board Assembly and Bottom Button Hot Path Cut
 
 Rules:
