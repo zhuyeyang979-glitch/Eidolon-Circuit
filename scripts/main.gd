@@ -4590,6 +4590,7 @@ class AssemblyBoardRenderComponentItem:
 	var view
 	var node_index := -1
 	var item_signature := ""
+	var placeholder_mode := false
 	var redraw_count := 0
 
 	func configure(next_view, next_node_index: int) -> void:
@@ -4601,12 +4602,24 @@ class AssemblyBoardRenderComponentItem:
 		if next_signature == item_signature:
 			return false
 		item_signature = next_signature
+		placeholder_mode = false
+		queue_redraw()
+		return true
+
+	func submit_placeholder(next_signature: String) -> bool:
+		if next_signature == item_signature and placeholder_mode:
+			return false
+		item_signature = next_signature
+		placeholder_mode = true
 		queue_redraw()
 		return true
 
 	func _draw() -> void:
 		redraw_count += 1
 		if view == null:
+			return
+		if placeholder_mode:
+			view._retained_draw_custom_component_placeholder(self, node_index)
 			return
 		view._retained_draw_custom_component(self, node_index)
 
@@ -4686,6 +4699,8 @@ class AssemblyBoardView:
 	var retained_component_remove_count := 0
 	var retained_component_defer_count := 0
 	var retained_component_deferred_flush_count := 0
+	var retained_component_placeholder_count := 0
+	var retained_component_body_submit_count := 0
 	var retained_deferred_component_indices: Array = []
 	var retained_edge_update_count := 0
 	var retained_edge_noop_count := 0
@@ -4791,10 +4806,32 @@ class AssemblyBoardView:
 		board_snapshot["revision_key"] = revision_key
 		last_board_signature = revision_key
 		if defer_draw:
-			_defer_retained_components([node_index])
+			append_component_placeholder(node_index, revision_key)
 		else:
 			_submit_retained_components_for_indices([node_index])
 		custom_retained_root_redraw_skip_count += 1
+
+	func append_component_placeholder(node_index: int, revision_key: String = "") -> void:
+		_ensure_retained_render_layer()
+		var nodes: Array = board_snapshot.get("nodes", [])
+		if node_index < 0 or node_index >= nodes.size():
+			return
+		var item: AssemblyBoardRenderComponentItem = retained_component_items.get(node_index, null)
+		if item == null:
+			item = AssemblyBoardRenderComponentItem.new()
+			item.name = "Component_%d" % node_index
+			item.configure(self, node_index)
+			retained_component_items[node_index] = item
+			if retained_component_layer != null:
+				retained_component_layer.add_child(item)
+		item.position = Vector2.ZERO
+		item.size = size
+		var signature := "placeholder|%s|%d|%s" % [revision_key, node_index, _retained_component_signature(node_index)]
+		if item.submit_placeholder(signature):
+			retained_component_placeholder_count += 1
+		else:
+			retained_component_noop_count += 1
+		_defer_retained_components([node_index])
 
 	func _notification(what: int) -> void:
 		if what == NOTIFICATION_RESIZED:
@@ -5137,6 +5174,7 @@ class AssemblyBoardView:
 			var signature := _retained_component_signature(i)
 			if item.submit(signature):
 				retained_component_update_count += 1
+				retained_component_body_submit_count += 1
 			else:
 				retained_component_noop_count += 1
 
@@ -5148,6 +5186,9 @@ class AssemblyBoardView:
 			if not retained_deferred_component_indices.has(i):
 				retained_deferred_component_indices.append(i)
 				retained_component_defer_count += 1
+
+	func queue_retained_component_body_submit(node_index: int) -> void:
+		_defer_retained_components([node_index])
 
 	func flush_deferred_retained_components(max_items: int = 2) -> int:
 		if retained_deferred_component_indices.is_empty():
@@ -5694,6 +5735,22 @@ class AssemblyBoardView:
 		canvas.draw_string(ThemeDB.get_fallback_font(), center + Vector2(-36.0, -physical_radius - 8.0), label, HORIZONTAL_ALIGNMENT_CENTER, 72.0, 10, Color(0.78, 0.9, 1.0, 0.76))
 		if bool(board_snapshot.get("show_node_numbers", false)):
 			canvas.draw_string(ThemeDB.get_fallback_font(), center + Vector2(-8.0, 5.0), str(node_index + 1), HORIZONTAL_ALIGNMENT_CENTER, 16.0, 10, Color(0.02, 0.03, 0.04, 0.42))
+
+	func _retained_draw_custom_component_placeholder(canvas: CanvasItem, node_index: int) -> void:
+		var nodes: Array = board_snapshot.get("nodes", [])
+		if node_index < 0 or node_index >= nodes.size():
+			return
+		var node: Dictionary = nodes[node_index]
+		var center := _custom_node_pos(node)
+		var radius := clampf(_node_visual_radius(node), 10.0, 36.0)
+		var color := _node_material_color(node)
+		canvas.draw_circle(center, radius * 0.72, Color(color.r, color.g, color.b, 0.18))
+		canvas.draw_arc(center, radius, 0.0, TAU, 24, Color(color.r, color.g, color.b, 0.72), 1.8)
+		var axis := Vector2.RIGHT.rotated(float(node.get("axis_angle", node.get("angle", 0.0))))
+		if axis.length() < 0.01:
+			axis = Vector2.RIGHT
+		axis = axis.normalized()
+		canvas.draw_line(center - axis * radius * 0.8, center + axis * radius * 0.8, Color(color.r, color.g, color.b, 0.58), 1.4)
 
 	func _retained_draw_custom_selection(canvas: CanvasItem) -> void:
 		if not bool(board_snapshot.get("selection_box_active", false)):
@@ -8670,6 +8727,8 @@ var editor_canvas_motion_phase := 0.0
 var editor_visual_pulse_accumulator := 0.0
 var editor_part_group_mode := "muscle"
 var editor_part_filter_mode := "terminal"
+var editor_weapon_filter_group := "all"
+var editor_weapon_filter_subtype := "all"
 var editor_catalog_sort_key := "cost"
 var editor_catalog_sort_ascending := true
 var editor_catalog_raw_cache := {}
@@ -8678,6 +8737,7 @@ var editor_catalog_sort_keys_cache := {}
 var editor_catalog_card_model_cache := {}
 var editor_catalog_page_model_cache := {}
 var editor_load_entry_stats_cache := {}
+var runtime_catalog_cache := {}
 var editor_catalog_cache_hit_count := 0
 var editor_catalog_cache_miss_count := 0
 var editor_hover_preview_refresh_count := 0
@@ -17813,6 +17873,14 @@ func _prewarm_placement_template(slot_key: String, part_index: int, part: Dictio
 	return true
 
 
+func prewarm_retained_component_shell(slot_key: String, part_index: int) -> bool:
+	var role_key: String = ROLE_ORDER[editor_role_index]
+	var part := _selected_component(role_key, slot_key, part_index)
+	if part.is_empty():
+		return false
+	return _prewarm_placement_template(slot_key, part_index, part)
+
+
 func _placement_template_for_part(slot_key: String, part_index: int, count_miss: bool = true) -> Dictionary:
 	if part_index < 0:
 		return {}
@@ -20287,6 +20355,8 @@ func _select_editor_slot(slot_index: int) -> void:
 	editor_slot_index = clampi(slot_index, 0, BUILD_SLOTS.size() - 1)
 	editor_part_group_mode = _part_group_for_slot(String(BUILD_SLOTS[editor_slot_index]))
 	editor_part_filter_mode = _default_filter_for_slot(String(BUILD_SLOTS[editor_slot_index]))
+	editor_weapon_filter_group = "all"
+	editor_weapon_filter_subtype = "all"
 	editor_catalog_page = 0
 	_invalidate_editor_catalog_cache()
 	_clear_editor_hover_card()
@@ -20297,6 +20367,8 @@ func _select_editor_part_group(group_key: String) -> void:
 	if not EDITOR_PART_GROUP_SLOTS.has(group_key):
 		return
 	editor_part_group_mode = group_key
+	editor_weapon_filter_group = "all"
+	editor_weapon_filter_subtype = "all"
 	editor_sort_menu_open = false
 	_invalidate_editor_catalog_cache()
 	var filter_options := _part_filter_options_for_group(group_key)
@@ -20322,6 +20394,12 @@ func _select_editor_part_filter(filter_index: int) -> void:
 		return
 	var option: Dictionary = filter_options[filter_index]
 	editor_part_filter_mode = String(option.get("key", "all"))
+	if editor_part_group_mode == "terminal_weapon":
+		editor_weapon_filter_group = String(option.get("weapon_group", editor_weapon_filter_group))
+		editor_weapon_filter_subtype = String(option.get("weapon_subtype", "all"))
+	else:
+		editor_weapon_filter_group = "all"
+		editor_weapon_filter_subtype = "all"
 	editor_slot_index = BUILD_SLOTS.find(_primary_slot_from_filter_option(option, String(BUILD_SLOTS[editor_slot_index])))
 	if editor_slot_index < 0:
 		editor_slot_index = 0
@@ -20399,7 +20477,7 @@ func _preferred_filter_for_part_group(group_key: String) -> String:
 		"limb":
 			return "connector_limb"
 		"terminal_weapon":
-			return "terminal"
+			return "weapon_all"
 		"barrier_panel":
 			return "barrier_muscle"
 		"software_muscle":
@@ -20428,30 +20506,28 @@ func _part_filter_options_for_group(group_key: String) -> Array:
 			{"key": "connector_limb", "slot": "limb_muscle", "zh": "连接肢体", "en": "LIMB"},
 		]
 	if group_key == "terminal_weapon":
-		return [
-			{"key": "terminal", "slot": "muscle", "zh": "全部", "en": "ALL"},
-			{"key": "terminal_melee", "slot": "muscle", "zh": "近战", "en": "MELEE"},
-			{"key": "terminal_ranged", "slot": "muscle", "zh": "远程", "en": "RANGED"},
-			{"key": "weapon_blade", "slot": "muscle", "zh": "斩击", "en": "BLADE"},
-			{"key": "weapon_blunt", "slot": "muscle", "zh": "钝击", "en": "BLUNT"},
-			{"key": "weapon_pierce", "slot": "muscle", "zh": "戳刺", "en": "PIERCE"},
-			{"key": "weapon_scythe", "slot": "muscle", "zh": "镰刀", "en": "SCY"},
-			{"key": "weapon_katana", "slot": "muscle", "zh": "武士刀", "en": "KAT"},
-			{"key": "weapon_greatsword", "slot": "muscle", "zh": "巨剑", "en": "GSWD"},
-			{"key": "weapon_gauntlet", "slot": "muscle", "zh": "拳套", "en": "GNT"},
-			{"key": "weapon_shield", "slot": "muscle", "zh": "盾牌", "en": "SHD"},
-			{"key": "weapon_hammer", "slot": "muscle", "zh": "锤", "en": "HAM"},
-			{"key": "weapon_lance", "slot": "muscle", "zh": "长枪", "en": "LNC"},
-			{"key": "weapon_rapier", "slot": "muscle", "zh": "细剑", "en": "RPR"},
-			{"key": "weapon_drill", "slot": "muscle", "zh": "钻头", "en": "DRL"},
-			{"key": "gun_sniper", "slot": "muscle", "zh": "狙击", "en": "SNP"},
-			{"key": "gun_rifle", "slot": "muscle", "zh": "来复", "en": "RFL"},
-			{"key": "gun_laser_gun", "slot": "muscle", "zh": "激光", "en": "LSR"},
-			{"key": "gun_sprayer", "slot": "muscle", "zh": "喷射", "en": "SPR"},
-			{"key": "gun_grenade_launcher", "slot": "muscle", "zh": "榴弹", "en": "GRN"},
-			{"key": "gun_missile_launcher", "slot": "muscle", "zh": "导弹", "en": "MSL"},
-			{"key": "gun_web", "slot": "muscle", "zh": "蛛丝", "en": "WEB"},
+		var options := [
+			{"key": "weapon_all", "slot": "muscle", "weapon_group": "all", "weapon_subtype": "all", "zh": "全部", "en": "ALL"},
+			{"key": "weapon_melee", "slot": "muscle", "weapon_group": "melee", "weapon_subtype": "all", "zh": "近战", "en": "MELEE"},
+			{"key": "weapon_gun", "slot": "muscle", "weapon_group": "gun", "weapon_subtype": "all", "zh": "枪械", "en": "GUN"},
 		]
+		if editor_weapon_filter_group == "melee":
+			options.append_array([
+				{"key": "weapon_blade", "slot": "muscle", "weapon_group": "melee", "weapon_subtype": "blade", "zh": "斩击", "en": "BLADE"},
+				{"key": "weapon_blunt", "slot": "muscle", "weapon_group": "melee", "weapon_subtype": "blunt", "zh": "钝击", "en": "BLUNT"},
+				{"key": "weapon_pierce", "slot": "muscle", "weapon_group": "melee", "weapon_subtype": "pierce", "zh": "戳刺", "en": "PIERCE"},
+			])
+		elif editor_weapon_filter_group == "gun":
+			options.append_array([
+				{"key": "gun_sniper", "slot": "muscle", "weapon_group": "gun", "weapon_subtype": "sniper", "zh": "狙击", "en": "SNP"},
+				{"key": "gun_rifle", "slot": "muscle", "weapon_group": "gun", "weapon_subtype": "rifle", "zh": "来复", "en": "RFL"},
+				{"key": "gun_laser_gun", "slot": "muscle", "weapon_group": "gun", "weapon_subtype": "laser_gun", "zh": "激光", "en": "LSR"},
+				{"key": "gun_sprayer", "slot": "muscle", "weapon_group": "gun", "weapon_subtype": "sprayer", "zh": "喷射", "en": "SPR"},
+				{"key": "gun_grenade_launcher", "slot": "muscle", "weapon_group": "gun", "weapon_subtype": "grenade_launcher", "zh": "榴弹", "en": "GRN"},
+				{"key": "gun_missile_launcher", "slot": "muscle", "weapon_group": "gun", "weapon_subtype": "missile_launcher", "zh": "导弹", "en": "MSL"},
+				{"key": "gun_web", "slot": "muscle", "weapon_group": "gun", "weapon_subtype": "web", "zh": "蛛丝", "en": "WEB"},
+			])
+		return options
 	if group_key == "barrier_panel":
 		return [
 			{"key": "barrier_muscle", "slots": ["limb_muscle", "muscle"], "zh": "连接-结界", "en": "C-BAR"},
@@ -20502,7 +20578,7 @@ func _primary_slot_from_filter_option(option: Dictionary, fallback_slot: String)
 func _default_filter_for_slot(slot_key: String) -> String:
 	match slot_key:
 		"muscle":
-			return "terminal"
+			return "weapon_all"
 		"limb_muscle":
 			return "connector_limb"
 		"booster":
@@ -22251,7 +22327,7 @@ func _tick_editor_visuals(delta: float) -> void:
 	elif editor_save_unit_feedback_label != null and editor_save_unit_feedback_label.visible:
 		editor_save_unit_feedback_label.visible = false
 	if preview_budget > 0 and assembly_board_view != null:
-		var flushed_components := assembly_board_view.flush_deferred_retained_components(2)
+		var flushed_components := assembly_board_view.flush_deferred_retained_components(1)
 		if hot_path_profiler != null and flushed_components > 0:
 			hot_path_profiler.record_value("teamedit.retained_component_deferred_flush", flushed_components)
 	if preview_budget > 0 and not editor_deferred_sfx_queue.is_empty():
@@ -37337,11 +37413,30 @@ func _gun_family_label(part: Dictionary, zh: bool) -> String:
 	return "远程" if zh else "Ranged"
 
 
+func _gun_family_short_label(part: Dictionary, zh: bool) -> String:
+	match _gun_family_for_part(part):
+		"sniper":
+			return "狙击" if zh else "SNP"
+		"rifle":
+			return "来复" if zh else "RFL"
+		"laser_gun":
+			return "激光" if zh else "LSR"
+		"sprayer":
+			return "喷射" if zh else "SPR"
+		"grenade_launcher":
+			return "榴弹" if zh else "GRN"
+		"missile_launcher":
+			return "导弹" if zh else "MSL"
+		"web", "web_gun", "web_tether":
+			return "蛛丝" if zh else "WEB"
+	return "枪械" if zh else "GUN"
+
+
 func _terminal_weapon_category_path(part: Dictionary, slot_key: String, zh: bool) -> String:
 	if slot_key != "muscle" or _terminal_weapon_kind_for_part(part, slot_key) == "":
 		return ""
 	if _part_is_ranged_terminal_weapon(part):
-		return "武器 > 远程 > %s" % _gun_family_label(part, zh) if zh else "Weapon > Ranged > %s" % _gun_family_label(part, zh)
+		return "武器 > 枪械 > %s" % _gun_family_label(part, zh) if zh else "Weapon > Gun > %s" % _gun_family_label(part, zh)
 	if _component_is_blade_weapon(part):
 		return "武器 > 近战 > 斩击 > %s" % _terminal_weapon_family_label(part, zh) if zh else "Weapon > Melee > Blade > %s" % _terminal_weapon_family_label(part, zh)
 	if _component_is_blunt_weapon(part):
@@ -37353,14 +37448,13 @@ func _terminal_weapon_category_path(part: Dictionary, slot_key: String, zh: bool
 
 func _terminal_weapon_short_category(part: Dictionary, zh: bool) -> String:
 	if _part_is_ranged_terminal_weapon(part):
-		return ("远程/%s" if zh else "RNG/%s") % _gun_family_label(part, zh)
-	var family := _terminal_weapon_family_label(part, zh)
+		return ("枪械>%s" if zh else "GUN>%s") % _gun_family_short_label(part, zh)
 	if _component_is_blade_weapon(part):
-		return ("斩击/%s" if zh else "BLD/%s") % family
+		return ("近战>斩击" if zh else "MEL>BLADE")
 	if _component_is_blunt_weapon(part):
-		return ("钝击/%s" if zh else "BLT/%s") % family
+		return ("近战>钝击" if zh else "MEL>BLUNT")
 	if _component_is_pierce_weapon(part):
-		return ("戳刺/%s" if zh else "PCE/%s") % family
+		return ("近战>戳刺" if zh else "MEL>PIERCE")
 	return "近战" if zh else "MELEE"
 
 
@@ -39562,6 +39656,9 @@ func _append_unique_catalog_parts(target: Array, source: Array, seen: Dictionary
 
 
 func _catalog_for(role_key: String, slot_key: String) -> Array:
+	var cache_key := "%s|%s" % [role_key, slot_key]
+	if runtime_catalog_cache.has(cache_key):
+		return Array(runtime_catalog_cache[cache_key])
 	if slot_key == "special":
 		var special_catalog: Array = []
 		var seen := {}
@@ -39572,12 +39669,14 @@ func _catalog_for(role_key: String, slot_key: String) -> Array:
 				continue
 			_append_unique_catalog_parts(special_catalog, SPECIAL_CATALOG.get(String(other_role), []), seen, slot_key)
 			_append_unique_catalog_parts(special_catalog, STYLE_SPECIAL_CATALOG.get(String(other_role), []), seen, slot_key)
-		return special_catalog
+		runtime_catalog_cache[cache_key] = special_catalog
+		return Array(special_catalog)
 	var common_catalog: Array = []
 	var seen_common := {}
 	_append_unique_catalog_parts(common_catalog, COMMON_CATALOG.get(slot_key, []), seen_common, slot_key)
 	_append_unique_catalog_parts(common_catalog, STYLE_COMMON_CATALOG.get(slot_key, []), seen_common, slot_key)
-	return common_catalog
+	runtime_catalog_cache[cache_key] = common_catalog
+	return Array(common_catalog)
 
 
 func _component_index_by_name(role_key: String, slot_key: String, component_name: String, fallback: int = 0) -> int:
@@ -42548,9 +42647,9 @@ func _apply_editor_panel_visibility(role_key: String, unit_bp: Dictionary) -> vo
 		if filter_visible:
 			var filter_option: Dictionary = filter_options[i]
 			var filter_key := String(filter_option.get("key", "all"))
-			var filter_columns := 4 if editor_part_group_mode == "terminal_weapon" else 3
-			var filter_width := 64.0 if editor_part_group_mode == "terminal_weapon" else 84.0
-			var filter_step_x := 68.0 if editor_part_group_mode == "terminal_weapon" else 90.0
+			var filter_columns := 5 if editor_part_group_mode == "terminal_weapon" else 3
+			var filter_width := 52.0 if editor_part_group_mode == "terminal_weapon" else 84.0
+			var filter_step_x := 56.0 if editor_part_group_mode == "terminal_weapon" else 90.0
 			var filter_step_y := 24.0 if editor_part_group_mode == "terminal_weapon" else 26.0
 			_set_control_position_if_changed(filter_button, Vector2(936.0 + float(i % filter_columns) * filter_step_x, 204.0 + float(floori(float(i) / float(filter_columns))) * filter_step_y))
 			_set_control_size_if_changed(filter_button, Vector2(filter_width, 22.0))
@@ -43173,11 +43272,11 @@ func _editor_catalog_cache_source_signature(role_key: String, slot_key: String) 
 
 
 func _editor_catalog_raw_cache_key(role_key: String, slot_key: String) -> String:
-	return "%s|%s|%s|%s|%s" % [role_key, slot_key, editor_part_group_mode, editor_part_filter_mode, _editor_catalog_cache_source_signature(role_key, slot_key)]
+	return "%s|%s|%s|%s|%s|%s|%s" % [role_key, slot_key, editor_part_group_mode, editor_part_filter_mode, editor_weapon_filter_group, editor_weapon_filter_subtype, _editor_catalog_cache_source_signature(role_key, slot_key)]
 
 
 func _editor_catalog_entries_cache_key(role_key: String, slot_key: String) -> String:
-	return "%s|%s|%s|%s|%s|%s|%s" % [role_key, slot_key, editor_part_group_mode, editor_part_filter_mode, editor_catalog_sort_key, str(editor_catalog_sort_ascending), _editor_catalog_cache_source_signature(role_key, slot_key)]
+	return "%s|%s|%s|%s|%s|%s|%s|%s|%s" % [role_key, slot_key, editor_part_group_mode, editor_part_filter_mode, editor_weapon_filter_group, editor_weapon_filter_subtype, editor_catalog_sort_key, str(editor_catalog_sort_ascending), _editor_catalog_cache_source_signature(role_key, slot_key)]
 
 
 func _invalidate_editor_catalog_cache() -> void:
@@ -43374,11 +43473,11 @@ func _editor_catalog_part_passes_filter(slot_key: String, part: Dictionary) -> b
 		var terminal_kind := _terminal_weapon_kind_for_part(part, "muscle") if terminal_candidate else ""
 		var terminal_melee := terminal_candidate and terminal_kind == "melee" and damage_type in ["blunt", "pierce", "tear", "explosive"]
 		match filter_key:
-			"terminal":
+			"terminal", "weapon_all":
 				return terminal_candidate
-			"terminal_ranged":
+			"terminal_ranged", "weapon_gun":
 				return terminal_candidate and terminal_kind == "ranged"
-			"terminal_melee":
+			"terminal_melee", "weapon_melee":
 				return terminal_melee
 			"weapon_blade":
 				return terminal_melee and _component_is_blade_weapon(part)
@@ -43590,11 +43689,12 @@ func _update_editor_catalog_buttons(role_key: String, unit_bp: Dictionary) -> vo
 	var page_start := editor_catalog_page * page_size
 	var page_end := mini(entries.size(), page_start + page_size)
 	var page_selection_key := _editor_catalog_page_selection_key(unit_bp, role_key, entries.slice(page_start, page_end))
-	var revision_key := "%s|%s|%s|%s|%s|%d|%d|%d|%d" % [
+	var revision_key := "%s|%s|%s|%s|%s|%s|%d|%d|%d|%d" % [
 		role_key,
 		slot_key,
 		editor_part_group_mode,
 		editor_part_filter_mode,
+		editor_weapon_filter_group + ":" + editor_weapon_filter_subtype,
 		editor_catalog_sort_key,
 		1 if editor_catalog_sort_ascending else 0,
 		editor_catalog_page,

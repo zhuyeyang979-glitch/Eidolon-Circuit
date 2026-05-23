@@ -3144,6 +3144,44 @@ Findings:
 Sync:
 - Implemented in `E:\New project`; mirror sync and local commit recorded by the surrounding Git history.
 
+## 2026-05-23 Real Gesture Matrix, Deferred Retained Component Draw, and Weapon Submenus
+
+Rules:
+- Future TeamEdit performance changes must be gated by the headed `performance_profile_4080s_probe` real gesture matrix. Counter-only probes are supporting checks, not proof of smoothness.
+- Dropping a new part onto the board may create a retained component shell on the release frame, but the full component body draw/submit must be deferred to idle work. The release frame must not refresh catalog cards, scan saved units, recompute battle geometry, or submit GPU queries.
+- Catalog weapon filtering is now a compact submenu: `all / melee / gun`, with melee subtypes `blade / blunt / pierce` and gun subtypes `sniper / rifle / laser / sprayer / grenade / missile / web`.
+
+Implementation notes:
+- Added retained component placeholders for newly appended board nodes. `apply_component_node_diff(..., defer_draw=true)` now creates a cheap shell/outline and queues the full body for deferred flush.
+- Deferred retained component flush now processes one component per idle visual tick instead of two, avoiding clustered first-draw spikes after a sequence of drops.
+- Added runtime catalog caching in `_catalog_for(role, slot)`. This was the real drag-to-board hot path: each drop was rebuilding and normalizing the static COMMON/STYLE catalog before even creating the node.
+- Added `prewarm_retained_component_shell()` and focused probes for deferred first draw and no body submit on release.
+- Reworked the weapon catalog filter options into a compact submenu and shortened card category text to `近战>斩击`, `近战>钝击`, `近战>戳刺`, or `枪械>喷射` style labels. Full category paths remain in hover/details.
+
+Verification:
+- `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120` passed.
+- Headed RTX 4080 SUPER real gesture matrix:
+  - `performance_profile_4080s_probe`: catalog click/page `p95=1.10ms`, drag-to-board `p95=0.96ms`, existing node release `p95=0.26ms`, manual unlink `p95=0.30ms`, bottom buttons `p95=0.79ms`, bound pose drag `p95=0.41ms`, saved units `p95=0.43ms`, battle tick `p95=0.11ms`.
+  - `teamedit_drag_to_board_frame_budget_probe -Headed`: `p95=0.96ms`, `max=0.96ms`, `catalog_delta=0`, `stats_delta=0`, `visual_delta=0`.
+- New probes passed:
+  - `retained_component_deferred_first_draw_probe`
+  - `teamedit_drop_no_component_submit_on_release_probe`
+  - `weapon_catalog_submenu_probe`
+  - `weapon_catalog_text_overlap_probe`
+  - `catalog_card_size_badge_probe`
+- Regressions passed:
+  - `teamedit_probe`
+  - `combat_probe`
+  - `ui_layout_probe`
+  - `text_overflow_probe`
+
+Findings:
+- The slow drag-to-board feel was not GPU, board rendering, or Loading misses. It was static catalog reconstruction on placement. Runtime catalog caching dropped the measured drag-to-board p95 from roughly `12.7ms` to `0.96ms`.
+- The next modification direction, if the player still feels stutter, should be the first hot scope from the real gesture matrix only. Current matrix no longer points at catalog cards, board retained rendering, saved units, GPU readback, or pose drag.
+
+Sync:
+- Implemented in `E:\New project`; Documents and OneDrive mirrors should be refreshed from this source after commit.
+
 ## 2026-05-23 Real Gesture Profiler and Dirty Probe Consolidation
 
 Rules:
