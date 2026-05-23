@@ -4553,6 +4553,196 @@ class EngineMomentumAllocationPanelView:
 		return value.substr(0, maxi(1, max_chars - 1)) + "."
 
 
+class UnitEditorPowerTopbarView:
+	extends Control
+
+	signal allocation_changed(entry_id: String, ratio: float)
+	signal allocation_drag_finished(entry_id: String)
+	signal open_requested()
+
+	var ui_language := "zh"
+	var title := ""
+	var subtitle := ""
+	var engine_output := 0.0
+	var used_ratio := 0.0
+	var entries: Array = []
+	var empty_note := ""
+	var dragging_entry_id := ""
+	var last_signature := ""
+	var last_emitted_ratios := {}
+
+	func set_empty(note: String, next_language: String) -> void:
+		var signature := "empty|%s|%s" % [next_language, note]
+		if signature == last_signature:
+			return
+		last_signature = signature
+		ui_language = next_language
+		title = _label("动力分配", "POWER SPLIT")
+		subtitle = ""
+		engine_output = 0.0
+		used_ratio = 0.0
+		entries = []
+		empty_note = note
+		visible = true
+		queue_redraw()
+
+	func set_allocation_data(next_data: Dictionary, next_language: String) -> void:
+		var next_entries := Array(next_data.get("entries", []))
+		var signature := "%s|%s|%s|%.2f|%.3f|%s" % [
+			next_language,
+			String(next_data.get("title", "")),
+			String(next_data.get("subtitle", "")),
+			float(next_data.get("engine_output", 0.0)),
+			float(next_data.get("used_ratio", 0.0)),
+			_entries_signature(next_entries),
+		]
+		if signature == last_signature:
+			return
+		last_signature = signature
+		ui_language = next_language
+		title = String(next_data.get("title", _label("动力分配", "POWER SPLIT")))
+		subtitle = String(next_data.get("subtitle", ""))
+		engine_output = maxf(0.0, float(next_data.get("engine_output", 0.0)))
+		used_ratio = maxf(0.0, float(next_data.get("used_ratio", 0.0)))
+		entries = next_entries.duplicate(true)
+		empty_note = ""
+		visible = true
+		queue_redraw()
+
+	func _entries_signature(next_entries: Array) -> String:
+		var bits: Array = [str(next_entries.size())]
+		for i in range(mini(next_entries.size(), 12)):
+			if not (next_entries[i] is Dictionary):
+				bits.append("_")
+				continue
+			var entry: Dictionary = next_entries[i]
+			bits.append("%s:%.3f:%.1f:%s" % [
+				String(entry.get("id", "")),
+				float(entry.get("ratio", 0.0)),
+				float(entry.get("momentum", 0.0)),
+				String(entry.get("label", "")),
+			])
+		return "|".join(bits)
+
+	func _gui_input(event: InputEvent) -> void:
+		if event is InputEventMouseMotion and dragging_entry_id != "":
+			_emit_slider_change(dragging_entry_id, (event as InputEventMouseMotion).position)
+			accept_event()
+			return
+		if not (event is InputEventMouseButton):
+			return
+		var mouse_event := event as InputEventMouseButton
+		if mouse_event.button_index != MOUSE_BUTTON_LEFT:
+			return
+		if not mouse_event.pressed:
+			if dragging_entry_id != "":
+				var finished_id := dragging_entry_id
+				dragging_entry_id = ""
+				allocation_drag_finished.emit(finished_id)
+				accept_event()
+			return
+		if _open_rect().has_point(mouse_event.position):
+			open_requested.emit()
+			accept_event()
+			return
+		for i in range(entries.size()):
+			var entry: Dictionary = entries[i] if entries[i] is Dictionary else {}
+			var entry_id := String(entry.get("id", ""))
+			if entry_id == "":
+				continue
+			if _entry_slider_rect(i).grow(5.0).has_point(mouse_event.position):
+				dragging_entry_id = entry_id
+				_emit_slider_change(entry_id, mouse_event.position)
+				accept_event()
+				return
+
+	func _emit_slider_change(entry_id: String, pos: Vector2) -> void:
+		var index := _entry_index_for_id(entry_id)
+		if index < 0:
+			return
+		var rect := _entry_slider_rect(index)
+		var ratio := clampf((pos.x - rect.position.x) / maxf(1.0, rect.size.x), 0.0, 1.0)
+		if last_emitted_ratios.has(entry_id) and absf(float(last_emitted_ratios[entry_id]) - ratio) < 0.004:
+			return
+		last_emitted_ratios[entry_id] = ratio
+		allocation_changed.emit(entry_id, ratio)
+
+	func _draw() -> void:
+		if not visible:
+			return
+		var font := ThemeDB.get_fallback_font()
+		draw_rect(Rect2(Vector2.ZERO, size), Color(0.006, 0.014, 0.022, 0.86), true)
+		draw_rect(Rect2(Vector2.ONE, size - Vector2(2.0, 2.0)), Color(0.32, 0.86, 1.0, 0.38), false, 1.0)
+		draw_string(font, Vector2(8.0, 18.0), _trim(title, 18), HORIZONTAL_ALIGNMENT_LEFT, 134.0, 12, Color(1.0, 0.92, 0.48, 1.0))
+		if empty_note != "":
+			draw_string(font, Vector2(8.0, 38.0), _trim(empty_note, 42), HORIZONTAL_ALIGNMENT_LEFT, size.x - 92.0, 10, Color(0.78, 0.9, 1.0, 0.82))
+			_draw_open_button(font)
+			return
+		var total_label := _label("池 %.0f 用 %.0f%%", "POOL %.0f USED %.0f%%") % [engine_output, used_ratio * 100.0]
+		draw_string(font, Vector2(8.0, 38.0), total_label, HORIZONTAL_ALIGNMENT_LEFT, 134.0, 10, Color(0.78, 0.9, 1.0, 0.86))
+		_draw_tree(font)
+		for i in range(mini(entries.size(), 5)):
+			_draw_entry(font, i)
+		_draw_open_button(font)
+
+	func _draw_tree(font: Font) -> void:
+		var origin := Vector2(150.0, 13.0)
+		var trunk_color := Color(1.0, 0.82, 0.25, 0.88) if used_ratio <= 1.0001 else Color(1.0, 0.24, 0.12, 0.92)
+		draw_line(origin, origin + Vector2(0.0, 29.0), trunk_color, 2.0)
+		draw_circle(origin, 4.0, trunk_color)
+		draw_string(font, origin + Vector2(8.0, 4.0), _label("引擎", "ENG"), HORIZONTAL_ALIGNMENT_LEFT, 40.0, 9, trunk_color)
+		var row_count := mini(entries.size(), 5)
+		for i in range(row_count):
+			var y := 12.0 + float(i) * 8.0
+			var entry: Dictionary = entries[i] if entries[i] is Dictionary else {}
+			var color: Color = entry.get("color", Color(0.42, 0.86, 1.0, 1.0))
+			draw_line(origin + Vector2(0.0, y - 13.0), Vector2(208.0, y), Color(color.r, color.g, color.b, 0.5), 1.0)
+
+	func _draw_entry(font: Font, index: int) -> void:
+		var entry: Dictionary = entries[index] if entries[index] is Dictionary else {}
+		if entry.is_empty():
+			return
+		var rect := _entry_slider_rect(index)
+		var color: Color = entry.get("color", Color(0.42, 0.86, 1.0, 1.0))
+		var over := bool(entry.get("over_budget", false)) or used_ratio > 1.0001
+		var ratio := clampf(float(entry.get("ratio", 0.0)), 0.0, 1.0)
+		draw_rect(rect, Color(0.01, 0.022, 0.032, 0.9), true)
+		draw_rect(Rect2(rect.position, Vector2(rect.size.x * ratio, rect.size.y)), Color(1.0, 0.24, 0.12, 0.72) if over else Color(color.r, color.g, color.b, 0.66), true)
+		draw_rect(rect, Color(1.0, 0.22, 0.14, 0.92) if over else Color(color.r, color.g, color.b, 0.9), false, 1.0)
+		var knob_x := rect.position.x + rect.size.x * ratio
+		draw_circle(Vector2(knob_x, rect.position.y + rect.size.y * 0.5), 4.0, Color(1.0, 0.94, 0.7, 1.0))
+		draw_string(font, rect.position + Vector2(3.0, -2.0), _trim(String(entry.get("label", "")), 14), HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 36.0, 8, Color(0.92, 0.98, 1.0, 0.96))
+		draw_string(font, rect.position + Vector2(rect.size.x - 34.0, -2.0), "%.0f" % float(entry.get("momentum", 0.0)), HORIZONTAL_ALIGNMENT_RIGHT, 32.0, 8, Color(1.0, 0.86, 0.42, 0.94))
+
+	func _draw_open_button(font: Font) -> void:
+		var rect := _open_rect()
+		draw_rect(rect, Color(0.12, 0.16, 0.19, 0.92), true)
+		draw_rect(rect, Color(0.44, 0.92, 1.0, 0.72), false, 1.0)
+		draw_string(font, rect.position + Vector2(4.0, 14.0), _label("详细", "MORE"), HORIZONTAL_ALIGNMENT_CENTER, rect.size.x - 8.0, 9, Color(0.9, 0.98, 1.0, 1.0))
+
+	func _entry_slider_rect(index: int) -> Rect2:
+		var col := index % 3
+		var row := index / 3
+		return Rect2(Vector2(226.0 + float(col) * 138.0, 10.0 + float(row) * 24.0), Vector2(124.0, 13.0))
+
+	func _open_rect() -> Rect2:
+		return Rect2(Vector2(size.x - 58.0, 12.0), Vector2(48.0, 24.0))
+
+	func _entry_index_for_id(entry_id: String) -> int:
+		for i in range(entries.size()):
+			if entries[i] is Dictionary and String(Dictionary(entries[i]).get("id", "")) == entry_id:
+				return i
+		return -1
+
+	func _label(zh: String, en: String) -> String:
+		return zh if ui_language == "zh" else en
+
+	func _trim(value: String, max_chars: int) -> String:
+		if value.length() <= max_chars:
+			return value
+		return value.substr(0, maxi(1, max_chars - 1)) + "."
+
+
 class AssemblyBoardRenderLayer:
 	extends Control
 
@@ -5725,7 +5915,7 @@ class AssemblyBoardView:
 		elif pose_member:
 			canvas.draw_arc(center, physical_radius + 10.0 + snap_amount * 5.0, 0.0, TAU, 36, Color(0.34, 1.0, 0.82, 0.52), 2.8)
 		if pose_mode and node_index == pose_root:
-			var root_socket := center - axis.normalized() * _node_edge_extent_px(node, physical_radius)
+			var root_socket := AssemblyBoardRenderer.component_connection_anchor(center, node, axis, physical_radius, center - axis.normalized(), "root_joint", _node_visual_length_px(node, physical_radius), true)
 			canvas.draw_arc(root_socket, maxf(7.0, physical_radius * 0.2), 0.0, TAU, 24, Color(1.0, 0.86, 0.22, 0.96), 2.4)
 			canvas.draw_line(root_socket - axis.normalized().orthogonal() * 8.0, root_socket + axis.normalized().orthogonal() * 8.0, Color(1.0, 0.86, 0.22, 0.82), 1.6)
 		_draw_topology_component_on(canvas, center, node, color, axis, physical_radius, snap_amount)
@@ -5919,7 +6109,7 @@ class AssemblyBoardView:
 			elif pose_member:
 				draw_arc(center, physical_radius + 10.0 + snap_amount * 5.0, 0.0, TAU, 36, Color(0.34, 1.0, 0.82, 0.52), 2.8)
 			if pose_mode and i == pose_root:
-				var root_socket := center - axis.normalized() * _node_edge_extent_px(node, physical_radius)
+				var root_socket := AssemblyBoardRenderer.component_connection_anchor(center, node, axis, physical_radius, center - axis.normalized(), "root_joint", _node_visual_length_px(node, physical_radius), true)
 				draw_arc(root_socket, maxf(7.0, physical_radius * 0.2), 0.0, TAU, 24, Color(1.0, 0.86, 0.22, 0.96), 2.4)
 				draw_line(root_socket - axis.normalized().orthogonal() * 8.0, root_socket + axis.normalized().orthogonal() * 8.0, Color(1.0, 0.86, 0.22, 0.82), 1.6)
 			_draw_topology_component(center, node, color, axis, physical_radius, snap_amount)
@@ -5947,7 +6137,7 @@ class AssemblyBoardView:
 		return Rect2(pos, rect_size)
 
 	func _custom_node_pos(node: Dictionary) -> Vector2:
-		var pos = node.get("pos", Vector2(0.5, 0.5))
+		var pos = node.get("visual_pos", node.get("pos", Vector2(0.5, 0.5)))
 		if pos is Vector2:
 			var clamped := _custom_clamp_topology_position(pos)
 			return size * 0.5 + _custom_view_offset() + (clamped - Vector2(0.5, 0.5)) * _custom_board_uniform_scale()
@@ -6008,16 +6198,8 @@ class AssemblyBoardView:
 		return neighbors
 
 	func _node_connection_anchor(node: Dictionary, axis: Vector2, center: Vector2, toward: Vector2, physical_radius: float) -> Vector2:
-		var forward := axis.normalized()
-		if forward.length() < 0.01:
-			forward = Vector2.RIGHT
-		var direction := toward - center
-		if direction.length() < 0.01:
-			direction = forward
-		var side := 1.0 if direction.dot(forward) >= 0.0 else -1.0
-		var slot_key := String(node.get("slot", ""))
-		var extent_px := _node_edge_extent_px(node, physical_radius)
-		return center + forward * extent_px * side
+		var visual_length_px := _node_visual_length_px(node, physical_radius)
+		return AssemblyBoardRenderer.component_connection_anchor(center, node, axis, physical_radius, toward, "", visual_length_px, true)
 
 	func _node_edge_extent_px(node: Dictionary, fallback_radius: float) -> float:
 		var extent_units := float(node.get("edge_extent_units", -1.0))
@@ -7743,8 +7925,8 @@ const SLOT_NAMES_EN = {
 const SOFTWARE_MANUFACTURERS = ["NULL SOFTWARE", "BOOTLEG GHOST"]
 const UI_LANGUAGE_ZH = "zh"
 const UI_LANGUAGE_EN = "en"
-const MENU_ITEMS = ["开始训练", "已保存单位", "队伍编辑", "AI 对战", "本地对战", "设置", "退出"]
-const MENU_ITEMS_EN = ["TRAINING", "SAVED UNITS", "TEAM EDIT", "AI BATTLE", "PVP", "SETTINGS", "QUIT"]
+const MENU_ITEMS = ["开始训练", "已保存单位", "单位编辑", "AI 对战", "本地对战", "设置", "退出"]
+const MENU_ITEMS_EN = ["TRAINING", "SAVED UNITS", "UNIT EDIT", "AI BATTLE", "PVP", "SETTINGS", "QUIT"]
 const MENU_DESCRIPTIONS = [
 	"先选择训练单位、席位和靶机状态，再进入训练场。",
 	"查看已保存的单个单位，载入编辑，或单选/多选直接导入训练场。",
@@ -7756,7 +7938,7 @@ const MENU_DESCRIPTIONS = [
 ]
 const MENU_DESCRIPTIONS_EN = [
 	"Choose training units, seat, and dummy behavior before entering the arena.",
-	"Browse saved single units, load one back into TeamEdit, or send one/many into Training.",
+	"Browse saved units, load one back into Unit Edit, compose teams, or send units into Training.",
 	"Blank-canvas first: edit one unit, save it, then compose teams.",
 	"Choose an AI Battle seat: P1 left, P2 right, or P3 spectator watching two AI teams.",
 	"Local versus for two controllers. P1 uses controller 1, P2 uses controller 2.",
@@ -8612,6 +8794,11 @@ var saved_unit_cache_disk_scan_count := 0
 var saved_unit_cache_json_load_count := 0
 var saved_unit_cache_stats_compute_count := 0
 var saved_unit_cache_illegal_compute_count := 0
+var saved_team_selected_index := -1
+var saved_team_selected_path := ""
+var saved_team_entries_cache: Array = []
+var saved_team_entries_cache_signature := ""
+var saved_team_entries_cache_dirty := true
 var editor_role_labels := {}
 var editor_role_buttons := {}
 var editor_slot_labels: Array = []
@@ -8718,6 +8905,9 @@ var editor_structure_reference_label: Label
 var editor_shop_card_backdrop: TextureRect
 var assembly_board_view: AssemblyBoardView
 var editor_stats_rail_view: EditorStatsRailView
+var editor_engine_allocation_button: Button
+var editor_engine_allocation_summary_label: Label
+var editor_power_topbar_view: UnitEditorPowerTopbarView
 var editor_hover_popup_view: EditorPartHoverPopupView
 var editor_unit_hover_view: ScoutUnitDetailView
 var engine_momentum_allocation_view: EngineMomentumAllocationPanelView
@@ -10818,6 +11008,65 @@ func _toggle_saved_unit_selection(entry: Dictionary) -> void:
 	_update_saved_units_ui()
 
 
+func _load_saved_unit_into_unit_editor(path: String) -> bool:
+	if path == "":
+		return false
+	var entry := {}
+	for raw_entry in _unit_library_entries():
+		if raw_entry is Dictionary and _saved_unit_entry_path(raw_entry) == path:
+			entry = Dictionary(raw_entry)
+			break
+	if entry.is_empty():
+		entry = _unit_library_entry_from_file(path)
+	if entry.is_empty():
+		if saved_unit_hint_label != null:
+			saved_unit_hint_label.text = "载入编辑失败：单位文件不存在或已废弃。" if _ui_is_zh() else "Edit load failed: unit file is missing or obsolete."
+		_play_sfx_wave("alarm", 170.0, 0.08, -16.0)
+		return false
+	return _load_saved_unit_entry_into_unit_editor(entry)
+
+
+func _load_saved_unit_entry_into_unit_editor(entry: Dictionary) -> bool:
+	if not (entry.get("blueprint", {}) is Dictionary):
+		if saved_unit_hint_label != null:
+			saved_unit_hint_label.text = "载入编辑失败：单位蓝图损坏。" if _ui_is_zh() else "Edit load failed: damaged unit blueprint."
+		return false
+	var role_key := String(entry.get("role", "hero"))
+	if not ROLE_ORDER.has(role_key):
+		if saved_unit_hint_label != null:
+			saved_unit_hint_label.text = "载入编辑失败：单位角色非法。" if _ui_is_zh() else "Edit load failed: invalid unit role."
+		return false
+	var unit_bp: Dictionary = Dictionary(entry.get("blueprint", {})).duplicate(true)
+	unit_bp["role"] = role_key
+	unit_bp["unit_name"] = String(entry.get("unit_name", unit_bp.get("unit_name", unit_bp.get("name", ""))))
+	unit_bp["name"] = String(unit_bp.get("unit_name", unit_bp.get("name", _role_name(role_key))))
+	if _role_uses_body_board(role_key):
+		_normalize_unit_to_component_topology(role_key, unit_bp)
+	_apply_entry_pose_to_blueprint(unit_bp)
+	editor_role_index = ROLE_ORDER.find(role_key)
+	editor_canvas_mode = "blank"
+	editor_working_role_key = role_key
+	editor_working_blueprint = unit_bp
+	editor_topology_node_index = 0
+	editor_selected_topology_nodes = []
+	editor_dragging_node_index = -1
+	editor_dragging_selected_nodes = false
+	editor_dragging_whole_unit = false
+	editor_open_torso_node_index = -1
+	editor_hovered_torso_node_index = -1
+	editor_engine_allocation_payload_index = -1
+	editor_engine_allocation_torso_node_index = -1
+	saved_unit_focus_path = _saved_unit_entry_path(entry)
+	_show_unit_editor_preserve_loaded_blueprint()
+	if editor_summary_label != null:
+		editor_summary_label.text = "已载入单位编辑：%s" % String(unit_bp.get("unit_name", unit_bp.get("name", ""))) if _ui_is_zh() else "Loaded into Unit Edit: %s" % String(unit_bp.get("unit_name", unit_bp.get("name", "")))
+	return true
+
+
+func _show_unit_editor_preserve_loaded_blueprint() -> void:
+	_show_editor_preserve_canvas()
+
+
 func _saved_units_action(action_key: String) -> void:
 	match action_key:
 		"prev":
@@ -10838,8 +11087,7 @@ func _saved_units_action(action_key: String) -> void:
 			var edit_entry := _saved_unit_entry_at_absolute_index(saved_unit_selected_index)
 			if edit_entry.is_empty():
 				return
-			_show_editor()
-			_load_unit_library_entry_to_canvas(edit_entry)
+			_load_saved_unit_entry_into_unit_editor(edit_entry)
 		"train_one":
 			var train_entry := _saved_unit_entry_at_absolute_index(saved_unit_selected_index)
 			if not train_entry.is_empty():
@@ -10848,6 +11096,42 @@ func _saved_units_action(action_key: String) -> void:
 			_import_saved_unit_entries_to_training(_saved_unit_selected_entries())
 		"delete_selected":
 			_request_delete_saved_units()
+		"save_team":
+			var selection := _saved_units_team_selection_entries()
+			var name := "Team %d" % int(Time.get_unix_time_from_system())
+			_save_team_from_saved_unit_selection(name, selection)
+			_update_saved_units_ui()
+		"team_prev":
+			var teams := _saved_teams_entries()
+			if not teams.is_empty():
+				saved_team_selected_index = _wrapped_index(saved_team_selected_index - 1, teams.size())
+				saved_team_selected_path = String(Dictionary(teams[saved_team_selected_index]).get("path", ""))
+				_update_saved_units_ui()
+		"team_next":
+			var teams_next := _saved_teams_entries()
+			if not teams_next.is_empty():
+				saved_team_selected_index = _wrapped_index(saved_team_selected_index + 1, teams_next.size())
+				saved_team_selected_path = String(Dictionary(teams_next[saved_team_selected_index]).get("path", ""))
+				_update_saved_units_ui()
+		"load_team":
+			var teams_load := _saved_teams_entries()
+			if saved_team_selected_index >= 0 and saved_team_selected_index < teams_load.size():
+				_load_saved_team_to_current_roster(String(Dictionary(teams_load[saved_team_selected_index]).get("path", "")))
+				_update_saved_units_ui()
+		"delete_team":
+			var teams_delete := _saved_teams_entries()
+			if saved_team_selected_index >= 0 and saved_team_selected_index < teams_delete.size():
+				var path := String(Dictionary(teams_delete[saved_team_selected_index]).get("path", ""))
+				var err := DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
+				if err == OK:
+					saved_team_entries_cache_dirty = true
+					saved_team_selected_index = -1
+					saved_team_selected_path = ""
+					if saved_unit_hint_label != null:
+						saved_unit_hint_label.text = "已删除保存队伍。" if _ui_is_zh() else "Deleted saved team."
+				elif saved_unit_hint_label != null:
+					saved_unit_hint_label.text = "删除队伍失败。" if _ui_is_zh() else "Delete team failed."
+				_update_saved_units_ui()
 
 
 func _show_saved_unit_detail(entry: Dictionary) -> void:
@@ -10864,12 +11148,12 @@ func _show_saved_unit_detail(entry: Dictionary) -> void:
 	var role_key := String(entry.get("role", "hero"))
 	var stats := _saved_unit_entry_stats(entry)
 	var illegal_note := _saved_unit_entry_illegal_note(entry)
-	var selected_marker := "已加入训练选择" if saved_unit_selected_paths.has(_saved_unit_entry_path(entry)) else "未加入训练选择"
+	var selected_marker := ("已加入队伍草稿" if _ui_is_zh() else "in team draft") if saved_unit_selected_paths.has(_saved_unit_entry_path(entry)) else ("未加入队伍草稿" if _ui_is_zh() else "not in team draft")
 	var detail_lines := [
 		("单位库文件：%s" if _ui_is_zh() else "Unit file: %s") % String(entry.get("path", "")),
 		("状态：%s" if _ui_is_zh() else "Status: %s") % (("可训练/可出战" if illegal_note == "" else _localized_system_text(illegal_note)) if _ui_is_zh() else ("legal for training/sortie" if illegal_note == "" else illegal_note)),
 		("选择：%s" if _ui_is_zh() else "Selection: %s") % selected_marker,
-		("操作：点击查看；右键或按钮加入多选；可载入编辑、训练或删除。" if _ui_is_zh() else "Actions: click inspect; right-click/button multi-select; edit, train, or delete."),
+		("操作：点击查看；右键或按钮加入队伍草稿；可载入编辑、训练或删除。" if _ui_is_zh() else "Actions: click inspect; right-click/button add to team draft; edit, train, or delete."),
 	]
 	var view_entry := {"role": role_key, "index": 0}
 	saved_unit_detail_view.set_unit(1, view_entry, stats, "\n".join(detail_lines), ui_language)
@@ -10905,7 +11189,7 @@ func _handle_saved_units_input() -> void:
 		if saved_unit_delete_panel != null and saved_unit_delete_panel.visible:
 			_cancel_delete_saved_units()
 			return
-		_show_menu()
+		_page_options_back("saved_units")
 	elif Input.is_action_just_pressed("menu_up"):
 		saved_unit_selected_index = maxi(0, saved_unit_selected_index - 1)
 		saved_unit_page = int(floor(float(saved_unit_selected_index) / float(maxi(1, saved_unit_buttons.size()))))
@@ -10930,7 +11214,7 @@ func _update_saved_units_ui() -> void:
 	if saved_unit_title_label != null:
 		saved_unit_title_label.text = "已保存单位" if _ui_is_zh() else "SAVED UNITS"
 	if saved_unit_hint_label != null:
-		saved_unit_hint_label.text = "单位库可直接训练；队伍编成只引用这里的单位。" if _ui_is_zh() else "Train units here; compose teams later."
+		saved_unit_hint_label.text = "勾选单位组成队伍；也可载入编辑。" if _ui_is_zh() else "Select units for teams; edit one unit."
 	var filter_labels := {
 		"all": ["全部", "ALL"],
 		"hero": ["英雄", "HERO"],
@@ -10979,14 +11263,30 @@ func _update_saved_units_ui() -> void:
 		saved_unit_page_label.text = ("第 %d/%d 页  共 %d 个单位" if _ui_is_zh() else "PAGE %d/%d  %d UNITS") % [saved_unit_page + 1, max_page + 1, entries.size()]
 	if saved_unit_selection_label != null:
 		var selected_entries := _saved_unit_selected_entries()
-		var role_counts := {"hero": 0, "puppet": 0, "barrier": 0}
-		var total_cost := 0
-		for raw_entry in selected_entries:
-			var entry: Dictionary = raw_entry
-			var role_key := String(entry.get("role", "hero"))
-			role_counts[role_key] = int(role_counts.get(role_key, 0)) + 1
-			total_cost += int(_saved_unit_entry_stats(entry).get("cost", 0))
-		saved_unit_selection_label.text = ("已选 %d：英%d 傀%d 界%d  总价 %d" if _ui_is_zh() else "SELECTED %d: H%d P%d B%d  COST %d") % [selected_entries.size(), int(role_counts["hero"]), int(role_counts["puppet"]), int(role_counts["barrier"]), total_cost]
+		var team_summary := _saved_units_team_legality_summary(selected_entries)
+		var role_counts: Dictionary = Dictionary(team_summary.get("role_counts", {}))
+		var teams := _saved_teams_entries()
+		var team_line := ""
+		if teams.is_empty():
+			team_line = "保存队伍：无" if _ui_is_zh() else "Saved teams: none"
+		else:
+			saved_team_selected_index = clampi(saved_team_selected_index, 0, teams.size() - 1)
+			var team_entry: Dictionary = teams[saved_team_selected_index]
+			team_line = ("保存队伍 %d/%d：%s  %d单位" if _ui_is_zh() else "Saved team %d/%d: %s  %d units") % [
+				saved_team_selected_index + 1,
+				teams.size(),
+				_trim_text(String(team_entry.get("team_name", "")), 18),
+				int(team_entry.get("unit_count", 0)),
+			]
+		saved_unit_selection_label.text = ("%s\n草稿 %d：英%d 傀%d 界%d  总价 %d  %s" if _ui_is_zh() else "%s\nDRAFT %d: H%d P%d B%d  COST %d  %s") % [
+			team_line,
+			int(team_summary.get("count", 0)),
+			int(role_counts.get("hero", 0)),
+			int(role_counts.get("puppet", 0)),
+			int(role_counts.get("barrier", 0)),
+			int(team_summary.get("cost", 0)),
+			String(team_summary.get("note", "")),
+		]
 	if saved_unit_detail_view != null:
 		var detail_entry := _saved_unit_entry_at_absolute_index(saved_unit_selected_index)
 		if detail_entry.is_empty():
@@ -11025,6 +11325,22 @@ func _update_saved_units_ui() -> void:
 			"delete_selected":
 				action_button.text = "删除选中" if _ui_is_zh() else "DELETE"
 				action_button.disabled = _saved_unit_delete_candidates().is_empty()
+			"save_team":
+				action_button.text = "保存队伍" if _ui_is_zh() else "SAVE TEAM"
+				var draft_entries := _saved_units_team_selection_entries()
+				action_button.disabled = draft_entries.is_empty() or draft_entries.size() > _current_roster_cap()
+			"team_prev":
+				action_button.text = "队伍 <" if _ui_is_zh() else "TEAM <"
+				action_button.disabled = _saved_teams_entries().is_empty()
+			"team_next":
+				action_button.text = "队伍 >" if _ui_is_zh() else "TEAM >"
+				action_button.disabled = _saved_teams_entries().is_empty()
+			"load_team":
+				action_button.text = "载入队伍" if _ui_is_zh() else "LOAD TEAM"
+				action_button.disabled = _saved_teams_entries().is_empty()
+			"delete_team":
+				action_button.text = "删除队伍" if _ui_is_zh() else "DEL TEAM"
+				action_button.disabled = _saved_teams_entries().is_empty()
 	if saved_unit_delete_confirm_button != null:
 		saved_unit_delete_confirm_button.text = "确认删除" if _ui_is_zh() else "DELETE"
 	if saved_unit_delete_cancel_button != null:
@@ -11039,6 +11355,202 @@ func _saved_unit_selection_all_trainable() -> bool:
 		var entry: Dictionary = raw_entry
 		if _saved_unit_entry_illegal_note(entry) != "":
 			return false
+	return true
+
+
+func _saved_units_team_selection_entries() -> Array:
+	return _saved_unit_selected_entries()
+
+
+func _saved_teams_entries(force: bool = false) -> Array:
+	var files := _saved_team_files()
+	var signature := "|".join(files)
+	if not force and not saved_team_entries_cache_dirty and signature == saved_team_entries_cache_signature:
+		return saved_team_entries_cache
+	saved_team_entries_cache_signature = signature
+	saved_team_entries_cache_dirty = false
+	var entries: Array = []
+	for path_value in files:
+		var path := String(path_value)
+		if not FileAccess.file_exists(path):
+			continue
+		var parsed = JSON.parse_string(FileAccess.get_file_as_string(path))
+		if not (parsed is Dictionary):
+			continue
+		var payload: Dictionary = parsed
+		if not _is_current_saved_team_payload(payload):
+			continue
+		var slots: Array = Array(payload.get("slots", []))
+		var non_empty := 0
+		for raw_slot in slots:
+			if raw_slot is Dictionary and not bool(Dictionary(raw_slot).get("empty", false)):
+				non_empty += 1
+		entries.append({
+			"path": path,
+			"payload": payload,
+			"team_name": String(payload.get("team_name", path.get_file().get_basename())),
+			"slot_count": slots.size(),
+			"unit_count": non_empty,
+		})
+	if saved_team_selected_index >= entries.size():
+		saved_team_selected_index = entries.size() - 1
+	if saved_team_selected_index < 0 and not entries.is_empty():
+		saved_team_selected_index = entries.size() - 1
+	if saved_team_selected_index >= 0 and saved_team_selected_index < entries.size():
+		saved_team_selected_path = String(Dictionary(entries[saved_team_selected_index]).get("path", ""))
+	else:
+		saved_team_selected_path = ""
+	saved_team_entries_cache = entries
+	return saved_team_entries_cache
+
+
+func _saved_units_team_legality_summary(selection: Array) -> Dictionary:
+	var role_counts := {"hero": 0, "puppet": 0, "barrier": 0}
+	var total_cost := 0
+	var invalid_notes: Array = []
+	for raw_entry in selection:
+		if not (raw_entry is Dictionary):
+			continue
+		var entry: Dictionary = raw_entry
+		var role_key := String(entry.get("role", "hero"))
+		role_counts[role_key] = int(role_counts.get(role_key, 0)) + 1
+		total_cost += int(_saved_unit_entry_stats(entry).get("cost", 0))
+		var note := _saved_unit_entry_illegal_note(entry)
+		if note != "":
+			invalid_notes.append(note)
+	var roster_cap := _current_roster_cap()
+	var valid := not selection.is_empty() and selection.size() <= roster_cap and int(role_counts.get("hero", 0)) > 0 and invalid_notes.is_empty() and total_cost <= START_BUDGET
+	var note := ""
+	if selection.is_empty():
+		note = "先勾选单位组成队伍。" if _ui_is_zh() else "Select units to compose a team."
+	elif selection.size() > roster_cap:
+		note = ("超过队伍上限 %d。" if _ui_is_zh() else "Over team cap %d.") % roster_cap
+	elif int(role_counts.get("hero", 0)) <= 0:
+		note = "队伍至少需要 1 个英雄单位。" if _ui_is_zh() else "Team needs at least one hero unit."
+	elif total_cost > START_BUDGET:
+		note = ("总价 %d 超过预算 %d。" if _ui_is_zh() else "Cost %d exceeds budget %d.") % [total_cost, START_BUDGET]
+	elif not invalid_notes.is_empty():
+		note = _localized_system_text(String(invalid_notes[0])) if _ui_is_zh() else String(invalid_notes[0])
+	else:
+		note = "队伍合法。" if _ui_is_zh() else "Team legal."
+	return {
+		"valid": valid,
+		"note": note,
+		"role_counts": role_counts,
+		"cost": total_cost,
+		"count": selection.size(),
+	}
+
+
+func _save_team_from_saved_unit_selection(team_name: String, selection: Array) -> String:
+	var summary := _saved_units_team_legality_summary(selection)
+	if selection.is_empty() or selection.size() > _current_roster_cap():
+		if saved_unit_hint_label != null:
+			saved_unit_hint_label.text = String(summary.get("note", ""))
+		_play_sfx_wave("alarm", 170.0, 0.08, -16.0)
+		return ""
+	_ensure_saved_teams_dir()
+	var slots: Array = []
+	for raw_entry in selection:
+		if not (raw_entry is Dictionary):
+			continue
+		var entry: Dictionary = raw_entry
+		var role_key := String(entry.get("role", "hero"))
+		var unit_bp: Dictionary = Dictionary(entry.get("blueprint", {})).duplicate(true)
+		unit_bp["role"] = role_key
+		unit_bp["schema_version"] = SAVED_UNIT_SCHEMA_VERSION
+		slots.append({
+			"empty": false,
+			"role": role_key,
+			"blueprint": _json_safe_value(unit_bp),
+			"source_path": _saved_unit_entry_path(entry),
+			"unit_name": String(entry.get("unit_name", unit_bp.get("unit_name", unit_bp.get("name", "")))),
+		})
+	while slots.size() < _current_roster_cap():
+		slots.append({"empty": true})
+	var clean_name := team_name.strip_edges()
+	if clean_name == "":
+		clean_name = "Team %d" % int(Time.get_unix_time_from_system())
+	var path := "%s/%s_%d.json" % [SAVED_TEAMS_DIR, _safe_save_stem(clean_name, "team"), int(Time.get_unix_time_from_system())]
+	var player_id := _editor_player()
+	var payload := {
+		"schema_version": SAVED_TEAM_SCHEMA_VERSION,
+		"team_name": clean_name,
+		"match_format": editor_match_format,
+		"roster_cap": _current_roster_cap(),
+		"sortie_cap": _current_sortie_cap(),
+		"team_color_index": int(team_color_indices.get(player_id, 0)),
+		"team_custom_color": {
+			"name": String(Dictionary(team_custom_colors.get(player_id, {})).get("name", "自定义")),
+			"name_en": String(Dictionary(team_custom_colors.get(player_id, {})).get("name_en", "Custom")),
+			"primary": _color_to_save_dict(_team_primary_color(player_id)),
+			"accent": _color_to_save_dict(_team_accent_color(player_id)),
+		},
+		"slots": slots,
+	}
+	var file := FileAccess.open(path, FileAccess.WRITE)
+	if file == null:
+		if saved_unit_hint_label != null:
+			saved_unit_hint_label.text = "保存队伍失败：无法写入队伍目录。" if _ui_is_zh() else "Team save failed: cannot write saved-teams folder."
+		return ""
+	file.store_string(JSON.stringify(payload, "\t"))
+	file.close()
+	saved_team_entries_cache_dirty = true
+	var entries := _saved_teams_entries(true)
+	for i in range(entries.size()):
+		if String(Dictionary(entries[i]).get("path", "")) == path:
+			saved_team_selected_index = i
+			saved_team_selected_path = path
+			break
+	if saved_unit_hint_label != null:
+		saved_unit_hint_label.text = "已保存队伍：%s" % clean_name if _ui_is_zh() else "Saved team: %s" % clean_name
+	_play_sfx_wave("clack", 760.0, 0.055, -16.0)
+	return path
+
+
+func _load_saved_team_to_current_roster(path: String) -> bool:
+	if not FileAccess.file_exists(path):
+		if saved_unit_hint_label != null:
+			saved_unit_hint_label.text = "载入队伍失败：找不到队伍文件。" if _ui_is_zh() else "Load team failed: team file not found."
+		return false
+	var parsed = JSON.parse_string(FileAccess.get_file_as_string(path))
+	if not (parsed is Dictionary):
+		if saved_unit_hint_label != null:
+			saved_unit_hint_label.text = "载入队伍失败：JSON 损坏。" if _ui_is_zh() else "Load team failed: damaged JSON."
+		return false
+	var payload: Dictionary = parsed
+	if not _is_current_saved_team_payload(payload):
+		if saved_unit_hint_label != null:
+			saved_unit_hint_label.text = "载入队伍失败：旧队伍数据已废弃。" if _ui_is_zh() else "Load team failed: old team schema is obsolete."
+		return false
+	var imported := _blank_player_roster()
+	for raw_slot in Array(payload.get("slots", [])):
+		if not (raw_slot is Dictionary):
+			continue
+		var slot: Dictionary = raw_slot
+		if bool(slot.get("empty", false)):
+			continue
+		var role_key := String(slot.get("role", ""))
+		if not ROLE_ORDER.has(role_key) or not (slot.get("blueprint", {}) is Dictionary):
+			if saved_unit_hint_label != null:
+				saved_unit_hint_label.text = "载入队伍失败：槽位单位损坏。" if _ui_is_zh() else "Load team failed: damaged slot."
+			return false
+		var unit_bp: Dictionary = Dictionary(_json_restore_value(slot.get("blueprint", {}))).duplicate(true)
+		unit_bp["role"] = role_key
+		if _role_uses_body_board(role_key):
+			_normalize_unit_to_component_topology(role_key, unit_bp)
+		imported[role_key].append(unit_bp)
+	var player_id := _editor_player()
+	blueprints[player_id] = imported
+	active_roster_indices[player_id] = {"hero": 0, "puppet": 0, "barrier": 0}
+	sortie_loadouts[player_id] = []
+	initial_sortie_slot[player_id] = 0
+	initial_role[player_id] = "hero"
+	team_color_indices[player_id] = int(payload.get("team_color_index", team_color_indices.get(player_id, 0)))
+	ai_team_manual_lock[player_id] = true
+	if saved_unit_hint_label != null:
+		saved_unit_hint_label.text = "已载入队伍：%s" % String(payload.get("team_name", path.get_file())) if _ui_is_zh() else "Loaded team: %s" % String(payload.get("team_name", path.get_file()))
+	_play_sfx_wave("clack", 620.0, 0.045, -18.0)
 	return true
 
 
@@ -11120,6 +11632,7 @@ func _export_editor_team(path: String = "") -> String:
 		return ""
 	file.store_string(JSON.stringify(payload, "\t"))
 	file.close()
+	saved_team_entries_cache_dirty = true
 	editor_summary_label.text = "已导出 P%d 队伍：%s" % [player_id, export_path] if _ui_is_zh() else "Exported P%d team: %s" % [player_id, export_path]
 	return export_path
 
@@ -12655,6 +13168,16 @@ func _hover_editor_roster_overview_slot(local_slot: int) -> void:
 func _update_editor_roster_overview() -> void:
 	if editor_roster_slot_buttons.is_empty():
 		return
+	if editor_section_labels.has("roster_overview"):
+		_set_canvas_item_visible_if_changed(editor_section_labels["roster_overview"], false)
+	if editor_section_labels.has("roster_page"):
+		_set_canvas_item_visible_if_changed(editor_section_labels["roster_page"], false)
+	for i in range(editor_roster_slot_buttons.size()):
+		_set_canvas_item_visible_if_changed(editor_roster_slot_buttons[i], false)
+		_set_button_disabled_if_changed(editor_roster_slot_buttons[i], true)
+		if i < editor_roster_slot_thumb_views.size():
+			_set_canvas_item_visible_if_changed(editor_roster_slot_thumb_views[i], false)
+	return
 	var player_id := _editor_player()
 	var entries := _editor_team_order_entries(player_id)
 	var page_size := maxi(1, editor_roster_slot_buttons.size())
@@ -13021,16 +13544,16 @@ func _choose_editor_match_format(format_key: String) -> void:
 func _update_match_format_select_ui() -> void:
 	if format_select_layer == null:
 		return
-	_set_named_label(format_select_layer, "FormatTitle", "选择队伍编辑规则" if _ui_is_zh() else "Choose TeamEdit Format")
-	_set_named_label(format_select_layer, "FormatHint", "进入 TeamEdit 前先决定本次草稿容量；队伍可之后导入/导出。" if _ui_is_zh() else "Pick this draft capacity before entering TeamEdit; teams can still be imported or exported later.")
+	_set_named_label(format_select_layer, "FormatTitle", "选择单位编辑规则" if _ui_is_zh() else "Choose Unit Edit Format")
+	_set_named_label(format_select_layer, "FormatHint", "单位编辑只编辑单个单位；队伍编成在已保存单位页完成。" if _ui_is_zh() else "Unit Edit edits one unit; compose teams from Saved Units.")
 	var texts := [
 		["标准队伍 10选6", "构筑十个单位，赛前公开双方队伍后选择六个出战。"],
 		["轻量队伍 5选3", "构筑五个单位，赛前选择三个出战；适合快速测试构筑。"],
-		["返回主菜单", "暂不进入 TeamEdit。"],
+		["返回主菜单", "暂不进入单位编辑。"],
 	] if _ui_is_zh() else [
 		["STANDARD 10 PICK 6", "Build ten units; after scouting both rosters, choose six for the match."],
 		["LIGHT 5 PICK 3", "Build five units and choose three before battle; useful for fast build tests."],
-		["BACK TO MENU", "Do not enter TeamEdit yet."],
+		["BACK TO MENU", "Do not enter Unit Edit yet."],
 	]
 	for i in range(mini(format_select_buttons.size(), texts.size())):
 		var button: Button = format_select_buttons[i]
@@ -13554,7 +14077,7 @@ func _apply_language_to_existing_ui() -> void:
 	if format_select_layer != null:
 		_update_match_format_select_ui()
 	if editor_layer != null:
-		_set_named_label(editor_layer, "EditorTitle", "队伍编辑" if _ui_is_zh() else "TeamEdit")
+		_set_named_label(editor_layer, "EditorTitle", "单位编辑" if _ui_is_zh() else "Unit Edit")
 		_set_named_label(editor_layer, "EditorHelp", "自由画布优先；详情看悬停卡。" if _ui_is_zh() else "Free canvas first; hover for details.")
 		_set_named_label(editor_layer, "EditorBackButton", "选项" if _ui_is_zh() else "OPTIONS")
 		_set_named_label(editor_layer, "BoardTitle", "自由画布" if _ui_is_zh() else "FREE CANVAS")
@@ -14135,7 +14658,7 @@ func _loading_target_label(target_state: String) -> String:
 		STATE_MENU:
 			return "主菜单" if _ui_is_zh() else "Main Menu"
 		STATE_EDITOR:
-			return "队伍编辑" if _ui_is_zh() else "TeamEdit"
+			return "单位编辑" if _ui_is_zh() else "Unit Edit"
 		STATE_SAVED_UNITS:
 			return "已保存单位" if _ui_is_zh() else "Saved Units"
 		STATE_SETTINGS:
@@ -16295,6 +16818,144 @@ func _refresh_engine_momentum_allocation_view() -> void:
 	engine_momentum_allocation_view.set_allocation_data(data, ui_language)
 
 
+func _editor_active_engine_allocation_target() -> Dictionary:
+	var role_key: String = ROLE_ORDER[editor_role_index]
+	if not _role_uses_body_board(role_key):
+		return {}
+	var unit_bp: Dictionary = _editor_current_blueprint()
+	if not unit_bp.has("custom_topology"):
+		return {}
+	var topology: Dictionary = unit_bp.get("custom_topology", {})
+	var nodes: Array = Array(topology.get("nodes", []))
+	if nodes.is_empty():
+		return {}
+	var torso_node := editor_open_torso_node_index
+	if torso_node < 0 or torso_node >= nodes.size() or not _topology_node_is_torso(role_key, nodes[torso_node], unit_bp):
+		if editor_topology_node_index >= 0 and editor_topology_node_index < nodes.size() and _topology_node_is_torso(role_key, nodes[editor_topology_node_index], unit_bp):
+			torso_node = editor_topology_node_index
+	if torso_node < 0 or torso_node >= nodes.size() or not _topology_node_is_torso(role_key, nodes[torso_node], unit_bp):
+		for i in range(nodes.size()):
+			if nodes[i] is Dictionary and _topology_node_is_torso(role_key, nodes[i], unit_bp):
+				torso_node = i
+				break
+	if torso_node < 0 or torso_node >= nodes.size():
+		return {}
+	var payloads: Array = Array(unit_bp.get("slot_payloads", []))
+	var engine_payload_index := -1
+	for i in range(payloads.size()):
+		if not (payloads[i] is Dictionary):
+			continue
+		var payload: Dictionary = payloads[i]
+		if String(payload.get("kind", "")) != "engine":
+			continue
+		if _payload_torso_node_index(payload, unit_bp) != torso_node:
+			continue
+		engine_payload_index = i
+		break
+	if engine_payload_index < 0:
+		return {
+			"torso_node": torso_node,
+			"engine_payload_index": -1,
+			"has_engine": false,
+			"data": {},
+		}
+	var data := _engine_momentum_allocation_data(unit_bp, torso_node, engine_payload_index)
+	return {
+		"torso_node": torso_node,
+		"engine_payload_index": engine_payload_index,
+		"has_engine": not data.is_empty(),
+		"data": data,
+	}
+
+
+func _engine_allocation_totals(data: Dictionary) -> Dictionary:
+	var thruster := 0.0
+	var limb := 0.0
+	for raw_entry in Array(data.get("entries", [])):
+		if not (raw_entry is Dictionary):
+			continue
+		var entry: Dictionary = raw_entry
+		var momentum := maxf(0.0, float(entry.get("momentum", 0.0)))
+		match String(entry.get("kind", "")):
+			"booster":
+				thruster += momentum
+			"limb":
+				limb += momentum
+	return {
+		"engine": maxf(0.0, float(data.get("engine_output", 0.0))),
+		"thruster": thruster,
+		"limb": limb,
+		"remaining": maxf(0.0, float(data.get("engine_output", 0.0)) - thruster - limb),
+		"over": thruster + limb > float(data.get("engine_output", 0.0)) + 0.001,
+	}
+
+
+func _open_dashboard_engine_allocation() -> void:
+	var target := _editor_active_engine_allocation_target()
+	if target.is_empty():
+		if editor_board_hint_label != null:
+			_set_control_text_if_changed(editor_board_hint_label, "先放置或选择躯干" if _ui_is_zh() else "Select a torso first")
+		return
+	if not bool(target.get("has_engine", false)):
+		if editor_board_hint_label != null:
+			_set_control_text_if_changed(editor_board_hint_label, "先给当前躯干安装引擎" if _ui_is_zh() else "Install an engine on this torso first")
+		return
+	_open_engine_momentum_allocation_for_payload(int(target.get("engine_payload_index", -1)))
+
+
+func _refresh_engine_allocation_dashboard_summary() -> void:
+	_refresh_unit_editor_power_allocation_topbar()
+	if editor_engine_allocation_button == null or editor_engine_allocation_summary_label == null:
+		return
+	var role_key: String = ROLE_ORDER[editor_role_index]
+	var visible := editor_layer != null and editor_layer.visible and editor_panel_mode == "parts" and _role_uses_body_board(role_key)
+	_set_canvas_item_visible_if_changed(editor_engine_allocation_button, visible)
+	_set_canvas_item_visible_if_changed(editor_engine_allocation_summary_label, visible)
+	if not visible:
+		return
+	_set_control_text_if_changed(editor_engine_allocation_button, "动力分配" if _ui_is_zh() else "POWER")
+	var target := _editor_active_engine_allocation_target()
+	if target.is_empty():
+		_set_button_disabled_if_changed(editor_engine_allocation_button, true)
+		_set_control_text_if_changed(editor_engine_allocation_summary_label, "选躯干" if _ui_is_zh() else "TORSO")
+		_set_control_tooltip_if_changed(editor_engine_allocation_button, "选择躯干后打开动力分配" if _ui_is_zh() else "Select a torso to open power allocation")
+		return
+	if not bool(target.get("has_engine", false)):
+		_set_button_disabled_if_changed(editor_engine_allocation_button, true)
+		_set_control_text_if_changed(editor_engine_allocation_summary_label, "装引擎" if _ui_is_zh() else "ENGINE")
+		_set_control_tooltip_if_changed(editor_engine_allocation_button, "先给当前躯干安装引擎" if _ui_is_zh() else "Install an engine on this torso first")
+		return
+	var totals := _engine_allocation_totals(Dictionary(target.get("data", {})))
+	_set_button_disabled_if_changed(editor_engine_allocation_button, false)
+	var summary := ("%.0f/%.0f" if _ui_is_zh() else "%.0f/%.0f") % [
+		float(totals.get("engine", 0.0)),
+		float(totals.get("thruster", 0.0)) + float(totals.get("limb", 0.0)),
+	]
+	_set_control_text_if_changed(editor_engine_allocation_summary_label, summary)
+	_set_canvas_item_modulate_if_changed(editor_engine_allocation_summary_label, Color(1.0, 0.46, 0.32, 0.96) if bool(totals.get("over", false)) else Color(0.78, 0.92, 1.0, 0.94))
+	_set_control_tooltip_if_changed(editor_engine_allocation_button, "打开推进器与已绑定肢体动力 slider" if _ui_is_zh() else "Open thruster and bound-limb power sliders")
+
+
+func _refresh_unit_editor_power_allocation_topbar() -> void:
+	if editor_power_topbar_view == null:
+		return
+	var role_key: String = ROLE_ORDER[editor_role_index]
+	var visible := editor_layer != null and editor_layer.visible and _role_uses_body_board(role_key)
+	_set_canvas_item_visible_if_changed(editor_power_topbar_view, visible)
+	if not visible:
+		return
+	var target := _editor_active_engine_allocation_target()
+	if target.is_empty():
+		editor_power_topbar_view.set_empty("选择躯干后显示可分配动力。" if _ui_is_zh() else "Select a torso to show allocatable power.", ui_language)
+		return
+	if not bool(target.get("has_engine", false)):
+		editor_power_topbar_view.set_empty("当前躯干未安装引擎。" if _ui_is_zh() else "Current torso has no engine installed.", ui_language)
+		return
+	editor_engine_allocation_torso_node_index = int(target.get("torso_node", -1))
+	editor_engine_allocation_payload_index = int(target.get("engine_payload_index", -1))
+	editor_power_topbar_view.set_allocation_data(Dictionary(target.get("data", {})), ui_language)
+
+
 func _invalidate_editor_board_snapshot_cache() -> void:
 	editor_board_snapshot_cache = {}
 	editor_board_snapshot_cache_key = ""
@@ -16541,11 +17202,12 @@ func _refresh_editor_visual_views_fast_drag(changed_nodes: Array = [], component
 		if i >= nodes.size() or nodes[i] is Dictionary:
 			continue
 		nodes[i] = _editor_fast_enriched_board_node(role_key, unit_bp, source_nodes, source_edges, i)
-	snapshot["nodes"] = nodes
 	var shallow_edges: Array = []
 	shallow_edges.resize(source_edges.size())
 	for edge_i in range(source_edges.size()):
 		shallow_edges[edge_i] = Dictionary(source_edges[edge_i]).duplicate(false) if source_edges[edge_i] is Dictionary else source_edges[edge_i]
+	nodes = _board_nodes_with_art_visual_positions(role_key, unit_bp, nodes, shallow_edges)
+	snapshot["nodes"] = nodes
 	snapshot["edges"] = shallow_edges
 	var base_key := String(editor_board_base_snapshot_cache_key)
 	if base_key == "":
@@ -16595,6 +17257,9 @@ func _apply_editor_component_node_direct(node_index: int, defer_draw: bool = tru
 	var node := Dictionary(editor_last_added_topology_node_snapshot).duplicate(false) if node_index == editor_last_added_topology_node_index and not editor_last_added_topology_node_snapshot.is_empty() else _editor_fast_enriched_board_node(role_key, unit_bp, source_nodes, source_edges, node_index)
 	if node.is_empty():
 		return false
+	var visual_nodes := _board_nodes_with_art_visual_positions(role_key, unit_bp, [node], [])
+	if not visual_nodes.is_empty() and visual_nodes[0] is Dictionary:
+		node = visual_nodes[0]
 	editor_fast_board_revision_counter += 1
 	var fast_revision := "component:%d:%d:%s" % [
 		node_index,
@@ -16648,6 +17313,7 @@ func _refresh_editor_dashboard_after_allocation(full_refresh: bool) -> void:
 	# while stats/legal/detail recompute is deferred to drag end or idle flush.
 	if engine_momentum_allocation_view != null and engine_momentum_allocation_view.visible:
 		engine_momentum_allocation_view.queue_redraw()
+	_refresh_engine_allocation_dashboard_summary()
 
 
 func _equalize_engine_momentum_allocation() -> void:
@@ -17065,7 +17731,7 @@ func _topology_socket_position_by_id(role_key: String, unit_bp: Dictionary, node
 		if axis.length() < 0.0001:
 			axis = Vector2.RIGHT
 		var side := _topology_socket_side_value(id)
-		var extent := _topology_node_edge_extent_units(role_key, node, unit_bp) / TOPOLOGY_BOARD_PHYSICAL_UNITS
+		var extent := _topology_node_visual_edge_extent_units(role_key, node, unit_bp, id) / TOPOLOGY_BOARD_PHYSICAL_UNITS
 		return center + axis.normalized() * extent * float(side)
 	return center
 
@@ -17621,6 +18287,41 @@ func _topology_node_axis(node: Dictionary) -> Vector2:
 	return axis.normalized()
 
 
+func _topology_display_component_node(role_key: String, node: Dictionary, unit_bp: Dictionary) -> Dictionary:
+	if not _topology_node_is_component(node):
+		return node.duplicate(false)
+	var slot_key := _topology_node_slot(node)
+	var part := _topology_node_part(role_key, node, unit_bp)
+	var effective_part := _part_with_effective_terminal_geometry(part, slot_key)
+	var component_node := AssemblyBoardRenderer.part_to_component_node(slot_key, effective_part)
+	for key in ["joint_ports", "connection_ends", "is_torso", "terminal_weapon", "material_class", "shape", "size_class"]:
+		if node.has(key):
+			component_node[key] = node[key]
+	return component_node
+
+
+func _topology_display_metrics_units(role_key: String, node: Dictionary, unit_bp: Dictionary) -> Dictionary:
+	var component_node := _topology_display_component_node(role_key, node, unit_bp)
+	var part := _topology_node_part(role_key, node, unit_bp) if _topology_node_is_component(node) else {}
+	var length_units := _topology_node_physical_length_units(role_key, node, unit_bp)
+	var radius_units := maxf(0.001, float(part.get("radius", node.get("component_radius", 0.04))))
+	return AssemblyBoardRenderer.component_display_metrics(component_node, radius_units, length_units, false)
+
+
+func _topology_node_visual_edge_extent_units(role_key: String, node: Dictionary, unit_bp: Dictionary, socket_id: String = "") -> float:
+	if not _topology_node_is_component(node):
+		return _topology_node_physical_length_units(role_key, node, unit_bp) * 0.5
+	var id := _topology_canonical_socket_id(socket_id)
+	if _topology_node_is_torso(role_key, node, unit_bp):
+		return float(_topology_display_metrics_units(role_key, node, unit_bp).get("length", _topology_node_physical_length_units(role_key, node, unit_bp))) * 0.5
+	var metrics := _topology_display_metrics_units(role_key, node, unit_bp)
+	if id in ["root_joint", "handle", "end:a", "side:-1", "side:a"]:
+		return float(metrics.get("root_extent", float(metrics.get("length", 0.0)) * 0.5))
+	if id in ["distal", "end:b", "side:1", "side:b"]:
+		return float(metrics.get("tip_extent", float(metrics.get("length", 0.0)) * 0.5))
+	return float(metrics.get("length", _topology_node_physical_length_units(role_key, node, unit_bp))) * 0.5
+
+
 func _topology_torso_port_positions(role_key: String, node: Dictionary, unit_bp: Dictionary) -> Array:
 	var part := _topology_node_part(role_key, node, unit_bp)
 	var count := _torso_external_joint_ports(part)
@@ -17629,16 +18330,97 @@ func _topology_torso_port_positions(role_key: String, node: Dictionary, unit_bp:
 	var center := _topology_node_position(node)
 	var forward := _topology_node_axis(node)
 	var right := Vector2(-forward.y, forward.x)
-	var edge_extent := maxf(0.02, _topology_node_edge_extent_units(role_key, node, unit_bp) / TOPOLOGY_BOARD_PHYSICAL_UNITS)
-	var saddle_radius := edge_extent / 0.97
-	var length := saddle_radius * 1.94
-	var front_width := saddle_radius * 0.72
-	var rear_width := saddle_radius * 1.58
+	var component_node := _topology_display_component_node(role_key, node, unit_bp)
+	var metrics := _topology_display_metrics_units(role_key, node, unit_bp)
+	var radius_units := float(metrics.get("display_radius", 0.01))
+	var port_offsets := AssemblyBoardRenderer.torso_port_positions(
+		Vector2.ZERO,
+		component_node,
+		Vector2.RIGHT,
+		radius_units,
+		float(metrics.get("length", 0.0)),
+		false
+	)
 	var positions: Array = []
-	for local in PartArt.torso_saddle_port_local_offsets(count, length, front_width, rear_width):
+	for local in port_offsets:
 		var p: Vector2 = local
-		positions.append(center + forward * p.x + right * p.y)
+		positions.append(center + (forward * p.x + right * p.y) / maxf(0.001, TOPOLOGY_BOARD_PHYSICAL_UNITS))
 	return positions
+
+
+func _topology_socket_offset_units_for_display(role_key: String, unit_bp: Dictionary, nodes: Array, edges: Array, node_index: int, socket_id: String, neighbor_index: int = -1) -> Vector2:
+	if node_index < 0 or node_index >= nodes.size() or not (nodes[node_index] is Dictionary):
+		return Vector2.ZERO
+	var node: Dictionary = nodes[node_index]
+	var id := _topology_canonical_socket_id(socket_id)
+	if _topology_node_is_torso(role_key, node, unit_bp):
+		var center := _topology_node_position(node)
+		var ports := _topology_torso_port_positions(role_key, node, unit_bp)
+		if id.begins_with("torso_port:") and ports.size() > 0:
+			return ports[clampi(int(id.get_slice(":", 1)), 0, ports.size() - 1)] - center
+		return Vector2.ZERO
+	if _topology_node_slot(node) == "joint":
+		return Vector2.ZERO
+	if _topology_node_uses_endpoint_sides(role_key, node, unit_bp):
+		var axis := _topology_endpoint_axis_for_socket(role_key, unit_bp, nodes, edges, node_index, neighbor_index)
+		if axis.length() < 0.0001:
+			axis = Vector2.RIGHT
+		var side := _topology_socket_side_value(id)
+		return axis.normalized() * (_topology_node_visual_edge_extent_units(role_key, node, unit_bp, id) / maxf(0.001, TOPOLOGY_BOARD_PHYSICAL_UNITS)) * float(side)
+	return Vector2.ZERO
+
+
+func _board_nodes_with_art_visual_positions(role_key: String, unit_bp: Dictionary, source_nodes: Array, edges: Array) -> Array:
+	var visual_nodes: Array = []
+	visual_nodes.resize(source_nodes.size())
+	var visual_positions := {}
+	for i in range(source_nodes.size()):
+		if not (source_nodes[i] is Dictionary):
+			visual_nodes[i] = source_nodes[i]
+			continue
+		var node: Dictionary = Dictionary(source_nodes[i]).duplicate(false)
+		visual_nodes[i] = node
+		if _topology_node_is_torso(role_key, node, unit_bp):
+			visual_positions[i] = _topology_node_position(node)
+	if visual_positions.is_empty() and source_nodes.size() > 0 and source_nodes[0] is Dictionary:
+		visual_positions[0] = _topology_node_position(source_nodes[0])
+	for _pass in range(maxi(1, source_nodes.size() * 2)):
+		var changed := false
+		for raw_edge in edges:
+			var a := _topology_edge_node_a(raw_edge)
+			var b := _topology_edge_node_b(raw_edge)
+			if a < 0 or b < 0 or a >= source_nodes.size() or b >= source_nodes.size():
+				continue
+			if not (source_nodes[a] is Dictionary) or not (source_nodes[b] is Dictionary):
+				continue
+			var a_known := visual_positions.has(a)
+			var b_known := visual_positions.has(b)
+			if a_known == b_known:
+				continue
+			var known := a if a_known else b
+			var unknown := b if a_known else a
+			var known_socket := _topology_edge_socket_for_node(raw_edge, known)
+			var unknown_socket := _topology_edge_socket_for_node(raw_edge, unknown)
+			if known_socket == "" or unknown_socket == "":
+				continue
+			var known_offset := _topology_socket_offset_units_for_display(role_key, unit_bp, source_nodes, edges, known, known_socket, unknown)
+			var unknown_offset := _topology_socket_offset_units_for_display(role_key, unit_bp, source_nodes, edges, unknown, unknown_socket, known)
+			var known_pos: Vector2 = visual_positions[known]
+			visual_positions[unknown] = known_pos + known_offset - unknown_offset
+			changed = true
+		if not changed:
+			break
+	for i in range(source_nodes.size()):
+		if not (visual_nodes[i] is Dictionary):
+			continue
+		var node: Dictionary = Dictionary(visual_nodes[i]).duplicate(false)
+		var topology_pos := _topology_node_position(node)
+		var visual_pos: Vector2 = visual_positions[i] if visual_positions.has(i) else topology_pos
+		node["topology_pos"] = topology_pos
+		node["visual_pos"] = visual_pos
+		node["pos"] = visual_pos
+		visual_nodes[i] = node
+	return visual_nodes
 
 
 func _torso_joint_slot_profiles_for_part(part: Dictionary) -> Array:
@@ -18797,11 +19579,11 @@ func _topology_node_edge_extent_units(role_key: String, node: Dictionary, unit_b
 	if slot_key == "joint":
 		return _topology_joint_radius_units(part)
 	if slot_key == "limb_muscle":
-		return maxf(0.0175, float(part.get("length", 0.0)) * 0.5)
+		return maxf(0.0175, _topology_node_visual_edge_extent_units(role_key, node, unit_bp, "distal"))
 	if slot_key == "muscle":
 		if bool(part.get("is_torso", false)):
-			return maxf(0.04, maxf(float(part.get("radius", 0.0)), float(part.get("length", 0.0)) * 0.38))
-		return maxf(0.02, _effective_part_length_for_geometry(part, "muscle") * 0.5)
+			return maxf(0.04, _topology_node_visual_edge_extent_units(role_key, node, unit_bp, "distal"))
+		return maxf(0.02, _topology_node_visual_edge_extent_units(role_key, node, unit_bp, "distal"))
 	return _topology_node_physical_length_units(role_key, node, unit_bp) * 0.5
 
 
@@ -18957,7 +19739,7 @@ func _topology_position_for_socket_alignment(role_key: String, unit_bp: Dictiona
 	if _topology_node_uses_endpoint_sides(role_key, node, unit_bp):
 		var axis := _topology_node_axis_for_socket_alignment(role_key, unit_bp, nodes, edges, node_index, id, target_pos, desired_pos)
 		var side := _topology_socket_side_value(id)
-		var extent := _topology_node_edge_extent_units(role_key, node, unit_bp) / TOPOLOGY_BOARD_PHYSICAL_UNITS
+		var extent := _topology_node_visual_edge_extent_units(role_key, node, unit_bp, id) / TOPOLOGY_BOARD_PHYSICAL_UNITS
 		return {
 			"pos": _clamp_topology_position(target_pos - axis * extent * float(side)),
 			"axis": axis,
@@ -40387,13 +41169,18 @@ func _build_saved_units_ui() -> void:
 		["train_one", "单独训练", "TRAIN ONE"],
 		["train_selected", "训练所选", "TRAIN SEL"],
 		["delete_selected", "删除选中", "DELETE"],
+		["save_team", "保存队伍", "SAVE TEAM"],
+		["team_prev", "队伍<", "TEAM <"],
+		["team_next", "队伍>", "TEAM >"],
+		["load_team", "载入队伍", "LOAD TEAM"],
+		["delete_team", "删除队伍", "DEL TEAM"],
 	]
 	for i in range(actions.size()):
 		var button := Button.new()
 		button.name = "SavedUnitAction%s" % String(actions[i][0])
 		button.text = String(actions[i][1])
-		button.position = Vector2(54.0 + float(i % 4) * 178.0, 610.0 + float(i / 4) * 34.0)
-		button.size = Vector2(164.0, 28.0)
+		button.position = Vector2(54.0 + float(i % 5) * 142.0, 610.0 + float(i / 5) * 32.0)
+		button.size = Vector2(132.0, 26.0)
 		button.focus_mode = Control.FOCUS_NONE
 		button.pressed.connect(_saved_units_action.bind(String(actions[i][0])))
 		root.add_child(button)
@@ -40444,12 +41231,12 @@ func _build_format_select_ui() -> void:
 	_add_ui_rect(root, "FormatDim", Vector2.ZERO, Vector2(1280.0, 720.0), Color(0.0, 0.0, 0.0, 0.48))
 	_add_ui_rect(root, "FormatPanel", Vector2(286.0, 156.0), Vector2(708.0, 360.0), Color(0.012, 0.022, 0.032, 0.94))
 	_add_ui_rect(root, "FormatAccent", Vector2(326.0, 220.0), Vector2(628.0, 3.0), Color(0.25, 0.92, 1.0, 0.95))
-	_make_label(root, "FormatTitle", "选择队伍编辑规则", Vector2(326.0, 174.0), Vector2(628.0, 42.0), 30, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER)
-	_make_label(root, "FormatHint", "进入 TeamEdit 前先决定本次草稿容量；队伍可之后导入/导出。", Vector2(326.0, 232.0), Vector2(628.0, 44.0), 17, Color(0.82, 0.9, 0.95, 1.0), HORIZONTAL_ALIGNMENT_CENTER)
+	_make_label(root, "FormatTitle", "选择单位编辑规则", Vector2(326.0, 174.0), Vector2(628.0, 42.0), 30, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER)
+	_make_label(root, "FormatHint", "单位编辑只编辑单个单位；队伍编成在已保存单位页完成。", Vector2(326.0, 232.0), Vector2(628.0, 44.0), 17, Color(0.82, 0.9, 0.95, 1.0), HORIZONTAL_ALIGNMENT_CENTER)
 	var specs := [
 		["standard", "标准队伍 10选6", "构筑十个单位，赛前公开双方队伍后选择六个出战。"],
 		["light", "轻量队伍 5选3", "构筑五个单位，赛前选择三个出战；适合快速测试构筑。"],
-		["back", "返回主菜单", "暂不进入 TeamEdit。"],
+		["back", "返回主菜单", "暂不进入单位编辑。"],
 	]
 	for i in range(specs.size()):
 		var button := Button.new()
@@ -40480,7 +41267,7 @@ func _build_editor_ui() -> void:
 	editor_backdrop.set_mode("editor")
 	editor_backdrop.set_background_texture(space_backdrop_texture)
 	root.add_child(editor_backdrop)
-	_make_label(root, "EditorTitle", "队伍编辑", Vector2(54.0, 24.0), Vector2(470.0, 42.0), 32, Color.WHITE, HORIZONTAL_ALIGNMENT_LEFT)
+	_make_label(root, "EditorTitle", "单位编辑", Vector2(54.0, 24.0), Vector2(470.0, 42.0), 32, Color.WHITE, HORIZONTAL_ALIGNMENT_LEFT)
 	_make_label(root, "EditorHelp", "默认是自由画布；需要预设拓扑时再打开模板导入。", Vector2(534.0, 32.0), Vector2(486.0, 28.0), 14, Color(0.8, 0.87, 0.92, 1.0), HORIZONTAL_ALIGNMENT_RIGHT)
 	var editor_back_button := Button.new()
 	editor_back_button.name = "EditorBackButton"
@@ -40493,7 +41280,7 @@ func _build_editor_ui() -> void:
 	_add_ui_rect(root, "EditorCanvasPanel", Vector2(28.0, 76.0), Vector2(888.0, 608.0), Color(0.01, 0.018, 0.026, 0.58))
 	_add_ui_rect(root, "EditorDrawerPanel", Vector2(924.0, 76.0), Vector2(294.0, 608.0), Color(0.012, 0.022, 0.03, 0.72))
 	var panel_specs := [
-		["load", "单位库/队伍编成"],
+		["load", "单位库"],
 		["parts", "零件库"],
 	]
 	for i in range(panel_specs.size()):
@@ -40737,12 +41524,15 @@ func _build_editor_ui() -> void:
 			button.pressed.connect(_confirm_save_unit_name_dialog.bind(String(spec[2])))
 		editor_save_unit_name_panel.add_child(button)
 	editor_section_labels["roster_overview"] = _make_label(root, "RosterOverviewTitle", "队伍总览", Vector2(236.0, 82.0), Vector2(112.0, 22.0), 13, Color(1.0, 0.86, 0.28, 1.0), HORIZONTAL_ALIGNMENT_LEFT)
+	editor_section_labels["roster_overview"].visible = false
 	editor_section_labels["roster_page"] = _make_label(root, "RosterOverviewPage", "", Vector2(792.0, 82.0), Vector2(52.0, 22.0), 11, Color(0.82, 0.9, 0.96, 1.0), HORIZONTAL_ALIGNMENT_CENTER)
+	editor_section_labels["roster_page"].visible = false
 	var roster_prev_button := Button.new()
 	roster_prev_button.text = "<"
 	roster_prev_button.position = Vector2(846.0, 80.0)
 	roster_prev_button.size = Vector2(22.0, 24.0)
 	roster_prev_button.focus_mode = Control.FOCUS_NONE
+	roster_prev_button.visible = false
 	roster_prev_button.pressed.connect(_change_editor_roster_page.bind(-1))
 	root.add_child(roster_prev_button)
 	var roster_next_button := Button.new()
@@ -40750,6 +41540,7 @@ func _build_editor_ui() -> void:
 	roster_next_button.position = Vector2(870.0, 80.0)
 	roster_next_button.size = Vector2(22.0, 24.0)
 	roster_next_button.focus_mode = Control.FOCUS_NONE
+	roster_next_button.visible = false
 	roster_next_button.pressed.connect(_change_editor_roster_page.bind(1))
 	root.add_child(roster_next_button)
 	for i in range(5):
@@ -40761,16 +41552,37 @@ func _build_editor_ui() -> void:
 		roster_button.pressed.connect(_select_editor_roster_overview_slot.bind(i))
 		roster_button.mouse_entered.connect(_hover_editor_roster_overview_slot.bind(i))
 		roster_button.mouse_exited.connect(_clear_editor_unit_hover_card)
+		roster_button.visible = false
 		root.add_child(roster_button)
 		editor_roster_slot_buttons.append(roster_button)
 		var roster_thumb := SortieThumbView.new()
 		roster_thumb.position = roster_button.position + Vector2(3.0, 3.0)
 		roster_thumb.size = Vector2(20.0, 20.0)
 		roster_thumb.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		roster_thumb.visible = false
 		root.add_child(roster_thumb)
 		editor_roster_slot_thumb_views.append(roster_thumb)
+	editor_power_topbar_view = UnitEditorPowerTopbarView.new()
+	editor_power_topbar_view.name = "UnitEditorPowerTopbar"
+	editor_power_topbar_view.position = Vector2(236.0, 78.0)
+	editor_power_topbar_view.size = Vector2(656.0, 44.0)
+	editor_power_topbar_view.mouse_filter = Control.MOUSE_FILTER_STOP
+	editor_power_topbar_view.allocation_changed.connect(_set_engine_momentum_allocation_ratio)
+	editor_power_topbar_view.allocation_drag_finished.connect(_finish_engine_momentum_allocation_drag)
+	editor_power_topbar_view.open_requested.connect(_open_dashboard_engine_allocation)
+	root.add_child(editor_power_topbar_view)
 	editor_section_labels["board"] = _make_label(root, "BoardTitle", "自由画布", Vector2(236.0, 124.0), Vector2(210.0, 18.0), 14, Color(0.9, 0.96, 1.0, 1.0), HORIZONTAL_ALIGNMENT_LEFT)
 	editor_board_hint_label = _make_label(root, "BoardHint", "", Vector2(470.0, 124.0), Vector2(422.0, 18.0), 10, Color(1.0, 0.9, 0.45, 1.0), HORIZONTAL_ALIGNMENT_RIGHT)
+	editor_engine_allocation_button = Button.new()
+	editor_engine_allocation_button.name = "DashboardPowerAllocationButton"
+	editor_engine_allocation_button.text = "动力分配"
+	editor_engine_allocation_button.position = Vector2(52.0, 108.0)
+	editor_engine_allocation_button.size = Vector2(82.0, 24.0)
+	editor_engine_allocation_button.focus_mode = Control.FOCUS_NONE
+	editor_engine_allocation_button.pressed.connect(_open_dashboard_engine_allocation)
+	root.add_child(editor_engine_allocation_button)
+	editor_engine_allocation_summary_label = _make_label(root, "DashboardPowerAllocationSummary", "", Vector2(140.0, 109.0), Vector2(82.0, 22.0), 9, Color(0.78, 0.92, 1.0, 0.94), HORIZONTAL_ALIGNMENT_LEFT)
+	editor_engine_allocation_summary_label.autowrap_mode = TextServer.AUTOWRAP_OFF
 	var board_primary_actions := [
 		["save_canvas", "保存为单位"],
 		["training_import", "训练测试"],
@@ -41574,9 +42386,9 @@ func _show_context_help(context: String) -> void:
 	if _ui_is_zh():
 		match context:
 			"editor":
-				text = "TeamEdit：先保存单个单位，再在队伍编成中组合；训练可从当前画板临时导入。"
+				text = "单位编辑：只编辑单个单位；保存后在已保存单位页勾选组成队伍。"
 			"saved_units":
-				text = "已保存单位：卡片可 hover 查看详情，可单选/多选进入训练。"
+				text = "已保存单位：卡片可 hover 查看详情；勾选单位组成队伍，也可载入单位继续编辑。"
 			"scout":
 				text = "训练配置/赛前侦查：先选 P1/P2/P3 席位，再开始。训练靶机默认只刹车不主动攻击。"
 			"settings":
@@ -41586,7 +42398,7 @@ func _show_context_help(context: String) -> void:
 	else:
 		match context:
 			"editor":
-				text = "TeamEdit: save single units first, then compose teams. Training can import the current canvas temporarily."
+				text = "Unit Edit: edit one unit at a time; save it, then compose teams from Saved Units."
 			"saved_units":
 				text = "Saved Units: hover cards for details; select one or multiple units for Training."
 			"scout":
@@ -42394,18 +43206,15 @@ func _update_editor_ui(force_now: bool = false) -> void:
 	var current_is_blank := bool(stats.get("blank_canvas", false))
 	var current_cost_label := "当前画布造价" if _ui_is_zh() and (_editor_is_blank_work_canvas() or current_is_blank) else ("当前单位造价" if _ui_is_zh() else ("Canvas Cost" if (_editor_is_blank_work_canvas() or current_is_blank) else "Unit Cost"))
 	var current_cost_text := "%s %d" % [current_cost_label, int(stats.get("cost", 0))]
-	var show_team_cost := editor_panel_mode == "load" and editor_load_mode == "team"
 	if _editor_is_blank_work_canvas():
 		_set_control_text_if_changed(editor_unit_label, ("P%d 临时%s\n%s" if _ui_is_zh() else "P%d TEMP %s\n%s") % [player_id, _role_short(role_key), current_cost_text])
 	else:
 		_set_control_text_if_changed(editor_unit_label, ("P%d %s %d/%d\n%s" if _ui_is_zh() else "P%d %s %d/%d\n%s") % [player_id, _role_short(role_key), int(editor_unit_indices[role_key]) + 1, roster.size(), current_cost_text])
-	var budget_text := ("预算正常" if _ui_is_zh() else "BUDGET OK") if bool(summary.get("budget_valid", true)) else ("预算警告" if _ui_is_zh() else "BUDGET WARN")
-	var valid_text := ("%s合法" % _match_format_short() if _ui_is_zh() else "%s OK" % _match_format_short()) if bool(summary["valid"]) else ("队伍未完成" if _ui_is_zh() else "ROSTER TODO")
-	var length_note_text := _localized_system_text(String(summary["length_note"])) if _ui_is_zh() else String(summary["length_note"])
 	var unit_line := ("%s：%d" if _ui_is_zh() else "%s: %d") % [current_cost_label, int(stats.get("cost", 0))]
-	if show_team_cost:
-		unit_line += ("  队伍：%d/%d" if _ui_is_zh() else "  Team: %d/%d") % [int(summary["cost"]), START_BUDGET]
-	var roster_line := ("P%d %s  %s" if _ui_is_zh() else "P%d %s  %s") % [player_id, budget_text, valid_text]
+	var unit_note := "单位编辑：保存后在已保存单位页编成队伍。" if _ui_is_zh() else "Unit Edit: save, then compose teams from Saved Units."
+	if String(stats.get("slot_payload_note", "")) != "":
+		unit_note = _localized_system_text(String(stats.get("slot_payload_note", ""))) if _ui_is_zh() else String(stats.get("slot_payload_note", ""))
+	var roster_line := ("P%d %s" if _ui_is_zh() else "P%d %s") % [player_id, unit_note]
 	_set_control_text_if_changed(editor_summary_label, "%s\n%s" % [unit_line, roster_line])
 	_set_control_text_if_changed(editor_stats_label, _format_unit_stats(stats))
 	var switch_note: String = " | %s %s" % [_ui_term("shift"), String(selected_component.get("role_switch", "")).to_upper()] if String(selected_component.get("role_switch", "")) != "" else ""
@@ -42599,6 +43408,8 @@ func _update_editor_load_card_buttons(role_key: String) -> void:
 
 func _apply_editor_panel_visibility(role_key: String, unit_bp: Dictionary) -> void:
 	var body_board_enabled := _role_uses_body_board(role_key)
+	if editor_load_mode == "team":
+		editor_load_mode = "unit"
 	var mode := String(editor_panel_mode)
 	var load_visible := mode == "load"
 	var unit_visible := load_visible
@@ -42607,15 +43418,15 @@ func _apply_editor_panel_visibility(role_key: String, unit_bp: Dictionary) -> vo
 	var template_visible := load_visible
 	var color_visible := false
 	var stats_visible := false
-	var panel_texts_zh := {"load": "单位库/队伍", "parts": "零件库"}
-	var panel_texts_en := {"load": "UNITS/TEAMS", "parts": "PARTS"}
+	var panel_texts_zh := {"load": "单位库", "parts": "零件库"}
+	var panel_texts_en := {"load": "UNITS", "parts": "PARTS"}
 	for panel_key in editor_panel_buttons.keys():
 		var panel_button: Button = editor_panel_buttons[panel_key]
 		_set_control_text_if_changed(panel_button, String((panel_texts_zh if _ui_is_zh() else panel_texts_en).get(String(panel_key), String(panel_key).to_upper())))
 		_set_canvas_item_modulate_if_changed(panel_button, Color(0.35, 0.95, 1.0, 1.0) if String(panel_key) == mode else Color(0.86, 0.9, 0.94, 1.0))
 	for role_key_button in editor_role_buttons.keys():
 		var role_button: Button = editor_role_buttons[role_key_button]
-		var role_visible := load_visible or parts_visible
+		var role_visible := false
 		_set_canvas_item_visible_if_changed(role_button, role_visible)
 		_set_button_disabled_if_changed(role_button, not role_visible)
 		_set_control_position_if_changed(role_button, Vector2(936.0 + float(ROLE_ORDER.find(String(role_key_button))) * 92.0, 118.0 if parts_visible else 212.0))
@@ -42665,7 +43476,7 @@ func _apply_editor_panel_visibility(role_key: String, unit_bp: Dictionary) -> vo
 		_set_control_size_if_changed(ammo_button, Vector2(50.0, 22.0))
 		_set_control_text_if_changed(ammo_button, _volume_rank_label(float(rank)))
 		_set_canvas_item_modulate_if_changed(ammo_button, Color(1.0, 0.86, 0.28, 1.0) if rank == editor_ammo_size_rank else Color(0.76, 0.9, 1.0, 0.82))
-	var unit_action_keys := ["edit_side", "load_team", "load_unit", "add_to_team", "import_team", "export_team", "clear_team", "toggle_match_format", "copy_ai"]
+	var unit_action_keys := ["load_unit"]
 	if editor_load_mode == "unit":
 		unit_action_keys.append_array(["duplicate", "delete"])
 	var board_primary_action_keys := ["save_canvas", "training_import", "open_saved_units"]
@@ -42785,10 +43596,7 @@ func _apply_editor_panel_visibility(role_key: String, unit_bp: Dictionary) -> vo
 		if unit_visible:
 			_set_control_position_if_changed(editor_unit_label, Vector2(936.0, 186.0))
 			_set_control_size_if_changed(editor_unit_label, Vector2(270.0, 52.0))
-			if editor_load_mode == "team":
-				_set_control_text_if_changed(editor_unit_label, ("队伍 %s" if _ui_is_zh() else "TEAM %s") % _match_format_short())
-			else:
-				_set_control_text_if_changed(editor_unit_label, "单位库" if _ui_is_zh() else "UNITS")
+			_set_control_text_if_changed(editor_unit_label, "单位库" if _ui_is_zh() else "UNITS")
 	if editor_summary_label != null:
 		_set_canvas_item_visible_if_changed(editor_summary_label, unit_visible)
 		if unit_visible:
@@ -44650,6 +45458,7 @@ func _refresh_editor_stats_rail(current_stats: Dictionary, preview_stats: Dictio
 		header = "预览：%s" % _short_part_name(hover_title) if _ui_is_zh() else "PREVIEW: %s" % _short_part_name(hover_title)
 	editor_stats_rail_view.visible = true
 	editor_stats_rail_view.set_stats(entries, header, _editor_rule_status_note(flags), has_preview, ui_language)
+	_refresh_engine_allocation_dashboard_summary()
 
 
 func _editor_rule_flags(role_key: String, unit_bp: Dictionary, stats: Dictionary, summary: Dictionary) -> Dictionary:
@@ -45188,6 +45997,9 @@ func _refresh_editor_visual_views(precomputed_stats: Dictionary = {}, update_sid
 				node["downstream_rotation_radius_units"] = _topology_joint_max_rotation_radius_units(role_key, unit_bp, source_nodes_for_edges, edges_for_snapshot, i)
 			nodes[i] = node
 		var source_edges_for_conflicts: Array = topology.get("edges", [])
+		var display_nodes_for_edges := _board_nodes_with_art_visual_positions(role_key, unit_bp, nodes, source_edges_for_conflicts)
+		source_nodes_for_edges = display_nodes_for_edges
+		nodes = display_nodes_for_edges
 		var endpoint_conflicts := _topology_endpoint_conflicts(role_key, unit_bp, source_nodes_for_edges, source_edges_for_conflicts)
 		var edge_states := {}
 		for edge in Array(topology.get("edges", [])):
@@ -45513,7 +46325,7 @@ func _localized_system_text(value: String) -> String:
 		["soul", "英魂"],
 		["cost", "价格"],
 		["deploy", "入场"],
-		["TeamEdit", "队伍编辑"],
+		["TeamEdit", "单位编辑"],
 		["236X", "正面+X"],
 		["214X", "背面+X"],
 		["236", "正面"],

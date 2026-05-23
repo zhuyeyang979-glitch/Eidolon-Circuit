@@ -3144,6 +3144,86 @@ Findings:
 Sync:
 - Implemented in `E:\New project`; mirror sync and local commit recorded by the surrounding Git history.
 
+## 2026-05-23 Unit Edit / Saved Units Team Builder Split
+
+Rules:
+- The board editor is now the single-unit editor. Team composition controls must not occupy the Unit Edit canvas page.
+- Saved Units is the team composition surface: selecting saved units builds a team draft, saved teams are viewed/loaded/deleted there, and team legality is evaluated there.
+- Loading a saved unit into Unit Edit must preserve the saved topology, payloads, module bindings, momentum allocations, and pose data. It must not route through the normal editor entry that resets the board.
+- Unit Edit power allocation is a first-class top-bar surface: engine output, thruster allocation, bound limb allocation, remaining budget, and heat/cooling summary should be visible without hunting through hidden detail panels.
+
+Implementation notes:
+- Added `_load_saved_unit_into_unit_editor()` and `_show_unit_editor_preserve_loaded_blueprint()` so `载入编辑 / EDIT` loads the selected saved-unit blueprint directly into the editor working blueprint and then shows the editor without clearing the canvas.
+- Renamed visible TeamEdit copy to `单位编辑 / Unit Edit` and hid unit-editor team composition controls such as team role buttons, roster overview, team import/export, and sortie ordering.
+- Expanded Saved Units with team-draft selection, saved-team navigation, save/load/delete actions, and `_saved_units_team_legality_summary()` so team legality lives next to team composition.
+- Added `UnitEditorPowerTopbarView`, connected to the existing momentum allocation writeback path. The top bar exposes thruster and bound-limb sliders plus the same engine-to-consumer budget tree used by the detailed Dashboard allocation panel.
+- Shortened Saved Units hint text after `text_overflow_probe` found the English hint line could overflow.
+
+Verification:
+- `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120` passed.
+- New probes passed:
+  - `saved_unit_load_to_unit_editor_probe`
+  - `unit_editor_rename_probe`
+  - `unit_editor_no_team_role_controls_probe`
+  - `saved_units_team_builder_probe`
+  - `saved_units_team_legality_probe`
+  - `saved_units_saved_team_view_probe`
+  - `unit_editor_power_allocation_topbar_probe`
+  - `unit_editor_power_slider_writeback_probe`
+- Regressions passed:
+  - `teamedit_probe`
+  - `saved_units_menu_probe`
+  - `saved_units_back_to_editor_probe`
+  - `ui_layout_probe`
+  - `text_overflow_probe`
+  - `combat_probe`
+
+Findings:
+- The previous `EDIT` path still used the generic editor entry and could wipe the loaded canvas. The new path keeps the loaded blueprint in `editor_working_blueprint` and only refreshes the Unit Edit page around that state.
+- Existing saved-team validation requires current saved-unit schema metadata inside team payloads; the team save helper now injects the current unit schema version into copied member blueprints before writing a saved-team JSON.
+- Unit Edit still keeps role data internally for saved-unit/team legality, but player-facing team assembly is now in Saved Units.
+
+Sync:
+- Implemented in `E:\New project`; Documents and OneDrive mirrors should be refreshed from this source after this worklog update.
+
+## 2026-05-23 Board Art Anchors and Dashboard Power Allocation
+
+Rules:
+- TeamEdit board display anchors must be generated from the same AssemblyBoard art metrics used by catalog previews and battle rendering.
+- Pure art/profile refresh may create display-only `visual_pos` values, but must not mutate saved topology `pos`.
+- Torso display profile now targets a larger card-matched silhouette: front width is about `0.36 * length`, rear width about `0.72 * length`.
+- Drag placement, socket markers, edge endpoints, hit anchors, and battle polygons must agree with the visible art profile so limbs do not appear to float off the torso.
+- Engine power allocation must be reachable from TeamEdit without hunting through payload rows. Dashboard now exposes a compact allocation entry and opens the existing slider panel for thrusters and bound action limbs.
+
+Implementation notes:
+- Added `AssemblyBoardRenderer.component_display_metrics()`, `torso_port_positions()`, and `component_connection_anchor()` as the shared shape/anchor API.
+- Updated TeamEdit topology display to produce display-only `visual_pos` / `visual_anchor` from art-aware socket alignment. Board drawing reads these display coordinates; saved topology remains unchanged by visual refresh.
+- Updated board socket positions and alignment helpers to use the new visible component extents and torso port positions.
+- Added a compact Dashboard power allocation button and summary. It finds the active/open torso, validates an installed engine, displays total/used engine momentum, and opens the existing `EngineMomentumAllocationPanelView`.
+- Allocation slider writeback continues through `allocated_momentum` for thrusters and `allocated_limb_momentum_by_node` for bound limbs; drag remains light and full legality refresh is deferred.
+
+Verification:
+- `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120` passed.
+- New probes passed:
+  - `torso_display_area_profile_probe`: front `0.360`, rear `0.720`, ports `4`.
+  - `board_art_anchor_zero_gap_probe`: visual socket gap `0px`.
+  - `board_visual_pos_art_scale_probe`: display `visual_pos` changes while raw topology pos stays unchanged.
+  - `placement_uses_art_anchors_probe`: placement gap `0px`.
+  - `engine_allocation_dashboard_visible_probe`: Dashboard allocation entry opens the slider panel.
+  - `engine_allocation_slider_writeback_probe`: slider writes back thruster allocation and refreshes the summary.
+- Regressions passed:
+  - `board_battle_art_identity_probe`
+  - `teamedit_probe`
+  - `ui_layout_probe`
+  - `text_overflow_probe`
+
+Findings:
+- The apparent "torso too small" issue was primarily an anchor mismatch: board topology centers were still drawn from older logical extents while the art profile had changed. Solving it at the shared renderer/anchor layer removes the visual gap without rewriting existing saved topology.
+- Dashboard already had the underlying allocation data chain; the missing piece was a clear always-available entry point. The compact summary intentionally uses `total/used` to avoid reintroducing text overlap in the TeamEdit header.
+
+Sync:
+- Implemented in `E:\New project`; Documents and OneDrive mirrors should be refreshed from this source after validation.
+
 ## 2026-05-23 Real Gesture Matrix, Deferred Retained Component Draw, and Weapon Submenus
 
 Rules:

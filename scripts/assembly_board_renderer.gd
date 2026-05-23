@@ -202,9 +202,9 @@ static func component_display_radius(node: Dictionary, physical_radius: float, v
 				min_radius = 5.0 / 0.76
 	match kind:
 		"torso":
-			# Matches the saddle card silhouette: rear width is about 60% of length,
-			# because _draw_torso derives rear width as radius * 2.4.
-			return maxf(length * 0.25, min_radius)
+			# Matches the card silhouette used by the catalog: front width ~= 36%
+			# of length, rear width ~= 72% of length.
+			return maxf(length * 0.30, min_radius)
 		"terminal":
 			return maxf(length * 0.135, min_radius)
 		"barrier":
@@ -212,6 +212,92 @@ static func component_display_radius(node: Dictionary, physical_radius: float, v
 		_:
 			# Limb cards are intentionally slimmer than their metric radius can imply.
 			return maxf(length * 0.145, min_radius)
+
+
+static func component_display_metrics(node: Dictionary, physical_radius: float, visual_length_px: float = -1.0, pixel_minimums: bool = true) -> Dictionary:
+	var kind := component_kind(node)
+	var display_radius := component_display_radius(node, physical_radius, visual_length_px, pixel_minimums)
+	var length := _component_profile_length(kind, physical_radius, visual_length_px, pixel_minimums)
+	var min_width := 6.0 if pixel_minimums else 0.001
+	match kind:
+		"torso":
+			var front_width := maxf(length * 0.36, maxf(display_radius * 1.2, min_width))
+			var rear_width := maxf(length * 0.72, maxf(display_radius * 2.4, front_width + (2.0 if pixel_minimums else 0.001)))
+			return {
+				"kind": kind,
+				"length": length,
+				"display_radius": display_radius,
+				"front_width": front_width,
+				"rear_width": rear_width,
+				"root_extent": length * 0.5,
+				"tip_extent": length * 0.5,
+			}
+		"terminal":
+			return {
+				"kind": kind,
+				"length": length,
+				"display_radius": display_radius,
+				"body_width": display_radius,
+				"root_extent": length * 0.5,
+				"tip_extent": length * 0.5,
+			}
+		"barrier":
+			return {
+				"kind": kind,
+				"length": length,
+				"display_radius": display_radius,
+				"body_width": maxf(display_radius * 0.9, 7.0 if pixel_minimums else 0.001),
+				"root_extent": length * 0.5,
+				"tip_extent": length * 0.5,
+			}
+		_:
+			return {
+				"kind": kind,
+				"length": length,
+				"display_radius": display_radius,
+				"body_width": maxf(display_radius * 0.76, 5.0 if pixel_minimums else 0.001),
+				"root_extent": length * 0.5,
+				"tip_extent": length * 0.5,
+			}
+
+
+static func torso_port_positions(center: Vector2, node: Dictionary, axis: Vector2, physical_radius: float, visual_length_px: float = -1.0, pixel_minimums: bool = true) -> Array:
+	var metrics := component_display_metrics(node, physical_radius, visual_length_px, pixel_minimums)
+	var forward := _safe_axis(axis)
+	var right := Vector2(-forward.y, forward.x)
+	var torso_scale := maxf(0.001, PartArt.TORSO_GEOMETRY_SCALE)
+	var port_count := PartArt.torso_saddle_port_count(node)
+	var positions: Array = []
+	for raw_local in PartArt.torso_saddle_port_local_offsets(
+		port_count,
+		float(metrics.get("length", 0.0)) / torso_scale,
+		float(metrics.get("front_width", 0.0)) / torso_scale,
+		float(metrics.get("rear_width", 0.0)) / torso_scale
+	):
+		var local: Vector2 = raw_local
+		positions.append(center + forward * local.x + right * local.y)
+	return positions
+
+
+static func component_connection_anchor(center: Vector2, node: Dictionary, axis: Vector2, physical_radius: float, toward: Vector2, socket_id: String = "", visual_length_px: float = -1.0, pixel_minimums: bool = true) -> Vector2:
+	var forward := _safe_axis(axis)
+	var kind := component_kind(node)
+	var id := socket_id.to_lower()
+	if kind == "torso" and id.begins_with("torso_port:"):
+		var ports := torso_port_positions(center, node, forward, physical_radius, visual_length_px, pixel_minimums)
+		if ports.size() > 0:
+			return ports[clampi(int(id.get_slice(":", 1)), 0, ports.size() - 1)]
+	var direction := toward - center
+	if direction.length() < 0.01:
+		direction = forward
+	var side := 1.0 if direction.dot(forward) >= 0.0 else -1.0
+	if id in ["root_joint", "handle", "end:a", "side:-1", "side:a"]:
+		side = -1.0
+	elif id in ["distal", "end:b", "side:1", "side:b"]:
+		side = 1.0
+	var metrics := component_display_metrics(node, physical_radius, visual_length_px, pixel_minimums)
+	var extent := float(metrics.get("tip_extent" if side >= 0.0 else "root_extent", float(metrics.get("length", 0.0)) * 0.5))
+	return center + forward * extent * side
 
 
 static func _component_profile_length(kind: String, physical_radius: float, visual_length_px: float, pixel_minimums: bool) -> float:
@@ -240,23 +326,17 @@ static func _component_profile_length(kind: String, physical_radius: float, visu
 static func component_polygon(center: Vector2, node: Dictionary, axis: Vector2, physical_radius: float, visual_length_px: float = -1.0, pixel_minimums: bool = true) -> PackedVector2Array:
 	var forward := _safe_axis(axis)
 	var kind := component_kind(node)
-	var display_radius := component_display_radius(node, physical_radius, visual_length_px, pixel_minimums)
+	var metrics := component_display_metrics(node, physical_radius, visual_length_px, pixel_minimums)
+	var display_radius := float(metrics.get("display_radius", component_display_radius(node, physical_radius, visual_length_px, pixel_minimums)))
 	match kind:
 		"torso":
-			var min_length := 10.0 if pixel_minimums else 0.001
-			var min_width := 6.0 if pixel_minimums else 0.001
-			var length := maxf(visual_length_px if visual_length_px > 0.0 else display_radius * 1.94, min_length)
-			var front_width := maxf(display_radius * 1.2, min_width)
-			var rear_width := maxf(display_radius * 2.4, front_width + (2.0 if pixel_minimums else 0.001))
-			return saddle_polygon(center, forward, length, front_width, rear_width)
+			return saddle_polygon(center, forward, float(metrics.get("length", 0.0)), float(metrics.get("front_width", 0.0)), float(metrics.get("rear_width", 0.0)))
 		"terminal":
 			return terminal_polygon(center, node, forward, display_radius, visual_length_px, pixel_minimums)
 		"barrier":
-			var barrier_length := maxf(visual_length_px if visual_length_px > 0.0 else display_radius * 2.0, 10.0 if pixel_minimums else 0.001)
-			return capsule_polygon(center, forward, barrier_length, maxf(display_radius * 0.9, 7.0 if pixel_minimums else 0.001), 6)
+			return capsule_polygon(center, forward, float(metrics.get("length", 0.0)), float(metrics.get("body_width", display_radius)), 6)
 		_:
-			var limb_length := maxf(visual_length_px if visual_length_px > 0.0 else display_radius * 1.9, 8.0 if pixel_minimums else 0.001)
-			return capsule_polygon(center, forward, limb_length, maxf(display_radius * 0.76, 5.0 if pixel_minimums else 0.001), 6)
+			return capsule_polygon(center, forward, float(metrics.get("length", 0.0)), float(metrics.get("body_width", display_radius)), 6)
 
 
 static func saddle_polygon(center: Vector2, axis: Vector2, length: float, front_width: float, rear_width: float) -> PackedVector2Array:
@@ -349,15 +429,10 @@ static func rotated_rect(center: Vector2, axis: Vector2, length: float, width: f
 
 
 static func _draw_torso(canvas: CanvasItem, center: Vector2, axis: Vector2, color: Color, radius: float, node: Dictionary, visual_length_px: float = -1.0) -> void:
-	var length := maxf(float(node.get("component_length", 0.0)), 0.0)
-	if visual_length_px > 0.0:
-		length = visual_length_px
-	if length <= 0.0:
-		length = maxf(float(node.get("edge_extent_units", 0.0)), 0.0) * 1.94
-	if length <= 0.0:
-		length = radius * 1.94
-	var front_width := maxf(radius * 1.2, 6.0)
-	var rear_width := maxf(radius * 2.4, front_width + 2.0)
+	var metrics := component_display_metrics(node, radius, visual_length_px, true)
+	var length := float(metrics.get("length", maxf(float(node.get("component_length", 0.0)), radius * 1.94)))
+	var front_width := float(metrics.get("front_width", maxf(radius * 1.2, 6.0)))
+	var rear_width := float(metrics.get("rear_width", maxf(radius * 2.4, front_width + 2.0)))
 	var hull := saddle_polygon(center, axis, length, front_width, rear_width)
 	canvas.draw_colored_polygon(hull, color.darkened(0.44))
 	_draw_outline(canvas, hull, color.lerp(Color.WHITE, 0.24), 2.0)
@@ -367,12 +442,7 @@ static func _draw_torso(canvas: CanvasItem, center: Vector2, axis: Vector2, colo
 	var forward := _safe_axis(axis)
 	var right := Vector2(-forward.y, forward.x)
 	canvas.draw_line(center + forward * length * 0.5 - right * front_width * 0.42, center + forward * length * 0.5 + right * front_width * 0.42, color.lerp(Color.WHITE, 0.42), 2.0)
-	var port_count := PartArt.torso_saddle_port_count(node)
-	var port_positions := []
-	var torso_scale := maxf(0.001, PartArt.TORSO_GEOMETRY_SCALE)
-	for raw_local in PartArt.torso_saddle_port_local_offsets(port_count, length / torso_scale, front_width / torso_scale, rear_width / torso_scale):
-		var local: Vector2 = raw_local
-		port_positions.append(center + forward * local.x + right * local.y)
+	var port_positions := torso_port_positions(center, node, axis, radius, visual_length_px, true)
 	var occupied_ports: Array = Array(node.get("occupied_ports", []))
 	for i in range(port_positions.size()):
 		var p: Vector2 = port_positions[i]
