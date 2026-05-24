@@ -58,11 +58,27 @@ func _init() -> void:
 	main.editor_open_torso_node_index = 0
 	main.editor_topology_node_index = 0
 	main._update_editor_ui(true)
-	if main.editor_power_topbar_view == null or not main.editor_power_topbar_view.visible:
-		_fail("Unit Edit power topbar should be visible.")
-	if main.editor_power_topbar_view.entries.size() < 2:
-		_fail("Power topbar should list thruster and bound limb allocation entries.")
-	if main.editor_power_topbar_view.engine_output <= 0.0:
-		_fail("Power topbar should show engine output.")
-	print("UNIT_EDITOR_POWER_ALLOCATION_TOPBAR_PROBE ok entries=%d" % main.editor_power_topbar_view.entries.size())
+	if main.editor_power_topbar_view != null:
+		_fail("Unit Edit power topbar banner should not be instantiated.")
+	if main.editor_power_dock_view == null or not main.editor_power_dock_view.visible:
+		_fail("Unit Edit power dock should be visible.")
+	if main.editor_power_dock_view.entries.size() < 2:
+		_fail("Power dock should list thruster demand and bound limb drive entries.")
+	if main.editor_power_dock_view.engine_output <= 0.0:
+		_fail("Power dock should show engine output.")
+	var booster_rows := 0
+	var limb_rows := 0
+	for raw_entry in main.editor_power_dock_view.entries:
+		if not (raw_entry is Dictionary):
+			continue
+		var entry: Dictionary = raw_entry
+		if String(entry.get("kind", "")).begins_with("booster"):
+			booster_rows += 1
+		if String(entry.get("kind", "")) == "limb":
+			limb_rows += 1
+			if bool(entry.get("readonly", false)):
+				_fail("Power dock limb entry should remain adjustable.")
+	if booster_rows < 1 or limb_rows < 1:
+		_fail("Power dock should contain both booster demand and limb drive rows.")
+	print("UNIT_EDITOR_POWER_ALLOCATION_TOPBAR_PROBE ok dock_entries=%d" % main.editor_power_dock_view.entries.size())
 	quit()

@@ -64,13 +64,21 @@ func _init() -> void:
 	main.editor_panel_mode = "parts"
 	main._open_engine_momentum_allocation_for_payload(0)
 	var data: Dictionary = main._engine_momentum_allocation_data(main._editor_current_blueprint(), main.editor_engine_allocation_torso_node_index, main.editor_engine_allocation_payload_index)
-	var booster_id := _first_id(data, "booster")
-	if booster_id == "":
-		_fail("Missing booster allocation entry.")
+	var booster_id := _first_id(data, "booster_drive")
+	var limb_id := _first_id(data, "limb")
+	if booster_id == "" or limb_id == "":
+		_fail("Missing booster or limb allocation entry.")
+	var booster_before: Dictionary = {}
+	for raw_entry in Array(data.get("entries", [])):
+		if raw_entry is Dictionary and String(Dictionary(raw_entry).get("id", "")) == booster_id:
+			booster_before = Dictionary(raw_entry)
 	main.editor_update_ui_count = 0
 	main.editor_allocation_light_refresh_count = 0
 	main._set_engine_momentum_allocation_ratio(booster_id, 0.18)
-	main._set_engine_momentum_allocation_ratio(booster_id, 0.24)
+	if int(main.editor_update_ui_count) != 0:
+		_fail("Booster slider drag path triggered full editor UI rebuild.")
+	main._set_engine_momentum_allocation_ratio(limb_id, 0.18)
+	main._set_engine_momentum_allocation_ratio(limb_id, 0.24)
 	if int(main.editor_update_ui_count) != 0:
 		_fail("Slider drag path triggered full editor UI rebuild.")
 	if int(main.editor_allocation_light_refresh_count) < 2:

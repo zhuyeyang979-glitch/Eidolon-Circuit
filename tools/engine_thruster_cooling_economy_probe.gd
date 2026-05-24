@@ -37,18 +37,23 @@ func _check_slot(main, slot_key: String) -> void:
 		elif slot_key == "booster":
 			var expected_move_momentum := median * 2.0
 			var expected_boost_momentum := median * 4.0
-			for field in ["thruster_family", "allocated_momentum", "momentum_min", "momentum_max", "move_efficiency", "boost_efficiency", "turn_efficiency", "movement_profile", "boost_angle_degrees", "boost_cooldown", "boost_heat", "thruster_duration", "boost_duration", "thruster_idle_heat_coeff", "brake_efficiency", "flame_color", "summary"]:
+			for field in ["thruster_family", "drive_demand", "momentum_min", "momentum_max", "move_efficiency", "boost_efficiency", "turn_efficiency", "movement_profile", "boost_angle_degrees", "boost_cooldown", "boost_heat", "thruster_duration", "boost_duration", "thruster_idle_heat_coeff", "brake_efficiency", "flame_color", "summary"]:
 				if not part.has(field):
 					_fail("Booster missing %s: %s" % [field, String(part.get("name", ""))])
+			if absf(main._thruster_drive_demand_for_part(part) - float(part.get("momentum_min", 0.0))) > 0.001:
+				_fail("Booster fixed demand should equal momentum_min: %s" % String(part.get("name", "")))
 			if main._booster_normal_momentum_for_part(part) <= 0.0:
-				_fail("Booster allocation does not produce normal movement momentum: %s" % String(part.get("name", "")))
+				_fail("Booster fixed demand does not produce normal movement momentum: %s" % String(part.get("name", "")))
 			if main._thruster_boost_total_momentum_for_part(part) <= 0.0:
-				_fail("Booster allocation does not produce boost total momentum: %s" % String(part.get("name", "")))
+				_fail("Booster fixed demand does not produce boost total momentum: %s" % String(part.get("name", "")))
 			if float(part.get("thruster_duration", 0.0)) <= 0.0 or float(part.get("boost_duration", 0.0)) <= 0.0:
 				_fail("Booster lacks positive durations: %s" % String(part.get("name", "")))
 			if main._booster_normal_momentum_for_part(part) + 0.01 >= expected_move_momentum and main._thruster_boost_total_momentum_for_part(part) + 0.01 >= expected_boost_momentum:
 				booster_target_ranks[rank] = true
-			var stats := {"role": "hero", "mass": median, "thruster_allocated_momentum": float(part.get("allocated_momentum", 0.0)), "boost_momentum": float(part.get("boost_momentum", 0.0)), "move_efficiency": float(part.get("move_efficiency", 1.0)), "boost_efficiency": float(part.get("boost_efficiency", MainScene.ECONOMY_BOOST_MOMENTUM_MULT)), "turn_efficiency": float(part.get("turn_efficiency", 1.0)), "boost_duration": float(part.get("boost_duration", 0.3)), "speed_mult": 1.0}
+			var demand: float = main._thruster_drive_demand_for_part(part)
+			var boost_extra: float = main._booster_boost_momentum_for_part(part)
+			var stats := {"role": "hero", "mass": median, "thruster_drive_demand": demand, "thruster_allocated_momentum": 9999.0, "thruster_boost_extra_demand": boost_extra, "thruster_boost_peak_demand": demand + boost_extra, "engine_momentum_output": demand + boost_extra + 1.0, "boost_momentum": float(part.get("boost_momentum", 0.0)), "move_efficiency": float(part.get("move_efficiency", 1.0)), "boost_efficiency": float(part.get("boost_efficiency", MainScene.ECONOMY_BOOST_MOMENTUM_MULT)), "turn_efficiency": float(part.get("turn_efficiency", 1.0)), "boost_duration": float(part.get("boost_duration", 0.3)), "speed_mult": 1.0}
+			main._apply_engine_momentum_budget(stats, "hero")
 			main._apply_thruster_momentum_stats(stats, "hero")
 			if float(stats.get("body_move_speed", 0.0)) <= 0.0 or float(stats.get("boost_speed", 0.0)) <= 0.0:
 				_fail("Booster does not produce movement speeds: %s" % String(part.get("name", "")))

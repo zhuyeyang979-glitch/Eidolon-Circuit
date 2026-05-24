@@ -12,7 +12,11 @@ func _stats(allocation: float, mass: float) -> Dictionary:
 	return {
 		"role": "hero",
 		"mass": mass,
-		"thruster_allocated_momentum": allocation,
+		"thruster_drive_demand": allocation,
+		"thruster_allocated_momentum": 9999.0,
+		"thruster_boost_extra_demand": 20.0,
+		"thruster_boost_peak_demand": allocation + 20.0,
+		"engine_momentum_output": allocation + 20.0,
 		"move_efficiency": 1.2,
 		"boost_efficiency": 2.4,
 		"boost_momentum": 20.0,
@@ -26,6 +30,7 @@ func _init() -> void:
 	root.add_child(main)
 	main._ready()
 	var a := _stats(60.0, 30.0)
+	main._apply_engine_momentum_budget(a, "hero")
 	main._apply_thruster_momentum_stats(a, "hero")
 	main._apply_turn_stats(a, "hero")
 	if absf(float(a.get("body_move_speed", 0.0)) - 2.4) > 0.01:
@@ -33,9 +38,11 @@ func _init() -> void:
 	if absf(float(a.get("boost_speed", 0.0)) - 6.4) > 0.01:
 		_fail("Boost speed should be (allocated + boost extra) * boost_efficiency / mass.")
 	var stronger := _stats(90.0, 30.0)
+	main._apply_engine_momentum_budget(stronger, "hero")
 	main._apply_thruster_momentum_stats(stronger, "hero")
 	main._apply_turn_stats(stronger, "hero")
 	var heavier := _stats(60.0, 60.0)
+	main._apply_engine_momentum_budget(heavier, "hero")
 	main._apply_thruster_momentum_stats(heavier, "hero")
 	main._apply_turn_stats(heavier, "hero")
 	if float(stronger.get("body_move_speed", 0.0)) <= float(a.get("body_move_speed", 0.0)):

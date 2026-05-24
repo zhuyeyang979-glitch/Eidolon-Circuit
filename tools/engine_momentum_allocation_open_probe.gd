@@ -77,13 +77,15 @@ func _init() -> void:
 	main._update_editor_ui()
 	main._open_engine_momentum_allocation_for_payload(0)
 	if main.engine_momentum_allocation_view == null or not main.engine_momentum_allocation_view.visible:
-		_fail("Engine allocation panel did not open.")
-	if String(main.engine_momentum_allocation_view.title) != "动力分配":
-		_fail("Unexpected allocation title: %s" % String(main.engine_momentum_allocation_view.title))
+		_fail("Engine allocation detail panel did not open from the explicit engine-slot entry.")
+	if main.editor_power_dock_view == null or not main.editor_power_dock_view.visible:
+		_fail("Unit Edit power dock did not become visible.")
+	if main.editor_power_topbar_view != null and main.editor_power_topbar_view.visible:
+		_fail("Topbar banner should stay hidden.")
 	var data: Dictionary = main._engine_momentum_allocation_data(main._editor_current_blueprint(), main.editor_engine_allocation_torso_node_index, main.editor_engine_allocation_payload_index)
 	if float(data.get("engine_output", 0.0)) <= 0.0:
 		_fail("Allocation pool should be positive.")
 	if Array(data.get("entries", [])).size() < 2:
-		_fail("Allocation panel should expose booster and limb entries.")
-	print("ENGINE_POWER_ALLOCATION_OPEN_PROBE ok entries=%d pool=%.1f" % [Array(data.get("entries", [])).size(), float(data.get("engine_output", 0.0))])
+		_fail("Allocation dock should expose booster and limb entries.")
+	print("ENGINE_POWER_ALLOCATION_OPEN_PROBE ok detail_open=true dock_visible=true entries=%d pool=%.1f" % [Array(data.get("entries", [])).size(), float(data.get("engine_output", 0.0))])
 	quit()

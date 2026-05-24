@@ -59,22 +59,40 @@ func _init() -> void:
 	main.editor_topology_node_index = 0
 	main._update_editor_ui(true)
 	var entry := {}
-	for raw_entry in main.editor_power_topbar_view.entries:
-		if raw_entry is Dictionary and String(Dictionary(raw_entry).get("kind", "")) == "booster":
+	var booster_entry := {}
+	for raw_entry in main.editor_power_dock_view.entries:
+		if not (raw_entry is Dictionary):
+			continue
+		if String(Dictionary(raw_entry).get("kind", "")) == "booster_drive":
+			booster_entry = Dictionary(raw_entry)
+		if String(Dictionary(raw_entry).get("kind", "")) == "limb" and entry.is_empty():
 			entry = Dictionary(raw_entry)
-			break
+	if booster_entry.is_empty():
+		_fail("No booster drive entry found.")
+	var booster_id := String(booster_entry.get("id", ""))
+	var booster_expected := main._engine_allocation_clamped_momentum_from_entries(Array(main.editor_power_dock_view.entries), booster_id, main.editor_power_dock_view.engine_output * 0.12, main.editor_power_dock_view.engine_output)
+	main._set_engine_momentum_allocation_ratio(booster_id, 0.12)
+	var booster_payload_index := int(booster_id.get_slice(":", 1))
+	var after_booster_payloads: Array = Array(main._editor_current_blueprint().get("slot_payloads", []))
+	if booster_payload_index < 0 or booster_payload_index >= after_booster_payloads.size():
+		_fail("Booster payload index was not valid after readonly attempt.")
+	if absf(float(Dictionary(after_booster_payloads[booster_payload_index]).get("thruster_drive_allocated_momentum", -1.0)) - booster_expected) > 0.01:
+		_fail("Booster dock slider did not write drive allocation.")
 	if entry.is_empty():
-		_fail("No booster allocation entry found.")
+		_fail("No limb allocation entry found.")
 	var entry_id := String(entry.get("id", ""))
 	main._set_engine_momentum_allocation_ratio(entry_id, 0.12)
 	var unit_bp: Dictionary = main._editor_current_blueprint()
-	var payloads: Array = Array(unit_bp.get("slot_payloads", []))
-	var payload_index := int(entry_id.get_slice(":", 1))
-	if payload_index < 0 or payload_index >= payloads.size():
-		_fail("Booster payload index was not valid after writeback.")
-	var payload: Dictionary = payloads[payload_index]
-	var expected: float = main.editor_power_topbar_view.engine_output * 0.12
-	if absf(float(payload.get("allocated_momentum", -1.0)) - expected) > 0.5:
-		_fail("Power topbar slider writeback did not update booster allocated_momentum.")
-	print("UNIT_EDITOR_POWER_SLIDER_WRITEBACK_PROBE ok momentum=%.2f" % float(payload.get("allocated_momentum", 0.0)))
+	var expected: float = main._engine_allocation_clamped_momentum_from_entries(Array(main.editor_power_dock_view.entries), entry_id, main.editor_power_dock_view.engine_output * 0.12, main.editor_power_dock_view.engine_output)
+	var bindings: Array = Array(unit_bp.get("module_bindings", []))
+	if bindings.is_empty() or not (bindings[0] is Dictionary):
+		_fail("Limb binding missing after dock writeback.")
+	var by_node: Dictionary = Dictionary(bindings[0]).get("allocated_limb_momentum_by_node", {})
+	var actual := -1.0
+	for value in by_node.values():
+		actual = float(value)
+		break
+	if absf(actual - expected) > 0.5:
+		_fail("Power dock slider writeback did not update limb momentum.")
+	print("UNIT_EDITOR_POWER_SLIDER_WRITEBACK_PROBE ok limb=%.2f" % actual)
 	quit()

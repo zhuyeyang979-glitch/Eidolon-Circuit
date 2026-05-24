@@ -66,9 +66,9 @@ func _init() -> void:
 	main.editor_working_role_key = "hero"
 	main.editor_working_blueprint = unit_bp
 	main.editor_open_torso_node_index = torso
-	main._refresh_unit_editor_power_allocation_topbar()
+	main._refresh_unit_editor_power_allocation_dock()
 	var limb_entry := {}
-	for raw_entry in main.editor_power_topbar_view.entries:
+	for raw_entry in main.editor_power_dock_view.entries:
 		if raw_entry is Dictionary and String(Dictionary(raw_entry).get("kind", "")) == "limb":
 			limb_entry = Dictionary(raw_entry)
 			break

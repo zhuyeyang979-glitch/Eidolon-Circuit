@@ -2,6 +2,7 @@ param(
     [switch]$CheckOnly,
     [switch]$SelfTest,
     [switch]$Headed,
+    [switch]$Headless,
     [string]$Probe = "",
     [string]$Script = "",
     [string]$ProjectPath = "",
@@ -97,6 +98,10 @@ function Test-RunFailed {
 $RootPath = Resolve-ProjectPath $ProjectPath
 $GodotPath = Resolve-GodotPath $Godot $RootPath
 
+if ($Headed -and $Headless) {
+    throw "Use either -Headed or -Headless, not both. Headed is the project default."
+}
+
 if ($SelfTest) {
     if ($RootPath -notmatch "\s") {
         throw "Self-test expects a project path with a space; current path is '$RootPath'."
@@ -131,6 +136,15 @@ if (-not $CheckOnly -and [string]::IsNullOrWhiteSpace($Script)) {
 }
 
 if ($CheckOnly) {
+    if (-not $Headless) {
+        $headedArgs = "--path `"$RootPath`" --check-only --quit-after 1"
+        $headedResult = Invoke-GodotCommand -Exe $GodotPath -Root $RootPath -Arguments $headedArgs -LimitSec $TimeoutSec -Label "headed-check-only"
+        Write-RunResult $headedResult
+        if (-not (Test-RunFailed $headedResult)) {
+            exit 0
+        }
+        exit 1
+    }
     $args = "--headless --path `"$RootPath`" --check-only --quit-after 1"
     $first = Invoke-GodotCommand -Exe $GodotPath -Root $RootPath -Arguments $args -LimitSec $TimeoutSec -Label "headless-check-only"
     Write-RunResult $first
@@ -170,8 +184,8 @@ if (-not [string]::IsNullOrWhiteSpace($Script)) {
     } elseif (-not $scriptPath.EndsWith(".gd")) {
         $scriptPath = "$scriptPath.gd"
     }
-    $scriptArgs = if ($Headed) { "--path `"$RootPath`" --script $scriptPath" } else { "--headless --path `"$RootPath`" --script $scriptPath" }
-    $scriptLabel = if ($Headed) { "headed-script-$scriptPath" } else { "script-$scriptPath" }
+    $scriptArgs = if (-not $Headless) { "--path `"$RootPath`" --script $scriptPath" } else { "--headless --path `"$RootPath`" --script $scriptPath" }
+    $scriptLabel = if (-not $Headless) { "headed-script-$scriptPath" } else { "headless-script-$scriptPath" }
     $scriptResult = Invoke-GodotCommand -Exe $GodotPath -Root $RootPath -Arguments $scriptArgs -LimitSec $TimeoutSec -Label $scriptLabel
     Write-RunResult $scriptResult
     if (Test-RunFailed $scriptResult) {

@@ -16,8 +16,8 @@ func _init() -> void:
 		_fail("Main menu should expose seven mature top-level entries.")
 	if MainScene.MENU_ITEMS[0] != "开始训练":
 		_fail("First main menu item should be training config entry.")
-	if MainScene.MENU_ITEMS[2] != "队伍编辑":
-		_fail("TeamEdit should be the third top-level item.")
+	if MainScene.MENU_ITEMS[2] != "单位编辑":
+		_fail("Unit Edit should be the third top-level item.")
 	main._activate_menu_item(0)
 	if main.game_state != MainScene.STATE_SCOUT:
 		_fail("Training menu entry should open training config/scout page, not direct battle.")

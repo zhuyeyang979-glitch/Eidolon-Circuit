@@ -12,6 +12,9 @@ func _init() -> void:
 	var main = MainScene.new()
 	root.add_child(main)
 	main._ready()
+	main.loading_auto_transitions_enabled = false
+	if main.game_state == MainScene.STATE_LOADING:
+		main._show_menu(true)
 	main._show_training_config(true)
 	if main.game_state != MainScene.STATE_SCOUT:
 		_fail("Training config should use scout/config page.")

@@ -28,11 +28,11 @@ func _init() -> void:
 	var unit = _spawn_unit(main)
 	var rotate_speed := main._unit2_turn_speed_reference()
 	var start := Vector2.UP
-	var toward_front := main._gun_activation_rotated_direction(unit, start, Vector2.RIGHT, rotate_speed, 0.25)
-	if toward_front.dot(Vector2.RIGHT) <= start.dot(Vector2.RIGHT):
-		_fail("Chemical sprayer Gun Activate should rotate toward local 6 while held.")
-	var toward_rear := main._gun_activation_rotated_direction(unit, start, Vector2.LEFT, rotate_speed, 0.25)
-	if toward_rear.dot(Vector2.LEFT) <= start.dot(Vector2.LEFT):
-		_fail("Chemical sprayer Gun Activate should rotate toward local 4 while held.")
+	var right_turn := main._gun_activation_rotated_direction(unit, start, Vector2.RIGHT, rotate_speed, 0.25)
+	if wrapf(right_turn.angle() - start.angle(), -PI, PI) <= 0.0:
+		_fail("Chemical sprayer 6 should rotate with a stable right turn sign.")
+	var left_turn := main._gun_activation_rotated_direction(unit, start, Vector2.LEFT, rotate_speed, 0.25)
+	if wrapf(left_turn.angle() - start.angle(), -PI, PI) >= 0.0:
+		_fail("Chemical sprayer 4 should rotate with a stable left turn sign.")
 	print("CHEMICAL_SPRAYER_ROTATE_COMMAND_PROBE ok speed=%.2f" % rotate_speed)
 	quit()

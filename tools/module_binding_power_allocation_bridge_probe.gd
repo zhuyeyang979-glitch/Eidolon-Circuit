@@ -57,14 +57,14 @@ func _init() -> void:
 	main._start_editor_module_binding_flow(1, main._selected_component("hero", "module", module_index))
 	main._complete_pending_module_binding_with_selection(unit_bp, [limb_a])
 	main._set_pending_module_attack_key(1)
-	main._refresh_unit_editor_power_allocation_topbar()
-	if main.editor_power_topbar_view == null or main.editor_power_topbar_view.entries.is_empty():
-		_fail("Power topbar did not show bound module limb allocations after binding.")
+	main._refresh_unit_editor_power_allocation_dock()
+	if main.editor_power_dock_view == null or main.editor_power_dock_view.entries.is_empty():
+		_fail("Power dock did not show bound module limb allocations after binding.")
 	var has_limb := false
-	for raw_entry in main.editor_power_topbar_view.entries:
+	for raw_entry in main.editor_power_dock_view.entries:
 		if raw_entry is Dictionary and String(Dictionary(raw_entry).get("kind", "")) == "limb":
 			has_limb = true
 	if not has_limb:
-		_fail("Power topbar entries did not include bound limb sliders.")
-	print("MODULE_BINDING_POWER_ALLOCATION_BRIDGE_PROBE ok entries=%d" % main.editor_power_topbar_view.entries.size())
+		_fail("Power dock entries did not include bound limb sliders.")
+	print("MODULE_BINDING_POWER_ALLOCATION_BRIDGE_PROBE ok entries=%d" % main.editor_power_dock_view.entries.size())
 	quit()

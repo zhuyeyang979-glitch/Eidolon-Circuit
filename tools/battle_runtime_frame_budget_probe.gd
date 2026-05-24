@@ -73,7 +73,7 @@ func _init() -> void:
 	var frames := 180
 	for i in range(frames):
 		var start := Time.get_ticks_usec()
-		main._tick_battle(1.0 / 60.0)
+		main._tick_battle(MainScene.BATTLE_FRAME_DELTA)
 		var elapsed := Time.get_ticks_usec() - start
 		if i < warmup:
 			continue

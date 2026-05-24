@@ -38,25 +38,28 @@ func _expect_symmetric_pairs(label: String, top: Array, bottom: Array) -> void:
 			_fail("%s side port %d not mirrored: %s vs %s" % [label, i, str(a), str(b)])
 
 
-func _expect_ports_on_boundary(count: int, offsets: Array) -> void:
-	var length := 2.0
-	var front_width := 0.72
-	var rear_width := 1.56
-	var half_length := length * 0.5
-	var front_half := front_width * 0.5
-	var rear_half := rear_width * 0.5
+func _hull_bounds(part: Dictionary) -> Rect2:
+	var points := PartArt.torso_hull_local_points(part)
+	var min_p := points[0]
+	var max_p := points[0]
+	for p in points:
+		min_p.x = minf(min_p.x, p.x)
+		min_p.y = minf(min_p.y, p.y)
+		max_p.x = maxf(max_p.x, p.x)
+		max_p.y = maxf(max_p.y, p.y)
+	return Rect2(min_p, max_p - min_p)
+
+
+func _expect_ports_on_boundary(count: int, part: Dictionary, offsets: Array) -> void:
+	var bounds := _hull_bounds(part)
 	for raw_offset in offsets:
 		var p: Vector2 = raw_offset
-		if p.x > half_length + 0.001 or p.x < -half_length - 0.001:
-			_fail("%d-port saddle port drifted outside length bounds: %s" % [count, str(p)])
-		var t := clampf((half_length - p.x) / maxf(0.001, length), 0.0, 1.0)
-		var half_width := lerpf(front_half, rear_half, t)
-		if absf(p.y) > half_width + 0.001:
-			_fail("%d-port saddle port drifted outside hull width: %s > %.3f" % [count, str(p), half_width])
-		var on_front_edge := absf(p.x - half_length) <= 0.001 and absf(p.y) <= front_half + 0.001
-		var on_waist_edge := absf(absf(p.y) - half_width) <= 0.001
-		if not (on_front_edge or on_waist_edge):
-			_fail("%d-port saddle port is not on torso boundary: %s half_width %.3f" % [count, str(p), half_width])
+		if p.x > bounds.end.x + 0.001 or p.x < bounds.position.x - 0.001:
+			_fail("%d-port hull port drifted outside length bounds: %s vs %s" % [count, str(p), str(bounds)])
+		if p.y > bounds.end.y + 0.001 or p.y < bounds.position.y - 0.001:
+			_fail("%d-port hull port drifted outside width bounds: %s vs %s" % [count, str(p), str(bounds)])
+		if absf(p.y) > 0.001 and absf(absf(p.y) - maxf(absf(bounds.position.y), absf(bounds.end.y))) < 0.001:
+			_fail("%d-port hull port snapped to rectangular max width instead of shaped side: %s" % [count, str(p)])
 
 
 func _init() -> void:
@@ -73,9 +76,9 @@ func _init() -> void:
 		}
 		var dirs: Array = main._torso_port_directions(torso)
 		_expect(dirs.size() == count, "%d-port torso returned %d directions." % [count, dirs.size()])
-		var offsets: Array = PartArt.torso_saddle_port_local_offsets(count)
+		var offsets: Array = PartArt.torso_hull_port_local_offsets(torso, count)
 		_expect(offsets.size() == count, "%d-port local offsets returned %d points." % [count, offsets.size()])
-		_expect_ports_on_boundary(count, offsets)
+		_expect_ports_on_boundary(count, torso, offsets)
 		var split := _split_sides(dirs)
 		var expected_front := 1 if count in [1, 3, 5] else 0
 		_expect(int(split["front"]) == expected_front, "%d-port torso front-center count expected %d got %d." % [count, expected_front, int(split["front"])])

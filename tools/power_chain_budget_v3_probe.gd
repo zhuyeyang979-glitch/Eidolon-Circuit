@@ -16,7 +16,8 @@ func _init() -> void:
 		"role": "hero",
 		"mass": 24.0,
 		"engine_momentum_output": 100.0,
-		"thruster_allocated_momentum": 32.0,
+		"thruster_drive_demand": 32.0,
+		"thruster_allocated_momentum": 9999.0,
 		"runtime_topology_segments": [
 			{"node_index": 1, "joint_drive_kind": "rotary", "allocated_limb_momentum": 24.0, "momentum_min": 1.0, "momentum_max": 80.0, "mass": 6.0, "a_local": Vector2.ZERO, "b_local": Vector2(1.0, 0.0)},
 			{"node_index": 2, "joint_drive_kind": "rotary", "allocated_limb_momentum": 14.0, "momentum_min": 1.0, "momentum_max": 80.0, "mass": 4.0, "a_local": Vector2(1.0, 0.0), "b_local": Vector2(2.0, 0.0)},
@@ -32,7 +33,7 @@ func _init() -> void:
 		_fail("Total allocated momentum mismatch")
 	if float(stats.get("engine_momentum_margin", 0.0)) < 29.999:
 		_fail("Engine margin should remain positive")
-	stats["thruster_allocated_momentum"] = 80.0
+	stats["thruster_drive_demand"] = 80.0
 	main._apply_engine_momentum_budget(stats, "hero")
 	if float(stats.get("engine_momentum_margin", 0.0)) >= 0.0:
 		_fail("Over allocation should be invalid/negative")

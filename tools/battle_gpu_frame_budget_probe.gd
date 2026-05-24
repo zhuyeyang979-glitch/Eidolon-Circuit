@@ -19,7 +19,7 @@ func _init() -> void:
 	main.hot_path_profiler.begin_interaction("battle.gpu_frame_budget")
 	for i in range(300):
 		main.hot_path_profiler.begin_frame()
-		main._tick_battle(1.0 / 60.0)
+		main._tick_battle(MainScene.BATTLE_FRAME_DELTA)
 		main.hot_path_profiler.end_frame()
 	main.hot_path_profiler.end_interaction("battle.gpu_frame_budget")
 	var after_sync := 0

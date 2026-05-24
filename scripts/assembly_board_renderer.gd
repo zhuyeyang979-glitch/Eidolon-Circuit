@@ -43,11 +43,38 @@ static func draw_runtime_segment(canvas: CanvasItem, segment: Dictionary, center
 	var node := segment_to_component_node(segment)
 	node["runtime_action"] = bool(segment.get("runtime_action", false))
 	node["runtime_action_state"] = String(segment.get("runtime_action_state", ""))
+	node["runtime_action_phase"] = String(segment.get("runtime_action_phase", ""))
+	node["runtime_action_progress"] = float(segment.get("runtime_action_progress", 0.0))
 	var draw_color := material_color
 	if part_kind == "torso":
 		draw_color = primary_color.lerp(material_color, 0.45).lerp(Color.WHITE, 0.08)
 	var center := (local_a + local_b) * 0.5
 	return draw_component(canvas, center, node, draw_color, axis, radius_px, 0.0, visual_length, true)
+
+
+static func runtime_segment_overlay_polygon(segment: Dictionary, center_world: Vector2, body_rotation: float, visual_scale: float) -> PackedVector2Array:
+	var local_a := world_to_local(Vector2(segment.get("a", center_world)), center_world, body_rotation, visual_scale)
+	var local_b := world_to_local(Vector2(segment.get("b", Vector2(segment.get("a", center_world)))), center_world, body_rotation, visual_scale)
+	var axis := local_b - local_a
+	if axis.length() < 0.001:
+		axis = Vector2.RIGHT
+	var radius_px := maxf(2.0, float(segment.get("radius", 0.025)) * visual_scale)
+	var visual_length := maxf(0.0, local_a.distance_to(local_b))
+	var node := segment_to_component_node(segment)
+	var center := (local_a + local_b) * 0.5
+	return component_polygon(center, node, axis, radius_px, visual_length, true)
+
+
+static func draw_runtime_segment_status_overlay(canvas: CanvasItem, segment: Dictionary, center_world: Vector2, body_rotation: float, visual_scale: float, overlay_color: Color, outline_width: float = 3.0) -> bool:
+	var polygon := runtime_segment_overlay_polygon(segment, center_world, body_rotation, visual_scale)
+	if polygon.size() < 3:
+		return false
+	var fill_alpha := clampf(overlay_color.a * 0.38, 0.05, 0.22)
+	var fill := Color(overlay_color.r, overlay_color.g, overlay_color.b, fill_alpha)
+	var outline := Color(overlay_color.r, overlay_color.g, overlay_color.b, clampf(overlay_color.a + 0.26, 0.32, 0.92))
+	canvas.draw_colored_polygon(polygon, fill)
+	_draw_outline(canvas, polygon, outline, maxf(1.4, outline_width))
+	return true
 
 
 static func draw_part_preview(canvas: CanvasItem, rect: Rect2, slot_key: String, part: Dictionary, selected: bool = false, pulse: float = 0.0) -> bool:
@@ -92,6 +119,7 @@ static func part_to_component_node(slot_key: String, part: Dictionary) -> Dictio
 	var slot := slot_key.to_lower()
 	var node := part.duplicate(true)
 	node["slot"] = slot_key
+	node["source_shape"] = String(part.get("shape", ""))
 	node["component_name"] = String(part.get("name", part.get("component_name", slot_key.to_upper())))
 	node["label"] = String(node.get("component_name", slot_key.to_upper()))
 	node["material_visual"] = String(part.get("material_visual", part.get("torso_material", part.get("material_class", ""))))
@@ -143,8 +171,18 @@ static func segment_to_component_node(segment: Dictionary) -> Dictionary:
 		"material_class": String(segment.get("material_class", "")),
 		"material_visual": String(segment.get("material_visual", segment.get("material_class", ""))),
 		"projectile": bool(segment.get("projectile", false)),
+		"gun_kind": String(segment.get("gun_kind", "")),
+		"ammo_kind": String(segment.get("ammo_kind", "")),
+		"projectile_style": String(segment.get("projectile_style", "")),
+		"projectile_behavior": String(segment.get("projectile_behavior", "")),
 		"radius": float(segment.get("radius", 0.025)),
 		"component_radius": float(segment.get("radius", 0.025)),
+		"source_shape": String(segment.get("source_shape", segment.get("shape", ""))),
+		"shape": String(segment.get("shape", "")),
+		"weapon_family": String(segment.get("weapon_family", "")),
+		"blunt_shield": bool(segment.get("blunt_shield", false)),
+		"blunt_gauntlet": bool(segment.get("blunt_gauntlet", false)),
+		"blunt_hammer": bool(segment.get("blunt_hammer", false)),
 	}
 	match part_kind:
 		"torso":
@@ -268,7 +306,8 @@ static func torso_port_positions(center: Vector2, node: Dictionary, axis: Vector
 	var torso_scale := maxf(0.001, PartArt.TORSO_GEOMETRY_SCALE)
 	var port_count := PartArt.torso_saddle_port_count(node)
 	var positions: Array = []
-	for raw_local in PartArt.torso_saddle_port_local_offsets(
+	for raw_local in PartArt.torso_hull_port_local_offsets(
+		node,
 		port_count,
 		float(metrics.get("length", 0.0)) / torso_scale,
 		float(metrics.get("front_width", 0.0)) / torso_scale,
@@ -330,7 +369,7 @@ static func component_polygon(center: Vector2, node: Dictionary, axis: Vector2, 
 	var display_radius := float(metrics.get("display_radius", component_display_radius(node, physical_radius, visual_length_px, pixel_minimums)))
 	match kind:
 		"torso":
-			return saddle_polygon(center, forward, float(metrics.get("length", 0.0)), float(metrics.get("front_width", 0.0)), float(metrics.get("rear_width", 0.0)))
+			return torso_hull_polygon(center, forward, node, float(metrics.get("length", 0.0)), float(metrics.get("front_width", 0.0)), float(metrics.get("rear_width", 0.0)))
 		"terminal":
 			return terminal_polygon(center, node, forward, display_radius, visual_length_px, pixel_minimums)
 		"barrier":
@@ -355,6 +394,17 @@ static func saddle_polygon(center: Vector2, axis: Vector2, length: float, front_
 		var t := clampf((x + half_length) / maxf(0.001, length), 0.0, 1.0)
 		var width := lerpf(rear_half, front_half, t)
 		var local := Vector2(x, sx * width)
+		points.append(center + forward * local.x + right * local.y)
+	return points
+
+
+static func torso_hull_polygon(center: Vector2, axis: Vector2, node: Dictionary, length: float, front_width: float, rear_width: float) -> PackedVector2Array:
+	var forward := _safe_axis(axis)
+	var right := Vector2(-forward.y, forward.x)
+	var torso_scale := maxf(0.001, PartArt.TORSO_GEOMETRY_SCALE)
+	var points := PackedVector2Array()
+	for raw_local in PartArt.torso_hull_local_points(node, length / torso_scale, front_width / torso_scale, rear_width / torso_scale):
+		var local: Vector2 = raw_local
 		points.append(center + forward * local.x + right * local.y)
 	return points
 
@@ -386,17 +436,566 @@ static func terminal_polygon(center: Vector2, node: Dictionary, axis: Vector2, p
 	var root := center - forward * length * 0.5
 	var tip := center + forward * length * 0.5
 	var damage_type := String(node.get("damage_type", "")).to_lower()
-	var material_class := String(node.get("material_class", "")).to_lower()
-	var projectile := bool(node.get("projectile", false)) or material_class in ["gun", "missile_launcher", "web_gun"]
-	var handle_len := minf(length * 0.24, radius * 2.2)
-	var body_root := root + forward * handle_len
-	if projectile:
+	var family := terminal_shape_family(node)
+	match family:
+		"sniper":
+			return _terminal_sniper_polygon(center, forward, right, length, radius)
+		"rifle":
+			return _terminal_rifle_polygon(center, forward, right, length, radius)
+		"laser_gun":
+			return _terminal_laser_gun_polygon(center, forward, right, length, radius)
+		"sprayer":
+			return _terminal_sprayer_polygon(center, forward, right, length, radius)
+		"grenade_launcher", "mortar", "cannon":
+			return _terminal_launcher_polygon(center, forward, right, length, radius)
+		"missile_launcher":
+			return _terminal_missile_launcher_polygon(center, forward, right, length, radius)
+		"web_gun":
+			return _terminal_web_gun_polygon(center, forward, right, length, radius)
+	if family == "gun":
 		return smooth_taper_polygon(root, tip, forward, right, radius * 0.82, radius * 0.36, 16)
-	if damage_type == "tear":
+	if family == "scythe":
+		return _terminal_scythe_polygon(center, forward, right, length, radius)
+	if family == "saber":
+		return _terminal_saber_polygon(center, forward, right, length, radius)
+	if family == "shield":
+		return _terminal_shield_polygon(center, forward, right, length, radius)
+	if family == "drill":
+		return _terminal_drill_polygon(center, forward, right, length, radius)
+	if family == "gauntlet":
+		return _terminal_gauntlet_polygon(center, forward, right, length, radius)
+	match family:
+		"katana":
+			return _terminal_katana_polygon(center, forward, right, length, radius)
+		"greatsword":
+			return _terminal_greatsword_polygon(center, forward, right, length, radius)
+		"hammer":
+			return _terminal_hammer_polygon(center, forward, right, length, radius)
+		"lance":
+			return _terminal_lance_polygon(center, forward, right, length, radius)
+		"rapier":
+			return _terminal_rapier_polygon(center, forward, right, length, radius)
+		"claw":
+			return _terminal_claw_polygon(center, forward, right, length, radius)
+		"racket":
+			return _terminal_racket_polygon(center, forward, right, length, radius)
+		"chain":
+			return _terminal_chain_polygon(center, forward, right, length, radius)
+	if family == "generic_blade" or damage_type == "tear":
 		return smooth_taper_polygon(root, tip, forward, right, radius * 0.62, radius * 0.2, 18, 1.35)
-	if damage_type == "pierce":
+	if family == "generic_pierce" or damage_type == "pierce":
 		return smooth_taper_polygon(root, tip, forward, right, radius * 0.55, radius * 0.08, 16, 0.9)
 	return capsule_polygon(center, forward, length, radius * 1.7, 6)
+
+
+static func terminal_shape_family(node: Dictionary) -> String:
+	var material_class := String(node.get("material_class", "")).to_lower()
+	var family := String(node.get("weapon_family", "")).to_lower()
+	var gun_kind := String(node.get("gun_kind", "")).to_lower()
+	var projectile_style := String(node.get("projectile_style", "")).to_lower()
+	var projectile_behavior := String(node.get("projectile_behavior", "")).to_lower()
+	var damage_type := String(node.get("projectile_damage_type", node.get("damage_type", ""))).to_lower()
+	var source_shape := String(node.get("source_shape", node.get("shape", ""))).to_lower()
+	var shape := String(node.get("shape", "")).to_lower()
+	var name := String(node.get("component_name", node.get("label", ""))).to_lower()
+	var key := "%s %s %s %s %s %s %s %s %s" % [family, gun_kind, projectile_style, projectile_behavior, damage_type, material_class, source_shape, shape, name]
+	if bool(node.get("projectile", false)) or material_class in ["gun", "missile_launcher", "web_gun"]:
+		if material_class == "web_gun" or gun_kind == "web_gun" or key.contains("web"):
+			return "web_gun"
+		if material_class == "missile_launcher" or gun_kind == "missile_launcher" or projectile_style == "missile" or key.contains("missile"):
+			return "missile_launcher"
+		if gun_kind == "laser_gun" or projectile_style == "beam" or key.contains("laser"):
+			return "laser_gun"
+		if gun_kind == "sprayer" or key.contains("sprayer") or key.contains("siphon") or key.contains("nozzle"):
+			return "sprayer"
+		if gun_kind == "grenade_launcher" or key.contains("grenade"):
+			return "grenade_launcher"
+		if key.contains("mortar"):
+			return "mortar"
+		if key.contains("cannon") or key.contains("turret"):
+			return "cannon"
+		if projectile_style == "spray" or damage_type == "chemical" or key.contains("spray") or key.contains("caustic") or key.contains("chemical"):
+			return "sprayer"
+		if gun_kind == "sniper" or projectile_style == "true_bullet" or key.contains("sniper") or key.contains("rail"):
+			return "sniper"
+		if gun_kind == "rifle" or projectile_style == "bullet_hell" or key.contains("rifle"):
+			return "rifle"
+		return "gun"
+	if bool(node.get("blunt_shield", false)) or family == "shield" or key.contains("shield") or key.contains("buckler"):
+		return "shield"
+	if bool(node.get("blunt_gauntlet", false)) or family == "gauntlet" or key.contains("gauntlet") or key.contains("glove") or key.contains("fist"):
+		return "gauntlet"
+	if family in ["saber", "sabre"] or key.contains("saber") or key.contains("sabre"):
+		return "saber"
+	if family == "scythe" or key.contains("scythe") or key.contains("crescent") or key.contains("hook"):
+		return "scythe"
+	if family == "drill" or key.contains("drill") or key.contains("auger") or key.contains("borer"):
+		return "drill"
+	if family == "katana" or key.contains("katana") or key.contains("wakizashi") or key.contains("odachi") or key.contains("saber"):
+		return "katana"
+	if family == "greatsword" or key.contains("greatsword") or key.contains("great_sword") or key.contains("buster"):
+		return "greatsword"
+	if bool(node.get("blunt_hammer", false)) or family == "hammer" or key.contains("hammer") or key.contains("maul") or key.contains("mace") or key.contains("jack"):
+		return "hammer"
+	if family == "rapier" or key.contains("rapier") or key.contains("foil") or key.contains("epee") or key.contains("stiletto"):
+		return "rapier"
+	if family == "lance" or key.contains("lance") or key.contains("spear") or key.contains("pike") or key.contains("harpoon") or key.contains("needle") or key.contains("spike"):
+		return "lance"
+	if family == "claw" or key.contains("claw") or key.contains("jaw") or key.contains("talon") or key.contains("paw") or key.contains("hoof"):
+		return "claw"
+	if family == "racket" or material_class == "racket" or key.contains("racket") or key.contains("rake"):
+		return "racket"
+	if family == "chain" or key.contains("chain") or key.contains("whip") or key.contains("antenna"):
+		return "chain"
+	if damage_type == "tear" or family in ["katana", "greatsword", "blade"]:
+		return "generic_blade"
+	if damage_type == "pierce" or family in ["lance", "rapier", "pierce"]:
+		return "generic_pierce"
+	if damage_type == "blunt" or family in ["hammer", "blunt"] or bool(node.get("blunt_hammer", false)):
+		return "generic_blunt"
+	return "generic_terminal"
+
+
+static func terminal_visual_detail_tags(node: Dictionary) -> PackedStringArray:
+	match terminal_shape_family(node):
+		"scythe":
+			return PackedStringArray(["long_handle", "right_angle_scythe", "crescent_hook_blade", "inner_cutting_edge"])
+		"saber":
+			return PackedStringArray(["curved_saber_edge", "single_edge_blade", "old_scythe_art_reassigned"])
+		"shield":
+			return PackedStringArray(["thick_arc_shield", "top_down_curved_plate", "inner_grip_ridge"])
+		"drill":
+			return PackedStringArray(["powered_drill_body", "chuck_collar", "animated_spiral_texture", "bit_ridges"])
+		"gauntlet":
+			return PackedStringArray(["piston_rod_handle", "wrist_cuff", "finger_knuckles", "iron_fist_front"])
+		"katana":
+			return PackedStringArray(["single_edge_curve", "short_guard", "wrapped_grip"])
+		"greatsword":
+			return PackedStringArray(["broad_double_edge", "cross_guard", "heavy_tip"])
+		"hammer":
+			return PackedStringArray(["long_handle", "hammer_head", "counterweight"])
+		"lance":
+			return PackedStringArray(["long_shaft", "spear_tip", "barbed_point"])
+		"rapier":
+			return PackedStringArray(["needle_blade", "cup_guard", "thin_thrust_line"])
+		"claw":
+			return PackedStringArray(["paired_claws", "hinge_palm", "hook_tips"])
+		"racket":
+			return PackedStringArray(["racket_frame", "inner_mesh", "long_grip"])
+		"chain":
+			return PackedStringArray(["chain_links", "flex_segments", "weighted_tip"])
+		"sniper":
+			return PackedStringArray(["long_barrel", "scope", "stock"])
+		"rifle":
+			return PackedStringArray(["rifle_barrel", "magazine", "stock"])
+		"laser_gun":
+			return PackedStringArray(["prism_lens", "focus_coils", "slim_emitter"])
+		"sprayer":
+			return PackedStringArray(["fluid_tank", "wide_nozzle", "hose_line"])
+		"grenade_launcher", "mortar", "cannon":
+			return PackedStringArray(["thick_barrel", "breech_block", "muzzle_ring"])
+		"missile_launcher":
+			return PackedStringArray(["missile_tubes", "rack_body", "nose_caps"])
+		"web_gun":
+			return PackedStringArray(["spool_body", "anchor_muzzle", "tether_line"])
+		_:
+			return PackedStringArray()
+
+
+static func terminal_drill_spiral_offset(node: Dictionary) -> float:
+	if not bool(node.get("runtime_action", false)):
+		return 0.0
+	return fposmod(float(node.get("runtime_action_progress", 0.0)) * 0.33, 1.0)
+
+
+static func _terminal_local_polygon(center: Vector2, forward: Vector2, right: Vector2, points: Array) -> PackedVector2Array:
+	var polygon := PackedVector2Array()
+	for raw_point in points:
+		var p: Vector2 = raw_point
+		polygon.append(center + forward * p.x + right * p.y)
+	return polygon
+
+
+static func _terminal_scythe_polygon(center: Vector2, forward: Vector2, right: Vector2, length: float, radius: float) -> PackedVector2Array:
+	var handle_root := -length * 0.50
+	var handle_tip := length * 0.16
+	var blade_base := handle_tip
+	var hook_tip := length * 0.38
+	return _terminal_local_polygon(center, forward, right, [
+		Vector2(handle_root, -radius * 0.18),
+		Vector2(handle_tip, -radius * 0.18),
+		Vector2(handle_tip + length * 0.035, radius * 0.48),
+		Vector2(blade_base + length * 0.11, radius * 1.06),
+		Vector2(blade_base + length * 0.26, radius * 1.42),
+		Vector2(hook_tip, radius * 1.18),
+		Vector2(blade_base + length * 0.32, radius * 0.72),
+		Vector2(blade_base + length * 0.17, radius * 0.46),
+		Vector2(handle_tip + length * 0.055, radius * 0.18),
+		Vector2(handle_tip, radius * 0.18),
+		Vector2(handle_root, radius * 0.18),
+	])
+
+
+static func _terminal_saber_polygon(center: Vector2, forward: Vector2, right: Vector2, length: float, radius: float) -> PackedVector2Array:
+	var root := -length * 0.50
+	var guard := -length * 0.28
+	var belly := length * 0.12
+	var tip := length * 0.50
+	return _terminal_local_polygon(center, forward, right, [
+		Vector2(root, -radius * 0.22),
+		Vector2(guard, -radius * 0.28),
+		Vector2(belly, -radius * 0.34),
+		Vector2(tip - length * 0.08, -radius * 0.16),
+		Vector2(tip, radius * 0.02),
+		Vector2(tip - length * 0.10, radius * 0.34),
+		Vector2(belly, radius * 0.72),
+		Vector2(guard, radius * 0.48),
+		Vector2(root, radius * 0.22),
+	])
+
+
+static func _terminal_shield_polygon(center: Vector2, forward: Vector2, right: Vector2, length: float, radius: float) -> PackedVector2Array:
+	var root := -length * 0.50
+	var shoulder := -length * 0.30
+	var belly := length * 0.04
+	var face := length * 0.34
+	var nose := length * 0.50
+	return _terminal_local_polygon(center, forward, right, [
+		Vector2(root, -radius * 0.42),
+		Vector2(shoulder, -radius * 0.88),
+		Vector2(belly, -radius * 1.14),
+		Vector2(face, -radius * 1.04),
+		Vector2(nose, -radius * 0.62),
+		Vector2(nose, radius * 0.62),
+		Vector2(face, radius * 1.04),
+		Vector2(belly, radius * 1.14),
+		Vector2(shoulder, radius * 0.88),
+		Vector2(root, radius * 0.42),
+	])
+
+
+static func _terminal_drill_polygon(center: Vector2, forward: Vector2, right: Vector2, length: float, radius: float) -> PackedVector2Array:
+	var root := -length * 0.50
+	var motor := -length * 0.30
+	var chuck := -length * 0.06
+	var bit := length * 0.34
+	var tip := length * 0.50
+	return _terminal_local_polygon(center, forward, right, [
+		Vector2(root, -radius * 0.76),
+		Vector2(motor, -radius * 0.90),
+		Vector2(chuck, -radius * 0.52),
+		Vector2(bit, -radius * 0.18),
+		Vector2(tip, 0.0),
+		Vector2(bit, radius * 0.18),
+		Vector2(chuck, radius * 0.52),
+		Vector2(motor, radius * 0.90),
+		Vector2(root, radius * 0.76),
+	])
+
+
+static func _terminal_gauntlet_polygon(center: Vector2, forward: Vector2, right: Vector2, length: float, radius: float) -> PackedVector2Array:
+	var wrist := -length * 0.50
+	var rod_end := -length * 0.22
+	var palm := length * 0.02
+	var knuckle := length * 0.30
+	var front := length * 0.50
+	return _terminal_local_polygon(center, forward, right, [
+		Vector2(wrist, -radius * 0.20),
+		Vector2(rod_end, -radius * 0.22),
+		Vector2(rod_end + length * 0.06, -radius * 0.56),
+		Vector2(palm, -radius * 1.02),
+		Vector2(knuckle, -radius * 1.20),
+		Vector2(front, -radius * 0.88),
+		Vector2(front, radius * 0.88),
+		Vector2(knuckle, radius * 1.20),
+		Vector2(palm, radius * 1.02),
+		Vector2(rod_end + length * 0.06, radius * 0.56),
+		Vector2(rod_end, radius * 0.22),
+		Vector2(wrist, radius * 0.20),
+	])
+
+
+static func _terminal_katana_polygon(center: Vector2, forward: Vector2, right: Vector2, length: float, radius: float) -> PackedVector2Array:
+	var root := -length * 0.50
+	var guard := -length * 0.33
+	var belly := length * 0.08
+	var shoulder := length * 0.34
+	var tip := length * 0.50
+	return _terminal_local_polygon(center, forward, right, [
+		Vector2(root, -radius * 0.16),
+		Vector2(guard, -radius * 0.18),
+		Vector2(belly, -radius * 0.28),
+		Vector2(shoulder, -radius * 0.20),
+		Vector2(tip, radius * 0.02),
+		Vector2(shoulder, radius * 0.42),
+		Vector2(belly, radius * 0.54),
+		Vector2(guard, radius * 0.24),
+		Vector2(root, radius * 0.16),
+	])
+
+
+static func _terminal_greatsword_polygon(center: Vector2, forward: Vector2, right: Vector2, length: float, radius: float) -> PackedVector2Array:
+	var pommel := -length * 0.50
+	var guard := -length * 0.30
+	var blade_root := -length * 0.22
+	var shoulder := length * 0.34
+	var tip := length * 0.50
+	return _terminal_local_polygon(center, forward, right, [
+		Vector2(pommel, -radius * 0.22),
+		Vector2(guard, -radius * 0.24),
+		Vector2(guard - length * 0.02, -radius * 0.82),
+		Vector2(guard + length * 0.06, -radius * 0.82),
+		Vector2(blade_root, -radius * 0.58),
+		Vector2(shoulder, -radius * 0.42),
+		Vector2(tip, 0.0),
+		Vector2(shoulder, radius * 0.42),
+		Vector2(blade_root, radius * 0.58),
+		Vector2(guard + length * 0.06, radius * 0.82),
+		Vector2(guard - length * 0.02, radius * 0.82),
+		Vector2(guard, radius * 0.24),
+		Vector2(pommel, radius * 0.22),
+	])
+
+
+static func _terminal_hammer_polygon(center: Vector2, forward: Vector2, right: Vector2, length: float, radius: float) -> PackedVector2Array:
+	var grip := -length * 0.50
+	var neck := length * 0.16
+	var head_center := length * 0.32
+	var head_front := length * 0.50
+	var head_back := length * 0.14
+	return _terminal_local_polygon(center, forward, right, [
+		Vector2(grip, -radius * 0.24),
+		Vector2(neck, -radius * 0.22),
+		Vector2(head_back, -radius * 1.10),
+		Vector2(head_front, -radius * 1.10),
+		Vector2(head_front, radius * 1.10),
+		Vector2(head_back, radius * 1.10),
+		Vector2(neck, radius * 0.22),
+		Vector2(grip, radius * 0.24),
+		Vector2(grip - length * 0.02, 0.0),
+		Vector2(head_center, -radius * 0.16),
+		Vector2(head_front + length * 0.02, 0.0),
+		Vector2(head_center, radius * 0.16),
+	])
+
+
+static func _terminal_lance_polygon(center: Vector2, forward: Vector2, right: Vector2, length: float, radius: float) -> PackedVector2Array:
+	var butt := -length * 0.50
+	var shaft_end := length * 0.22
+	var head := length * 0.38
+	var tip := length * 0.50
+	return _terminal_local_polygon(center, forward, right, [
+		Vector2(butt, -radius * 0.16),
+		Vector2(shaft_end, -radius * 0.16),
+		Vector2(head, -radius * 0.46),
+		Vector2(head + length * 0.03, -radius * 0.18),
+		Vector2(tip, 0.0),
+		Vector2(head + length * 0.03, radius * 0.18),
+		Vector2(head, radius * 0.46),
+		Vector2(shaft_end, radius * 0.16),
+		Vector2(butt, radius * 0.16),
+	])
+
+
+static func _terminal_rapier_polygon(center: Vector2, forward: Vector2, right: Vector2, length: float, radius: float) -> PackedVector2Array:
+	var pommel := -length * 0.50
+	var guard := -length * 0.28
+	var blade_root := -length * 0.18
+	var tip := length * 0.50
+	return _terminal_local_polygon(center, forward, right, [
+		Vector2(pommel, -radius * 0.14),
+		Vector2(guard, -radius * 0.16),
+		Vector2(guard, -radius * 0.70),
+		Vector2(blade_root, -radius * 0.18),
+		Vector2(tip, 0.0),
+		Vector2(blade_root, radius * 0.18),
+		Vector2(guard, radius * 0.70),
+		Vector2(guard, radius * 0.16),
+		Vector2(pommel, radius * 0.14),
+	])
+
+
+static func _terminal_claw_polygon(center: Vector2, forward: Vector2, right: Vector2, length: float, radius: float) -> PackedVector2Array:
+	var wrist := -length * 0.50
+	var palm := -length * 0.08
+	var tine := length * 0.26
+	var tip := length * 0.50
+	return _terminal_local_polygon(center, forward, right, [
+		Vector2(wrist, -radius * 0.38),
+		Vector2(palm, -radius * 0.88),
+		Vector2(tine, -radius * 1.04),
+		Vector2(tip, -radius * 0.54),
+		Vector2(tine + length * 0.04, -radius * 0.12),
+		Vector2(tip - length * 0.05, 0.0),
+		Vector2(tine + length * 0.04, radius * 0.12),
+		Vector2(tip, radius * 0.54),
+		Vector2(tine, radius * 1.04),
+		Vector2(palm, radius * 0.88),
+		Vector2(wrist, radius * 0.38),
+	])
+
+
+static func _terminal_racket_polygon(center: Vector2, forward: Vector2, right: Vector2, length: float, radius: float) -> PackedVector2Array:
+	var grip := -length * 0.50
+	var throat := -length * 0.12
+	var head_mid := length * 0.20
+	var front := length * 0.50
+	return _terminal_local_polygon(center, forward, right, [
+		Vector2(grip, -radius * 0.20),
+		Vector2(throat, -radius * 0.22),
+		Vector2(head_mid, -radius * 1.14),
+		Vector2(front, -radius * 0.78),
+		Vector2(front, radius * 0.78),
+		Vector2(head_mid, radius * 1.14),
+		Vector2(throat, radius * 0.22),
+		Vector2(grip, radius * 0.20),
+	])
+
+
+static func _terminal_chain_polygon(center: Vector2, forward: Vector2, right: Vector2, length: float, radius: float) -> PackedVector2Array:
+	var root := -length * 0.50
+	var tip := length * 0.50
+	return _terminal_local_polygon(center, forward, right, [
+		Vector2(root, -radius * 0.22),
+		Vector2(tip - length * 0.14, -radius * 0.22),
+		Vector2(tip, -radius * 0.46),
+		Vector2(tip + length * 0.02, 0.0),
+		Vector2(tip, radius * 0.46),
+		Vector2(tip - length * 0.14, radius * 0.22),
+		Vector2(root, radius * 0.22),
+	])
+
+
+static func _terminal_sniper_polygon(center: Vector2, forward: Vector2, right: Vector2, length: float, radius: float) -> PackedVector2Array:
+	var butt := -length * 0.50
+	var stock := -length * 0.28
+	var body := -length * 0.02
+	var barrel := length * 0.34
+	var muzzle := length * 0.50
+	return _terminal_local_polygon(center, forward, right, [
+		Vector2(butt, -radius * 0.42),
+		Vector2(stock, -radius * 0.50),
+		Vector2(body, -radius * 0.46),
+		Vector2(barrel, -radius * 0.18),
+		Vector2(muzzle, -radius * 0.14),
+		Vector2(muzzle, radius * 0.14),
+		Vector2(barrel, radius * 0.18),
+		Vector2(body, radius * 0.46),
+		Vector2(stock, radius * 0.50),
+		Vector2(butt, radius * 0.42),
+	])
+
+
+static func _terminal_rifle_polygon(center: Vector2, forward: Vector2, right: Vector2, length: float, radius: float) -> PackedVector2Array:
+	var butt := -length * 0.50
+	var stock := -length * 0.24
+	var body := length * 0.08
+	var barrel := length * 0.34
+	var muzzle := length * 0.50
+	return _terminal_local_polygon(center, forward, right, [
+		Vector2(butt, -radius * 0.40),
+		Vector2(stock, -radius * 0.50),
+		Vector2(body, -radius * 0.50),
+		Vector2(barrel, -radius * 0.26),
+		Vector2(muzzle, -radius * 0.20),
+		Vector2(muzzle, radius * 0.20),
+		Vector2(barrel, radius * 0.26),
+		Vector2(body, radius * 0.50),
+		Vector2(stock, radius * 0.50),
+		Vector2(butt, radius * 0.40),
+	])
+
+
+static func _terminal_laser_gun_polygon(center: Vector2, forward: Vector2, right: Vector2, length: float, radius: float) -> PackedVector2Array:
+	var root := -length * 0.50
+	var prism := length * 0.16
+	var emitter := length * 0.50
+	return _terminal_local_polygon(center, forward, right, [
+		Vector2(root, -radius * 0.32),
+		Vector2(-length * 0.18, -radius * 0.46),
+		Vector2(prism, -radius * 0.70),
+		Vector2(emitter, -radius * 0.22),
+		Vector2(emitter, radius * 0.22),
+		Vector2(prism, radius * 0.70),
+		Vector2(-length * 0.18, radius * 0.46),
+		Vector2(root, radius * 0.32),
+	])
+
+
+static func _terminal_sprayer_polygon(center: Vector2, forward: Vector2, right: Vector2, length: float, radius: float) -> PackedVector2Array:
+	var tank_root := -length * 0.50
+	var tank_front := length * 0.04
+	var neck := length * 0.28
+	var nozzle := length * 0.50
+	return _terminal_local_polygon(center, forward, right, [
+		Vector2(tank_root, -radius * 0.58),
+		Vector2(tank_root + length * 0.08, -radius * 0.80),
+		Vector2(tank_front, -radius * 0.80),
+		Vector2(neck, -radius * 0.44),
+		Vector2(nozzle, -radius * 0.54),
+		Vector2(nozzle, radius * 0.54),
+		Vector2(neck, radius * 0.44),
+		Vector2(tank_front, radius * 0.80),
+		Vector2(tank_root + length * 0.08, radius * 0.80),
+		Vector2(tank_root, radius * 0.58),
+	])
+
+
+static func _terminal_launcher_polygon(center: Vector2, forward: Vector2, right: Vector2, length: float, radius: float) -> PackedVector2Array:
+	var breech := -length * 0.50
+	var chamber := -length * 0.16
+	var throat := length * 0.16
+	var barrel := length * 0.50
+	return _terminal_local_polygon(center, forward, right, [
+		Vector2(breech, -radius * 0.72),
+		Vector2(chamber, -radius * 0.86),
+		Vector2(throat, -radius * 0.62),
+		Vector2(barrel - length * 0.04, -radius * 0.70),
+		Vector2(barrel, -radius * 0.54),
+		Vector2(barrel, radius * 0.54),
+		Vector2(barrel - length * 0.04, radius * 0.70),
+		Vector2(throat, radius * 0.62),
+		Vector2(chamber, radius * 0.86),
+		Vector2(breech, radius * 0.72),
+	])
+
+
+static func _terminal_missile_launcher_polygon(center: Vector2, forward: Vector2, right: Vector2, length: float, radius: float) -> PackedVector2Array:
+	var rear := -length * 0.50
+	var rack := -length * 0.12
+	var body := length * 0.22
+	var nose := length * 0.50
+	return _terminal_local_polygon(center, forward, right, [
+		Vector2(rear, -radius * 0.86),
+		Vector2(rack, -radius * 0.98),
+		Vector2(body, -radius * 0.86),
+		Vector2(nose - length * 0.08, -radius * 0.48),
+		Vector2(nose, -radius * 0.18),
+		Vector2(nose, radius * 0.18),
+		Vector2(nose - length * 0.08, radius * 0.48),
+		Vector2(body, radius * 0.86),
+		Vector2(rack, radius * 0.98),
+		Vector2(rear, radius * 0.86),
+	])
+
+
+static func _terminal_web_gun_polygon(center: Vector2, forward: Vector2, right: Vector2, length: float, radius: float) -> PackedVector2Array:
+	var rear := -length * 0.50
+	var spool := -length * 0.05
+	var throat := length * 0.22
+	var muzzle := length * 0.50
+	return _terminal_local_polygon(center, forward, right, [
+		Vector2(rear, -radius * 0.42),
+		Vector2(rear + length * 0.12, -radius * 0.78),
+		Vector2(spool, -radius * 0.92),
+		Vector2(throat, -radius * 0.48),
+		Vector2(muzzle, -radius * 0.22),
+		Vector2(muzzle, radius * 0.22),
+		Vector2(throat, radius * 0.48),
+		Vector2(spool, radius * 0.92),
+		Vector2(rear + length * 0.12, radius * 0.78),
+		Vector2(rear, radius * 0.42),
+	])
 
 
 static func smooth_taper_polygon(root: Vector2, tip: Vector2, forward: Vector2, right: Vector2, root_half: float, tip_half: float, steps: int = 16, belly_mult: float = 1.0) -> PackedVector2Array:
@@ -433,14 +1032,15 @@ static func _draw_torso(canvas: CanvasItem, center: Vector2, axis: Vector2, colo
 	var length := float(metrics.get("length", maxf(float(node.get("component_length", 0.0)), radius * 1.94)))
 	var front_width := float(metrics.get("front_width", maxf(radius * 1.2, 6.0)))
 	var rear_width := float(metrics.get("rear_width", maxf(radius * 2.4, front_width + 2.0)))
-	var hull := saddle_polygon(center, axis, length, front_width, rear_width)
+	var hull := torso_hull_polygon(center, axis, node, length, front_width, rear_width)
 	canvas.draw_colored_polygon(hull, color.darkened(0.44))
 	_draw_outline(canvas, hull, color.lerp(Color.WHITE, 0.24), 2.0)
-	var inner := saddle_polygon(center, axis, length * 0.62, front_width * 0.58, rear_width * 0.58)
+	var inner := torso_hull_polygon(center, axis, node, length * 0.62, front_width * 0.58, rear_width * 0.58)
 	canvas.draw_colored_polygon(inner, color.darkened(0.16))
 	_draw_material_marks(canvas, center, axis, length * 0.48, rear_width * 0.46, _node_material_style(node), 0.86)
 	var forward := _safe_axis(axis)
 	var right := Vector2(-forward.y, forward.x)
+	_draw_torso_design_marks(canvas, center, forward, right, length, front_width, rear_width, node, color)
 	canvas.draw_line(center + forward * length * 0.5 - right * front_width * 0.42, center + forward * length * 0.5 + right * front_width * 0.42, color.lerp(Color.WHITE, 0.42), 2.0)
 	var port_positions := torso_port_positions(center, node, axis, radius, visual_length_px, true)
 	var occupied_ports: Array = Array(node.get("occupied_ports", []))
@@ -451,6 +1051,40 @@ static func _draw_torso(canvas: CanvasItem, center: Vector2, axis: Vector2, colo
 		var port_radius := maxf(3.0, radius * 0.085)
 		canvas.draw_circle(p, port_radius, port_color.darkened(0.08))
 		canvas.draw_arc(p, port_radius * 1.08, -0.9, 0.9, 14, port_color.lerp(Color.WHITE, 0.34), 1.7)
+
+
+static func _draw_torso_design_marks(canvas: CanvasItem, center: Vector2, forward: Vector2, right: Vector2, length: float, front_width: float, rear_width: float, node: Dictionary, color: Color) -> void:
+	var family := PartArt.torso_visual_family(node)
+	var light := color.lerp(Color.WHITE, 0.38)
+	var shadow := color.darkened(0.52)
+	match family:
+		"robot_core":
+			var shoulder_y := rear_width * 0.22
+			canvas.draw_line(center - forward * length * 0.18 - right * shoulder_y, center + forward * length * 0.18 - right * front_width * 0.20, light, 1.5)
+			canvas.draw_line(center - forward * length * 0.18 + right * shoulder_y, center + forward * length * 0.18 + right * front_width * 0.20, light, 1.5)
+			canvas.draw_circle(center + forward * length * 0.10, maxf(2.2, front_width * 0.055), Color(0.26, 0.95, 1.0, 0.72))
+		"spacecraft_hull":
+			canvas.draw_line(center - forward * length * 0.42, center + forward * length * 0.44, light, 1.7)
+			for raw_y in [-0.24, 0.24]:
+				canvas.draw_line(center - forward * length * 0.22 + right * rear_width * float(raw_y), center + forward * length * 0.32 + right * front_width * float(raw_y), Color(light.r, light.g, light.b, 0.72), 1.2)
+			canvas.draw_arc(center - forward * length * 0.36, rear_width * 0.16, 0.0, TAU, 24, Color(light.r, light.g, light.b, 0.48), 1.2)
+		"carapace", "mantle":
+			for i in range(5):
+				var t := lerpf(-0.32, 0.34, float(i) / 4.0)
+				var rib_center := center + forward * length * t
+				var rib_width := lerpf(rear_width * 0.34, front_width * 0.26, clampf(t + 0.36, 0.0, 1.0))
+				canvas.draw_line(rib_center - right * rib_width, rib_center + right * rib_width, Color(light.r, light.g, light.b, 0.56), 1.1)
+			canvas.draw_circle(center - forward * length * 0.16, maxf(2.4, rear_width * 0.035), Color(0.18, 1.0, 0.72, 0.44))
+		"spine":
+			canvas.draw_line(center - forward * length * 0.44, center + forward * length * 0.42, light, 1.6)
+			for i in range(6):
+				var t := lerpf(-0.38, 0.36, float(i) / 5.0)
+				var p := center + forward * length * t
+				canvas.draw_circle(p, maxf(1.8, rear_width * 0.024), shadow.lerp(light, 0.48))
+				canvas.draw_line(p - right * rear_width * 0.11, p + right * rear_width * 0.11, Color(light.r, light.g, light.b, 0.44), 0.9)
+		_:
+			canvas.draw_line(center - forward * length * 0.34, center + forward * length * 0.34, Color(light.r, light.g, light.b, 0.58), 1.2)
+			canvas.draw_circle(center, maxf(2.0, front_width * 0.048), Color(0.32, 0.84, 1.0, 0.46))
 
 
 static func _draw_limb(canvas: CanvasItem, center: Vector2, axis: Vector2, color: Color, radius: float, pulse: float, visual_length_px: float, node: Dictionary) -> void:
@@ -472,13 +1106,222 @@ static func _draw_limb(canvas: CanvasItem, center: Vector2, axis: Vector2, color
 static func _draw_terminal(canvas: CanvasItem, center: Vector2, axis: Vector2, color: Color, radius: float, pulse: float, visual_length_px: float, node: Dictionary) -> void:
 	var forward := _safe_axis(axis)
 	var polygon := terminal_polygon(center, node, forward, radius, visual_length_px)
-	canvas.draw_colored_polygon(polygon, color.darkened(0.16))
+	canvas.draw_colored_polygon(_drawable_polygon(polygon), color.darkened(0.16))
 	_draw_outline(canvas, polygon, color.lerp(Color.WHITE, 0.34), 1.6)
 	var length := visual_length_px if visual_length_px > 0.0 else radius * 2.0
+	_draw_terminal_family_details(canvas, center, forward, color, radius, length, node)
 	_draw_terminal_root_handle(canvas, center, forward, color, radius, pulse, length)
 	if bool(node.get("projectile", false)) or String(node.get("material_class", "")).to_lower() in ["gun", "missile_launcher", "web_gun"]:
 		var muzzle := center + forward * length * 0.5
 		canvas.draw_circle(muzzle, maxf(2.6, radius * 0.18), Color.WHITE.lerp(color, 0.35))
+
+
+static func _drawable_polygon(polygon: PackedVector2Array) -> PackedVector2Array:
+	if polygon.size() < 3:
+		return polygon
+	if Geometry2D.triangulate_polygon(polygon).size() >= 3:
+		return polygon
+	var hull := Geometry2D.convex_hull(polygon)
+	if hull.size() >= 2 and hull[0].distance_squared_to(hull[hull.size() - 1]) <= 0.001:
+		hull.remove_at(hull.size() - 1)
+	return hull
+
+
+static func _draw_terminal_family_details(canvas: CanvasItem, center: Vector2, forward: Vector2, color: Color, radius: float, length: float, node: Dictionary) -> void:
+	var right := Vector2(-forward.y, forward.x)
+	var bright := color.lerp(Color.WHITE, 0.42)
+	var dark := color.darkened(0.48)
+	match terminal_shape_family(node):
+		"scythe":
+			_draw_local_polyline(canvas, center, forward, right, [
+				Vector2(-length * 0.46, 0.0),
+				Vector2(length * 0.16, 0.0),
+			], dark, maxf(1.2, radius * 0.10), false)
+			_draw_local_polyline(canvas, center, forward, right, [
+				Vector2(length * 0.16, radius * 0.12),
+				Vector2(length * 0.19, radius * 0.66),
+				Vector2(length * 0.28, radius * 1.04),
+				Vector2(length * 0.39, radius * 1.04),
+			], bright, maxf(1.2, radius * 0.10), false)
+			_draw_local_polyline(canvas, center, forward, right, [
+				Vector2(length * 0.22, radius * 0.24),
+				Vector2(length * 0.28, radius * 0.62),
+				Vector2(length * 0.35, radius * 0.78),
+			], dark.lerp(Color.WHITE, 0.16), maxf(1.0, radius * 0.055), false)
+		"saber":
+			_draw_local_polyline(canvas, center, forward, right, [
+				Vector2(-length * 0.44, -radius * 0.02),
+				Vector2(length * 0.05, -radius * 0.08),
+				Vector2(length * 0.42, radius * 0.02),
+			], dark, maxf(1.1, radius * 0.07), false)
+			_draw_local_polyline(canvas, center, forward, right, [
+				Vector2(-length * 0.22, radius * 0.32),
+				Vector2(length * 0.12, radius * 0.52),
+				Vector2(length * 0.40, radius * 0.22),
+			], bright, maxf(1.1, radius * 0.08), false)
+			canvas.draw_line(center - forward * length * 0.30 - right * radius * 0.48, center - forward * length * 0.30 + right * radius * 0.48, bright.darkened(0.12), maxf(1.0, radius * 0.065))
+		"shield":
+			var inner := _terminal_shield_polygon(center, forward, right, length * 0.72, radius * 0.68)
+			_draw_outline(canvas, inner, bright, maxf(1.0, radius * 0.08))
+			canvas.draw_arc(center + forward * length * 0.06, radius * 1.02, -PI * 0.40, PI * 0.40, 28, bright.lerp(Color.WHITE, 0.08), maxf(1.0, radius * 0.07))
+			canvas.draw_arc(center + forward * length * 0.02, radius * 0.62, -PI * 0.40, PI * 0.40, 28, dark.lerp(Color.WHITE, 0.18), maxf(1.0, radius * 0.05))
+			var grip := rotated_rect(center - forward * length * 0.10, forward, length * 0.24, radius * 0.18)
+			canvas.draw_colored_polygon(grip, dark.lerp(Color.WHITE, 0.10))
+			_draw_outline(canvas, grip, bright.darkened(0.12), maxf(1.0, radius * 0.045))
+		"drill":
+			canvas.draw_line(center - forward * length * 0.44, center - forward * length * 0.12, dark.lerp(Color.WHITE, 0.2), maxf(1.0, radius * 0.09))
+			var chuck := rotated_rect(center - forward * length * 0.06, forward, length * 0.12, radius * 0.84)
+			canvas.draw_colored_polygon(chuck, dark.lerp(Color.WHITE, 0.12))
+			_draw_outline(canvas, chuck, bright.darkened(0.08), maxf(1.0, radius * 0.055))
+			var spin_offset := terminal_drill_spiral_offset(node)
+			for i in range(8):
+				var t := fposmod(0.02 + float(i) * 0.13 + spin_offset, 1.0)
+				var x := lerpf(-length * 0.02, length * 0.42, t)
+				var half_width := lerpf(radius * 0.48, radius * 0.09, t)
+				var p0 := center + forward * (x - length * 0.055) - right * half_width
+				var p1 := center + forward * (x + length * 0.075) + right * half_width * 0.78
+				canvas.draw_line(p0, p1, bright, maxf(1.0, radius * 0.075))
+				var shadow0 := center + forward * (x + length * 0.018) + right * half_width * 0.78
+				var shadow1 := center + forward * (x + length * 0.105) - right * half_width * 0.58
+				canvas.draw_line(shadow0, shadow1, dark.lerp(Color.WHITE, 0.08), maxf(1.0, radius * 0.045))
+		"gauntlet":
+			var rod := capsule_polygon(center - forward * length * 0.36, forward, length * 0.24, maxf(2.4, radius * 0.18), 5)
+			canvas.draw_colored_polygon(rod, dark.lerp(Color.WHITE, 0.18))
+			_draw_outline(canvas, rod, bright.darkened(0.2), maxf(1.0, radius * 0.04))
+			var front_x := length * 0.34
+			for offset in [-0.60, -0.20, 0.20, 0.60]:
+				var knuckle := center + forward * front_x + right * radius * float(offset)
+				var knuckle_plate := rotated_rect(knuckle, forward, maxf(3.8, radius * 0.36), maxf(3.1, radius * 0.32))
+				canvas.draw_colored_polygon(knuckle_plate, bright.darkened(0.04))
+				_draw_outline(canvas, knuckle_plate, dark.lerp(Color.WHITE, 0.22), maxf(1.0, radius * 0.045))
+			canvas.draw_line(center - forward * length * 0.18 - right * radius * 0.38, center - forward * length * 0.18 + right * radius * 0.38, bright, maxf(1.0, radius * 0.08))
+			canvas.draw_line(center + forward * length * 0.02 - right * radius * 0.84, center + forward * length * 0.02 + right * radius * 0.84, dark.lerp(Color.WHITE, 0.16), maxf(1.0, radius * 0.055))
+		"katana":
+			_draw_local_polyline(canvas, center, forward, right, [
+				Vector2(-length * 0.42, -radius * 0.02),
+				Vector2(length * 0.02, -radius * 0.10),
+				Vector2(length * 0.42, radius * 0.02),
+			], dark, maxf(1.0, radius * 0.06), false)
+			_draw_local_polyline(canvas, center, forward, right, [
+				Vector2(-length * 0.26, radius * 0.26),
+				Vector2(length * 0.12, radius * 0.38),
+				Vector2(length * 0.42, radius * 0.12),
+			], bright, maxf(1.0, radius * 0.065), false)
+			canvas.draw_line(center - forward * length * 0.32 - right * radius * 0.48, center - forward * length * 0.32 + right * radius * 0.48, bright.darkened(0.12), maxf(1.0, radius * 0.055))
+		"greatsword":
+			canvas.draw_line(center - forward * length * 0.26 - right * radius * 0.82, center - forward * length * 0.26 + right * radius * 0.82, bright, maxf(1.0, radius * 0.08))
+			canvas.draw_line(center - forward * length * 0.18, center + forward * length * 0.34, dark.lerp(Color.WHITE, 0.22), maxf(1.0, radius * 0.065))
+			canvas.draw_line(center - forward * length * 0.16 - right * radius * 0.34, center + forward * length * 0.28 - right * radius * 0.20, bright.darkened(0.12), maxf(1.0, radius * 0.04))
+			canvas.draw_line(center - forward * length * 0.16 + right * radius * 0.34, center + forward * length * 0.28 + right * radius * 0.20, bright.darkened(0.12), maxf(1.0, radius * 0.04))
+		"hammer":
+			canvas.draw_line(center - forward * length * 0.44, center + forward * length * 0.16, dark.lerp(Color.WHITE, 0.18), maxf(1.0, radius * 0.10))
+			var hammer_face_a := rotated_rect(center + forward * length * 0.33 - right * radius * 0.52, forward, length * 0.20, radius * 0.16)
+			var hammer_face_b := rotated_rect(center + forward * length * 0.33 + right * radius * 0.52, forward, length * 0.20, radius * 0.16)
+			canvas.draw_colored_polygon(hammer_face_a, bright.darkened(0.08))
+			canvas.draw_colored_polygon(hammer_face_b, bright.darkened(0.08))
+			canvas.draw_circle(center + forward * length * 0.04, maxf(2.0, radius * 0.12), bright)
+		"lance":
+			canvas.draw_line(center - forward * length * 0.46, center + forward * length * 0.30, dark.lerp(Color.WHITE, 0.18), maxf(1.0, radius * 0.055))
+			_draw_local_polyline(canvas, center, forward, right, [
+				Vector2(length * 0.24, -radius * 0.36),
+				Vector2(length * 0.48, 0.0),
+				Vector2(length * 0.24, radius * 0.36),
+			], bright, maxf(1.0, radius * 0.065), false)
+			canvas.draw_line(center - forward * length * 0.18 - right * radius * 0.34, center - forward * length * 0.18 + right * radius * 0.34, bright.darkened(0.1), maxf(1.0, radius * 0.055))
+		"rapier":
+			canvas.draw_line(center - forward * length * 0.20, center + forward * length * 0.48, bright, maxf(1.0, radius * 0.045))
+			canvas.draw_line(center - forward * length * 0.28 - right * radius * 0.58, center - forward * length * 0.28 + right * radius * 0.58, bright.darkened(0.1), maxf(1.0, radius * 0.05))
+			canvas.draw_arc(center - forward * length * 0.30, radius * 0.42, 0.0, TAU, 28, dark.lerp(Color.WHITE, 0.25), maxf(1.0, radius * 0.045))
+		"claw":
+			var palm_plate := rotated_rect(center - forward * length * 0.10, forward, length * 0.24, radius * 0.84)
+			canvas.draw_colored_polygon(palm_plate, dark.lerp(Color.WHITE, 0.12))
+			_draw_outline(canvas, palm_plate, bright.darkened(0.12), maxf(1.0, radius * 0.045))
+			for offset in [-0.46, 0.0, 0.46]:
+				_draw_local_polyline(canvas, center, forward, right, [
+					Vector2(length * 0.02, radius * float(offset)),
+					Vector2(length * 0.38, radius * (float(offset) + 0.10)),
+					Vector2(length * 0.50, radius * (float(offset) + 0.26)),
+				], bright, maxf(1.0, radius * 0.055), false)
+		"racket":
+			canvas.draw_arc(center + forward * length * 0.24, radius * 0.72, 0.0, TAU, 40, bright, maxf(1.0, radius * 0.07))
+			canvas.draw_line(center - forward * length * 0.46, center + forward * length * 0.04, dark.lerp(Color.WHITE, 0.18), maxf(1.0, radius * 0.08))
+			for offset in [-0.38, 0.0, 0.38]:
+				canvas.draw_line(center + forward * length * 0.04 + right * radius * float(offset), center + forward * length * 0.48 + right * radius * float(offset) * 0.72, bright.darkened(0.1), maxf(1.0, radius * 0.035))
+			for offset in [-0.26, 0.26]:
+				canvas.draw_line(center + forward * length * 0.20 + right * radius * float(offset) * 2.2, center + forward * length * 0.28 - right * radius * float(offset) * 2.2, bright.darkened(0.16), maxf(1.0, radius * 0.035))
+		"chain":
+			for i in range(6):
+				var t := float(i) / 5.0
+				var x := lerpf(-length * 0.38, length * 0.30, t)
+				var y := radius * 0.16 if i % 2 == 0 else -radius * 0.16
+				var link_axis := forward if i % 2 == 0 else right
+				var link := rotated_rect(center + forward * x + right * y, link_axis, length * 0.12, radius * 0.22)
+				canvas.draw_colored_polygon(link, dark.lerp(Color.WHITE, 0.16))
+				_draw_outline(canvas, link, bright.darkened(0.08), maxf(1.0, radius * 0.035))
+			canvas.draw_circle(center + forward * length * 0.44, maxf(2.4, radius * 0.18), bright)
+		"sniper":
+			canvas.draw_line(center - forward * length * 0.02, center + forward * length * 0.48, bright, maxf(1.0, radius * 0.045))
+			var scope := capsule_polygon(center - forward * length * 0.06 + right * radius * 0.48, forward, length * 0.24, maxf(2.2, radius * 0.12), 5)
+			canvas.draw_colored_polygon(scope, bright.darkened(0.05))
+			_draw_outline(canvas, scope, dark.lerp(Color.WHITE, 0.22), maxf(1.0, radius * 0.035))
+			canvas.draw_line(center - forward * length * 0.36 - right * radius * 0.28, center - forward * length * 0.18 - right * radius * 0.46, dark.lerp(Color.WHITE, 0.20), maxf(1.0, radius * 0.055))
+		"rifle":
+			canvas.draw_line(center + forward * length * 0.04, center + forward * length * 0.48, bright, maxf(1.0, radius * 0.055))
+			var magazine := rotated_rect(center + forward * length * 0.02 - right * radius * 0.56, forward, length * 0.13, radius * 0.22)
+			canvas.draw_colored_polygon(magazine, dark.lerp(Color.WHITE, 0.14))
+			_draw_outline(canvas, magazine, bright.darkened(0.18), maxf(1.0, radius * 0.035))
+			canvas.draw_line(center - forward * length * 0.36, center - forward * length * 0.18, dark.lerp(Color.WHITE, 0.18), maxf(1.0, radius * 0.08))
+		"laser_gun":
+			var prism := _terminal_local_polygon(center, forward, right, [
+				Vector2(length * 0.02, 0.0),
+				Vector2(length * 0.16, -radius * 0.42),
+				Vector2(length * 0.30, 0.0),
+				Vector2(length * 0.16, radius * 0.42),
+			])
+			canvas.draw_colored_polygon(prism, bright.darkened(0.04))
+			_draw_outline(canvas, prism, Color.WHITE.lerp(color, 0.30), maxf(1.0, radius * 0.045))
+			canvas.draw_line(center - forward * length * 0.18, center + forward * length * 0.46, dark.lerp(Color.WHITE, 0.20), maxf(1.0, radius * 0.045))
+			for offset in [-0.38, 0.38]:
+				canvas.draw_line(center - forward * length * 0.08 + right * radius * float(offset), center + forward * length * 0.34 + right * radius * float(offset) * 0.62, bright, maxf(1.0, radius * 0.035))
+		"sprayer":
+			var tank := capsule_polygon(center - forward * length * 0.24 - right * radius * 0.38, forward, length * 0.26, maxf(2.4, radius * 0.22), 6)
+			canvas.draw_colored_polygon(tank, dark.lerp(Color.WHITE, 0.12))
+			_draw_outline(canvas, tank, bright.darkened(0.12), maxf(1.0, radius * 0.035))
+			canvas.draw_line(center - forward * length * 0.08 - right * radius * 0.24, center + forward * length * 0.30 + right * radius * 0.14, bright.darkened(0.08), maxf(1.0, radius * 0.045))
+			canvas.draw_line(center + forward * length * 0.34 - right * radius * 0.36, center + forward * length * 0.48 + right * radius * 0.36, bright, maxf(1.0, radius * 0.06))
+		"grenade_launcher", "mortar", "cannon":
+			var breech := rotated_rect(center - forward * length * 0.12, forward, length * 0.22, radius * 0.64)
+			canvas.draw_colored_polygon(breech, dark.lerp(Color.WHITE, 0.12))
+			_draw_outline(canvas, breech, bright.darkened(0.14), maxf(1.0, radius * 0.04))
+			canvas.draw_line(center + forward * length * 0.00, center + forward * length * 0.46, bright, maxf(1.0, radius * 0.12))
+			canvas.draw_arc(center + forward * length * 0.46, radius * 0.28, 0.0, TAU, 24, Color.WHITE.lerp(color, 0.22), maxf(1.0, radius * 0.055))
+		"missile_launcher":
+			for offset in [-0.44, 0.0, 0.44]:
+				var tube := capsule_polygon(center + right * radius * float(offset), forward, length * 0.78, maxf(2.2, radius * 0.13), 5)
+				canvas.draw_colored_polygon(tube, dark.lerp(Color.WHITE, 0.12))
+				_draw_outline(canvas, tube, bright.darkened(0.12), maxf(1.0, radius * 0.035))
+				canvas.draw_circle(center + forward * length * 0.38 + right * radius * float(offset), maxf(1.8, radius * 0.095), bright)
+		"web_gun":
+			canvas.draw_circle(center - forward * length * 0.18 - right * radius * 0.24, maxf(2.8, radius * 0.24), dark.lerp(Color.WHITE, 0.18))
+			canvas.draw_circle(center - forward * length * 0.18 + right * radius * 0.24, maxf(2.8, radius * 0.24), dark.lerp(Color.WHITE, 0.18))
+			canvas.draw_arc(center - forward * length * 0.18 - right * radius * 0.24, radius * 0.16, 0.0, TAU, 20, bright, maxf(1.0, radius * 0.035))
+			canvas.draw_arc(center - forward * length * 0.18 + right * radius * 0.24, radius * 0.16, 0.0, TAU, 20, bright, maxf(1.0, radius * 0.035))
+			canvas.draw_line(center - forward * length * 0.02, center + forward * length * 0.46, bright.darkened(0.08), maxf(1.0, radius * 0.045))
+		_:
+			return
+
+
+static func _draw_local_polyline(canvas: CanvasItem, center: Vector2, forward: Vector2, right: Vector2, points: Array, color: Color, width: float, closed: bool = false) -> void:
+	if points.size() < 2:
+		return
+	var transformed: Array[Vector2] = []
+	for raw_point in points:
+		var p: Vector2 = raw_point
+		transformed.append(center + forward * p.x + right * p.y)
+	for i in range(transformed.size() - 1):
+		canvas.draw_line(transformed[i], transformed[i + 1], color, width)
+	if closed:
+		canvas.draw_line(transformed[transformed.size() - 1], transformed[0], color, width)
 
 
 static func _draw_barrier(canvas: CanvasItem, center: Vector2, axis: Vector2, color: Color, radius: float, pulse: float, visual_length_px: float, node: Dictionary) -> void:
@@ -675,16 +1518,61 @@ static func _node_material_style(node: Dictionary) -> String:
 
 
 static func _terminal_shape_name(node: Dictionary) -> String:
-	if bool(node.get("projectile", false)):
-		return "gun"
-	match String(node.get("damage_type", "")).to_lower():
-		"tear":
-			return "blade"
-		"pierce":
-			return "spike"
-		"blunt":
+	match terminal_shape_family(node):
+		"gun":
+			return "gun"
+		"sniper":
+			return "sniper"
+		"rifle":
+			return "rifle"
+		"laser_gun":
+			return "laser_gun"
+		"sprayer":
+			return "sprayer"
+		"grenade_launcher":
+			return "grenade_launcher"
+		"mortar":
+			return "mortar"
+		"cannon":
+			return "cannon"
+		"missile_launcher":
+			return "missile_launcher"
+		"web_gun":
+			return "web_gun"
+		"scythe":
+			return "scythe"
+		"shield":
+			return "shield"
+		"drill":
+			return "drill"
+		"gauntlet":
+			return "gauntlet"
+		"saber":
+			return "saber"
+		"katana":
+			return "katana"
+		"greatsword":
+			return "greatsword"
+		"hammer":
 			return "hammer"
-	return "terminal"
+		"lance":
+			return "lance"
+		"rapier":
+			return "rapier"
+		"claw":
+			return "claw"
+		"racket":
+			return "racket"
+		"chain":
+			return "chain"
+		"generic_blade":
+			return "blade"
+		"generic_pierce":
+			return "spike"
+		"generic_blunt":
+			return "hammer"
+		_:
+			return "terminal"
 
 
 static func _safe_axis(axis: Vector2) -> Vector2:

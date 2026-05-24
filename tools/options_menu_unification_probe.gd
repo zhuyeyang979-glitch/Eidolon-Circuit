@@ -25,6 +25,9 @@ func _init() -> void:
 	var main = MainScene.new()
 	root.add_child(main)
 	main._ready()
+	main.loading_auto_transitions_enabled = false
+	if main.game_state == MainScene.STATE_LOADING:
+		main._show_menu(true)
 	main._show_saved_units_library()
 	_assert_options_button(main, main.saved_units_layer, "SavedUnitsBackButton")
 	main._show_page_options("saved_units")

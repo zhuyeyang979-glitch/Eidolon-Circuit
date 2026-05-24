@@ -45,7 +45,7 @@ func _init() -> void:
 		_fail("Runtime segment drawing does not request the thumbnail-style display profile.")
 	if not fighter_source.contains("AssemblyBoardRenderer.component_polygon"):
 		_fail("Fighter runtime collision no longer uses AssemblyBoardRenderer.component_polygon.")
-	_assert_runtime_profile("torso", {"part_kind": "torso", "a": Vector2(0, 0), "b": Vector2(1, 0), "joint_ports": 4}, 0.45, 0.49)
+	_assert_runtime_profile("torso", {"part_kind": "torso", "a": Vector2(0, 0), "b": Vector2(1, 0), "joint_ports": 4}, 0.66, 0.74)
 	_assert_runtime_profile("limb", {"part_kind": "limb_muscle", "a": Vector2(0, 0), "b": Vector2(1, 0)}, 0.10, 0.12)
 	_assert_runtime_profile("terminal", {"part_kind": "terminal", "a": Vector2(0, 0), "b": Vector2(1, 0), "damage_type": "blunt"}, 0.22, 0.24)
 	print("BATTLE_PREVIEW_ART_IDENTITY_PROBE ok")

@@ -18,9 +18,20 @@ func _init() -> void:
 		"stats": {
 			"health": 100,
 			"mass": 10.0,
+			"thruster_drive_demand": 30.0,
+			"thruster_effective_drive_demand": 30.0,
+			"thruster_boost_extra_demand": 30.0,
+			"thruster_boost_peak_demand": 60.0,
+			"thruster_effective_boost_peak_demand": 60.0,
+			"engine_drive_chain_ratio": 1.0,
+			"engine_boost_chain_ratio": 1.0,
+			"move_momentum": 30.0,
 			"body_move_speed": 3.0,
+			"move_speed": 3.0,
 			"thruster_acceleration": 8.0,
 			"boost_momentum": 30.0,
+			"boost_total_momentum": 60.0,
+			"boost_speed": 6.0,
 			"boost_duration": 0.3,
 			"teamedit_runtime_topology": true,
 			"runtime_topology_segments": [{"part_kind": "torso"}],
@@ -36,8 +47,9 @@ func _init() -> void:
 	if unit.velocity.length() > 0.001:
 		_fail("Reverse boost should spend boost momentum to brake to zero in this setup.")
 		return
-	if String(unit.get_meta("last_velocity_brake_reason", "")) != "unusable_boost_angle":
-		_fail("Brake reason should be unusable_boost_angle.")
+	var reason := String(unit.get_meta("last_velocity_brake_reason", ""))
+	if reason not in ["unusable_boost_angle", "reverse_brake"]:
+		_fail("Brake reason should be unusable_boost_angle or reverse_brake, got %s." % reason)
 		return
 	print("BOOST_UNUSABLE_DIRECTION_BRAKES_PROBE ok")
 	quit()

@@ -20,10 +20,21 @@ func _make_fighter():
 			"teamedit_runtime_topology": true,
 			"runtime_topology_segments": [{"part_kind": "torso", "node_index": 0, "a_local": Vector2(-0.2, 0.0), "b_local": Vector2(0.2, 0.0), "radius": 0.08}],
 			"mass": 10.0,
+			"thruster_drive_demand": 40.0,
+			"thruster_effective_drive_demand": 40.0,
+			"thruster_boost_extra_demand": 80.0,
+			"thruster_boost_peak_demand": 120.0,
+			"thruster_effective_boost_peak_demand": 120.0,
+			"engine_drive_chain_ratio": 1.0,
+			"engine_boost_chain_ratio": 1.0,
+			"move_momentum": 40.0,
 			"body_move_speed": 4.0,
+			"move_speed": 4.0,
 			"thruster_acceleration": 4.0,
 			"thruster_momentum": 40.0,
 			"boost_momentum": 80.0,
+			"boost_total_momentum": 120.0,
+			"boost_speed": 12.0,
 			"boost_duration": 0.5,
 			"turn_speed": 2.0,
 			"thruster_cone_degrees": 180.0,
@@ -53,8 +64,8 @@ func _init() -> void:
 		return
 	var rear_component_outside = _make_fighter()
 	rear_component_outside.move_by(Vector2(-0.2, 1.0).normalized(), 0.1, 24.0)
-	if float(rear_component_outside.boost_flash_timer) > 0.001:
-		_fail("Small rear component outside the rear 100 degree cone should not trigger brake.")
+	if rear_component_outside.velocity.x < -0.001:
+		_fail("Small rear component outside the rear 100 degree cone should not reverse velocity.")
 		return
 	print("BRAKE_INPUT_TOLERANCE_PROBE tolerant_speed=%.3f" % tolerant.velocity.length())
 	quit()

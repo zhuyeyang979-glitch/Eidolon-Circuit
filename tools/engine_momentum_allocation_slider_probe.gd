@@ -52,6 +52,13 @@ func _first_id(data: Dictionary, kind: String) -> String:
 	return ""
 
 
+func _first_entry(data: Dictionary, kind: String) -> Dictionary:
+	for entry in Array(data.get("entries", [])):
+		if entry is Dictionary and String(Dictionary(entry).get("kind", "")) == kind:
+			return Dictionary(entry)
+	return {}
+
+
 func _init() -> void:
 	var main = MainScene.new()
 	root.add_child(main)
@@ -65,27 +72,38 @@ func _init() -> void:
 	main._open_engine_momentum_allocation_for_payload(0)
 	var data: Dictionary = main._engine_momentum_allocation_data(main._editor_current_blueprint(), main.editor_engine_allocation_torso_node_index, main.editor_engine_allocation_payload_index)
 	var pool := float(data.get("engine_output", 0.0))
-	var booster_id := _first_id(data, "booster")
-	var limb_id := _first_id(data, "limb")
+	var booster_entry := _first_entry(data, "booster_drive")
+	var limb_entry := _first_entry(data, "limb")
+	var booster_id := String(booster_entry.get("id", ""))
+	var limb_id := String(limb_entry.get("id", ""))
 	if booster_id == "" or limb_id == "":
 		_fail("Missing booster or limb allocation entry.")
-	main._set_engine_momentum_allocation_ratio(booster_id, 0.25)
+	if bool(booster_entry.get("readonly", false)):
+		_fail("Booster drive allocation entry should be adjustable.")
+	var requested_ratio := 0.25
+	main._set_engine_momentum_allocation_ratio(booster_id, requested_ratio)
 	var payloads: Array = Array(main._editor_current_blueprint().get("slot_payloads", []))
 	var booster_payload: Dictionary = payloads[1]
-	if absf(float(booster_payload.get("allocated_momentum", -1.0)) - pool * 0.25) > 0.01:
-		_fail("Booster allocation did not write to payload: %.2f expected %.2f" % [float(booster_payload.get("allocated_momentum", -1.0)), pool * 0.25])
+	var after_booster: Dictionary = main._engine_momentum_allocation_data(main._editor_current_blueprint(), main.editor_engine_allocation_torso_node_index, main.editor_engine_allocation_payload_index)
+	var after_booster_entry := _first_entry(after_booster, "booster_drive")
+	var expected_booster := main._engine_allocation_clamped_momentum_from_entries(Array(data.get("entries", [])), booster_id, pool * requested_ratio, pool)
+	if absf(float(after_booster_entry.get("momentum", -1.0)) - expected_booster) > 0.01:
+		_fail("Booster drive allocation did not change to expected clamped momentum.")
+	if absf(float(booster_payload.get("thruster_drive_allocated_momentum", -1.0)) - expected_booster) > 0.01:
+		_fail("Booster drive allocation did not write payload.")
 	main._set_engine_momentum_allocation_ratio(limb_id, 0.20)
 	var bindings: Array = Array(main._editor_current_blueprint().get("module_bindings", []))
 	var binding: Dictionary = bindings[0]
 	var by_node: Dictionary = binding.get("allocated_limb_momentum_by_node", {})
 	if by_node.is_empty():
 		_fail("Limb allocation did not write per-node map.")
+	var expected_momentum := main._engine_allocation_clamped_momentum_from_entries(Array(after_booster.get("entries", [])), limb_id, pool * 0.20, pool)
 	var found := false
 	for value in by_node.values():
-		if absf(float(value) - pool * 0.20) <= 0.01:
+		if absf(float(value) - expected_momentum) <= 0.01:
 			found = true
 	if not found:
-		_fail("Limb allocation map did not contain expected momentum: %s" % str(by_node))
+		_fail("Limb allocation map did not contain expected clamped momentum %.3f: %s" % [expected_momentum, str(by_node)])
 	var stats: Dictionary = main._editor_current_stats()
 	if float(stats.get("engine_momentum_required", 0.0)) <= 0.0:
 		_fail("Allocation did not affect engine demand.")

@@ -74,5 +74,14 @@ func _init() -> void:
 		_fail("Equalize did not normalize allocation: %.4f" % float(after.get("used_ratio", 0.0)))
 	if Array(after.get("entries", [])).is_empty():
 		_fail("Equalize removed allocation entries.")
+	var payloads: Array = Array(main._editor_current_blueprint().get("slot_payloads", []))
+	if payloads.size() < 2 or not (payloads[1] is Dictionary):
+		_fail("Booster payload missing after equalize.")
+	var booster_payload: Dictionary = payloads[1]
+	if booster_payload.has("allocated_momentum") and absf(float(booster_payload.get("allocated_momentum", 0.0)) - 9999.0) > 0.01:
+		_fail("Equalize should not rewrite readonly booster payload allocation alias.")
+	for raw_entry in Array(after.get("entries", [])):
+		if raw_entry is Dictionary and String(Dictionary(raw_entry).get("kind", "")).begins_with("booster") and float(Dictionary(raw_entry).get("momentum", 0.0)) <= 0.0 and String(Dictionary(raw_entry).get("kind", "")) == "booster_drive":
+			_fail("Booster drive entry should remain present after equalize.")
 	print("ENGINE_POWER_ALLOCATION_NORMALIZATION_PROBE ok before=%.2f after=%.2f" % [float(before.get("used_ratio", 0.0)), float(after.get("used_ratio", 0.0))])
 	quit()

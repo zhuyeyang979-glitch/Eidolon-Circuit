@@ -83,7 +83,7 @@ func _init() -> void:
 		var entry_text := "%s %s %s" % [String(Dictionary(entry).get("kind", "")), String(Dictionary(entry).get("label", "")), String(Dictionary(entry).get("line", ""))]
 		if _contains_banned(entry_text):
 			_fail("Allocation entry exposed old wording: %s" % entry_text)
-		has_booster = has_booster or String(Dictionary(entry).get("kind", "")) == "booster"
+		has_booster = has_booster or String(Dictionary(entry).get("kind", "")).begins_with("booster")
 		has_limb = has_limb or String(Dictionary(entry).get("kind", "")) == "limb"
 	if not has_booster or not has_limb:
 		_fail("Allocation UI should include thrust and action limb entries.")

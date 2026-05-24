@@ -30,14 +30,14 @@ func _init() -> void:
 	var unit = _spawn_unit(main)
 	var rotate_speed := main._unit2_turn_speed_reference()
 	var start := Vector2.UP
-	var toward_front := main._gun_activation_rotated_direction(unit, start, Vector2.RIGHT, rotate_speed, 0.25)
-	if toward_front.dot(Vector2.RIGHT) <= start.dot(Vector2.RIGHT):
-		_fail("Holding local 6 should rotate the gun direction toward the unit front.")
-	var toward_rear := main._gun_activation_rotated_direction(unit, start, Vector2.LEFT, rotate_speed, 0.25)
-	if toward_rear.dot(Vector2.LEFT) <= start.dot(Vector2.LEFT):
-		_fail("Holding local 4 should rotate the gun direction toward the unit rear.")
+	var right_turn := main._gun_activation_rotated_direction(unit, start, Vector2.RIGHT, rotate_speed, 0.25)
+	if wrapf(right_turn.angle() - start.angle(), -PI, PI) <= 0.0:
+		_fail("Holding 6 should rotate the gun direction to the right with a stable turn sign.")
+	var left_turn := main._gun_activation_rotated_direction(unit, start, Vector2.LEFT, rotate_speed, 0.25)
+	if wrapf(left_turn.angle() - start.angle(), -PI, PI) >= 0.0:
+		_fail("Holding 4 should rotate the gun direction to the left with a stable turn sign.")
 	var unchanged := main._gun_activation_rotated_direction(unit, start, Vector2.UP, rotate_speed, 0.25)
 	if unchanged.distance_to(start) > 0.001:
-		_fail("Perpendicular command should not rotate the Gun Activate aim direction.")
+		_fail("Vertical command should not rotate the Gun Activate aim direction.")
 	print("GUN_ACTIVATE_ROTATE_COMMAND_PROBE ok speed=%.2f" % rotate_speed)
 	quit()

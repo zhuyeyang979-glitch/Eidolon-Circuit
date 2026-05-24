@@ -32,10 +32,6 @@ func _event_for_profile(profile: String) -> Dictionary:
 	var module_part := {
 		"name": profile,
 		"module_action_profile": profile,
-		"normal_damage": 6,
-		"armor_damage": 8,
-		"active_damage": 9,
-		"damage_type": "pierce" if profile.contains("pierce") or profile.contains("lance") or profile.contains("drill") or profile.contains("rapier") else "blunt",
 		"module_extension_m": 1.2 if profile.contains("extend") or profile.contains("pierce") or profile.contains("lance") or profile.contains("drill") or profile.contains("rapier") else 0.0,
 		"swing_arc_degrees": 150.0,
 	}

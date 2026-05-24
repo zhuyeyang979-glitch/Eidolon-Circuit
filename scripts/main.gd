@@ -12,6 +12,8 @@ const HotPathProfiler = preload("res://scripts/perf/hot_path_profiler.gd")
 const GpuGeometryService = preload("res://scripts/services/gpu_geometry_service.gd")
 const PartCatalogService = preload("res://scripts/services/part_catalog_service.gd")
 const UnitStatsService = preload("res://scripts/services/unit_stats_service.gd")
+const PowerAllocationService = preload("res://scripts/services/power_allocation_service.gd")
+const NavigationService = preload("res://scripts/services/navigation_service.gd")
 const TeamEditController = preload("res://scripts/controllers/team_edit_controller.gd")
 const BattleController = preload("res://scripts/controllers/battle_controller.gd")
 const SavedUnitsController = preload("res://scripts/controllers/saved_units_controller.gd")
@@ -19,6 +21,17 @@ const SettingsController = preload("res://scripts/controllers/settings_controlle
 const ScoutController = preload("res://scripts/controllers/scout_controller.gd")
 const MenuController = preload("res://scripts/controllers/menu_controller.gd")
 const LoadingController = preload("res://scripts/controllers/loading_controller.gd")
+const MenuView = preload("res://scripts/views/menu_view.gd")
+const MotionBudget = preload("res://scripts/motion_budget.gd")
+const MobiusWorld = preload("res://scripts/mobius_world.gd")
+const GameplayTransform = preload("res://scripts/gameplay_transform.gd")
+const MobiusStripSurfaceShader = preload("res://shaders/mobius_strip_surface.gdshader")
+
+const CATALOG_CARD_TITLE_FONT_SIZE := 11
+const CATALOG_CARD_SIMPLE_TITLE_FONT_SIZE := 12
+const CATALOG_CARD_LINE_FONT_SIZE := 9
+const CATALOG_CARD_TEXT_PLATE_ALPHA := 0.62
+const CATALOG_CARD_BODY_TEXTURE_STYLE_REVISION := 2
 
 class BackdropView:
 	extends Control
@@ -66,6 +79,89 @@ class BackdropView:
 		for i in range(12):
 			var x0 := 70.0 + float(i) * 96.0
 			draw_rect(Rect2(Vector2(x0, 604.0 + float(i % 3) * 12.0), Vector2(42.0, 3.0)), Color(0.9, 0.96, 1.0, 0.12), true)
+
+
+class MobiusStripSurfaceView:
+	extends Control
+
+	var config := {}
+	var rotation_state := {}
+	var camera_coord := Vector2.ZERO
+	var surface_texture: Texture2D
+
+	func set_surface_texture(texture: Texture2D) -> void:
+		surface_texture = texture
+		if material is ShaderMaterial:
+			var shader_material := material as ShaderMaterial
+			shader_material.set_shader_parameter("surface_texture", surface_texture)
+			shader_material.set_shader_parameter("surface_texture_enabled", surface_texture != null)
+		queue_redraw()
+
+	func set_world(next_config: Dictionary, next_rotation_state: Dictionary, next_camera_coord: Vector2) -> void:
+		config = next_config.duplicate(true)
+		config["twist_visual_enabled"] = true
+		rotation_state = next_rotation_state.duplicate(true)
+		camera_coord = next_camera_coord
+		if material is ShaderMaterial:
+			var shader_material := material as ShaderMaterial
+			shader_material.set_shader_parameter("twist_phase", float(rotation_state.get("twist_phase", rotation_state.get("angle", 0.0))))
+			shader_material.set_shader_parameter("depth_contrast", float(config.get("depth_contrast", 1.0)))
+			shader_material.set_shader_parameter("edge_fog", float(config.get("edge_fog_width", config.get("boundary_fog_width", 0.75))))
+			shader_material.set_shader_parameter("cosmic_mix", 0.09)
+			shader_material.set_shader_parameter("surface_texture", surface_texture)
+			shader_material.set_shader_parameter("surface_texture_enabled", surface_texture != null)
+		queue_redraw()
+
+	func _draw() -> void:
+		if not bool(config.get("enabled", true)):
+			return
+		var loop := maxf(0.001, float(config.get("loop_length", 24.0)))
+		var half_width := MobiusWorld.strip_half_width(config)
+		var surface_segments := clampi(int(config.get("surface_segments", 96)), 16, 160)
+		var view_width := maxf(1.0, float(config.get("view_width", 7.2)))
+		var span := view_width * 1.22
+		var near_alpha := float(config.get("near_alpha", 0.38))
+		var far_alpha := float(config.get("far_alpha", 0.18))
+		var samples := MobiusWorld.surface_sample_grid(camera_coord, config, rotation_state)
+		samples.sort_custom(Callable(self, "_sort_surface_sample"))
+		for raw_sample in samples:
+			if not (raw_sample is Dictionary):
+				continue
+			var sample: Dictionary = raw_sample
+			var avg_depth := float(sample.get("avg_depth", 0.5))
+			var edge_softness := float(sample.get("edge_softness", 1.0))
+			var stripe := float(sample.get("stripe", 0.5))
+			var poly: PackedVector2Array = sample.get("poly", PackedVector2Array())
+			if poly.size() < 4:
+				continue
+			var base := Color(0.04, 0.12, 0.18, 0.23)
+			base.a = far_alpha
+			var near := Color(0.22, 0.62, 0.92, near_alpha)
+			var color := base.lerp(near, avg_depth)
+			color = color.lerp(Color(1.0, 0.72, 0.24, color.a), stripe * 0.11)
+			color.a *= clampf(0.18 + edge_softness * 0.82, 0.0, 1.0)
+			var uvs: PackedVector2Array = sample.get("uvs", PackedVector2Array())
+			if surface_texture != null and uvs.size() == poly.size():
+				draw_polygon(poly, PackedColorArray([color, color, color, color]), uvs, surface_texture)
+			else:
+				draw_colored_polygon(poly, color)
+		for raw_lane_ratio in [-1.0, -0.5, 0.0, 0.5, 1.0]:
+			var lane_ratio := float(raw_lane_ratio)
+			if absf(lane_ratio) >= 0.9 and not bool(config.get("show_surface_boundary_guides", true)):
+				continue
+			var points := PackedVector2Array()
+			for i in range(surface_segments + 1):
+				var t := float(i) / float(surface_segments)
+				var s := camera_coord.x + lerpf(-span, span, t)
+				var v := half_width * lane_ratio
+				var projection := MobiusWorld.project_to_screen(Vector2(s, v), camera_coord, config, rotation_state)
+				points.append(projection.get("position", Vector2.ZERO))
+			var alpha := 0.22 if absf(lane_ratio) < 0.9 else 0.34
+			var edge_softness := MobiusWorld.boundary_softness(half_width * lane_ratio, config)
+			draw_polyline(points, Color(0.72, 0.94, 1.0, alpha * (0.28 + edge_softness * 0.72)), 1.2 if absf(lane_ratio) < 0.9 else 3.6, true)
+
+	func _sort_surface_sample(a: Dictionary, b: Dictionary) -> bool:
+		return float(a.get("avg_depth", 0.0)) < float(b.get("avg_depth", 0.0))
 
 
 class CockpitHudView:
@@ -559,7 +655,7 @@ class BattlePartPreviewView:
 			forward = Vector2.RIGHT
 		var right := Vector2(-forward.y, forward.x)
 		var pts := PackedVector2Array()
-		for local in PartArt.torso_saddle_local_points(length, front_width, rear_width):
+		for local in PartArt.torso_hull_local_points(part, length, front_width, rear_width):
 			var p: Vector2 = local
 			pts.append(center + forward * p.x + right * p.y)
 		return pts
@@ -570,7 +666,7 @@ class BattlePartPreviewView:
 			forward = Vector2.RIGHT
 		var right := Vector2(-forward.y, forward.x)
 		var positions: Array = []
-		for local in PartArt.torso_saddle_port_local_offsets(port_count, length, front_width, rear_width):
+		for local in PartArt.torso_hull_port_local_offsets(part, port_count, length, front_width, rear_width):
 			var p: Vector2 = local
 			positions.append(center + forward * p.x + right * p.y)
 		return positions
@@ -659,6 +755,136 @@ class SortieThumbView:
 			draw_circle(center, radius, base.lerp(Color.WHITE, pulse * 0.25))
 			draw_circle(center, radius * 0.42, Color(0.0, 0.0, 0.0, 0.64))
 			draw_arc(center, radius * 1.18, -PI * 0.78, PI * 0.78, 18, Color.WHITE, 1.3)
+
+
+class TrainingEntryIntroView:
+	extends Control
+
+	var entries: Array = []
+	var language := "zh"
+	var visible_until_msec := 0
+
+	func set_entries(next_entries: Array, next_language: String, duration_sec: float = 3.0) -> void:
+		entries = next_entries.duplicate(true)
+		language = next_language
+		visible_until_msec = Time.get_ticks_msec() + int(maxf(0.2, duration_sec) * 1000.0)
+		visible = not entries.is_empty()
+		set_process(visible)
+		queue_redraw()
+
+	func clear_intro() -> void:
+		entries = []
+		visible_until_msec = 0
+		visible = false
+		set_process(false)
+		queue_redraw()
+
+	func _process(_delta: float) -> void:
+		if visible_until_msec > 0 and Time.get_ticks_msec() >= visible_until_msec:
+			clear_intro()
+
+	func _draw() -> void:
+		if entries.is_empty():
+			return
+		var font := ThemeDB.get_fallback_font()
+		var panel_count := entries.size()
+		var panel_width := minf(376.0, (size.x - 72.0) / maxf(1.0, float(panel_count)))
+		var panel_height := 126.0
+		var total_width := panel_width * float(panel_count) + 16.0 * float(maxi(0, panel_count - 1))
+		var start := Vector2(size.x * 0.5 - total_width * 0.5, 92.0)
+		for i in range(panel_count):
+			var entry: Dictionary = entries[i] if entries[i] is Dictionary else {}
+			var rect := Rect2(start + Vector2(float(i) * (panel_width + 16.0), 0.0), Vector2(panel_width, panel_height))
+			var player_id := int(entry.get("player_id", i + 1))
+			var base := Color(0.24, 0.86, 1.0, 0.92) if player_id == 1 else Color(1.0, 0.28, 0.44, 0.92)
+			draw_rect(rect, Color(0.004, 0.012, 0.02, 0.84), true)
+			draw_rect(rect, base, false, 1.5)
+			var title := String(entry.get("name", "UNIT"))
+			var label := String(entry.get("label", "P%d" % player_id))
+			draw_string(font, rect.position + Vector2(14.0, 22.0), _trim(label, 18), HORIZONTAL_ALIGNMENT_LEFT, 76.0, 12, Color(base.r, base.g, base.b, 1.0))
+			draw_string(font, rect.position + Vector2(86.0, 22.0), _trim(title, 30), HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 100.0, 15, Color(0.94, 0.98, 1.0, 1.0))
+			var thumb_rect := Rect2(rect.position + Vector2(14.0, 36.0), Vector2(rect.size.x - 28.0, rect.size.y - 50.0))
+			_draw_unit_thumbnail(thumb_rect, entry, base)
+
+	func _draw_unit_thumbnail(rect: Rect2, entry: Dictionary, base: Color) -> void:
+		draw_rect(rect, Color(0.0, 0.0, 0.0, 0.24), true)
+		draw_rect(rect, Color(base.r, base.g, base.b, 0.28), false, 1.0)
+		var segments: Array = Array(entry.get("segments", []))
+		if segments.is_empty():
+			draw_circle(rect.get_center(), minf(rect.size.x, rect.size.y) * 0.22, Color(base.r, base.g, base.b, 0.78))
+			return
+		var bounds := _segment_bounds(segments)
+		var fit_rect := rect.grow(-10.0)
+		var scale := minf(fit_rect.size.x / maxf(0.001, bounds.size.x), fit_rect.size.y / maxf(0.001, bounds.size.y))
+		for raw_segment in segments:
+			if not (raw_segment is Dictionary):
+				continue
+			var segment: Dictionary = Dictionary(raw_segment).duplicate(true)
+			var a := _segment_local_point(segment, "a_local", "a")
+			var b := _segment_local_point(segment, "b_local", "b")
+			segment["a"] = fit_rect.get_center() + (a - bounds.get_center()) * scale
+			segment["b"] = fit_rect.get_center() + (b - bounds.get_center()) * scale
+			segment["radius"] = maxf(2.0, float(segment.get("radius", 0.025)) * scale)
+			var part_kind := String(segment.get("part_kind", "limb_muscle"))
+			var material := Color(0.45, 0.62, 0.78, 0.9)
+			var primary := base.lerp(Color.WHITE, 0.08)
+			if part_kind == "torso":
+				material = base.lerp(Color(0.42, 0.54, 0.66, 1.0), 0.38)
+			AssemblyBoardRenderer.draw_runtime_segment(self, segment, Vector2.ZERO, 0.0, 1.0, material, primary)
+
+	func _segment_bounds(segments: Array) -> Rect2:
+		var first := true
+		var min_point := Vector2.ZERO
+		var max_point := Vector2.ZERO
+		for raw_segment in segments:
+			if not (raw_segment is Dictionary):
+				continue
+			var segment: Dictionary = raw_segment
+			var radius := maxf(0.0, float(segment.get("radius", 0.025)))
+			for point in _segment_local_bound_points(segment):
+				if first:
+					min_point = point - Vector2(radius, radius)
+					max_point = point + Vector2(radius, radius)
+					first = false
+				else:
+					min_point.x = minf(min_point.x, point.x - radius)
+					min_point.y = minf(min_point.y, point.y - radius)
+					max_point.x = maxf(max_point.x, point.x + radius)
+					max_point.y = maxf(max_point.y, point.y + radius)
+		if first:
+			return Rect2(Vector2(-1.0, -1.0), Vector2(2.0, 2.0))
+		var rect := Rect2(min_point, max_point - min_point)
+		if rect.size.x < 0.05:
+			rect.size.x = 0.05
+		if rect.size.y < 0.05:
+			rect.size.y = 0.05
+		return rect.grow(maxf(rect.size.x, rect.size.y) * 0.08 + 0.08)
+
+	func _segment_local_bound_points(segment: Dictionary) -> Array:
+		var points: Array = []
+		var polygon = segment.get("polygon_local", [])
+		if polygon is Array:
+			for raw_point in Array(polygon):
+				if raw_point is Vector2:
+					points.append(raw_point)
+				elif raw_point is Dictionary:
+					points.append(Vector2(float(raw_point.get("x", 0.0)), float(raw_point.get("y", 0.0))))
+		elif polygon is PackedVector2Array:
+			for raw_point in polygon:
+				points.append(raw_point)
+		if points.is_empty():
+			points.append(_segment_local_point(segment, "a_local", "a"))
+			points.append(_segment_local_point(segment, "b_local", "b"))
+		return points
+
+	func _segment_local_point(segment: Dictionary, primary_key: String, fallback_key: String) -> Vector2:
+		var value = segment.get(primary_key, segment.get(fallback_key, Vector2.ZERO))
+		return value if value is Vector2 else Vector2.ZERO
+
+	func _trim(value: String, max_chars: int) -> String:
+		if value.length() <= max_chars:
+			return value
+		return value.substr(0, maxi(1, max_chars - 1)) + "."
 
 
 class ScoutUnitDetailView:
@@ -1176,10 +1402,18 @@ class CatalogCardTextLayer:
 		var font := ThemeDB.get_fallback_font()
 		var simple_card := data_line_a == "" and data_line_b == ""
 		var title_color := Color(1.0, 0.92, 0.36, 1.0) if selected else Color(0.9, 0.96, 1.0, 0.98)
-		draw_string(font, Vector2(0.0, 12.0 if simple_card else 8.0), _card_trim(display_name, 17 if simple_card else 14), HORIZONTAL_ALIGNMENT_LEFT, size.x, 10 if simple_card else 8, title_color)
+		var title_size := CATALOG_CARD_SIMPLE_TITLE_FONT_SIZE if simple_card else CATALOG_CARD_TITLE_FONT_SIZE
+		var title_pos := Vector2(2.0, 15.0 if simple_card else 11.0)
+		draw_rect(Rect2(Vector2.ZERO, size), Color(0.0, 0.0, 0.0, CATALOG_CARD_TEXT_PLATE_ALPHA), true)
+		draw_string(font, title_pos + Vector2(1.0, 1.0), _card_trim(display_name, 17 if simple_card else 14), HORIZONTAL_ALIGNMENT_LEFT, size.x - 4.0, title_size, Color(0.0, 0.0, 0.0, 0.82))
+		draw_string(font, title_pos, _card_trim(display_name, 17 if simple_card else 14), HORIZONTAL_ALIGNMENT_LEFT, size.x - 4.0, title_size, title_color)
 		if not simple_card:
-			draw_string(font, Vector2(0.0, 17.0), _card_trim(data_line_a, 15), HORIZONTAL_ALIGNMENT_LEFT, size.x, 7, Color(0.78, 0.9, 1.0, 0.95))
-			draw_string(font, Vector2(0.0, minf(26.0, size.y - 2.0)), _card_trim(data_line_b, 15), HORIZONTAL_ALIGNMENT_LEFT, size.x, 7, Color(0.72, 0.78, 0.84, 0.95))
+			var line_a_pos := Vector2(2.0, 21.0)
+			var line_b_pos := Vector2(2.0, minf(32.0, size.y - 3.0))
+			draw_string(font, line_a_pos + Vector2(1.0, 1.0), _card_trim(data_line_a, 15), HORIZONTAL_ALIGNMENT_LEFT, size.x - 4.0, CATALOG_CARD_LINE_FONT_SIZE, Color(0.0, 0.0, 0.0, 0.78))
+			draw_string(font, line_a_pos, _card_trim(data_line_a, 15), HORIZONTAL_ALIGNMENT_LEFT, size.x - 4.0, CATALOG_CARD_LINE_FONT_SIZE, Color(0.82, 0.94, 1.0, 1.0))
+			draw_string(font, line_b_pos + Vector2(1.0, 1.0), _card_trim(data_line_b, 15), HORIZONTAL_ALIGNMENT_LEFT, size.x - 4.0, CATALOG_CARD_LINE_FONT_SIZE, Color(0.0, 0.0, 0.0, 0.76))
+			draw_string(font, line_b_pos, _card_trim(data_line_b, 15), HORIZONTAL_ALIGNMENT_LEFT, size.x - 4.0, CATALOG_CARD_LINE_FONT_SIZE, Color(0.78, 0.86, 0.94, 1.0))
 
 	func _card_trim(value: String, max_chars: int) -> String:
 		if value.length() <= max_chars:
@@ -1210,10 +1444,18 @@ class CatalogCardBodyTextureRenderCanvas:
 		var font := ThemeDB.get_fallback_font()
 		var simple_card := data_line_a == "" and data_line_b == ""
 		var title_color := Color(1.0, 0.92, 0.36, 1.0) if selected else Color(0.9, 0.96, 1.0, 0.98)
-		draw_string(font, Vector2(0.0, 12.0 if simple_card else 8.0), _card_trim(display_name, 17 if simple_card else 14), HORIZONTAL_ALIGNMENT_LEFT, size.x, 10 if simple_card else 8, title_color)
+		var title_size := CATALOG_CARD_SIMPLE_TITLE_FONT_SIZE if simple_card else CATALOG_CARD_TITLE_FONT_SIZE
+		var title_pos := Vector2(2.0, 15.0 if simple_card else 11.0)
+		draw_rect(Rect2(Vector2.ZERO, size), Color(0.0, 0.0, 0.0, CATALOG_CARD_TEXT_PLATE_ALPHA), true)
+		draw_string(font, title_pos + Vector2(1.0, 1.0), _card_trim(display_name, 17 if simple_card else 14), HORIZONTAL_ALIGNMENT_LEFT, size.x - 4.0, title_size, Color(0.0, 0.0, 0.0, 0.82))
+		draw_string(font, title_pos, _card_trim(display_name, 17 if simple_card else 14), HORIZONTAL_ALIGNMENT_LEFT, size.x - 4.0, title_size, title_color)
 		if not simple_card:
-			draw_string(font, Vector2(0.0, 17.0), _card_trim(data_line_a, 15), HORIZONTAL_ALIGNMENT_LEFT, size.x, 7, Color(0.78, 0.9, 1.0, 0.95))
-			draw_string(font, Vector2(0.0, minf(26.0, size.y - 2.0)), _card_trim(data_line_b, 15), HORIZONTAL_ALIGNMENT_LEFT, size.x, 7, Color(0.72, 0.78, 0.84, 0.95))
+			var line_a_pos := Vector2(2.0, 21.0)
+			var line_b_pos := Vector2(2.0, minf(32.0, size.y - 3.0))
+			draw_string(font, line_a_pos + Vector2(1.0, 1.0), _card_trim(data_line_a, 15), HORIZONTAL_ALIGNMENT_LEFT, size.x - 4.0, CATALOG_CARD_LINE_FONT_SIZE, Color(0.0, 0.0, 0.0, 0.78))
+			draw_string(font, line_a_pos, _card_trim(data_line_a, 15), HORIZONTAL_ALIGNMENT_LEFT, size.x - 4.0, CATALOG_CARD_LINE_FONT_SIZE, Color(0.82, 0.94, 1.0, 1.0))
+			draw_string(font, line_b_pos + Vector2(1.0, 1.0), _card_trim(data_line_b, 15), HORIZONTAL_ALIGNMENT_LEFT, size.x - 4.0, CATALOG_CARD_LINE_FONT_SIZE, Color(0.0, 0.0, 0.0, 0.76))
+			draw_string(font, line_b_pos, _card_trim(data_line_b, 15), HORIZONTAL_ALIGNMENT_LEFT, size.x - 4.0, CATALOG_CARD_LINE_FONT_SIZE, Color(0.78, 0.86, 0.94, 1.0))
 
 	func _card_trim(value: String, max_chars: int) -> String:
 		if value.length() <= max_chars:
@@ -1246,7 +1488,8 @@ class CatalogCardBodyTextureCache:
 
 	static func key_for(slot_key: String, part: Dictionary, display_name: String, line_a: String, line_b: String, selected: bool, preview_size: Vector2) -> String:
 		var size_key := "%dx%d" % [maxi(1, int(round(preview_size.x))), maxi(1, int(round(preview_size.y)))]
-		return "%s|%s|%s|%s|%s|%s" % [
+		return "%s|%s|%s|%s|%s|%s|%s" % [
+			str(CATALOG_CARD_BODY_TEXTURE_STYLE_REVISION),
 			slot_key,
 			String(part.get("stable_key", part.get("name", ""))),
 			display_name,
@@ -1453,7 +1696,7 @@ class CatalogCardRetainedItem:
 		data_line_a = next_line_a
 		data_line_b = next_line_b
 		preview_texture = PartPreviewTextureCache.peek_preview(slot_key, part, false, 0.0, _art_rect().size)
-		body_texture = CatalogCardBodyTextureCache.peek_preview(slot_key, part, display_name, data_line_a, data_line_b, false, _body_texture_rect().size)
+		body_texture = null
 		if not defer_texture_requests:
 			_request_textures()
 		queue_redraw()
@@ -1474,15 +1717,10 @@ class CatalogCardRetainedItem:
 		if slot_key == "" or part.is_empty() or size.x <= 0.0 or size.y <= 0.0:
 			return
 		var art_rect := _art_rect()
-		var body_rect := _body_texture_rect()
 		var next_preview := PartPreviewTextureCache.request_preview(self, slot_key, part, false, 0.0, art_rect.size)
-		var next_body := CatalogCardBodyTextureCache.request_preview(self, slot_key, part, display_name, data_line_a, data_line_b, false, body_rect.size)
 		if next_preview != null:
 			preview_texture = next_preview
-		if next_body != null:
-			body_texture = next_body
 		preview_request_count += 1
-		body_request_count += 1
 
 	func ensure_textures_requested() -> bool:
 		if slot_key == "" or part.is_empty():
@@ -1507,9 +1745,7 @@ class CatalogCardRetainedItem:
 		return PartPreviewTextureCache.key_for(slot_key, part, false, 0.0, _art_rect().size)
 
 	func body_cache_key() -> String:
-		if slot_key == "" or part.is_empty():
-			return ""
-		return CatalogCardBodyTextureCache.key_for(slot_key, part, display_name, data_line_a, data_line_b, false, _body_texture_rect().size)
+		return ""
 
 	func refresh_preview_texture() -> bool:
 		if slot_key == "" or part.is_empty():
@@ -1522,14 +1758,7 @@ class CatalogCardRetainedItem:
 		return true
 
 	func refresh_body_texture() -> bool:
-		if slot_key == "" or part.is_empty():
-			return false
-		var next_texture := CatalogCardBodyTextureCache.peek_preview(slot_key, part, display_name, data_line_a, data_line_b, false, _body_texture_rect().size)
-		if next_texture == null or next_texture == body_texture:
-			return false
-		body_texture = next_texture
-		queue_redraw()
-		return true
+		return false
 
 	func _draw() -> void:
 		redraw_count += 1
@@ -1554,13 +1783,8 @@ class CatalogCardRetainedItem:
 		_draw_size_ruler(art_rect, _thumbnail_size_scale())
 		_draw_size_badge(art_rect)
 		var data_rect := _data_rect()
-		draw_rect(data_rect, Color(0.0, 0.0, 0.0, 0.38), true)
-		if body_texture == null:
-			refresh_body_texture()
-		if body_texture != null:
-			draw_texture_rect(body_texture, _body_texture_rect(), false)
-		else:
-			_draw_body_fallback(_body_texture_rect())
+		draw_rect(data_rect, Color(0.0, 0.0, 0.0, 0.58), true)
+		_draw_body_fallback(_body_texture_rect())
 		if selected:
 			draw_circle(Vector2(size.x - 10.0, 10.0), 4.0, Color(1.0, 0.86, 0.24, 1.0))
 
@@ -1580,10 +1804,18 @@ class CatalogCardRetainedItem:
 	func _draw_body_fallback(rect: Rect2) -> void:
 		var font := ThemeDB.get_fallback_font()
 		var simple_card := data_line_a == "" and data_line_b == ""
-		draw_string(font, rect.position + Vector2(0.0, 12.0 if simple_card else 8.0), _card_trim(display_name, 17 if simple_card else 14), HORIZONTAL_ALIGNMENT_LEFT, rect.size.x, 10 if simple_card else 8, Color(0.9, 0.96, 1.0, 0.98))
+		var title_size := CATALOG_CARD_SIMPLE_TITLE_FONT_SIZE if simple_card else CATALOG_CARD_TITLE_FONT_SIZE
+		var title_pos := rect.position + Vector2(2.0, 15.0 if simple_card else 11.0)
+		draw_rect(rect, Color(0.0, 0.0, 0.0, CATALOG_CARD_TEXT_PLATE_ALPHA), true)
+		draw_string(font, title_pos + Vector2(1.0, 1.0), _card_trim(display_name, 17 if simple_card else 14), HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 4.0, title_size, Color(0.0, 0.0, 0.0, 0.82))
+		draw_string(font, title_pos, _card_trim(display_name, 17 if simple_card else 14), HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 4.0, title_size, Color(0.9, 0.96, 1.0, 1.0))
 		if not simple_card:
-			draw_string(font, rect.position + Vector2(0.0, 17.0), _card_trim(data_line_a, 15), HORIZONTAL_ALIGNMENT_LEFT, rect.size.x, 7, Color(0.78, 0.9, 1.0, 0.95))
-			draw_string(font, rect.position + Vector2(0.0, minf(26.0, rect.size.y - 2.0)), _card_trim(data_line_b, 15), HORIZONTAL_ALIGNMENT_LEFT, rect.size.x, 7, Color(0.72, 0.78, 0.84, 0.95))
+			var line_a_pos := rect.position + Vector2(2.0, 21.0)
+			var line_b_pos := rect.position + Vector2(2.0, minf(32.0, rect.size.y - 3.0))
+			draw_string(font, line_a_pos + Vector2(1.0, 1.0), _card_trim(data_line_a, 15), HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 4.0, CATALOG_CARD_LINE_FONT_SIZE, Color(0.0, 0.0, 0.0, 0.78))
+			draw_string(font, line_a_pos, _card_trim(data_line_a, 15), HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 4.0, CATALOG_CARD_LINE_FONT_SIZE, Color(0.82, 0.94, 1.0, 1.0))
+			draw_string(font, line_b_pos + Vector2(1.0, 1.0), _card_trim(data_line_b, 15), HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 4.0, CATALOG_CARD_LINE_FONT_SIZE, Color(0.0, 0.0, 0.0, 0.76))
+			draw_string(font, line_b_pos, _card_trim(data_line_b, 15), HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 4.0, CATALOG_CARD_LINE_FONT_SIZE, Color(0.78, 0.86, 0.94, 1.0))
 
 	func _card_trim(value: String, max_chars: int) -> String:
 		if value.length() <= max_chars:
@@ -1655,6 +1887,8 @@ class CatalogCardRetainedItem:
 class PartCatalogCardButton:
 	extends Button
 
+	signal page_scroll(direction: int)
+
 	var slot_key := ""
 	var part := {}
 	var selected := false
@@ -1702,6 +1936,17 @@ class PartCatalogCardButton:
 		preview.set_art_sheets(asset_sheet, joint_sheet, limb_muscle_sheet, blade_weapon_sheet, blunt_weapon_sheet, pierce_weapon_sheet, torso_sheet, booster_sheet, engine_sheet, projectile_sheet)
 		set_drag_preview(preview)
 		return {"kind": "editor_catalog_part", "slot": slot_key, "index": part_index}
+
+	func _gui_input(event: InputEvent) -> void:
+		if not (event is InputEventMouseButton):
+			return
+		var mouse_event := event as InputEventMouseButton
+		if not mouse_event.pressed:
+			return
+		if mouse_event.button_index == MOUSE_BUTTON_WHEEL_UP or mouse_event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+			var direction := -1 if mouse_event.button_index == MOUSE_BUTTON_WHEEL_UP else 1
+			page_scroll.emit(direction)
+			accept_event()
 
 	func set_card(next_slot: String, next_part: Dictionary, next_selected: bool, next_language: String, next_index: int, next_display_name: String, next_line_a: String, next_line_b: String) -> void:
 		if DisplayServer.get_name().to_lower() == "headless":
@@ -2105,7 +2350,7 @@ class PartCatalogCardButton:
 	func _card_booster_row() -> int:
 		var name := String(part.get("name", "")).to_upper()
 		var mass := float(part.get("mass", 0.0))
-		var momentum := float(part.get("boost_momentum", 0.0)) + float(part.get("allocated_momentum", 0.0))
+		var momentum := float(part.get("boost_momentum", 0.0)) + float(part.get("drive_demand", part.get("momentum_min", part.get("allocated_momentum", 0.0))))
 		if name.contains("NANO") or name.contains("MICRO") or mass <= 2.5 or momentum <= 70.0:
 			return 0
 		if name.contains("COLOSSUS") or name.contains("TITAN") or name.contains("SIEGE") or mass >= 34.0 or momentum >= 360.0:
@@ -2280,7 +2525,7 @@ class PartCatalogCardButton:
 			forward = Vector2.RIGHT
 		var right := Vector2(-forward.y, forward.x)
 		var pts := PackedVector2Array()
-		for local in PartArt.torso_saddle_local_points(length, front_width, rear_width):
+		for local in PartArt.torso_hull_local_points(part, length, front_width, rear_width):
 			var p: Vector2 = local
 			pts.append(center + forward * p.x + right * p.y)
 		return pts
@@ -2291,7 +2536,7 @@ class PartCatalogCardButton:
 			forward = Vector2.RIGHT
 		var right := Vector2(-forward.y, forward.x)
 		var positions: Array = []
-		for local in PartArt.torso_saddle_port_local_offsets(port_count, length, front_width, rear_width):
+		for local in PartArt.torso_hull_port_local_offsets(part, port_count, length, front_width, rear_width):
 			var p: Vector2 = local
 			positions.append(center + forward * p.x + right * p.y)
 		return positions
@@ -2363,14 +2608,15 @@ class EditorStatsRailView:
 
 	func _entries_signature(next_entries: Array) -> String:
 		var bits: Array = [str(next_entries.size())]
-		for i in range(mini(next_entries.size(), 18)):
+		for i in range(mini(next_entries.size(), 28)):
 			if not (next_entries[i] is Dictionary):
 				bits.append("_")
 				continue
 			var entry: Dictionary = next_entries[i]
-			bits.append("%s:%s:%s:%s:%s:%s:%s" % [
+			bits.append("%s:%s:%s:%s:%s:%s:%s:%s" % [
 				String(entry.get("kind", "")),
 				String(entry.get("label", "")),
+				String(entry.get("section", "")),
 				String(entry.get("value_text", "")),
 				str(snappedf(float(entry.get("value", 0.0)), 0.01)),
 				str(snappedf(float(entry.get("preview", float(entry.get("value", 0.0)))), 0.01)),
@@ -2397,9 +2643,12 @@ class EditorStatsRailView:
 		var font := ThemeDB.get_fallback_font()
 		draw_rect(Rect2(Vector2.ZERO, size), Color(0.006, 0.014, 0.021, 0.88), true)
 		draw_rect(Rect2(Vector2.ONE, size - Vector2(2.0, 2.0)), Color(0.26, 0.86, 1.0, 0.42), false, 1.4)
-		draw_string(font, Vector2(10.0, 22.0), _trim(header, 18), HORIZONTAL_ALIGNMENT_LEFT, size.x - 20.0, 15, Color(0.92, 0.98, 1.0, 1.0))
+		draw_string(font, Vector2(10.0, 20.0), _trim(header, 18), HORIZONTAL_ALIGNMENT_LEFT, size.x - 20.0, 14, Color(0.92, 0.98, 1.0, 1.0))
 		var status_color := Color(1.0, 0.32, 0.22, 1.0) if status_note.begins_with("!") else Color(0.6, 1.0, 0.74, 1.0)
-		draw_string(font, Vector2(10.0, 42.0), _trim(status_note, 22), HORIZONTAL_ALIGNMENT_LEFT, size.x - 20.0, 11, status_color)
+		var status_rect := Rect2(Vector2(9.0, 27.0), Vector2(size.x - 18.0, 18.0))
+		draw_rect(status_rect, Color(status_color.r, status_color.g, status_color.b, 0.12), true)
+		draw_rect(status_rect, Color(status_color.r, status_color.g, status_color.b, 0.42), false, 1.0)
+		draw_string(font, status_rect.position + Vector2(5.0, 13.0), _trim(status_note, 22), HORIZONTAL_ALIGNMENT_LEFT, status_rect.size.x - 10.0, 10, status_color)
 		var pinned_entries: Array = []
 		var normal_entries: Array = []
 		for entry in entries:
@@ -2409,48 +2658,51 @@ class EditorStatsRailView:
 				pinned_entries.append(entry)
 			else:
 				normal_entries.append(entry)
-		var y := 58.0
+		var y := 54.0
 		for entry in pinned_entries:
 			_draw_entry(font, entry, y)
-			y += 42.0
+			y += _entry_height(entry)
 		if not pinned_entries.is_empty():
 			draw_line(Vector2(10.0, y - 7.0), Vector2(size.x - 10.0, y - 7.0), Color(0.28, 0.88, 1.0, 0.28), 1.0)
 		var normal_start_y := y
 		var visible_bottom := size.y - 30.0
 		y -= scroll_offset
 		for entry in normal_entries:
-			if y + 36.0 >= normal_start_y and y <= visible_bottom:
+			var entry_height := _entry_height(entry)
+			if y + entry_height >= normal_start_y and y <= visible_bottom:
 				_draw_entry(font, entry, y)
-			y += 42.0
-		_draw_scrollbar(normal_start_y, normal_entries.size())
+			y += entry_height
+		_draw_scrollbar(normal_start_y, _entries_height(normal_entries))
 
 	func _max_scroll_for_entries() -> float:
 		var pinned_count := 0
-		var normal_count := 0
+		var normal_height := 0.0
 		for entry in entries:
 			if not (entry is Dictionary):
 				continue
 			if bool(Dictionary(entry).get("pinned", false)):
 				pinned_count += 1
 			else:
-				normal_count += 1
-		var normal_start := 58.0 + float(pinned_count) * 42.0 + (0.0 if pinned_count == 0 else 0.0)
+				normal_height += _entry_height(entry)
+		var normal_start := 54.0 + float(pinned_count) * 42.0 + (0.0 if pinned_count == 0 else 0.0)
 		var viewport_height := maxf(20.0, size.y - 30.0 - normal_start)
-		return maxf(0.0, float(normal_count) * 42.0 - viewport_height)
+		return maxf(0.0, normal_height - viewport_height)
 
-	func _draw_scrollbar(normal_start_y: float, normal_count: int) -> void:
+	func _draw_scrollbar(normal_start_y: float, normal_height: float) -> void:
 		var max_scroll := _max_scroll_for_entries()
-		if max_scroll <= 0.1 or normal_count <= 0:
+		if max_scroll <= 0.1 or normal_height <= 0.0:
 			return
 		var track := Rect2(Vector2(size.x - 8.0, normal_start_y), Vector2(3.0, maxf(24.0, size.y - 34.0 - normal_start_y)))
 		draw_rect(track, Color(0.28, 0.88, 1.0, 0.18), true)
-		var total_height := float(normal_count) * 42.0
-		var thumb_h := clampf(track.size.y * track.size.y / maxf(track.size.y, total_height), 18.0, track.size.y)
+		var thumb_h := clampf(track.size.y * track.size.y / maxf(track.size.y, normal_height), 18.0, track.size.y)
 		var t := clampf(scroll_offset / max_scroll, 0.0, 1.0)
 		var thumb := Rect2(Vector2(track.position.x - 1.0, track.position.y + (track.size.y - thumb_h) * t), Vector2(5.0, thumb_h))
 		draw_rect(thumb, Color(0.28, 0.88, 1.0, 0.72), true)
 
 	func _draw_entry(font: Font, entry: Dictionary, y: float) -> void:
+		if String(entry.get("kind", "")) == "section":
+			_draw_section_entry(font, entry, y)
+			return
 		if String(entry.get("kind", "")) == "balance":
 			_draw_balance_entry(font, entry, y)
 			return
@@ -2483,6 +2735,14 @@ class EditorStatsRailView:
 			_draw_dashed_line(Vector2(preview_x, bar_rect.position.y - 2.0), Vector2(preview_x, bar_rect.position.y + bar_rect.size.y + 4.0), change_color, 1.4)
 		if illegal:
 			draw_rect(Rect2(Vector2(6.0, y - 2.0), Vector2(size.x - 12.0, 36.0)), Color(1.0, 0.1, 0.06, 0.12), true)
+
+	func _draw_section_entry(font: Font, entry: Dictionary, y: float) -> void:
+		var label := String(entry.get("label", ""))
+		var color: Color = entry.get("color", Color(0.36, 0.88, 1.0, 0.86))
+		var line_y := y + 15.0
+		draw_line(Vector2(10.0, line_y), Vector2(size.x - 10.0, line_y), Color(color.r, color.g, color.b, 0.22), 1.0)
+		draw_rect(Rect2(Vector2(10.0, y + 4.0), Vector2(62.0, 17.0)), Color(0.004, 0.014, 0.022, 0.88), true)
+		draw_string(font, Vector2(14.0, y + 17.0), _trim(label, 10), HORIZONTAL_ALIGNMENT_LEFT, 76.0, 9, color)
 
 	func _draw_balance_entry(font: Font, entry: Dictionary, y: float) -> void:
 		var label := String(entry.get("label", ""))
@@ -2526,6 +2786,18 @@ class EditorStatsRailView:
 			_draw_dashed_line(Vector2(preview_x, bar_rect.position.y - 2.0), Vector2(preview_x, bar_rect.position.y + bar_rect.size.y + 4.0), change_color, 1.4)
 		if illegal:
 			draw_rect(Rect2(Vector2(6.0, y - 2.0), Vector2(size.x - 12.0, 36.0)), Color(1.0, 0.1, 0.06, 0.12), true)
+
+	func _entry_height(entry: Dictionary) -> float:
+		if String(entry.get("kind", "")) == "section":
+			return 24.0
+		return 42.0
+
+	func _entries_height(source_entries: Array) -> float:
+		var total := 0.0
+		for raw_entry in source_entries:
+			if raw_entry is Dictionary:
+				total += _entry_height(raw_entry)
+		return total
 
 	func _format_value(value: float, unit: String) -> String:
 		if unit == "m":
@@ -2866,7 +3138,7 @@ class EditorPartHoverPopupView:
 			forward = Vector2.RIGHT
 		var right := Vector2(-forward.y, forward.x)
 		var pts := PackedVector2Array()
-		for local in PartArt.torso_saddle_local_points(length, front_width, rear_width):
+		for local in PartArt.torso_hull_local_points(part, length, front_width, rear_width):
 			var p: Vector2 = local
 			pts.append(center + forward * p.x + right * p.y)
 		return pts
@@ -2877,7 +3149,7 @@ class EditorPartHoverPopupView:
 			forward = Vector2.RIGHT
 		var right := Vector2(-forward.y, forward.x)
 		var positions: Array = []
-		for local in PartArt.torso_saddle_port_local_offsets(port_count, length, front_width, rear_width):
+		for local in PartArt.torso_hull_port_local_offsets(part, port_count, length, front_width, rear_width):
 			var p: Vector2 = local
 			positions.append(center + forward * p.x + right * p.y)
 		return positions
@@ -3231,7 +3503,7 @@ class ComponentArtView:
 	func _booster_art_row() -> int:
 		var name := String(part.get("name", "")).to_upper()
 		var mass := float(part.get("mass", 0.0))
-		var momentum := float(part.get("boost_momentum", 0.0)) + float(part.get("allocated_momentum", 0.0))
+		var momentum := float(part.get("boost_momentum", 0.0)) + float(part.get("drive_demand", part.get("momentum_min", part.get("allocated_momentum", 0.0))))
 		if name.contains("NANO") or name.contains("MICRO") or mass <= 2.5 or momentum <= 70.0:
 			return 0
 		if name.contains("COLOSSUS") or name.contains("TITAN") or name.contains("SIEGE") or mass >= 34.0 or momentum >= 360.0:
@@ -3631,7 +3903,7 @@ class ComponentArtView:
 			forward = Vector2.RIGHT
 		var right := Vector2(-forward.y, forward.x)
 		var pts := PackedVector2Array()
-		for local in PartArt.torso_saddle_local_points(length, front_width, rear_width):
+		for local in PartArt.torso_hull_local_points(part, length, front_width, rear_width):
 			var p: Vector2 = local
 			pts.append(center + forward * p.x + right * p.y)
 		return pts
@@ -3642,7 +3914,7 @@ class ComponentArtView:
 			forward = Vector2.RIGHT
 		var right := Vector2(-forward.y, forward.x)
 		var positions: Array = []
-		for local in PartArt.torso_saddle_port_local_offsets(port_count, length, front_width, rear_width):
+		for local in PartArt.torso_hull_port_local_offsets(part, port_count, length, front_width, rear_width):
 			var p: Vector2 = local
 			positions.append(center + forward * p.x + right * p.y)
 		return positions
@@ -3786,6 +4058,9 @@ class TorsoDetailPanelView:
 			return
 		var payload := Dictionary(data)
 		var hit := _slot_hit(at_position)
+		var action := String(hit.get("action", "none"))
+		if action in ["delete", "rebind"]:
+			return
 		var kind := String(hit.get("kind", _slot_kind_at_position(at_position)))
 		if kind == "":
 			return
@@ -3793,7 +4068,8 @@ class TorsoDetailPanelView:
 
 	func _get_drag_data(at_position: Vector2):
 		var hit := _slot_hit(at_position)
-		if hit.is_empty() or bool(hit.get("remove", false)) or bool(hit.get("rebind", false)):
+		var action := String(hit.get("action", "none"))
+		if hit.is_empty() or action in ["delete", "rebind"]:
 			return null
 		var entry := _entry_for_slot(String(hit.get("kind", "")), int(hit.get("index", -1)))
 		var payload_index := int(entry.get("payload_index", -1))
@@ -3812,9 +4088,8 @@ class TorsoDetailPanelView:
 
 	func _notification(what: int) -> void:
 		if what == NOTIFICATION_DRAG_END and dragging_payload_index >= 0:
-			if not get_viewport().gui_is_drag_successful():
-				remove_payload.emit(dragging_payload_index)
 			dragging_payload_index = -1
+			queue_redraw()
 		if what == NOTIFICATION_MOUSE_EXIT:
 			_clear_payload_hover()
 
@@ -3880,35 +4155,49 @@ class TorsoDetailPanelView:
 				return
 		if _close_rect().has_point(mouse_event.position):
 			close_requested.emit()
+			accept_event()
 			return
 		var hit := _slot_hit(mouse_event.position)
 		if hit.is_empty():
 			return
-		selected_kind = String(hit.get("kind", ""))
-		selected_index = int(hit.get("index", -1))
-		if bool(hit.get("rebind", false)):
-			var rebind_entry := _entry_for_slot(selected_kind, selected_index)
+		var action := String(hit.get("action", "none"))
+		if action == "rebind":
+			var hit_kind := String(hit.get("kind", ""))
+			var hit_index := int(hit.get("index", -1))
+			var rebind_entry := _entry_for_slot(hit_kind, hit_index)
 			var rebind_index := int(rebind_entry.get("payload_index", -1))
 			if rebind_index >= 0:
 				rebind_payload.emit(rebind_index)
 			accept_event()
 			queue_redraw()
 			return
-		if mouse_event.button_index == MOUSE_BUTTON_RIGHT or bool(hit.get("remove", false)):
-			var entry := _entry_for_slot(selected_kind, selected_index)
+		if mouse_event.button_index == MOUSE_BUTTON_RIGHT or action == "delete":
+			var hit_kind := String(hit.get("kind", ""))
+			var hit_index := int(hit.get("index", -1))
+			var entry := _entry_for_slot(hit_kind, hit_index)
 			var payload_index := int(entry.get("payload_index", -1))
 			if payload_index >= 0:
 				remove_payload.emit(payload_index)
-		elif mouse_event.button_index == MOUSE_BUTTON_LEFT:
+			accept_event()
+			queue_redraw()
+			return
+		selected_kind = String(hit.get("kind", ""))
+		selected_index = int(hit.get("index", -1))
+		if mouse_event.button_index == MOUSE_BUTTON_LEFT and action == "engine_allocation":
 			var entry := _entry_for_slot(selected_kind, selected_index)
 			var payload_index := int(entry.get("payload_index", -1))
-			if payload_index >= 0 and String(entry.get("kind", "")) == "engine":
+			if payload_index >= 0:
 				engine_allocation_requested.emit(payload_index)
+			accept_event()
+			queue_redraw()
+			return
+		accept_event()
 		queue_redraw()
 
 	func _update_payload_hover(pos: Vector2) -> void:
 		var hit := _slot_hit(pos)
-		if hit.is_empty() or bool(hit.get("remove", false)):
+		var action := String(hit.get("action", "none"))
+		if hit.is_empty() or action in ["delete", "rebind"]:
 			_clear_payload_hover()
 			return
 		var kind := String(hit.get("kind", ""))
@@ -4055,11 +4344,26 @@ class TorsoDetailPanelView:
 			var capacity := plugin_capacity if kind == "plugin" else software_capacity
 			for i in range(maxi(capacity, entries.size())):
 				var slot_rect := _slot_rect(kind, i)
+				var entry := _entry_for_slot(kind, i)
+				if entry.is_empty():
+					continue
+				if _remove_rect_for_slot(slot_rect).has_point(pos):
+					return {"kind": kind, "index": i, "action": "delete", "payload_index": int(entry.get("payload_index", -1))}
+				if bool(entry.get("can_rebind", false)) and _rebind_rect_for_slot(slot_rect).has_point(pos):
+					return {"kind": kind, "index": i, "action": "rebind", "payload_index": int(entry.get("payload_index", -1))}
+		for kind in ["plugin", "software"]:
+			if not _group_content_rect(kind).has_point(pos):
+				continue
+			var entries := plugin_entries if kind == "plugin" else software_entries
+			var capacity := plugin_capacity if kind == "plugin" else software_capacity
+			for i in range(maxi(capacity, entries.size())):
+				var slot_rect := _slot_rect(kind, i)
 				if slot_rect.has_point(pos):
 					var entry := _entry_for_slot(kind, i)
-					var remove_hit := _remove_rect_for_slot(slot_rect).has_point(pos) and not entry.is_empty()
-					var rebind_hit := _rebind_rect_for_slot(slot_rect).has_point(pos) and bool(entry.get("can_rebind", false))
-					return {"kind": kind, "index": i, "remove": remove_hit, "rebind": rebind_hit}
+					var action := "select"
+					if not entry.is_empty() and String(entry.get("kind", "")) == "engine":
+						action = "engine_allocation"
+					return {"kind": kind, "index": i, "action": action, "payload_index": int(entry.get("payload_index", -1))}
 		return {}
 
 	func _entry_for_slot(kind: String, index: int) -> Dictionary:
@@ -4184,15 +4488,20 @@ class TorsoDetailPanelView:
 
 	func _binding_list_rect() -> Rect2:
 		var rect := _binding_panel_rect()
-		return Rect2(rect.position + Vector2(12.0, 48.0), Vector2(rect.size.x - 24.0, rect.size.y - 96.0))
+		return Rect2(rect.position + Vector2(12.0, 48.0), Vector2(rect.size.x - 24.0, rect.size.y - 132.0))
 
 	func _binding_key_rect(key_value: int) -> Rect2:
 		var rect := _binding_panel_rect()
-		var width := 58.0
+		var columns := 3
+		var width := minf(72.0, (rect.size.x - 40.0) / float(columns))
 		var gap := 8.0
-		var total := width * 6.0 + gap * 5.0
-		var x := rect.get_center().x - total * 0.5 + float(key_value - 1) * (width + gap)
-		return Rect2(Vector2(x, rect.end.y - 38.0), Vector2(width, 26.0))
+		var total := width * float(columns) + gap * float(columns - 1)
+		var index := clampi(key_value - 1, 0, 5)
+		var column := index % columns
+		var row := index / columns
+		var x := rect.get_center().x - total * 0.5 + float(column) * (width + gap)
+		var y := rect.end.y - 70.0 + float(row) * 32.0
+		return Rect2(Vector2(x, y), Vector2(width, 26.0))
 
 	func _binding_candidate_rect(index: int) -> Rect2:
 		var list_rect := _binding_list_rect()
@@ -4237,8 +4546,16 @@ class TorsoDetailPanelView:
 				bg = Color(0.12, 0.28, 0.36, 0.96)
 			draw_rect(row, bg, true)
 			draw_rect(row, color, false, 1.0)
-			draw_string(font, row.position + Vector2(8.0, 17.0), _trim(String(candidate.get("label", "")), 30), HORIZONTAL_ALIGNMENT_LEFT, row.size.x * 0.46, 10, Color(0.92, 0.98, 1.0, 0.95) if valid else Color(1.0, 0.76, 0.72, 0.9))
-			draw_string(font, row.position + Vector2(row.size.x * 0.48, 17.0), _trim(String(candidate.get("note", "")), 36), HORIZONTAL_ALIGNMENT_LEFT, row.size.x * 0.5, 9, Color(0.78, 0.9, 0.96, 0.85) if valid else Color(1.0, 0.58, 0.48, 0.85))
+			var nodes_label := String(candidate.get("nodes_label", ""))
+			var drive := float(candidate.get("required_drive", 0.0))
+			var label_text := String(candidate.get("label", ""))
+			if nodes_label != "":
+				label_text += "  N%s" % nodes_label
+			var note_text := String(candidate.get("note", ""))
+			if drive > 0.0:
+				note_text += ("  动力%.0f" if ui_language == "zh" else "  PWR%.0f") % drive
+			draw_string(font, row.position + Vector2(8.0, 17.0), _trim(label_text, 34), HORIZONTAL_ALIGNMENT_LEFT, row.size.x * 0.52, 10, Color(0.92, 0.98, 1.0, 0.95) if valid else Color(1.0, 0.76, 0.72, 0.9))
+			draw_string(font, row.position + Vector2(row.size.x * 0.54, 17.0), _trim(note_text, 34), HORIZONTAL_ALIGNMENT_LEFT, row.size.x * 0.44, 9, Color(0.78, 0.9, 0.96, 0.85) if valid else Color(1.0, 0.58, 0.48, 0.85))
 		if binding_candidates.is_empty():
 			draw_string(font, list_rect.position + Vector2(10.0, 28.0), _label("没有可绑定目标。", "No bindable target."), HORIZONTAL_ALIGNMENT_LEFT, list_rect.size.x - 20.0, 12, Color(1.0, 0.54, 0.42, 0.9))
 		if _binding_max_scroll() > 0.1:
@@ -4249,6 +4566,8 @@ class TorsoDetailPanelView:
 			var thumb := Rect2(Vector2(track.position.x - 1.0, track.position.y + (track.size.y - thumb_height) * scroll_t), Vector2(6.0, thumb_height))
 			draw_rect(track, Color(0.42, 0.9, 1.0, 0.16), true)
 			draw_rect(thumb, Color(0.42, 0.9, 1.0, 0.76), true)
+		var key_hint := _label("选择攻击键", "PICK ATTACK KEY") if binding_key_ready else _label("先点合法部位", "PICK TARGET FIRST")
+		draw_string(font, Vector2(rect.position.x + 14.0, rect.end.y - 77.0), key_hint, HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 28.0, 9, Color(0.72, 0.92, 1.0, 0.86) if binding_key_ready else Color(0.8, 0.72, 0.62, 0.72))
 		for key_value in range(1, 7):
 			var key_rect := _binding_key_rect(key_value)
 			var key_color := Color(0.36, 0.92, 1.0, 0.95) if binding_key_ready else Color(0.28, 0.32, 0.36, 0.78)
@@ -4271,6 +4590,7 @@ class EngineMomentumAllocationPanelView:
 	signal close_requested()
 	signal equalize_requested()
 	signal allocation_changed(entry_id: String, ratio: float)
+	signal allocation_value_submitted(entry_id: String, momentum: float)
 	signal allocation_drag_finished(entry_id: String)
 
 	var ui_language := "zh"
@@ -4280,21 +4600,37 @@ class EngineMomentumAllocationPanelView:
 	var torso_name := ""
 	var engine_output := 0.0
 	var used_ratio := 0.0
+	var cooling_pool := 0.0
+	var engine_heat_load := 0.0
+	var allocation_heat_used := 0.0
+	var heat_used := 0.0
+	var heat_ratio := 0.0
+	var thermal_margin := 0.0
 	var entries: Array = []
 	var segments: Array = []
+	var allocation_groups: Array = []
 	var dragging_entry_id := ""
+	var selected_group_id := ""
+	var entry_scroll_offset := 0.0
 	var last_emitted_ratios := {}
 	var last_allocation_signature := ""
+	var entry_value_edits := {}
+	var entry_value_submit_guard := {}
 
 	func set_allocation_data(next_data: Dictionary, next_language: String) -> void:
-		var signature := "%s|%s|%s|%s|%s|%s|%s" % [
+		var display_entries := Array(next_data.get("display_entries", next_data.get("entries", [])))
+		var signature := "%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s" % [
 			next_language,
 			String(next_data.get("title", "")),
 			String(next_data.get("subtitle", "")),
 			String(next_data.get("engine_name", "")),
 			str(snappedf(float(next_data.get("engine_output", 0.0)), 0.01)),
 			str(snappedf(float(next_data.get("used_ratio", 0.0)), 0.001)),
-			_allocation_entries_signature(Array(next_data.get("entries", []))),
+			str(snappedf(float(next_data.get("cooling_pool", 0.0)), 0.01)),
+			str(snappedf(float(next_data.get("heat_used", 0.0)), 0.01)),
+			str(snappedf(float(next_data.get("thermal_margin", 0.0)), 0.01)),
+			_allocation_entries_signature(display_entries),
+			_allocation_groups_signature(Array(next_data.get("allocation_groups", []))),
 		]
 		if visible and signature == last_allocation_signature:
 			return
@@ -4306,10 +4642,23 @@ class EngineMomentumAllocationPanelView:
 		torso_name = String(next_data.get("torso_name", ""))
 		engine_output = maxf(0.0, float(next_data.get("engine_output", 0.0)))
 		used_ratio = maxf(0.0, float(next_data.get("used_ratio", 0.0)))
-		entries = Array(next_data.get("entries", [])).duplicate(true)
+		cooling_pool = maxf(0.0, float(next_data.get("cooling_pool", 0.0)))
+		engine_heat_load = maxf(0.0, float(next_data.get("engine_heat_load", 0.0)))
+		allocation_heat_used = maxf(0.0, float(next_data.get("allocation_heat_used", 0.0)))
+		heat_used = maxf(0.0, float(next_data.get("heat_used", 0.0)))
+		heat_ratio = maxf(0.0, float(next_data.get("heat_ratio", 0.0)))
+		thermal_margin = float(next_data.get("thermal_margin", cooling_pool - heat_used))
+		entries = display_entries.duplicate(true)
 		segments = Array(next_data.get("segments", [])).duplicate(true)
+		allocation_groups = Array(next_data.get("allocation_groups", [])).duplicate(true)
+		entry_scroll_offset = clampf(entry_scroll_offset, 0.0, _entry_max_scroll())
 		visible = true
+		_sync_entry_value_edits()
 		queue_redraw()
+
+	func _notification(what: int) -> void:
+		if what == NOTIFICATION_VISIBILITY_CHANGED or what == NOTIFICATION_RESIZED:
+			_sync_entry_value_edits()
 
 	func _allocation_entries_signature(next_entries: Array) -> String:
 		var bits: Array = [str(next_entries.size())]
@@ -4318,13 +4667,36 @@ class EngineMomentumAllocationPanelView:
 				bits.append("_")
 				continue
 			var entry: Dictionary = next_entries[i]
-			bits.append("%s:%s:%s:%s:%s:%s" % [
+			bits.append("%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s" % [
 				String(entry.get("id", "")),
 				String(entry.get("label", "")),
 				str(snappedf(float(entry.get("allocated_momentum", entry.get("momentum", 0.0))), 0.01)),
 				str(snappedf(float(entry.get("ratio", 0.0)), 0.001)),
 				str(snappedf(float(entry.get("min_ratio", 0.0)), 0.001)),
 				str(snappedf(float(entry.get("max_ratio", 1.0)), 0.001)),
+				str(snappedf(float(entry.get("min_momentum", 0.0)), 0.01)),
+				str(snappedf(float(entry.get("max_momentum", 0.0)), 0.01)),
+				str(snappedf(float(entry.get("duration_estimate", -1.0)), 0.01)),
+				str(snappedf(float(entry.get("boost_peak_ratio", 0.0)), 0.001)),
+				str(snappedf(float(entry.get("heat_load", 0.0)), 0.01)),
+				str(snappedf(float(entry.get("heat_ratio", 0.0)), 0.001)),
+			])
+		return "|".join(bits)
+
+	func _allocation_groups_signature(next_groups: Array) -> String:
+		var bits: Array = [str(next_groups.size())]
+		for i in range(mini(next_groups.size(), 24)):
+			if not (next_groups[i] is Dictionary):
+				bits.append("_")
+				continue
+			var group: Dictionary = next_groups[i]
+			var node_bits: Array = []
+			for raw_node in Array(group.get("target_nodes", [])):
+				node_bits.append(str(int(raw_node)))
+			bits.append("%s:%s:%s" % [
+				String(group.get("id", "")),
+				String(group.get("label", "")),
+				",".join(node_bits),
 			])
 		return "|".join(bits)
 
@@ -4336,6 +4708,18 @@ class EngineMomentumAllocationPanelView:
 		if not (event is InputEventMouseButton):
 			return
 		var mouse_event := event as InputEventMouseButton
+		if mouse_event.button_index == MOUSE_BUTTON_WHEEL_UP or mouse_event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+			if _side_rect().has_point(mouse_event.position):
+				var direction := -1.0 if mouse_event.button_index == MOUSE_BUTTON_WHEEL_UP else 1.0
+				entry_scroll_offset = clampf(entry_scroll_offset + direction * 42.0, 0.0, _entry_max_scroll())
+				_sync_entry_value_edits()
+				queue_redraw()
+				accept_event()
+			return
+		if mouse_event.button_index == MOUSE_BUTTON_RIGHT and mouse_event.pressed:
+			close_requested.emit()
+			accept_event()
+			return
 		if mouse_event.button_index != MOUSE_BUTTON_LEFT:
 			return
 		if not mouse_event.pressed:
@@ -4352,12 +4736,21 @@ class EngineMomentumAllocationPanelView:
 			equalize_requested.emit()
 			accept_event()
 			return
+		var clicked_group_id := _allocation_group_id_at(mouse_event.position)
+		if clicked_group_id != "":
+			selected_group_id = clicked_group_id
+			queue_redraw()
+			accept_event()
+			return
 		for i in range(entries.size()):
 			var entry: Dictionary = entries[i] if entries[i] is Dictionary else {}
 			var entry_id := String(entry.get("id", ""))
 			if entry_id == "":
 				continue
+			if bool(entry.get("disabled", false)) or bool(entry.get("readonly", false)):
+				continue
 			if _entry_slider_rect(i).grow(6.0).has_point(mouse_event.position):
+				_release_focus_from_entry_edits()
 				dragging_entry_id = entry_id
 				_emit_slider_change(entry_id, mouse_event.position)
 				accept_event()
@@ -4367,8 +4760,16 @@ class EngineMomentumAllocationPanelView:
 		var index := _entry_index_for_id(entry_id)
 		if index < 0:
 			return
+		var entry: Dictionary = entries[index] if entries[index] is Dictionary else {}
 		var rect := _entry_slider_rect(index)
-		var ratio := clampf((pos.x - rect.position.x) / maxf(1.0, rect.size.x), 0.0, 1.0)
+		var local_ratio := clampf((pos.x - rect.position.x) / maxf(1.0, rect.size.x), 0.0, 1.0)
+		var ratio := local_ratio
+		if _entry_uses_range_slider(entry):
+			var min_momentum := maxf(0.0, float(entry.get("min_momentum", 0.0)))
+			var max_momentum := maxf(min_momentum, float(entry.get("max_momentum", min_momentum)))
+			if max_momentum > min_momentum:
+				var momentum := min_momentum + (max_momentum - min_momentum) * local_ratio
+				ratio = momentum / maxf(1.0, engine_output)
 		if last_emitted_ratios.has(entry_id) and absf(float(last_emitted_ratios[entry_id]) - ratio) < 0.004:
 			return
 		last_emitted_ratios[entry_id] = ratio
@@ -4390,8 +4791,9 @@ class EngineMomentumAllocationPanelView:
 		draw_string(font, _close_rect().position + Vector2(5.0, 16.0), "X", HORIZONTAL_ALIGNMENT_CENTER, _close_rect().size.x - 10.0, 12, Color(1.0, 0.82, 0.76, 1.0))
 		_draw_power_pips(font)
 		_draw_silhouette()
+		_draw_allocation_group_halos(font)
 		_draw_entry_sliders(font)
-		var hint := _label("动力分配：推进与绑定肢体共用。", "Momentum split: thrust and bound limbs share one pool.")
+		var hint := _label("动力预算：推进器推进占常热，Boost刹车是峰值动力提示；绑定肢体按范围可调。", "Drive budget: thruster move uses idle heat; boost-brake is a peak demand hint; bound limbs stay range-limited.")
 		draw_string(font, Vector2(18.0, size.y - 13.0), _trim(hint, 78), HORIZONTAL_ALIGNMENT_LEFT, size.x - 36.0, 10, Color(0.82, 0.9, 0.98, 0.72))
 
 	func _draw_power_pips(font: Font) -> void:
@@ -4412,6 +4814,26 @@ class EngineMomentumAllocationPanelView:
 		if used_ratio > 1.0001:
 			label = _label("超额 %.2f", "OVER %.2f") % [used_ratio - 1.0]
 		draw_string(font, Vector2(size.x - 214.0, 51.0), label, HORIZONTAL_ALIGNMENT_LEFT, 168.0, 10, Color(1.0, 0.78, 0.24, 0.94) if used_ratio <= 1.0001 else Color(1.0, 0.32, 0.22, 0.96))
+		var heat_rect := Rect2(Vector2(size.x - 214.0, 62.0), Vector2(168.0, 8.0))
+		var safe_cooling := maxf(0.0, cooling_pool)
+		var local_heat_ratio := clampf(heat_used / maxf(1.0, safe_cooling), 0.0, 1.6) if safe_cooling > 0.0 else (1.6 if heat_used > 0.0 else 0.0)
+		var heat_over := heat_used > safe_cooling + 0.001
+		draw_rect(heat_rect, Color(0.035, 0.016, 0.012, 0.94), true)
+		draw_rect(Rect2(heat_rect.position, Vector2(heat_rect.size.x * clampf(local_heat_ratio, 0.0, 1.0), heat_rect.size.y)), Color(1.0, 0.24, 0.1, 0.78) if heat_over else Color(1.0, 0.46, 0.14, 0.66), true)
+		draw_rect(heat_rect, Color(1.0, 0.18, 0.08, 0.92) if heat_over else Color(1.0, 0.58, 0.22, 0.62), false, 1.0)
+		var heat_text := _label("常热 %.1f=引擎 %.1f+推进/肢体 %.1f / 池 %.1f", "HEAT %.1f=ENG %.1f+MOVE/LIMB %.1f / POOL %.1f") % [
+			heat_used,
+			engine_heat_load,
+			allocation_heat_used,
+			safe_cooling,
+		]
+		if safe_cooling <= 0.0:
+			heat_text = _label("常热 %.1f=引擎 %.1f+推进/肢体 %.1f / 无热力池", "HEAT %.1f=ENG %.1f+MOVE/LIMB %.1f / NO POOL") % [
+				heat_used,
+				engine_heat_load,
+				allocation_heat_used,
+			]
+		draw_string(font, heat_rect.position + Vector2(0.0, 20.0), _trim(heat_text, 42), HORIZONTAL_ALIGNMENT_LEFT, heat_rect.size.x + 64.0, 9, Color(1.0, 0.34, 0.18, 0.98) if heat_over else Color(1.0, 0.72, 0.42, 0.92))
 
 	func _draw_silhouette() -> void:
 		var rect := _silhouette_rect()
@@ -4425,64 +4847,188 @@ class EngineMomentumAllocationPanelView:
 			if not (raw_segment is Dictionary):
 				continue
 			var segment: Dictionary = Dictionary(raw_segment).duplicate(true)
-			var a := _segment_local_point(segment, "a_local", "a")
-			var b := _segment_local_point(segment, "b_local", "b")
-			segment["a"] = _map_local_point(a)
-			segment["b"] = _map_local_point(b)
-			segment["radius"] = maxf(2.0, float(segment.get("radius", 0.025)) * _silhouette_scale())
+			var node := AssemblyBoardRenderer.segment_to_component_node(segment)
+			node["runtime_action"] = bool(segment.get("runtime_action", false))
+			node["runtime_action_state"] = String(segment.get("runtime_action_state", ""))
 			var primary := Color(0.72, 0.92, 1.0, 0.92)
 			var material := Color(0.46, 0.64, 0.78, 0.9)
-			AssemblyBoardRenderer.draw_runtime_segment(self, segment, Vector2.ZERO, 0.0, 1.0, material, primary)
+			if String(segment.get("part_kind", "")) == "torso":
+				material = primary.lerp(material, 0.45).lerp(Color.WHITE, 0.08)
+			_draw_aspect_fit_segment(segment, node, material)
+
+	func _draw_aspect_fit_segment(segment: Dictionary, node: Dictionary, color: Color) -> void:
+		var local_polygon := _segment_visual_polygon_local(segment, node)
+		if local_polygon.size() < 3:
+			return
+		var screen_polygon := PackedVector2Array()
+		for local_point in local_polygon:
+			screen_polygon.append(_map_local_point(local_point))
+		draw_colored_polygon(screen_polygon, color)
+		var outline := screen_polygon.duplicate()
+		if outline.size() > 0:
+			outline.append(outline[0])
+		draw_polyline(outline, Color(0.86, 0.98, 1.0, 0.42), 1.0)
 
 	func _draw_entry_sliders(font: Font) -> void:
+		var side := _side_rect()
+		draw_rect(side, Color(0.004, 0.012, 0.018, 0.9), true)
+		draw_rect(side, Color(0.36, 0.9, 1.0, 0.26), false, 1.0)
+		draw_string(font, side.position + Vector2(10.0, 20.0), _label("动力分配", "DRIVE ALLOC"), HORIZONTAL_ALIGNMENT_LEFT, side.size.x - 20.0, 11, Color(0.88, 0.98, 1.0, 0.92))
 		for i in range(entries.size()):
 			var entry: Dictionary = entries[i] if entries[i] is Dictionary else {}
 			if entry.is_empty():
 				continue
 			var slider_rect := _entry_slider_rect(i)
+			if not slider_rect.grow(48.0).intersects(side):
+				continue
 			var ratio := clampf(float(entry.get("ratio", 0.0)), 0.0, 1.6)
+			var local_slider_ratio := _entry_slider_fill_ratio(entry)
 			var over := bool(entry.get("over_budget", false)) or used_ratio > 1.0001
+			var disabled := bool(entry.get("disabled", false))
+			var readonly := bool(entry.get("readonly", false))
+			var heat_only := bool(entry.get("heat_only", false))
 			var color: Color = entry.get("color", Color(1.0, 0.78, 0.24, 1.0))
+			var group_id := String(entry.get("group_id", ""))
+			var row_rect := _entry_row_rect(i)
+			draw_rect(row_rect, Color(0.016, 0.03, 0.04, 0.94) if not disabled else Color(0.03, 0.032, 0.034, 0.82), true)
+			draw_rect(row_rect, Color(1.0, 0.9, 0.34, 0.88) if group_id != "" and group_id == selected_group_id else (Color(color.r, color.g, color.b, 0.44 if readonly else 0.62) if not disabled else Color(0.52, 0.58, 0.62, 0.42)), false, 1.2 if group_id != "" and group_id == selected_group_id else 1.0)
 			if String(entry.get("kind", "")) == "limb" and entry.get("anchor_local", null) is Vector2:
 				var anchor := _map_local_point(entry.get("anchor_local", Vector2.ZERO))
-				draw_line(anchor, slider_rect.position + Vector2(0.0, slider_rect.size.y * 0.5), Color(color.r, color.g, color.b, 0.36), 1.0)
-			if String(entry.get("kind", "")) == "booster":
+				draw_line(anchor, slider_rect.position + Vector2(0.0, slider_rect.size.y * 0.5), Color(color.r, color.g, color.b, 0.42), 1.0)
+			var entry_kind := String(entry.get("kind", ""))
+			if entry_kind.begins_with("booster"):
 				_draw_booster_icon(slider_rect.position + Vector2(-22.0, 8.0), color)
+			if _entry_uses_range_slider(entry):
+				var full_slider := _entry_full_slider_rect(i)
+				draw_rect(full_slider, Color(0.006, 0.012, 0.018, 0.94), true)
+				draw_rect(full_slider, Color(0.32, 0.44, 0.52, 0.32), false, 1.0)
+				draw_line(Vector2(slider_rect.position.x, full_slider.position.y - 3.0), Vector2(slider_rect.position.x, full_slider.position.y + full_slider.size.y + 3.0), Color(color.r, color.g, color.b, 0.58), 1.0)
+				draw_line(Vector2(slider_rect.position.x + slider_rect.size.x, full_slider.position.y - 3.0), Vector2(slider_rect.position.x + slider_rect.size.x, full_slider.position.y + full_slider.size.y + 3.0), Color(color.r, color.g, color.b, 0.58), 1.0)
 			draw_rect(slider_rect, Color(0.012, 0.022, 0.03, 0.96), true)
-			draw_rect(slider_rect, Color(1.0, 0.22, 0.14, 0.9) if over else color.darkened(0.2), false, 1.0)
-			var fill := Rect2(slider_rect.position, Vector2(slider_rect.size.x * clampf(ratio, 0.0, 1.0), slider_rect.size.y))
-			draw_rect(fill, Color(1.0, 0.25, 0.12, 0.74) if over else Color(color.r, color.g, color.b, 0.62), true)
-			var knob_x := slider_rect.position.x + slider_rect.size.x * clampf(ratio, 0.0, 1.0)
-			draw_circle(Vector2(knob_x, slider_rect.position.y + slider_rect.size.y * 0.5), 6.0, Color(1.0, 0.94, 0.72, 1.0))
-			draw_string(font, slider_rect.position + Vector2(4.0, -5.0), _trim(String(entry.get("label", "")), 20), HORIZONTAL_ALIGNMENT_LEFT, slider_rect.size.x - 8.0, 9, Color(0.93, 0.98, 1.0, 0.94))
-			var value_label := "%.2f  %.0f" % [ratio, float(entry.get("momentum", 0.0))]
-			draw_string(font, slider_rect.position + Vector2(4.0, slider_rect.size.y + 10.0), value_label, HORIZONTAL_ALIGNMENT_LEFT, slider_rect.size.x - 8.0, 8, Color(1.0, 0.86, 0.46, 0.9) if not over else Color(1.0, 0.36, 0.24, 0.95))
+			draw_rect(slider_rect, Color(0.5, 0.56, 0.62, 0.6) if disabled else (Color(1.0, 0.22, 0.14, 0.9) if over else color.darkened(0.2)), false, 1.0)
+			var fill := Rect2(slider_rect.position, Vector2(slider_rect.size.x * clampf(local_slider_ratio, 0.0, 1.0), slider_rect.size.y))
+			draw_rect(fill, Color(0.24, 0.28, 0.32, 0.46) if disabled else (Color(color.r, color.g, color.b, 0.34) if readonly else (Color(1.0, 0.25, 0.12, 0.74) if over else Color(color.r, color.g, color.b, 0.62))), true)
+			if entry_kind.begins_with("booster"):
+				_draw_boost_peak_hint(slider_rect, entry, color, disabled)
+			var knob_x := slider_rect.position.x + slider_rect.size.x * clampf(local_slider_ratio, 0.0, 1.0)
+			if not readonly:
+				draw_circle(Vector2(knob_x, slider_rect.position.y + slider_rect.size.y * 0.5), 6.0, Color(0.62, 0.68, 0.72, 0.86) if disabled else Color(1.0, 0.94, 0.72, 1.0))
+			_draw_entry_heat_bar(font, i, entry, disabled)
+			var kind_label := _entry_kind_label(entry)
+			draw_string(font, row_rect.position + Vector2(8.0, 17.0), kind_label, HORIZONTAL_ALIGNMENT_LEFT, 42.0, 9, Color(color.r, color.g, color.b, 0.9) if not disabled else Color(0.62, 0.68, 0.72, 0.82))
+			var label_width := row_rect.size.x - 56.0
+			if _entry_uses_range_slider(entry):
+				label_width = maxf(68.0, _entry_value_edit_rect(i).position.x - (row_rect.position.x + 52.0) - 8.0)
+			draw_string(font, row_rect.position + Vector2(52.0, 17.0), _trim(String(entry.get("label", "")), 28), HORIZONTAL_ALIGNMENT_LEFT, label_width, 9, Color(0.93, 0.98, 1.0, 0.94) if not disabled else Color(0.72, 0.76, 0.8, 0.86))
+			var value_label := ("固定 %.0f" if ui_language == "zh" else "FIXED %.0f") % float(entry.get("momentum", 0.0)) if readonly else "%.2f  %.0f" % [ratio, float(entry.get("momentum", 0.0))]
+			if heat_only:
+				value_label = _label("引擎常热 %.1f", "ENGINE IDLE %.1f") % float(entry.get("heat_load", 0.0))
+			if _entry_uses_range_slider(entry) and not readonly:
+				value_label = "%.0f / %.0f-%.0f" % [float(entry.get("momentum", 0.0)), float(entry.get("min_momentum", 0.0)), float(entry.get("max_momentum", 0.0))]
+			if disabled:
+				value_label += "  " + _label("先装引擎", "NEED ENGINE")
+			draw_string(font, row_rect.position + Vector2(8.0, 83.0), value_label, HORIZONTAL_ALIGNMENT_LEFT, 104.0, 9, Color(0.72, 0.76, 0.8, 0.86) if disabled else (Color(1.0, 0.86, 0.46, 0.9) if not over else Color(1.0, 0.36, 0.24, 0.95)))
 			var line := String(entry.get("line", ""))
 			if line != "":
-				draw_string(font, slider_rect.position + Vector2(60.0, slider_rect.size.y + 10.0), _trim(line, 18), HORIZONTAL_ALIGNMENT_LEFT, slider_rect.size.x - 62.0, 8, Color(0.76, 0.86, 0.94, 0.72))
+				draw_string(font, row_rect.position + Vector2(120.0, 83.0), _trim(line, 30), HORIZONTAL_ALIGNMENT_LEFT, row_rect.size.x - 128.0, 9, Color(0.76, 0.86, 0.94, 0.72))
+			var duration_label := String(entry.get("duration_label", ""))
+			if duration_label != "":
+				draw_string(font, row_rect.position + Vector2(8.0, 101.0), _trim(duration_label, 48), HORIZONTAL_ALIGNMENT_LEFT, row_rect.size.x - 16.0, 9, Color(0.78, 0.9, 0.98, 0.76) if not disabled else Color(0.62, 0.68, 0.72, 0.72))
+			elif entry_kind.begins_with("booster"):
+				var boost_label := String(entry.get("boost_label", ""))
+				if boost_label != "":
+					draw_string(font, row_rect.position + Vector2(8.0, 101.0), _trim(boost_label, 48), HORIZONTAL_ALIGNMENT_LEFT, row_rect.size.x - 16.0, 9, Color(1.0, 0.72, 0.24, 0.82) if not disabled else Color(0.62, 0.68, 0.72, 0.72))
+
+	func _draw_entry_heat_bar(font: Font, index: int, entry: Dictionary, disabled: bool) -> void:
+		var heat_rect := _entry_heat_bar_rect(index)
+		var heat_load := maxf(0.0, float(entry.get("heat_load", 0.0)))
+		var entry_heat_ratio := clampf(float(entry.get("heat_ratio", 0.0)), 0.0, 1.6)
+		var heat_over := bool(entry.get("heat_over_budget", false)) or (cooling_pool <= 0.0 and heat_load > 0.0)
+		var heat_color: Color = entry.get("heat_color", Color(1.0, 0.42, 0.14, 1.0))
+		if disabled:
+			heat_color = Color(0.58, 0.52, 0.48, 0.82)
+		draw_rect(heat_rect, Color(0.034, 0.018, 0.012, 0.94), true)
+		draw_rect(Rect2(heat_rect.position, Vector2(heat_rect.size.x * clampf(entry_heat_ratio, 0.0, 1.0), heat_rect.size.y)), Color(heat_color.r, heat_color.g, heat_color.b, 0.32 if disabled else (0.78 if heat_over else 0.58)), true)
+		draw_rect(heat_rect, Color(1.0, 0.18, 0.08, 0.84) if heat_over and not disabled else Color(heat_color.r, heat_color.g, heat_color.b, 0.56), false, 1.0)
+		var heat_label := String(entry.get("heat_label", ""))
+		if heat_label == "":
+			heat_label = _label("热 %.1f", "H %.1f") % heat_load
+		draw_string(font, heat_rect.end + Vector2(6.0, 6.0), _trim(heat_label, 18), HORIZONTAL_ALIGNMENT_LEFT, 102.0, 8, Color(1.0, 0.32, 0.18, 0.96) if heat_over and not disabled else Color(1.0, 0.68, 0.38, 0.86))
+
+	func _draw_boost_peak_hint(slider_rect: Rect2, entry: Dictionary, color: Color, disabled: bool) -> void:
+		var start_ratio := clampf(float(entry.get("ratio", 0.0)), 0.0, 1.0)
+		var peak_ratio := clampf(float(entry.get("boost_peak_ratio", start_ratio)), 0.0, 1.6)
+		if peak_ratio <= start_ratio + 0.002:
+			return
+		var start_x := slider_rect.position.x + slider_rect.size.x * start_ratio
+		var end_x := slider_rect.position.x + slider_rect.size.x * minf(1.0, peak_ratio)
+		var y := slider_rect.position.y + slider_rect.size.y * 0.5
+		var dash_color := Color(1.0, 0.72, 0.22, 0.32) if disabled else Color(1.0, 0.74, 0.2, 0.92)
+		var x := start_x + 3.0
+		while x < end_x:
+			draw_line(Vector2(x, y), Vector2(minf(x + 5.0, end_x), y), dash_color, 2.0)
+			x += 9.0
+		if peak_ratio > 1.0:
+			var overflow_x := slider_rect.position.x + slider_rect.size.x
+			draw_line(Vector2(overflow_x, slider_rect.position.y - 3.0), Vector2(overflow_x, slider_rect.position.y + slider_rect.size.y + 3.0), Color(color.r, color.g, color.b, 0.76), 1.4)
 
 	func _draw_booster_icon(center: Vector2, color: Color) -> void:
 		draw_colored_polygon(PackedVector2Array([center + Vector2(-7.0, -9.0), center + Vector2(9.0, 0.0), center + Vector2(-7.0, 9.0)]), color)
 		draw_colored_polygon(PackedVector2Array([center + Vector2(-9.0, -5.0), center + Vector2(-17.0, 0.0), center + Vector2(-9.0, 5.0)]), Color(1.0, 0.44, 0.12, 0.66))
 
 	func _entry_slider_rect(index: int) -> Rect2:
-		var entry: Dictionary = entries[index] if index >= 0 and index < entries.size() and entries[index] is Dictionary else {}
-		var side_rect := _side_rect()
-		if String(entry.get("kind", "")) == "limb" and entry.get("anchor_local", null) is Vector2:
-			var anchor := _map_local_point(entry.get("anchor_local", Vector2.ZERO))
-			var pos := anchor + Vector2(16.0, -9.0)
-			pos.x = clampf(pos.x, _silhouette_rect().position.x + 8.0, _silhouette_rect().end.x - 136.0)
-			pos.y = clampf(pos.y, _silhouette_rect().position.y + 20.0, _silhouette_rect().end.y - 34.0)
-			return Rect2(pos, Vector2(128.0, 18.0))
-		var row := _booster_row_for_entry(index)
-		return Rect2(side_rect.position + Vector2(30.0, 62.0 + float(row) * 48.0), Vector2(side_rect.size.x - 42.0, 18.0))
+		var full_rect := _entry_full_slider_rect(index)
+		if index >= 0 and index < entries.size() and entries[index] is Dictionary:
+			var entry: Dictionary = entries[index]
+			if _entry_uses_range_slider(entry):
+				var min_momentum := maxf(0.0, float(entry.get("min_momentum", 0.0)))
+				var max_momentum := maxf(min_momentum, float(entry.get("max_momentum", min_momentum)))
+				if engine_output > 0.0 and max_momentum > min_momentum:
+					var start_ratio := clampf(min_momentum / maxf(1.0, engine_output), 0.0, 1.0)
+					var end_ratio := clampf(max_momentum / maxf(1.0, engine_output), start_ratio, 1.0)
+					var range_ratio := maxf(0.0, end_ratio - start_ratio)
+					var width := clampf(full_rect.size.x * range_ratio, minf(72.0, full_rect.size.x), full_rect.size.x)
+					var x := full_rect.position.x + full_rect.size.x * start_ratio
+					if x + width > full_rect.position.x + full_rect.size.x:
+						x = full_rect.position.x + full_rect.size.x - width
+					return Rect2(Vector2(x, full_rect.position.y), Vector2(width, full_rect.size.y))
+		return full_rect
 
-	func _booster_row_for_entry(index: int) -> int:
-		var row := 0
-		for i in range(index + 1):
-			if i >= 0 and i < entries.size() and entries[i] is Dictionary and String(Dictionary(entries[i]).get("kind", "")) == "booster":
-				row += 1
-		return maxi(0, row - 1)
+	func _entry_full_slider_rect(index: int) -> Rect2:
+		var row_rect := _entry_row_rect(index)
+		var right_pad := 88.0 if _entry_has_value_edit(index) else 14.0
+		return Rect2(row_rect.position + Vector2(12.0, 34.0), Vector2(row_rect.size.x - 12.0 - right_pad, 14.0))
+
+	func _entry_heat_bar_rect(index: int) -> Rect2:
+		var row_rect := _entry_row_rect(index)
+		return Rect2(row_rect.position + Vector2(12.0, 58.0), Vector2(row_rect.size.x - 128.0, 8.0))
+
+	func _entry_slider_fill_ratio(entry: Dictionary) -> float:
+		if not _entry_uses_range_slider(entry):
+			return clampf(float(entry.get("ratio", 0.0)), 0.0, 1.0)
+		var min_momentum := maxf(0.0, float(entry.get("min_momentum", 0.0)))
+		var max_momentum := maxf(min_momentum, float(entry.get("max_momentum", min_momentum)))
+		var momentum := maxf(0.0, float(entry.get("momentum", 0.0)))
+		if max_momentum <= min_momentum:
+			return 0.0
+		return clampf((momentum - min_momentum) / maxf(0.001, max_momentum - min_momentum), 0.0, 1.0)
+
+	func _entry_row_rect(index: int) -> Rect2:
+		var side_rect := _side_rect()
+		return Rect2(side_rect.position + Vector2(10.0, 44.0 + float(index) * _entry_row_stride() - entry_scroll_offset), Vector2(side_rect.size.x - 20.0, 112.0))
+
+	func _entry_row_stride() -> float:
+		return 122.0
+
+	func _entry_has_value_edit(index: int) -> bool:
+		if index < 0 or index >= entries.size() or not (entries[index] is Dictionary):
+			return false
+		var entry: Dictionary = entries[index]
+		return _entry_uses_range_slider(entry) and not bool(entry.get("readonly", false)) and not bool(entry.get("disabled", false))
+
+	func _entry_value_edit_rect(index: int) -> Rect2:
+		var row_rect := _entry_row_rect(index)
+		return Rect2(row_rect.position + Vector2(row_rect.size.x - 76.0, 6.0), Vector2(68.0, 24.0))
 
 	func _entry_index_for_id(entry_id: String) -> int:
 		for i in range(entries.size()):
@@ -4491,16 +5037,221 @@ class EngineMomentumAllocationPanelView:
 		return -1
 
 	func _silhouette_rect() -> Rect2:
-		return Rect2(Vector2(16.0, 70.0), Vector2(size.x - 252.0, size.y - 106.0))
+		return Rect2(Vector2(16.0, 70.0), Vector2(size.x - 360.0, size.y - 106.0))
 
 	func _side_rect() -> Rect2:
-		return Rect2(Vector2(size.x - 222.0, 84.0), Vector2(198.0, size.y - 126.0))
+		return Rect2(Vector2(size.x - 330.0, 84.0), Vector2(306.0, size.y - 126.0))
+
+	func _entry_max_scroll() -> float:
+		return maxf(0.0, 44.0 + float(entries.size()) * _entry_row_stride() - _side_rect().size.y)
+
+	func _sync_entry_value_edits() -> void:
+		var wanted := {}
+		if visible:
+			for i in range(entries.size()):
+				if not _entry_has_value_edit(i):
+					continue
+				var row_visible := _entry_row_rect(i).grow(4.0).intersects(_side_rect())
+				var entry: Dictionary = entries[i]
+				var entry_id := String(entry.get("id", ""))
+				if entry_id == "":
+					continue
+				wanted[entry_id] = true
+				var edit: LineEdit = entry_value_edits.get(entry_id, null)
+				if edit == null:
+					edit = LineEdit.new()
+					edit.name = "DriveValue_%s" % entry_id.replace(":", "_")
+					edit.alignment = HORIZONTAL_ALIGNMENT_RIGHT
+					edit.select_all_on_focus = true
+					edit.context_menu_enabled = false
+					edit.text_submitted.connect(_submit_entry_value_edit.bind(entry_id))
+					edit.focus_exited.connect(_submit_entry_value_edit_focus.bind(entry_id))
+					add_child(edit)
+					entry_value_edits[entry_id] = edit
+				edit.visible = row_visible
+				edit.editable = true
+				edit.placeholder_text = _label("动力", "Drive")
+				edit.position = _entry_value_edit_rect(i).position
+				edit.size = _entry_value_edit_rect(i).size
+				edit.tooltip_text = _label("输入该项动力分配值", "Enter this drive allocation")
+				if not edit.has_focus():
+					edit.text = _format_entry_momentum_text(float(entry.get("momentum", 0.0)))
+		for raw_id in entry_value_edits.keys():
+			var edit: LineEdit = entry_value_edits[raw_id]
+			if not wanted.has(raw_id):
+				edit.visible = false
+
+	func _format_entry_momentum_text(value: float) -> String:
+		if absf(value - roundf(value)) < 0.01:
+			return "%.0f" % value
+		return "%.2f" % value
+
+	func _submit_entry_value_edit_focus(entry_id: String) -> void:
+		if bool(entry_value_submit_guard.get(entry_id, false)):
+			entry_value_submit_guard.erase(entry_id)
+			return
+		if not entry_value_edits.has(entry_id):
+			return
+		var edit: LineEdit = entry_value_edits[entry_id]
+		_submit_entry_value_edit(edit.text, entry_id)
+
+	func _submit_entry_value_edit(text_value: String, entry_id: String) -> void:
+		var edit: LineEdit = entry_value_edits.get(entry_id, null)
+		var current := _entry_momentum_for_id(entry_id)
+		if not text_value.is_valid_float():
+			if edit != null:
+				edit.text = _format_entry_momentum_text(current)
+			return
+		var requested := maxf(0.0, text_value.to_float())
+		if edit != null:
+			edit.text = _format_entry_momentum_text(requested)
+			if edit.has_focus():
+				entry_value_submit_guard[entry_id] = true
+			edit.release_focus()
+		allocation_value_submitted.emit(entry_id, requested)
+
+	func has_focused_value_edit() -> bool:
+		for raw_edit in entry_value_edits.values():
+			if raw_edit is LineEdit and (raw_edit as LineEdit).visible and (raw_edit as LineEdit).has_focus():
+				return true
+		return false
+
+	func submit_focused_value_edit() -> bool:
+		for raw_id in entry_value_edits.keys():
+			var edit: LineEdit = entry_value_edits.get(raw_id, null)
+			if edit != null and edit.visible and edit.has_focus():
+				_submit_entry_value_edit(edit.text, String(raw_id))
+				return true
+		return false
+
+	func _entry_momentum_for_id(entry_id: String) -> float:
+		for raw_entry in entries:
+			if raw_entry is Dictionary and String(Dictionary(raw_entry).get("id", "")) == entry_id:
+				return maxf(0.0, float(Dictionary(raw_entry).get("momentum", 0.0)))
+		return 0.0
+
+	func _entry_uses_range_slider(entry: Dictionary) -> bool:
+		if bool(entry.get("readonly", false)):
+			return false
+		if not entry.has("min_momentum") and not entry.has("max_momentum"):
+			return false
+		var min_momentum := maxf(0.0, float(entry.get("min_momentum", 0.0)))
+		var max_momentum := maxf(min_momentum, float(entry.get("max_momentum", min_momentum)))
+		return max_momentum > min_momentum
+
+	func _entry_kind_label(entry: Dictionary) -> String:
+		match String(entry.get("kind", "")):
+			"engine_heat":
+				return _label("常热", "IDLE")
+			"limb":
+				return _label("肢体", "LIMB")
+			"booster_drive":
+				return _label("推进", "MOVE")
+			"booster_boost_brake":
+				return _label("增幅", "B+B")
+			_:
+				return _label("需求", "REQ")
+
+	func _release_focus_from_entry_edits() -> void:
+		for raw_edit in entry_value_edits.values():
+			if raw_edit is LineEdit and (raw_edit as LineEdit).has_focus():
+				(raw_edit as LineEdit).release_focus()
+
+	func _draw_allocation_group_halos(font: Font) -> void:
+		for raw_group in allocation_groups:
+			if not (raw_group is Dictionary):
+				continue
+			var group: Dictionary = raw_group
+			var bounds := _allocation_group_screen_rect(group)
+			if bounds.size.x <= 0.0 or bounds.size.y <= 0.0:
+				continue
+			var selected := String(group.get("id", "")) == selected_group_id
+			var color := Color(0.46, 0.62, 1.0, 0.88) if not selected else Color(1.0, 0.9, 0.28, 0.95)
+			draw_rect(bounds.grow(8.0), Color(color.r, color.g, color.b, 0.12 if not selected else 0.18), true)
+			draw_rect(bounds.grow(8.0), Color(color.r, color.g, color.b, 0.72), false, 2.2 if selected else 1.6)
+			draw_rect(bounds.grow(14.0), Color(color.r, color.g, color.b, 0.22), false, 5.0)
+			var label := _trim(String(group.get("label", _label("可分配肢体", "POWER LIMB"))), 18)
+			var label_rect := Rect2(bounds.position + Vector2(0.0, -22.0), Vector2(maxf(92.0, bounds.size.x), 18.0))
+			draw_rect(label_rect, Color(0.004, 0.012, 0.018, 0.84), true)
+			draw_rect(label_rect, Color(color.r, color.g, color.b, 0.62), false, 1.0)
+			draw_string(font, label_rect.position + Vector2(4.0, 13.0), label, HORIZONTAL_ALIGNMENT_LEFT, label_rect.size.x - 8.0, 9, Color(0.92, 0.98, 1.0, 0.96))
+
+	func _allocation_group_id_at(pos: Vector2) -> String:
+		for raw_group in allocation_groups:
+			if not (raw_group is Dictionary):
+				continue
+			var group: Dictionary = raw_group
+			if _allocation_group_screen_rect(group).grow(16.0).has_point(pos):
+				return String(group.get("id", ""))
+		return ""
+
+	func _allocation_group_screen_rect(group: Dictionary) -> Rect2:
+		var target_nodes: Array = Array(group.get("target_nodes", []))
+		if target_nodes.is_empty():
+			return Rect2()
+		var node_set := {}
+		for raw_node in target_nodes:
+			node_set[int(raw_node)] = true
+		var first := true
+		var min_point := Vector2.ZERO
+		var max_point := Vector2.ZERO
+		for raw_segment in segments:
+			if not (raw_segment is Dictionary):
+				continue
+			var segment: Dictionary = raw_segment
+			var node_index := int(segment.get("node_index", -9999))
+			if not node_set.has(node_index):
+				continue
+			var radius := maxf(6.0, float(segment.get("radius", 0.025)) * _silhouette_scale() + 8.0)
+			for local_point in _segment_local_bound_points(segment):
+				var point := _map_local_point(local_point)
+				if first:
+					min_point = point - Vector2(radius, radius)
+					max_point = point + Vector2(radius, radius)
+					first = false
+				else:
+					min_point.x = minf(min_point.x, point.x - radius)
+					min_point.y = minf(min_point.y, point.y - radius)
+					max_point.x = maxf(max_point.x, point.x + radius)
+					max_point.y = maxf(max_point.y, point.y + radius)
+		if first:
+			return Rect2()
+		return Rect2(min_point, max_point - min_point)
 
 	func _close_rect() -> Rect2:
 		return Rect2(Vector2(size.x - 38.0, 10.0), Vector2(26.0, 24.0))
 
 	func _equalize_rect() -> Rect2:
 		return Rect2(Vector2(size.x - 92.0, 10.0), Vector2(48.0, 24.0))
+
+	func _segment_local_bound_points(segment: Dictionary) -> Array:
+		var points: Array = []
+		var polygon = segment.get("polygon_local", [])
+		if polygon is Array:
+			for raw_point in Array(polygon):
+				if raw_point is Vector2:
+					points.append(raw_point)
+				elif raw_point is Dictionary:
+					points.append(Vector2(float(raw_point.get("x", 0.0)), float(raw_point.get("y", 0.0))))
+		elif polygon is PackedVector2Array:
+			for raw_point in polygon:
+				points.append(raw_point)
+		if points.is_empty():
+			for raw_point in _segment_visual_polygon_local(segment):
+				points.append(raw_point)
+		if points.is_empty():
+			points.append(_segment_local_point(segment, "a_local", "a"))
+			points.append(_segment_local_point(segment, "b_local", "b"))
+		return points
+
+	func _segment_visual_polygon_local(segment: Dictionary, node_override: Dictionary = {}) -> PackedVector2Array:
+		var a := _segment_local_point(segment, "a_local", "a")
+		var b := _segment_local_point(segment, "b_local", "b")
+		var axis := b - a
+		if axis.length() < 0.001:
+			axis = Vector2.RIGHT
+		var node := node_override if not node_override.is_empty() else AssemblyBoardRenderer.segment_to_component_node(segment)
+		return AssemblyBoardRenderer.component_polygon((a + b) * 0.5, node, axis, maxf(0.001, float(segment.get("radius", 0.025))), maxf(0.001, a.distance_to(b)), false)
 
 	func _segment_bounds() -> Rect2:
 		var first := true
@@ -4510,16 +5261,17 @@ class EngineMomentumAllocationPanelView:
 			if not (raw_segment is Dictionary):
 				continue
 			var segment: Dictionary = raw_segment
-			for point in [_segment_local_point(segment, "a_local", "a"), _segment_local_point(segment, "b_local", "b")]:
+			var radius := maxf(0.0, float(segment.get("radius", 0.025)))
+			for point in _segment_local_bound_points(segment):
 				if first:
-					min_point = point
-					max_point = point
+					min_point = point - Vector2(radius, radius)
+					max_point = point + Vector2(radius, radius)
 					first = false
 				else:
-					min_point.x = minf(min_point.x, point.x)
-					min_point.y = minf(min_point.y, point.y)
-					max_point.x = maxf(max_point.x, point.x)
-					max_point.y = maxf(max_point.y, point.y)
+					min_point.x = minf(min_point.x, point.x - radius)
+					min_point.y = minf(min_point.y, point.y - radius)
+					max_point.x = maxf(max_point.x, point.x + radius)
+					max_point.y = maxf(max_point.y, point.y + radius)
 		if first:
 			return Rect2(Vector2(-1.0, -1.0), Vector2(2.0, 2.0))
 		var rect := Rect2(min_point, max_point - min_point)
@@ -4553,7 +5305,7 @@ class EngineMomentumAllocationPanelView:
 		return value.substr(0, maxi(1, max_chars - 1)) + "."
 
 
-class UnitEditorPowerTopbarView:
+class UnitEditorPowerDockView:
 	extends Control
 
 	signal allocation_changed(entry_id: String, ratio: float)
@@ -4568,6 +5320,7 @@ class UnitEditorPowerTopbarView:
 	var entries: Array = []
 	var empty_note := ""
 	var dragging_entry_id := ""
+	var scroll_offset := 0.0
 	var last_signature := ""
 	var last_emitted_ratios := {}
 
@@ -4577,12 +5330,13 @@ class UnitEditorPowerTopbarView:
 			return
 		last_signature = signature
 		ui_language = next_language
-		title = _label("动力分配", "POWER SPLIT")
+		title = _label("动力预算", "DRIVE BUDGET")
 		subtitle = ""
 		engine_output = 0.0
 		used_ratio = 0.0
 		entries = []
 		empty_note = note
+		scroll_offset = 0.0
 		visible = true
 		queue_redraw()
 
@@ -4600,27 +5354,30 @@ class UnitEditorPowerTopbarView:
 			return
 		last_signature = signature
 		ui_language = next_language
-		title = String(next_data.get("title", _label("动力分配", "POWER SPLIT")))
+		title = String(next_data.get("title", _label("动力预算", "DRIVE BUDGET")))
 		subtitle = String(next_data.get("subtitle", ""))
 		engine_output = maxf(0.0, float(next_data.get("engine_output", 0.0)))
 		used_ratio = maxf(0.0, float(next_data.get("used_ratio", 0.0)))
 		entries = next_entries.duplicate(true)
 		empty_note = ""
+		scroll_offset = clampf(scroll_offset, 0.0, _max_scroll())
 		visible = true
 		queue_redraw()
 
 	func _entries_signature(next_entries: Array) -> String:
 		var bits: Array = [str(next_entries.size())]
-		for i in range(mini(next_entries.size(), 12)):
+		for i in range(mini(next_entries.size(), 32)):
 			if not (next_entries[i] is Dictionary):
 				bits.append("_")
 				continue
 			var entry: Dictionary = next_entries[i]
-			bits.append("%s:%.3f:%.1f:%s" % [
+			bits.append("%s:%s:%.3f:%.1f:%s:%s" % [
 				String(entry.get("id", "")),
+				String(entry.get("label", "")),
 				float(entry.get("ratio", 0.0)),
 				float(entry.get("momentum", 0.0)),
-				String(entry.get("label", "")),
+				String(entry.get("line", "")),
+				str(bool(entry.get("disabled", false))),
 			])
 		return "|".join(bits)
 
@@ -4632,6 +5389,12 @@ class UnitEditorPowerTopbarView:
 		if not (event is InputEventMouseButton):
 			return
 		var mouse_event := event as InputEventMouseButton
+		if mouse_event.button_index == MOUSE_BUTTON_WHEEL_UP or mouse_event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+			var direction := -1.0 if mouse_event.button_index == MOUSE_BUTTON_WHEEL_UP else 1.0
+			scroll_offset = clampf(scroll_offset + direction * 36.0, 0.0, _max_scroll())
+			queue_redraw()
+			accept_event()
+			return
 		if mouse_event.button_index != MOUSE_BUTTON_LEFT:
 			return
 		if not mouse_event.pressed:
@@ -4647,10 +5410,12 @@ class UnitEditorPowerTopbarView:
 			return
 		for i in range(entries.size()):
 			var entry: Dictionary = entries[i] if entries[i] is Dictionary else {}
+			if bool(entry.get("disabled", false)) or bool(entry.get("readonly", false)):
+				continue
 			var entry_id := String(entry.get("id", ""))
 			if entry_id == "":
 				continue
-			if _entry_slider_rect(i).grow(5.0).has_point(mouse_event.position):
+			if _entry_slider_rect(i).grow(7.0).has_point(mouse_event.position):
 				dragging_entry_id = entry_id
 				_emit_slider_change(entry_id, mouse_event.position)
 				accept_event()
@@ -4660,8 +5425,16 @@ class UnitEditorPowerTopbarView:
 		var index := _entry_index_for_id(entry_id)
 		if index < 0:
 			return
+		var entry: Dictionary = entries[index] if entries[index] is Dictionary else {}
 		var rect := _entry_slider_rect(index)
-		var ratio := clampf((pos.x - rect.position.x) / maxf(1.0, rect.size.x), 0.0, 1.0)
+		var local_ratio := clampf((pos.x - rect.position.x) / maxf(1.0, rect.size.x), 0.0, 1.0)
+		var ratio := local_ratio
+		if _entry_uses_range_slider(entry):
+			var min_momentum := maxf(0.0, float(entry.get("min_momentum", 0.0)))
+			var max_momentum := maxf(min_momentum, float(entry.get("max_momentum", min_momentum)))
+			if max_momentum > min_momentum:
+				var momentum := min_momentum + (max_momentum - min_momentum) * local_ratio
+				ratio = momentum / maxf(1.0, engine_output)
 		if last_emitted_ratios.has(entry_id) and absf(float(last_emitted_ratios[entry_id]) - ratio) < 0.004:
 			return
 		last_emitted_ratios[entry_id] = ratio
@@ -4671,68 +5444,119 @@ class UnitEditorPowerTopbarView:
 		if not visible:
 			return
 		var font := ThemeDB.get_fallback_font()
-		draw_rect(Rect2(Vector2.ZERO, size), Color(0.006, 0.014, 0.022, 0.86), true)
-		draw_rect(Rect2(Vector2.ONE, size - Vector2(2.0, 2.0)), Color(0.32, 0.86, 1.0, 0.38), false, 1.0)
-		draw_string(font, Vector2(8.0, 18.0), _trim(title, 18), HORIZONTAL_ALIGNMENT_LEFT, 134.0, 12, Color(1.0, 0.92, 0.48, 1.0))
+		draw_rect(Rect2(Vector2.ZERO, size), Color(0.004, 0.012, 0.018, 0.88), true)
+		draw_rect(Rect2(Vector2.ONE, size - Vector2(2.0, 2.0)), Color(0.36, 0.92, 1.0, 0.52), false, 1.3)
+		draw_string(font, Vector2(10.0, 18.0), _trim(title, 20), HORIZONTAL_ALIGNMENT_LEFT, 170.0, 13, Color(1.0, 0.92, 0.42, 1.0))
 		if empty_note != "":
-			draw_string(font, Vector2(8.0, 38.0), _trim(empty_note, 42), HORIZONTAL_ALIGNMENT_LEFT, size.x - 92.0, 10, Color(0.78, 0.9, 1.0, 0.82))
+			draw_string(font, Vector2(190.0, 18.0), _trim(empty_note, 56), HORIZONTAL_ALIGNMENT_LEFT, size.x - 260.0, 11, Color(0.82, 0.92, 1.0, 0.88))
 			_draw_open_button(font)
 			return
-		var total_label := _label("池 %.0f 用 %.0f%%", "POOL %.0f USED %.0f%%") % [engine_output, used_ratio * 100.0]
-		draw_string(font, Vector2(8.0, 38.0), total_label, HORIZONTAL_ALIGNMENT_LEFT, 134.0, 10, Color(0.78, 0.9, 1.0, 0.86))
-		_draw_tree(font)
-		for i in range(mini(entries.size(), 5)):
-			_draw_entry(font, i)
+		var usage := _label("池 %.0f  已用 %.0f%%", "POOL %.0f  USED %.0f%%") % [engine_output, used_ratio * 100.0]
+		draw_string(font, Vector2(178.0, 18.0), usage, HORIZONTAL_ALIGNMENT_LEFT, 170.0, 10, Color(0.78, 0.9, 1.0, 0.9))
+		draw_string(font, Vector2(352.0, 18.0), _trim(subtitle, 58), HORIZONTAL_ALIGNMENT_LEFT, maxf(90.0, size.x - 430.0), 9, Color(0.68, 0.82, 0.92, 0.78))
+		_draw_rows(font)
 		_draw_open_button(font)
 
-	func _draw_tree(font: Font) -> void:
-		var origin := Vector2(150.0, 13.0)
-		var trunk_color := Color(1.0, 0.82, 0.25, 0.88) if used_ratio <= 1.0001 else Color(1.0, 0.24, 0.12, 0.92)
-		draw_line(origin, origin + Vector2(0.0, 29.0), trunk_color, 2.0)
-		draw_circle(origin, 4.0, trunk_color)
-		draw_string(font, origin + Vector2(8.0, 4.0), _label("引擎", "ENG"), HORIZONTAL_ALIGNMENT_LEFT, 40.0, 9, trunk_color)
-		var row_count := mini(entries.size(), 5)
-		for i in range(row_count):
-			var y := 12.0 + float(i) * 8.0
-			var entry: Dictionary = entries[i] if entries[i] is Dictionary else {}
-			var color: Color = entry.get("color", Color(0.42, 0.86, 1.0, 1.0))
-			draw_line(origin + Vector2(0.0, y - 13.0), Vector2(208.0, y), Color(color.r, color.g, color.b, 0.5), 1.0)
+	func _draw_rows(font: Font) -> void:
+		var clip_rect := _rows_clip_rect()
+		draw_rect(clip_rect, Color(0.0, 0.0, 0.0, 0.24), true)
+		for i in range(entries.size()):
+			var row := _entry_row_rect(i)
+			if not row.intersects(clip_rect):
+				continue
+			_draw_entry_row(font, i, row)
+		if _max_scroll() > 0.5:
+			var thumb_h := maxf(18.0, clip_rect.size.y * clip_rect.size.y / maxf(clip_rect.size.y + _max_scroll(), 1.0))
+			var thumb_y := clip_rect.position.y + (clip_rect.size.y - thumb_h) * (scroll_offset / maxf(_max_scroll(), 1.0))
+			draw_rect(Rect2(Vector2(size.x - 10.0, thumb_y), Vector2(4.0, thumb_h)), Color(0.6, 0.92, 1.0, 0.56), true)
 
-	func _draw_entry(font: Font, index: int) -> void:
+	func _draw_entry_row(font: Font, index: int, row: Rect2) -> void:
 		var entry: Dictionary = entries[index] if entries[index] is Dictionary else {}
 		if entry.is_empty():
 			return
-		var rect := _entry_slider_rect(index)
 		var color: Color = entry.get("color", Color(0.42, 0.86, 1.0, 1.0))
+		var disabled := bool(entry.get("disabled", false))
+		var readonly := bool(entry.get("readonly", false))
 		var over := bool(entry.get("over_budget", false)) or used_ratio > 1.0001
-		var ratio := clampf(float(entry.get("ratio", 0.0)), 0.0, 1.0)
-		draw_rect(rect, Color(0.01, 0.022, 0.032, 0.9), true)
-		draw_rect(Rect2(rect.position, Vector2(rect.size.x * ratio, rect.size.y)), Color(1.0, 0.24, 0.12, 0.72) if over else Color(color.r, color.g, color.b, 0.66), true)
-		draw_rect(rect, Color(1.0, 0.22, 0.14, 0.92) if over else Color(color.r, color.g, color.b, 0.9), false, 1.0)
-		var knob_x := rect.position.x + rect.size.x * ratio
-		draw_circle(Vector2(knob_x, rect.position.y + rect.size.y * 0.5), 4.0, Color(1.0, 0.94, 0.7, 1.0))
-		draw_string(font, rect.position + Vector2(3.0, -2.0), _trim(String(entry.get("label", "")), 14), HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 36.0, 8, Color(0.92, 0.98, 1.0, 0.96))
-		draw_string(font, rect.position + Vector2(rect.size.x - 34.0, -2.0), "%.0f" % float(entry.get("momentum", 0.0)), HORIZONTAL_ALIGNMENT_RIGHT, 32.0, 8, Color(1.0, 0.86, 0.42, 0.94))
+		var ratio := _entry_slider_fill_ratio(entry)
+		var bg := Color(0.016, 0.032, 0.044, 0.94)
+		if disabled:
+			bg = Color(0.026, 0.028, 0.032, 0.82)
+		draw_rect(row, bg, true)
+		draw_rect(row, Color(0.48, 0.55, 0.62, 0.42) if disabled else Color(color.r, color.g, color.b, 0.42 if readonly else 0.64), false, 1.0)
+		var icon_text := _entry_kind_short_label(entry)
+		var icon_color := Color(0.58, 0.62, 0.68, 0.8) if disabled else color
+		draw_circle(row.position + Vector2(14.0, row.size.y * 0.5), 8.0, Color(icon_color.r, icon_color.g, icon_color.b, 0.32))
+		draw_string(font, row.position + Vector2(7.0, 17.0), icon_text, HORIZONTAL_ALIGNMENT_CENTER, 14.0, 10, icon_color)
+		draw_string(font, row.position + Vector2(28.0, 14.0), _trim(String(entry.get("label", "")), 18), HORIZONTAL_ALIGNMENT_LEFT, 138.0, 10, Color(0.72, 0.76, 0.8, 0.88) if disabled else Color(0.92, 0.98, 1.0, 0.96))
+		draw_string(font, row.position + Vector2(28.0, 28.0), _trim(String(entry.get("line", "")), 24), HORIZONTAL_ALIGNMENT_LEFT, 170.0, 8, Color(0.64, 0.72, 0.78, 0.72) if disabled else Color(0.72, 0.84, 0.94, 0.78))
+		var slider_rect := _entry_slider_rect(index)
+		draw_rect(slider_rect, Color(0.008, 0.016, 0.022, 0.96), true)
+		draw_rect(Rect2(slider_rect.position, Vector2(slider_rect.size.x * ratio, slider_rect.size.y)), Color(0.24, 0.28, 0.32, 0.46) if disabled else (Color(color.r, color.g, color.b, 0.34) if readonly else (Color(1.0, 0.2, 0.12, 0.72) if over else Color(color.r, color.g, color.b, 0.68))), true)
+		draw_rect(slider_rect, Color(0.5, 0.56, 0.62, 0.6) if disabled else (Color(1.0, 0.22, 0.14, 0.9) if over else Color(color.r, color.g, color.b, 0.9)), false, 1.0)
+		var knob := Vector2(slider_rect.position.x + slider_rect.size.x * ratio, slider_rect.position.y + slider_rect.size.y * 0.5)
+		if not readonly:
+			draw_circle(knob, 6.0, Color(0.62, 0.68, 0.72, 0.86) if disabled else Color(1.0, 0.94, 0.7, 1.0))
+		var value_text := ("固定 %.0f" if ui_language == "zh" else "REQ %.0f") % float(entry.get("momentum", 0.0)) if readonly else "%.0f" % float(entry.get("momentum", 0.0))
+		if disabled:
+			value_text += "  " + _label("先装引擎", "NEED ENGINE")
+		draw_string(font, row.position + Vector2(row.size.x - 112.0, 17.0), value_text, HORIZONTAL_ALIGNMENT_RIGHT, 104.0, 10, Color(0.72, 0.76, 0.8, 0.86) if disabled else Color(1.0, 0.86, 0.42, 0.96))
+
+	func _entry_row_rect(index: int) -> Rect2:
+		return Rect2(Vector2(10.0, 34.0 + float(index) * 38.0 - scroll_offset), Vector2(size.x - 22.0, 34.0))
+
+	func _entry_slider_rect(index: int) -> Rect2:
+		var row := _entry_row_rect(index)
+		return Rect2(row.position + Vector2(220.0, 9.0), Vector2(maxf(80.0, row.size.x - 342.0), 16.0))
+
+	func _rows_clip_rect() -> Rect2:
+		return Rect2(Vector2(8.0, 32.0), Vector2(size.x - 18.0, size.y - 40.0))
+
+	func _max_scroll() -> float:
+		return maxf(0.0, float(entries.size()) * 38.0 - _rows_clip_rect().size.y)
+
+	func _open_rect() -> Rect2:
+		return Rect2(Vector2(size.x - 60.0, 8.0), Vector2(50.0, 22.0))
 
 	func _draw_open_button(font: Font) -> void:
 		var rect := _open_rect()
-		draw_rect(rect, Color(0.12, 0.16, 0.19, 0.92), true)
+		draw_rect(rect, Color(0.08, 0.14, 0.18, 0.92), true)
 		draw_rect(rect, Color(0.44, 0.92, 1.0, 0.72), false, 1.0)
 		draw_string(font, rect.position + Vector2(4.0, 14.0), _label("详细", "MORE"), HORIZONTAL_ALIGNMENT_CENTER, rect.size.x - 8.0, 9, Color(0.9, 0.98, 1.0, 1.0))
-
-	func _entry_slider_rect(index: int) -> Rect2:
-		var col := index % 3
-		var row := index / 3
-		return Rect2(Vector2(226.0 + float(col) * 138.0, 10.0 + float(row) * 24.0), Vector2(124.0, 13.0))
-
-	func _open_rect() -> Rect2:
-		return Rect2(Vector2(size.x - 58.0, 12.0), Vector2(48.0, 24.0))
 
 	func _entry_index_for_id(entry_id: String) -> int:
 		for i in range(entries.size()):
 			if entries[i] is Dictionary and String(Dictionary(entries[i]).get("id", "")) == entry_id:
 				return i
 		return -1
+
+	func _entry_uses_range_slider(entry: Dictionary) -> bool:
+		if bool(entry.get("readonly", false)):
+			return false
+		if not entry.has("min_momentum") and not entry.has("max_momentum"):
+			return false
+		var min_momentum := maxf(0.0, float(entry.get("min_momentum", 0.0)))
+		var max_momentum := maxf(min_momentum, float(entry.get("max_momentum", min_momentum)))
+		return max_momentum > min_momentum
+
+	func _entry_slider_fill_ratio(entry: Dictionary) -> float:
+		if not _entry_uses_range_slider(entry):
+			return clampf(float(entry.get("ratio", 0.0)), 0.0, 1.0)
+		var min_momentum := maxf(0.0, float(entry.get("min_momentum", 0.0)))
+		var max_momentum := maxf(min_momentum, float(entry.get("max_momentum", min_momentum)))
+		var momentum := maxf(0.0, float(entry.get("momentum", 0.0)))
+		return clampf((momentum - min_momentum) / maxf(0.001, max_momentum - min_momentum), 0.0, 1.0)
+
+	func _entry_kind_short_label(entry: Dictionary) -> String:
+		match String(entry.get("kind", "")):
+			"limb":
+				return "肢" if ui_language == "zh" else "L"
+			"booster_drive":
+				return "推" if ui_language == "zh" else "M"
+			"booster_boost_brake":
+				return "增" if ui_language == "zh" else "B"
+			_:
+				return "需" if ui_language == "zh" else "R"
 
 	func _label(zh: String, en: String) -> String:
 		return zh if ui_language == "zh" else en
@@ -4880,6 +5704,7 @@ class AssemblyBoardView:
 	var retained_socket_items := {}
 	var retained_candidate_socket_items := {}
 	var retained_material_overlay_items := {}
+	var retained_binding_group_items := {}
 	var retained_warning_items := {}
 	var retained_sweep_arc_items := {}
 	var retained_render_submit_count := 0
@@ -4906,6 +5731,8 @@ class AssemblyBoardView:
 	var root_draw_count := 0
 	var custom_retained_root_redraw_skip_count := 0
 	var retained_last_size := Vector2.ZERO
+	var retained_view_signature := ""
+	var retained_view_invalidation_count := 0
 
 	func set_board(next_snapshot: Dictionary, next_selected: String, next_illegal: Dictionary, next_snap_part: String, next_snap_amount: float, next_mode: String = "hero", next_language: String = "zh", next_motion_phase: float = 0.0, next_revision_key: String = "") -> void:
 		set_board_call_count += 1
@@ -4975,6 +5802,10 @@ class AssemblyBoardView:
 				_defer_retained_components(changed)
 			else:
 				_submit_retained_components_for_indices(changed)
+				if bool(diff.get("update_edge_socket_items", false)):
+					_submit_retained_edge_items(false)
+					_submit_retained_socket_items(false)
+					_submit_retained_overlay_items(false)
 				_submit_retained_layer(retained_selection_layer, "selection|" + _retained_selection_signature())
 				_submit_retained_layer(retained_hint_layer, "hint|" + revision_key + "|" + ui_language)
 			custom_retained_root_redraw_skip_count += 1
@@ -5106,6 +5937,53 @@ class AssemblyBoardView:
 				control.position = Vector2.ZERO
 				control.size = size
 
+	func _retained_view_signature_for(snapshot: Dictionary, mode: String) -> String:
+		var offset_value = snapshot.get("view_offset", Vector2.ZERO)
+		var offset: Vector2 = offset_value if offset_value is Vector2 else Vector2.ZERO
+		return "%s|z:%s|o:%s|s:%s" % [
+			mode,
+			str(snappedf(float(snapshot.get("view_zoom", 1.0)), 0.001)),
+			_retained_vec_key(offset),
+			_retained_vec_key(size),
+		]
+
+	func _retained_view_signature_current() -> String:
+		return _retained_view_signature_for(board_snapshot, board_mode)
+
+	func _invalidate_retained_item_pool(pool: Dictionary) -> void:
+		for raw_item in pool.values():
+			if raw_item is AssemblyBoardRenderItem:
+				var item: AssemblyBoardRenderItem = raw_item
+				item.item_signature = ""
+
+	func _invalidate_retained_view_transform() -> void:
+		retained_view_invalidation_count += 1
+		for layer in [retained_edge_layer, retained_socket_layer, retained_overlay_layer, retained_selection_layer, retained_hint_layer]:
+			if layer is AssemblyBoardRenderLayer:
+				var render_layer: AssemblyBoardRenderLayer = layer
+				render_layer.layer_signature = ""
+		for raw_item in retained_component_items.values():
+			if raw_item is AssemblyBoardRenderComponentItem:
+				var component_item: AssemblyBoardRenderComponentItem = raw_item
+				component_item.item_signature = ""
+		_invalidate_retained_item_pool(retained_edge_items)
+		_invalidate_retained_item_pool(retained_socket_items)
+		_invalidate_retained_item_pool(retained_candidate_socket_items)
+		_invalidate_retained_item_pool(retained_material_overlay_items)
+		_invalidate_retained_item_pool(retained_binding_group_items)
+		_invalidate_retained_item_pool(retained_warning_items)
+		_invalidate_retained_item_pool(retained_sweep_arc_items)
+		root_redraw_request_count += 1
+		queue_redraw()
+
+	func _sync_retained_view_signature() -> bool:
+		var next_signature := _retained_view_signature_current()
+		if next_signature == retained_view_signature:
+			return false
+		retained_view_signature = next_signature
+		_invalidate_retained_view_transform()
+		return true
+
 	func _set_retained_render_visible(next_visible: bool) -> void:
 		if retained_render_layer != null:
 			retained_render_layer.visible = next_visible
@@ -5126,7 +6004,10 @@ class AssemblyBoardView:
 			return
 		retained_render_layer.visible = true
 		_resize_retained_render_layer()
-		var base := "%s|%s|%s" % [last_board_signature, _retained_vec_key(size), "force" if force_layers else ""]
+		var view_changed := _sync_retained_view_signature()
+		if view_changed:
+			force_layers = true
+		var base := "%s|%s|%s|%s" % [last_board_signature, _retained_view_signature_current(), _retained_vec_key(size), "force" if force_layers else ""]
 		_submit_retained_edge_items(force_layers)
 		_submit_retained_socket_items(force_layers)
 		_submit_retained_overlay_items(force_layers)
@@ -5140,7 +6021,7 @@ class AssemblyBoardView:
 				return retained_edge_layer
 			"socket":
 				return retained_socket_layer
-			"candidate", "material_overlay", "warning", "sweep":
+			"candidate", "material_overlay", "binding_group", "warning", "sweep":
 				return retained_overlay_layer
 		return retained_render_layer
 
@@ -5188,14 +6069,15 @@ class AssemblyBoardView:
 			var key := _edge_key(a, b) + ":" + _edge_socket_for_node(edge, a) + ":" + _edge_socket_for_node(edge, b)
 			live[key] = true
 			var state: Dictionary = edge_states.get(_edge_key(a, b), {})
-			var signature := "%s|%s|%s|%s|%s|%s" % [
+			var signature := "|".join([
 				key,
+				_retained_view_signature_current(),
 				_retained_vec_key(size),
 				_retained_vec_key(_custom_node_pos(nodes[a])),
 				_retained_vec_key(_custom_node_pos(nodes[b])),
 				"!" if bool(state.get("invalid", false)) else ".",
 				str(snappedf(snap_amount, 0.01)),
-			]
+			])
 			if _submit_retained_item(retained_edge_items, "edge", key, {"edge": edge, "a": a, "b": b}, signature, force_items):
 				retained_edge_update_count += 1
 			else:
@@ -5218,15 +6100,16 @@ class AssemblyBoardView:
 			var key := "%s:%s:%d" % [node_key, String(marker_dict.get("slot", "")), i]
 			live[key] = true
 			var highlight_state := String(Dictionary(material_highlights.get(node_key, {})).get("state", ""))
-			var signature := "%s|%s|%s|%s|%s|%s|%s" % [
+			var signature := "|".join([
 				key,
+				_retained_view_signature_current(),
 				_retained_vec_key(size),
 				_retained_vec_key(marker_pos),
 				"o" if bool(marker_dict.get("occupied", false)) else ".",
 				"s" if bool(marker_dict.get("selected", false)) else ".",
 				highlight_state,
 				str(snappedf(snap_amount, 0.01)),
-			]
+			])
 			if _submit_retained_item(retained_socket_items, "socket", key, {"marker": marker_dict}, signature, force_items):
 				retained_socket_update_count += 1
 			else:
@@ -5246,15 +6129,83 @@ class AssemblyBoardView:
 				continue
 			var key := "material:%d" % node_index
 			live_material[key] = true
-			var signature := "%s|%s|%s|%s|%s" % [key, state, _retained_vec_key(size), _retained_vec_key(_custom_node_pos(nodes[node_index])), str(snappedf(snap_amount, 0.01))]
+			var signature := "%s|%s|%s|%s|%s|%s" % [key, _retained_view_signature_current(), state, _retained_vec_key(size), _retained_vec_key(_custom_node_pos(nodes[node_index])), str(snappedf(snap_amount, 0.01))]
 			if _submit_retained_item(retained_material_overlay_items, "material_overlay", key, {"node": node_index, "state": state}, signature, force_items):
 				retained_overlay_update_count += 1
 			else:
 				retained_overlay_noop_count += 1
 		retained_overlay_remove_count += _prune_retained_item_pool(retained_material_overlay_items, live_material)
+		_submit_retained_binding_group_items(force_items)
 		_submit_retained_warning_items(force_items)
 		_submit_retained_sweep_items(force_items)
 		_submit_retained_candidate_items(force_items)
+
+	func _binding_group_payloads() -> Array:
+		var nodes: Array = board_snapshot.get("nodes", [])
+		var binding_highlights: Dictionary = board_snapshot.get("binding_highlights", {})
+		var groups := {}
+		for raw_key in binding_highlights.keys():
+			var node_index := int(raw_key)
+			if node_index < 0 or node_index >= nodes.size():
+				continue
+			var info: Dictionary = Dictionary(binding_highlights[raw_key])
+			var candidate_id := String(info.get("candidate_id", "node:%d" % node_index))
+			if candidate_id == "":
+				candidate_id = "node:%d" % node_index
+			var group: Dictionary = groups.get(candidate_id, {
+				"candidate_id": candidate_id,
+				"nodes": [],
+				"state": String(info.get("state", "")),
+				"selected": bool(info.get("selected", false)),
+				"reason": String(info.get("reason", "")),
+				"required_drive": float(info.get("required_drive", 0.0)),
+			})
+			var group_nodes: Array = Array(group.get("nodes", []))
+			for raw_node in Array(info.get("target_nodes", [])):
+				var target_node := int(raw_node)
+				if target_node >= 0 and target_node < nodes.size() and not group_nodes.has(target_node):
+					group_nodes.append(target_node)
+			if not group_nodes.has(node_index):
+				group_nodes.append(node_index)
+			group["nodes"] = group_nodes
+			if bool(info.get("selected", false)):
+				group["selected"] = true
+			if String(group.get("state", "")) == "" and String(info.get("state", "")) != "":
+				group["state"] = String(info.get("state", ""))
+			groups[candidate_id] = group
+		var result: Array = []
+		for raw_group in groups.values():
+			if raw_group is Dictionary and not Array(Dictionary(raw_group).get("nodes", [])).is_empty():
+				result.append(raw_group)
+		return result
+
+	func _submit_retained_binding_group_items(force_items: bool) -> void:
+		var nodes: Array = board_snapshot.get("nodes", [])
+		var live := {}
+		for raw_group in _binding_group_payloads():
+			if not (raw_group is Dictionary):
+				continue
+			var group: Dictionary = raw_group
+			var candidate_id := String(group.get("candidate_id", ""))
+			if candidate_id == "":
+				continue
+			var key := "binding:%s" % candidate_id
+			live[key] = true
+			var bits: Array = [key, _retained_view_signature_current(), String(group.get("state", "")), str(bool(group.get("selected", false))), str(snappedf(snap_amount, 0.01)), _retained_vec_key(size)]
+			for raw_node in Array(group.get("nodes", [])):
+				var node_index := int(raw_node)
+				if node_index < 0 or node_index >= nodes.size():
+					continue
+				bits.append("%d:%s:%s" % [
+					node_index,
+					_retained_vec_key(_custom_node_pos(nodes[node_index])),
+					str(snappedf(_node_visual_radius(nodes[node_index]), 0.1)),
+				])
+			if _submit_retained_item(retained_binding_group_items, "binding_group", key, group, "|".join(bits), force_items):
+				retained_overlay_update_count += 1
+			else:
+				retained_overlay_noop_count += 1
+		retained_overlay_remove_count += _prune_retained_item_pool(retained_binding_group_items, live)
 
 	func _submit_retained_warning_items(force_items: bool) -> void:
 		var nodes: Array = board_snapshot.get("nodes", [])
@@ -5265,7 +6216,7 @@ class AssemblyBoardView:
 				continue
 			var key := "warning:%d" % node_index
 			live[key] = true
-			var signature := "%s|%s|%s|%s" % [key, _retained_vec_key(size), _retained_vec_key(_custom_node_pos(nodes[node_index])), str(snappedf(snap_amount, 0.01))]
+			var signature := "%s|%s|%s|%s|%s" % [key, _retained_view_signature_current(), _retained_vec_key(size), _retained_vec_key(_custom_node_pos(nodes[node_index])), str(snappedf(snap_amount, 0.01))]
 			if _submit_retained_item(retained_warning_items, "warning", key, {"node": node_index}, signature, force_items):
 				retained_overlay_update_count += 1
 			else:
@@ -5283,15 +6234,16 @@ class AssemblyBoardView:
 			var profile: Dictionary = profiles[i]
 			var pivot_value = profile.get("pivot", Vector2.ZERO)
 			var pivot_key := _retained_vec_key(pivot_value if pivot_value is Vector2 else Vector2.ZERO)
-			var signature := "%s|%s|%s|%.2f|%.2f|%d|%s" % [
+			var signature := "|".join([
 				key,
+				_retained_view_signature_current(),
 				_retained_vec_key(size),
 				pivot_key,
-				float(profile.get("world_center_angle", 0.0)),
-				float(profile.get("half_width", 0.0)),
-				int(board_snapshot.get("swept_collision_count", 0)),
+				str(snappedf(float(profile.get("world_center_angle", 0.0)), 0.01)),
+				str(snappedf(float(profile.get("half_width", 0.0)), 0.01)),
+				str(int(board_snapshot.get("swept_collision_count", 0))),
 				str(snappedf(snap_amount, 0.01)),
-			]
+			])
 			if _submit_retained_item(retained_sweep_arc_items, "sweep", key, {"profile": profile}, signature, force_items):
 				retained_overlay_update_count += 1
 			else:
@@ -5304,7 +6256,7 @@ class AssemblyBoardView:
 		if not candidate.is_empty() and candidate.get("a") is Vector2 and candidate.get("b") is Vector2:
 			var key := "candidate:socket_pair"
 			live[key] = true
-			var signature := "%s|%s|%s|%s|%s" % [key, _retained_vec_key(size), _retained_vec_key(candidate.get("a")), _retained_vec_key(candidate.get("b")), str(snappedf(snap_amount, 0.01))]
+			var signature := "%s|%s|%s|%s|%s|%s" % [key, _retained_view_signature_current(), _retained_vec_key(size), _retained_vec_key(candidate.get("a")), _retained_vec_key(candidate.get("b")), str(snappedf(snap_amount, 0.01))]
 			if _submit_retained_item(retained_candidate_socket_items, "candidate", key, {"candidate": candidate}, signature, force_items):
 				retained_overlay_update_count += 1
 			else:
@@ -5399,7 +6351,7 @@ class AssemblyBoardView:
 		var nodes: Array = board_snapshot.get("nodes", [])
 		var edges: Array = board_snapshot.get("edges", [])
 		var edge_states: Dictionary = board_snapshot.get("edge_states", {})
-		var bits: Array = [_retained_vec_key(size), str(edges.size()), str(nodes.size())]
+		var bits: Array = [_retained_view_signature_current(), _retained_vec_key(size), str(edges.size()), str(nodes.size())]
 		for edge in edges:
 			var a := _edge_node_a(edge)
 			var b := _edge_node_b(edge)
@@ -5418,7 +6370,7 @@ class AssemblyBoardView:
 	func _retained_socket_signature() -> String:
 		var socket_markers: Array = board_snapshot.get("socket_markers", [])
 		var material_highlights: Dictionary = board_snapshot.get("material_highlights", {})
-		var bits: Array = [_retained_vec_key(size), str(socket_markers.size()), str(snappedf(snap_amount, 0.01))]
+		var bits: Array = [_retained_view_signature_current(), _retained_vec_key(size), str(socket_markers.size()), str(snappedf(snap_amount, 0.01))]
 		for marker in socket_markers:
 			if not (marker is Dictionary):
 				continue
@@ -5441,7 +6393,9 @@ class AssemblyBoardView:
 		var warning_nodes: Array = board_snapshot.get("material_warning_nodes", [])
 		var profiles: Array = board_snapshot.get("joint_slot_profiles", [])
 		var candidate: Dictionary = board_snapshot.get("candidate_socket_pair", {})
+		var tryout: Dictionary = board_snapshot.get("tryout_preview", {})
 		var bits: Array = [
+			_retained_view_signature_current(),
 			_retained_vec_key(size),
 			str(nodes.size()),
 			str(material_highlights.size()),
@@ -5451,6 +6405,8 @@ class AssemblyBoardView:
 			str(snappedf(snap_amount, 0.01)),
 			str(board_snapshot.get("board_tool", "")),
 			str(board_snapshot.get("pose_root_node", -1)),
+			String(tryout.get("profile", "")),
+			str(snappedf(float(tryout.get("timer", 0.0)), 0.02)),
 		]
 		for key in material_highlights.keys():
 			bits.append("%s:%s" % [str(key), String(Dictionary(material_highlights[key]).get("state", ""))])
@@ -5460,10 +6416,13 @@ class AssemblyBoardView:
 			bits.append("ca" + _retained_vec_key(candidate.get("a")))
 		if candidate.get("b") is Vector2:
 			bits.append("cb" + _retained_vec_key(candidate.get("b")))
+		for raw_try_node in Array(tryout.get("target_nodes", [])):
+			bits.append("tn%d" % int(raw_try_node))
 		return "|".join(bits)
 
 	func _retained_selection_signature() -> String:
-		return "%s|%s|%s|%s" % [
+		return "%s|%s|%s|%s|%s" % [
+			_retained_view_signature_current(),
 			_retained_vec_key(size),
 			"1" if bool(board_snapshot.get("selection_box_active", false)) else "0",
 			_retained_vec_key(board_snapshot.get("selection_box_start", Vector2.ZERO) if board_snapshot.get("selection_box_start", Vector2.ZERO) is Vector2 else Vector2.ZERO),
@@ -5478,10 +6437,15 @@ class AssemblyBoardView:
 		var node: Dictionary = nodes[node_index]
 		var selected_nodes: Array = board_snapshot.get("selected_nodes", [])
 		var pose_downstream: Array = board_snapshot.get("pose_downstream_nodes", [])
+		var binding_highlights: Dictionary = board_snapshot.get("binding_highlights", {})
+		var binding_info: Dictionary = Dictionary(binding_highlights.get(str(node_index), {}))
+		var tryout: Dictionary = board_snapshot.get("tryout_preview", {})
+		var tryout_nodes: Array = Array(tryout.get("target_nodes", []))
 		var center := _custom_node_pos(node)
 		var axis := _custom_node_axis(node_index, nodes, edges)
-		return "%d|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%d|%s|%s" % [
+		return "%d|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%d|%s|%s|%s|%s|%s|%s" % [
 			node_index,
+			_retained_view_signature_current(),
 			_retained_vec_key(size),
 			_retained_vec_key(center),
 			_retained_vec_key(axis, 100.0),
@@ -5495,6 +6459,10 @@ class AssemblyBoardView:
 			int(node.get("module_count", 1)),
 			str(snappedf(snap_amount, 0.01)),
 			str(board_snapshot.get("show_node_numbers", false)),
+			String(binding_info.get("state", "")),
+			str(bool(binding_info.get("selected", false))),
+			String(tryout.get("profile", "")),
+			str(tryout_nodes.has(node_index)),
 		]
 
 	func _draw() -> void:
@@ -5620,6 +6588,8 @@ class AssemblyBoardView:
 				_retained_draw_custom_candidate_item(canvas, payload)
 			"material_overlay":
 				_retained_draw_custom_material_overlay_item(canvas, payload)
+			"binding_group":
+				_retained_draw_custom_binding_group_item(canvas, payload)
 			"warning":
 				_retained_draw_custom_warning_item(canvas, payload)
 			"sweep":
@@ -5726,6 +6696,60 @@ class AssemblyBoardView:
 			color = Color(1.0, 0.16, 0.08, 0.58)
 			width = 2.8 + snap_amount * 2.0
 		canvas.draw_arc(center, radius + 8.0 + snap_amount * 5.0, 0.0, TAU, 34, color, width)
+
+	func _retained_draw_custom_binding_group_item(canvas: CanvasItem, payload: Dictionary) -> void:
+		var nodes: Array = board_snapshot.get("nodes", [])
+		var group_nodes: Array = Array(payload.get("nodes", []))
+		if group_nodes.is_empty():
+			return
+		var first := true
+		var bounds := Rect2(Vector2.ZERO, Vector2.ZERO)
+		var centers: Array = []
+		for raw_node in group_nodes:
+			var node_index := int(raw_node)
+			if node_index < 0 or node_index >= nodes.size():
+				continue
+			var center := _custom_node_pos(nodes[node_index])
+			var radius := _node_visual_radius(nodes[node_index]) + 22.0 + snap_amount * 7.0
+			var node_rect := Rect2(center - Vector2(radius, radius), Vector2(radius * 2.0, radius * 2.0))
+			bounds = node_rect if first else bounds.merge(node_rect)
+			first = false
+			centers.append(center)
+		if first:
+			return
+		bounds = bounds.grow(8.0)
+		var state := String(payload.get("state", "binding_valid"))
+		var selected := bool(payload.get("selected", false))
+		var color := Color(0.18, 1.0, 0.76, 0.88)
+		var fill := Color(0.12, 1.0, 0.72, 0.10)
+		var label := "点击绑定" if _board_is_zh() else "CLICK"
+		if state == "binding_invalid":
+			color = Color(1.0, 0.28, 0.1, 0.9)
+			fill = Color(1.0, 0.12, 0.06, 0.10)
+			label = "不可绑定" if _board_is_zh() else "NO"
+		elif state == "allocation_bound":
+			color = Color(0.78, 0.52, 1.0, 0.88)
+			fill = Color(0.52, 0.32, 1.0, 0.10)
+			label = "动力" if _board_is_zh() else "POWER"
+		if selected:
+			color = Color(1.0, 0.9, 0.28, 0.96)
+			fill = Color(1.0, 0.82, 0.18, 0.12)
+		canvas.draw_rect(bounds, fill, true)
+		canvas.draw_rect(bounds, Color(color.r, color.g, color.b, 0.42), false, 6.0)
+		canvas.draw_rect(bounds.grow(-4.0), color, false, 2.4)
+		for i in range(centers.size() - 1):
+			canvas.draw_line(centers[i], centers[i + 1], Color(color.r, color.g, color.b, 0.36), 2.0)
+		for center_value in centers:
+			if center_value is Vector2:
+				var c: Vector2 = center_value
+				canvas.draw_arc(c, 11.0 + snap_amount * 4.0, 0.0, TAU, 24, color, 2.0)
+		var font := ThemeDB.get_fallback_font()
+		var label_rect := Rect2(bounds.position + Vector2(8.0, -24.0), Vector2(maxf(74.0, bounds.size.x - 16.0), 20.0))
+		if label_rect.position.y < 2.0:
+			label_rect.position.y = bounds.end.y + 4.0
+		canvas.draw_rect(label_rect, Color(0.0, 0.0, 0.0, 0.68), true)
+		canvas.draw_rect(label_rect, color, false, 1.0)
+		canvas.draw_string(font, label_rect.position + Vector2(4.0, 14.0), label, HORIZONTAL_ALIGNMENT_CENTER, label_rect.size.x - 8.0, 11, color)
 
 	func _retained_draw_custom_warning_item(canvas: CanvasItem, payload: Dictionary) -> void:
 		var nodes: Array = board_snapshot.get("nodes", [])
@@ -5868,6 +6892,29 @@ class AssemblyBoardView:
 			var radius := _node_visual_radius(nodes[warning_index])
 			canvas.draw_arc(center, radius + 14.0 + snap_amount * 10.0, 0.0, TAU, 42, Color(1.0, 0.08, 0.02, 0.9), 4.0)
 			canvas.draw_string(ThemeDB.get_fallback_font(), center + Vector2(-28.0, -radius - 18.0), "材料!" if _board_is_zh() else "MAT!", HORIZONTAL_ALIGNMENT_CENTER, 56.0, 12, Color(1.0, 0.2, 0.1, 0.95))
+		var tryout: Dictionary = board_snapshot.get("tryout_preview", {})
+		if not tryout.is_empty():
+			var target_nodes := Array(tryout.get("target_nodes", []))
+			var preview_color := Color(1.0, 0.28, 0.18, 0.72) if String(tryout.get("preview_kind", "")) == "projectile" else Color(0.24, 1.0, 0.82, 0.58)
+			for raw_node in target_nodes:
+				var try_node := int(raw_node)
+				if try_node < 0 or try_node >= nodes.size():
+					continue
+				var center := _custom_node_pos(nodes[try_node])
+				var axis := _custom_node_axis(try_node, nodes, board_snapshot.get("edges", []))
+				if axis.length() < 0.01:
+					axis = Vector2.RIGHT
+				axis = axis.normalized()
+				var reach := clampf(float(tryout.get("range", 0.7)) * 72.0 * _custom_view_zoom(), 42.0, 220.0)
+				if String(tryout.get("travel_path", "straight")) == "arc_u":
+					var end := center + axis * reach
+					var mid := center.lerp(end, 0.5) - axis.orthogonal() * 28.0 * _custom_view_zoom()
+					canvas.draw_line(center, mid, preview_color, 2.0)
+					canvas.draw_line(mid, end, preview_color, 2.0)
+					canvas.draw_arc(end, 16.0 + snap_amount * 6.0, 0.0, TAU, 30, Color(1.0, 0.62, 0.16, 0.76), 2.4)
+				else:
+					canvas.draw_line(center, center + axis * reach, preview_color, 2.2)
+					canvas.draw_circle(center + axis * reach, 6.0 + snap_amount * 3.0, Color(preview_color.r, preview_color.g, preview_color.b, 0.42))
 		var sweep_bad := int(board_snapshot.get("swept_collision_count", 0)) > 0
 		for raw_profile in Array(board_snapshot.get("joint_slot_profiles", [])):
 			if not (raw_profile is Dictionary):
@@ -5900,6 +6947,12 @@ class AssemblyBoardView:
 		var selected := node_index == int(board_snapshot.get("selected", 0)) or selected_nodes.has(node_index)
 		var pose_member := pose_downstream.has(node_index)
 		var illegal := bool(node.get("illegal", false))
+		var binding_highlights: Dictionary = board_snapshot.get("binding_highlights", {})
+		var binding_info: Dictionary = Dictionary(binding_highlights.get(str(node_index), {}))
+		var binding_state := String(binding_info.get("state", ""))
+		var tryout: Dictionary = board_snapshot.get("tryout_preview", {})
+		var tryout_nodes: Array = Array(tryout.get("target_nodes", []))
+		var tryout_member := tryout_nodes.has(node_index)
 		var color := _node_material_color(node)
 		if illegal:
 			color = Color(1.0, 0.24, 0.16, 1.0)
@@ -5908,6 +6961,24 @@ class AssemblyBoardView:
 		if axis.length() < 0.01:
 			axis = Vector2.UP
 		axis = axis.normalized()
+		if binding_state != "":
+			var bind_color := Color(0.24, 1.0, 0.82, 0.88)
+			var bind_width := 3.2
+			if binding_state == "binding_invalid":
+				bind_color = Color(1.0, 0.34, 0.12, 0.86)
+				bind_width = 2.8
+			elif binding_state == "allocation_bound":
+				bind_color = Color(0.72, 0.52, 1.0, 0.74)
+				bind_width = 2.4
+			canvas.draw_arc(center, physical_radius + 15.0 + snap_amount * 7.0, 0.0, TAU, 42, bind_color, bind_width)
+			if bool(binding_info.get("selected", false)):
+				canvas.draw_arc(center, physical_radius + 20.0 + snap_amount * 7.0, 0.0, TAU, 42, Color(1.0, 0.88, 0.24, 0.92), 2.0)
+			var bind_text := "力" if _board_is_zh() and binding_state == "allocation_bound" else ("PWR" if binding_state == "allocation_bound" else ("点" if _board_is_zh() and binding_state == "binding_valid" else ("!" if _board_is_zh() else ("CLICK" if binding_state == "binding_valid" else "NO"))))
+			canvas.draw_string(ThemeDB.get_fallback_font(), center + Vector2(-24.0, physical_radius + 24.0), bind_text, HORIZONTAL_ALIGNMENT_CENTER, 48.0, 11, bind_color)
+		if tryout_member:
+			var try_color := Color(1.0, 0.2, 0.18, 0.72) if String(tryout.get("state", "")) == "active" else (Color(0.32, 0.62, 1.0, 0.74) if String(tryout.get("state", "")) == "armor" else Color(0.92, 0.86, 0.4, 0.68))
+			canvas.draw_arc(center, physical_radius + 24.0 + snap_amount * 5.0, -0.4, TAU - 0.4, 44, try_color, 3.0)
+			canvas.draw_line(center, center + axis * (physical_radius + 38.0), try_color, 2.0)
 		if selected:
 			canvas.draw_arc(center, physical_radius + 12.0 + snap_amount * 8.0, 0.0, TAU, 40, Color(1.0, 0.88, 0.24, 0.72), 4.0)
 			if String(node.get("slot", "")) == "joint":
@@ -6859,20 +7930,10 @@ class ProjectileTraceEffect:
 
 	func _trace_points(inv: float) -> PackedVector2Array:
 		var points := PackedVector2Array()
-		var delta := end_point - start_point
-		var length := delta.length()
-		var dir := delta.normalized() if length > 0.01 else Vector2.RIGHT
-		var right := Vector2(-dir.y, dir.x)
 		var segments := 18
 		for i in range(segments):
 			var t := float(i) / float(segments - 1)
 			var p := start_point.lerp(end_point, t)
-			if projectile_style == "spray" or travel_path == "sine":
-				p += right * sin(t * TAU * 2.0 + inv * TAU * 3.0) * 14.0
-			elif projectile_style == "missile" or travel_path in ["arc_u", "homing", "throw_arc"]:
-				p += right * sin(t * PI) * (32.0 + length * 0.04)
-			elif travel_path in ["boomerang", "wide_return", "guided_curve"]:
-				p += right * sin(t * TAU) * (24.0 + length * 0.035)
 			points.append(p)
 		return points
 
@@ -7449,6 +8510,12 @@ const BATTLE_INPUT_BINDINGS_PATH = "user://battle_input_bindings.json"
 const PERFORMANCE_SETTINGS_PATH = "user://performance_settings.json"
 const PERFORMANCE_PROFILE_DEFAULT = "balanced_4080s"
 const PERFORMANCE_PROFILE_ORDER = ["ultra_4080s", "balanced_4080s", "compat_60"]
+const MINIMUM_RUNTIME_FPS_CAP = 72
+const BATTLE_SIMULATION_FPS = 72.0
+const BATTLE_FRAME_DELTA = 1.0 / BATTLE_SIMULATION_FPS
+const GENERATED_SPACE_BACKDROP_PATH = "res://assets/generated/space_battle_backdrop.png"
+const MOBIUS_SURFACE_TEXTURE_PATH = "res://assets/generated/mobius_strip_surface_space.png"
+const BATTLE_MINIMAL_BACKGROUND = true
 const DISPLAY_MODE_DEFAULT = "windowed"
 const DISPLAY_MODE_ORDER = ["windowed", "borderless_fullscreen", "fullscreen"]
 const WINDOW_SIZE_DEFAULT = "1280x720"
@@ -7485,18 +8552,18 @@ const PERFORMANCE_PROFILE_SPECS = {
 		"gpu_collision_mode": "auto",
 	},
 	"compat_60": {
-		"name_zh": "兼容 60",
-		"name_en": "Compat 60",
-		"fps_cap": 60,
-		"render_scale": 0.85,
-		"vfx_scale": 0.68,
+		"name_zh": "兼容 72",
+		"name_en": "Compat 72",
+		"fps_cap": 72,
+		"render_scale": 0.78,
+		"vfx_scale": 0.55,
 		"hit_vfx": true,
 		"board_preview_quality": "standard",
-		"battle_vfx_budget": 120,
-		"projectile_trace_budget": 56,
-		"hit_effect_budget": 52,
-		"contact_particle_pool": 72,
-		"topology_segment_budget": 480,
+		"battle_vfx_budget": 92,
+		"projectile_trace_budget": 40,
+		"hit_effect_budget": 36,
+		"contact_particle_pool": 56,
+		"topology_segment_budget": 420,
 		"gpu_collision_mode": "auto",
 	},
 }
@@ -7543,8 +8610,6 @@ const PROJECTILE_MASS_BULLET_HELL = 2.85
 const PROJECTILE_MASS_LASER = 0.3
 const PROJECTILE_MASS_CHEMICAL = 3.7
 const PROJECTILE_MASS_EXPLOSIVE = 9.6
-const PROJECTILE_RECOIL_IMPULSE_SCALE = 0.12
-const PROJECTILE_RECOIL_REFERENCE = 0.08
 const PROJECTILE_STAGGER_RATIO_SECONDS = 0.135
 const PROJECTILE_STAGGER_MAX_SECONDS = 0.58
 const MOMENTUM_MOVE_SPEED_MULT = 3.0
@@ -7565,6 +8630,7 @@ const STANDARD_SNIPER_NAME = "标准子弹狙击枪 / STANDARD BULLET SNIPER"
 const STANDARD_SNIPER_AMMO_CAPACITY = 10
 const STANDARD_SNIPER_PROJECTILE_WIDTH_M = 0.1
 const STANDARD_SNIPER_PROJECTILE_DAMAGE_MULT = 20.0
+const STANDARD_SNIPER_GUN_DAMAGE_COEFF = 10.0
 const STANDARD_SNIPER_FALLBACK_BOOST_MOMENTUM = 120.0
 const STANDARD_CHEMICAL_SPRAYER_NAME = "标准化学喷射器 / STANDARD CAUSTIC SPRAYER"
 const STANDARD_CHEMICAL_SPRAYER_AMMO_CAPACITY = 12
@@ -7592,6 +8658,11 @@ const STANDARD_MISSILE_PROJECTILE_DAMAGE_COEFF = 34.0
 const STANDARD_MISSILE_SPEED_MULT = 1.05
 const STANDARD_MISSILE_EXPLOSION_RADIUS = 0.54
 const STANDARD_MISSILE_OCCLUSION_GRACE = 0.28
+const MAP_OCCLUSION_NONE = "none"
+const MAP_OCCLUSION_SOLID = "solid"
+const MAP_OCCLUSION_CAGE = "cage"
+const MAP_OCCLUSION_ONE_WAY = "one_way"
+const MAP_OCCLUSION_REFLECTOR = "reflector"
 const STANDARD_WEB_TETHER_GUN_NAME = "标准捕缚蛛丝枪 / STANDARD WEB TETHER GUN"
 const STANDARD_WEB_TETHER_AMMO_CAPACITY = 8
 const STANDARD_WEB_TETHER_RANGE_M = 4.4
@@ -7688,7 +8759,32 @@ const PUPPET_HP_SEGMENT_MAX = 12
 const RING_LENGTH = 24.0
 const VIEW_WIDTH = 7.2
 const VIEW_HEIGHT = 5.2
-const BATTLE_HALF_HEIGHT = 5.0
+const BATTLE_HALF_HEIGHT = 7.5
+const MOBIUS_ENABLED_DEFAULT = true
+const MOBIUS_SURFACE_SEGMENTS = 96
+const MOBIUS_WIDTH_SEGMENTS = 7
+const MOBIUS_NEAR_SCALE = 1.22
+const MOBIUS_FAR_SCALE = 0.70
+const MOBIUS_DEPTH_STRENGTH = 0.42
+const MOBIUS_PARALLAX_STRENGTH = 0.28
+const MOBIUS_TWIST_INTERVAL_MIN = 30.0
+const MOBIUS_TWIST_INTERVAL_MAX = 60.0
+const MOBIUS_TWIST_BLEND_SECONDS = 4.0
+const MOBIUS_TWIST_WAVE_SPEED = 0.10
+const MOBIUS_TWIST_WAVE_AMPLITUDE = 0.18
+const MOBIUS_TWIST_WAVE_SCALE = 1.35
+const MOBIUS_BOUNDARY_FOG_WIDTH = 0.75
+const MOBIUS_FRAME_ROTATION_STRENGTH = 0.52
+const MOBIUS_INPUT_FRAME_STRENGTH = 0.34
+const MOBIUS_FAIRNESS_RADIUS = 1.35
+const MOBIUS_EDGE_FOG_WIDTH = 1.18
+const MOBIUS_SURFACE_DETAIL_DENSITY = 1.0
+const MOBIUS_NEAR_ALPHA = 0.26
+const MOBIUS_FAR_ALPHA = 0.10
+const MOBIUS_DEPTH_CONTRAST = 1.12
+const VISUAL_HITBOX_SCALE_STRENGTH = 1.0
+const VISUAL_HITBOX_SCALE_MIN = 0.70
+const VISUAL_HITBOX_SCALE_MAX = 1.30
 const BARRIER_MAP_COLUMNS = 10
 const BARRIER_MAP_ROWS = 5
 const BARRIER_BLUEPRINT_WIDTH = VIEW_WIDTH
@@ -7875,6 +8971,12 @@ const SOURCE_MOVE_NAMES = {
 	"flank": "侧绕",
 }
 const ECONOMY_PRICE_MULTIPLIER = 0.5
+const ENGINE_MOMENTUM_OUTPUT_SCALE = 9.0
+const COOLING_OUTPUT_SCALE = 1.0
+const COOLING_POOL_SCALE = 2.0
+const THRUSTER_ALLOCATION_MAX_MULT = 3.0
+const LIMB_MOMENTUM_MAX_SCALE = 3.0
+const DEFAULT_LIMB_DRIVE_IDLE_HEAT_COEFF = 0.018
 const ECONOMY_MEDIAN_MASS_BY_RANK = {1: 12.0, 2: 24.0, 3: 48.0, 4: 96.0, 5: 192.0}
 const ECONOMY_THRUSTER_TARGET_SPEED = 2.0
 const ECONOMY_THRUSTER_TARGET_DURATION = 0.3
@@ -7892,11 +8994,11 @@ const EDITOR_PART_GROUP_SLOTS = {
 	"software_muscle": ["engine", "booster", "cooling", "muscle"],
 	"software": ["special", "module"],
 }
-const EDITOR_PART_GROUP_NAMES_ZH = {"torso": "躯干", "limb": "肢体", "terminal_weapon": "武器", "barrier_panel": "结界板", "software_muscle": "软肌肉", "software": "软件"}
-const EDITOR_PART_GROUP_NAMES_EN = {"torso": "TORSO", "limb": "LIMB", "terminal_weapon": "WEAPON", "barrier_panel": "BARRIER", "software_muscle": "SOFT-MUS", "software": "SOFT"}
+const EDITOR_PART_GROUP_NAMES_ZH = {"torso": "躯干", "limb": "肢体", "terminal_weapon": "武器", "barrier_panel": "结界板", "software_muscle": "装备", "software": "软件"}
+const EDITOR_PART_GROUP_NAMES_EN = {"torso": "TORSO", "limb": "LIMB", "terminal_weapon": "WEAPON", "barrier_panel": "BARRIER", "software_muscle": "EQUIPMENT", "software": "SOFT"}
 const EDITOR_SORT_KEY_ORDER = ["cost", "hp", "mass", "length", "stiffness", "engine_momentum", "allocated_momentum", "damage", "range"]
-const EDITOR_SORT_KEY_NAMES_ZH = {"cost": "价格", "hp": "生命", "mass": "质量", "length": "长度", "stiffness": "刚度", "engine_momentum": "总动力", "allocated_momentum": "分配动力", "damage": "伤害", "range": "射程"}
-const EDITOR_SORT_KEY_NAMES_EN = {"cost": "COST", "hp": "HP", "mass": "MASS", "length": "LENGTH", "stiffness": "STIFFNESS", "engine_momentum": "ENGINE MOMENTUM", "allocated_momentum": "ALLOCATED", "damage": "DAMAGE", "range": "RANGE"}
+const EDITOR_SORT_KEY_NAMES_ZH = {"cost": "价格", "hp": "生命", "mass": "质量", "length": "长度", "stiffness": "刚度", "engine_momentum": "总动力", "allocated_momentum": "需求动力", "damage": "伤害", "range": "射程"}
+const EDITOR_SORT_KEY_NAMES_EN = {"cost": "COST", "hp": "HP", "mass": "MASS", "length": "LENGTH", "stiffness": "STIFFNESS", "engine_momentum": "ENGINE MOMENTUM", "allocated_momentum": "REQUIRED", "damage": "DAMAGE", "range": "RANGE"}
 const TOPOLOGY_PART_SLOTS = ["limb_muscle", "muscle"]
 const LIMB_MUSCLE_LENGTH_MULTIPLIER = 0.5
 const TERMINAL_MELEE_GEOMETRY_MULTIPLIER = 0.62
@@ -8087,8 +9189,8 @@ const STYLE_COMMON_CATALOG = {
 		{"name": "HUMANOVA PRACTICE CORNER", "maker": "HUMANOVA ATELIER", "cost": 54, "hp": 44, "mass": 20, "length": 0.62, "normal_damage": 0, "damage_type": "blunt", "material_class": "barrier_wall", "connection_ends": 2, "shape": "corner_wall", "radius": 0.12, "barrier_panel": true, "barrier_tile_component": true, "is_cage_wall": true, "cage_radius": 0.46, "cage_repel": 0.32, "summary": "Cheap clean corner for duelist rings and whiff-punish spaces."},
 	],
 	"booster": [
-		{"name": "COINRUN YELLOW CORNER BANK", "maker": "COINRUN DYNAMICS", "cost": 108, "hp": 0, "mass": 8, "thruster_family": "sustain_yellow", "thruster_duration": 0.46, "boost_momentum": 118.0, "boost_duration": 0.68, "slot_volume_tier": "S", "brake_efficiency": 0.9, "recoil_cancel": 0.4, "flame_color": "yellow", "cornering": 1.3, "speed_lane_affinity": 0.12, "torso_slot_payload": true, "summary": "Cornering sustain thruster for coin routes and spectator-readable route fights."},
-		{"name": "VANTA SILENT VECTOR POD", "maker": "VANTA LOOM", "cost": 88, "hp": 0, "mass": 5, "thruster_family": "counter_brake", "thruster_duration": 0.28, "boost_momentum": 92.0, "boost_duration": 0.30, "slot_volume_tier": "S", "brake_efficiency": 1.35, "recoil_cancel": 0.82, "flame_color": "blue", "torso_slot_payload": true, "summary": "Quiet counter-brake vector pod for control teams that need to hold tethers."},
+		{"name": "COINRUN YELLOW CORNER BANK", "maker": "COINRUN DYNAMICS", "cost": 108, "mass": 8, "thruster_family": "sustain_yellow", "thruster_duration": 0.46, "boost_momentum": 118.0, "boost_duration": 0.68, "slot_volume_tier": "S", "brake_efficiency": 0.9, "recoil_cancel": 0.4, "flame_color": "yellow", "cornering": 1.3, "speed_lane_affinity": 0.12, "torso_slot_payload": true, "summary": "Cornering sustain thruster for coin routes and spectator-readable route fights."},
+		{"name": "VANTA SILENT VECTOR POD", "maker": "VANTA LOOM", "cost": 88, "mass": 5, "thruster_family": "counter_brake", "thruster_duration": 0.28, "boost_momentum": 92.0, "boost_duration": 0.30, "slot_volume_tier": "S", "brake_efficiency": 1.35, "recoil_cancel": 0.82, "flame_color": "blue", "torso_slot_payload": true, "summary": "Quiet counter-brake vector pod for control teams that need to hold tethers."},
 	],
 	"engine": [
 		{"name": "SYNTAX ROTATION ENGINE", "maker": "SYNTAX ELEVEN", "cost": 112, "engine_family": "balanced", "slot_volume_tier": "M", "mass": 12, "speed_mult": 1.04, "heat_capacity": 36, "summary": "Balanced M-class engine: general power reserve for mixed weapons, puppets, and ordinary two-link melee."},
@@ -8104,17 +9206,17 @@ const STYLE_COMMON_CATALOG = {
 		{"name": "COLOSSUS HEAT LUNG", "maker": "COLOSSUS KENNEL", "cost": 148, "mass": 48, "cooling": 52, "heat_capacity": 88, "cooling_profile": "monster_lung", "weapon_heat_tags": ["repeat", "blunt", "explosive", "missile"], "manual_cooling_bonus": 4.0, "repeat_heat_relief": 0.08, "missile_heat_relief": 0.1, "overheat_shutdown_mult": 0.68, "summary": "XL monster heat lung: huge heat buffer for tower shields, mauls, missiles, and bodies that keep swinging."},
 	],
 	"module": [
-		{"name": "COMBO ROUTER: BALANCE STRING", "maker": "SYNTAX ELEVEN", "cost": 72, "aim_mode": "fixed", "motion": "rod", "requires_bound_key": true, "module_target_kind": "ball_joint", "swing_arc_degrees": 120.0, "normal_damage": 5, "armor_damage": 9, "active_damage": 10, "damage_type": "blunt", "summary": "Balanced module that cancels cleanly into a second limb instead of repeating itself."},
-		{"name": "CLAMP ROUTER: VISE CLOSE", "maker": "CRUSTA DYNAMICS", "cost": 96, "aim_mode": "fixed", "motion": "pincer_clamp", "requires_bound_key": true, "module_target_kind": "dual_ball_joint", "requires_joint_pair": true, "paired_attack_key": true, "paired_joint_count": 2, "normal_damage": 7, "armor_damage": 14, "active_damage": 15, "damage_type": "blunt", "summary": "Two-joint clamp module for crab claws and pressure gates."},
-		{"name": "枪械启动 / GUN ACTIVATE", "maker": "LONGSIGHT AEGIS", "cost": 104, "aim_mode": "manual", "motion": "gun_activate", "requires_bound_key": true, "module_target_kind": "gun_terminal", "module_action_profile": "gun_activate", "gun_activation": "gun_activate", "hold_to_activate": true, "gun_rotate_speed": 0.0, "normal_damage": 3, "damage_type": "bullet", "summary": "按住绑定键启动枪械；狙击枪瞄准锁定后延迟发射，化学喷射器持续喷射。启动中按住局部4/6可持续向后/向前旋转枪口。"},
-		{"name": "棱镜照射启动 / PRISM BEAM ACTIVATE", "maker": "LONGSIGHT AEGIS", "cost": 92, "aim_mode": "manual", "motion": "gun_activate", "requires_bound_key": true, "module_target_kind": "gun_terminal", "module_action_profile": "laser_beam_activate", "gun_activation": "laser_beam_activate", "hold_to_activate": true, "gun_rotate_speed": 0.0, "laser_tick_interval": 1.0, "normal_damage": 2, "damage_type": "laser", "summary": "按住绑定键启动激光枪；只绑定激光枪末端，持续按射击间隔发射即时光束，松开停止，不进入狙击锁定。"},
-		{"name": "猎隼锁射启动 / KESTREL MISSILE LOCK", "maker": "REDLINE ARMS", "cost": 112, "aim_mode": "manual", "motion": "gun_activate", "requires_bound_key": true, "module_target_kind": "gun_terminal", "module_action_profile": "missile_lock_activate", "gun_activation": "missile_lock_activate", "hold_to_activate": true, "gun_rotate_speed": 0.0, "missile_lock_priority": "screen_hero_first", "missile_lock_cone_degrees": 52.0, "missile_occlusion_grace": 0.28, "normal_damage": 2, "damage_type": "bullet", "summary": "按住绑定键锁定导弹目标，默认同屏英雄优先，其次傀儡与结界支援/攻击部位；松开发射可被遮蔽甩脱的制导导弹。"},
-		{"name": "ROUTE ROUTER: PICKUP DASH", "maker": "COINRUN DYNAMICS", "cost": 68, "aim_mode": "manual", "motion": "pendulum", "requires_bound_key": true, "module_target_kind": "ball_joint", "swing_arc_degrees": 180.0, "speed_lane_affinity": 0.06, "normal_damage": 4, "active_damage": 8, "damage_type": "blunt", "summary": "Coin-run swing module for hitting ball puppets while racing route fields."},
-		{"name": "MONSTER ROUTER: CRUSH WINDUP", "maker": "COLOSSUS KENNEL", "cost": 118, "aim_mode": "fixed", "motion": "rod", "requires_bound_key": true, "module_target_kind": "ball_joint", "swing_arc_degrees": 180.0, "normal_damage": 12, "armor_damage": 20, "active_damage": 24, "damage_type": "blunt", "summary": "Slow simple monster swing; the damage comes from mass and momentum."},
-		{"name": "HIJACK ROUTER: PIN AND INSERT", "maker": "VANTA LOOM", "cost": 112, "aim_mode": "manual", "motion": "grapple", "requires_bound_key": true, "module_target_kind": "ejectable_muscle_joint", "module_effect": "capture", "takeover_power": 0.18, "normal_damage": 2, "active_damage": 6, "damage_type": "pierce", "summary": "Control module for tethering a target before the takeover needle connects."},
+		{"name": "COMBO ROUTER: BALANCE STRING", "maker": "SYNTAX ELEVEN", "cost": 72, "aim_mode": "fixed", "motion": "rod", "requires_bound_key": true, "module_target_kind": "ball_joint", "swing_arc_degrees": 120.0, "summary": "Balanced module that cancels cleanly into a second limb instead of repeating itself."},
+		{"name": "CLAMP ROUTER: VISE CLOSE", "maker": "CRUSTA DYNAMICS", "cost": 96, "aim_mode": "fixed", "motion": "pincer_clamp", "requires_bound_key": true, "module_target_kind": "dual_ball_joint", "requires_joint_pair": true, "paired_attack_key": true, "paired_joint_count": 2, "summary": "Two-joint clamp module for crab claws and pressure gates."},
+		{"name": "枪械启动 / GUN ACTIVATE", "maker": "LONGSIGHT AEGIS", "cost": 104, "aim_mode": "manual", "motion": "gun_activate", "requires_bound_key": true, "module_target_kind": "gun_terminal", "module_action_profile": "gun_activate", "gun_activation": "gun_activate", "hold_to_activate": true, "gun_rotate_speed": 0.0, "summary": "按住绑定键启动枪械；狙击枪瞄准锁定后延迟发射，化学喷射器持续喷射。启动中按住局部4/6可持续向后/向前旋转枪口。"},
+		{"name": "棱镜照射启动 / PRISM BEAM ACTIVATE", "maker": "LONGSIGHT AEGIS", "cost": 92, "aim_mode": "manual", "motion": "gun_activate", "requires_bound_key": true, "module_target_kind": "gun_terminal", "module_action_profile": "laser_beam_activate", "gun_activation": "laser_beam_activate", "hold_to_activate": true, "gun_rotate_speed": 0.0, "laser_tick_interval": 1.0, "summary": "按住绑定键启动激光枪；只绑定激光枪末端，持续按射击间隔发射即时光束，松开停止，不进入狙击锁定。"},
+		{"name": "猎隼锁射启动 / KESTREL MISSILE LOCK", "maker": "REDLINE ARMS", "cost": 112, "aim_mode": "manual", "motion": "gun_activate", "requires_bound_key": true, "module_target_kind": "gun_terminal", "module_action_profile": "missile_lock_activate", "gun_activation": "missile_lock_activate", "hold_to_activate": true, "gun_rotate_speed": 0.0, "missile_lock_priority": "screen_hero_first", "missile_lock_cone_degrees": 52.0, "missile_occlusion_grace": 0.28, "summary": "按住绑定键锁定导弹目标，默认同屏英雄优先，其次傀儡与结界支援/攻击部位；松开发射可被遮蔽甩脱的制导导弹。"},
+		{"name": "ROUTE ROUTER: PICKUP DASH", "maker": "COINRUN DYNAMICS", "cost": 68, "aim_mode": "manual", "motion": "pendulum", "requires_bound_key": true, "module_target_kind": "ball_joint", "swing_arc_degrees": 180.0, "speed_lane_affinity": 0.06, "summary": "Coin-run swing module for hitting ball puppets while racing route fields."},
+		{"name": "MONSTER ROUTER: CRUSH WINDUP", "maker": "COLOSSUS KENNEL", "cost": 118, "aim_mode": "fixed", "motion": "rod", "requires_bound_key": true, "module_target_kind": "ball_joint", "swing_arc_degrees": 180.0, "summary": "Slow simple monster swing; the damage comes from mass and momentum."},
+		{"name": "HIJACK ROUTER: PIN AND INSERT", "maker": "VANTA LOOM", "cost": 112, "aim_mode": "manual", "motion": "grapple", "requires_bound_key": true, "module_target_kind": "ejectable_muscle_joint", "module_effect": "capture", "takeover_power": 0.18, "summary": "Control module for tethering a target before the takeover needle connects."},
 		{"name": "FOLD ROUTER: STAGE SHIFT", "maker": "FOLD PARADE", "cost": 122, "aim_mode": "fixed", "motion": "identity_shift", "module_effect": "fold_barrier_squad", "role_switch": "cycle", "command": "236214", "skill_state": "active", "summary": "Command module for swapping a stage unit between barrier, puppet, and hero roles."},
-		{"name": "SALVO ROUTER: EXPLOSIVE ARC", "maker": "REDLINE ARMS", "cost": 110, "aim_mode": "auto", "motion": "auto_line", "requires_bound_key": true, "module_target_kind": "gun_joint", "requires_connected_gun": true, "projectile": true, "module_effect": "explosive_salvo", "explosion_radius": 0.5, "projectile_momentum": 48.0, "normal_damage": 4, "damage_type": "bullet", "summary": "Explosive projectile module for missile tanks and barrier clearing."},
-		{"name": "DUEL ROUTER: FEINT THRUST", "maker": "HUMANOVA ATELIER", "cost": 78, "aim_mode": "fixed", "motion": "thrust", "requires_bound_key": true, "module_target_kind": "telescopic_joint", "required_extension_m": 2.0, "module_extension_m": 2.0, "normal_damage": 7, "armor_damage": 13, "active_damage": 15, "damage_type": "pierce", "summary": "Small-unit thrust module for whiff punish and armor-chip timing."},
+		{"name": "SALVO ROUTER: EXPLOSIVE ARC", "maker": "REDLINE ARMS", "cost": 110, "aim_mode": "auto", "motion": "auto_line", "requires_bound_key": true, "module_target_kind": "gun_joint", "requires_connected_gun": true, "projectile": true, "module_effect": "explosive_salvo", "explosion_radius": 0.5, "projectile_momentum": 48.0, "summary": "Explosive projectile module for missile tanks and barrier clearing."},
+		{"name": "DUEL ROUTER: FEINT THRUST", "maker": "HUMANOVA ATELIER", "cost": 78, "aim_mode": "fixed", "motion": "thrust", "requires_bound_key": true, "module_target_kind": "telescopic_joint", "required_extension_m": 2.0, "module_extension_m": 2.0, "summary": "Small-unit thrust module for whiff punish and armor-chip timing."},
 		{"name": "VAULT ROUTER: SENTINEL LOOP", "maker": "LONGEVITY YIELD", "cost": 64, "aim_mode": "auto", "motion": "software", "ai": "screen_wall", "annuity_rate": 1.0, "sequence": ["armor", "normal"], "summary": "Low-action sentinel software: occupy space and earn time."},
 	],
 }
@@ -8301,9 +9403,9 @@ const COMMON_CATALOG = {
 		{"name": "TEAR-SCAR POD", "cost": 62, "hp": 13, "mass": 4, "length": 0.28, "normal_damage": 2, "damage_type": "tear", "material_class": "suicide_puppet", "connection_ends": 0, "shape": "suicide_pod", "radius": 0.06, "standalone_puppet_core": true, "suicide_on_hit": true, "vuln_kind": "tear", "vuln_mult": 2.15, "vuln_duration": 4.2, "blast_radius": 0.48, "speed_mult": 1.2, "counter_tiers": {"bullet": 0, "chemical": 0, "laser": 1, "blunt": 0, "pierce": 0, "tear": 2}, "resist": {"bullet": 1.1, "chemical": 1.08, "laser": 1.0, "blunt": 1.16, "pierce": 1.08, "tear": 0.96}, "summary": "Suicide pod that scars armor against tearing and blade follow-ups"},
 		{"name": "BLACKBOX ESCAPE POD", "maker": "PARACHUTE MUTUAL", "cost": 64, "hp": 18, "mass": 5, "length": 0.18, "normal_damage": 0, "damage_type": "blunt", "material_class": "escape_pod", "connection_ends": 0, "shape": "drone_core", "radius": 0.045, "torso_slot_payload": true, "has_escape_pod": true, "escape_speed": 0.86, "escape_module_slots": 2, "escape_target_ring_delta": 2.8, "escape_target_lane": 0.0, "counter_tiers": {"bullet": 0, "chemical": 0, "laser": 0, "blunt": 0, "pierce": 0, "tear": 0}, "resist": {"bullet": 1.12, "chemical": 1.12, "laser": 1.1, "blunt": 1.18, "pierce": 1.08, "tear": 1.08}, "summary": "Torso-slot escape pod. It carries a few action modules away when the unit dies; installed art is visible but does not enlarge body collision"},
 		{"name": "RAPID VAULT ESCAPE POD", "maker": "PARACHUTE MUTUAL", "cost": 124, "hp": 24, "mass": 8, "length": 0.22, "normal_damage": 0, "damage_type": "laser", "material_class": "escape_pod", "connection_ends": 0, "shape": "drone_core", "radius": 0.06, "torso_slot_payload": true, "has_escape_pod": true, "escape_speed": 1.42, "escape_module_slots": 3, "escape_target_ring_delta": 3.5, "escape_target_lane": 0.0, "counter_tiers": {"bullet": 1, "chemical": 0, "laser": 1, "blunt": 0, "pierce": 0, "tear": 0}, "resist": {"bullet": 1.04, "chemical": 1.14, "laser": 1.02, "blunt": 1.16, "pierce": 1.08, "tear": 1.08}, "summary": "Fast expensive escape pod. More likely to preserve shared modules, but losing it en route is a painful tempo swing"},
-		{"name": "BULLET DRUM AMMO BAY", "maker": "AUXILIA MESH", "cost": 24, "hp": 0, "mass": 4, "length": 0.0, "normal_damage": 0, "damage_type": "bullet", "material_class": "ammo_payload", "connection_ends": 0, "shape": "ammo_mag", "radius": 0.0, "torso_slot_payload": true, "ammo_capacity": {"bullet": 18}, "ammo_slot_payload": true, "counter_tiers": {"bullet": 0, "chemical": 0, "laser": 0, "blunt": 0, "pierce": 0, "tear": 0}, "resist": {"bullet": 1.0, "chemical": 1.0, "laser": 1.0, "blunt": 1.0, "pierce": 1.0, "tear": 1.0}, "summary": "Internal torso-slot bullet ammunition. Adds cost and mass only; no heat, no HP, and no collision volume"},
-		{"name": "CAUSTIC AMMO TANK", "maker": "AUXILIA MESH", "cost": 28, "hp": 0, "mass": 5, "length": 0.0, "normal_damage": 0, "damage_type": "chemical", "material_class": "ammo_payload", "connection_ends": 0, "shape": "ammo_mag", "radius": 0.0, "torso_slot_payload": true, "ammo_capacity": {"chemical": 14}, "ammo_slot_payload": true, "counter_tiers": {"bullet": 0, "chemical": 0, "laser": 0, "blunt": 0, "pierce": 0, "tear": 0}, "resist": {"bullet": 1.0, "chemical": 1.0, "laser": 1.0, "blunt": 1.0, "pierce": 1.0, "tear": 1.0}, "summary": "Internal corrosive-fluid ammunition tank. It is a mass-bearing slot resource, not a physical limb"},
-		{"name": "LASER CAPACITOR CELL", "maker": "AUXILIA MESH", "cost": 32, "hp": 0, "mass": 3, "length": 0.0, "normal_damage": 0, "damage_type": "laser", "material_class": "ammo_payload", "connection_ends": 0, "shape": "ammo_mag", "radius": 0.0, "torso_slot_payload": true, "ammo_capacity": {"laser": 12}, "ammo_slot_payload": true, "counter_tiers": {"bullet": 0, "chemical": 0, "laser": 0, "blunt": 0, "pierce": 0, "tear": 0}, "resist": {"bullet": 1.0, "chemical": 1.0, "laser": 1.0, "blunt": 1.0, "pierce": 1.0, "tear": 1.0}, "summary": "Internal laser charge cell. Light and pricey, counts toward torso payload capacity but never enlarges collision"},
+		{"name": "BULLET DRUM AMMO BAY", "maker": "AUXILIA MESH", "cost": 24, "mass": 4, "length": 0.0, "damage_type": "bullet", "material_class": "ammo_payload", "connection_ends": 0, "shape": "ammo_mag", "radius": 0.0, "torso_slot_payload": true, "ammo_capacity": {"bullet": 18}, "ammo_slot_payload": true, "counter_tiers": {"bullet": 0, "chemical": 0, "laser": 0, "blunt": 0, "pierce": 0, "tear": 0}, "resist": {"bullet": 1.0, "chemical": 1.0, "laser": 1.0, "blunt": 1.0, "pierce": 1.0, "tear": 1.0}, "summary": "Internal torso-slot bullet ammunition. Adds cost and mass only; no heat, no HP, and no collision volume"},
+		{"name": "CAUSTIC AMMO TANK", "maker": "AUXILIA MESH", "cost": 28, "mass": 5, "length": 0.0, "damage_type": "chemical", "material_class": "ammo_payload", "connection_ends": 0, "shape": "ammo_mag", "radius": 0.0, "torso_slot_payload": true, "ammo_capacity": {"chemical": 14}, "ammo_slot_payload": true, "counter_tiers": {"bullet": 0, "chemical": 0, "laser": 0, "blunt": 0, "pierce": 0, "tear": 0}, "resist": {"bullet": 1.0, "chemical": 1.0, "laser": 1.0, "blunt": 1.0, "pierce": 1.0, "tear": 1.0}, "summary": "Internal corrosive-fluid ammunition tank. It is a mass-bearing slot resource, not a physical limb"},
+		{"name": "LASER CAPACITOR CELL", "maker": "AUXILIA MESH", "cost": 32, "mass": 3, "length": 0.0, "damage_type": "laser", "material_class": "ammo_payload", "connection_ends": 0, "shape": "ammo_mag", "radius": 0.0, "torso_slot_payload": true, "ammo_capacity": {"laser": 12}, "ammo_slot_payload": true, "counter_tiers": {"bullet": 0, "chemical": 0, "laser": 0, "blunt": 0, "pierce": 0, "tear": 0}, "resist": {"bullet": 1.0, "chemical": 1.0, "laser": 1.0, "blunt": 1.0, "pierce": 1.0, "tear": 1.0}, "summary": "Internal laser charge cell. Light and pricey, counts toward torso payload capacity but never enlarges collision"},
 		{"name": "COOLANT AURA FIN", "cost": 58, "hp": 40, "mass": 9, "length": 0.42, "normal_damage": 1, "damage_type": "chemical", "material_class": "coolant_field", "connection_ends": 3, "shape": "coolant_field", "radius": 0.16, "is_coolant_field": true, "coolant_radius": 0.7, "coolant_boost": 22.0, "coolant_affects": "ally", "cooling_profile": "team_aura_fin", "cooling_aura_bonus": 22.0, "counter_tiers": {"bullet": 0, "chemical": 2, "laser": 1, "blunt": 0, "pierce": 0, "tear": 0}, "resist": {"bullet": 1.12, "chemical": 0.94, "laser": 1.0, "blunt": 1.14, "pierce": 1.1, "tear": 1.1}, "summary": "Small ally coolant aura for mobile teams: stand nearby to bleed heat faster, but it is a battlefield support piece rather than an internal plugin."},
 		{"name": "CRYO STORM TOWER", "cost": 128, "hp": 90, "mass": 34, "length": 0.9, "normal_damage": 1, "damage_type": "chemical", "material_class": "coolant_field", "connection_ends": 5, "shape": "coolant_field", "radius": 0.34, "is_coolant_field": true, "coolant_radius": 1.12, "coolant_boost": 46.0, "coolant_affects": "ally", "cooling_profile": "team_cryo_tower", "cooling_aura_bonus": 46.0, "counter_tiers": {"bullet": 1, "chemical": 3, "laser": 1, "blunt": 1, "pierce": 0, "tear": 0}, "resist": {"bullet": 1.02, "chemical": 0.9, "laser": 1.02, "blunt": 1.04, "pierce": 1.1, "tear": 1.12}, "summary": "Large team coolant tower for high-heat combo rooms and missile screens; stronger area cooling in exchange for mass and obvious target value."},
 		{"name": "BULLET TANKER NODE", "maker": "AUXILIA MESH", "cost": 78, "hp": 48, "mass": 18, "length": 0.42, "normal_damage": 1, "damage_type": "bullet", "material_class": "support_node", "connection_ends": 4, "shape": "ammo_mag", "radius": 0.18, "is_support_node": true, "support_kind": "ammo", "support_ammo_type": "bullet", "support_amount": 4, "support_refill_seconds": 1.0, "support_radius": 0.64, "support_affects": "ally", "counter_tiers": {"bullet": 2, "chemical": 0, "laser": 0, "blunt": 1, "pierce": 0, "tear": 0}, "resist": {"bullet": 0.94, "chemical": 1.12, "laser": 1.08, "blunt": 1.04, "pierce": 1.08, "tear": 1.08}, "summary": "Paid bullet-only support component for barriers or tanker puppets. Allies that stay close for one second buy bullet ammo at the ammo bay unit price"},
@@ -8363,10 +9465,10 @@ const COMMON_CATALOG = {
 		{"name": "HUMANOVA DUELIST BLADE", "maker": "HUMANOVA ATELIER", "cost": 54, "hp": 18, "mass": 3, "length": 0.48, "range": 0.16, "normal_damage": 8, "active_damage": 13, "damage_type": "pierce", "material_class": "weapon", "connection_ends": 1, "shape": "spike", "radius": 0.045, "recoil": 0.06, "counter_tiers": {"bullet": 0, "chemical": 0, "laser": 1, "blunt": 0, "pierce": 2, "tear": 1}, "resist": {"bullet": 1.08, "chemical": 1.08, "laser": 1.02, "blunt": 1.12, "pierce": 0.96, "tear": 1.02}, "summary": "Light humanoid terminal blade. Low mass, crisp cancels, and readable strike length for technical small-unit play"},
 		{"name": "UMBRA VENT STILETTO", "maker": "UMBRA REARWORKS", "cost": 84, "hp": 18, "mass": 4, "length": 0.56, "range": 0.28, "normal_damage": 11, "active_damage": 15, "damage_type": "pierce", "material_class": "weapon", "connection_ends": 1, "shape": "spike", "radius": 0.04, "recoil": 0.045, "back_hit_heat_bonus": 16.0, "back_hit_heat_mult": 1.18, "counter_tiers": {"bullet": 0, "chemical": 1, "laser": 1, "blunt": 0, "pierce": 3, "tear": 1}, "resist": {"bullet": 1.08, "chemical": 1.0, "laser": 0.96, "blunt": 1.2, "pierce": 0.9, "tear": 1.02}, "summary": "Rearworks piercer. Normal damage is modest, but back hits inject large heat through exposed vents"},
 		{"name": "UMBRA HEAT NEEDLER", "maker": "UMBRA REARWORKS", "cost": 112, "hp": 16, "mass": 5, "length": 0.64, "normal_damage": 10, "projectile_damage": 10, "damage_type": "laser", "projectile_damage_type": "laser", "normal_heat": 36.0, "range": 1.34, "projectile_range": 4.6, "projectile": true, "projectile_only": true, "projectile_style": "beam", "travel_path": "instant_line", "laser_aim_time": 0.32, "material_class": "gun", "connection_ends": 1, "shape": "gun", "radius": 0.04, "recoil": 0.04, "back_hit_heat_bonus": 22.0, "back_hit_heat_mult": 1.24, "counter_tiers": {"bullet": 0, "chemical": 1, "laser": 3, "blunt": 0, "pierce": 1, "tear": 1}, "resist": {"bullet": 1.12, "chemical": 1.06, "laser": 0.9, "blunt": 1.14, "pierce": 1.0, "tear": 1.02}, "summary": "Needle laser tuned for rear vents. Short warning line, lower damage, and high thermal shock on back shots"},
-		{"name": "SHIELD VEIL PATCH", "maker": "LONGSIGHT AEGIS", "cost": 36, "hp": 0, "mass": 3, "length": 0.0, "normal_damage": 0, "connection_ends": 0, "material_class": "shield_payload", "shape": "shield_software", "radius": 0.0, "torso_slot_payload": true, "shield_payload": true, "electronic_armor": true, "shield_hp": 16.0, "shield_regen": 1.6, "shield_coverage": 0.42, "electronic_armor_hp": 16.0, "electronic_armor_regen": 1.6, "electronic_armor_coverage": 0.42, "summary": "Torso-slot shield software. Adds mass only: no HP, no collision volume, no slot volume; shield is consumed before HP"},
-		{"name": "SHIELD DUEL HALO", "maker": "LONGSIGHT AEGIS", "cost": 78, "hp": 0, "mass": 8, "length": 0.0, "normal_damage": 0, "connection_ends": 0, "material_class": "shield_payload", "shape": "shield_software", "radius": 0.0, "torso_slot_payload": true, "shield_payload": true, "electronic_armor": true, "shield_hp": 42.0, "shield_regen": 2.8, "shield_coverage": 0.86, "electronic_armor_hp": 42.0, "electronic_armor_regen": 2.8, "electronic_armor_coverage": 0.86, "summary": "Duelist shield software. Covers small and standard bodies well; oversized mechs dilute the shield"},
-		{"name": "SHIELD SIEGE MANTLE", "maker": "LONGSIGHT AEGIS", "cost": 156, "hp": 0, "mass": 24, "length": 0.0, "normal_damage": 0, "connection_ends": 0, "material_class": "shield_payload", "shape": "shield_software", "radius": 0.0, "torso_slot_payload": true, "shield_payload": true, "electronic_armor": true, "shield_hp": 96.0, "shield_regen": 4.2, "shield_coverage": 1.72, "electronic_armor_hp": 96.0, "electronic_armor_regen": 4.2, "electronic_armor_coverage": 1.72, "summary": "Heavy shield software for tanks and large heroes. Strong shield pool with real mass tax, but still no physical volume"},
-		{"name": "SHIELD TITAN DOME", "maker": "LONGSIGHT AEGIS", "cost": 288, "hp": 0, "mass": 76, "length": 0.0, "normal_damage": 0, "connection_ends": 0, "material_class": "shield_payload", "shape": "shield_software", "radius": 0.0, "torso_slot_payload": true, "shield_payload": true, "electronic_armor": true, "shield_hp": 210.0, "shield_regen": 6.4, "shield_coverage": 3.3, "electronic_armor_hp": 210.0, "electronic_armor_regen": 6.4, "electronic_armor_coverage": 3.3, "summary": "Monster-scale shield software. Huge regenerating buffer, priced and weighted for colossal bodies; no extra collision body"},
+		{"name": "SHIELD VEIL PATCH", "maker": "LONGSIGHT AEGIS", "cost": 36, "mass": 3, "length": 0.0, "connection_ends": 0, "material_class": "shield_payload", "shape": "shield_software", "radius": 0.0, "torso_slot_payload": true, "shield_payload": true, "electronic_armor": true, "shield_hp": 16.0, "shield_regen": 1.6, "shield_coverage": 0.42, "electronic_armor_hp": 16.0, "electronic_armor_regen": 1.6, "electronic_armor_coverage": 0.42, "summary": "Torso-slot shield software. Adds mass only: no HP, no collision volume, no slot volume; shield is consumed before HP"},
+		{"name": "SHIELD DUEL HALO", "maker": "LONGSIGHT AEGIS", "cost": 78, "mass": 8, "length": 0.0, "connection_ends": 0, "material_class": "shield_payload", "shape": "shield_software", "radius": 0.0, "torso_slot_payload": true, "shield_payload": true, "electronic_armor": true, "shield_hp": 42.0, "shield_regen": 2.8, "shield_coverage": 0.86, "electronic_armor_hp": 42.0, "electronic_armor_regen": 2.8, "electronic_armor_coverage": 0.86, "summary": "Duelist shield software. Covers small and standard bodies well; oversized mechs dilute the shield"},
+		{"name": "SHIELD SIEGE MANTLE", "maker": "LONGSIGHT AEGIS", "cost": 156, "mass": 24, "length": 0.0, "connection_ends": 0, "material_class": "shield_payload", "shape": "shield_software", "radius": 0.0, "torso_slot_payload": true, "shield_payload": true, "electronic_armor": true, "shield_hp": 96.0, "shield_regen": 4.2, "shield_coverage": 1.72, "electronic_armor_hp": 96.0, "electronic_armor_regen": 4.2, "electronic_armor_coverage": 1.72, "summary": "Heavy shield software for tanks and large heroes. Strong shield pool with real mass tax, but still no physical volume"},
+		{"name": "SHIELD TITAN DOME", "maker": "LONGSIGHT AEGIS", "cost": 288, "mass": 76, "length": 0.0, "connection_ends": 0, "material_class": "shield_payload", "shape": "shield_software", "radius": 0.0, "torso_slot_payload": true, "shield_payload": true, "electronic_armor": true, "shield_hp": 210.0, "shield_regen": 6.4, "shield_coverage": 3.3, "electronic_armor_hp": 210.0, "electronic_armor_regen": 6.4, "electronic_armor_coverage": 3.3, "summary": "Monster-scale shield software. Huge regenerating buffer, priced and weighted for colossal bodies; no extra collision body"},
 		{"name": "METAL SHRIMP RAIL TORSO", "maker": "CRUSTA DYNAMICS", "cost": 108, "hp": 54, "mass": 16, "length": 0.92, "heat_capacity": 22, "normal_damage": 1, "damage_type": "pierce", "material_class": "torso", "torso_material": "metal", "connection_ends": 8, "is_torso": true, "archetype": "shrimp", "joint_ports": 8, "weapon_bays": 5, "engine_slots": 1, "booster_slots": 3, "cooling_slots": 2, "module_slots": 6, "torso_slots": 3, "torso_slot_mass_limit": 48.0, "shape": "shrimp", "radius": 0.2, "speed_mult": 1.05, "counter_tiers": {"bullet": 1, "chemical": 1, "laser": 1, "blunt": 1, "pierce": 2, "tear": 1}, "resist": {"bullet": 0.96, "chemical": 1.06, "laser": 1.0, "blunt": 0.96, "pierce": 0.92, "tear": 1.02}, "summary": "Top-down shrimp shell torso with many side sockets. Medium mass, good port density, and clean forward thrust silhouette"},
 		{"name": "CERAMIC SHRIMP BULWARK", "maker": "CRUSTA DYNAMICS", "cost": 132, "hp": 76, "mass": 30, "length": 1.02, "heat_capacity": 24, "normal_damage": 1, "damage_type": "blunt", "material_class": "torso", "torso_material": "ceramic", "connection_ends": 8, "is_torso": true, "archetype": "shrimp", "joint_ports": 8, "weapon_bays": 5, "engine_slots": 1, "booster_slots": 2, "cooling_slots": 2, "module_slots": 5, "torso_slots": 4, "torso_slot_mass_limit": 68.0, "shape": "shrimp", "radius": 0.26, "speed_mult": 0.92, "counter_tiers": {"bullet": 1, "chemical": 0, "laser": 2, "blunt": 2, "pierce": 2, "tear": 1}, "resist": {"bullet": 1.0, "chemical": 1.14, "laser": 0.94, "blunt": 0.92, "pierce": 0.9, "tear": 1.04}, "summary": "Ceramic shrimp torso. Heavier and tougher, with fewer module routes but excellent load-bearing side ports"},
 		{"name": "TIMBER SHRIMP FRAME", "maker": "ORBITAL BRIDGE", "cost": 72, "hp": 44, "mass": 11, "length": 0.84, "heat_capacity": 16, "normal_damage": 1, "damage_type": "blunt", "material_class": "torso", "torso_material": "wood", "connection_ends": 6, "is_torso": true, "archetype": "shrimp", "joint_ports": 6, "weapon_bays": 4, "engine_slots": 1, "booster_slots": 2, "cooling_slots": 1, "module_slots": 5, "torso_slots": 2, "torso_slot_mass_limit": 30.0, "shape": "shrimp", "radius": 0.18, "speed_mult": 1.1, "counter_tiers": {"bullet": 1, "chemical": 0, "laser": 0, "blunt": 1, "pierce": 1, "tear": 1}, "resist": {"bullet": 0.98, "chemical": 1.18, "laser": 1.16, "blunt": 1.0, "pierce": 1.08, "tear": 1.08}, "summary": "Light wooden shrimp frame. Cheap, fast, and easy to slot into early sorties, but poor under heat and corrosion"},
@@ -8406,30 +9508,32 @@ const COMMON_CATALOG = {
 		{"name": "MAZE ONE-WAY FIRING SCREEN PANEL", "maker": "LONGSIGHT BALLISTICS", "cost": 86, "hp": 70, "mass": 30, "length": 0.82, "normal_damage": 0, "damage_type": "laser", "material_class": "one_way_shield", "connection_ends": 2, "shape": "one_way_shield", "radius": 0.16, "barrier_panel": true, "barrier_tile_component": true, "panel_family": "screen", "is_one_way_shield": true, "shield_radius": 0.72, "shield_lane_width": 0.26, "shield_pass_mode": "directional", "shield_pass_direction": "facing", "shield_block_damage_mult": 0.54, "shield_affects": "enemy", "summary": "Directional firing screen panel. Friendly shots from the planned side pass through while enemy fire is softened"},
 		{"name": "MAZE ENTRY BREACH CHARGE PANEL", "maker": "ORBITAL BRIDGE", "cost": 82, "hp": 28, "mass": 14, "length": 0.38, "normal_damage": 0, "damage_type": "laser", "material_class": "entry_breach", "connection_ends": 2, "shape": "repulsor_field", "radius": 0.12, "barrier_panel": true, "barrier_tile_component": true, "panel_family": "entry_breach", "entry_breach_damage": 92, "entry_breach_damage_type": "laser", "entry_breach_self_heat": 30.0, "summary": "Forced-entry maze panel. If the barrier entry overlaps an enemy barrier piece, this panel sacrifices itself to blast a legal opening"},
 		{"name": "MAZE HARDLIGHT CAGE WALL PANEL", "maker": "COLOSSUS KENNEL", "cost": 88, "hp": 132, "mass": 96, "length": 1.1, "normal_damage": 1, "damage_type": "laser", "material_class": "barrier_wall", "connection_ends": 2, "shape": "arc_wall", "radius": 0.24, "barrier_panel": true, "barrier_tile_component": true, "panel_family": "wall", "is_cage_wall": true, "cage_radius": 0.84, "cage_damage": 8, "cage_damage_type": "laser", "cage_repel": 0.42, "cage_hit_interval": 0.55, "cage_affects": "enemy", "cage_shape": "line", "summary": "Heavy cage wall panel for building maze corridors. Enemies touching its hardlight edge are repelled and chipped"},
+		{"name": "长视制式来复枪 / LONGSIGHT PATTERN RIFLE", "maker": "LONGSIGHT AEGIS", "cost": 82, "hp": 24, "mass": 9, "energy": 16, "length": 0.68, "normal_damage": 6, "projectile_damage": 6, "damage_type": "bullet", "projectile_damage_type": "bullet", "gun_kind": "rifle", "ammo_kind": "bullet", "carried_ammo": 30, "ammo_capacity": {"bullet": 30}, "fire_rate": 5.0, "fire_interval": 0.2, "projectile_range": 2.8, "range": 2.8, "projectile_speed_mult": 3.2, "projectile_momentum": 22.0, "projectile_width_m": 0.08, "projectile_damage_coeff": 12.0, "projectile_consumes_on_fire": true, "normal_heat": 5.5, "recoil": 0.09, "projectile": true, "projectile_only": true, "projectile_behavior": "bullet_hell", "projectile_style": "bullet_hell", "travel_path": "straight", "material_class": "gun", "connection_ends": 1, "shape": "rifle", "radius": 0.065, "size_class": "medium", "summary": "Longsight pattern rifle: visible short-burst bullets, no true-bullet lock, low single-shot damage, built for sustained suppression through an explicit rifle module."},
+		{"name": "红线跳爆榴弹枪 / REDLINE HOPPER GRENADE LAUNCHER", "maker": "REDLINE ARMS", "cost": 118, "hp": 26, "mass": 14, "energy": 26, "length": 0.74, "normal_damage": 8, "projectile_damage": 8, "damage_type": "bullet", "projectile_damage_type": "explosion", "gun_kind": "grenade_launcher", "ammo_kind": "explosive", "carried_ammo": 6, "ammo_capacity": {"explosive": 6}, "fire_rate": 0.9, "fire_interval": 1.111111, "projectile_range": 2.65, "range": 2.65, "projectile_speed_mult": 1.35, "projectile_momentum": 72.0, "projectile_width_m": 0.18, "projectile_damage_coeff": 18.0, "projectile_consumes_on_fire": true, "explosion_damage": 9, "explosion_radius": 0.56, "explosion_damage_type": "bullet", "explosion_style": "grenade", "normal_heat": 28.0, "recoil": 0.16, "projectile": true, "projectile_only": true, "projectile_behavior": "explosive", "projectile_style": "explosive", "travel_path": "arc_u", "material_class": "gun", "connection_ends": 1, "shape": "mortar", "radius": 0.11, "size_class": "medium", "summary": "Redline hopper grenade launcher: slow visible arcing explosive rounds, manual fire only, no lock-on or missile seeker behavior."},
 	],
 	"booster": [
-		{"name": "SPARK SWARM MICRO THRUSTER", "maker": "COMMON STARTER", "cost": 24, "hp": 0, "mass": 1.2, "thruster_family": "swarm_micro", "thruster_duration": 0.24, "boost_momentum": 34.0, "boost_duration": 0.22, "slot_volume_tier": "XS", "brake_efficiency": 0.72, "recoil_cancel": 0.12, "flame_color": "blue", "speed_mult": 1.04, "cornering": 1.08, "torso_slot_payload": true, "attach_modes": ["torso_edge", "limb_tip"], "summary": "XS swarm thruster: cheap attitude and escape movement for tiny puppets; too small for heavy weapons."},
-		{"name": "BLUE XS CRUISE THRUSTER", "maker": "AFTERBURN UNION", "cost": 42, "hp": 0, "mass": 2.0, "thruster_family": "cruise_blue", "thruster_duration": 0.30, "boost_momentum": 48.0, "boost_duration": 0.30, "slot_volume_tier": "XS", "brake_efficiency": 0.95, "recoil_cancel": 0.34, "flame_color": "blue", "speed_mult": 1.12, "cornering": 1.06, "torso_slot_payload": true, "attach_modes": ["torso_edge", "limb_tip"], "summary": "XS blue cruise thruster: strong normal movement for scouts, modest boost, clean low heat."},
-		{"name": "RED XS OVERBURN DART", "maker": "REDLINE METEORICS", "cost": 54, "hp": 0, "mass": 2.2, "thruster_family": "overburn_red", "thruster_duration": 0.18, "boost_momentum": 74.0, "boost_duration": 0.16, "slot_volume_tier": "XS", "brake_efficiency": 0.82, "recoil_cancel": 0.26, "flame_color": "red", "speed_mult": 0.96, "cornering": 1.0, "torso_slot_payload": true, "attach_modes": ["torso_edge", "limb_tip"], "summary": "XS red overburn dart: violent knife-range burst, poor cruising, fast heat growth."},
-		{"name": "LIGHT SWARM FORMATION THRUSTER", "maker": "COMMON STARTER", "cost": 48, "hp": 0, "mass": 3.0, "thruster_family": "swarm_micro", "thruster_duration": 0.26, "boost_momentum": 70.0, "boost_duration": 0.24, "slot_volume_tier": "S", "brake_efficiency": 0.78, "recoil_cancel": 0.22, "flame_color": "blue", "speed_mult": 1.04, "cornering": 1.12, "torso_slot_payload": true, "attach_modes": ["torso_edge", "limb_tip"], "summary": "S swarm thruster: cheap small-unit mobility for puppet groups; not a main hero drive."},
-		{"name": "BLUE S CRUISE THRUSTER", "maker": "AFTERBURN UNION", "cost": 78, "hp": 0, "mass": 6.0, "thruster_family": "cruise_blue", "thruster_duration": 0.30, "boost_momentum": 96.0, "boost_duration": 0.30, "slot_volume_tier": "S", "brake_efficiency": 1.0, "recoil_cancel": 0.46, "flame_color": "blue", "speed_mult": 1.16, "cornering": 1.08, "torso_slot_payload": true, "attach_modes": ["torso_edge", "limb_tip"], "summary": "S blue cruise thruster: light hero default with reliable ordinary thrust and readable boost."},
-		{"name": "YELLOW S SUSTAIN THRUSTER", "maker": "COINRUN DYNAMICS", "cost": 84, "hp": 0, "mass": 6.5, "thruster_family": "sustain_yellow", "thruster_duration": 0.42, "boost_momentum": 104.0, "boost_duration": 0.58, "slot_volume_tier": "S", "brake_efficiency": 0.9, "recoil_cancel": 0.34, "flame_color": "yellow", "speed_mult": 1.02, "cornering": 1.18, "torso_slot_payload": true, "attach_modes": ["torso_edge", "limb_tip"], "summary": "S yellow sustain thruster: lower normal push, long cool boost strings for chase and support."},
-		{"name": "COUNTER S BRAKE POD", "maker": "LONGSIGHT AEGIS", "cost": 92, "hp": 0, "mass": 7.5, "thruster_family": "counter_brake", "thruster_duration": 0.28, "boost_momentum": 96.0, "boost_duration": 0.26, "slot_volume_tier": "S", "brake_efficiency": 1.45, "recoil_cancel": 0.9, "flame_color": "blue", "speed_mult": 0.98, "cornering": 1.0, "torso_slot_payload": true, "attach_modes": ["torso_edge", "limb_tip"], "summary": "S counter-brake pod: small recoil and braking stabilizer for rifles and light gauntlets."},
-		{"name": "RED S OVERBURN BOOSTER", "maker": "REDLINE METEORICS", "cost": 98, "hp": 0, "mass": 7.0, "thruster_family": "overburn_red", "thruster_duration": 0.18, "boost_momentum": 148.0, "boost_duration": 0.18, "slot_volume_tier": "S", "brake_efficiency": 0.86, "recoil_cancel": 0.42, "flame_color": "red", "speed_mult": 0.96, "cornering": 1.0, "torso_slot_payload": true, "attach_modes": ["torso_edge", "limb_tip"], "summary": "S red overburn booster: high heat burst entry for light melee, weak cruising."},
-		{"name": "BLUE M CRUISE THRUSTER", "maker": "AFTERBURN UNION", "cost": 124, "hp": 0, "mass": 14.0, "thruster_family": "cruise_blue", "thruster_duration": 0.30, "boost_momentum": 196.0, "boost_duration": 0.30, "slot_volume_tier": "M", "brake_efficiency": 1.0, "recoil_cancel": 0.62, "flame_color": "blue", "speed_mult": 1.12, "cornering": 1.08, "torso_slot_payload": true, "attach_modes": ["torso_edge", "limb_tip"], "summary": "M blue cruise thruster: midfield default, strong ordinary movement and honest boost."},
-		{"name": "YELLOW M LONG BOOST THRUSTER", "maker": "COINRUN DYNAMICS", "cost": 132, "hp": 0, "mass": 15.0, "thruster_family": "sustain_yellow", "thruster_duration": 0.46, "boost_momentum": 206.0, "boost_duration": 0.76, "slot_volume_tier": "M", "brake_efficiency": 0.92, "recoil_cancel": 0.48, "flame_color": "yellow", "speed_mult": 1.0, "cornering": 1.16, "torso_slot_payload": true, "attach_modes": ["torso_edge", "limb_tip"], "summary": "M yellow sustain thruster: repeated boost pressure with low heat, less immediate burst."},
-		{"name": "COUNTER M IMPULSE BRAKE", "maker": "LONGSIGHT AEGIS", "cost": 148, "hp": 0, "mass": 18.0, "thruster_family": "counter_brake", "thruster_duration": 0.28, "boost_momentum": 230.0, "boost_duration": 0.28, "slot_volume_tier": "M", "brake_efficiency": 1.65, "recoil_cancel": 1.24, "flame_color": "blue", "speed_mult": 0.96, "cornering": 1.0, "torso_slot_payload": true, "attach_modes": ["torso_edge", "limb_tip"], "summary": "M counter-brake thruster: cancels rifle recoil and heavy limb reaction better than it races."},
-		{"name": "RED M METEOR BOOSTER", "maker": "REDLINE METEORICS", "cost": 158, "hp": 0, "mass": 20.0, "thruster_family": "overburn_red", "thruster_duration": 0.18, "boost_momentum": 286.0, "boost_duration": 0.20, "slot_volume_tier": "M", "brake_efficiency": 0.88, "recoil_cancel": 0.64, "flame_color": "red", "speed_mult": 0.94, "cornering": 0.98, "torso_slot_payload": true, "attach_modes": ["torso_edge", "limb_tip"], "summary": "M red overburn booster: explosive close-range entry for blades, drills, and gauntlets."},
-		{"name": "BLUE L CRUISE BANK", "maker": "AFTERBURN UNION", "cost": 198, "hp": 0, "mass": 34.0, "thruster_family": "cruise_blue", "thruster_duration": 0.32, "boost_momentum": 370.0, "boost_duration": 0.32, "slot_volume_tier": "L", "brake_efficiency": 1.02, "recoil_cancel": 0.86, "flame_color": "blue", "speed_mult": 1.04, "cornering": 1.02, "torso_slot_payload": true, "attach_modes": ["torso_edge", "limb_tip"], "summary": "L blue cruise bank: large-frame normal thrust for ranged lines and mixed weapon teams."},
-		{"name": "YELLOW L MARATHON BOOST BANK", "maker": "COINRUN DYNAMICS", "cost": 216, "hp": 0, "mass": 38.0, "thruster_family": "sustain_yellow", "thruster_duration": 0.50, "boost_momentum": 390.0, "boost_duration": 0.88, "slot_volume_tier": "L", "brake_efficiency": 0.95, "recoil_cancel": 0.72, "flame_color": "yellow", "speed_mult": 0.98, "cornering": 1.08, "torso_slot_payload": true, "attach_modes": ["torso_edge", "limb_tip"], "summary": "L yellow sustain bank: low-heat repeated boosts for big support frames and long chases."},
-		{"name": "COUNTER L REACTION KEEPER", "maker": "COLOSSUS KENNEL", "cost": 226, "hp": 0, "mass": 46.0, "thruster_family": "counter_brake", "thruster_duration": 0.30, "boost_momentum": 430.0, "boost_duration": 0.30, "slot_volume_tier": "L", "brake_efficiency": 1.82, "recoil_cancel": 1.48, "flame_color": "blue", "speed_mult": 0.92, "cornering": 0.96, "torso_slot_payload": true, "attach_modes": ["torso_edge", "limb_tip"], "summary": "L counter-brake keeper: stops heavy melee recoil and cannon kick before the torso drifts away."},
-		{"name": "RED L OVERBURN BANK", "maker": "REDLINE METEORICS", "cost": 246, "hp": 0, "mass": 48.0, "thruster_family": "overburn_red", "thruster_duration": 0.20, "boost_momentum": 570.0, "boost_duration": 0.22, "slot_volume_tier": "L", "brake_efficiency": 0.9, "recoil_cancel": 0.88, "flame_color": "red", "speed_mult": 0.9, "cornering": 0.92, "torso_slot_payload": true, "attach_modes": ["torso_edge", "limb_tip"], "summary": "L red overburn bank: one hard dash can start a combo or cook the hero."},
-		{"name": "TITAN L VECTOR PLATE", "maker": "COLOSSUS KENNEL", "cost": 258, "hp": 0, "mass": 56.0, "thruster_family": "titan_vector", "thruster_duration": 0.36, "boost_momentum": 430.0, "boost_duration": 0.36, "slot_volume_tier": "L", "brake_efficiency": 1.25, "recoil_cancel": 1.25, "flame_color": "blue", "speed_mult": 0.86, "cornering": 0.88, "torso_slot_payload": true, "attach_modes": ["torso_edge", "limb_tip"], "summary": "L titan vector plate: high mass and high push for shields, giant blades, and siege bodies."},
-		{"name": "BLUE XL CRUISE ARRAY", "maker": "AFTERBURN UNION", "cost": 330, "hp": 0, "mass": 86.0, "thruster_family": "cruise_blue", "thruster_duration": 0.34, "boost_momentum": 720.0, "boost_duration": 0.34, "slot_volume_tier": "XL", "brake_efficiency": 1.02, "recoil_cancel": 1.08, "flame_color": "blue", "speed_mult": 0.86, "cornering": 0.82, "torso_slot_payload": true, "attach_modes": ["torso_edge", "limb_tip"], "summary": "XL blue cruise array: monster-frame ordinary thrust with readable, controlled boost."},
-		{"name": "YELLOW XL SUSTAIN ARRAY", "maker": "COINRUN DYNAMICS", "cost": 352, "hp": 0, "mass": 92.0, "thruster_family": "sustain_yellow", "thruster_duration": 0.54, "boost_momentum": 790.0, "boost_duration": 1.00, "slot_volume_tier": "XL", "brake_efficiency": 0.98, "recoil_cancel": 0.98, "flame_color": "yellow", "speed_mult": 0.8, "cornering": 0.82, "torso_slot_payload": true, "attach_modes": ["torso_edge", "limb_tip"], "summary": "XL yellow sustain array: repeated monster boosts without instantly drowning the heat budget."},
-		{"name": "COUNTER XL GRAVITY HEEL", "maker": "COLOSSUS KENNEL", "cost": 372, "hp": 0, "mass": 112.0, "thruster_family": "counter_brake", "thruster_duration": 0.34, "boost_momentum": 780.0, "boost_duration": 0.34, "slot_volume_tier": "XL", "brake_efficiency": 2.0, "recoil_cancel": 1.75, "flame_color": "blue", "speed_mult": 0.72, "cornering": 0.76, "torso_slot_payload": true, "attach_modes": ["torso_edge", "limb_tip"], "summary": "XL counter-brake heel: for colossal melee and artillery frames that must not fly backward after impact."},
-		{"name": "RED XL APOGEE OVERBURN", "maker": "REDLINE METEORICS", "cost": 410, "hp": 0, "mass": 118.0, "thruster_family": "overburn_red", "thruster_duration": 0.22, "boost_momentum": 1060.0, "boost_duration": 0.24, "slot_volume_tier": "XL", "brake_efficiency": 0.92, "recoil_cancel": 1.18, "flame_color": "red", "speed_mult": 0.7, "cornering": 0.72, "torso_slot_payload": true, "attach_modes": ["torso_edge", "limb_tip"], "summary": "XL red overburn: absurd burst for fortress bodies, with severe heat and recovery demands."},
-		{"name": "TITAN XL VECTOR FURNACE", "maker": "COLOSSUS KENNEL", "cost": 430, "hp": 0, "mass": 138.0, "thruster_family": "titan_vector", "thruster_duration": 0.40, "boost_momentum": 870.0, "boost_duration": 0.40, "slot_volume_tier": "XL", "brake_efficiency": 1.32, "recoil_cancel": 1.48, "flame_color": "blue", "speed_mult": 0.68, "cornering": 0.68, "torso_slot_payload": true, "attach_modes": ["torso_edge", "limb_tip"], "summary": "XL titan vector furnace: heavy, honest push for siege bodies and giant close-combat shells."},
+		{"name": "SPARK SWARM MICRO THRUSTER", "maker": "COMMON STARTER", "cost": 24, "mass": 1.2, "thruster_family": "swarm_micro", "thruster_duration": 0.24, "boost_momentum": 34.0, "boost_duration": 0.22, "slot_volume_tier": "XS", "brake_efficiency": 0.72, "recoil_cancel": 0.12, "flame_color": "blue", "speed_mult": 1.04, "cornering": 1.08, "torso_slot_payload": true, "attach_modes": ["torso_edge", "limb_tip"], "summary": "XS swarm thruster: cheap attitude and escape movement for tiny puppets; too small for heavy weapons."},
+		{"name": "BLUE XS CRUISE THRUSTER", "maker": "AFTERBURN UNION", "cost": 42, "mass": 2.0, "thruster_family": "cruise_blue", "thruster_duration": 0.30, "boost_momentum": 48.0, "boost_duration": 0.30, "slot_volume_tier": "XS", "brake_efficiency": 0.95, "recoil_cancel": 0.34, "flame_color": "blue", "speed_mult": 1.12, "cornering": 1.06, "torso_slot_payload": true, "attach_modes": ["torso_edge", "limb_tip"], "summary": "XS blue cruise thruster: strong normal movement for scouts, modest boost, clean low heat."},
+		{"name": "RED XS OVERBURN DART", "maker": "REDLINE METEORICS", "cost": 54, "mass": 2.2, "thruster_family": "overburn_red", "thruster_duration": 0.18, "boost_momentum": 74.0, "boost_duration": 0.16, "slot_volume_tier": "XS", "brake_efficiency": 0.82, "recoil_cancel": 0.26, "flame_color": "red", "speed_mult": 0.96, "cornering": 1.0, "torso_slot_payload": true, "attach_modes": ["torso_edge", "limb_tip"], "summary": "XS red overburn dart: violent knife-range burst, poor cruising, fast heat growth."},
+		{"name": "LIGHT SWARM FORMATION THRUSTER", "maker": "COMMON STARTER", "cost": 48, "mass": 3.0, "thruster_family": "swarm_micro", "thruster_duration": 0.26, "boost_momentum": 70.0, "boost_duration": 0.24, "slot_volume_tier": "S", "brake_efficiency": 0.78, "recoil_cancel": 0.22, "flame_color": "blue", "speed_mult": 1.04, "cornering": 1.12, "torso_slot_payload": true, "attach_modes": ["torso_edge", "limb_tip"], "summary": "S swarm thruster: cheap small-unit mobility for puppet groups; not a main hero drive."},
+		{"name": "BLUE S CRUISE THRUSTER", "maker": "AFTERBURN UNION", "cost": 78, "mass": 6.0, "thruster_family": "cruise_blue", "thruster_duration": 0.30, "boost_momentum": 96.0, "boost_duration": 0.30, "slot_volume_tier": "S", "brake_efficiency": 1.0, "recoil_cancel": 0.46, "flame_color": "blue", "speed_mult": 1.16, "cornering": 1.08, "torso_slot_payload": true, "attach_modes": ["torso_edge", "limb_tip"], "summary": "S blue cruise thruster: light hero default with reliable ordinary thrust and readable boost."},
+		{"name": "YELLOW S SUSTAIN THRUSTER", "maker": "COINRUN DYNAMICS", "cost": 84, "mass": 6.5, "thruster_family": "sustain_yellow", "thruster_duration": 0.42, "boost_momentum": 104.0, "boost_duration": 0.58, "slot_volume_tier": "S", "brake_efficiency": 0.9, "recoil_cancel": 0.34, "flame_color": "yellow", "speed_mult": 1.02, "cornering": 1.18, "torso_slot_payload": true, "attach_modes": ["torso_edge", "limb_tip"], "summary": "S yellow sustain thruster: lower normal push, long cool boost strings for chase and support."},
+		{"name": "COUNTER S BRAKE POD", "maker": "LONGSIGHT AEGIS", "cost": 92, "mass": 7.5, "thruster_family": "counter_brake", "thruster_duration": 0.28, "boost_momentum": 96.0, "boost_duration": 0.26, "slot_volume_tier": "S", "brake_efficiency": 1.45, "recoil_cancel": 0.9, "flame_color": "blue", "speed_mult": 0.98, "cornering": 1.0, "torso_slot_payload": true, "attach_modes": ["torso_edge", "limb_tip"], "summary": "S counter-brake pod: small recoil and braking stabilizer for rifles and light gauntlets."},
+		{"name": "RED S OVERBURN BOOSTER", "maker": "REDLINE METEORICS", "cost": 98, "mass": 7.0, "thruster_family": "overburn_red", "thruster_duration": 0.18, "boost_momentum": 148.0, "boost_duration": 0.18, "slot_volume_tier": "S", "brake_efficiency": 0.86, "recoil_cancel": 0.42, "flame_color": "red", "speed_mult": 0.96, "cornering": 1.0, "torso_slot_payload": true, "attach_modes": ["torso_edge", "limb_tip"], "summary": "S red overburn booster: high heat burst entry for light melee, weak cruising."},
+		{"name": "BLUE M CRUISE THRUSTER", "maker": "AFTERBURN UNION", "cost": 124, "mass": 14.0, "thruster_family": "cruise_blue", "thruster_duration": 0.30, "boost_momentum": 196.0, "boost_duration": 0.30, "slot_volume_tier": "M", "brake_efficiency": 1.0, "recoil_cancel": 0.62, "flame_color": "blue", "speed_mult": 1.12, "cornering": 1.08, "torso_slot_payload": true, "attach_modes": ["torso_edge", "limb_tip"], "summary": "M blue cruise thruster: midfield default, strong ordinary movement and honest boost."},
+		{"name": "YELLOW M LONG BOOST THRUSTER", "maker": "COINRUN DYNAMICS", "cost": 132, "mass": 15.0, "thruster_family": "sustain_yellow", "thruster_duration": 0.46, "boost_momentum": 206.0, "boost_duration": 0.76, "slot_volume_tier": "M", "brake_efficiency": 0.92, "recoil_cancel": 0.48, "flame_color": "yellow", "speed_mult": 1.0, "cornering": 1.16, "torso_slot_payload": true, "attach_modes": ["torso_edge", "limb_tip"], "summary": "M yellow sustain thruster: repeated boost pressure with low heat, less immediate burst."},
+		{"name": "COUNTER M IMPULSE BRAKE", "maker": "LONGSIGHT AEGIS", "cost": 148, "mass": 18.0, "thruster_family": "counter_brake", "thruster_duration": 0.28, "boost_momentum": 230.0, "boost_duration": 0.28, "slot_volume_tier": "M", "brake_efficiency": 1.65, "recoil_cancel": 1.24, "flame_color": "blue", "speed_mult": 0.96, "cornering": 1.0, "torso_slot_payload": true, "attach_modes": ["torso_edge", "limb_tip"], "summary": "M counter-brake thruster: cancels rifle recoil and heavy limb reaction better than it races."},
+		{"name": "RED M METEOR BOOSTER", "maker": "REDLINE METEORICS", "cost": 158, "mass": 20.0, "thruster_family": "overburn_red", "thruster_duration": 0.18, "boost_momentum": 286.0, "boost_duration": 0.20, "slot_volume_tier": "M", "brake_efficiency": 0.88, "recoil_cancel": 0.64, "flame_color": "red", "speed_mult": 0.94, "cornering": 0.98, "torso_slot_payload": true, "attach_modes": ["torso_edge", "limb_tip"], "summary": "M red overburn booster: explosive close-range entry for blades, drills, and gauntlets."},
+		{"name": "BLUE L CRUISE BANK", "maker": "AFTERBURN UNION", "cost": 198, "mass": 34.0, "thruster_family": "cruise_blue", "thruster_duration": 0.32, "boost_momentum": 370.0, "boost_duration": 0.32, "slot_volume_tier": "L", "brake_efficiency": 1.02, "recoil_cancel": 0.86, "flame_color": "blue", "speed_mult": 1.04, "cornering": 1.02, "torso_slot_payload": true, "attach_modes": ["torso_edge", "limb_tip"], "summary": "L blue cruise bank: large-frame normal thrust for ranged lines and mixed weapon teams."},
+		{"name": "YELLOW L MARATHON BOOST BANK", "maker": "COINRUN DYNAMICS", "cost": 216, "mass": 38.0, "thruster_family": "sustain_yellow", "thruster_duration": 0.50, "boost_momentum": 390.0, "boost_duration": 0.88, "slot_volume_tier": "L", "brake_efficiency": 0.95, "recoil_cancel": 0.72, "flame_color": "yellow", "speed_mult": 0.98, "cornering": 1.08, "torso_slot_payload": true, "attach_modes": ["torso_edge", "limb_tip"], "summary": "L yellow sustain bank: low-heat repeated boosts for big support frames and long chases."},
+		{"name": "COUNTER L REACTION KEEPER", "maker": "COLOSSUS KENNEL", "cost": 226, "mass": 46.0, "thruster_family": "counter_brake", "thruster_duration": 0.30, "boost_momentum": 430.0, "boost_duration": 0.30, "slot_volume_tier": "L", "brake_efficiency": 1.82, "recoil_cancel": 1.48, "flame_color": "blue", "speed_mult": 0.92, "cornering": 0.96, "torso_slot_payload": true, "attach_modes": ["torso_edge", "limb_tip"], "summary": "L counter-brake keeper: stops heavy melee recoil and cannon kick before the torso drifts away."},
+		{"name": "RED L OVERBURN BANK", "maker": "REDLINE METEORICS", "cost": 246, "mass": 48.0, "thruster_family": "overburn_red", "thruster_duration": 0.20, "boost_momentum": 570.0, "boost_duration": 0.22, "slot_volume_tier": "L", "brake_efficiency": 0.9, "recoil_cancel": 0.88, "flame_color": "red", "speed_mult": 0.9, "cornering": 0.92, "torso_slot_payload": true, "attach_modes": ["torso_edge", "limb_tip"], "summary": "L red overburn bank: one hard dash can start a combo or cook the hero."},
+		{"name": "TITAN L VECTOR PLATE", "maker": "COLOSSUS KENNEL", "cost": 258, "mass": 56.0, "thruster_family": "titan_vector", "thruster_duration": 0.36, "boost_momentum": 430.0, "boost_duration": 0.36, "slot_volume_tier": "L", "brake_efficiency": 1.25, "recoil_cancel": 1.25, "flame_color": "blue", "speed_mult": 0.86, "cornering": 0.88, "torso_slot_payload": true, "attach_modes": ["torso_edge", "limb_tip"], "summary": "L titan vector plate: high mass and high push for shields, giant blades, and siege bodies."},
+		{"name": "BLUE XL CRUISE ARRAY", "maker": "AFTERBURN UNION", "cost": 330, "mass": 86.0, "thruster_family": "cruise_blue", "thruster_duration": 0.34, "boost_momentum": 720.0, "boost_duration": 0.34, "slot_volume_tier": "XL", "brake_efficiency": 1.02, "recoil_cancel": 1.08, "flame_color": "blue", "speed_mult": 0.86, "cornering": 0.82, "torso_slot_payload": true, "attach_modes": ["torso_edge", "limb_tip"], "summary": "XL blue cruise array: monster-frame ordinary thrust with readable, controlled boost."},
+		{"name": "YELLOW XL SUSTAIN ARRAY", "maker": "COINRUN DYNAMICS", "cost": 352, "mass": 92.0, "thruster_family": "sustain_yellow", "thruster_duration": 0.54, "boost_momentum": 790.0, "boost_duration": 1.00, "slot_volume_tier": "XL", "brake_efficiency": 0.98, "recoil_cancel": 0.98, "flame_color": "yellow", "speed_mult": 0.8, "cornering": 0.82, "torso_slot_payload": true, "attach_modes": ["torso_edge", "limb_tip"], "summary": "XL yellow sustain array: repeated monster boosts without instantly drowning the heat budget."},
+		{"name": "COUNTER XL GRAVITY HEEL", "maker": "COLOSSUS KENNEL", "cost": 372, "mass": 112.0, "thruster_family": "counter_brake", "thruster_duration": 0.34, "boost_momentum": 780.0, "boost_duration": 0.34, "slot_volume_tier": "XL", "brake_efficiency": 2.0, "recoil_cancel": 1.75, "flame_color": "blue", "speed_mult": 0.72, "cornering": 0.76, "torso_slot_payload": true, "attach_modes": ["torso_edge", "limb_tip"], "summary": "XL counter-brake heel: for colossal melee and artillery frames that must not fly backward after impact."},
+		{"name": "RED XL APOGEE OVERBURN", "maker": "REDLINE METEORICS", "cost": 410, "mass": 118.0, "thruster_family": "overburn_red", "thruster_duration": 0.22, "boost_momentum": 1060.0, "boost_duration": 0.24, "slot_volume_tier": "XL", "brake_efficiency": 0.92, "recoil_cancel": 1.18, "flame_color": "red", "speed_mult": 0.7, "cornering": 0.72, "torso_slot_payload": true, "attach_modes": ["torso_edge", "limb_tip"], "summary": "XL red overburn: absurd burst for fortress bodies, with severe heat and recovery demands."},
+		{"name": "TITAN XL VECTOR FURNACE", "maker": "COLOSSUS KENNEL", "cost": 430, "mass": 138.0, "thruster_family": "titan_vector", "thruster_duration": 0.40, "boost_momentum": 870.0, "boost_duration": 0.40, "slot_volume_tier": "XL", "brake_efficiency": 1.32, "recoil_cancel": 1.48, "flame_color": "blue", "speed_mult": 0.68, "cornering": 0.68, "torso_slot_payload": true, "attach_modes": ["torso_edge", "limb_tip"], "summary": "XL titan vector furnace: heavy, honest push for siege bodies and giant close-combat shells."},
 	],
 	"engine": [
 		{"name": "SPARK SWARM LITE ENGINE", "maker": "COMMON STARTER", "cost": 28, "hp": 6, "engine_family": "swarm_lite", "slot_volume_tier": "XS", "mass": 1.5, "speed_mult": 1.08, "heat_capacity": 8, "summary": "XS swarm-lite engine. Cheap legal power for tiny puppets and scout bodies; not a main drive for heavy weapons."},
@@ -8457,106 +9561,108 @@ const COMMON_CATALOG = {
 		{"name": "GLACIER RADIATOR FIN", "cost": 138, "hp": 52, "mass": 36, "cooling": 66, "heat_capacity": 62, "cooling_profile": "heavy_radiator", "weapon_heat_tags": ["chemical", "explosive", "repeat"], "manual_cooling_bonus": 8.0, "chemical_heat_relief": 0.12, "missile_heat_relief": 0.08, "repeat_heat_relief": 0.08, "overheat_shutdown_mult": 0.82, "summary": "Massive exposed radiator for large frames that want sustained weapons without becoming a universal light-build answer."},
 	],
 	"module": [
-		{"name": "CHAIN SWING", "cost": 45, "hp": 12, "mass": 2, "aim_mode": "fixed", "motion": "chain", "normal_damage": 4, "active_damage": 8, "damage_type": "tear", "command": "236", "skill_state": "active", "summary": "1: Chain swing action module"},
-		{"name": "ROD SWING", "cost": 45, "hp": 14, "mass": 3, "aim_mode": "fixed", "motion": "rod", "normal_damage": 5, "range": 0.08, "damage_type": "blunt", "command": "236", "skill_state": "active", "summary": "2: Straight rod swing"},
-		{"name": "SWING ASSAULT", "cost": 70, "hp": 14, "mass": 3, "aim_mode": "auto", "motion": "pendulum", "active_damage": 12, "active_range": 0.18, "damage_type": "blunt", "command": "236", "skill_state": "active", "summary": "3: Auto-swing assault"},
-		{"name": "DIRECT ASSAULT", "cost": 80, "hp": 14, "mass": 3, "aim_mode": "fixed", "motion": "straight", "active_damage": 14, "active_range": 0.34, "active_heat": 54.0, "damage_type": "pierce", "command": "236", "skill_state": "active", "summary": "4: 236X active rush"},
-		{"name": "MANUAL AIM", "cost": 65, "hp": 12, "mass": 2, "aim_mode": "manual", "motion": "aimed", "normal_damage": 4, "range": 0.12, "damage_type": "pierce", "command": "214", "skill_state": "armor", "armor_damage": 12, "armor_heat": 44.0, "summary": "5: Hold attack and steer aim line"},
-		{"name": "SWING AIM", "cost": 75, "hp": 14, "mass": 3, "aim_mode": "manual", "motion": "pendulum", "aim_swing": 1.7, "range": 0.18, "normal_damage": 5, "damage_type": "tear", "command": "214", "skill_state": "armor", "summary": "6: Manual pendulum aim"},
-		{"name": "AUTO AIM", "cost": 90, "hp": 16, "mass": 3, "aim_mode": "auto", "motion": "auto_line", "auto_swing": 2.8, "range": 0.22, "normal_damage": 6, "damage_type": "bullet", "command": "632146", "skill_state": "active", "active_damage": 22, "active_range": 0.6, "active_heat": 78.0, "projectile": true, "summary": "7: Auto sweeping line, release to fire"},
-		{"name": "CHAIN CLAMP", "cost": 85, "hp": 20, "mass": 4, "aim_mode": "manual", "motion": "chain_clamp", "normal_damage": 8, "armor_damage": 13, "damage_type": "tear", "command": "214", "skill_state": "armor", "summary": "8: Chain clamp"},
-		{"name": "ROD CLAMP", "cost": 80, "hp": 22, "mass": 5, "aim_mode": "fixed", "motion": "rod_clamp", "normal_damage": 10, "armor_damage": 12, "damage_type": "blunt", "command": "214", "skill_state": "armor", "summary": "9: Rod clamp"},
-		{"name": "CHAIN DEFLECT", "cost": 70, "hp": 18, "mass": 3, "aim_mode": "manual", "motion": "chain_deflect", "armor_duration": 0.24, "armor_damage": 9, "damage_type": "tear", "command": "214", "skill_state": "armor", "summary": "10: Chain deflect"},
-		{"name": "ROD DEFLECT", "cost": 65, "hp": 20, "mass": 4, "aim_mode": "fixed", "motion": "rod_deflect", "armor_duration": 0.3, "armor_damage": 10, "damage_type": "blunt", "command": "214", "skill_state": "armor", "summary": "11: Rod deflect"},
-		{"name": "AUTO: GUARD ORBIT", "cost": 58, "hp": 0, "mass": 0, "aim_mode": "auto", "motion": "software", "ai": "guard_orbit", "sequence": ["normal", "armor"], "orbit_radius": 0.45, "summary": "Software module: if this unit becomes a puppet, guard-orbit the hero"},
-		{"name": "AUTO: PINCER HUNT", "cost": 72, "hp": 0, "mass": 0, "aim_mode": "auto", "motion": "software", "ai": "pincer", "sequence": ["normal", "active"], "flank_width": 0.74, "summary": "Software module: if puppet, split and collapse from two lanes"},
-		{"name": "AUTO: SCREEN WALL", "cost": 66, "hp": 0, "mass": 0, "aim_mode": "auto", "motion": "software", "ai": "screen_wall", "sequence": ["armor", "normal"], "summary": "Software module: if puppet, form a moving shield line"},
-		{"name": "AUTO: MINE DANCE", "cost": 86, "hp": 0, "mass": 0, "aim_mode": "auto", "motion": "software", "ai": "mine_dance", "sequence": ["normal", "normal", "active", "armor"], "orbit_radius": 0.62, "summary": "Software module: if puppet, dance around target and place strike pockets"},
-		{"name": "SHIFT: BECOME HERO", "cost": 110, "hp": 0, "mass": 0, "aim_mode": "fixed", "motion": "identity_shift", "command": "236", "skill_state": "active", "role_switch": "hero", "switch_cooldown": 2.4, "summary": "Identity module: puppet/barrier/hero attempts to become the active hero"},
-		{"name": "SHIFT: BECOME PUPPET", "cost": 92, "hp": 0, "mass": 0, "aim_mode": "fixed", "motion": "identity_shift", "command": "214", "skill_state": "armor", "role_switch": "puppet", "ai": "guard_orbit", "sequence": ["normal", "armor"], "switch_cooldown": 1.8, "summary": "Identity module: hero/barrier can shed direct control and run puppet software"},
-		{"name": "SHIFT: BECOME BARRIER", "cost": 96, "hp": 0, "mass": 0, "aim_mode": "fixed", "motion": "identity_shift", "command": "632146", "skill_state": "armor", "role_switch": "barrier", "barrier_logic": "riposte_mirror", "pulse_interval": 1.1, "switch_cooldown": 2.1, "summary": "Identity module: collapse topology into a spatial barrier"},
-		{"name": "SHIFT: ROLE CYCLER", "cost": 128, "hp": 0, "mass": 0, "aim_mode": "auto", "motion": "identity_shift", "command": "236", "skill_state": "active", "role_switch": "cycle", "ai": "pincer", "barrier_logic": "heat_well", "aura_heat": 10.0, "switch_cooldown": 1.6, "summary": "Identity module: cycles hero -> puppet -> barrier -> hero"},
-		{"name": "FRACTURE BROOD", "cost": 118, "hp": 0, "mass": 0, "aim_mode": "auto", "motion": "fracture_brood", "command": "214214", "skill_state": "armor", "module_effect": "torso_fracture_brood", "fracture_trigger": "torso_tear", "fracture_exception_group": true, "fracture_ai": "guard_orbit", "summary": "Passive rupture software: snake/centipede torso cuts spawn temporary puppet fragments while the soul-bearing torso remains controllable"},
-		{"name": "EJECT: LINE LAUNCH", "cost": 82, "hp": 0, "mass": 0, "aim_mode": "fixed", "motion": "eject", "command": "236", "skill_state": "active", "module_effect": "eject", "module_state": "active", "travel_path": "straight", "module_range": 1.65, "module_lane_range": 0.28, "module_damage_mult": 1.08, "summary": "Launch selected part in a straight path; the flying part has its own hit check"},
-		{"name": "EJECT: U-ARC SEND", "cost": 98, "hp": 0, "mass": 0, "aim_mode": "manual", "motion": "eject_arc", "command": "214", "skill_state": "armor", "module_effect": "eject", "module_state": "armor", "travel_path": "arc_u", "module_range": 1.9, "module_lane_range": 0.44, "module_damage_mult": 0.92, "summary": "Launch a part on a U-shaped route; slower but reaches around lanes"},
-		{"name": "RECEIVER: PART SOCKET", "cost": 48, "hp": 0, "mass": 0, "aim_mode": "fixed", "motion": "receiver", "receiver": true, "summary": "Software socket that can accept launched parts from ally eject modules"},
-		{"name": "CHAIN RECALL", "cost": 92, "hp": 0, "mass": 0, "aim_mode": "manual", "motion": "chain_recall", "command": "214", "skill_state": "armor", "module_effect": "chain_recall", "module_state": "armor", "travel_path": "tether", "projectile_style": "chain", "module_range": 1.35, "module_lane_range": 0.42, "module_damage_mult": 0.88, "pull_power": 0.14, "summary": "Shoot a chained weapon outward and reel it back; useful with chain muscle plus glove/thruster"},
-		{"name": "CHAOS FOCUS SHOT", "cost": 118, "hp": 0, "mass": 0, "aim_mode": "manual", "motion": "chaos_shot", "command": "236", "skill_state": "active", "module_effect": "chaos_shot", "damage_type": "bullet", "projectile": true, "charge_time": 0.42, "focus_cost": 18.0, "summary": "Hold module button to focus, release for near-instant line shot; consumes heat/focus"},
-		{"name": "GRAPPLE CAPTURE", "cost": 86, "hp": 0, "mass": 0, "aim_mode": "manual", "motion": "grapple", "command": "236", "skill_state": "armor", "module_effect": "capture", "module_state": "armor", "travel_path": "hook", "projectile_style": "chain", "module_range": 1.25, "module_lane_range": 0.38, "module_damage_mult": 0.72, "pull_power": 0.22, "summary": "Catch a material or enemy body; mass decides which side is pulled closer"},
-		{"name": "ENTANGLE WRAP", "cost": 104, "hp": 0, "mass": 0, "aim_mode": "auto", "motion": "entangle", "command": "632146", "skill_state": "active", "module_effect": "entangle", "module_state": "active", "travel_path": "spiral", "projectile_style": "chain", "module_range": 1.05, "module_lane_range": 0.52, "module_damage_mult": 0.58, "pull_power": 0.18, "summary": "Wrap a unit or map piece with topology tension, briefly dragging and slowing it"},
-		{"name": "BARRIER SNAP THROW", "cost": 96, "hp": 0, "mass": 0, "aim_mode": "fixed", "motion": "barrier_break", "command": "214", "skill_state": "armor", "module_effect": "barrier_break", "module_state": "armor", "travel_path": "throw_arc", "projectile_style": "thrown", "module_range": 1.45, "module_lane_range": 0.4, "module_damage_mult": 0.8, "summary": "Rip a material chunk from a barrier-map segment and throw it forward"},
-		{"name": "BOOT ACTION DRIVER", "cost": 8, "hp": 0, "mass": 0, "aim_mode": "fixed", "motion": "straight", "normal_damage": 1, "range": 0.02, "damage_type": "blunt", "command": "236", "skill_state": "active", "summary": "Bare software driver; keeps initial units legal but offers almost no offense"},
-		{"name": "TURRET TRAVERSE FIRE", "cost": 52, "hp": 0, "mass": 0, "aim_mode": "manual", "motion": "turret", "command": "236", "skill_state": "active", "projectile": true, "active_heat": 38.0, "module_range": 1.8, "module_lane_range": 0.2, "summary": "Manual turret aim module for tanks and fortress guns"},
-		{"name": "BARRIER: GALAXY CASTLE", "cost": 130, "hp": 0, "mass": 0, "aim_mode": "auto", "motion": "fortress_logic", "command": "632146", "skill_state": "active", "barrier_logic": "galaxy_castle", "aura_range": 0.88, "aura_heat": 10.0, "slow_power": 0.24, "pulse_interval": 0.72, "summary": "Fortress logic: traps, gates, heat rooms, and reactive pulses like a tiny galactic Metroidvania"},
-		{"name": "BARRIER: REACTIVE GATE", "cost": 82, "hp": 0, "mass": 0, "aim_mode": "auto", "motion": "reactive_gate", "command": "214", "skill_state": "armor", "barrier_logic": "reactive_gate", "aura_range": 0.62, "pulse_interval": 0.9, "active_damage": 10, "summary": "A barrier action module that automatically snaps shut when enemies enter its trigger space"},
-		{"name": "TRAP LINK: ALPHA", "cost": 44, "hp": 0, "mass": 0, "aim_mode": "fixed", "motion": "trap_control", "command": "236", "module_effect": "trap_control", "trap_link": "alpha", "summary": "Attack-button software: sacrifices this limb action to trigger linked alpha traps when the command is entered"},
-		{"name": "TRAP LINK: BETA SPRING", "cost": 62, "hp": 0, "mass": 0, "aim_mode": "manual", "motion": "trap_control", "command": "2146", "module_effect": "trap_control", "trap_link": "beta", "summary": "Attack-button software for spring and catapult traps; input direction controls launch direction"},
-		{"name": "TRAP LINK: CONDUCTOR", "cost": 98, "hp": 0, "mass": 0, "aim_mode": "auto", "motion": "trap_control", "command": "632146", "module_effect": "trap_control", "trap_link": "all", "summary": "Premium trap controller: one attack button can trigger any linked trap in its team if targets are inside"},
-		{"name": "THROW: SHIELD BOOMERANG", "cost": 132, "hp": 0, "mass": 0, "aim_mode": "manual", "motion": "boomerang_throw", "command": "236", "skill_state": "active", "module_effect": "boomerang_recall", "module_state": "active", "travel_path": "boomerang", "projectile_style": "shield", "module_range": 2.2, "module_lane_range": 0.5, "module_damage_mult": 0.95, "return_damage_mult": 0.58, "self_receiver": true, "summary": "Throw one muscle or a small group and recall it to the same mech like a shield arc"},
-		{"name": "THROW: BOOSTED PART GUIDANCE", "cost": 164, "hp": 0, "mass": 0, "aim_mode": "manual", "motion": "guided_eject", "command": "214", "skill_state": "active", "module_effect": "guided_eject", "module_state": "active", "travel_path": "guided_curve", "projectile_style": "guided", "module_range": 2.65, "module_lane_range": 0.72, "module_damage_mult": 1.02, "steer_power": 0.46, "boosted_throw": true, "summary": "High-price combined module: thrown part can steer mid-flight if the thrown group has a booster"},
-		{"name": "THROW: GROUP DISC", "cost": 118, "hp": 0, "mass": 0, "aim_mode": "auto", "motion": "group_disc", "command": "632146", "skill_state": "armor", "module_effect": "group_throw", "module_state": "armor", "travel_path": "wide_return", "projectile_style": "shield", "module_range": 1.75, "module_lane_range": 0.86, "module_damage_mult": 0.72, "thrown_group": true, "self_receiver": true, "summary": "Throws a whole component group as a broad returning disc; safer coverage, lower damage"},
-		{"name": "RECEIVER: SELF CATCH LOOP", "cost": 44, "hp": 0, "mass": 0, "aim_mode": "fixed", "motion": "self_receiver", "receiver": true, "self_receiver": true, "return_damage_mult": 0.34, "summary": "Cheap receiver software for a mech to catch its own thrown part on return"},
-		{"name": "GUIDANCE: MIDFLIGHT NUDGE", "cost": 58, "hp": 0, "mass": 0, "aim_mode": "manual", "motion": "throw_guidance", "module_effect": "throw_guidance", "steer_power": 0.24, "summary": "Cheap helper module that improves thrown-part direction changes when paired with an eject module"},
-		{"name": "WEB: EDGE SWING", "cost": 76, "hp": 0, "mass": 0, "aim_mode": "manual", "motion": "web_anchor", "command": "236", "skill_state": "active", "module_effect": "web_anchor", "module_state": "active", "travel_path": "tether", "projectile_style": "web", "module_range": 2.35, "module_lane_range": 0.58, "module_damage_mult": 0.0, "non_damage": true, "web_strength": 0.24, "web_break_force": 0.68, "web_pull_mode": "self_to_anchor", "summary": "Shoot silk into a wall/barrier-like point and swing the shooter toward it; snaps if tension exceeds module limit"},
-		{"name": "WEB: PUPPET REEL", "cost": 94, "hp": 0, "mass": 0, "aim_mode": "manual", "motion": "web_reel", "command": "214", "skill_state": "armor", "module_effect": "web_reel", "module_state": "armor", "travel_path": "tether", "projectile_style": "web", "module_range": 2.15, "module_lane_range": 0.48, "module_damage_mult": 0.0, "non_damage": true, "web_strength": 0.32, "web_break_force": 0.84, "web_pull_mode": "target_to_self", "summary": "Non-damaging reel logic: drags puppet bodies or light heroes toward the user"},
-		{"name": "WEB: MASS TETHER DUEL", "cost": 132, "hp": 0, "mass": 0, "aim_mode": "auto", "motion": "web_tether", "command": "632146", "skill_state": "active", "module_effect": "web_tether", "module_state": "active", "travel_path": "tether", "projectile_style": "web", "module_range": 2.85, "module_lane_range": 0.68, "module_damage_mult": 0.0, "non_damage": true, "web_strength": 0.46, "web_break_force": 1.1, "web_pull_mode": "mass_duel", "summary": "Strong cable contest; heavier body moves less, lighter body gets reeled harder"},
-		{"name": "蛛丝牵引 / WEB TETHER ACTIVATE", "cost": 72, "hp": 0, "mass": 0, "aim_mode": "manual", "motion": "gun_activate", "requires_bound_key": true, "module_target_kind": "gun_terminal", "module_action_profile": "web_tether_activate", "gun_activation": "web_tether_activate", "hold_to_activate": true, "gun_rotate_speed": 0.0, "travel_path": "tether", "projectile_style": "web", "projectile_behavior": "web_tether", "module_range": 4.4, "module_lane_range": 0.04, "module_damage_mult": 0.0, "non_damage": true, "web_target_filter": "all", "web_anchor_swing": true, "web_swing_uses_melee_collision": true, "web_strength": 0.34, "web_break_force": 1.08, "web_pull_mode": "mass_duel", "summary": "按住绑定键发射蛛丝枪。可牵引敌我单位；射向上下边界时建立摆荡锚点。蛛丝不直接造成 HP 伤害，摆荡后的真实碰撞按实体动量结算。"},
-		{"name": "LIGHTSINK: AREA DENIAL", "cost": 88, "hp": 0, "mass": 0, "aim_mode": "manual", "motion": "light_sink", "command": "214", "skill_state": "armor", "module_effect": "light_sink", "module_state": "armor", "travel_path": "arc_u", "projectile_style": "blind", "module_range": 2.55, "module_lane_range": 0.74, "module_damage_mult": 0.0, "non_damage": true, "blind_radius": 0.68, "blind_duration": 2.65, "blind_strength": 0.6, "summary": "Drops a light-absorbing pocket. The owner sees through it; enemies inside suffer blind aim and retreat pressure"},
-		{"name": "LIGHTSINK: ECLIPSE SCREEN", "cost": 146, "hp": 0, "mass": 0, "aim_mode": "auto", "motion": "eclipse_screen", "command": "632146", "skill_state": "active", "module_effect": "light_sink", "module_state": "active", "travel_path": "wide_return", "projectile_style": "blind", "module_range": 3.1, "module_lane_range": 0.96, "module_damage_mult": 0.0, "non_damage": true, "blind_radius": 0.98, "blind_duration": 3.45, "blind_strength": 0.86, "summary": "High-price screen tool: claims a large visual-control zone without direct damage"},
-		{"name": "HEAT RITE: VENT BLOOM", "maker": "GLACIER MONKS", "cost": 72, "hp": 0, "mass": 0, "aim_mode": "fixed", "motion": "active_cool", "command": "214214", "skill_state": "armor", "module_effect": "active_cool", "cool_burst": 46.0, "cool_lock": 0.44, "cool_overheat_clear": true, "summary": "Command cooling module: 214214 + state vents a large heat chunk, locking movement briefly"},
-		{"name": "HEAT RITE: WHITEOUT DUMP", "maker": "GLACIER MONKS", "cost": 126, "hp": 0, "mass": 0, "aim_mode": "fixed", "motion": "active_cool", "command": "632146", "skill_state": "armor", "module_effect": "active_cool", "cool_burst": 82.0, "cool_lock": 0.62, "cool_overheat_clear": true, "summary": "Expensive active cooling command for extreme heat builds; huge vent with a longer immobile beat"},
-		{"name": "FIREWALL: HARDENED ROUTE", "maker": "CIPHER WARD", "cost": 54, "hp": 0, "mass": 0, "aim_mode": "fixed", "motion": "firewall", "command": "214", "skill_state": "armor", "data_security": 0.42, "summary": "Passive security software. Raises the unit's data-security value without adding volume"},
-		{"name": "FIREWALL: AIR-GAPPED DRIVER", "maker": "CIPHER WARD", "cost": 96, "hp": 0, "mass": 0, "aim_mode": "fixed", "motion": "firewall", "command": "632146", "skill_state": "armor", "data_security": 0.82, "summary": "High-grade firewall module. Great against paralysis, hack fields, bootleg betrayal, and takeover rods"},
-		{"name": "OPEN PORT: VIOLENT INTERFACE", "maker": "NEURAL TETHER RESEARCH", "cost": 64, "hp": 0, "mass": 0, "aim_mode": "manual", "motion": "open_port", "command": "236", "skill_state": "active", "module_damage_mult": 1.18, "takeover_power": 0.18, "data_security": -0.36, "summary": "Risky aggressive interface. Improves intrusion pressure, but leaves the owner's machine easier to hack"},
-		{"name": "AEGIS VEIL: BULLET MIRROR", "maker": "AEGIS SELECTIVE", "cost": 74, "hp": 0, "mass": 0, "aim_mode": "fixed", "motion": "projectile_shield", "command": "214", "skill_state": "armor", "module_effect": "projectile_shield", "shield_duration": 1.15, "reflect_types": ["bullet"], "reflect_power": 0.72, "reflect_bonus_range": 0.72, "summary": "Command shield: reflects bullet projectiles for a short window. Excellent with corridor ricochet plans"},
-		{"name": "AEGIS VEIL: SPECTRUM MIRROR", "maker": "AEGIS SELECTIVE", "cost": 148, "hp": 0, "mass": 0, "aim_mode": "fixed", "motion": "projectile_shield", "command": "632146", "skill_state": "armor", "module_effect": "projectile_shield", "shield_duration": 1.35, "reflect_types": ["bullet", "chemical", "laser"], "reflect_power": 0.86, "reflect_bonus_range": 1.05, "summary": "Expensive command shield that reflects all three projectile damage types for a brief, readable timing window"},
-		{"name": "LOADOUT: TERMINAL SWAP", "cost": 54, "hp": 0, "mass": 0, "aim_mode": "fixed", "motion": "weapon_swap", "command": "236236", "skill_state": "active", "module_effect": "weapon_swap", "summary": "Command software for torso weapon bays. Switches the six attack buttons between current limbs and carried terminal-muscle weapons"},
-		{"name": "CONTROL: PAGE SHIFT", "cost": 68, "hp": 0, "mass": 0, "aim_mode": "fixed", "motion": "control_page_shift", "command": "214214", "skill_state": "armor", "module_effect": "control_page_shift", "control_pages": ["limb", "spare", "trap"], "can_control_traps": true, "summary": "Switches what the six attack buttons operate: mech limbs, spare weapons, or linked traps/barrier mechanisms"},
-		{"name": "DUAL LIMB: SIEGE SWING", "maker": "MONOCHROME FORGE", "cost": 108, "hp": 0, "mass": 0, "aim_mode": "manual", "motion": "dual_limb_swing", "command": "236", "skill_state": "active", "module_effect": "dual_mount_action", "dual_mount_module": true, "dual_mount_load_mult": 1.72, "recoil_brace_mult": 0.72, "module_damage_mult": 1.12, "summary": "Action software for two limbs sharing one large melee weapon. Braces attack momentum and changes swing solving into a two-arm arc"},
-		{"name": "DUAL LIMB: RAIL BRACE", "maker": "RECOIL LATTICE", "cost": 126, "hp": 0, "mass": 0, "aim_mode": "manual", "motion": "dual_limb_brace", "command": "2146", "skill_state": "armor", "module_effect": "dual_mount_action", "dual_mount_module": true, "dual_mount_load_mult": 1.95, "recoil_brace_mult": 0.52, "module_damage_mult": 1.04, "summary": "Two-limb bracing software for oversized guns and cannons. Greatly reduces recoil but commits the topology during firing"},
-		{"name": "RETREAT: BLACKBOX EJECT", "cost": 74, "hp": 0, "mass": 0, "aim_mode": "fixed", "motion": "retreat", "retreat_on_defeat": true, "retreat_repair_rate": 7.5, "repair_time_mult": 1.0, "summary": "When this machine would be defeated, it withdraws offscreen and slowly repairs instead of dying"},
-		{"name": "RETREAT: DOCK SEEKER", "cost": 112, "hp": 0, "mass": 0, "aim_mode": "auto", "motion": "retreat", "retreat_on_defeat": true, "retreat_repair_rate": 10.0, "repair_time_mult": 0.78, "prefer_repair_station": true, "summary": "Defeat-triggered retreat that seeks a friendly repair station; station repair is much faster, but dock destruction kills occupants"},
-		{"name": "MORPH: TOPOLOGY SHIFT", "cost": 128, "hp": 0, "mass": 0, "aim_mode": "fixed", "motion": "morph", "command": "236", "skill_state": "active", "module_effect": "morph", "morph_modes": ["combat", "travel"], "morph_cooldown": 2.8, "summary": "Switches the controlled component group between saved topology connection modes. Prototype changes silhouette only"},
-		{"name": "MORPH: MULTI-FORM DRIVER", "cost": 188, "hp": 0, "mass": 0, "aim_mode": "auto", "motion": "morph", "command": "632146", "skill_state": "active", "module_effect": "morph", "morph_modes": ["combat", "travel", "siege"], "morph_cooldown": 2.2, "summary": "Higher-price morph software with three or more saved topology modes for complex mechs"},
-		{"name": "FOLD PARADE: STAGE TO SQUAD", "maker": "FOLD PARADE", "cost": 156, "hp": 0, "mass": 0, "aim_mode": "fixed", "motion": "identity_shift", "command": "236214", "skill_state": "active", "module_effect": "fold_barrier_squad", "role_switch": "puppet", "ai": "screen_wall", "group_count": 4, "sequence": ["armor", "normal", "active"], "switch_cooldown": 2.8, "summary": "Command switch module: turns a Fold Parade barrier into a four-mech puppet squad, or lets a squad refold toward barrier logic"},
-		{"name": "RACKET SERVE", "cost": 86, "hp": 0, "mass": 0, "aim_mode": "manual", "motion": "racket_serve", "command": "236", "skill_state": "active", "module_effect": "racket_serve", "module_state": "active", "racket_power": 1.2, "serve_range": 0.75, "summary": "Tennis-like swing module: bats nearby allied ball puppets forward as inertial projectiles"},
-		{"name": "RACKET SMASH DRIVER", "cost": 138, "hp": 0, "mass": 0, "aim_mode": "auto", "motion": "racket_smash", "command": "632146", "skill_state": "armor", "module_effect": "racket_serve", "module_state": "armor", "racket_power": 1.75, "serve_range": 0.92, "summary": "Heavier racket action with armor timing and stronger launch speed"},
-		{"name": "COMBINE: DOCKING FRAME", "cost": 120, "hp": 0, "mass": 0, "aim_mode": "fixed", "motion": "combine", "command": "236", "skill_state": "active", "module_effect": "combine", "combine_range": 0.56, "combine_bonus_hp": 28, "summary": "Combines with a nearby allied unit that also has a combine module. Trigger again to separate"},
-		{"name": "COMBINE: RAID BODY", "cost": 190, "hp": 0, "mass": 0, "aim_mode": "auto", "motion": "combine", "command": "632146", "skill_state": "armor", "module_effect": "combine", "combine_range": 0.72, "combine_bonus_hp": 64, "summary": "Expensive combine software for large legal pre/post-combination topology states"},
-		{"name": "UMBRA: REAR VECTOR ROUTE", "maker": "UMBRA REARWORKS", "cost": 78, "hp": 0, "mass": 0, "aim_mode": "manual", "motion": "rear_vector", "command": "2146", "skill_state": "active", "back_hit_heat_bonus": 12.0, "back_hit_heat_mult": 1.18, "module_damage_mult": 1.02, "summary": "Back-attack software. Routes this attack group toward rear angles and adds extra heat when the hit lands on the target's back"},
-		{"name": "UMBRA: THERMAL SHOCK SCRIPT", "maker": "UMBRA REARWORKS", "cost": 134, "hp": 0, "mass": 0, "aim_mode": "auto", "motion": "thermal_shock", "command": "632146", "skill_state": "active", "back_hit_heat_bonus": 26.0, "back_hit_heat_mult": 1.34, "module_damage_mult": 0.94, "summary": "Premium rear-hit script. Sacrifices some direct damage to push back hits rapidly toward overheat shock"},
-		{"name": "ACTION 1: QUICK 90 BALL SWING", "cost": 42, "hp": 0, "mass": 0, "aim_mode": "fixed", "motion": "rod", "requires_bound_key": true, "module_target_kind": "ball_joint", "required_joint_degrees": 90, "swing_arc_degrees": 90.0, "module_action_profile": "swing_90", "normal_damage": 4, "armor_damage": 7, "active_damage": 8, "armor_heat": 24.0, "active_heat": 28.0, "damage_type": "blunt", "summary": "Canonical Action 1: bind X to a selected 90-degree ball joint. X swings; 236X armor-state swing; 214X active-state swing. Actual speed follows the torque/engine/mass solver"},
-		{"name": "ACTION 2: QUICK 1M TELESCOPIC THRUST", "cost": 46, "hp": 0, "mass": 0, "aim_mode": "fixed", "motion": "thrust", "requires_bound_key": true, "module_target_kind": "telescopic_joint", "required_extension_m": 1.0, "module_extension_m": 1.0, "module_action_profile": "extend_1m", "range": 0.18, "normal_damage": 4, "armor_damage": 7, "active_damage": 8, "armor_heat": 25.0, "active_heat": 30.0, "damage_type": "pierce", "summary": "Canonical Action 2: bind X to a selected telescopic joint rated for 1m extension. X extends; 236X armor-state extension; 214X active-state extension. Speed is solved from engine output, joint power, and mass"},
-		{"name": "枪械启动 / GUN ACTIVATE", "cost": 64, "hp": 0, "mass": 0, "aim_mode": "manual", "motion": "gun_activate", "requires_bound_key": true, "module_target_kind": "gun_terminal", "module_action_profile": "gun_activate", "gun_activation": "gun_activate", "hold_to_activate": true, "gun_rotate_speed": 0.0, "normal_damage": 2, "damage_type": "bullet", "summary": "按住绑定键启动枪械。狙击枪：瞄准锁定后松开发射；化学喷射器：按住持续喷射。启动中局部4/6持续旋转枪口。"},
-		{"name": "ACTION 4: MEDIUM 180 BALL SWING", "cost": 56, "hp": 0, "mass": 0, "aim_mode": "fixed", "motion": "pendulum", "requires_bound_key": true, "module_target_kind": "ball_joint", "required_joint_degrees": 180, "swing_arc_degrees": 180.0, "module_action_profile": "swing_180", "normal_damage": 5, "armor_damage": 8, "active_damage": 10, "armor_heat": 30.0, "active_heat": 36.0, "damage_type": "blunt", "summary": "Canonical Action 4: bind X to a selected 180-degree ball joint. X swings through a wide arc; 236X armor-state swing; 214X active-state swing. Speed follows torque, engine, and mass"},
-		{"name": "ACTION 5: MEDIUM 2M TELESCOPIC THRUST", "cost": 62, "hp": 0, "mass": 0, "aim_mode": "fixed", "motion": "direct", "requires_bound_key": true, "module_target_kind": "telescopic_joint", "required_extension_m": 2.0, "module_extension_m": 2.0, "module_action_profile": "extend_2m", "range": 0.34, "normal_damage": 5, "armor_damage": 9, "active_damage": 11, "armor_heat": 32.0, "active_heat": 40.0, "damage_type": "pierce", "summary": "Canonical Action 5: bind X to a selected telescopic joint rated for 2m extension. X extends; 236X armor-state extension; 214X active-state extension. Speed follows torque, engine, and mass"},
-		{"name": "SPIN CROWN: 360 BALL DRIVER", "cost": 74, "hp": 0, "mass": 0, "aim_mode": "fixed", "motion": "rod", "requires_bound_key": true, "module_target_kind": "ball_joint", "required_joint_degrees": 360, "swing_arc_degrees": 360.0, "module_action_profile": "swing_360", "normal_damage": 5, "armor_damage": 9, "active_damage": 10, "armor_heat": 32.0, "active_heat": 38.0, "damage_type": "blunt", "summary": "Bind X to a selected 360-degree ball joint. X swings through 360 degrees; 236X armor-state swing; 214X active-state swing. Speed is solved from joint torque, engine output, and mass"},
-		{"name": "SIEGE RAM: 3M LINEAR DRIVER", "cost": 88, "hp": 0, "mass": 0, "aim_mode": "fixed", "motion": "thrust", "requires_bound_key": true, "module_target_kind": "telescopic_joint", "required_extension_m": 3.0, "module_extension_m": 3.0, "module_action_profile": "extend_3m", "range": 0.46, "normal_damage": 5, "armor_damage": 10, "active_damage": 11, "armor_heat": 36.0, "active_heat": 44.0, "damage_type": "pierce", "summary": "Bind X to a selected telescopic joint rated for 3m extension. X extends 3m; 236X armor-state extension; 214X active-state extension. Extension speed depends on torque, engine output, and attached mass"},
-		{"name": "GUNNER WRIST: QE MANUAL SWEEP", "cost": 72, "hp": 0, "mass": 0, "aim_mode": "manual", "motion": "manual_aim", "requires_bound_key": true, "module_target_kind": "gun_joint", "requires_connected_gun": true, "hold_to_activate": true, "gun_activation": "hold_turn_sweep", "turn_keys_steer_joint": true, "manual_turn_rate": 3.4, "true_bullet_release_lock": true, "laser_public_aim": true, "bullet_hell_immediate_fire": true, "chemical_splash_immediate": true, "normal_damage": 2, "armor_damage": 4, "active_damage": 5, "damage_type": "bullet", "summary": "Hold X to activate the connected gun while Q/E manually sweeps the selected joint. True bullets keep the lock and fire after release; lasers show public aim; bullet-hell and chemical guns fire directly while activated"},
-		{"name": "双段正锋折返 / TWO-LINK FORWARD SNAP", "cost": 66, "hp": 0, "mass": 0, "aim_mode": "fixed", "motion": "two_link_forward_snap", "requires_bound_key": true, "module_target_kind": "two_link_rotating_limb", "module_action_profile": "two_link_forward_snap", "command_window_profile": "two_link_4_6", "requires_two_rotating_muscles": true, "two_link_action": true, "startup_ratio": 0.333333, "recovery_ratio": 0.666667, "two_link_straight_phase": 0.333333, "startup_pose": "straight_forward", "recovery_pose": "foldback_parallel", "normal_damage": 12, "armor_damage": 15, "active_damage": 18, "armor_heat": 30.0, "active_heat": 36.0, "damage_type": "blunt", "summary": "Bind X to one two-segment rotating limb. Startup is the first third: both segments strike straight forward. Recovery is the final two thirds: first segment folds backward parallel to the torso axis while the second folds forward; this module alone uses front+X for armor and rear+X for active."},
-		{"name": "PAIR RAM: 2M TWIN LINEAR DRIVER", "cost": 78, "hp": 0, "mass": 0, "aim_mode": "fixed", "motion": "direct", "requires_bound_key": true, "module_target_kind": "dual_telescopic_joint", "required_extension_m": 2.0, "module_extension_m": 2.0, "module_action_profile": "dual_extend_2m", "requires_joint_pair": true, "paired_attack_key": true, "paired_joint_count": 2, "dual_joint_action": true, "range": 0.36, "normal_damage": 5, "armor_damage": 9, "active_damage": 11, "armor_heat": 32.0, "active_heat": 40.0, "damage_type": "pierce", "summary": "Bind one attack key to two selected telescopic joints rated for 2m extension. X extends both 2m; 236X armor-state extension; 214X active-state extension"},
-		{"name": "CLAW MIRROR: INWARD PINCER DRIVER", "cost": 92, "hp": 0, "mass": 0, "aim_mode": "fixed", "motion": "pincer_clamp", "requires_bound_key": true, "module_target_kind": "dual_ball_joint", "required_joint_degrees": 120, "swing_arc_degrees": 120.0, "module_action_profile": "inward_pincer_clamp", "requires_joint_pair": true, "paired_attack_key": true, "paired_joint_count": 2, "dual_joint_action": true, "paired_motion": "inward_clamp", "pincer_close_until_contact": true, "clamp_close_angle_degrees": 150.0, "normal_damage": 7, "armor_damage": 13, "active_damage": 14, "armor_heat": 38.0, "active_heat": 44.0, "damage_type": "blunt", "summary": "Two selected ball joints rotate toward each other until the attached terminal muscles meet, forming a claw clamp. X clamps; 236X armor-state clamp; 214X active-state clamp"},
-		{"name": "TETHER CAST: AUTOSWING EJECT", "cost": 104, "hp": 0, "mass": 0, "aim_mode": "auto", "motion": "swing_aim", "requires_bound_key": true, "module_target_kind": "ejectable_muscle_joint", "requires_ejectable_muscle": true, "hold_to_activate": true, "release_to_fire": true, "aim_swing_editable": true, "auto_swing": 1.45, "aim_swing_min": 0.45, "aim_swing_max": 4.2, "module_effect": "eject", "travel_path": "arc", "module_range": 2.45, "module_lane_range": 0.42, "module_damage_mult": 1.0, "normal_damage": 4, "armor_damage": 8, "active_damage": 9, "armor_heat": 34.0, "active_heat": 42.0, "damage_type": "blunt", "summary": "Hold X to auto-swing the selected joint as an aim line, with swing speed intended to be edited in Team Edit. Release X to eject the adjacent ejectable muscle or component group; 236X armor-state launch; 214X active-state launch"},
-		{"name": "WHIP WAKE: CHAIN BACKLASH", "cost": 86, "hp": 0, "mass": 0, "aim_mode": "fixed", "motion": "chain_lash", "requires_bound_key": true, "module_target_kind": "chain_limb_joint", "required_joint_degrees": 180, "swing_arc_degrees": 240.0, "module_action_profile": "chain_backlash", "normal_damage": 5, "armor_damage": 9, "active_damage": 12, "armor_heat": 34.0, "active_heat": 46.0, "damage_type": "tear", "summary": "Bind X to a chain/whip limb. The joint drives a delayed whip lash and inertial return; 236X armor-state lash; 214X active-state lash"},
-		{"name": "刃弧切返 / BLADE ARC RETURN", "cost": 112, "hp": 0, "mass": 0, "aim_mode": "fixed", "motion": "blade_arc_return", "requires_bound_key": true, "module_target_kind": "blade_ball_joint", "required_joint_degrees": 180, "swing_arc_degrees": 190.0, "module_action_profile": "blade_arc_return", "command_window_profile": "blade_simple_4_6", "startup_ratio": 0.36, "recovery_ratio": 0.64, "normal_damage": 9, "armor_damage": 12, "active_damage": 14, "damage_type": "tear", "summary": "Bind X to a rotating blade terminal or blade-carrying limb chain. X performs a sweep cut, 6X is an armor forward-pressure cut, and 4X is an active reverse return cut. This 4/6 rule belongs to this module profile only."},
-		{"name": "武士刀瞬斩 / KATANA QUICKDRAW", "cost": 86, "hp": 0, "mass": 0, "aim_mode": "fixed", "motion": "katana_quickdraw", "requires_bound_key": true, "module_target_kind": "blade_ball_joint", "required_joint_degrees": 120, "required_blade_family": "katana", "swing_arc_degrees": 128.0, "module_action_profile": "katana_quickdraw", "command_window_profile": "blade_simple_4_6", "startup_ratio": 0.24, "recovery_ratio": 0.76, "normal_damage": 8, "armor_damage": 10, "active_damage": 13, "damage_type": "tear", "summary": "Katana-only quickdraw module. X is a fast draw cut, 6X is an armor intercept cut, and 4X is an active turning cut. Low commitment and high tip speed."},
-		{"name": "镰月钩返 / SCYTHE HOOK RETURN", "cost": 104, "hp": 0, "mass": 0, "aim_mode": "fixed", "motion": "scythe_hook_return", "requires_bound_key": true, "module_target_kind": "blade_ball_joint", "required_joint_degrees": 180, "required_blade_family": "scythe", "swing_arc_degrees": 230.0, "module_action_profile": "scythe_hook_return", "command_window_profile": "blade_complex_236_214", "startup_ratio": 0.34, "recovery_ratio": 0.66, "normal_damage": 10, "armor_damage": 15, "active_damage": 16, "special_heat_fraction": 0.1, "damage_type": "tear", "summary": "Scythe-only hook module. X hooks and sweeps, 236X is an armor inward hook advance, and 214X is an active outward hook return. 26/24 are accepted as relaxed 236/214 inputs."},
-		{"name": "巨剑压斩 / GREATSWORD COMMIT CLEAVE", "cost": 132, "hp": 0, "mass": 0, "aim_mode": "fixed", "motion": "greatsword_commit_cleave", "requires_bound_key": true, "module_target_kind": "blade_ball_joint", "required_joint_degrees": 160, "required_blade_family": "greatsword", "swing_arc_degrees": 170.0, "module_action_profile": "greatsword_commit_cleave", "command_window_profile": "blade_complex_236_214", "startup_ratio": 0.42, "recovery_ratio": 0.58, "normal_damage": 13, "armor_damage": 20, "active_damage": 22, "special_heat_fraction": 0.1, "damage_type": "tear", "summary": "Greatsword-only committed cleave. X is a heavy cut, 236X is an armor crush cleave, and 214X is an active guard-breaking cleave. Slower, heavier, and built for high-stiffness limbs."},
-		{"name": "三肢轮切 / TRIPLE-LIMB CROSS CUT", "cost": 148, "hp": 0, "mass": 0, "aim_mode": "fixed", "motion": "triple_limb_cross_cut", "requires_bound_key": true, "module_target_kind": "blade_ball_joint", "required_joint_degrees": 180, "min_bound_nodes": 3, "swing_arc_degrees": 220.0, "module_action_profile": "triple_limb_cross_cut", "command_window_profile": "blade_complex_236_214", "startup_ratio": 0.38, "recovery_ratio": 0.62, "normal_damage": 12, "armor_damage": 18, "active_damage": 21, "special_heat_fraction": 0.1, "damage_type": "tear", "summary": "Three-link blade-chain module. Bind a three-part rotating limb ending in a blade. X cuts in sequence, 236X compresses all three links with armor, and 214X performs an active offset chase cut."},
-		{"name": "伸旋突斩 / EXTEND-SLASH DRIVER", "cost": 126, "hp": 0, "mass": 0, "aim_mode": "fixed", "motion": "extend_slash_driver", "requires_bound_key": true, "module_target_kind": "blade_ball_joint", "required_joint_degrees": 120, "requires_extend_or_hybrid_chain": true, "swing_arc_degrees": 150.0, "module_extension_m": 0.9, "module_action_profile": "extend_slash_driver", "command_window_profile": "blade_complex_236_214", "startup_ratio": 0.34, "recovery_ratio": 0.66, "normal_damage": 11, "armor_damage": 17, "active_damage": 19, "special_heat_fraction": 0.1, "damage_type": "tear", "summary": "Blade module for telescopic or hybrid-linked limbs. X extends then cuts, 236X is an armor inside extend-slash, and 214X is an active outside extend-slash."},
-		{"name": "LANCE RAIL: 3M PIERCE DRIVER", "cost": 108, "hp": 0, "mass": 0, "aim_mode": "fixed", "motion": "direct", "requires_bound_key": true, "module_target_kind": "pierce_telescopic_joint", "required_extension_m": 3.0, "module_extension_m": 3.0, "module_action_profile": "pierce_rail_3m", "range": 0.5, "normal_damage": 7, "armor_damage": 12, "active_damage": 16, "armor_heat": 42.0, "active_heat": 52.0, "damage_type": "pierce", "summary": "Bind X to a 3m telescopic joint carrying a lance, rapier, spike, or drill terminal. X rails it forward; 236X armor-state rail; 214X active-state rail"},
-		{"name": "拳套伸摆 / GAUNTLET EXTEND-SWING", "cost": 96, "hp": 0, "mass": 0, "aim_mode": "fixed", "motion": "gauntlet_extend_swing", "requires_bound_key": true, "module_target_kind": "blunt_hybrid_gauntlet", "required_joint_degrees": 180, "required_extension_m": 2.0, "module_extension_m": 2.0, "swing_arc_degrees": 70.0, "recovery_angle_degrees": 15.0, "module_action_profile": "blunt_gauntlet_extend_swing", "command_window_profile": "gauntlet_4_6_236_214", "startup_ratio": 0.333333, "recovery_ratio": 0.666667, "startup_pose": "gauntlet_extend_or_swing", "recovery_pose": "gauntlet_15deg_guard", "normal_damage": 12, "armor_damage": 16, "active_damage": 18, "special_heat_fraction": 0.1, "blunt_momentum_mult": 1.5, "damage_type": "blunt", "summary": "Bind X to a blunt gauntlet terminal with a hybrid rotate+extend joint. X extends, 4X swings outward, 6X swings inward, 236X armor inward extend-swing, and 214X active outward extend-swing. Specials consume 10% of the executing hero heat capacity."},
-		{"name": "盾牌架撞 / SHIELD GUARD-BASH", "cost": 74, "hp": 0, "mass": 0, "aim_mode": "fixed", "motion": "shield_guard_bash", "requires_bound_key": true, "module_target_kind": "blunt_shield_terminal", "required_joint_degrees": 90, "swing_arc_degrees": 82.0, "recovery_angle_degrees": 10.0, "module_action_profile": "blunt_shield_guard_bash", "command_window_profile": "blunt_terminal_4_6_236_214", "startup_ratio": 0.26, "recovery_ratio": 0.74, "normal_damage": 8, "armor_damage": 12, "active_damage": 14, "special_heat_fraction": 0.08, "blunt_momentum_mult": 1.2, "damage_type": "blunt", "summary": "Bind X to a blunt shield terminal with an embedded ball joint. X braces forward, 4X/6X side-bash, 236X armor guard-bash, and 214X active shoulder-bash. Damage is real contact only."},
-		{"name": "大锤蓄砸 / HAMMER WINDUP-SLAM", "cost": 112, "hp": 0, "mass": 0, "aim_mode": "fixed", "motion": "hammer_windup_slam", "requires_bound_key": true, "module_target_kind": "blunt_hammer_terminal", "required_joint_degrees": 120, "swing_arc_degrees": 150.0, "recovery_angle_degrees": -18.0, "module_action_profile": "blunt_hammer_windup_slam", "command_window_profile": "blunt_terminal_4_6_236_214", "startup_ratio": 0.45, "recovery_ratio": 0.55, "normal_damage": 10, "armor_damage": 17, "active_damage": 19, "special_heat_fraction": 0.12, "blunt_momentum_mult": 1.45, "damage_type": "blunt", "summary": "Bind X to a blunt hammer or maul terminal with an embedded ball joint. X short-swings, 4X/6X wind up side slams, 236X armor overhead slam, and 214X active committed side slam. Damage is real contact only."},
-		{"name": "RECOIL LOCK: BRACED GUN SWEEP", "maker": "RECOIL LATTICE", "cost": 102, "hp": 0, "mass": 0, "aim_mode": "manual", "motion": "manual_aim", "requires_bound_key": true, "module_target_kind": "braced_gun_joint", "requires_connected_gun": true, "hold_to_activate": true, "gun_activation": "braced_hold_sweep", "turn_keys_steer_joint": true, "manual_turn_rate": 2.2, "recoil_mult": 0.46, "true_bullet_release_lock": true, "laser_public_aim": true, "bullet_hell_immediate_fire": true, "chemical_splash_immediate": true, "normal_damage": 2, "armor_damage": 4, "active_damage": 6, "damage_type": "bullet", "summary": "Hold X to aim a connected gun with Q/E while the module braces the joint against recoil. It trades sweep speed for cleaner projectile lines"},
-		{"name": "SOUL CAST: FIRST RECEIVER", "cost": 142, "hp": 0, "mass": 0, "aim_mode": "fixed", "motion": "soul_cast", "command": "236214", "skill_state": "active", "module_effect": "soul_cast_transfer", "identity_receiver_role": "puppet", "identity_receiver_order": 0, "switch_cooldown": 2.6, "summary": "Identity command: fires the soul from the current hero to the first TeamEdit receiver puppet. The old body receives the target payload in return"},
-		{"name": "SOUL CAST: ETHER ASCENT", "cost": 158, "hp": 0, "mass": 0, "aim_mode": "fixed", "motion": "soul_cast", "command": "632146", "skill_state": "armor", "module_effect": "soul_cast_transfer", "identity_receiver_role": "barrier", "identity_receiver_order": 0, "switch_cooldown": 3.0, "summary": "Identity command: sends the hero soul into the active barrier receiver, making the former stage become the controlled hero body"},
-		{"name": "FORM SHIFT: MECH/BARRIER GATE", "cost": 136, "hp": 0, "mass": 0, "aim_mode": "fixed", "motion": "role_form_shift", "command": "214236", "skill_state": "active", "module_effect": "role_form_shift", "role_form_target_role": "cycle_mech_barrier", "role_form_mech_role": "puppet", "role_form_shape": "", "switch_cooldown": 2.2, "summary": "Topology command: the unit changes its own legal identity between mech and barrier without needing a second live exchanger"},
-		{"name": "COMBINE: TRIAD DOCK", "cost": 236, "hp": 0, "mass": 0, "aim_mode": "auto", "motion": "combine", "command": "236236", "skill_state": "active", "module_effect": "combine", "combine_range": 0.84, "combine_partner_count": 2, "combine_max_partners": 2, "combine_bonus_hp": 92, "combine_shape": "crab", "summary": "Three-unit docking module. Requires two nearby allied combine units; trigger again to split them back out"},
-		{"name": "COMBINE: FIELD PARADE LINK", "maker": "FOLD PARADE", "cost": 268, "hp": 0, "mass": 0, "aim_mode": "fixed", "motion": "combine", "command": "214236", "skill_state": "armor", "module_effect": "combine", "combine_range": 0.96, "combine_partner_count": 3, "combine_max_partners": 3, "combine_bonus_hp": 126, "combine_shape": "tank", "summary": "Four-unit parade docking module for squad-to-fortress plans. Separation restores the stored partner units around the lead body"},
-		{"name": "PUPPET AI: THREAT MEMORY", "cost": 42, "hp": 0, "mass": 0, "aim_mode": "fixed", "motion": "puppet_behavior", "puppet_behavior_module": true, "puppet_only_module": true, "puppet_behavior_trait": "threat_memory", "source_target_policy": "protect_puppet_group", "source_threat_override_range": 0.92, "source_close_response": "intercept", "summary": "Puppet-only behavior module. Heroes can equip it but gain no direct control effect; puppets remember enemies that threaten their group and reprioritize interception"},
-		{"name": "PUPPET AI: RETREAT COVER ROUTE", "cost": 58, "hp": 0, "mass": 0, "aim_mode": "fixed", "motion": "puppet_behavior", "puppet_behavior_module": true, "puppet_only_module": true, "puppet_behavior_trait": "cover_retreat", "source_attack_preference": "melee_first", "source_close_response": "intercept", "source_keep_range": 0.58, "summary": "Puppet-only behavior module. Adds richer guard movement: the puppet moves between attackers and damaged allies instead of chasing blindly"},
-		{"name": "PUPPET AI: PACK FLANK VARIANCE", "cost": 64, "hp": 0, "mass": 0, "aim_mode": "fixed", "motion": "puppet_behavior", "puppet_behavior_module": true, "puppet_only_module": true, "puppet_behavior_trait": "pack_flank_variance", "flank_width": 0.72, "orbit_radius": 0.6, "summary": "Puppet-only behavior module. Adds lane variance and orbit offsets to source-code packs so multiple puppets stop stacking on one line"},
+		{"name": "CHAIN SWING", "cost": 45, "mass": 2, "aim_mode": "fixed", "motion": "chain", "command": "236", "skill_state": "active", "summary": "1: Chain swing action module"},
+		{"name": "ROD SWING", "cost": 45, "mass": 3, "aim_mode": "fixed", "motion": "rod", "range": 0.08, "command": "236", "skill_state": "active", "summary": "2: Straight rod swing"},
+		{"name": "SWING ASSAULT", "cost": 70, "mass": 3, "aim_mode": "auto", "motion": "pendulum", "active_range": 0.18, "command": "236", "skill_state": "active", "summary": "3: Auto-swing assault"},
+		{"name": "DIRECT ASSAULT", "cost": 80, "mass": 3, "aim_mode": "fixed", "motion": "straight", "active_range": 0.34, "active_heat": 54.0, "command": "236", "skill_state": "active", "summary": "4: 236X active rush"},
+		{"name": "MANUAL AIM", "cost": 65, "mass": 2, "aim_mode": "manual", "motion": "aimed", "range": 0.12, "command": "214", "skill_state": "armor", "armor_heat": 44.0, "summary": "5: Hold attack and steer aim line"},
+		{"name": "SWING AIM", "cost": 75, "mass": 3, "aim_mode": "manual", "motion": "pendulum", "aim_swing": 1.7, "range": 0.18, "command": "214", "skill_state": "armor", "summary": "6: Manual pendulum aim"},
+		{"name": "AUTO AIM", "cost": 90, "mass": 3, "aim_mode": "auto", "motion": "auto_line", "auto_swing": 2.8, "range": 0.22, "command": "632146", "skill_state": "active", "active_range": 0.6, "active_heat": 78.0, "projectile": true, "summary": "7: Auto sweeping line, release to fire"},
+		{"name": "CHAIN CLAMP", "cost": 85, "mass": 4, "aim_mode": "manual", "motion": "chain_clamp", "command": "214", "skill_state": "armor", "summary": "8: Chain clamp"},
+		{"name": "ROD CLAMP", "cost": 80, "mass": 5, "aim_mode": "fixed", "motion": "rod_clamp", "command": "214", "skill_state": "armor", "summary": "9: Rod clamp"},
+		{"name": "CHAIN DEFLECT", "cost": 70, "mass": 3, "aim_mode": "manual", "motion": "chain_deflect", "armor_duration": 0.24, "command": "214", "skill_state": "armor", "summary": "10: Chain deflect"},
+		{"name": "ROD DEFLECT", "cost": 65, "mass": 4, "aim_mode": "fixed", "motion": "rod_deflect", "armor_duration": 0.3, "command": "214", "skill_state": "armor", "summary": "11: Rod deflect"},
+		{"name": "AUTO: GUARD ORBIT", "cost": 58, "mass": 0, "aim_mode": "auto", "motion": "software", "ai": "guard_orbit", "sequence": ["normal", "armor"], "orbit_radius": 0.45, "summary": "Software module: if this unit becomes a puppet, guard-orbit the hero"},
+		{"name": "AUTO: PINCER HUNT", "cost": 72, "mass": 0, "aim_mode": "auto", "motion": "software", "ai": "pincer", "sequence": ["normal", "active"], "flank_width": 0.74, "summary": "Software module: if puppet, split and collapse from two lanes"},
+		{"name": "AUTO: SCREEN WALL", "cost": 66, "mass": 0, "aim_mode": "auto", "motion": "software", "ai": "screen_wall", "sequence": ["armor", "normal"], "summary": "Software module: if puppet, form a moving shield line"},
+		{"name": "AUTO: MINE DANCE", "cost": 86, "mass": 0, "aim_mode": "auto", "motion": "software", "ai": "mine_dance", "sequence": ["normal", "normal", "active", "armor"], "orbit_radius": 0.62, "summary": "Software module: if puppet, dance around target and place strike pockets"},
+		{"name": "SHIFT: BECOME HERO", "cost": 110, "mass": 0, "aim_mode": "fixed", "motion": "identity_shift", "command": "236", "skill_state": "active", "role_switch": "hero", "switch_cooldown": 2.4, "summary": "Identity module: puppet/barrier/hero attempts to become the active hero"},
+		{"name": "SHIFT: BECOME PUPPET", "cost": 92, "mass": 0, "aim_mode": "fixed", "motion": "identity_shift", "command": "214", "skill_state": "armor", "role_switch": "puppet", "ai": "guard_orbit", "sequence": ["normal", "armor"], "switch_cooldown": 1.8, "summary": "Identity module: hero/barrier can shed direct control and run puppet software"},
+		{"name": "SHIFT: BECOME BARRIER", "cost": 96, "mass": 0, "aim_mode": "fixed", "motion": "identity_shift", "command": "632146", "skill_state": "armor", "role_switch": "barrier", "barrier_logic": "riposte_mirror", "pulse_interval": 1.1, "switch_cooldown": 2.1, "summary": "Identity module: collapse topology into a spatial barrier"},
+		{"name": "SHIFT: ROLE CYCLER", "cost": 128, "mass": 0, "aim_mode": "auto", "motion": "identity_shift", "command": "236", "skill_state": "active", "role_switch": "cycle", "ai": "pincer", "barrier_logic": "heat_well", "aura_heat": 10.0, "switch_cooldown": 1.6, "summary": "Identity module: cycles hero -> puppet -> barrier -> hero"},
+		{"name": "FRACTURE BROOD", "cost": 118, "mass": 0, "aim_mode": "auto", "motion": "fracture_brood", "command": "214214", "skill_state": "armor", "module_effect": "torso_fracture_brood", "fracture_trigger": "torso_tear", "fracture_exception_group": true, "fracture_ai": "guard_orbit", "summary": "Passive rupture software: snake/centipede torso cuts spawn temporary puppet fragments while the soul-bearing torso remains controllable"},
+		{"name": "EJECT: LINE LAUNCH", "cost": 82, "mass": 0, "aim_mode": "fixed", "motion": "eject", "command": "236", "skill_state": "active", "module_effect": "eject", "module_state": "active", "travel_path": "straight", "module_range": 1.65, "module_lane_range": 0.28, "summary": "Launch selected part in a straight path; the flying part has its own hit check"},
+		{"name": "EJECT: U-ARC SEND", "cost": 98, "mass": 0, "aim_mode": "manual", "motion": "eject_arc", "command": "214", "skill_state": "armor", "module_effect": "eject", "module_state": "armor", "travel_path": "arc_u", "module_range": 1.9, "module_lane_range": 0.44, "summary": "Launch a part on a U-shaped route; slower but reaches around lanes"},
+		{"name": "RECEIVER: PART SOCKET", "cost": 48, "mass": 0, "aim_mode": "fixed", "motion": "receiver", "receiver": true, "summary": "Software socket that can accept launched parts from ally eject modules"},
+		{"name": "CHAIN RECALL", "cost": 92, "mass": 0, "aim_mode": "manual", "motion": "chain_recall", "command": "214", "skill_state": "armor", "module_effect": "chain_recall", "module_state": "armor", "travel_path": "tether", "projectile_style": "chain", "module_range": 1.35, "module_lane_range": 0.42, "pull_power": 0.14, "summary": "Shoot a chained weapon outward and reel it back; useful with chain muscle plus glove/thruster"},
+		{"name": "CHAOS FOCUS SHOT", "cost": 118, "mass": 0, "aim_mode": "manual", "motion": "chaos_shot", "command": "236", "skill_state": "active", "module_effect": "chaos_shot", "projectile": true, "charge_time": 0.42, "focus_cost": 18.0, "summary": "Hold module button to focus, release for near-instant line shot; consumes heat/focus"},
+		{"name": "GRAPPLE CAPTURE", "cost": 86, "mass": 0, "aim_mode": "manual", "motion": "grapple", "command": "236", "skill_state": "armor", "module_effect": "capture", "module_state": "armor", "travel_path": "hook", "projectile_style": "chain", "module_range": 1.25, "module_lane_range": 0.38, "pull_power": 0.22, "summary": "Catch a material or enemy body; mass decides which side is pulled closer"},
+		{"name": "ENTANGLE WRAP", "cost": 104, "mass": 0, "aim_mode": "auto", "motion": "entangle", "command": "632146", "skill_state": "active", "module_effect": "entangle", "module_state": "active", "travel_path": "spiral", "projectile_style": "chain", "module_range": 1.05, "module_lane_range": 0.52, "pull_power": 0.18, "summary": "Wrap a unit or map piece with topology tension, briefly dragging and slowing it"},
+		{"name": "BARRIER SNAP THROW", "cost": 96, "mass": 0, "aim_mode": "fixed", "motion": "barrier_break", "command": "214", "skill_state": "armor", "module_effect": "barrier_break", "module_state": "armor", "travel_path": "throw_arc", "projectile_style": "thrown", "module_range": 1.45, "module_lane_range": 0.4, "summary": "Rip a material chunk from a barrier-map segment and throw it forward"},
+		{"name": "BOOT ACTION DRIVER", "cost": 8, "mass": 0, "aim_mode": "fixed", "motion": "straight", "range": 0.02, "command": "236", "skill_state": "active", "summary": "Bare software driver; keeps initial units legal but offers almost no offense"},
+		{"name": "TURRET TRAVERSE FIRE", "cost": 52, "mass": 0, "aim_mode": "manual", "motion": "turret", "command": "236", "skill_state": "active", "projectile": true, "active_heat": 38.0, "module_range": 1.8, "module_lane_range": 0.2, "summary": "Manual turret aim module for tanks and fortress guns"},
+		{"name": "BARRIER: GALAXY CASTLE", "cost": 130, "mass": 0, "aim_mode": "auto", "motion": "fortress_logic", "command": "632146", "skill_state": "active", "barrier_logic": "galaxy_castle", "aura_range": 0.88, "aura_heat": 10.0, "slow_power": 0.24, "pulse_interval": 0.72, "summary": "Fortress logic: traps, gates, heat rooms, and reactive pulses like a tiny galactic Metroidvania"},
+		{"name": "BARRIER: REACTIVE GATE", "cost": 82, "mass": 0, "aim_mode": "auto", "motion": "reactive_gate", "command": "214", "skill_state": "armor", "barrier_logic": "reactive_gate", "aura_range": 0.62, "pulse_interval": 0.9, "summary": "A barrier action module that automatically snaps shut when enemies enter its trigger space"},
+		{"name": "TRAP LINK: ALPHA", "cost": 44, "mass": 0, "aim_mode": "fixed", "motion": "trap_control", "command": "236", "module_effect": "trap_control", "trap_link": "alpha", "summary": "Attack-button software: sacrifices this limb action to trigger linked alpha traps when the command is entered"},
+		{"name": "TRAP LINK: BETA SPRING", "cost": 62, "mass": 0, "aim_mode": "manual", "motion": "trap_control", "command": "2146", "module_effect": "trap_control", "trap_link": "beta", "summary": "Attack-button software for spring and catapult traps; input direction controls launch direction"},
+		{"name": "TRAP LINK: CONDUCTOR", "cost": 98, "mass": 0, "aim_mode": "auto", "motion": "trap_control", "command": "632146", "module_effect": "trap_control", "trap_link": "all", "summary": "Premium trap controller: one attack button can trigger any linked trap in its team if targets are inside"},
+		{"name": "THROW: SHIELD BOOMERANG", "cost": 132, "mass": 0, "aim_mode": "manual", "motion": "boomerang_throw", "command": "236", "skill_state": "active", "module_effect": "boomerang_recall", "module_state": "active", "travel_path": "boomerang", "projectile_style": "shield", "module_range": 2.2, "module_lane_range": 0.5, "self_receiver": true, "summary": "Throw one muscle or a small group and recall it to the same mech like a shield arc"},
+		{"name": "THROW: BOOSTED PART GUIDANCE", "cost": 164, "mass": 0, "aim_mode": "manual", "motion": "guided_eject", "command": "214", "skill_state": "active", "module_effect": "guided_eject", "module_state": "active", "travel_path": "guided_curve", "projectile_style": "guided", "module_range": 2.65, "module_lane_range": 0.72, "steer_power": 0.46, "boosted_throw": true, "summary": "High-price combined module: thrown part can steer mid-flight if the thrown group has a booster"},
+		{"name": "THROW: GROUP DISC", "cost": 118, "mass": 0, "aim_mode": "auto", "motion": "group_disc", "command": "632146", "skill_state": "armor", "module_effect": "group_throw", "module_state": "armor", "travel_path": "wide_return", "projectile_style": "shield", "module_range": 1.75, "module_lane_range": 0.86, "thrown_group": true, "self_receiver": true, "summary": "Throws a whole component group as a broad returning disc; safer coverage, lower damage"},
+		{"name": "RECEIVER: SELF CATCH LOOP", "cost": 44, "mass": 0, "aim_mode": "fixed", "motion": "self_receiver", "receiver": true, "self_receiver": true, "summary": "Cheap receiver software for a mech to catch its own thrown part on return"},
+		{"name": "GUIDANCE: MIDFLIGHT NUDGE", "cost": 58, "mass": 0, "aim_mode": "manual", "motion": "throw_guidance", "module_effect": "throw_guidance", "steer_power": 0.24, "summary": "Cheap helper module that improves thrown-part direction changes when paired with an eject module"},
+		{"name": "WEB: EDGE SWING", "cost": 76, "mass": 0, "aim_mode": "manual", "motion": "web_anchor", "command": "236", "skill_state": "active", "module_effect": "web_anchor", "module_state": "active", "travel_path": "tether", "projectile_style": "web", "module_range": 2.35, "module_lane_range": 0.58, "non_damage": true, "web_strength": 0.24, "web_break_force": 0.68, "web_pull_mode": "self_to_anchor", "summary": "Shoot silk into a wall/barrier-like point and swing the shooter toward it; snaps if tension exceeds module limit"},
+		{"name": "WEB: PUPPET REEL", "cost": 94, "mass": 0, "aim_mode": "manual", "motion": "web_reel", "command": "214", "skill_state": "armor", "module_effect": "web_reel", "module_state": "armor", "travel_path": "tether", "projectile_style": "web", "module_range": 2.15, "module_lane_range": 0.48, "non_damage": true, "web_strength": 0.32, "web_break_force": 0.84, "web_pull_mode": "target_to_self", "summary": "Non-damaging reel logic: drags puppet bodies or light heroes toward the user"},
+		{"name": "WEB: MASS TETHER DUEL", "cost": 132, "mass": 0, "aim_mode": "auto", "motion": "web_tether", "command": "632146", "skill_state": "active", "module_effect": "web_tether", "module_state": "active", "travel_path": "tether", "projectile_style": "web", "module_range": 2.85, "module_lane_range": 0.68, "non_damage": true, "web_strength": 0.46, "web_break_force": 1.1, "web_pull_mode": "mass_duel", "summary": "Strong cable contest; heavier body moves less, lighter body gets reeled harder"},
+		{"name": "蛛丝牵引 / WEB TETHER ACTIVATE", "cost": 72, "mass": 0, "aim_mode": "manual", "motion": "gun_activate", "requires_bound_key": true, "module_target_kind": "gun_terminal", "module_action_profile": "web_tether_activate", "gun_activation": "web_tether_activate", "hold_to_activate": true, "gun_rotate_speed": 0.0, "travel_path": "tether", "projectile_style": "web", "projectile_behavior": "web_tether", "module_range": 4.4, "module_lane_range": 0.04, "non_damage": true, "web_target_filter": "all", "web_anchor_swing": true, "web_swing_uses_melee_collision": true, "web_strength": 0.34, "web_break_force": 1.08, "web_pull_mode": "mass_duel", "summary": "按住绑定键发射蛛丝枪。可牵引敌我单位；射向上下边界时建立摆荡锚点。蛛丝不直接造成 HP 伤害，摆荡后的真实碰撞按实体动量结算。"},
+		{"name": "LIGHTSINK: AREA DENIAL", "cost": 88, "mass": 0, "aim_mode": "manual", "motion": "light_sink", "command": "214", "skill_state": "armor", "module_effect": "light_sink", "module_state": "armor", "travel_path": "arc_u", "projectile_style": "blind", "module_range": 2.55, "module_lane_range": 0.74, "non_damage": true, "blind_radius": 0.68, "blind_duration": 2.65, "blind_strength": 0.6, "summary": "Drops a light-absorbing pocket. The owner sees through it; enemies inside suffer blind aim and retreat pressure"},
+		{"name": "LIGHTSINK: ECLIPSE SCREEN", "cost": 146, "mass": 0, "aim_mode": "auto", "motion": "eclipse_screen", "command": "632146", "skill_state": "active", "module_effect": "light_sink", "module_state": "active", "travel_path": "wide_return", "projectile_style": "blind", "module_range": 3.1, "module_lane_range": 0.96, "non_damage": true, "blind_radius": 0.98, "blind_duration": 3.45, "blind_strength": 0.86, "summary": "High-price screen tool: claims a large visual-control zone without direct damage"},
+		{"name": "HEAT RITE: VENT BLOOM", "maker": "GLACIER MONKS", "cost": 72, "mass": 0, "aim_mode": "fixed", "motion": "active_cool", "command": "214214", "skill_state": "armor", "module_effect": "active_cool", "cool_burst": 46.0, "cool_lock": 0.44, "cool_overheat_clear": true, "summary": "Command cooling module: 214214 + state vents a large heat chunk, locking movement briefly"},
+		{"name": "HEAT RITE: WHITEOUT DUMP", "maker": "GLACIER MONKS", "cost": 126, "mass": 0, "aim_mode": "fixed", "motion": "active_cool", "command": "632146", "skill_state": "armor", "module_effect": "active_cool", "cool_burst": 82.0, "cool_lock": 0.62, "cool_overheat_clear": true, "summary": "Expensive active cooling command for extreme heat builds; huge vent with a longer immobile beat"},
+		{"name": "FIREWALL: HARDENED ROUTE", "maker": "CIPHER WARD", "cost": 54, "mass": 0, "aim_mode": "fixed", "motion": "firewall", "command": "214", "skill_state": "armor", "data_security": 0.42, "summary": "Passive security software. Raises the unit's data-security value without adding volume"},
+		{"name": "FIREWALL: AIR-GAPPED DRIVER", "maker": "CIPHER WARD", "cost": 96, "mass": 0, "aim_mode": "fixed", "motion": "firewall", "command": "632146", "skill_state": "armor", "data_security": 0.82, "summary": "High-grade firewall module. Great against paralysis, hack fields, bootleg betrayal, and takeover rods"},
+		{"name": "OPEN PORT: VIOLENT INTERFACE", "maker": "NEURAL TETHER RESEARCH", "cost": 64, "mass": 0, "aim_mode": "manual", "motion": "open_port", "command": "236", "skill_state": "active", "takeover_power": 0.18, "data_security": -0.36, "summary": "Risky aggressive interface. Improves intrusion pressure, but leaves the owner's machine easier to hack"},
+		{"name": "AEGIS VEIL: BULLET MIRROR", "maker": "AEGIS SELECTIVE", "cost": 74, "mass": 0, "aim_mode": "fixed", "motion": "projectile_shield", "command": "214", "skill_state": "armor", "module_effect": "projectile_shield", "shield_duration": 1.15, "reflect_types": ["bullet"], "reflect_power": 0.72, "reflect_bonus_range": 0.72, "summary": "Command shield: reflects bullet projectiles for a short window. Excellent with corridor ricochet plans"},
+		{"name": "AEGIS VEIL: SPECTRUM MIRROR", "maker": "AEGIS SELECTIVE", "cost": 148, "mass": 0, "aim_mode": "fixed", "motion": "projectile_shield", "command": "632146", "skill_state": "armor", "module_effect": "projectile_shield", "shield_duration": 1.35, "reflect_types": ["bullet", "chemical", "laser"], "reflect_power": 0.86, "reflect_bonus_range": 1.05, "summary": "Expensive command shield that reflects all three projectile damage types for a brief, readable timing window"},
+		{"name": "LOADOUT: TERMINAL SWAP", "cost": 54, "mass": 0, "aim_mode": "fixed", "motion": "weapon_swap", "command": "236236", "skill_state": "active", "module_effect": "weapon_swap", "summary": "Command software for torso weapon bays. Switches the six attack buttons between current limbs and carried terminal-muscle weapons"},
+		{"name": "CONTROL: PAGE SHIFT", "cost": 68, "mass": 0, "aim_mode": "fixed", "motion": "control_page_shift", "command": "214214", "skill_state": "armor", "module_effect": "control_page_shift", "control_pages": ["limb", "spare", "trap"], "can_control_traps": true, "summary": "Switches what the six attack buttons operate: mech limbs, spare weapons, or linked traps/barrier mechanisms"},
+		{"name": "DUAL LIMB: SIEGE SWING", "maker": "MONOCHROME FORGE", "cost": 108, "mass": 0, "aim_mode": "manual", "motion": "dual_limb_swing", "command": "236", "skill_state": "active", "module_effect": "dual_mount_action", "dual_mount_module": true, "dual_mount_load_mult": 1.72, "recoil_brace_mult": 0.72, "summary": "Action software for two limbs sharing one large melee weapon. Braces attack momentum and changes swing solving into a two-arm arc"},
+		{"name": "DUAL LIMB: RAIL BRACE", "maker": "RECOIL LATTICE", "cost": 126, "mass": 0, "aim_mode": "manual", "motion": "dual_limb_brace", "command": "2146", "skill_state": "armor", "module_effect": "dual_mount_action", "dual_mount_module": true, "dual_mount_load_mult": 1.95, "recoil_brace_mult": 0.52, "summary": "Two-limb bracing software for oversized guns and cannons. Greatly reduces recoil but commits the topology during firing"},
+		{"name": "RETREAT: BLACKBOX EJECT", "cost": 74, "mass": 0, "aim_mode": "fixed", "motion": "retreat", "retreat_on_defeat": true, "retreat_repair_rate": 7.5, "repair_time_mult": 1.0, "summary": "When this machine would be defeated, it withdraws offscreen and slowly repairs instead of dying"},
+		{"name": "RETREAT: DOCK SEEKER", "cost": 112, "mass": 0, "aim_mode": "auto", "motion": "retreat", "retreat_on_defeat": true, "retreat_repair_rate": 10.0, "repair_time_mult": 0.78, "prefer_repair_station": true, "summary": "Defeat-triggered retreat that seeks a friendly repair station; station repair is much faster, but dock destruction kills occupants"},
+		{"name": "MORPH: TOPOLOGY SHIFT", "cost": 128, "mass": 0, "aim_mode": "fixed", "motion": "morph", "command": "236", "skill_state": "active", "module_effect": "morph", "morph_modes": ["combat", "travel"], "morph_cooldown": 2.8, "summary": "Switches the controlled component group between saved topology connection modes. Prototype changes silhouette only"},
+		{"name": "MORPH: MULTI-FORM DRIVER", "cost": 188, "mass": 0, "aim_mode": "auto", "motion": "morph", "command": "632146", "skill_state": "active", "module_effect": "morph", "morph_modes": ["combat", "travel", "siege"], "morph_cooldown": 2.2, "summary": "Higher-price morph software with three or more saved topology modes for complex mechs"},
+		{"name": "FOLD PARADE: STAGE TO SQUAD", "maker": "FOLD PARADE", "cost": 156, "mass": 0, "aim_mode": "fixed", "motion": "identity_shift", "command": "236214", "skill_state": "active", "module_effect": "fold_barrier_squad", "role_switch": "puppet", "ai": "screen_wall", "group_count": 4, "sequence": ["armor", "normal", "active"], "switch_cooldown": 2.8, "summary": "Command switch module: turns a Fold Parade barrier into a four-mech puppet squad, or lets a squad refold toward barrier logic"},
+		{"name": "RACKET SERVE", "cost": 86, "mass": 0, "aim_mode": "manual", "motion": "racket_serve", "command": "236", "skill_state": "active", "module_effect": "racket_serve", "module_state": "active", "racket_power": 1.2, "serve_range": 0.75, "summary": "Tennis-like swing module: bats nearby allied ball puppets forward as inertial projectiles"},
+		{"name": "RACKET SMASH DRIVER", "cost": 138, "mass": 0, "aim_mode": "auto", "motion": "racket_smash", "command": "632146", "skill_state": "armor", "module_effect": "racket_serve", "module_state": "armor", "racket_power": 1.75, "serve_range": 0.92, "summary": "Heavier racket action with armor timing and stronger launch speed"},
+		{"name": "COMBINE: DOCKING FRAME", "cost": 120, "mass": 0, "aim_mode": "fixed", "motion": "combine", "command": "236", "skill_state": "active", "module_effect": "combine", "combine_range": 0.56, "combine_bonus_hp": 28, "summary": "Combines with a nearby allied unit that also has a combine module. Trigger again to separate"},
+		{"name": "COMBINE: RAID BODY", "cost": 190, "mass": 0, "aim_mode": "auto", "motion": "combine", "command": "632146", "skill_state": "armor", "module_effect": "combine", "combine_range": 0.72, "combine_bonus_hp": 64, "summary": "Expensive combine software for large legal pre/post-combination topology states"},
+		{"name": "UMBRA: REAR VECTOR ROUTE", "maker": "UMBRA REARWORKS", "cost": 78, "mass": 0, "aim_mode": "manual", "motion": "rear_vector", "command": "2146", "skill_state": "active", "back_hit_heat_bonus": 12.0, "back_hit_heat_mult": 1.18, "summary": "Back-attack software. Routes this attack group toward rear angles and adds extra heat when the hit lands on the target's back"},
+		{"name": "UMBRA: THERMAL SHOCK SCRIPT", "maker": "UMBRA REARWORKS", "cost": 134, "mass": 0, "aim_mode": "auto", "motion": "thermal_shock", "command": "632146", "skill_state": "active", "back_hit_heat_bonus": 26.0, "back_hit_heat_mult": 1.34, "summary": "Premium rear-hit script. Sacrifices some direct damage to push back hits rapidly toward overheat shock"},
+		{"name": "ACTION 1: QUICK 90 BALL SWING", "cost": 42, "mass": 0, "aim_mode": "fixed", "motion": "rod", "requires_bound_key": true, "module_target_kind": "ball_joint", "required_joint_degrees": 90, "swing_arc_degrees": 90.0, "module_action_profile": "swing_90", "armor_heat": 24.0, "active_heat": 28.0, "summary": "Canonical Action 1: bind X to a selected 90-degree ball joint. X swings; 236X armor-state swing; 214X active-state swing. Actual speed follows the torque/engine/mass solver"},
+		{"name": "ACTION 2: QUICK 1M TELESCOPIC THRUST", "cost": 46, "mass": 0, "aim_mode": "fixed", "motion": "thrust", "requires_bound_key": true, "module_target_kind": "telescopic_joint", "required_extension_m": 1.0, "module_extension_m": 1.0, "module_action_profile": "extend_1m", "range": 0.18, "armor_heat": 25.0, "active_heat": 30.0, "summary": "Canonical Action 2: bind X to a selected telescopic joint rated for 1m extension. X extends; 236X armor-state extension; 214X active-state extension. Speed is solved from engine output, joint power, and mass"},
+		{"name": "枪械启动 / GUN ACTIVATE", "cost": 64, "mass": 0, "aim_mode": "manual", "motion": "gun_activate", "requires_bound_key": true, "module_target_kind": "gun_terminal", "module_action_profile": "gun_activate", "gun_activation": "gun_activate", "hold_to_activate": true, "gun_rotate_speed": 0.0, "summary": "按住绑定键启动枪械。狙击枪：瞄准锁定后松开发射；化学喷射器：按住持续喷射。启动中局部4/6持续旋转枪口。"},
+		{"name": "ACTION 4: MEDIUM 180 BALL SWING", "cost": 56, "mass": 0, "aim_mode": "fixed", "motion": "pendulum", "requires_bound_key": true, "module_target_kind": "ball_joint", "required_joint_degrees": 180, "swing_arc_degrees": 180.0, "module_action_profile": "swing_180", "armor_heat": 30.0, "active_heat": 36.0, "summary": "Canonical Action 4: bind X to a selected 180-degree ball joint. X swings through a wide arc; 236X armor-state swing; 214X active-state swing. Speed follows torque, engine, and mass"},
+		{"name": "ACTION 5: MEDIUM 2M TELESCOPIC THRUST", "cost": 62, "mass": 0, "aim_mode": "fixed", "motion": "direct", "requires_bound_key": true, "module_target_kind": "telescopic_joint", "required_extension_m": 2.0, "module_extension_m": 2.0, "module_action_profile": "extend_2m", "range": 0.34, "armor_heat": 32.0, "active_heat": 40.0, "summary": "Canonical Action 5: bind X to a selected telescopic joint rated for 2m extension. X extends; 236X armor-state extension; 214X active-state extension. Speed follows torque, engine, and mass"},
+		{"name": "SPIN CROWN: 360 BALL DRIVER", "cost": 74, "mass": 0, "aim_mode": "fixed", "motion": "rod", "requires_bound_key": true, "module_target_kind": "ball_joint", "required_joint_degrees": 360, "swing_arc_degrees": 360.0, "module_action_profile": "swing_360", "armor_heat": 32.0, "active_heat": 38.0, "summary": "Bind X to a selected 360-degree ball joint. X swings through 360 degrees; 236X armor-state swing; 214X active-state swing. Speed is solved from joint torque, engine output, and mass"},
+		{"name": "SIEGE RAM: 3M LINEAR DRIVER", "cost": 88, "mass": 0, "aim_mode": "fixed", "motion": "thrust", "requires_bound_key": true, "module_target_kind": "telescopic_joint", "required_extension_m": 3.0, "module_extension_m": 3.0, "module_action_profile": "extend_3m", "range": 0.46, "armor_heat": 36.0, "active_heat": 44.0, "summary": "Bind X to a selected telescopic joint rated for 3m extension. X extends 3m; 236X armor-state extension; 214X active-state extension. Extension speed depends on torque, engine output, and attached mass"},
+		{"name": "GUNNER WRIST: QE MANUAL SWEEP", "cost": 72, "mass": 0, "aim_mode": "manual", "motion": "manual_aim", "requires_bound_key": true, "module_target_kind": "gun_joint", "requires_connected_gun": true, "hold_to_activate": true, "gun_activation": "hold_turn_sweep", "turn_keys_steer_joint": true, "manual_turn_rate": 3.4, "true_bullet_release_lock": true, "laser_public_aim": true, "bullet_hell_immediate_fire": true, "chemical_splash_immediate": true, "summary": "Hold X to activate the connected gun while Q/E manually sweeps the selected joint. True bullets keep the lock and fire after release; lasers show public aim; bullet-hell and chemical guns fire directly while activated"},
+		{"name": "双段正锋折返 / TWO-LINK FORWARD SNAP", "cost": 66, "mass": 0, "aim_mode": "fixed", "motion": "two_link_forward_snap", "requires_bound_key": true, "module_target_kind": "two_link_rotating_limb", "module_action_profile": "two_link_forward_snap", "command_window_profile": "two_link_4_6", "requires_two_rotating_muscles": true, "two_link_action": true, "startup_ratio": 0.333333, "recovery_ratio": 0.666667, "two_link_straight_phase": 0.333333, "startup_pose": "straight_forward", "recovery_pose": "foldback_parallel", "armor_heat": 30.0, "active_heat": 36.0, "summary": "Bind X to one two-segment rotating limb. Startup is the first third: both segments strike straight forward. Recovery is the final two thirds: first segment folds backward parallel to the torso axis while the second folds forward; this module alone uses front+X for armor and rear+X for active."},
+		{"name": "PAIR RAM: 2M TWIN LINEAR DRIVER", "cost": 78, "mass": 0, "aim_mode": "fixed", "motion": "direct", "requires_bound_key": true, "module_target_kind": "dual_telescopic_joint", "required_extension_m": 2.0, "module_extension_m": 2.0, "module_action_profile": "dual_extend_2m", "requires_joint_pair": true, "paired_attack_key": true, "paired_joint_count": 2, "dual_joint_action": true, "range": 0.36, "armor_heat": 32.0, "active_heat": 40.0, "summary": "Bind one attack key to two selected telescopic joints rated for 2m extension. X extends both 2m; 236X armor-state extension; 214X active-state extension"},
+		{"name": "CLAW MIRROR: INWARD PINCER DRIVER", "cost": 92, "mass": 0, "aim_mode": "fixed", "motion": "pincer_clamp", "requires_bound_key": true, "module_target_kind": "dual_ball_joint", "required_joint_degrees": 120, "swing_arc_degrees": 120.0, "module_action_profile": "inward_pincer_clamp", "requires_joint_pair": true, "paired_attack_key": true, "paired_joint_count": 2, "dual_joint_action": true, "paired_motion": "inward_clamp", "pincer_close_until_contact": true, "clamp_close_angle_degrees": 150.0, "armor_heat": 38.0, "active_heat": 44.0, "summary": "Two selected ball joints rotate toward each other until the attached terminal muscles meet, forming a claw clamp. X clamps; 236X armor-state clamp; 214X active-state clamp"},
+		{"name": "TETHER CAST: AUTOSWING EJECT", "cost": 104, "mass": 0, "aim_mode": "auto", "motion": "swing_aim", "requires_bound_key": true, "module_target_kind": "ejectable_muscle_joint", "requires_ejectable_muscle": true, "hold_to_activate": true, "release_to_fire": true, "aim_swing_editable": true, "auto_swing": 1.45, "aim_swing_min": 0.45, "aim_swing_max": 4.2, "module_effect": "eject", "travel_path": "arc", "module_range": 2.45, "module_lane_range": 0.42, "armor_heat": 34.0, "active_heat": 42.0, "summary": "Hold X to auto-swing the selected joint as an aim line, with swing speed intended to be edited in Team Edit. Release X to eject the adjacent ejectable muscle or component group; 236X armor-state launch; 214X active-state launch"},
+		{"name": "WHIP WAKE: CHAIN BACKLASH", "cost": 86, "mass": 0, "aim_mode": "fixed", "motion": "chain_lash", "requires_bound_key": true, "module_target_kind": "chain_limb_joint", "required_joint_degrees": 180, "swing_arc_degrees": 240.0, "module_action_profile": "chain_backlash", "armor_heat": 34.0, "active_heat": 46.0, "summary": "Bind X to a chain/whip limb. The joint drives a delayed whip lash and inertial return; 236X armor-state lash; 214X active-state lash"},
+		{"name": "刃弧切返 / BLADE ARC RETURN", "cost": 112, "mass": 0, "aim_mode": "fixed", "motion": "blade_arc_return", "requires_bound_key": true, "module_target_kind": "blade_ball_joint", "required_joint_degrees": 180, "swing_arc_degrees": 190.0, "module_action_profile": "blade_arc_return", "command_window_profile": "blade_simple_4_6", "startup_ratio": 0.36, "recovery_ratio": 0.64, "summary": "Bind X to a rotating blade terminal or blade-carrying limb chain. X performs a sweep cut, 6X is an armor forward-pressure cut, and 4X is an active reverse return cut. This 4/6 rule belongs to this module profile only."},
+		{"name": "武士刀瞬斩 / KATANA QUICKDRAW", "cost": 86, "mass": 0, "aim_mode": "fixed", "motion": "katana_quickdraw", "requires_bound_key": true, "module_target_kind": "blade_ball_joint", "required_joint_degrees": 120, "required_blade_family": "katana", "swing_arc_degrees": 128.0, "module_action_profile": "katana_quickdraw", "command_window_profile": "blade_simple_4_6", "startup_ratio": 0.24, "recovery_ratio": 0.76, "summary": "Katana-only quickdraw module. X is a fast draw cut, 6X is an armor intercept cut, and 4X is an active turning cut. Low commitment and high tip speed."},
+		{"name": "镰月钩返 / SCYTHE HOOK RETURN", "cost": 104, "mass": 0, "aim_mode": "fixed", "motion": "scythe_hook_return", "requires_bound_key": true, "module_target_kind": "blade_ball_joint", "required_joint_degrees": 180, "required_blade_family": "scythe", "swing_arc_degrees": 230.0, "module_action_profile": "scythe_hook_return", "command_window_profile": "blade_complex_236_214", "startup_ratio": 0.34, "recovery_ratio": 0.66, "special_heat_fraction": 0.1, "summary": "Scythe-only hook module. X hooks and sweeps, 236X is an armor inward hook advance, and 214X is an active outward hook return. 26/24 are accepted as relaxed 236/214 inputs."},
+		{"name": "巨剑压斩 / GREATSWORD COMMIT CLEAVE", "cost": 132, "mass": 0, "aim_mode": "fixed", "motion": "greatsword_commit_cleave", "requires_bound_key": true, "module_target_kind": "blade_ball_joint", "required_joint_degrees": 160, "required_blade_family": "greatsword", "swing_arc_degrees": 170.0, "module_action_profile": "greatsword_commit_cleave", "command_window_profile": "blade_complex_236_214", "startup_ratio": 0.42, "recovery_ratio": 0.58, "special_heat_fraction": 0.1, "summary": "Greatsword-only committed cleave. X is a heavy cut, 236X is an armor crush cleave, and 214X is an active guard-breaking cleave. Slower, heavier, and built for high-stiffness limbs."},
+		{"name": "三肢轮切 / TRIPLE-LIMB CROSS CUT", "cost": 148, "mass": 0, "aim_mode": "fixed", "motion": "triple_limb_cross_cut", "requires_bound_key": true, "module_target_kind": "blade_ball_joint", "required_joint_degrees": 180, "min_bound_nodes": 3, "swing_arc_degrees": 220.0, "module_action_profile": "triple_limb_cross_cut", "command_window_profile": "blade_complex_236_214", "startup_ratio": 0.38, "recovery_ratio": 0.62, "special_heat_fraction": 0.1, "summary": "Three-link blade-chain module. Bind a three-part rotating limb ending in a blade. X cuts in sequence, 236X compresses all three links with armor, and 214X performs an active offset chase cut."},
+		{"name": "伸旋突斩 / EXTEND-SLASH DRIVER", "cost": 126, "mass": 0, "aim_mode": "fixed", "motion": "extend_slash_driver", "requires_bound_key": true, "module_target_kind": "blade_ball_joint", "required_joint_degrees": 120, "requires_extend_or_hybrid_chain": true, "swing_arc_degrees": 150.0, "module_extension_m": 0.9, "module_action_profile": "extend_slash_driver", "command_window_profile": "blade_complex_236_214", "startup_ratio": 0.34, "recovery_ratio": 0.66, "special_heat_fraction": 0.1, "summary": "Blade module for telescopic or hybrid-linked limbs. X extends then cuts, 236X is an armor inside extend-slash, and 214X is an active outside extend-slash."},
+		{"name": "LANCE RAIL: 3M PIERCE DRIVER", "cost": 108, "mass": 0, "aim_mode": "fixed", "motion": "direct", "requires_bound_key": true, "module_target_kind": "pierce_telescopic_joint", "required_extension_m": 3.0, "module_extension_m": 3.0, "module_action_profile": "pierce_rail_3m", "range": 0.5, "armor_heat": 42.0, "active_heat": 52.0, "summary": "Bind X to a 3m telescopic joint carrying a lance, rapier, spike, or drill terminal. X rails it forward; 236X armor-state rail; 214X active-state rail"},
+		{"name": "拳套伸摆 / GAUNTLET EXTEND-SWING", "cost": 96, "mass": 0, "aim_mode": "fixed", "motion": "gauntlet_extend_swing", "requires_bound_key": true, "module_target_kind": "blunt_hybrid_gauntlet", "required_joint_degrees": 180, "required_extension_m": 2.0, "module_extension_m": 2.0, "swing_arc_degrees": 70.0, "recovery_angle_degrees": 15.0, "module_action_profile": "blunt_gauntlet_extend_swing", "command_window_profile": "gauntlet_4_6_236_214", "startup_ratio": 0.333333, "recovery_ratio": 0.666667, "startup_pose": "gauntlet_extend_or_swing", "recovery_pose": "gauntlet_15deg_guard", "special_heat_fraction": 0.1, "blunt_momentum_mult": 1.5, "summary": "Bind X to a blunt gauntlet terminal with a hybrid rotate+extend joint. X extends, 4X swings outward, 6X swings inward, 236X armor inward extend-swing, and 214X active outward extend-swing. Specials consume 10% of the executing hero heat capacity."},
+		{"name": "盾牌架撞 / SHIELD GUARD-BASH", "cost": 74, "mass": 0, "aim_mode": "fixed", "motion": "shield_guard_bash", "requires_bound_key": true, "module_target_kind": "blunt_shield_terminal", "required_joint_degrees": 90, "swing_arc_degrees": 82.0, "recovery_angle_degrees": 10.0, "module_action_profile": "blunt_shield_guard_bash", "command_window_profile": "blunt_terminal_4_6_236_214", "startup_ratio": 0.26, "recovery_ratio": 0.74, "special_heat_fraction": 0.08, "blunt_momentum_mult": 1.2, "summary": "Bind X to a blunt shield terminal with an embedded ball joint. X braces forward, 4X/6X side-bash, 236X armor guard-bash, and 214X active shoulder-bash. Damage is real contact only."},
+		{"name": "大锤蓄砸 / HAMMER WINDUP-SLAM", "cost": 112, "mass": 0, "aim_mode": "fixed", "motion": "hammer_windup_slam", "requires_bound_key": true, "module_target_kind": "blunt_hammer_terminal", "required_joint_degrees": 120, "swing_arc_degrees": 150.0, "recovery_angle_degrees": -18.0, "module_action_profile": "blunt_hammer_windup_slam", "command_window_profile": "blunt_terminal_4_6_236_214", "startup_ratio": 0.45, "recovery_ratio": 0.55, "special_heat_fraction": 0.12, "blunt_momentum_mult": 1.45, "summary": "Bind X to a blunt hammer or maul terminal with an embedded ball joint. X short-swings, 4X/6X wind up side slams, 236X armor overhead slam, and 214X active committed side slam. Damage is real contact only."},
+		{"name": "RECOIL LOCK: BRACED GUN SWEEP", "maker": "RECOIL LATTICE", "cost": 102, "mass": 0, "aim_mode": "manual", "motion": "manual_aim", "requires_bound_key": true, "module_target_kind": "braced_gun_joint", "requires_connected_gun": true, "hold_to_activate": true, "gun_activation": "braced_hold_sweep", "turn_keys_steer_joint": true, "manual_turn_rate": 2.2, "recoil_mult": 0.46, "true_bullet_release_lock": true, "laser_public_aim": true, "bullet_hell_immediate_fire": true, "chemical_splash_immediate": true, "summary": "Hold X to aim a connected gun with Q/E while the module braces the joint against recoil. It trades sweep speed for cleaner projectile lines"},
+		{"name": "SOUL CAST: FIRST RECEIVER", "cost": 142, "mass": 0, "aim_mode": "fixed", "motion": "soul_cast", "command": "236214", "skill_state": "active", "module_effect": "soul_cast_transfer", "identity_receiver_role": "puppet", "identity_receiver_order": 0, "switch_cooldown": 2.6, "summary": "Identity command: fires the soul from the current hero to the first TeamEdit receiver puppet. The old body receives the target payload in return"},
+		{"name": "SOUL CAST: ETHER ASCENT", "cost": 158, "mass": 0, "aim_mode": "fixed", "motion": "soul_cast", "command": "632146", "skill_state": "armor", "module_effect": "soul_cast_transfer", "identity_receiver_role": "barrier", "identity_receiver_order": 0, "switch_cooldown": 3.0, "summary": "Identity command: sends the hero soul into the active barrier receiver, making the former stage become the controlled hero body"},
+		{"name": "FORM SHIFT: MECH/BARRIER GATE", "cost": 136, "mass": 0, "aim_mode": "fixed", "motion": "role_form_shift", "command": "214236", "skill_state": "active", "module_effect": "role_form_shift", "role_form_target_role": "cycle_mech_barrier", "role_form_mech_role": "puppet", "role_form_shape": "", "switch_cooldown": 2.2, "summary": "Topology command: the unit changes its own legal identity between mech and barrier without needing a second live exchanger"},
+		{"name": "COMBINE: TRIAD DOCK", "cost": 236, "mass": 0, "aim_mode": "auto", "motion": "combine", "command": "236236", "skill_state": "active", "module_effect": "combine", "combine_range": 0.84, "combine_partner_count": 2, "combine_max_partners": 2, "combine_bonus_hp": 92, "combine_shape": "crab", "summary": "Three-unit docking module. Requires two nearby allied combine units; trigger again to split them back out"},
+		{"name": "COMBINE: FIELD PARADE LINK", "maker": "FOLD PARADE", "cost": 268, "mass": 0, "aim_mode": "fixed", "motion": "combine", "command": "214236", "skill_state": "armor", "module_effect": "combine", "combine_range": 0.96, "combine_partner_count": 3, "combine_max_partners": 3, "combine_bonus_hp": 126, "combine_shape": "tank", "summary": "Four-unit parade docking module for squad-to-fortress plans. Separation restores the stored partner units around the lead body"},
+		{"name": "PUPPET AI: THREAT MEMORY", "cost": 42, "mass": 0, "aim_mode": "fixed", "motion": "puppet_behavior", "puppet_behavior_module": true, "puppet_only_module": true, "puppet_behavior_trait": "threat_memory", "source_target_policy": "protect_puppet_group", "source_threat_override_range": 0.92, "source_close_response": "intercept", "summary": "Puppet-only behavior module. Heroes can equip it but gain no direct control effect; puppets remember enemies that threaten their group and reprioritize interception"},
+		{"name": "PUPPET AI: RETREAT COVER ROUTE", "cost": 58, "mass": 0, "aim_mode": "fixed", "motion": "puppet_behavior", "puppet_behavior_module": true, "puppet_only_module": true, "puppet_behavior_trait": "cover_retreat", "source_attack_preference": "melee_first", "source_close_response": "intercept", "source_keep_range": 0.58, "summary": "Puppet-only behavior module. Adds richer guard movement: the puppet moves between attackers and damaged allies instead of chasing blindly"},
+		{"name": "PUPPET AI: PACK FLANK VARIANCE", "cost": 64, "mass": 0, "aim_mode": "fixed", "motion": "puppet_behavior", "puppet_behavior_module": true, "puppet_only_module": true, "puppet_behavior_trait": "pack_flank_variance", "flank_width": 0.72, "orbit_radius": 0.6, "summary": "Puppet-only behavior module. Adds lane variance and orbit offsets to source-code packs so multiple puppets stop stacking on one line"},
+		{"name": "来复枪点射启动 / RIFLE BURST ACTIVATE", "maker": "LONGSIGHT AEGIS", "cost": 78, "mass": 0, "aim_mode": "manual", "motion": "gun_activate", "requires_bound_key": true, "module_target_kind": "gun_terminal", "module_action_profile": "rifle_burst_activate", "gun_activation": "rifle_burst_activate", "hold_to_activate": true, "gun_rotate_speed": 0.0, "summary": "按住绑定键启动来复枪点射；只绑定 rifle + bullet 枪械末端，立即按射速发射可见 bullet-hell 子弹，松开停止。"},
+		{"name": "榴弹弧射启动 / GRENADE ARC ACTIVATE", "maker": "REDLINE ARMS", "cost": 96, "mass": 0, "aim_mode": "manual", "motion": "gun_activate", "requires_bound_key": true, "module_target_kind": "gun_terminal", "module_action_profile": "grenade_arc_activate", "gun_activation": "grenade_arc_activate", "hold_to_activate": true, "gun_rotate_speed": 0.0, "summary": "按住绑定键启动榴弹弧射；只绑定 grenade_launcher + explosive 枪械末端，低频发射可见 U 弧爆炸弹，不进入狙击锁定。"},
 	],
 }
 
@@ -8671,14 +9777,19 @@ var victory_points := {}
 var portal_index := {}
 var camera_center := 0.0
 var camera_lane_center := 0.0
+var camera_mobius_s := 0.0
 var player_camera_centers := {1: 0.0, 2: 0.0}
 var player_camera_lanes := {1: 0.0, 2: 0.0}
 var spectator_camera_center := 0.0
 var spectator_camera_lane := 0.0
 var spectator_view_mode := SPECTATOR_VIEW_MID
+var mobius_enabled := MOBIUS_ENABLED_DEFAULT
+var mobius_rotation_state := MobiusWorld.default_rotation_state(RING_LENGTH)
+var combat_geometry_debug := false
 var parallax_nodes: Array = []
 var world_coordinate_grid_lines: Array = []
 var world_background_art_nodes: Array = []
+var world_near_dust_nodes: Array = []
 var battle_message := ""
 var battle_message_timer := 0.0
 var game_over := false
@@ -8721,9 +9832,11 @@ var ui_mouse_click_latch_msec := -9999
 
 var units_root: Node2D
 var effects_root: Node2D
+var combat_geometry_debug_root: Node2D
 var battle_contact_vfx_pool: BattleContactVfxPool
 var arena_top_boundary_line: Line2D
 var arena_bottom_boundary_line: Line2D
+var mobius_strip_surface_view: MobiusStripSurfaceView
 var all_units: Array = []
 var blind_zones: Array = []
 var field_coins: Array = []
@@ -8770,6 +9883,7 @@ var saved_unit_page := 0
 var saved_unit_selected_index := -1
 var saved_unit_selected_paths: Array = []
 var saved_unit_focus_path := ""
+var editor_source_saved_unit_path := ""
 var saved_units_return_context := "menu"
 var saved_unit_delete_panel: Control
 var saved_unit_delete_label: Label
@@ -8895,6 +10009,7 @@ var settings_backdrop: BackdropView
 var hud_overlay: CockpitHudView
 var battle_minimap_view: BattleMinimapView
 var battle_instrument_gauge: BattleInstrumentGaugeView
+var training_entry_intro_view: TrainingEntryIntroView
 var battle_ui_last_heavy_msec := -1000000
 var battle_ui_last_minimap_msec := -1000000
 var battle_ui_last_sortie_msec := -1000000
@@ -8906,8 +10021,10 @@ var editor_shop_card_backdrop: TextureRect
 var assembly_board_view: AssemblyBoardView
 var editor_stats_rail_view: EditorStatsRailView
 var editor_engine_allocation_button: Button
+var editor_torso_detail_button: Button
 var editor_engine_allocation_summary_label: Label
-var editor_power_topbar_view: UnitEditorPowerTopbarView
+var editor_power_topbar_view = null
+var editor_power_dock_view: UnitEditorPowerDockView
 var editor_hover_popup_view: EditorPartHoverPopupView
 var editor_unit_hover_view: ScoutUnitDetailView
 var engine_momentum_allocation_view: EngineMomentumAllocationPanelView
@@ -8984,6 +10101,8 @@ var hot_path_profiler: HotPathProfiler
 var gpu_geometry_service: GpuGeometryService
 var part_catalog_service: PartCatalogService
 var unit_stats_service: UnitStatsService
+var power_allocation_service: PowerAllocationService
+var navigation_service: NavigationService
 var team_edit_controller: TeamEditController
 var battle_controller: BattleController
 var saved_units_controller: SavedUnitsController
@@ -8991,6 +10110,7 @@ var settings_controller: SettingsController
 var scout_controller: ScoutController
 var menu_controller: MenuController
 var loading_controller: LoadingController
+var menu_view: MenuView
 var loading_auto_transitions_enabled := true
 var loading_transition_applying := false
 var loading_pending_callback := Callable()
@@ -9074,6 +10194,7 @@ var editor_open_torso_node_index := -1
 var editor_selected_torso_slot_index := -1
 var editor_selected_torso_slot_kind := ""
 var editor_pending_module_binding := {}
+var editor_bound_module_tryout := {}
 var editor_torso_detail_refresh_count := 0
 var editor_torso_detail_cache_miss_count := 0
 var editor_torso_detail_template_cache := {}
@@ -9089,12 +10210,14 @@ var editor_deferred_sfx_queue: Array = []
 var editor_engine_allocation_payload_index := -1
 var editor_engine_allocation_torso_node_index := -1
 var editor_engine_allocation_undo_recorded := false
+var editor_engine_allocation_panel_user_closed := true
 var editor_save_unit_name_panel: ColorRect
 var editor_save_unit_name_edit: LineEdit
 var editor_save_unit_name_label: Label
 var editor_save_unit_feedback_label: Label
 var editor_save_success_flash_timer := 0.0
 var editor_save_success_flash_path := ""
+var editor_save_feedback_is_error := false
 var training_import_blueprint := {}
 var training_import_role_key := ""
 var training_import_error_note := ""
@@ -9172,12 +10295,14 @@ var music_phase := 0.0
 var music_beat_phase := 0.0
 var combat_vfx_texture: Texture2D
 var space_backdrop_texture: Texture2D
+var mobius_surface_texture: Texture2D
 
 
 func _ready() -> void:
 	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
 	combat_vfx_texture = _load_generated_texture("res://assets/generated/combat_vfx_atlas.png")
-	space_backdrop_texture = _load_generated_texture("res://assets/generated/space_battle_backdrop.png")
+	space_backdrop_texture = _load_space_backdrop_texture()
+	mobius_surface_texture = _load_mobius_surface_texture()
 	_initialize_hot_path_state_layer()
 	_initialize_gpu_collision_pipeline()
 	_register_inputs()
@@ -9209,6 +10334,9 @@ func _initialize_hot_path_state_layer() -> void:
 	part_catalog_service.bind(self)
 	unit_stats_service = UnitStatsService.new()
 	unit_stats_service.bind(self, derived_state_cache)
+	power_allocation_service = PowerAllocationService.new()
+	navigation_service = NavigationService.new()
+	navigation_service.commit_transition(game_state, "ready")
 	team_edit_controller = TeamEditController.new()
 	team_edit_controller.bind(self, game_state_store, dirty_graph, derived_state_cache, hot_path_profiler)
 	battle_controller = BattleController.new()
@@ -9221,6 +10349,8 @@ func _initialize_hot_path_state_layer() -> void:
 	scout_controller.bind(self, game_state_store, dirty_graph, derived_state_cache, hot_path_profiler)
 	menu_controller = MenuController.new()
 	menu_controller.bind(self, game_state_store, dirty_graph, derived_state_cache, hot_path_profiler)
+	menu_view = MenuView.new()
+	menu_view.bind(self)
 	loading_controller = LoadingController.new()
 	loading_controller.bind(game_state_store, dirty_graph, hot_path_profiler)
 	loading_auto_transitions_enabled = DisplayServer.get_name().to_lower() != "headless"
@@ -9280,19 +10410,114 @@ func _submit_gpu_geometry_queries_deferred(colliders: Array, queries: Array, del
 	return hits
 
 
+func _handle_engine_momentum_allocation_panel_global_input(event: InputEvent) -> bool:
+	if engine_momentum_allocation_view == null or not engine_momentum_allocation_view.visible:
+		return false
+	if event is InputEventKey:
+		var key_event := event as InputEventKey
+		if key_event.pressed and not key_event.echo and (key_event.keycode == KEY_ESCAPE or key_event.physical_keycode == KEY_ESCAPE):
+			_close_engine_momentum_allocation_panel()
+			return true
+	if event is InputEventMouseButton:
+		var mouse_event := event as InputEventMouseButton
+		if mouse_event.pressed and mouse_event.button_index == MOUSE_BUTTON_LEFT:
+			var local_point := engine_momentum_allocation_view.get_global_transform().affine_inverse() * mouse_event.position
+			if engine_momentum_allocation_view._close_rect().grow(8.0).has_point(local_point):
+				_close_engine_momentum_allocation_panel()
+				return true
+			if engine_momentum_allocation_view._equalize_rect().grow(8.0).has_point(local_point):
+				_equalize_engine_momentum_allocation()
+				return true
+		if mouse_event.pressed and mouse_event.button_index == MOUSE_BUTTON_RIGHT:
+			_close_engine_momentum_allocation_panel()
+			return true
+	return false
+
+
+func _route_editor_torso_detail_binding_global_input(event: InputEvent) -> bool:
+	if game_state != STATE_EDITOR:
+		return false
+	if editor_torso_detail_view == null or not editor_torso_detail_view.visible or not editor_torso_detail_view.binding_mode:
+		return false
+	if event is InputEventMouseButton:
+		var mouse_event := event as InputEventMouseButton
+		if not editor_torso_detail_view.get_global_rect().has_point(mouse_event.position):
+			return false
+		_clear_editor_hover_card()
+		var local_event := InputEventMouseButton.new()
+		local_event.button_index = mouse_event.button_index
+		local_event.pressed = mouse_event.pressed
+		local_event.double_click = mouse_event.double_click
+		local_event.factor = mouse_event.factor
+		local_event.position = editor_torso_detail_view.get_global_transform().affine_inverse() * mouse_event.position
+		local_event.global_position = mouse_event.position
+		editor_torso_detail_view._gui_input(local_event)
+		return true
+	if event is InputEventMouseMotion:
+		var motion_event := event as InputEventMouseMotion
+		if not editor_torso_detail_view.get_global_rect().has_point(motion_event.position):
+			return false
+		_clear_editor_hover_card()
+		var local_motion := InputEventMouseMotion.new()
+		local_motion.position = editor_torso_detail_view.get_global_transform().affine_inverse() * motion_event.position
+		local_motion.global_position = motion_event.position
+		local_motion.relative = motion_event.relative
+		local_motion.velocity = motion_event.velocity
+		editor_torso_detail_view._gui_input(local_motion)
+		return true
+	return false
+
+
+func _mark_input_as_handled() -> void:
+	var viewport := get_viewport()
+	if viewport != null:
+		viewport.set_input_as_handled()
+
+
+func _is_enter_key_event(event: InputEvent) -> bool:
+	if not (event is InputEventKey):
+		return false
+	var key_event := event as InputEventKey
+	if not key_event.pressed or key_event.echo:
+		return false
+	return key_event.keycode == KEY_ENTER or key_event.keycode == KEY_KP_ENTER or key_event.physical_keycode == KEY_ENTER or key_event.physical_keycode == KEY_KP_ENTER
+
+
+func _handle_unit_editor_enter_key(event: InputEvent) -> bool:
+	if game_state != STATE_EDITOR or not _is_enter_key_event(event):
+		return false
+	if engine_momentum_allocation_view != null and engine_momentum_allocation_view.visible and engine_momentum_allocation_view.has_focused_value_edit():
+		engine_momentum_allocation_view.submit_focused_value_edit()
+	return true
+
+
+func _route_unit_editor_priority_input(event: InputEvent) -> bool:
+	if game_state != STATE_EDITOR:
+		return false
+	if _handle_unit_editor_enter_key(event):
+		return true
+	if _handle_engine_momentum_allocation_panel_global_input(event):
+		return true
+	if _route_editor_torso_detail_binding_global_input(event):
+		return true
+	if _handle_editor_catalog_manual_drag(event):
+		return true
+	return false
+
+
 func _input(event: InputEvent) -> void:
 	if game_state == STATE_EDITOR and (event is InputEventMouseMotion or event is InputEventMouseButton):
 		editor_preview_pause_until_msec = Time.get_ticks_msec() + 150
 	if event is InputEventMouseButton and (event as InputEventMouseButton).pressed:
 		_record_post_loading_interaction("mouse_button:%s" % game_state)
-	if settings_rebind_action != "" and _handle_battle_input_rebind_event(event):
-		get_viewport().set_input_as_handled()
+	if _route_unit_editor_priority_input(event):
+		_mark_input_as_handled()
 		return
-	if _handle_editor_catalog_manual_drag(event):
-		get_viewport().set_input_as_handled()
+	if settings_rebind_action != "" and _handle_battle_input_rebind_event(event):
+		_mark_input_as_handled()
 		return
 	if _handle_global_ui_mouse_input(event):
-		get_viewport().set_input_as_handled()
+		_mark_input_as_handled()
 
 
 func _process(delta: float) -> void:
@@ -9417,7 +10642,9 @@ func _initialize_state() -> void:
 	runtime_resource = {1: RUNTIME_START_RESOURCE, 2: RUNTIME_START_RESOURCE}
 	victory_points = {1: 0, 2: 0}
 	portal_index = {1: 3, 2: 4}
+	camera_center = 0.0
 	camera_lane_center = 0.0
+	camera_mobius_s = 0.0
 	player_camera_lanes = {1: 0.0, 2: 0.0}
 	spectator_camera_center = 0.0
 	spectator_camera_lane = 0.0
@@ -9470,7 +10697,9 @@ func _apply_performance_profile(profile_key: String, persist: bool = true) -> vo
 	var spec := _performance_profile_spec(profile_key)
 	performance_profile = String(spec.get("profile", PERFORMANCE_PROFILE_DEFAULT))
 	runtime_quality_config = spec.duplicate(true)
+	runtime_quality_config["fps_cap"] = maxi(MINIMUM_RUNTIME_FPS_CAP, int(runtime_quality_config.get("fps_cap", 120)))
 	Engine.max_fps = int(runtime_quality_config.get("fps_cap", 120))
+	Engine.physics_ticks_per_second = int(BATTLE_SIMULATION_FPS)
 	if battle_contact_vfx_pool != null and is_instance_valid(battle_contact_vfx_pool):
 		battle_contact_vfx_pool.setup_pool(int(runtime_quality_config.get("contact_particle_pool", 128)), float(runtime_quality_config.get("vfx_scale", 1.0)))
 	if persist:
@@ -9735,6 +10964,7 @@ func _reset_editor_working_canvas(role_key: String = "") -> void:
 	editor_canvas_mode = "blank"
 	editor_working_role_key = resolved_role
 	editor_working_blueprint = _make_editor_blank_blueprint(resolved_role)
+	editor_source_saved_unit_path = ""
 	editor_topology_node_index = 0
 	editor_selected_barrier_cell = -1
 	editor_selected_topology_nodes = []
@@ -9895,7 +11125,7 @@ const LEGACY_POWER_FIELD_KEYS := [
 	"load_capacity",
 	"embedded_joint_momentum_capacity",
 	"damage_unit" + "_threshold",
-	"reference_damage",
+	"reference_" + "damage",
 	"torso_damage_unit" + "_threshold",
 ]
 
@@ -9927,6 +11157,98 @@ func _without_legacy_power_fields(part: Dictionary) -> Dictionary:
 	for key in LEGACY_POWER_FIELD_KEYS:
 		cleaned.erase(key)
 	return cleaned
+
+const ACTION_MODULE_COMBAT_FIELD_KEYS = [
+	"normal_damage",
+	"armor_damage",
+	"active_damage",
+	"damage",
+	"damage_type",
+	"damage_coeff",
+	"break_coeff",
+	"stiffness_momentum",
+	"path_stiffness_momentum",
+	"projectile_damage",
+	"projectile_damage_type",
+	"projectile_damage_coeff",
+	"projectile_break_coeff",
+	"explosion_damage",
+	"explosion_damage_type",
+	"trap_damage",
+	"trap_damage_type",
+	"barrage_damage",
+	"barrage_damage_type",
+	"homing_damage",
+	"homing_damage_type",
+	"cage_damage",
+	"cage_damage_type",
+	"ball_hit_damage",
+	"takeover_damage_rate",
+	"takeover_damage_type",
+	"module_damage_mult",
+]
+
+func _part_is_action_module(slot_key: String, part: Dictionary) -> bool:
+	return slot_key == "module" or part.has("module_action_profile") or part.has("module_target_kind") or part.has("command_window_profile")
+
+func _part_is_nonphysical_equipment_or_software(slot_key: String, part: Dictionary) -> bool:
+	if slot_key in ["engine", "booster", "cooling", "ammo", "special", "module", "joint"]:
+		return true
+	if bool(part.get("software", false)):
+		return true
+	if bool(part.get("torso_slot_payload", false)) and not bool(part.get("is_torso", false)):
+		return true
+	if bool(part.get("ammo_slot_payload", false)) or bool(part.get("shield_payload", false)) or bool(part.get("electronic_armor", false)):
+		return true
+	var material_class := String(part.get("material_class", ""))
+	if material_class in ["ammo_payload", "shield_payload", "engine_payload", "booster_payload", "cooling_payload"]:
+		return true
+	return false
+
+func _scrub_nonphysical_catalog_part(part: Dictionary, slot_key: String) -> Dictionary:
+	var cleaned := part.duplicate(true)
+	if _part_is_nonphysical_equipment_or_software(slot_key, cleaned):
+		cleaned.erase("hp")
+		cleaned.erase("max_hp")
+		cleaned.erase("health")
+	if _part_is_action_module(slot_key, cleaned):
+		for key in ACTION_MODULE_COMBAT_FIELD_KEYS:
+			cleaned.erase(key)
+	return cleaned
+
+func _saved_dict_looks_like_nonphysical_payload(data: Dictionary) -> bool:
+	var kind := String(data.get("kind", data.get("slot_key", data.get("slot", ""))))
+	if kind in ["engine", "booster", "cooling", "ammo", "special", "module", "joint", "electronic_armor", "shield"]:
+		return true
+	if data.has("engine_family") or data.has("engine_momentum_output"):
+		return true
+	if data.has("thruster_family") or data.has("movement_profile"):
+		return true
+	if data.has("cooling_family") or data.has("cooling_rate") or data.has("heat_dissipation"):
+		return true
+	if bool(data.get("ammo_slot_payload", false)) or bool(data.get("shield_payload", false)) or bool(data.get("electronic_armor", false)):
+		return true
+	if bool(data.get("software", false)) or data.has("soul_heat_capacity") or data.has("source_rules") or data.has("ether_group_kind"):
+		return true
+	return false
+
+func _saved_payload_has_legacy_nonphysical_combat_fields(value) -> bool:
+	if value is Dictionary:
+		var data: Dictionary = value
+		if _saved_dict_looks_like_nonphysical_payload(data) and data.has("hp"):
+			return true
+		if _part_is_action_module(String(data.get("slot_key", data.get("kind", ""))), data):
+			for key in ACTION_MODULE_COMBAT_FIELD_KEYS:
+				if data.has(key):
+					return true
+		for child in data.values():
+			if _saved_payload_has_legacy_nonphysical_combat_fields(child):
+				return true
+	elif value is Array:
+		for child in value:
+			if _saved_payload_has_legacy_nonphysical_combat_fields(child):
+				return true
+	return false
 
 
 func _saved_blueprint_has_current_topology(unit_bp: Dictionary) -> bool:
@@ -9960,6 +11282,8 @@ func _is_current_saved_unit_payload(payload: Dictionary) -> bool:
 		return false
 	if _saved_payload_has_legacy_power_fields(payload):
 		return false
+	if _saved_payload_has_legacy_nonphysical_combat_fields(payload):
+		return false
 	return true
 
 
@@ -9978,6 +11302,8 @@ func _is_current_saved_team_payload(payload: Dictionary) -> bool:
 		if not _saved_blueprint_has_current_topology(unit_bp):
 			return false
 	if _saved_payload_has_legacy_power_fields(payload):
+		return false
+	if _saved_payload_has_legacy_nonphysical_combat_fields(payload):
 		return false
 	return true
 
@@ -10344,7 +11670,29 @@ func _save_editor_current_unit_to_library(path: String = "") -> String:
 	return _save_editor_current_unit_to_library_named("", path)
 
 
-func _save_editor_current_unit_to_library_named(unit_name_override: String = "", path: String = "") -> String:
+func _latest_saved_unit_named_for_role(unit_name: String, role_key: String) -> Dictionary:
+	var clean_name := unit_name.strip_edges()
+	if clean_name == "":
+		return {}
+	var best_entry := {}
+	var best_time := -1
+	_ensure_saved_unit_library_cache(false, true)
+	for raw_entry in _unit_library_entries():
+		if not (raw_entry is Dictionary):
+			continue
+		var entry: Dictionary = raw_entry
+		if String(entry.get("role", "")) != role_key:
+			continue
+		if String(entry.get("unit_name", "")).strip_edges() != clean_name:
+			continue
+		var modified := int(entry.get("mtime", 0))
+		if modified >= best_time:
+			best_time = modified
+			best_entry = entry.duplicate(true)
+	return best_entry
+
+
+func _save_editor_current_unit_to_library_named(unit_name_override: String = "", path: String = "", save_as_new: bool = false) -> String:
 	var role_key: String = ROLE_ORDER[editor_role_index]
 	var unit_bp := _unit_blueprint_for_library(role_key, _editor_current_blueprint())
 	var clean_name := unit_name_override.strip_edges()
@@ -10353,6 +11701,13 @@ func _save_editor_current_unit_to_library_named(unit_name_override: String = "",
 		unit_bp["name"] = clean_name
 	_ensure_saved_units_dir()
 	var export_path := path
+	if export_path == "" and not save_as_new:
+		if editor_source_saved_unit_path != "" and FileAccess.file_exists(editor_source_saved_unit_path):
+			export_path = editor_source_saved_unit_path
+		else:
+			var matching_entry := _latest_saved_unit_named_for_role(String(unit_bp.get("unit_name", unit_bp.get("name", ""))), role_key)
+			if not matching_entry.is_empty():
+				export_path = String(matching_entry.get("path", ""))
 	if export_path == "":
 		var stem := _safe_save_stem(String(unit_bp.get("unit_name", unit_bp.get("name", role_key))), "%s_unit" % role_key)
 		export_path = "%s/%s_%d.json" % [SAVED_UNITS_DIR, stem, int(Time.get_unix_time_from_system())]
@@ -10374,9 +11729,12 @@ func _save_editor_current_unit_to_library_named(unit_name_override: String = "",
 	_invalidate_saved_unit_library_cache()
 	editor_working_blueprint = unit_bp.duplicate(true)
 	editor_canvas_mode = "blank"
+	saved_unit_focus_path = export_path
+	editor_source_saved_unit_path = export_path
 	editor_summary_label.text = "已保存到单位库：%s" % export_path if _ui_is_zh() else "Saved unit to library: %s" % export_path
 	editor_save_success_flash_path = export_path
 	editor_save_success_flash_timer = 1.7
+	editor_save_feedback_is_error = false
 	if editor_save_unit_feedback_label != null:
 		editor_save_unit_feedback_label.text = "保存成功：%s" % String(unit_bp.get("unit_name", unit_bp.get("name", ""))) if _ui_is_zh() else "Saved: %s" % String(unit_bp.get("unit_name", unit_bp.get("name", "")))
 		editor_save_unit_feedback_label.visible = true
@@ -10417,8 +11775,7 @@ func _refresh_save_unit_name_dialog_text() -> void:
 		editor_save_unit_name_edit.placeholder_text = "输入单位名称" if _ui_is_zh() else "Enter unit name"
 	var labels := {
 		"save_name_stay": "保存" if _ui_is_zh() else "SAVE",
-		"save_name_library": "打开单位库" if _ui_is_zh() else "UNITS",
-		"save_name_train": "保存并训练" if _ui_is_zh() else "TRAIN",
+		"save_name_save_as": "另存为" if _ui_is_zh() else "SAVE AS",
 		"save_name_cancel": "取消" if _ui_is_zh() else "CANCEL",
 	}
 	for button_name in labels.keys():
@@ -10438,14 +11795,14 @@ func _confirm_save_unit_name_dialog(action_or_text: String = "stay", maybe_actio
 	if unit_name.strip_edges() == "":
 		unit_name = _default_save_unit_name()
 	_hide_save_unit_name_dialog()
-	var saved_path := _save_editor_current_unit_to_library_named(unit_name)
+	var saved_path := _save_editor_current_unit_to_library_named(unit_name, "", action == "save_as")
 	if saved_path == "":
 		return
 	saved_unit_focus_path = saved_path
 	if action == "library":
 		_show_saved_units_library(saved_path, "editor", true)
 	elif action == "train":
-		_import_editor_canvas_to_training()
+		_start_editor_canvas_training_test()
 
 
 func _saved_unit_files() -> Array:
@@ -10634,25 +11991,152 @@ func _latest_saved_unit_named(unit_name: String) -> Dictionary:
 	return best_entry
 
 
-func _training_dummy_unit2_entry() -> Dictionary:
-	var entry := _latest_saved_unit_named("2")
+func _latest_training_dummy_unit_path() -> String:
+	var repaired := _repair_saved_unit4_for_training_dummy()
+	if bool(repaired.get("ok", false)):
+		return String(repaired.get("path", ""))
+	return ""
+
+
+func _training_dummy_unit4_entry() -> Dictionary:
+	var repair_result := _repair_saved_unit4_for_training_dummy()
+	if not bool(repair_result.get("ok", false)):
+		training_import_error_note = String(repair_result.get("error", "INVALID: saved unit named 4 is required as the training dummy."))
+		return {}
+	var entry: Dictionary = repair_result.get("entry", {}) if repair_result.get("entry", {}) is Dictionary else {}
 	if entry.is_empty():
-		training_import_error_note = "INVALID: saved unit named 2 is required as the training dummy."
+		training_import_error_note = "INVALID: saved unit named 4 is required as the training dummy."
 		return {}
 	var role_key := String(entry.get("role", "hero"))
 	if role_key != "hero":
-		training_import_error_note = "INVALID: saved unit 2 must be a hero unit for the current training dummy slot."
+		training_import_error_note = "INVALID: saved unit 4 must be a hero unit for the current training dummy slot."
 		return {}
 	var unit_bp: Dictionary = Dictionary(entry.get("blueprint", {})).duplicate(true)
 	var illegal_note := _training_blueprint_illegal_note(2, role_key, unit_bp)
 	if illegal_note != "":
-		training_import_error_note = "INVALID: saved unit 2 dummy is not training legal: %s" % illegal_note
+		training_import_error_note = "INVALID: saved unit 4 dummy is not training legal: %s" % illegal_note
 		return {}
 	unit_bp["role"] = role_key
-	unit_bp["unit_name"] = "2"
-	unit_bp["name"] = String(unit_bp.get("name", "2"))
+	unit_bp["unit_name"] = "4"
+	unit_bp["name"] = String(unit_bp.get("name", "4"))
 	_apply_entry_pose_to_blueprint(unit_bp)
 	return {"role": role_key, "blueprint": unit_bp}
+
+
+func _training_dummy_unit2_entry() -> Dictionary:
+	return _training_dummy_unit4_entry()
+
+
+func _repair_saved_unit4_for_training_dummy() -> Dictionary:
+	var entry := _latest_saved_unit_named("4")
+	if entry.is_empty():
+		return {"ok": false, "error": "INVALID: saved unit named 4 is required as the training dummy."}
+	var role_key := String(entry.get("role", "hero"))
+	if role_key != "hero":
+		return {"ok": false, "error": "INVALID: saved unit 4 must be a hero unit for the current training dummy slot."}
+	if not (entry.get("blueprint", {}) is Dictionary):
+		return {"ok": false, "error": "INVALID: saved unit 4 has no blueprint."}
+	var unit_bp: Dictionary = Dictionary(entry.get("blueprint", {})).duplicate(true)
+	unit_bp["role"] = role_key
+	unit_bp["unit_name"] = "4"
+	unit_bp["name"] = String(unit_bp.get("name", "4"))
+	_stamp_saved_blueprint_part_names(role_key, unit_bp)
+	var illegal_note := _training_blueprint_illegal_note(2, role_key, unit_bp)
+	if illegal_note == "":
+		entry["blueprint"] = unit_bp
+		return {"ok": true, "entry": entry, "path": String(entry.get("path", "")), "repaired": false}
+	var repaired_bp: Dictionary = unit_bp.duplicate(true)
+	var changed := _repair_blueprint_limb_allocation_ranges(role_key, repaired_bp)
+	_stamp_saved_blueprint_part_names(role_key, repaired_bp)
+	_apply_module_recovery_entry_pose_defaults(role_key, repaired_bp)
+	repaired_bp["entry_pose"] = _entry_pose_from_topology(repaired_bp)
+	var repaired_note := _training_blueprint_illegal_note(2, role_key, repaired_bp)
+	if repaired_note != "" or not changed:
+		return {"ok": false, "error": "INVALID: saved unit 4 dummy is not training legal: %s" % repaired_note}
+	_ensure_saved_units_dir()
+	var export_path := "%s/4_%d.json" % [SAVED_UNITS_DIR, int(Time.get_unix_time_from_system())]
+	var payload := {
+		"schema_version": SAVED_UNIT_SCHEMA_VERSION,
+		"unit_id": String(repaired_bp.get("unit_id", "hero_4_repaired")),
+		"unit_name": "4",
+		"unit_role": role_key,
+		"team_color": repaired_bp.get("team_color", {}),
+		"blueprint": _json_safe_value(repaired_bp),
+	}
+	var file := FileAccess.open(export_path, FileAccess.WRITE)
+	if file == null:
+		return {"ok": false, "error": "INVALID: saved unit 4 repair could not write a new save file."}
+	file.store_string(JSON.stringify(payload, "\t"))
+	file.close()
+	_invalidate_saved_unit_library_cache()
+	_ensure_saved_unit_library_cache(true, true)
+	var repaired_entry := _latest_saved_unit_named("4")
+	if repaired_entry.is_empty():
+		return {"ok": false, "error": "INVALID: saved unit 4 repair did not produce a readable save file."}
+	return {"ok": true, "entry": repaired_entry, "path": String(repaired_entry.get("path", export_path)), "repaired": true}
+
+
+func _repair_blueprint_limb_allocation_ranges(role_key: String, unit_bp: Dictionary) -> bool:
+	var stats := _compute_unit_stats(2, role_key, -1, unit_bp)
+	var segments_by_node := {}
+	for raw_segment in Array(stats.get("runtime_topology_segments", [])):
+		if raw_segment is Dictionary:
+			var segment: Dictionary = raw_segment
+			segments_by_node[int(segment.get("node_index", -1))] = segment
+	var bindings: Array = Array(unit_bp.get("module_bindings", [])).duplicate(true)
+	var changed := false
+	for binding_index in range(bindings.size()):
+		if not (bindings[binding_index] is Dictionary):
+			continue
+		var binding: Dictionary = Dictionary(bindings[binding_index]).duplicate(true)
+		var by_node := {}
+		if binding.get("allocated_limb_momentum_by_node", {}) is Dictionary:
+			by_node = Dictionary(binding.get("allocated_limb_momentum_by_node", {})).duplicate(true)
+		if by_node.is_empty() and binding.get("joint_drive_allocation_by_node", {}) is Dictionary:
+			by_node = Dictionary(binding.get("joint_drive_allocation_by_node", {})).duplicate(true)
+		var target_nodes: Array = Array(binding.get("target_nodes", []))
+		var target_count := maxi(1, target_nodes.size())
+		var total := 0.0
+		for raw_node in target_nodes:
+			var node_index := int(raw_node)
+			if not segments_by_node.has(node_index):
+				continue
+			var segment: Dictionary = Dictionary(segments_by_node[node_index])
+			if String(segment.get("part_kind", "")) == "torso":
+				continue
+			var drive_kind := String(segment.get("joint_drive_kind", "rigid"))
+			if drive_kind == "rigid" or drive_kind == "port":
+				continue
+			var min_momentum := maxf(0.0, float(segment.get("momentum_min", 0.0)))
+			var max_momentum := maxf(0.0, float(segment.get("momentum_max", 0.0)))
+			var current := 0.0
+			if by_node.has(str(node_index)):
+				current = maxf(0.0, float(by_node[str(node_index)]))
+			elif by_node.has(node_index):
+				current = maxf(0.0, float(by_node[node_index]))
+			elif binding.has("allocated_limb_momentum"):
+				current = maxf(0.0, float(binding.get("allocated_limb_momentum", 0.0)) / float(target_count))
+			else:
+				current = maxf(0.0, float(segment.get("allocated_limb_momentum", segment.get("joint_output_momentum_base", 0.0))))
+			var clamped := current
+			if min_momentum > 0.0:
+				clamped = maxf(clamped, min_momentum)
+			if max_momentum > 0.0:
+				clamped = minf(clamped, max_momentum)
+			if absf(clamped - current) > 0.001:
+				changed = true
+			by_node[str(node_index)] = clamped
+			total += clamped
+		if not by_node.is_empty():
+			binding["allocated_limb_momentum_by_node"] = by_node
+			binding["joint_drive_allocation_by_node"] = by_node.duplicate(true)
+			binding["allocated_limb_momentum"] = total
+			binding["joint_drive_allocation_total"] = total
+			binding["joint_drive_demand"] = total
+			bindings[binding_index] = binding
+	if changed:
+		unit_bp["module_bindings"] = bindings
+	return changed
 
 
 func _latest_unit2_balance_stats() -> Dictionary:
@@ -10751,6 +12235,8 @@ func _load_unit_library_entry_to_canvas(entry: Dictionary) -> void:
 	editor_working_role_key = role_key
 	editor_working_blueprint = Dictionary(entry.get("blueprint", {})).duplicate(true)
 	_apply_entry_pose_to_blueprint(editor_working_blueprint)
+	editor_source_saved_unit_path = _saved_unit_entry_path(entry)
+	saved_unit_focus_path = editor_source_saved_unit_path
 	editor_topology_node_index = 0
 	editor_selected_topology_nodes = []
 	editor_dragging_node_index = -1
@@ -10983,7 +12469,7 @@ func _handle_saved_unit_card_input(event: InputEvent, card_index: int) -> void:
 	if entry.is_empty():
 		return
 	_toggle_saved_unit_selection(entry)
-	get_viewport().set_input_as_handled()
+	_mark_input_as_handled()
 
 
 func _update_saved_units_hover(mouse_position: Vector2) -> void:
@@ -11056,7 +12542,9 @@ func _load_saved_unit_entry_into_unit_editor(entry: Dictionary) -> bool:
 	editor_hovered_torso_node_index = -1
 	editor_engine_allocation_payload_index = -1
 	editor_engine_allocation_torso_node_index = -1
+	editor_engine_allocation_panel_user_closed = true
 	saved_unit_focus_path = _saved_unit_entry_path(entry)
+	editor_source_saved_unit_path = saved_unit_focus_path
 	_show_unit_editor_preserve_loaded_blueprint()
 	if editor_summary_label != null:
 		editor_summary_label.text = "已载入单位编辑：%s" % String(unit_bp.get("unit_name", unit_bp.get("name", ""))) if _ui_is_zh() else "Loaded into Unit Edit: %s" % String(unit_bp.get("unit_name", unit_bp.get("name", "")))
@@ -11161,14 +12649,12 @@ func _show_saved_unit_detail(entry: Dictionary) -> void:
 
 
 func _show_saved_units_library(focus_path: String = "", return_context: String = "", defer_disk_scan: bool = false, preloaded: bool = false) -> void:
+	var resolved_return_context := _navigation_return_target_for(STATE_SAVED_UNITS, return_context)
 	if not preloaded and _should_queue_loading_transition(STATE_SAVED_UNITS):
-		queue_loading_transition(STATE_SAVED_UNITS, "saved_units", preload_saved_units_content(), Callable(self, "_show_saved_units_library").bind(focus_path, return_context, defer_disk_scan, true))
+		queue_loading_transition(STATE_SAVED_UNITS, "saved_units", preload_saved_units_content(), Callable(self, "_show_saved_units_library").bind(focus_path, return_context, defer_disk_scan, true), resolved_return_context)
 		return
-	if return_context != "":
-		saved_units_return_context = return_context
-	elif game_state != STATE_SAVED_UNITS:
-		saved_units_return_context = "editor" if game_state == STATE_EDITOR else "menu"
-	game_state = STATE_SAVED_UNITS
+	saved_units_return_context = resolved_return_context
+	_commit_page_state(STATE_SAVED_UNITS, "saved_units", {"focus_path": focus_path}, "" if preloaded else resolved_return_context)
 	_hide_match_format_select()
 	if defer_disk_scan and saved_unit_library_cache_dirty:
 		_request_deferred_saved_unit_cache_refresh(focus_path)
@@ -11752,6 +13238,10 @@ func _topology_component_node(node_id: int, label: String, pos: Vector2, slot_ke
 	if slot_key == "muscle" and _component_is_torso(part):
 		node["is_torso"] = true
 		node["material_class"] = "torso"
+	elif part.has("root_socket"):
+		node["root_socket"] = String(part.get("root_socket", ""))
+		if part.has("distal_socket"):
+			node["distal_socket"] = String(part.get("distal_socket", ""))
 	if slot_key == "muscle" and _part_counts_as_terminal_weapon(part, "muscle"):
 		node["terminal_weapon"] = true
 		node["terminal_weapon_kind"] = _terminal_weapon_kind_for_part(part, "muscle")
@@ -13408,12 +14898,77 @@ func _update_sortie_after_delete(player_id: int, role_key: String, deleted_index
 	initial_sortie_slot[player_id] = 0 if fixed.is_empty() else clampi(int(initial_sortie_slot.get(player_id, 0)), 0, fixed.size() - 1)
 
 
+func _navigation_current_page() -> String:
+	if navigation_service != null and navigation_service.current_page() != "":
+		return navigation_service.current_page()
+	return game_state
+
+
+func _navigation_return_target_for(target_state: String, explicit_return_target: String = "") -> String:
+	if explicit_return_target != "":
+		return explicit_return_target
+	var current := _navigation_current_page()
+	if current == STATE_LOADING:
+		current = game_state
+	match target_state:
+		STATE_SETTINGS:
+			if current != "" and current != STATE_SETTINGS and current != STATE_LOADING:
+				return current
+		STATE_SAVED_UNITS:
+			return STATE_EDITOR if current == STATE_EDITOR else STATE_MENU
+	return ""
+
+
+func _begin_page_navigation(target_state: String, reason: String, return_target: String = "", payload: Dictionary = {}) -> void:
+	if navigation_service == null:
+		return
+	navigation_service.begin_transition(target_state, reason, _navigation_return_target_for(target_state, return_target), payload)
+
+
+func _commit_page_state(target_state: String, reason: String = "", payload: Dictionary = {}, return_target: String = "") -> void:
+	var nav_reason := reason
+	if nav_reason == "":
+		nav_reason = "navigation:%s" % target_state
+	if navigation_service != null:
+		if return_target != "":
+			navigation_service.begin_transition(target_state, nav_reason, return_target, payload)
+		navigation_service.commit_transition(target_state, nav_reason, payload)
+	game_state = target_state
+	if game_state_store != null:
+		game_state_store.set_app_mode(target_state, nav_reason)
+	if dirty_graph != null:
+		dirty_graph.mark(GameStateStore.DOMAIN_GLOBAL, 1, nav_reason)
+	_hide_page_options()
+
+
+func _show_battle_layer_without_reset(reason: String = "return_battle") -> void:
+	_commit_page_state(STATE_BATTLE, reason, {"mode": battle_mode, "preserve_runtime": true})
+	_set_visible_layer(hud_layer)
+	_update_battle_ui()
+
+
+func _navigate_to_page_target(target_state: String, reason: String = "navigation_return") -> void:
+	match target_state:
+		STATE_EDITOR:
+			_show_editor_preserve_canvas()
+		STATE_SAVED_UNITS:
+			_show_saved_units_library("", _navigation_return_target_for(STATE_SAVED_UNITS), false)
+		STATE_SETTINGS:
+			_show_settings()
+		STATE_SCOUT:
+			_show_scout(pending_battle_mode)
+		STATE_BATTLE:
+			_show_battle_layer_without_reset(reason)
+		_:
+			_show_menu()
+
+
 func _show_menu(preloaded: bool = false) -> void:
 	if not preloaded and _should_queue_loading_transition(STATE_MENU):
 		queue_loading_transition(STATE_MENU, "menu", preload_menu_content(), Callable(self, "_show_menu").bind(true))
 		return
 	_restore_ai_side_roster_mapping()
-	game_state = STATE_MENU
+	_commit_page_state(STATE_MENU, "menu")
 	_clear_all_units()
 	_hide_match_format_select()
 	editor_board_zoom = 1.0
@@ -13497,7 +15052,7 @@ func _show_editor(preloaded: bool = false) -> void:
 	if not preloaded and _should_queue_loading_transition(STATE_EDITOR):
 		queue_loading_transition(STATE_EDITOR, "teamedit", preload_teamedit_content(), Callable(self, "_show_editor").bind(true))
 		return
-	game_state = STATE_EDITOR
+	_commit_page_state(STATE_EDITOR, "teamedit")
 	_hide_match_format_select()
 	editor_board_zoom = 1.0
 	editor_board_view_offset = Vector2.ZERO
@@ -13511,7 +15066,7 @@ func _show_editor_preserve_canvas(preloaded: bool = false) -> void:
 	if not preloaded and _should_queue_loading_transition(STATE_EDITOR):
 		queue_loading_transition(STATE_EDITOR, "teamedit_preserve", preload_teamedit_content(), Callable(self, "_show_editor_preserve_canvas").bind(true))
 		return
-	game_state = STATE_EDITOR
+	_commit_page_state(STATE_EDITOR, "teamedit_preserve", {"preserve_canvas": true})
 	_hide_match_format_select()
 	_refresh_editor_board_zoom_ui()
 	_set_visible_layer(editor_layer)
@@ -13519,7 +15074,7 @@ func _show_editor_preserve_canvas(preloaded: bool = false) -> void:
 
 
 func _show_match_format_select() -> void:
-	game_state = STATE_MENU
+	_commit_page_state(STATE_MENU, "match_format_select")
 	_set_visible_layer(menu_layer)
 	if format_select_layer != null:
 		format_select_layer.visible = true
@@ -13561,11 +15116,12 @@ func _update_match_format_select_ui() -> void:
 
 
 func _show_settings(preloaded: bool = false) -> void:
+	var resolved_return_target := _navigation_return_target_for(STATE_SETTINGS)
 	if not preloaded and _should_queue_loading_transition(STATE_SETTINGS):
-		queue_loading_transition(STATE_SETTINGS, "settings", preload_settings_content(), Callable(self, "_show_settings").bind(true))
+		queue_loading_transition(STATE_SETTINGS, "settings", preload_settings_content(), Callable(self, "_show_settings").bind(true), resolved_return_target)
 		return
 	settings_category = "root"
-	game_state = STATE_SETTINGS
+	_commit_page_state(STATE_SETTINGS, "settings", {}, "" if preloaded else resolved_return_target)
 	_set_visible_layer(settings_layer)
 	_rebuild_settings_list()
 	_update_settings_ui()
@@ -13621,7 +15177,7 @@ func _show_scout(mode: String, preloaded: bool = false) -> void:
 			scout_hint_label.text = "选择当前屏幕视角 P1/P2/P3；双方仍按出战规则入场。" if _ui_is_zh() else "Choose this screen's P1/P2/P3 view; both sides still enter by sortie rules."
 		else:
 			scout_hint_label.text = "双方完整队伍已公开。每方在此按%s选择出战单位，右键设首发。" % _match_format_name()
-	game_state = STATE_SCOUT
+	_commit_page_state(STATE_SCOUT, "scout:%s" % mode, {"mode": mode})
 	_set_visible_layer(scout_layer)
 	_update_scout_ui()
 
@@ -13761,11 +15317,19 @@ func _game_subtitle() -> String:
 
 
 func _menu_item(index: int) -> String:
-	var items := MENU_ITEMS if _ui_is_zh() else MENU_ITEMS_EN
-	return String(items[clampi(index, 0, items.size() - 1)])
+	var items := menu_controller.main_menu_model(ui_language, ai_battle_seat, _match_format_short()).get("items", []) if menu_controller != null else []
+	if not items.is_empty():
+		var item: Dictionary = items[clampi(index, 0, items.size() - 1)]
+		return String(item.get("label", ""))
+	var fallback := MENU_ITEMS if _ui_is_zh() else MENU_ITEMS_EN
+	return String(fallback[clampi(index, 0, fallback.size() - 1)])
 
 
 func _menu_description(index: int) -> String:
+	var items := menu_controller.main_menu_model(ui_language, ai_battle_seat, _match_format_short()).get("items", []) if menu_controller != null else []
+	if not items.is_empty():
+		var item: Dictionary = items[clampi(index, 0, items.size() - 1)]
+		return String(item.get("description", ""))
 	var descriptions := MENU_DESCRIPTIONS if _ui_is_zh() else MENU_DESCRIPTIONS_EN
 	return String(descriptions[clampi(index, 0, descriptions.size() - 1)])
 
@@ -14077,13 +15641,13 @@ func _apply_language_to_existing_ui() -> void:
 	if format_select_layer != null:
 		_update_match_format_select_ui()
 	if editor_layer != null:
-		_set_named_label(editor_layer, "EditorTitle", "单位编辑" if _ui_is_zh() else "Unit Edit")
-		_set_named_label(editor_layer, "EditorHelp", "自由画布优先；详情看悬停卡。" if _ui_is_zh() else "Free canvas first; hover for details.")
+		_set_named_label(editor_layer, "EditorTitle", "")
+		_set_named_label(editor_layer, "EditorHelp", "")
 		_set_named_label(editor_layer, "EditorBackButton", "选项" if _ui_is_zh() else "OPTIONS")
-		_set_named_label(editor_layer, "BoardTitle", "自由画布" if _ui_is_zh() else "FREE CANVAS")
-		_set_named_label(editor_layer, "CanvasToolsTitle", "画布工具" if _ui_is_zh() else "CANVAS TOOLS")
-		_set_named_label(editor_layer, "BoardZoomTitle", "画板缩放" if _ui_is_zh() else "BOARD ZOOM")
-		_set_named_label(editor_layer, "CanvasTopologyText", "自由拓扑：拖入构件，端点直连。" if _ui_is_zh() else "free topology: drag parts, connect sockets.")
+		_set_named_label(editor_layer, "BoardTitle", "")
+		_set_named_label(editor_layer, "CanvasToolsTitle", "")
+		_set_named_label(editor_layer, "BoardZoomTitle", "")
+		_set_named_label(editor_layer, "CanvasTopologyText", "")
 		_set_named_label(editor_layer, "ShopTitle", "零件面板" if _ui_is_zh() else "PART PANEL")
 		_set_named_label(editor_layer, "CatalogTitle", "零件卡片" if _ui_is_zh() else "PART CARDS")
 		_set_named_label(editor_layer, "EditorColorLabel", "队伍颜色" if _ui_is_zh() else "TEAM COLOR")
@@ -14180,7 +15744,28 @@ func _start_ai_battle_from_menu(seat: int) -> void:
 	_start_battle(MODE_AI)
 
 
-func _import_editor_canvas_to_training() -> void:
+func _show_unit_editor_blocking_error(raw_note: String, title: String = "") -> void:
+	var note := raw_note.strip_edges()
+	if note == "":
+		note = "INVALID: current unit is not training legal."
+	var localized := _localized_system_text(note)
+	var heading := title if title.strip_edges() != "" else ("训练测试失败" if _ui_is_zh() else "Training test blocked")
+	var text := "%s：%s" % [heading, localized]
+	if editor_summary_label != null:
+		editor_summary_label.text = text
+	if editor_board_hint_label != null:
+		editor_board_hint_label.text = text
+	if editor_save_unit_feedback_label != null:
+		editor_save_unit_feedback_label.text = text
+		editor_save_unit_feedback_label.visible = true
+		editor_save_feedback_is_error = true
+		editor_save_success_flash_timer = 4.2
+		editor_save_success_flash_path = ""
+	mark_editor_dirty(EDITOR_DIRTY_DASHBOARD | EDITOR_DIRTY_STATS | EDITOR_DIRTY_LEGALITY | EDITOR_DIRTY_ACTION_BUTTONS)
+	_play_sfx_wave("alarm", 170.0, 0.08, -16.0)
+
+
+func _prepare_editor_canvas_training_import() -> bool:
 	var role_key: String = ROLE_ORDER[editor_role_index]
 	var source_bp: Dictionary = _editor_current_blueprint()
 	if source_bp.has("custom_topology"):
@@ -14188,14 +15773,31 @@ func _import_editor_canvas_to_training() -> void:
 	var unit_bp := _unit_blueprint_for_library(role_key, _editor_current_blueprint())
 	var legal_note := _training_blueprint_illegal_note(_editor_player(), role_key, unit_bp)
 	if legal_note != "":
-		editor_summary_label.text = "训练导入被拦截：%s" % _localized_system_text(legal_note) if _ui_is_zh() else "Training import blocked: %s" % legal_note
-		_play_sfx_wave("alarm", 170.0, 0.08, -16.0)
-		return
+		_show_unit_editor_blocking_error(legal_note, "训练测试失败" if _ui_is_zh() else "Training test blocked")
+		return false
 	training_import_role_key = role_key
 	training_import_blueprint = unit_bp.duplicate(true)
 	training_import_units = [{"role": role_key, "blueprint": unit_bp.duplicate(true)}]
 	editor_summary_label.text = "正在将当前%s画布作为临时单位导入训练模式。" % _role_name(role_key) if _ui_is_zh() else "Importing the current %s canvas into Training as a temporary unit." % _role_name(role_key)
+	return true
+
+
+func _import_editor_canvas_to_training() -> void:
+	if not _prepare_editor_canvas_training_import():
+		return
 	_show_training_config(false)
+
+
+func _start_editor_canvas_training_test() -> void:
+	if not _prepare_editor_canvas_training_import():
+		return
+	ai_battle_seat = 1
+	training_seat_confirmed = true
+	if not _prepare_training_battle_loadouts():
+		var note := training_import_error_note if training_import_error_note != "" else "INVALID: training import failed."
+		_show_unit_editor_blocking_error(note, "训练入场失败" if _ui_is_zh() else "Training entry failed")
+		return
+	_begin_battle(MODE_TRAINING, true)
 
 
 func _apply_training_import_loadout() -> bool:
@@ -14251,6 +15853,7 @@ func _training_blueprint_illegal_note(player_id: int, role_key: String, unit_bp:
 	candidate["role"] = role_key
 	if _role_uses_body_board(role_key):
 		_normalize_unit_to_component_topology(role_key, candidate)
+		_apply_entry_pose_to_blueprint(candidate)
 	var stats := _compute_unit_stats(player_id, role_key, -1, candidate)
 	if bool(stats.get("blank_canvas", false)):
 		return "INVALID: blank topology needs at least one material node."
@@ -14350,15 +15953,18 @@ func _start_battle(mode: String, preloaded: bool = false) -> void:
 	_begin_battle(mode)
 
 
-func _begin_battle(mode: String, preloaded: bool = false) -> void:
+func _begin_battle(mode: String, preloaded: bool = false, reason: String = "") -> void:
+	var nav_reason := reason if reason != "" else "battle:%s" % mode
 	if not preloaded and _should_queue_loading_transition(STATE_BATTLE):
-		queue_loading_transition(STATE_BATTLE, "battle:%s" % mode, preload_battle_content(mode), Callable(self, "_begin_battle").bind(mode, true))
+		queue_loading_transition(STATE_BATTLE, nav_reason, preload_battle_content(mode), Callable(self, "_begin_battle").bind(mode, true, nav_reason))
 		return
 	battle_mode = mode
-	game_state = STATE_BATTLE
+	_commit_page_state(STATE_BATTLE, nav_reason, {"mode": mode})
 	game_over = false
 	camera_center = 0.0
 	camera_lane_center = 0.0
+	camera_mobius_s = 0.0
+	mobius_rotation_state = MobiusWorld.default_rotation_state(RING_LENGTH)
 	player_camera_centers = {1: 0.0, 2: 0.0}
 	player_camera_lanes = {1: 0.0, 2: 0.0}
 	spectator_camera_center = 0.0
@@ -14419,10 +16025,11 @@ func _begin_battle(mode: String, preloaded: bool = false) -> void:
 		var training_hero = active_units[training_player]["hero"]
 		if _is_live_unit(training_hero):
 			var hero_stats: Dictionary = training_hero.stats
-			if float(hero_stats.get("thruster_allocated_momentum", 0.0)) <= 0.0001:
+			if float(hero_stats.get("thruster_effective_drive_demand", 0.0)) <= 0.0001:
 				_show_battle_message("训练：该英雄无推进器，无法主动移动/转向。" if _ui_is_zh() else "TRAINING: this hero has no thrusters, so it cannot actively move or turn.", 3.0)
 			else:
 				_show_battle_message("训练%s：WASD 移动，Q/E 转向，U/I/O/J/K/L 触发已绑定行动模块。" % _battle_seat_label(ai_battle_seat) if _ui_is_zh() else "TRAINING %s: WASD move, Q/E turn, U/I/O/J/K/L trigger bound modules." % _battle_seat_label(ai_battle_seat), 2.8)
+			_show_training_entry_intro(training_player, training_dummy_player)
 		else:
 			_show_battle_message("训练：未导入英雄，进入观察/结构测试模式。" if _ui_is_zh() else "TRAINING: no hero imported, observation/structure test mode.", 2.8)
 	elif mode == MODE_AI:
@@ -14433,11 +16040,35 @@ func _begin_battle(mode: String, preloaded: bool = false) -> void:
 			_show_battle_message("AI 对战 P%d：你控制%s。" % [ai_battle_seat, side_name] if _ui_is_zh() else "AI BATTLE P%d: you control the %s side." % [ai_battle_seat, "left" if ai_battle_seat == 1 else "right"], 2.2)
 	else:
 		_show_battle_message("PVP：双控制器启用。键盘保留为 P1 练习备用。" if _ui_is_zh() else "PVP: two controllers active. Keyboard remains P1 practice fallback.", 2.2)
+	_refresh_battle_camera_projection_now()
 	_update_battle_ui()
 
 
+func _show_training_entry_intro(training_player: int, training_dummy_player: int) -> void:
+	if training_entry_intro_view == null:
+		return
+	var entries: Array = []
+	for player_id in [training_player, training_dummy_player]:
+		var unit = active_units[player_id]["hero"] if active_units.has(player_id) and active_units[player_id] is Dictionary else null
+		if not _is_live_unit(unit):
+			continue
+		var stats: Dictionary = unit.stats if unit.stats is Dictionary else {}
+		var name := String(unit.unit_name)
+		if name == "":
+			name = String(stats.get("name", "UNIT"))
+		var label := ("玩家单位" if _ui_is_zh() else "PLAYER") if player_id == training_player else ("训练靶机" if _ui_is_zh() else "DUMMY")
+		entries.append({
+			"player_id": player_id,
+			"label": label,
+			"name": name,
+			"segments": Array(stats.get("runtime_topology_segments", [])).duplicate(true),
+		})
+	if entries.is_empty():
+		return
+	training_entry_intro_view.set_entries(entries, ui_language, 3.2)
+
+
 func _set_visible_layer(layer: CanvasLayer) -> void:
-	_hide_page_options()
 	for candidate in [menu_layer, editor_layer, saved_units_layer, scout_layer, settings_layer, hud_layer, format_select_layer, loading_layer]:
 		if candidate != null:
 			candidate.visible = candidate == layer
@@ -14455,11 +16086,12 @@ func _should_queue_loading_transition(target_state: String) -> bool:
 	return target_state != STATE_LOADING
 
 
-func queue_loading_transition(target_state: String, reason: String, tasks: Array, completion: Callable = Callable()) -> void:
+func queue_loading_transition(target_state: String, reason: String, tasks: Array, completion: Callable = Callable(), return_target: String = "") -> void:
 	if loading_controller == null:
 		if completion.is_valid():
 			completion.call()
 		return
+	_begin_page_navigation(target_state, reason, return_target, {"loading": true})
 	loading_transition_count += 1
 	loading_pending_target_state = target_state
 	loading_pending_reason = reason
@@ -14480,11 +16112,7 @@ func queue_loading_transition(target_state: String, reason: String, tasks: Array
 			bool(task.get("first_interaction_critical", true)),
 			bool(task.get("idle_optional", false))
 		)
-	game_state = STATE_LOADING
-	if game_state_store != null:
-		game_state_store.set_app_mode(STATE_LOADING, "loading:%s" % reason)
-	if dirty_graph != null:
-		dirty_graph.mark(GameStateStore.DOMAIN_GLOBAL, 1, "loading:%s" % reason)
+	_commit_page_state(STATE_LOADING, "loading:%s" % reason, {"target_state": target_state})
 	_set_visible_layer(loading_layer)
 	_update_loading_overlay()
 
@@ -14742,7 +16370,7 @@ func _preload_global_assets_task() -> bool:
 	if combat_vfx_texture == null:
 		combat_vfx_texture = _load_generated_texture("res://assets/generated/combat_vfx_atlas.png")
 	if space_backdrop_texture == null:
-		space_backdrop_texture = _load_generated_texture("res://assets/generated/space_battle_backdrop.png")
+		space_backdrop_texture = _load_space_backdrop_texture()
 	if gpu_collision_pipeline == null and DisplayServer.get_name().to_lower() != "headless":
 		_initialize_gpu_collision_pipeline()
 	return true
@@ -14776,7 +16404,6 @@ func _preload_global_preview_task() -> bool:
 			var model: Dictionary = raw_model
 			var part: Dictionary = model.get("part", {})
 			PartPreviewTextureCache.request_preview(self, String(model.get("slot", slot_key)), part, false, 0.0, Vector2(116.0, 44.0))
-			CatalogCardBodyTextureCache.prewarm(self, String(model.get("slot", slot_key)), part, String(model.get("title", "")), String(model.get("line_a", "")), String(model.get("line_b", "")), false, Vector2(116.0, 30.0))
 			warmed += 1
 	return _process_preload_texture_queues(1, false)
 
@@ -14805,7 +16432,6 @@ func _preload_teamedit_catalog_task() -> bool:
 		var line_a := String(model.get("line_a", ""))
 		var line_b := String(model.get("line_b", ""))
 		PartPreviewTextureCache.request_preview(self, entry_slot, part, false, 0.0, Vector2(116.0, 44.0))
-		CatalogCardBodyTextureCache.prewarm(self, entry_slot, part, title, line_a, line_b, false, Vector2(116.0, 30.0))
 		_prewarm_torso_detail_template(part)
 	_prewarm_adjacent_catalog_card_bodies()
 	return true
@@ -15031,10 +16657,16 @@ func _first_editor_torso_node_index() -> int:
 
 func _handle_menu_input() -> void:
 	if Input.is_action_just_pressed("menu_up"):
-		menu_index = _wrapped_index(menu_index - 1, MENU_ITEMS.size())
+		if menu_controller != null:
+			menu_index = menu_controller.move_selection(-1)
+		else:
+			menu_index = _wrapped_index(menu_index - 1, MENU_ITEMS.size())
 		_update_menu_ui()
 	elif Input.is_action_just_pressed("menu_down"):
-		menu_index = _wrapped_index(menu_index + 1, MENU_ITEMS.size())
+		if menu_controller != null:
+			menu_index = menu_controller.move_selection(1)
+		else:
+			menu_index = _wrapped_index(menu_index + 1, MENU_ITEMS.size())
 		_update_menu_ui()
 	elif Input.is_action_just_pressed("menu_confirm"):
 		_activate_menu_item(menu_index)
@@ -15351,33 +16983,37 @@ func _handle_menu_button_gui_input(event: InputEvent, index: int) -> void:
 		if mouse_event.button_index == MOUSE_BUTTON_LEFT and mouse_event.pressed:
 			var now := Time.get_ticks_msec()
 			if now - ui_mouse_click_latch_msec < 120:
-				get_viewport().set_input_as_handled()
+				_mark_input_as_handled()
 				return
 			ui_mouse_click_latch_msec = now
 			_hover_menu_item(index)
 			_activate_menu_item(index)
-			get_viewport().set_input_as_handled()
+			_mark_input_as_handled()
 
 
 func _hover_menu_item(index: int) -> void:
-	menu_index = clampi(index, 0, MENU_ITEMS.size() - 1)
+	if menu_controller != null:
+		menu_index = menu_controller.select_index(index)
+	else:
+		menu_index = clampi(index, 0, MENU_ITEMS.size() - 1)
 	_update_menu_ui()
 
 
 func _activate_menu_item(index: int) -> void:
-	match index:
-		0:
+	var action := menu_controller.main_menu_action(index) if menu_controller != null else {"action": "", "index": index}
+	match String(action.get("action", "")):
+		"training_config":
 			_show_training_config(true)
-		1:
+		"saved_units":
 			_show_saved_units_library()
-		2:
+		"unit_edit":
 			_show_editor()
-		3:
+		"show_ai_seat_panel":
 			menu_index = 3
 			_update_menu_ui()
-		4:
+		"pvp":
 			_start_battle(MODE_PVP)
-		5:
+		"settings":
 			_show_settings()
 		_:
 			get_tree().quit()
@@ -15433,9 +17069,6 @@ func _handle_editor_input() -> void:
 	if Input.is_action_just_pressed("menu_back"):
 		_show_menu()
 		return
-	if Input.is_action_just_pressed("menu_confirm"):
-		_show_menu()
-		return
 	if Input.is_action_just_pressed("copy_team"):
 		var source_player := _editor_player()
 		var target_player := 2 if source_player == 1 else 1
@@ -15448,6 +17081,10 @@ func _handle_editor_input() -> void:
 		ai_team_manual_lock[target_player] = true
 		editor_summary_label.text = "已将 P%d 队伍编辑配置复制到 P%d/AI。" % [source_player, target_player] if _ui_is_zh() else "Copied P%d TeamEdit roster to P%d/AI loadout." % [source_player, target_player]
 		return
+	for attack_key in range(1, ATTACK_GROUP_COUNT + 1):
+		if Input.is_action_just_pressed("p1_attack_%d" % attack_key):
+			if _tryout_editor_bound_module(attack_key):
+				return
 	if Input.is_action_just_pressed("editor_next_unit"):
 		var player_id := _editor_player()
 		var role_key_for_next: String = ROLE_ORDER[editor_role_index]
@@ -16137,9 +17774,9 @@ func _payload_detail_line(payload_kind: String, part: Dictionary) -> String:
 		"engine":
 			return ("动力 %.0f  质量 %.0f" if _ui_is_zh() else "PWR %.0f  M %.0f") % [_engine_momentum_output_for_part(part), float(part.get("mass", 0.0))]
 		"cooling":
-			return ("散热 %.0f  质量 %.0f" if _ui_is_zh() else "COOL %.0f  M %.0f") % [float(part.get("cooling_rate", part.get("cooling", 0.0))), float(part.get("mass", 0.0))]
+			return ("散热 %.0f  池 %.0f" if _ui_is_zh() else "COOL %.0f  CAP %.0f") % [_cooling_rate_for_part(part), _cooling_heat_capacity_for_part(part)]
 		"booster":
-			return ("分配 %.0f  质量 %.0f" if _ui_is_zh() else "ALLOC %.0f  M %.0f") % [_thruster_allocated_momentum_for_part(part), float(part.get("mass", 0.0))]
+			return ("需求 %.0f  质量 %.0f" if _ui_is_zh() else "REQ %.0f  M %.0f") % [_thruster_drive_demand_for_part(part), float(part.get("mass", 0.0))]
 		"ammo":
 			var caps: Dictionary = part.get("ammo_capacity", {})
 			var total_ammo := 0
@@ -16329,6 +17966,20 @@ func _find_internal_slot_for_payload(unit_bp: Dictionary, torso_node_index: int,
 	return _best_internal_slot_for_payload(slot_sizes, occupied, payload_rank, requested_slot)
 
 
+func _torso_booster_payload_count(unit_bp: Dictionary, torso_node_index: int, ignored_payload_index: int = -1) -> int:
+	var count := 0
+	var payloads: Array = Array(unit_bp.get("slot_payloads", []))
+	for i in range(payloads.size()):
+		if i == ignored_payload_index or not (payloads[i] is Dictionary):
+			continue
+		var payload: Dictionary = payloads[i]
+		if String(payload.get("kind", "")) != "booster":
+			continue
+		if _torso_payload_belongs_to_node(payload, torso_node_index, unit_bp):
+			count += 1
+	return count
+
+
 func _torso_detail_display_entries(unit_bp: Dictionary, torso_node_index: int, group_kind: String, capacity: int, torso_part: Dictionary) -> Array:
 	var display: Array = []
 	if group_kind == "plugin":
@@ -16380,6 +18031,9 @@ func _torso_internal_slot_status_for_unit(role_key: String, unit_bp: Dictionary)
 		var torso_part := _topology_node_part(role_key, nodes[node_index], unit_bp)
 		var slot_sizes := _torso_internal_slot_size_ranks(torso_part)
 		status["slot_count"] = int(status.get("slot_count", 0)) + slot_sizes.size()
+		var booster_count := _torso_booster_payload_count(unit_bp, node_index)
+		if booster_count > 1 and String(status.get("invalid", "")) == "":
+			status["invalid"] = "INVALID: torso has %d/1 boosters." % booster_count
 		var assignments := _torso_plugin_payload_slot_assignment(unit_bp, node_index, torso_part)
 		var occupied := {}
 		for raw_payload_index in assignments.keys():
@@ -16499,6 +18153,8 @@ func _engine_allocation_pool_for_torso(unit_bp: Dictionary, torso_node_index: in
 
 func _engine_allocation_limb_momentum_for_node(binding: Dictionary, node_index: int, segment: Dictionary) -> float:
 	var by_node = binding.get("allocated_limb_momentum_by_node", {})
+	if not (by_node is Dictionary) or Dictionary(by_node).is_empty():
+		by_node = binding.get("joint_drive_allocation_by_node", {})
 	var node_key := str(node_index)
 	if by_node is Dictionary and Dictionary(by_node).has(node_key):
 		return maxf(0.0, float(Dictionary(by_node).get(node_key, 0.0)))
@@ -16522,6 +18178,8 @@ func _engine_allocation_binding_total(unit_bp: Dictionary, binding: Dictionary) 
 	var stats := _editor_current_stats()
 	var segments_by_node := _engine_allocation_segment_by_node(stats)
 	var by_node = binding.get("allocated_limb_momentum_by_node", {})
+	if not (by_node is Dictionary) or Dictionary(by_node).is_empty():
+		by_node = binding.get("joint_drive_allocation_by_node", {})
 	var total := 0.0
 	for raw_node in Array(binding.get("target_nodes", [])):
 		var node_index := int(raw_node)
@@ -16535,27 +18193,205 @@ func _engine_allocation_binding_total(unit_bp: Dictionary, binding: Dictionary) 
 	return total
 
 
+func _engine_allocation_limb_duration_estimate(segment: Dictionary, module_part: Dictionary, momentum: float) -> Dictionary:
+	var context := _engine_allocation_limb_motion_context(segment, module_part)
+	var motion_stats: Dictionary = Dictionary(context.get("motion_stats", {})).duplicate(true)
+	motion_stats["output"] = maxf(0.0, momentum)
+	motion_stats["allocated_limb_momentum"] = maxf(0.0, momentum)
+	var angle_degrees := float(context.get("angle_degrees", 180.0))
+	var extension_m := float(context.get("extension_m", 0.0))
+	var fallback_duration := float(context.get("fallback_duration", 0.72))
+	return MotionBudget.estimate_motion_budget(motion_stats, module_part, angle_degrees, extension_m, fallback_duration, "normal")
+
+
+func _engine_allocation_limb_motion_context(segment: Dictionary, module_part: Dictionary) -> Dictionary:
+	var a: Vector2 = segment.get("a_local", segment.get("a", Vector2.ZERO)) if segment.get("a_local", segment.get("a", Vector2.ZERO)) is Vector2 else Vector2.ZERO
+	var b: Vector2 = segment.get("b_local", segment.get("b", a)) if segment.get("b_local", segment.get("b", a)) is Vector2 else a
+	var chain_length := maxf(0.05, a.distance_to(b))
+	return {
+		"motion_stats": {
+			"mass": maxf(0.45, float(segment.get("mass", 1.0))),
+			"length": chain_length,
+			"chain_length": chain_length,
+		},
+		"angle_degrees": float(module_part.get("swing_arc_degrees", segment.get("joint_angle_range", 180.0))),
+		"extension_m": float(module_part.get("module_extension_m", module_part.get("required_extension_m", segment.get("joint_extension_m", 0.0)))),
+		"fallback_duration": maxf(0.12, float(module_part.get("fallback_duration", module_part.get("duration", 0.72)))),
+	}
+
+
+func _engine_allocation_limb_duration_label(module_part: Dictionary, min_momentum: float, max_momentum: float, duration_estimate: float) -> String:
+	var module_name := _short_part_name(_zh_part_name(String(module_part.get("name", "行动模块"))) if _ui_is_zh() else String(module_part.get("name", "ACTION")))
+	var duration_text := "时长 --" if _ui_is_zh() else "DUR --"
+	if duration_estimate > 0.0:
+		duration_text = ("时长 %.2fs" if _ui_is_zh() else "DUR %.2fs") % duration_estimate
+	return ("%s %.0f-%.0f  %s" if _ui_is_zh() else "%s %.0f-%.0f  %s") % [module_name, min_momentum, max_momentum, duration_text]
+
+
+func _engine_allocation_entry_with_duration(entry: Dictionary, momentum: float) -> Dictionary:
+	var updated := entry.duplicate(true)
+	if String(updated.get("kind", "")) != "limb":
+		return updated
+	var module_part: Dictionary = updated.get("duration_module_part", {}) if updated.get("duration_module_part", {}) is Dictionary else {}
+	var motion_stats: Dictionary = updated.get("duration_motion_stats", {}) if updated.get("duration_motion_stats", {}) is Dictionary else {}
+	if module_part.is_empty() or motion_stats.is_empty():
+		return updated
+	motion_stats = motion_stats.duplicate(true)
+	motion_stats["output"] = maxf(0.0, momentum)
+	motion_stats["allocated_limb_momentum"] = maxf(0.0, momentum)
+	var estimate := MotionBudget.estimate_motion_budget(
+		motion_stats,
+		module_part,
+		float(updated.get("duration_angle_degrees", 180.0)),
+		float(updated.get("duration_extension_m", 0.0)),
+		float(updated.get("duration_fallback", 0.72)),
+		"normal"
+	)
+	var duration := maxf(0.0, float(estimate.get("duration", 0.0)))
+	updated["duration_estimate"] = duration
+	updated["duration_budget"] = estimate
+	updated["duration_label"] = _engine_allocation_limb_duration_label(module_part, float(updated.get("min_momentum", 0.0)), float(updated.get("max_momentum", 0.0)), duration)
+	return updated
+
+
+func _engine_allocation_heat_color_for_kind(kind: String) -> Color:
+	match kind:
+		"limb":
+			return Color(1.0, 0.38, 0.12, 1.0)
+		"booster_boost_brake":
+			return Color(1.0, 0.62, 0.18, 1.0)
+		"booster_drive":
+			return Color(1.0, 0.48, 0.14, 1.0)
+		_:
+			return Color(1.0, 0.42, 0.14, 1.0)
+
+
+func _engine_allocation_heat_label(heat_load: float, cooling_pool: float) -> String:
+	if cooling_pool <= 0.0:
+		return ("热 %.1f / 无热力池" if _ui_is_zh() else "Heat %.1f / no pool") % heat_load
+	return ("热 %.1f / 池 %.0f%%" if _ui_is_zh() else "Heat %.1f / pool %.0f%%") % [heat_load, heat_load / maxf(1.0, cooling_pool) * 100.0]
+
+
+func _engine_allocation_entry_with_heat(entry: Dictionary, momentum: float, cooling_pool: float) -> Dictionary:
+	var updated := entry.duplicate(true)
+	if bool(updated.get("heat_exempt", false)):
+		updated["heat_coeff"] = 0.0
+		updated["heat_load"] = 0.0
+		updated["heat_ratio"] = 0.0
+		if String(updated.get("heat_label", "")) == "":
+			updated["heat_label"] = "峰值提示 / 不占常热" if _ui_is_zh() else "Peak hint / no idle heat"
+		if not updated.has("heat_color"):
+			updated["heat_color"] = _engine_allocation_heat_color_for_kind(String(updated.get("kind", "")))
+		return updated
+	var heat_coeff := maxf(0.0, float(updated.get("heat_coeff", 0.0)))
+	var heat_load := maxf(0.0, momentum) * heat_coeff
+	updated["heat_coeff"] = heat_coeff
+	updated["heat_load"] = heat_load
+	updated["heat_ratio"] = heat_load / maxf(1.0, cooling_pool) if cooling_pool > 0.0 else (1.6 if heat_load > 0.0 else 0.0)
+	updated["heat_label"] = _engine_allocation_heat_label(heat_load, cooling_pool)
+	if not updated.has("heat_color"):
+		updated["heat_color"] = _engine_allocation_heat_color_for_kind(String(updated.get("kind", "")))
+	return updated
+
+
+func _engine_allocation_engine_heat_entry(engine_part: Dictionary, engine_heat_load: float, cooling_pool: float) -> Dictionary:
+	var heat_load := maxf(0.0, engine_heat_load)
+	var engine_label := _short_part_name(_zh_part_name(String(engine_part.get("name", "引擎"))) if _ui_is_zh() else String(engine_part.get("name", "ENGINE")))
+	return {
+		"id": "engine_heat",
+		"kind": "engine_heat",
+		"label": ("%s / 常态发热" if _ui_is_zh() else "%s / IDLE HEAT") % engine_label,
+		"line": "不占动力分配" if _ui_is_zh() else "Not a power allocation",
+		"ratio": heat_load / maxf(1.0, cooling_pool) if cooling_pool > 0.0 else (1.0 if heat_load > 0.0 else 0.0),
+		"momentum": 0.0,
+		"allocated_momentum": 0.0,
+		"heat_load": heat_load,
+		"heat_ratio": heat_load / maxf(1.0, cooling_pool) if cooling_pool > 0.0 else (1.6 if heat_load > 0.0 else 0.0),
+		"heat_label": _engine_allocation_heat_label(heat_load, cooling_pool),
+		"heat_color": Color(1.0, 0.34, 0.16, 1.0),
+		"color": Color(1.0, 0.44, 0.22, 1.0),
+		"readonly": true,
+		"disabled": false,
+		"heat_only": true,
+	}
+
+
+func _engine_allocation_recalculate_heat(entries: Array, cooling_pool: float, engine_heat_load: float) -> Dictionary:
+	var next_entries: Array = []
+	var allocation_heat := 0.0
+	for raw_entry in entries:
+		if not (raw_entry is Dictionary):
+			next_entries.append(raw_entry)
+			continue
+		var entry: Dictionary = Dictionary(raw_entry).duplicate(true)
+		if bool(entry.get("heat_only", false)):
+			var static_heat := maxf(0.0, float(entry.get("heat_load", 0.0)))
+			entry["heat_ratio"] = static_heat / maxf(1.0, cooling_pool) if cooling_pool > 0.0 else (1.6 if static_heat > 0.0 else 0.0)
+			entry["heat_label"] = _engine_allocation_heat_label(static_heat, cooling_pool)
+			next_entries.append(entry)
+			continue
+		entry = _engine_allocation_entry_with_heat(entry, maxf(0.0, float(entry.get("momentum", entry.get("allocated_momentum", 0.0)))), cooling_pool)
+		allocation_heat += maxf(0.0, float(entry.get("heat_load", 0.0)))
+		next_entries.append(entry)
+	var heat_used := maxf(0.0, engine_heat_load) + allocation_heat
+	var over_heat := heat_used > cooling_pool + 0.001 if cooling_pool > 0.0 else heat_used > 0.0
+	for i in range(next_entries.size()):
+		if next_entries[i] is Dictionary:
+			var entry: Dictionary = Dictionary(next_entries[i]).duplicate(true)
+			entry["heat_over_budget"] = over_heat
+			next_entries[i] = entry
+	return {
+		"entries": next_entries,
+		"allocation_heat_used": allocation_heat,
+		"heat_used": heat_used,
+		"heat_ratio": heat_used / maxf(1.0, cooling_pool) if cooling_pool > 0.0 else (1.6 if heat_used > 0.0 else 0.0),
+		"thermal_margin": cooling_pool - heat_used,
+	}
+
+
+func _engine_allocation_engine_idle_heat_for_torso(unit_bp: Dictionary, torso_node_index: int) -> float:
+	var role_key: String = String(unit_bp.get("role", ROLE_ORDER[editor_role_index]))
+	var total := 0.0
+	for raw_payload in Array(unit_bp.get("slot_payloads", [])):
+		if not (raw_payload is Dictionary):
+			continue
+		var payload: Dictionary = raw_payload
+		if String(payload.get("kind", "")) != "engine":
+			continue
+		if _payload_torso_node_index(payload, unit_bp) != torso_node_index:
+			continue
+		var engine_part := _payload_part_for_payload(role_key, payload)
+		total += _engine_idle_heat_for_part(engine_part, _engine_momentum_output_for_part(engine_part))
+	return total
+
+
 func _engine_momentum_allocation_data(unit_bp: Dictionary, torso_node_index: int, engine_payload_index: int) -> Dictionary:
 	if not unit_bp.has("custom_topology"):
 		return {}
 	var payloads: Array = Array(unit_bp.get("slot_payloads", []))
-	if engine_payload_index < 0 or engine_payload_index >= payloads.size() or not (payloads[engine_payload_index] is Dictionary):
-		return {}
-	var engine_payload: Dictionary = payloads[engine_payload_index]
-	if String(engine_payload.get("kind", "")) != "engine":
-		return {}
-	if _payload_torso_node_index(engine_payload, unit_bp) != torso_node_index:
-		return {}
 	var role_key: String = String(unit_bp.get("role", ROLE_ORDER[editor_role_index]))
 	var topology: Dictionary = unit_bp.get("custom_topology", {})
 	var nodes: Array = Array(topology.get("nodes", []))
 	if torso_node_index < 0 or torso_node_index >= nodes.size() or not (nodes[torso_node_index] is Dictionary):
 		return {}
+	var has_engine_payload := false
+	var engine_payload: Dictionary = {}
+	if engine_payload_index >= 0:
+		if engine_payload_index >= payloads.size() or not (payloads[engine_payload_index] is Dictionary):
+			return {}
+		engine_payload = payloads[engine_payload_index]
+		if String(engine_payload.get("kind", "")) != "engine":
+			return {}
+		if _payload_torso_node_index(engine_payload, unit_bp) != torso_node_index:
+			return {}
+		has_engine_payload = true
 	var stats := _editor_current_stats()
 	var segments: Array = Array(stats.get("runtime_topology_segments", []))
 	var segments_by_node := _engine_allocation_segment_by_node(stats)
 	var pool := _engine_allocation_pool_for_torso(unit_bp, torso_node_index)
-	var engine_part := _payload_part_for_payload(role_key, engine_payload)
+	var cooling_pool := _thermal_load_pool_for_stats(stats)
+	var engine_heat_load := _engine_allocation_engine_idle_heat_for_torso(unit_bp, torso_node_index)
+	var engine_part := _payload_part_for_payload(role_key, engine_payload) if has_engine_payload else {"name": "NO ENGINE"}
 	var torso_part := _topology_node_part(role_key, nodes[torso_node_index], unit_bp)
 	var entries: Array = []
 	for i in range(payloads.size()):
@@ -16567,20 +18403,65 @@ func _engine_momentum_allocation_data(unit_bp: Dictionary, torso_node_index: int
 		if _payload_torso_node_index(payload, unit_bp) != torso_node_index:
 			continue
 		var booster_part := _payload_part_for_payload(role_key, payload)
-		var default_momentum := _thruster_allocated_momentum_for_part(booster_part)
-		var momentum := maxf(0.0, float(payload.get("allocated_momentum", default_momentum)))
-		var ratio := momentum / maxf(1.0, pool)
+		var drive_min := _thruster_drive_allocation_min_for_part(booster_part)
+		var drive_max := _thruster_drive_allocation_max_for_part(booster_part)
+		var drive_momentum := _thruster_drive_allocated_for_payload(payload, booster_part)
+		var drive_ratio := drive_momentum / maxf(1.0, pool) if pool > 0.0 else 0.0
+		var boost_min := _thruster_boost_brake_allocation_min_for_part(booster_part)
+		var boost_max := _thruster_boost_brake_allocation_max_for_part(booster_part)
+		var boost_momentum := _thruster_boost_brake_allocated_for_payload(payload, booster_part)
+		var boost_ratio := boost_momentum / maxf(1.0, pool) if pool > 0.0 else 0.0
+		var boost_peak := drive_momentum + boost_momentum
+		var boost_peak_ratio := boost_peak / maxf(1.0, pool) if pool > 0.0 else 0.0
+		var booster_heat_coeff := _thruster_idle_heat_coeff_for_part(booster_part)
+		var booster_label := _short_part_name(_zh_part_name(String(booster_part.get("name", "推进"))) if _ui_is_zh() else String(booster_part.get("name", "BOOSTER")))
 		entries.append({
-			"id": "booster:%d" % i,
-			"kind": "booster",
+			"id": "booster_drive:%d" % i,
+			"kind": "booster_drive",
 			"payload_index": i,
-			"label": _short_part_name(_zh_part_name(String(booster_part.get("name", "推进"))) if _ui_is_zh() else String(booster_part.get("name", "BOOSTER"))),
-			"line": "推进" if _ui_is_zh() else "THRUST",
-			"ratio": ratio,
-			"momentum": momentum,
-			"default_momentum": default_momentum,
+			"label": ("%s / 推进" if _ui_is_zh() else "%s / MOVE") % booster_label,
+			"line": ("普通移动/转向 %.0f-%.0f" if _ui_is_zh() else "Move/turn %.0f-%.0f") % [drive_min, drive_max],
+			"ratio": drive_ratio,
+			"momentum": drive_momentum,
+			"allocated_momentum": drive_momentum,
+			"min_momentum": drive_min,
+			"max_momentum": drive_max,
+			"default_momentum": drive_min,
+			"boost_extra_momentum": boost_momentum,
+			"boost_peak_momentum": boost_peak,
+			"boost_extra_ratio": boost_ratio,
+			"boost_peak_ratio": boost_peak_ratio,
+			"boost_dash_hint": true,
+			"boost_label": ("Boost刹车 +%.0f / 峰值 %.0f" if _ui_is_zh() else "Boost-brake +%.0f / PEAK %.0f") % [boost_momentum, boost_peak],
+			"heat_coeff": booster_heat_coeff,
+			"heat_color": Color(1.0, 0.48, 0.14, 1.0),
+			"readonly": drive_max <= drive_min,
+			"disabled": pool <= 0.0,
 			"color": Color(1.0, 0.52, 0.18, 1.0),
 		})
+		entries.append({
+			"id": "booster_boost_brake:%d" % i,
+			"kind": "booster_boost_brake",
+			"payload_index": i,
+			"label": ("%s / Boost刹车" if _ui_is_zh() else "%s / BOOST-BRAKE") % booster_label,
+			"line": ("Boost/刹车增幅 %.0f-%.0f" if _ui_is_zh() else "Boost/brake %.0f-%.0f") % [boost_min, boost_max],
+			"ratio": boost_ratio,
+			"momentum": boost_momentum,
+			"allocated_momentum": boost_momentum,
+			"min_momentum": boost_min,
+			"max_momentum": boost_max,
+			"default_momentum": boost_min,
+			"boost_peak_momentum": boost_peak,
+			"boost_peak_ratio": boost_peak_ratio,
+			"heat_coeff": 0.0,
+			"heat_exempt": true,
+			"heat_label": "峰值提示 / 不占常热" if _ui_is_zh() else "Peak hint / no idle heat",
+			"heat_color": Color(1.0, 0.62, 0.18, 1.0),
+			"readonly": boost_max <= boost_min,
+			"disabled": pool <= 0.0 or boost_max <= 0.0,
+			"color": Color(1.0, 0.72, 0.22, 1.0),
+		})
+	var allocation_groups: Array = []
 	var counted_nodes := {}
 	for ref in _engine_allocation_sorted_binding_refs(unit_bp):
 		if not (ref is Dictionary):
@@ -16598,6 +18479,21 @@ func _engine_momentum_allocation_data(unit_bp: Dictionary, torso_node_index: int
 		if _module_binding_torso_node_index(role_key, unit_bp, binding) != torso_node_index:
 			continue
 		var module_part := _payload_part_for_payload(role_key, module_payload)
+		var binding_target_nodes: Array = Array(binding.get("target_nodes", []))
+		var group_nodes: Array = []
+		for raw_group_node in binding_target_nodes:
+			var group_node := int(raw_group_node)
+			if group_node >= 0 and segments_by_node.has(group_node):
+				group_nodes.append(group_node)
+		var group_id := "binding:%d:%s" % [binding_index, _editor_int_array_signature(group_nodes)]
+		if not group_nodes.is_empty():
+			allocation_groups.append({
+				"id": group_id,
+				"binding_index": binding_index,
+				"target_nodes": group_nodes.duplicate(true),
+				"root_index": int(binding.get("root_index", group_nodes[0])),
+				"label": _short_part_name(_zh_part_name(String(module_part.get("name", "行动模块"))) if _ui_is_zh() else String(module_part.get("name", "ACTION"))),
+			})
 		for raw_node in Array(binding.get("target_nodes", [])):
 			var node_index := int(raw_node)
 			if counted_nodes.has(node_index):
@@ -16614,23 +18510,44 @@ func _engine_momentum_allocation_data(unit_bp: Dictionary, torso_node_index: int
 			var default_momentum := _engine_allocation_default_limb_momentum(segment)
 			var min_momentum := maxf(0.0, float(segment.get("momentum_min", 0.0)))
 			var max_momentum := maxf(0.0, float(segment.get("momentum_max", 0.0)))
+			if max_momentum <= 0.0:
+				max_momentum = maxf(default_momentum, min_momentum)
 			var anchor := Vector2.ZERO
 			var a_value = segment.get("a_local", segment.get("a", Vector2.ZERO))
 			var b_value = segment.get("b_local", segment.get("b", a_value))
 			if a_value is Vector2 and b_value is Vector2:
 				anchor = (a_value + b_value) * 0.5
+			var duration_info := _engine_allocation_limb_duration_estimate(segment, module_part, momentum)
+			var duration_estimate := maxf(0.0, float(duration_info.get("duration", 0.0)))
+			var duration_context := _engine_allocation_limb_motion_context(segment, module_part)
+			var limb_heat_coeff := _limb_drive_heat_coeff_for_segment(segment, module_part)
 			counted_nodes[node_index] = true
 			entries.append({
 				"id": "limb:%d:%d" % [binding_index, node_index],
 				"kind": "limb",
 				"binding_index": binding_index,
 				"node_index": node_index,
+				"group_id": group_id,
+				"target_nodes": group_nodes.duplicate(true),
 				"label": _short_part_name(String(segment.get("name", "LIMB"))),
 				"line": ("%s %.0f-%.0f" if _ui_is_zh() else "%s %.0f-%.0f") % [_short_part_name(String(module_part.get("name", "ACT"))), min_momentum, max_momentum],
-				"ratio": momentum / maxf(1.0, pool),
+				"ratio": momentum / maxf(1.0, pool) if pool > 0.0 else 0.0,
 				"momentum": momentum,
+				"min_momentum": min_momentum,
+				"max_momentum": max_momentum,
 				"default_momentum": default_momentum,
+				"duration_estimate": duration_estimate,
+				"duration_budget": duration_info,
+				"duration_label": _engine_allocation_limb_duration_label(module_part, min_momentum, max_momentum, duration_estimate),
+				"duration_module_part": module_part.duplicate(true),
+				"duration_motion_stats": Dictionary(duration_context.get("motion_stats", {})).duplicate(true),
+				"duration_angle_degrees": float(duration_context.get("angle_degrees", 180.0)),
+				"duration_extension_m": float(duration_context.get("extension_m", 0.0)),
+				"duration_fallback": float(duration_context.get("fallback_duration", 0.72)),
+				"heat_coeff": limb_heat_coeff,
+				"heat_color": Color(1.0, 0.38, 0.12, 1.0),
 				"anchor_local": anchor,
+				"disabled": pool <= 0.0,
 				"color": Color(0.38, 0.9, 1.0, 1.0),
 			})
 	var used_ratio := 0.0
@@ -16642,9 +18559,17 @@ func _engine_momentum_allocation_data(unit_bp: Dictionary, torso_node_index: int
 			var entry: Dictionary = entries[i]
 			entry["over_budget"] = used_ratio > 1.0001
 			entries[i] = entry
-	var title := "动力分配" if _ui_is_zh() else "POWER ALLOCATION"
+	var heat_summary := _engine_allocation_recalculate_heat(entries, cooling_pool, engine_heat_load)
+	entries = Array(heat_summary.get("entries", entries))
+	var display_entries := entries.duplicate(true)
+	if engine_heat_load > 0.0:
+		display_entries.insert(0, _engine_allocation_engine_heat_entry(engine_part, engine_heat_load, cooling_pool))
+	var title := "动力预算" if _ui_is_zh() else "DRIVE BUDGET"
+	var engine_label := _zh_part_name(String(engine_part.get("name", "引擎"))) if _ui_is_zh() else String(engine_part.get("name", "ENGINE"))
+	if not has_engine_payload:
+		engine_label = "未装引擎" if _ui_is_zh() else "NO ENGINE"
 	var subtitle := ("%s / %s / 池 %.0f = 1.00" if _ui_is_zh() else "%s / %s / POOL %.0f = 1.00") % [
-		_zh_part_name(String(engine_part.get("name", "引擎"))) if _ui_is_zh() else String(engine_part.get("name", "ENGINE")),
+		engine_label,
 		_zh_part_name(String(torso_part.get("name", "躯干"))) if _ui_is_zh() else String(torso_part.get("name", "TORSO")),
 		pool,
 	]
@@ -16655,10 +18580,19 @@ func _engine_momentum_allocation_data(unit_bp: Dictionary, torso_node_index: int
 		"torso_name": String(torso_part.get("name", "TORSO")),
 		"engine_output": pool,
 		"used_ratio": used_ratio,
+		"cooling_pool": cooling_pool,
+		"engine_heat_load": engine_heat_load,
+		"allocation_heat_used": maxf(0.0, float(heat_summary.get("allocation_heat_used", 0.0))),
+		"heat_used": maxf(0.0, float(heat_summary.get("heat_used", 0.0))),
+		"heat_ratio": maxf(0.0, float(heat_summary.get("heat_ratio", 0.0))),
+		"thermal_margin": float(heat_summary.get("thermal_margin", cooling_pool)),
 		"entries": entries,
+		"display_entries": display_entries,
 		"segments": segments,
+		"allocation_groups": allocation_groups,
 		"torso_node": torso_node_index,
 		"engine_payload_index": engine_payload_index,
+		"has_engine": has_engine_payload,
 	}
 
 
@@ -16673,6 +18607,10 @@ func _engine_allocation_clamped_ratio(data: Dictionary, entry_id: String, reques
 	var entry := _engine_allocation_entry_for_id(data, entry_id)
 	if entry.is_empty():
 		return 0.0
+	var pool := maxf(0.0, float(data.get("engine_output", 0.0)))
+	if pool > 0.0 and (entry.has("min_momentum") or entry.has("max_momentum")) and not bool(entry.get("readonly", false)):
+		var momentum := _engine_allocation_clamped_momentum_from_entries(Array(data.get("entries", [])), entry_id, pool * requested_ratio, pool)
+		return momentum / maxf(1.0, pool)
 	var current := maxf(0.0, float(entry.get("ratio", 0.0)))
 	var other := 0.0
 	for raw_entry in Array(data.get("entries", [])):
@@ -16695,10 +18633,11 @@ func _engine_allocation_view_entry_for_id(entry_id: String) -> Dictionary:
 	return {}
 
 
-func _engine_allocation_clamped_ratio_from_entries(entries: Array, entry_id: String, requested_ratio: float) -> float:
+func _engine_allocation_clamped_ratio_from_entries(entries: Array, entry_id: String, requested_ratio: float, pool: float = 0.0) -> float:
 	var current := 0.0
 	var other := 0.0
 	var found := false
+	var found_entry := {}
 	for raw_entry in entries:
 		if not (raw_entry is Dictionary):
 			continue
@@ -16706,16 +18645,39 @@ func _engine_allocation_clamped_ratio_from_entries(entries: Array, entry_id: Str
 		if String(entry.get("id", "")) == entry_id:
 			current = maxf(0.0, float(entry.get("ratio", 0.0)))
 			found = true
+			found_entry = entry
 		else:
 			other += maxf(0.0, float(entry.get("ratio", 0.0)))
 	if not found:
 		return 0.0
+	if pool > 0.0 and found_entry is Dictionary and (Dictionary(found_entry).has("min_momentum") or Dictionary(found_entry).has("max_momentum")) and not bool(Dictionary(found_entry).get("readonly", false)):
+		var momentum := _engine_allocation_clamped_momentum_from_entries(entries, entry_id, pool * requested_ratio, pool)
+		return momentum / maxf(1.0, pool)
 	var max_allowed := maxf(0.0, 1.0 - other)
 	var total := other + current
 	var upper := max_allowed
 	if total > 1.0001:
 		upper = maxf(current, max_allowed)
 	return clampf(requested_ratio, 0.0, upper)
+
+
+func _engine_allocation_clamped_momentum_from_entries(entries: Array, entry_id: String, requested_momentum: float, pool: float) -> float:
+	if pool <= 0.0:
+		return 0.0
+	var entry := {}
+	for raw_entry in entries:
+		if not (raw_entry is Dictionary):
+			continue
+		var next_entry: Dictionary = raw_entry
+		if String(next_entry.get("id", "")) == entry_id:
+			entry = next_entry
+	if entry.is_empty() or bool(entry.get("readonly", false)):
+		return 0.0
+	var min_momentum := maxf(0.0, float(entry.get("min_momentum", 0.0)))
+	var max_momentum := maxf(min_momentum, float(entry.get("max_momentum", pool)))
+	if max_momentum <= 0.0:
+		max_momentum = pool
+	return clampf(requested_momentum, min_momentum, max_momentum)
 
 
 func _update_engine_allocation_view_entry(entry_id: String, ratio: float, momentum: float) -> void:
@@ -16731,32 +18693,53 @@ func _update_engine_allocation_view_entry(entry_id: String, ratio: float, moment
 			entry["ratio"] = ratio
 			entry["momentum"] = momentum
 			entry["allocated_momentum"] = momentum
+			entry = _engine_allocation_entry_with_duration(entry, momentum)
+			entry = _engine_allocation_entry_with_heat(entry, momentum, engine_momentum_allocation_view.cooling_pool)
 		next_entries[i] = entry
-		used_ratio += maxf(0.0, float(entry.get("ratio", 0.0)))
+		if not bool(entry.get("heat_only", false)):
+			used_ratio += maxf(0.0, float(entry.get("ratio", 0.0)))
 	for i in range(next_entries.size()):
 		if next_entries[i] is Dictionary:
 			var entry: Dictionary = Dictionary(next_entries[i]).duplicate(true)
 			entry["over_budget"] = used_ratio > 1.0001
 			next_entries[i] = entry
-	engine_momentum_allocation_view.entries = next_entries
+	var heat_summary := _engine_allocation_recalculate_heat(next_entries, engine_momentum_allocation_view.cooling_pool, engine_momentum_allocation_view.engine_heat_load)
+	engine_momentum_allocation_view.entries = Array(heat_summary.get("entries", next_entries))
 	engine_momentum_allocation_view.used_ratio = used_ratio
+	engine_momentum_allocation_view.allocation_heat_used = maxf(0.0, float(heat_summary.get("allocation_heat_used", 0.0)))
+	engine_momentum_allocation_view.heat_used = maxf(0.0, float(heat_summary.get("heat_used", 0.0)))
+	engine_momentum_allocation_view.heat_ratio = maxf(0.0, float(heat_summary.get("heat_ratio", 0.0)))
+	engine_momentum_allocation_view.thermal_margin = float(heat_summary.get("thermal_margin", engine_momentum_allocation_view.cooling_pool - engine_momentum_allocation_view.heat_used))
 	engine_momentum_allocation_view.last_allocation_signature = ""
+	engine_momentum_allocation_view._sync_entry_value_edits()
 	engine_momentum_allocation_view.queue_redraw()
 
 
 func _write_engine_allocation_entry_momentum(unit_bp: Dictionary, entry: Dictionary, momentum: float) -> void:
 	var entry_id := String(entry.get("id", ""))
-	if entry_id.begins_with("booster:"):
-		var payload_index := int(entry_id.get_slice(":", 1))
+	if entry_id.begins_with("booster_drive:") or entry_id.begins_with("booster_boost_brake:"):
+		var pieces := entry_id.split(":")
+		if pieces.size() < 2:
+			return
+		var payload_index := int(pieces[1])
 		var payloads: Array = Array(unit_bp.get("slot_payloads", [])).duplicate(true)
 		if payload_index < 0 or payload_index >= payloads.size() or not (payloads[payload_index] is Dictionary):
 			return
 		var payload: Dictionary = Dictionary(payloads[payload_index]).duplicate(true)
 		if String(payload.get("kind", "")) != "booster":
 			return
-		payload["allocated_momentum"] = maxf(0.0, momentum)
+		var min_momentum := maxf(0.0, float(entry.get("min_momentum", 0.0)))
+		var max_momentum := maxf(min_momentum, float(entry.get("max_momentum", min_momentum)))
+		var safe_momentum := clampf(maxf(0.0, momentum), min_momentum, max_momentum)
+		if entry_id.begins_with("booster_drive:"):
+			payload["thruster_drive_allocated_momentum"] = safe_momentum
+			payload["allocated_momentum"] = safe_momentum
+		else:
+			payload["thruster_boost_brake_allocated_momentum"] = safe_momentum
 		payloads[payload_index] = payload
 		unit_bp["slot_payloads"] = payloads
+		return
+	if entry_id.begins_with("booster:"):
 		return
 	if entry_id.begins_with("limb:"):
 		var pieces := entry_id.split(":")
@@ -16764,6 +18747,11 @@ func _write_engine_allocation_entry_momentum(unit_bp: Dictionary, entry: Diction
 			return
 		var binding_index := int(pieces[1])
 		var node_index := int(pieces[2])
+		var safe_momentum := maxf(0.0, momentum)
+		if entry.has("min_momentum") or entry.has("max_momentum"):
+			var min_momentum := maxf(0.0, float(entry.get("min_momentum", 0.0)))
+			var max_momentum := maxf(min_momentum, float(entry.get("max_momentum", min_momentum)))
+			safe_momentum = clampf(safe_momentum, min_momentum, max_momentum)
 		var bindings: Array = Array(unit_bp.get("module_bindings", [])).duplicate(true)
 		if binding_index < 0 or binding_index >= bindings.size() or not (bindings[binding_index] is Dictionary):
 			return
@@ -16771,11 +18759,65 @@ func _write_engine_allocation_entry_momentum(unit_bp: Dictionary, entry: Diction
 		var by_node := {}
 		if binding.get("allocated_limb_momentum_by_node", {}) is Dictionary:
 			by_node = Dictionary(binding.get("allocated_limb_momentum_by_node", {})).duplicate(true)
-		by_node[str(node_index)] = maxf(0.0, momentum)
+		if by_node.is_empty() and binding.get("joint_drive_allocation_by_node", {}) is Dictionary:
+			by_node = Dictionary(binding.get("joint_drive_allocation_by_node", {})).duplicate(true)
+		by_node[str(node_index)] = safe_momentum
 		binding["allocated_limb_momentum_by_node"] = by_node
+		binding["joint_drive_allocation_by_node"] = by_node.duplicate(true)
 		binding["allocated_limb_momentum"] = _engine_allocation_binding_total(unit_bp, binding)
+		binding["joint_drive_allocation_total"] = binding["allocated_limb_momentum"]
+		binding["joint_drive_demand"] = binding["allocated_limb_momentum"]
 		bindings[binding_index] = binding
 		unit_bp["module_bindings"] = bindings
+
+
+func _engine_payload_index_for_torso(unit_bp: Dictionary, torso_node_index: int) -> int:
+	if torso_node_index < 0:
+		return -1
+	var payloads: Array = Array(unit_bp.get("slot_payloads", []))
+	for i in range(payloads.size()):
+		if not (payloads[i] is Dictionary):
+			continue
+		var payload: Dictionary = payloads[i]
+		if String(payload.get("kind", "")) != "engine":
+			continue
+		if _payload_torso_node_index(payload, unit_bp) != torso_node_index:
+			continue
+		return i
+	return -1
+
+
+func _set_engine_allocation_context_for_torso(unit_bp: Dictionary, torso_node_index: int, open_panel: bool = false, payload_override: int = -999999) -> bool:
+	if torso_node_index < 0:
+		return false
+	var payload_index := payload_override
+	if payload_index == -999999:
+		payload_index = _engine_payload_index_for_torso(unit_bp, torso_node_index)
+	elif payload_index >= 0:
+		var payloads: Array = Array(unit_bp.get("slot_payloads", []))
+		if payload_index >= payloads.size() or not (payloads[payload_index] is Dictionary):
+			return false
+		var payload: Dictionary = payloads[payload_index]
+		if String(payload.get("kind", "")) != "engine":
+			return false
+		if _payload_torso_node_index(payload, unit_bp) != torso_node_index:
+			return false
+	editor_open_torso_node_index = torso_node_index
+	editor_engine_allocation_torso_node_index = torso_node_index
+	editor_engine_allocation_payload_index = payload_index
+	editor_engine_allocation_undo_recorded = false
+	var detail_was_open := engine_momentum_allocation_view != null and engine_momentum_allocation_view.visible and not editor_engine_allocation_panel_user_closed
+	if open_panel:
+		editor_engine_allocation_panel_user_closed = false
+		_refresh_engine_momentum_allocation_view()
+	else:
+		if not detail_was_open:
+			editor_engine_allocation_panel_user_closed = true
+		_refresh_unit_editor_power_allocation_dock()
+		_refresh_engine_allocation_dashboard_summary()
+		if detail_was_open:
+			_refresh_engine_momentum_allocation_view()
+	return true
 
 
 func _open_engine_momentum_allocation_for_payload(payload_index: int) -> void:
@@ -16789,17 +18831,14 @@ func _open_engine_momentum_allocation_for_payload(payload_index: int) -> void:
 	var torso_node := _payload_torso_node_index(payload, unit_bp)
 	if torso_node < 0:
 		return
-	editor_engine_allocation_payload_index = payload_index
-	editor_engine_allocation_torso_node_index = torso_node
-	editor_engine_allocation_undo_recorded = false
-	editor_open_torso_node_index = torso_node
-	_refresh_engine_momentum_allocation_view()
+	_set_engine_allocation_context_for_torso(unit_bp, torso_node, true, payload_index)
 
 
 func _close_engine_momentum_allocation_panel() -> void:
 	editor_engine_allocation_payload_index = -1
 	editor_engine_allocation_torso_node_index = -1
 	editor_engine_allocation_undo_recorded = false
+	editor_engine_allocation_panel_user_closed = true
 	if engine_momentum_allocation_view != null:
 		engine_momentum_allocation_view.visible = false
 
@@ -16807,7 +18846,10 @@ func _close_engine_momentum_allocation_panel() -> void:
 func _refresh_engine_momentum_allocation_view() -> void:
 	if engine_momentum_allocation_view == null:
 		return
-	if editor_engine_allocation_payload_index < 0 or editor_engine_allocation_torso_node_index < 0 or editor_panel_mode != "parts":
+	if editor_engine_allocation_panel_user_closed:
+		engine_momentum_allocation_view.visible = false
+		return
+	if editor_engine_allocation_torso_node_index < 0 or editor_panel_mode != "parts":
 		engine_momentum_allocation_view.visible = false
 		return
 	var unit_bp: Dictionary = _editor_current_blueprint()
@@ -16816,6 +18858,10 @@ func _refresh_engine_momentum_allocation_view() -> void:
 		_close_engine_momentum_allocation_panel()
 		return
 	engine_momentum_allocation_view.set_allocation_data(data, ui_language)
+
+
+func _activate_engine_allocation_target_for_torso(unit_bp: Dictionary, torso_node_index: int) -> void:
+	_set_engine_allocation_context_for_torso(unit_bp, torso_node_index, false)
 
 
 func _editor_active_engine_allocation_target() -> Dictionary:
@@ -16853,11 +18899,12 @@ func _editor_active_engine_allocation_target() -> Dictionary:
 		engine_payload_index = i
 		break
 	if engine_payload_index < 0:
+		var no_engine_data := _engine_momentum_allocation_data(unit_bp, torso_node, -1)
 		return {
 			"torso_node": torso_node,
 			"engine_payload_index": -1,
 			"has_engine": false,
-			"data": {},
+			"data": no_engine_data,
 		}
 	var data := _engine_momentum_allocation_data(unit_bp, torso_node, engine_payload_index)
 	return {
@@ -16869,91 +18916,120 @@ func _editor_active_engine_allocation_target() -> Dictionary:
 
 
 func _engine_allocation_totals(data: Dictionary) -> Dictionary:
-	var thruster := 0.0
-	var limb := 0.0
-	for raw_entry in Array(data.get("entries", [])):
-		if not (raw_entry is Dictionary):
-			continue
-		var entry: Dictionary = raw_entry
-		var momentum := maxf(0.0, float(entry.get("momentum", 0.0)))
-		match String(entry.get("kind", "")):
-			"booster":
-				thruster += momentum
-			"limb":
-				limb += momentum
-	return {
-		"engine": maxf(0.0, float(data.get("engine_output", 0.0))),
-		"thruster": thruster,
-		"limb": limb,
-		"remaining": maxf(0.0, float(data.get("engine_output", 0.0)) - thruster - limb),
-		"over": thruster + limb > float(data.get("engine_output", 0.0)) + 0.001,
-	}
+	if power_allocation_service != null:
+		return power_allocation_service.totals(data)
+	return PowerAllocationService.new().totals(data)
 
 
 func _open_dashboard_engine_allocation() -> void:
+	_toggle_engine_momentum_allocation_for_active_target()
+
+
+func _toggle_dashboard_torso_detail() -> void:
 	var target := _editor_active_engine_allocation_target()
 	if target.is_empty():
 		if editor_board_hint_label != null:
 			_set_control_text_if_changed(editor_board_hint_label, "先放置或选择躯干" if _ui_is_zh() else "Select a torso first")
 		return
-	if not bool(target.get("has_engine", false)):
-		if editor_board_hint_label != null:
-			_set_control_text_if_changed(editor_board_hint_label, "先给当前躯干安装引擎" if _ui_is_zh() else "Install an engine on this torso first")
+	var torso_node := int(target.get("torso_node", -1))
+	if torso_node < 0:
 		return
-	_open_engine_momentum_allocation_for_payload(int(target.get("engine_payload_index", -1)))
+	if editor_torso_detail_view != null and editor_torso_detail_view.visible and editor_open_torso_node_index == torso_node:
+		_close_editor_torso_detail()
+		return
+	_activate_engine_allocation_target_for_torso(_editor_current_blueprint(), torso_node)
+	_open_editor_torso_detail(torso_node)
+	_refresh_engine_allocation_dashboard_summary()
+
+
+func _toggle_engine_momentum_allocation_for_active_target() -> void:
+	var target := _editor_active_engine_allocation_target()
+	if target.is_empty():
+		if editor_board_hint_label != null:
+			_set_control_text_if_changed(editor_board_hint_label, "先放置或选择躯干" if _ui_is_zh() else "Select a torso first")
+		return
+	var torso_node := int(target.get("torso_node", -1))
+	var payload_index := int(target.get("engine_payload_index", -1))
+	if torso_node < 0:
+		return
+	if engine_momentum_allocation_view != null and engine_momentum_allocation_view.visible and editor_engine_allocation_torso_node_index == torso_node:
+		_close_engine_momentum_allocation_panel()
+		return
+	_set_engine_allocation_context_for_torso(_editor_current_blueprint(), torso_node, true, payload_index)
+
+
+func _refresh_unit_editor_torso_detail_button(visible: bool, target: Dictionary) -> void:
+	if editor_torso_detail_button == null:
+		return
+	_set_canvas_item_visible_if_changed(editor_torso_detail_button, visible)
+	if not visible:
+		return
+	_set_control_text_if_changed(editor_torso_detail_button, "躯干详情" if _ui_is_zh() else "TORSO")
+	if target.is_empty():
+		_set_button_disabled_if_changed(editor_torso_detail_button, true)
+		_set_control_tooltip_if_changed(editor_torso_detail_button, "选择躯干后打开详情" if _ui_is_zh() else "Select a torso to open details")
+		return
+	var torso_node := int(target.get("torso_node", -1))
+	_set_button_disabled_if_changed(editor_torso_detail_button, torso_node < 0)
+	_set_control_tooltip_if_changed(editor_torso_detail_button, "打开/关闭当前躯干详情面板" if _ui_is_zh() else "Open or close the current torso detail panel")
 
 
 func _refresh_engine_allocation_dashboard_summary() -> void:
-	_refresh_unit_editor_power_allocation_topbar()
-	if editor_engine_allocation_button == null or editor_engine_allocation_summary_label == null:
-		return
+	_refresh_unit_editor_power_allocation_dock()
 	var role_key: String = ROLE_ORDER[editor_role_index]
 	var visible := editor_layer != null and editor_layer.visible and editor_panel_mode == "parts" and _role_uses_body_board(role_key)
-	_set_canvas_item_visible_if_changed(editor_engine_allocation_button, visible)
-	_set_canvas_item_visible_if_changed(editor_engine_allocation_summary_label, visible)
+	if editor_engine_allocation_button != null:
+		_set_canvas_item_visible_if_changed(editor_engine_allocation_button, false)
+		_set_button_disabled_if_changed(editor_engine_allocation_button, true)
+		_set_control_tooltip_if_changed(editor_engine_allocation_button, "")
+	if editor_engine_allocation_summary_label != null:
+		_set_canvas_item_visible_if_changed(editor_engine_allocation_summary_label, false)
+		_set_control_text_if_changed(editor_engine_allocation_summary_label, "")
+		_set_canvas_item_modulate_if_changed(editor_engine_allocation_summary_label, Color(0.78, 0.92, 1.0, 0.94))
 	if not visible:
+		_refresh_unit_editor_torso_detail_button(false, {})
 		return
-	_set_control_text_if_changed(editor_engine_allocation_button, "动力分配" if _ui_is_zh() else "POWER")
 	var target := _editor_active_engine_allocation_target()
-	if target.is_empty():
-		_set_button_disabled_if_changed(editor_engine_allocation_button, true)
-		_set_control_text_if_changed(editor_engine_allocation_summary_label, "选躯干" if _ui_is_zh() else "TORSO")
-		_set_control_tooltip_if_changed(editor_engine_allocation_button, "选择躯干后打开动力分配" if _ui_is_zh() else "Select a torso to open power allocation")
-		return
-	if not bool(target.get("has_engine", false)):
-		_set_button_disabled_if_changed(editor_engine_allocation_button, true)
-		_set_control_text_if_changed(editor_engine_allocation_summary_label, "装引擎" if _ui_is_zh() else "ENGINE")
-		_set_control_tooltip_if_changed(editor_engine_allocation_button, "先给当前躯干安装引擎" if _ui_is_zh() else "Install an engine on this torso first")
-		return
-	var totals := _engine_allocation_totals(Dictionary(target.get("data", {})))
-	_set_button_disabled_if_changed(editor_engine_allocation_button, false)
-	var summary := ("%.0f/%.0f" if _ui_is_zh() else "%.0f/%.0f") % [
-		float(totals.get("engine", 0.0)),
-		float(totals.get("thruster", 0.0)) + float(totals.get("limb", 0.0)),
-	]
-	_set_control_text_if_changed(editor_engine_allocation_summary_label, summary)
-	_set_canvas_item_modulate_if_changed(editor_engine_allocation_summary_label, Color(1.0, 0.46, 0.32, 0.96) if bool(totals.get("over", false)) else Color(0.78, 0.92, 1.0, 0.94))
-	_set_control_tooltip_if_changed(editor_engine_allocation_button, "打开推进器与已绑定肢体动力 slider" if _ui_is_zh() else "Open thruster and bound-limb power sliders")
+	_refresh_unit_editor_torso_detail_button(visible, target)
 
 
-func _refresh_unit_editor_power_allocation_topbar() -> void:
-	if editor_power_topbar_view == null:
-		return
+func _refresh_unit_editor_power_allocation_dock() -> void:
 	var role_key: String = ROLE_ORDER[editor_role_index]
 	var visible := editor_layer != null and editor_layer.visible and _role_uses_body_board(role_key)
-	_set_canvas_item_visible_if_changed(editor_power_topbar_view, visible)
+	if editor_power_dock_view != null:
+		_set_canvas_item_visible_if_changed(editor_power_dock_view, visible)
 	if not visible:
 		return
 	var target := _editor_active_engine_allocation_target()
 	if target.is_empty():
-		editor_power_topbar_view.set_empty("选择躯干后显示可分配动力。" if _ui_is_zh() else "Select a torso to show allocatable power.", ui_language)
+		if editor_power_dock_view != null:
+			editor_power_dock_view.set_empty("选择躯干后显示推进器与绑定肢体动力滑槽。" if _ui_is_zh() else "Select a torso to show thruster and bound-limb sliders.", ui_language)
 		return
 	if not bool(target.get("has_engine", false)):
-		editor_power_topbar_view.set_empty("当前躯干未安装引擎。" if _ui_is_zh() else "Current torso has no engine installed.", ui_language)
+		var no_engine_data: Dictionary = Dictionary(target.get("data", {}))
+		if no_engine_data.is_empty() or Array(no_engine_data.get("entries", [])).is_empty():
+			if editor_power_dock_view != null:
+				editor_power_dock_view.set_empty("当前躯干未安装引擎；绑定肢体会在此显示为禁用行。" if _ui_is_zh() else "No engine installed; bound limbs appear here as disabled rows.", ui_language)
+			return
+		if editor_power_dock_view != null:
+			editor_power_dock_view.set_allocation_data(no_engine_data, ui_language)
 		return
-	editor_engine_allocation_torso_node_index = int(target.get("torso_node", -1))
-	editor_engine_allocation_payload_index = int(target.get("engine_payload_index", -1))
-	editor_power_topbar_view.set_allocation_data(Dictionary(target.get("data", {})), ui_language)
+	var allocation_data := Dictionary(target.get("data", {}))
+	if editor_power_dock_view != null:
+		editor_power_dock_view.set_allocation_data(allocation_data, ui_language)
+
+
+func _set_editor_torso_detail_binding_layout(active: bool) -> void:
+	if editor_torso_detail_view == null:
+		return
+	if active:
+		_set_control_position_if_changed(editor_torso_detail_view, Vector2(936.0, 94.0))
+		_set_control_size_if_changed(editor_torso_detail_view, Vector2(280.0, 548.0))
+		editor_torso_detail_view.z_index = 320
+	else:
+		_set_control_position_if_changed(editor_torso_detail_view, Vector2(18.0, 338.0))
+		_set_control_size_if_changed(editor_torso_detail_view, Vector2(888.0, 346.0))
+		editor_torso_detail_view.z_index = 210
 
 
 func _invalidate_editor_board_snapshot_cache() -> void:
@@ -17074,7 +19150,142 @@ func _editor_board_dynamic_revision_key() -> String:
 		str(editor_open_torso_node_index),
 		str(editor_dragging_node_index),
 		str(snappedf(editor_snap_timer, 0.01)),
+		_editor_pending_binding_signature(),
+		_editor_bound_allocation_signature(),
+		_editor_tryout_signature(),
 	])
+
+
+func _editor_pending_binding_signature() -> String:
+	if editor_pending_module_binding.is_empty():
+		return "bind:none"
+	return "bind:%d:%d:%s:%s:%d" % [
+		int(editor_pending_module_binding.get("payload_index", -1)),
+		int(editor_pending_module_binding.get("module_index", -1)),
+		str(bool(editor_pending_module_binding.get("target_selected", false))),
+		_editor_int_array_signature(Array(editor_pending_module_binding.get("target_nodes", []))),
+		int(editor_pending_module_binding.get("root_index", -1)),
+	]
+
+
+func _editor_bound_allocation_signature() -> String:
+	var unit_bp: Dictionary = _editor_current_blueprint()
+	var bits: Array = ["alloc"]
+	for raw_binding in Array(unit_bp.get("module_bindings", [])):
+		if not (raw_binding is Dictionary):
+			continue
+		var binding: Dictionary = raw_binding
+		var by_node = binding.get("allocated_limb_momentum_by_node", {})
+		if not (by_node is Dictionary) or Dictionary(by_node).is_empty():
+			by_node = binding.get("joint_drive_allocation_by_node", {})
+		bits.append("%d:%d:%s:%s" % [
+			int(binding.get("software_slot_index", -1)),
+			int(binding.get("attack_key", 0)),
+			_editor_int_array_signature(Array(binding.get("target_nodes", []))),
+			str(hash(by_node)),
+		])
+	return "|".join(bits)
+
+
+func _binding_candidate_id(candidate: Dictionary) -> String:
+	var nodes_key := _editor_int_array_signature(Array(candidate.get("target_nodes", [])))
+	if nodes_key == "":
+		nodes_key = _editor_int_array_signature(Array(candidate.get("selection", [])))
+	return "%s:%d:%s" % [
+		String(candidate.get("target_kind", "")),
+		int(candidate.get("root_index", -1)),
+		nodes_key,
+	]
+
+
+func _editor_tryout_signature() -> String:
+	if editor_bound_module_tryout.is_empty():
+		return "try:none"
+	return "try:%d:%s:%s:%.2f:%s" % [
+		int(editor_bound_module_tryout.get("attack_key", 0)),
+		String(editor_bound_module_tryout.get("profile", "")),
+		String(editor_bound_module_tryout.get("preview_kind", "")),
+		snappedf(float(editor_bound_module_tryout.get("timer", 0.0)), 0.02),
+		_editor_int_array_signature(Array(editor_bound_module_tryout.get("target_nodes", []))),
+	]
+
+
+func _editor_binding_highlights_for_board(unit_bp: Dictionary) -> Dictionary:
+	var result := {}
+	if editor_pending_module_binding.is_empty():
+		return result
+	var role_key: String = ROLE_ORDER[editor_role_index]
+	var payload_index := int(editor_pending_module_binding.get("payload_index", -1))
+	var module_part := _selected_component(role_key, "module", int(editor_pending_module_binding.get("module_index", 0)))
+	var candidates := _torso_detail_module_binding_candidates(unit_bp, payload_index, module_part)
+	for raw_candidate in candidates:
+		if not (raw_candidate is Dictionary):
+			continue
+		var candidate: Dictionary = raw_candidate
+		var root_index := int(candidate.get("root_index", -1))
+		if root_index < 0:
+			continue
+		var candidate_id := String(candidate.get("candidate_id", _binding_candidate_id(candidate)))
+		var highlight_nodes: Array = Array(candidate.get("target_nodes", []))
+		if highlight_nodes.is_empty():
+			highlight_nodes = Array(candidate.get("selection", [root_index]))
+		if highlight_nodes.is_empty():
+			highlight_nodes = [root_index]
+		for raw_node in highlight_nodes:
+			var node_index := int(raw_node)
+			if node_index < 0:
+				continue
+			result[str(node_index)] = {
+				"state": "binding_valid" if bool(candidate.get("valid", false)) else "binding_invalid",
+				"reason": String(candidate.get("reason", candidate.get("note", ""))),
+				"target_kind": String(candidate.get("target_kind", "")),
+				"target_nodes": Array(candidate.get("target_nodes", [])),
+				"candidate_id": candidate_id,
+				"root_index": root_index,
+				"required_drive": float(candidate.get("required_drive", 0.0)),
+				"selected": bool(editor_pending_module_binding.get("target_selected", false)) and root_index == int(editor_pending_module_binding.get("root_index", -9999)),
+			}
+	return result
+
+
+func _editor_allocation_highlights_for_board(unit_bp: Dictionary) -> Dictionary:
+	var result := {}
+	var role_key: String = ROLE_ORDER[editor_role_index]
+	for raw_binding in _runtime_module_bindings_for_blueprint(role_key, unit_bp):
+		if not (raw_binding is Dictionary):
+			continue
+		var binding: Dictionary = raw_binding
+		if not bool(binding.get("runtime_valid", true)):
+			continue
+		var target_nodes: Array = Array(binding.get("target_nodes", []))
+		if target_nodes.is_empty():
+			continue
+		var by_node = binding.get("allocated_limb_momentum_by_node", {})
+		if not (by_node is Dictionary) or Dictionary(by_node).is_empty():
+			by_node = binding.get("joint_drive_allocation_by_node", {})
+		for raw_node in target_nodes:
+			var node_index := int(raw_node)
+			var node_key := str(node_index)
+			var drive := 0.0
+			if by_node is Dictionary:
+				drive = maxf(0.0, float(Dictionary(by_node).get(node_key, Dictionary(by_node).get(node_index, 0.0))))
+			result[node_key] = {
+				"state": "allocation_bound",
+				"reason": "bound power allocation",
+				"target_kind": String(binding.get("target_kind", "")),
+				"target_nodes": target_nodes.duplicate(true),
+				"candidate_id": "bound:%d:%s" % [int(binding.get("attack_key", 0)), _editor_int_array_signature(target_nodes)],
+				"root_index": int(binding.get("root_index", target_nodes[0])),
+				"required_drive": drive,
+				"selected": engine_momentum_allocation_view != null and engine_momentum_allocation_view.visible,
+			}
+	return result
+
+
+func _editor_tryout_preview_for_board() -> Dictionary:
+	if editor_bound_module_tryout.is_empty():
+		return {}
+	return editor_bound_module_tryout.duplicate(true)
 
 
 func _apply_editor_board_dynamic_fields(snapshot: Dictionary, role_key: String, unit_bp: Dictionary, base_key: String, visual_stats: Dictionary) -> Dictionary:
@@ -17095,12 +19306,21 @@ func _apply_editor_board_dynamic_fields(snapshot: Dictionary, role_key: String, 
 	snapshot["joint_slot_profiles"] = Array(visual_stats.get("joint_slot_profiles", snapshot.get("joint_slot_profiles", [])))
 	snapshot["swept_collision_count"] = int(visual_stats.get("swept_collision_count", snapshot.get("swept_collision_count", 0)))
 	snapshot["material_warning_nodes"] = editor_material_warning_nodes.duplicate()
+	var binding_highlights := {}
+	if not editor_pending_module_binding.is_empty() and (engine_momentum_allocation_view == null or not engine_momentum_allocation_view.visible):
+		binding_highlights = _editor_binding_highlights_for_board(unit_bp)
+	snapshot["binding_highlights"] = binding_highlights
+	snapshot["tryout_preview"] = _editor_tryout_preview_for_board()
 	snapshot.erase("candidate_socket_pair")
 	var topology: Dictionary = unit_bp.get("custom_topology", {})
 	var source_nodes: Array = Array(topology.get("nodes", []))
 	var source_edges: Array = Array(topology.get("edges", []))
-	if editor_dragging_node_index >= 0 and editor_dragging_node_index < source_nodes.size() and _topology_node_edge_count(source_edges, editor_dragging_node_index) <= 0:
-		var socket_candidate := _topology_socket_candidate(role_key, unit_bp, source_nodes, source_edges, editor_dragging_node_index, true)
+	var visual_nodes: Array = Array(snapshot.get("nodes", []))
+	var socket_nodes: Array = visual_nodes if visual_nodes.size() == source_nodes.size() else source_nodes
+	if not socket_nodes.is_empty():
+		_refresh_editor_board_dynamic_socket_geometry(snapshot, role_key, unit_bp, socket_nodes, source_edges)
+	if editor_dragging_node_index >= 0 and editor_dragging_node_index < socket_nodes.size() and _topology_node_edge_count(source_edges, editor_dragging_node_index) <= 0:
+		var socket_candidate := _topology_socket_candidate(role_key, unit_bp, socket_nodes, source_edges, editor_dragging_node_index, true)
 		if not socket_candidate.is_empty():
 			var candidate_a: Dictionary = socket_candidate.get("socket_a", {})
 			var candidate_b: Dictionary = socket_candidate.get("socket_b", {})
@@ -17113,6 +19333,122 @@ func _apply_editor_board_dynamic_fields(snapshot: Dictionary, role_key: String, 
 				"node_b": int(socket_candidate.get("target", -1)),
 			}
 	snapshot["revision_key"] = "%s|dyn:%s" % [base_key, _editor_board_dynamic_revision_key()]
+	return snapshot
+
+
+func _refresh_editor_board_dynamic_socket_geometry(snapshot: Dictionary, role_key: String, unit_bp: Dictionary, nodes: Array, edges: Array) -> void:
+	snapshot["socket_markers"] = _topology_socket_markers_for_board(role_key, unit_bp, nodes, edges)
+	var edge_states: Dictionary = Dictionary(snapshot.get("edge_states", {})).duplicate(false)
+	if edge_states.is_empty():
+		return
+	for raw_edge in edges:
+		var a := _topology_edge_node_a(raw_edge)
+		var b := _topology_edge_node_b(raw_edge)
+		if a < 0 or b < 0 or a >= nodes.size() or b >= nodes.size():
+			continue
+		var key := _topology_edge_key(a, b)
+		if not edge_states.has(key):
+			continue
+		var edge_points := _topology_edge_socket_board_points(role_key, unit_bp, nodes, edges, a, b)
+		if edge_points.is_empty():
+			continue
+		var state: Dictionary = Dictionary(edge_states.get(key, {})).duplicate(false)
+		state["pa"] = edge_points.get("a", Vector2.ZERO)
+		state["pb"] = edge_points.get("b", Vector2.ZERO)
+		state["socket_a"] = String(edge_points.get("socket_a", ""))
+		state["socket_b"] = String(edge_points.get("socket_b", ""))
+		edge_states[key] = state
+	snapshot["edge_states"] = edge_states
+
+
+func _apply_editor_board_pose_dynamic_fields(snapshot: Dictionary, role_key: String, unit_bp: Dictionary, nodes: Array, edges: Array, changed_nodes: Array, base_key: String) -> Dictionary:
+	if snapshot.is_empty():
+		return snapshot
+	editor_board_dynamic_overlay_apply_count += 1
+	snapshot["selected"] = editor_topology_node_index
+	snapshot["selected_nodes"] = editor_selected_topology_nodes.duplicate()
+	snapshot["selection_box_active"] = editor_selecting_topology_box
+	snapshot["selection_box_start"] = editor_selection_box_start
+	snapshot["selection_box_current"] = editor_selection_box_current
+	snapshot["distance_scale"] = TOPOLOGY_BOARD_PHYSICAL_UNITS
+	snapshot["view_zoom"] = editor_board_zoom
+	snapshot["view_offset"] = editor_board_view_offset
+	snapshot["board_tool"] = editor_board_tool
+	snapshot["pose_root_node"] = editor_pose_root_node
+	snapshot["pose_downstream_nodes"] = editor_pose_downstream_nodes.duplicate()
+	snapshot["material_warning_nodes"] = editor_material_warning_nodes.duplicate()
+	var current_board_snapshot: Dictionary = assembly_board_view.board_snapshot if assembly_board_view != null else {}
+	var pose_binding_highlights := {}
+	if not editor_pending_module_binding.is_empty() and (engine_momentum_allocation_view == null or not engine_momentum_allocation_view.visible):
+		pose_binding_highlights = _editor_binding_highlights_for_board(unit_bp)
+	snapshot["binding_highlights"] = pose_binding_highlights
+	snapshot["tryout_preview"] = Dictionary(current_board_snapshot.get("tryout_preview", snapshot.get("tryout_preview", {}))).duplicate(false)
+	snapshot.erase("candidate_socket_pair")
+	var changed_lookup := {}
+	for raw_index in changed_nodes:
+		changed_lookup[int(raw_index)] = true
+	var socket_markers: Array = []
+	var source_markers: Array = Array(current_board_snapshot.get("socket_markers", snapshot.get("socket_markers", [])))
+	var previous_occupied := {}
+	for raw_marker in source_markers:
+		if not (raw_marker is Dictionary):
+			continue
+		var marker: Dictionary = raw_marker
+		previous_occupied["%d:%s" % [int(marker.get("node", -1)), String(marker.get("id", ""))]] = bool(marker.get("occupied", false))
+		if changed_lookup.has(int(marker.get("node", -1))):
+			continue
+		socket_markers.append(marker.duplicate(false))
+	var selected_lookup := {}
+	for raw_index in editor_selected_topology_nodes:
+		selected_lookup[int(raw_index)] = true
+	if editor_topology_node_index >= 0:
+		selected_lookup[editor_topology_node_index] = true
+	for raw_index in changed_nodes:
+		var node_index := int(raw_index)
+		if node_index < 0 or node_index >= nodes.size() or not (nodes[node_index] is Dictionary):
+			continue
+		var node: Dictionary = nodes[node_index]
+		if not _topology_node_is_component(node):
+			continue
+		var slot_key := _topology_node_slot(node)
+		var center := _topology_node_position(node)
+		for raw_spec in _topology_socket_specs_for_node(role_key, unit_bp, nodes, edges, node_index):
+			if not (raw_spec is Dictionary):
+				continue
+			var spec: Dictionary = raw_spec
+			if not bool(spec.get("connectable", true)):
+				continue
+			var socket_id := _topology_canonical_socket_id(String(spec.get("id", "")))
+			var marker_pos: Vector2 = spec.get("pos", center)
+			socket_markers.append({
+				"node": node_index,
+				"id": socket_id,
+				"pos": _topology_position_to_board_local(marker_pos),
+				"slot": slot_key,
+				"occupied": bool(previous_occupied.get("%d:%s" % [node_index, socket_id], false)),
+				"selected": bool(selected_lookup.get(node_index, false)),
+			})
+	snapshot["socket_markers"] = socket_markers
+	var edge_states: Dictionary = Dictionary(current_board_snapshot.get("edge_states", snapshot.get("edge_states", {}))).duplicate(false)
+	for raw_edge in edges:
+		var a := _topology_edge_node_a(raw_edge)
+		var b := _topology_edge_node_b(raw_edge)
+		if a < 0 or b < 0 or a >= nodes.size() or b >= nodes.size():
+			continue
+		if not changed_lookup.has(a) and not changed_lookup.has(b):
+			continue
+		var key := _topology_edge_key(a, b)
+		var edge_points := _topology_edge_socket_board_points(role_key, unit_bp, nodes, edges, a, b)
+		if edge_points.is_empty():
+			continue
+		var state: Dictionary = Dictionary(edge_states.get(key, {})).duplicate(false)
+		state["pa"] = edge_points.get("a", Vector2.ZERO)
+		state["pb"] = edge_points.get("b", Vector2.ZERO)
+		state["socket_a"] = String(edge_points.get("socket_a", ""))
+		state["socket_b"] = String(edge_points.get("socket_b", ""))
+		edge_states[key] = state
+	snapshot["edge_states"] = edge_states
+	snapshot["revision_key"] = "%s|pose-dyn:%s:%s" % [base_key, _editor_board_dynamic_revision_key(), _editor_int_array_signature(changed_nodes)]
 	return snapshot
 
 
@@ -17167,7 +19503,7 @@ func _editor_fast_enriched_board_node(role_key: String, unit_bp: Dictionary, sou
 	return node
 
 
-func _refresh_editor_visual_views_fast_drag(changed_nodes: Array = [], component_only: bool = false) -> void:
+func _refresh_editor_visual_views_fast_drag(changed_nodes: Array = [], component_only: bool = false, retained_pose_diff: bool = false) -> void:
 	if assembly_board_view == null:
 		return
 	var role_key: String = ROLE_ORDER[editor_role_index]
@@ -17178,6 +19514,8 @@ func _refresh_editor_visual_views_fast_drag(changed_nodes: Array = [], component
 	var topology: Dictionary = unit_bp.get("custom_topology", {})
 	var source_nodes: Array = Array(topology.get("nodes", []))
 	var source_edges: Array = Array(topology.get("edges", []))
+	if hot_path_profiler != null:
+		hot_path_profiler.scope_begin("pose.visual.snapshot")
 	var snapshot: Dictionary = editor_board_base_snapshot_cache.duplicate(false)
 	var nodes: Array = Array(snapshot.get("nodes", [])).duplicate(false)
 	if nodes.size() != source_nodes.size():
@@ -17206,7 +19544,13 @@ func _refresh_editor_visual_views_fast_drag(changed_nodes: Array = [], component
 	shallow_edges.resize(source_edges.size())
 	for edge_i in range(source_edges.size()):
 		shallow_edges[edge_i] = Dictionary(source_edges[edge_i]).duplicate(false) if source_edges[edge_i] is Dictionary else source_edges[edge_i]
+	if hot_path_profiler != null:
+		hot_path_profiler.scope_end("pose.visual.snapshot")
+	if hot_path_profiler != null:
+		hot_path_profiler.scope_begin("pose.visual.art_positions")
 	nodes = _board_nodes_with_art_visual_positions(role_key, unit_bp, nodes, shallow_edges)
+	if hot_path_profiler != null:
+		hot_path_profiler.scope_end("pose.visual.art_positions")
 	snapshot["nodes"] = nodes
 	snapshot["edges"] = shallow_edges
 	var base_key := String(editor_board_base_snapshot_cache_key)
@@ -17217,7 +19561,14 @@ func _refresh_editor_visual_views_fast_drag(changed_nodes: Array = [], component
 		base_key = current_base_key
 		editor_board_base_snapshot_cache = snapshot.duplicate(false)
 		editor_board_base_snapshot_cache_key = current_base_key
-	snapshot = _apply_editor_board_dynamic_fields(snapshot, role_key, unit_bp, base_key, {})
+	if hot_path_profiler != null:
+		hot_path_profiler.scope_begin("pose.visual.dynamic")
+	if retained_pose_diff:
+		snapshot = _apply_editor_board_pose_dynamic_fields(snapshot, role_key, unit_bp, nodes, shallow_edges, indices, base_key)
+	else:
+		snapshot = _apply_editor_board_dynamic_fields(snapshot, role_key, unit_bp, base_key, {})
+	if hot_path_profiler != null:
+		hot_path_profiler.scope_end("pose.visual.dynamic")
 	editor_fast_board_revision_counter += 1
 	var fast_revision := "%s|fast:%d:%d:%d:%d" % [
 		base_key,
@@ -17227,11 +19578,14 @@ func _refresh_editor_visual_views_fast_drag(changed_nodes: Array = [], component
 		indices.size(),
 	]
 	snapshot["revision_key"] = fast_revision
+	if hot_path_profiler != null:
+		hot_path_profiler.scope_begin("pose.visual.apply_diff")
 	assembly_board_view.apply_board_diff({
 		"snapshot": snapshot,
 		"changed_nodes": indices,
-		"component_only": component_only,
-		"defer_component_draw": component_only,
+		"component_only": component_only or retained_pose_diff,
+		"defer_component_draw": component_only and not retained_pose_diff,
+		"update_edge_socket_items": retained_pose_diff,
 		"selected_part": editor_selected_body_part,
 		"illegal_parts": {},
 		"snap_part": editor_snap_part,
@@ -17240,6 +19594,8 @@ func _refresh_editor_visual_views_fast_drag(changed_nodes: Array = [], component
 		"language": ui_language,
 		"motion_phase": editor_canvas_motion_phase,
 	}, fast_revision)
+	if hot_path_profiler != null:
+		hot_path_profiler.scope_end("pose.visual.apply_diff")
 
 
 func _apply_editor_component_node_direct(node_index: int, defer_draw: bool = true) -> bool:
@@ -17273,24 +19629,61 @@ func _apply_editor_component_node_direct(node_index: int, defer_draw: bool = tru
 func _record_engine_allocation_undo_once() -> void:
 	if editor_engine_allocation_undo_recorded:
 		return
-	_record_editor_undo_state("调整动力分配" if _ui_is_zh() else "adjust power allocation")
+	_record_editor_undo_state("调整肢体动力" if _ui_is_zh() else "adjust limb drive")
 	editor_engine_allocation_undo_recorded = true
 
 
 func _set_engine_momentum_allocation_ratio(entry_id: String, requested_ratio: float) -> void:
 	var unit_bp: Dictionary = _editor_current_blueprint()
 	var entry := _engine_allocation_view_entry_for_id(entry_id)
+	if bool(entry.get("readonly", false)):
+		return
 	var pool := maxf(0.0, float(engine_momentum_allocation_view.engine_output)) if engine_momentum_allocation_view != null and engine_momentum_allocation_view.visible else 0.0
-	var ratio := _engine_allocation_clamped_ratio_from_entries(Array(engine_momentum_allocation_view.entries), entry_id, requested_ratio) if engine_momentum_allocation_view != null and engine_momentum_allocation_view.visible else 0.0
+	var ratio := _engine_allocation_clamped_ratio_from_entries(Array(engine_momentum_allocation_view.entries), entry_id, requested_ratio, pool) if engine_momentum_allocation_view != null and engine_momentum_allocation_view.visible else 0.0
 	if entry.is_empty() or pool <= 0.0:
-		var data := _engine_momentum_allocation_data(unit_bp, editor_engine_allocation_torso_node_index, editor_engine_allocation_payload_index)
+		var data := {}
+		if engine_momentum_allocation_view != null and engine_momentum_allocation_view.visible:
+			data = _engine_momentum_allocation_data(unit_bp, editor_engine_allocation_torso_node_index, editor_engine_allocation_payload_index)
+		else:
+			var target := _editor_active_engine_allocation_target()
+			if not target.is_empty():
+				data = Dictionary(target.get("data", {}))
 		entry = _engine_allocation_entry_for_id(data, entry_id)
 		pool = maxf(0.0, float(data.get("engine_output", 0.0)))
 		ratio = _engine_allocation_clamped_ratio(data, entry_id, requested_ratio)
 	if entry.is_empty():
 		return
+	if bool(entry.get("readonly", false)):
+		return
 	_record_engine_allocation_undo_once()
 	var momentum := pool * ratio
+	_write_engine_allocation_entry_momentum(unit_bp, entry, momentum)
+	_update_engine_allocation_view_entry(entry_id, ratio, momentum)
+	ai_team_manual_lock[_editor_player()] = true
+	_refresh_editor_dashboard_after_allocation(false)
+
+
+func _set_engine_momentum_allocation_value(entry_id: String, requested_momentum: float) -> void:
+	var unit_bp: Dictionary = _editor_current_blueprint()
+	var data := {}
+	if engine_momentum_allocation_view != null and engine_momentum_allocation_view.visible:
+		data = {
+			"entries": Array(engine_momentum_allocation_view.entries),
+			"engine_output": engine_momentum_allocation_view.engine_output,
+		}
+	else:
+		var target := _editor_active_engine_allocation_target()
+		if not target.is_empty():
+			data = Dictionary(target.get("data", {}))
+	if data.is_empty():
+		return
+	var entry := _engine_allocation_entry_for_id(data, entry_id)
+	if entry.is_empty() or bool(entry.get("readonly", false)):
+		return
+	var pool := maxf(0.0, float(data.get("engine_output", 0.0)))
+	var momentum := _engine_allocation_clamped_momentum_from_entries(Array(data.get("entries", [])), entry_id, requested_momentum, pool)
+	var ratio := momentum / maxf(1.0, pool) if pool > 0.0 else 0.0
+	_record_engine_allocation_undo_once()
 	_write_engine_allocation_entry_momentum(unit_bp, entry, momentum)
 	_update_engine_allocation_view_entry(entry_id, ratio, momentum)
 	ai_team_manual_lock[_editor_player()] = true
@@ -17322,21 +19715,21 @@ func _equalize_engine_momentum_allocation() -> void:
 	var entries: Array = Array(data.get("entries", []))
 	if entries.is_empty():
 		return
-	var weight_total := 0.0
-	for raw_entry in entries:
-		if raw_entry is Dictionary:
-			weight_total += maxf(1.0, float(Dictionary(raw_entry).get("default_momentum", 0.0)))
-	if weight_total <= 0.0:
+	var momentum_by_id := power_allocation_service.equalized_entry_momentum(entries, float(data.get("engine_output", 0.0))) if power_allocation_service != null else PowerAllocationService.new().equalized_entry_momentum(entries, float(data.get("engine_output", 0.0)))
+	if momentum_by_id.is_empty():
 		return
-	var pool := maxf(0.0, float(data.get("engine_output", 0.0)))
 	_record_engine_allocation_undo_once()
 	for raw_entry in entries:
 		if not (raw_entry is Dictionary):
 			continue
 		var entry: Dictionary = raw_entry
-		var ratio := maxf(1.0, float(entry.get("default_momentum", 0.0))) / weight_total
-		_write_engine_allocation_entry_momentum(unit_bp, entry, pool * ratio)
+		var entry_id := String(entry.get("id", ""))
+		if not momentum_by_id.has(entry_id):
+			continue
+		_write_engine_allocation_entry_momentum(unit_bp, entry, float(momentum_by_id.get(entry_id, 0.0)))
 	ai_team_manual_lock[_editor_player()] = true
+	if engine_momentum_allocation_view != null and engine_momentum_allocation_view.visible:
+		_refresh_engine_momentum_allocation_view()
 	_refresh_editor_dashboard_after_allocation(true)
 
 
@@ -17397,8 +19790,8 @@ func _topology_edge_can_connect(node_a: Dictionary, node_b: Dictionary) -> bool:
 	var family_b := _topology_slot_family(_topology_node_slot(node_b))
 	if family_a != "muscle" or family_b != "muscle":
 		return false
-	var a_torso := bool(node_a.get("is_torso_node", false))
-	var b_torso := bool(node_b.get("is_torso_node", false))
+	var a_torso := bool(node_a.get("is_torso_node", node_a.get("is_torso", false)))
+	var b_torso := bool(node_b.get("is_torso_node", node_b.get("is_torso", false)))
 	return not (a_torso and b_torso)
 
 
@@ -18273,7 +20666,7 @@ func _torso_port_directions(part: Dictionary) -> Array:
 	var count := _torso_external_joint_ports(part)
 	if count <= 0:
 		return []
-	return PartArt.torso_saddle_port_directions(count)
+	return PartArt.torso_hull_port_directions(part, count)
 
 
 func _topology_node_axis(node: Dictionary) -> Vector2:
@@ -18431,7 +20824,7 @@ func _torso_joint_slot_profiles_for_part(part: Dictionary) -> Array:
 	var length := 2.0
 	var front_width := 0.72
 	var rear_width := 1.56
-	var offsets := PartArt.torso_saddle_port_local_offsets(count, length, front_width, rear_width)
+	var offsets := PartArt.torso_hull_port_local_offsets(part, count, length, front_width, rear_width)
 	var angles: Array = []
 	for raw_offset in offsets:
 		var offset: Vector2 = raw_offset
@@ -18611,6 +21004,10 @@ func _build_placement_template(slot_key: String, part_index: int, part: Dictiona
 	node_base["shape"] = String(part.get("shape", component_node.get("shape", slot_key)))
 	node_base["projectile"] = bool(part.get("projectile", false))
 	node_base["is_torso"] = bool(part.get("is_torso", false)) or _component_is_torso(part)
+	if part.has("root_socket"):
+		node_base["root_socket"] = String(part.get("root_socket", ""))
+	if part.has("distal_socket"):
+		node_base["distal_socket"] = String(part.get("distal_socket", ""))
 	return {
 		"slot": slot_key,
 		"part_index": part_index,
@@ -18636,6 +21033,8 @@ func _build_placement_template(slot_key: String, part_index: int, part: Dictiona
 		"shape": String(part.get("shape", component_node.get("shape", slot_key))),
 		"projectile": bool(part.get("projectile", false)),
 		"is_torso": bool(part.get("is_torso", false)) or _component_is_torso(part),
+		"root_socket": String(part.get("root_socket", "")),
+		"distal_socket": String(part.get("distal_socket", "")),
 	}
 
 
@@ -19160,11 +21559,13 @@ func _editor_board_zoom_input_allowed() -> bool:
 func _handle_editor_board_zoom_wheel(mouse_event: InputEventMouseButton) -> void:
 	if not _editor_board_zoom_input_allowed():
 		return
+	_close_engine_momentum_allocation_panel()
 	var factor := EDITOR_BOARD_ZOOM_STEP if mouse_event.button_index == MOUSE_BUTTON_WHEEL_UP else 1.0 / EDITOR_BOARD_ZOOM_STEP
 	_set_editor_board_zoom(editor_board_zoom * factor, mouse_event.position)
 
 
 func _set_editor_board_zoom(next_zoom: float, anchor_position = null) -> void:
+	_close_engine_momentum_allocation_panel()
 	var board_size := _topology_board_size()
 	var anchor: Vector2 = anchor_position if anchor_position is Vector2 else board_size * 0.5
 	var topology_under_anchor := _board_position_to_topology(anchor)
@@ -19251,8 +21652,22 @@ func _handle_custom_topology_click(mouse_event: InputEventMouseButton, unit_bp: 
 			return
 		if mouse_event.button_index == MOUSE_BUTTON_LEFT:
 			var nearest_for_binding := _nearest_custom_node_index(role_key, unit_bp, nodes, mouse_event.position)
-			if nearest_for_binding >= 0:
-				_complete_pending_module_binding_with_selection(unit_bp, [nearest_for_binding])
+			var candidate := _pending_module_binding_candidate_for_point(unit_bp, mouse_event.position)
+			if candidate.is_empty() and nearest_for_binding >= 0:
+				candidate = _pending_module_binding_candidate_for_node(unit_bp, nearest_for_binding)
+			if not candidate.is_empty():
+				if candidate.is_empty() or not bool(candidate.get("valid", false)):
+					var reason := String(candidate.get("reason", candidate.get("note", ""))) if not candidate.is_empty() else ("没有可绑定部位" if _ui_is_zh() else "No bindable target")
+					if editor_summary_label != null:
+						editor_summary_label.text = ("绑定目标非法：%s" if _ui_is_zh() else "Illegal binding target: %s") % reason
+					if editor_board_hint_label != null:
+						editor_board_hint_label.text = reason
+					_play_sfx_wave("alarm", 170.0, 0.08, -16.0)
+					_refresh_editor_visual_views()
+					if hot_path_profiler != null:
+						hot_path_profiler.scope_end("board_click")
+					return
+				_complete_pending_module_binding_with_selection(unit_bp, Array(candidate.get("selection", candidate.get("target_nodes", []))))
 				if hot_path_profiler != null:
 					hot_path_profiler.scope_end("board_click")
 				return
@@ -20558,7 +22973,7 @@ func _start_editor_pose_drag(unit_bp: Dictionary, root_index: int, local_positio
 	if editor_board_hint_label != null:
 		editor_board_hint_label.text = "正在姿态编辑：当前构件带动 %d 个下游构件随动，上游近端保持静止。" % downstream.size() if _ui_is_zh() else "Pose edit: this part drives %d downstream part(s); upstream ancestors stay fixed." % downstream.size()
 	ai_team_manual_lock[_editor_player()] = true
-	_refresh_editor_visual_views_fast_drag(editor_pose_downstream_nodes)
+	_refresh_editor_visual_views_fast_drag(editor_pose_downstream_nodes, false, true)
 	return true
 
 
@@ -20614,7 +23029,7 @@ func _apply_editor_pose_drag_pending(unit_bp: Dictionary) -> void:
 	ai_team_manual_lock[_editor_player()] = true
 	if hot_path_profiler != null:
 		hot_path_profiler.scope_begin("pose.drag.visual_diff")
-	_refresh_editor_visual_views_fast_drag(editor_pose_downstream_nodes)
+	_refresh_editor_visual_views_fast_drag(editor_pose_downstream_nodes, false, true)
 	if hot_path_profiler != null:
 		hot_path_profiler.scope_end("pose.drag.visual_diff")
 
@@ -20636,7 +23051,7 @@ func _finish_editor_pose_drag(unit_bp: Dictionary) -> void:
 	editor_pose_original_entry_pose = {}
 	if editor_board_hint_label != null:
 		editor_board_hint_label.text = "入场姿态已更新：保存单位后，训练和战斗入场都会使用该姿态。" if _ui_is_zh() else "Entry pose updated: save the unit to use this pose in training and battle entry."
-	_refresh_editor_visual_views_fast_drag(editor_pose_downstream_nodes)
+	_refresh_editor_visual_views_fast_drag(editor_pose_downstream_nodes, false, true)
 	if hot_path_profiler != null:
 		hot_path_profiler.scope_begin("pose.commit.idle_dirty")
 	_schedule_editor_stats_idle_refresh("pose.commit")
@@ -21327,7 +23742,10 @@ func _part_filter_options_for_group(group_key: String) -> Array:
 			{"key": "soul", "slot": "special", "zh": "英魂", "en": "SOUL"},
 			{"key": "code", "slot": "special", "zh": "源代码", "en": "CODE"},
 			{"key": "ether", "slot": "special", "zh": "以太", "en": "ETHER"},
-			{"key": "module", "slot": "module", "zh": "行动模块", "en": "MODULE"},
+			{"key": "module", "slot": "module", "zh": "全部模块", "en": "MOD ALL"},
+			{"key": "module_melee", "slot": "module", "zh": "近战", "en": "MELEE"},
+			{"key": "module_ranged", "slot": "module", "zh": "远程", "en": "RANGED"},
+			{"key": "module_other", "slot": "module", "zh": "其他", "en": "OTHER"},
 		]
 	return []
 
@@ -21469,6 +23887,10 @@ func _add_torso_payload_component(slot_key: String, part_index: int, part: Dicti
 	var payload := _make_torso_payload_for_part(payload_kind, slot_key, part_index, part)
 	var assigned_internal_slot := -1
 	if torso_node_index >= 0:
+		if payload_kind == "booster" and _torso_booster_payload_count(unit_bp, torso_node_index) >= 1:
+			editor_summary_label.text = "警报：该躯体已有推进器。" if _ui_is_zh() else "ALARM: torso already has a booster."
+			_play_sfx_wave("alarm", 170.0, 0.08, -16.0)
+			return
 		var plugin_count := _torso_plugin_slot_summary(unit_bp, torso_node_index).size()
 		var software_count := _torso_software_slot_summary(unit_bp, torso_node_index).size()
 		var topology: Dictionary = unit_bp.get("custom_topology", {})
@@ -21548,6 +23970,8 @@ func _attack_key_label(key_value: int) -> String:
 
 func _start_editor_module_binding_flow(payload_index: int, module_part: Dictionary) -> void:
 	var unit_bp: Dictionary = _editor_current_blueprint()
+	_clear_editor_hover_card()
+	_close_engine_momentum_allocation_panel()
 	editor_pending_module_binding = {
 		"payload_index": payload_index,
 		"module_index": int(module_part.get("__catalog_index", -1)),
@@ -21585,13 +24009,85 @@ func _pending_module_binding_hint() -> String:
 	var module_part := _selected_component(role_key, "module", int(editor_pending_module_binding.get("module_index", 0)))
 	var module_name := _zh_part_name(String(module_part.get("name", "行动模块"))) if _ui_is_zh() else String(module_part.get("name", "MODULE"))
 	if not bool(editor_pending_module_binding.get("target_selected", false)):
-		return ("绑定 %s：在躯干详情页点选可绑定部位。" if _ui_is_zh() else "Bind %s: choose a bindable target in the torso detail page.") % module_name
+		return ("绑定 %s：画板蓝绿部位可点击，红橙部位会显示原因；也可在躯干详情页点选。" if _ui_is_zh() else "Bind %s: click blue-green board targets; red-orange targets show why they fail. You can also pick in torso detail.") % module_name
 	var key := int(editor_pending_module_binding.get("attack_key", 0))
 	var target_label := String(editor_pending_module_binding.get("target_label", "TARGET"))
 	var key_text := "未选择" if _ui_is_zh() else "none"
 	if key > 0:
 		key_text = "%d %s" % [key, _attack_key_label(key)]
 	return ("绑定 %s：目标 %s；请选择攻击键（当前 %s）。" if _ui_is_zh() else "Bind %s: target %s; choose an attack key (current %s).") % [module_name, target_label, key_text]
+
+
+func _pending_module_binding_candidate_for_node(unit_bp: Dictionary, node_index: int) -> Dictionary:
+	if editor_pending_module_binding.is_empty():
+		return {}
+	var role_key: String = ROLE_ORDER[editor_role_index]
+	var module_part := _selected_component(role_key, "module", int(editor_pending_module_binding.get("module_index", 0)))
+	var payload_index := int(editor_pending_module_binding.get("payload_index", -1))
+	var candidates := _torso_detail_module_binding_candidates(unit_bp, payload_index, module_part)
+	var first_invalid := {}
+	for raw_candidate in candidates:
+		if not (raw_candidate is Dictionary):
+			continue
+		var candidate: Dictionary = raw_candidate
+		var nodes: Array = Array(candidate.get("target_nodes", []))
+		var selection: Array = Array(candidate.get("selection", []))
+		var root_index := int(candidate.get("root_index", -1))
+		var contains_node := root_index == node_index or nodes.has(node_index) or selection.has(node_index)
+		if not contains_node:
+			continue
+		if bool(candidate.get("valid", false)):
+			return candidate
+		if first_invalid.is_empty():
+			first_invalid = candidate
+	if not first_invalid.is_empty():
+		return first_invalid
+	return _torso_detail_binding_candidate_for_node(unit_bp, payload_index, module_part, node_index)
+
+
+func _pending_module_binding_candidate_for_point(unit_bp: Dictionary, local_pos: Vector2) -> Dictionary:
+	if editor_pending_module_binding.is_empty() or not unit_bp.has("custom_topology"):
+		return {}
+	var role_key: String = ROLE_ORDER[editor_role_index]
+	var topology: Dictionary = unit_bp.get("custom_topology", {})
+	var nodes: Array = Array(topology.get("nodes", []))
+	var module_part := _selected_component(role_key, "module", int(editor_pending_module_binding.get("module_index", 0)))
+	var payload_index := int(editor_pending_module_binding.get("payload_index", -1))
+	var candidates := _torso_detail_module_binding_candidates(unit_bp, payload_index, module_part)
+	var first_invalid := {}
+	for raw_candidate in candidates:
+		if not (raw_candidate is Dictionary):
+			continue
+		var candidate: Dictionary = raw_candidate
+		var group_nodes: Array = Array(candidate.get("target_nodes", []))
+		if group_nodes.is_empty():
+			group_nodes = Array(candidate.get("selection", []))
+		var root_index := int(candidate.get("root_index", -1))
+		if root_index >= 0 and not group_nodes.has(root_index):
+			group_nodes.append(root_index)
+		var first := true
+		var bounds := Rect2(Vector2.ZERO, Vector2.ZERO)
+		for raw_node in group_nodes:
+			var node_index := int(raw_node)
+			if node_index < 0 or node_index >= nodes.size() or not (nodes[node_index] is Dictionary):
+				continue
+			var node: Dictionary = nodes[node_index]
+			var point := _topology_position_to_board_local(_topology_node_position(node))
+			var radius := _topology_node_pick_radius(role_key, unit_bp, node) + 28.0
+			var node_rect := Rect2(point - Vector2(radius, radius), Vector2(radius * 2.0, radius * 2.0))
+			bounds = node_rect if first else bounds.merge(node_rect)
+			first = false
+		if first:
+			continue
+		if not bounds.grow(8.0).has_point(local_pos):
+			continue
+		if bool(candidate.get("valid", false)):
+			return candidate
+		if first_invalid.is_empty():
+			first_invalid = candidate
+	if not first_invalid.is_empty():
+		return first_invalid
+	return {}
 
 
 func _set_pending_module_attack_key(key_value: int) -> void:
@@ -21623,10 +24119,11 @@ func _topology_node_is_projectile_gun_terminal(role_key: String, unit_bp: Dictio
 	if node_index < 0 or node_index >= nodes.size() or not (nodes[node_index] is Dictionary):
 		return false
 	var node: Dictionary = nodes[node_index]
-	if _topology_node_slot(node) != "muscle":
+	var slot_key := _topology_node_slot(node)
+	if _topology_slot_family(slot_key) != "muscle":
 		return false
 	var part := _topology_node_part(role_key, node, unit_bp)
-	return _terminal_weapon_kind_for_part(part, "muscle") == "ranged" and bool(part.get("projectile", false))
+	return _terminal_weapon_kind_for_part(part, "muscle") == "ranged" and _component_is_gun_muscle(part, "muscle")
 
 
 func _part_is_standard_blunt_gauntlet(part: Dictionary) -> bool:
@@ -21854,6 +24351,9 @@ func _complete_pending_module_binding_with_selection(unit_bp: Dictionary, select
 		target_nodes = selection
 	if torso_index < 0 and not target_nodes.is_empty():
 		torso_index = _topology_owner_torso_node_for_node(role_key, unit_bp, int(target_nodes[0]))
+	var drive_by_node := _module_binding_drive_allocation_for_nodes(role_key, unit_bp, nodes, target_nodes, module_part)
+	var joint_drive_total := _module_binding_drive_total(drive_by_node)
+	var joint_output_total := _module_binding_joint_output_for_nodes(role_key, unit_bp, nodes, target_nodes, module_part)
 	var min_bound_nodes := int(module_part.get("min_bound_nodes", 0))
 	if min_bound_nodes > 0 and target_nodes.size() < min_bound_nodes:
 		editor_summary_label.text = "警报：该行动模块至少需要绑定 %d 段肢体。" % min_bound_nodes if _ui_is_zh() else "ALARM: this action module needs at least %d limb segments." % min_bound_nodes
@@ -21901,6 +24401,12 @@ func _complete_pending_module_binding_with_selection(unit_bp: Dictionary, select
 	editor_pending_module_binding["target_torso_node"] = torso_index
 	editor_pending_module_binding["root_index"] = root_index
 	editor_pending_module_binding["target_label"] = target_label
+	editor_pending_module_binding["joint_drive_allocation_by_node"] = drive_by_node
+	editor_pending_module_binding["allocated_limb_momentum_by_node"] = drive_by_node.duplicate(true)
+	editor_pending_module_binding["allocated_limb_momentum"] = joint_drive_total
+	editor_pending_module_binding["joint_drive_allocation_total"] = joint_drive_total
+	editor_pending_module_binding["joint_drive_demand"] = joint_drive_total
+	editor_pending_module_binding["joint_output_momentum"] = joint_output_total
 	editor_pending_module_binding["attack_key"] = 0
 	editor_selected_topology_nodes = target_nodes
 	editor_topology_node_index = root_index
@@ -21947,10 +24453,66 @@ func _torso_detail_module_binding_candidates(unit_bp: Dictionary, payload_index:
 	return candidates
 
 
+func _module_binding_target_nodes_for_candidate(role_key: String, unit_bp: Dictionary, nodes: Array, edges: Array, root_index: int, target_kind: String, module_part: Dictionary) -> Array:
+	if root_index < 0 or root_index >= nodes.size():
+		return []
+	match target_kind:
+		"torso", "gun_terminal", "gauntlet_terminal", "shield_terminal", "hammer_terminal":
+			return [root_index]
+		_:
+			if String(module_part.get("module_action_profile", "")) == "two_link_forward_snap":
+				return _two_link_chain_node_indices(role_key, unit_bp, root_index)
+			return _topology_downstream_node_indices(role_key, unit_bp, nodes, edges, root_index)
+
+
+func _module_binding_drive_allocation_for_nodes(role_key: String, unit_bp: Dictionary, nodes: Array, target_nodes: Array, module_part: Dictionary) -> Dictionary:
+	var by_node := {}
+	for raw_node in target_nodes:
+		var node_index := int(raw_node)
+		if node_index < 0 or node_index >= nodes.size() or not (nodes[node_index] is Dictionary):
+			continue
+		var node: Dictionary = nodes[node_index]
+		var slot_key := _topology_node_slot(node)
+		if not (slot_key in ["limb_muscle", "muscle"]):
+			continue
+		if _topology_node_is_torso(role_key, node, unit_bp):
+			continue
+		var part := _topology_node_part(role_key, node, unit_bp)
+		var allocation := _default_limb_allocated_momentum_for_part(part, slot_key, module_part)
+		if allocation > 0.0:
+			by_node[str(node_index)] = allocation
+	return by_node
+
+
+func _module_binding_drive_total(by_node: Dictionary) -> float:
+	var total := 0.0
+	for raw_key in by_node.keys():
+		total += maxf(0.0, float(by_node[raw_key]))
+	return total
+
+
+func _module_binding_joint_output_for_nodes(role_key: String, unit_bp: Dictionary, nodes: Array, target_nodes: Array, module_part: Dictionary) -> float:
+	var total := 0.0
+	for raw_node in target_nodes:
+		var node_index := int(raw_node)
+		if node_index < 0 or node_index >= nodes.size() or not (nodes[node_index] is Dictionary):
+			continue
+		var node: Dictionary = nodes[node_index]
+		var slot_key := _topology_node_slot(node)
+		if not (slot_key in ["limb_muscle", "muscle"]):
+			continue
+		if _topology_node_is_torso(role_key, node, unit_bp):
+			continue
+		var part := _topology_node_part(role_key, node, unit_bp)
+		total += _joint_output_momentum_base_for_part(part, slot_key, module_part)
+	return total
+
+
 func _torso_detail_binding_candidate_for_node(unit_bp: Dictionary, _payload_index: int, module_part: Dictionary, node_index: int) -> Dictionary:
 	var role_key: String = ROLE_ORDER[editor_role_index]
 	var topology: Dictionary = unit_bp.get("custom_topology", {})
 	var nodes: Array = Array(topology.get("nodes", []))
+	var edges: Array = Array(topology.get("edges", []))
 	if node_index < 0 or node_index >= nodes.size() or not (nodes[node_index] is Dictionary):
 		return {}
 	var node: Dictionary = Dictionary(nodes[node_index])
@@ -22005,19 +24567,37 @@ func _torso_detail_binding_candidate_for_node(unit_bp: Dictionary, _payload_inde
 		root_index = node_index
 	var root_node: Dictionary = Dictionary(nodes[root_index]) if root_index >= 0 and root_index < nodes.size() and nodes[root_index] is Dictionary else node
 	var label := "%d %s" % [root_index + 1, _short_part_name(String(root_node.get("label", root_node.get("part_name", "PART"))))]
-	return {
+	var target_nodes := _module_binding_target_nodes_for_candidate(role_key, unit_bp, nodes, edges, root_index, target_kind, module_part) if valid else []
+	var drive_by_node := _module_binding_drive_allocation_for_nodes(role_key, unit_bp, nodes, target_nodes, module_part)
+	var required_drive := _module_binding_drive_total(drive_by_node)
+	var node_labels: Array = []
+	for raw_target in target_nodes:
+		var target_index := int(raw_target)
+		if target_index >= 0 and target_index < nodes.size() and nodes[target_index] is Dictionary:
+			var target_node: Dictionary = nodes[target_index]
+			node_labels.append("%d" % (target_index + 1))
+	var candidate := {
 		"valid": valid,
 		"label": label,
 		"note": note,
-		"selection": selection,
+		"reason": note,
+		"selection": [root_index] if valid else selection,
 		"root_index": root_index,
 		"target_kind": target_kind,
+		"target_nodes": target_nodes,
+		"target_torso_node": _topology_owner_torso_node_for_node(role_key, unit_bp, root_index) if root_index >= 0 else -1,
+		"nodes_label": "+".join(node_labels),
+		"drive_by_node": drive_by_node,
+		"required_drive": required_drive,
 	}
+	candidate["candidate_id"] = _binding_candidate_id(candidate)
+	return candidate
 
 
 func _select_torso_detail_binding_candidate(candidate_index: int) -> void:
 	if editor_pending_module_binding.is_empty():
 		return
+	_clear_editor_hover_card()
 	var unit_bp: Dictionary = _editor_current_blueprint()
 	var role_key: String = ROLE_ORDER[editor_role_index]
 	var payload_index := int(editor_pending_module_binding.get("payload_index", -1))
@@ -22036,6 +24616,7 @@ func _select_torso_detail_binding_candidate(candidate_index: int) -> void:
 
 
 func _select_torso_detail_binding_key(key_value: int) -> void:
+	_clear_editor_hover_card()
 	_set_pending_module_attack_key(key_value)
 	_refresh_torso_detail_view()
 
@@ -22072,6 +24653,13 @@ func _finalize_pending_module_binding_after_key(unit_bp: Dictionary) -> bool:
 	var root_index := int(editor_pending_module_binding.get("root_index", -1))
 	var torso_index := int(editor_pending_module_binding.get("target_torso_node", -1))
 	var target_nodes: Array = Array(editor_pending_module_binding.get("target_nodes", []))
+	var drive_by_node: Dictionary = editor_pending_module_binding.get("joint_drive_allocation_by_node", {}) if editor_pending_module_binding.get("joint_drive_allocation_by_node", {}) is Dictionary else {}
+	if drive_by_node.is_empty() and editor_pending_module_binding.get("allocated_limb_momentum_by_node", {}) is Dictionary:
+		drive_by_node = Dictionary(editor_pending_module_binding.get("allocated_limb_momentum_by_node", {})).duplicate(true)
+	if drive_by_node.is_empty():
+		drive_by_node = _module_binding_drive_allocation_for_nodes(role_key, unit_bp, nodes, target_nodes, module_part)
+	var joint_drive_total := _module_binding_drive_total(drive_by_node)
+	var joint_output_total := _module_binding_joint_output_for_nodes(role_key, unit_bp, nodes, target_nodes, module_part)
 	if root_index < 0 or root_index >= nodes.size() or target_nodes.is_empty():
 		editor_summary_label.text = "警报：行动模块目标已失效，请重新选择绑定部位。" if _ui_is_zh() else "ALARM: module target is stale; select the target part again."
 		editor_pending_module_binding["target_selected"] = false
@@ -22101,26 +24689,119 @@ func _finalize_pending_module_binding_after_key(unit_bp: Dictionary) -> bool:
 		"module_index": module_index,
 		"attack_key": attack_key,
 		"target_kind": target_kind,
+		"root_index": root_index,
 		"target_nodes": target_nodes,
 		"target_torso_node": torso_index,
+		"joint_drive_allocation_by_node": drive_by_node,
+		"allocated_limb_momentum_by_node": drive_by_node.duplicate(true),
+		"allocated_limb_momentum": joint_drive_total,
+		"joint_drive_allocation_total": joint_drive_total,
+		"joint_drive_demand": joint_drive_total,
+		"joint_output_momentum": joint_output_total,
 		"command_window_profile": String(module_part.get("command_window_profile", "")),
 		"binding_valid_note": "OK",
 	})
 	unit_bp["module_bindings"] = kept
 	editor_pending_module_binding = {}
-	editor_selected_topology_nodes = target_nodes
+	editor_bound_module_tryout = {}
+	editor_selected_topology_nodes = []
 	editor_topology_node_index = root_index
+	_set_engine_allocation_context_for_torso(unit_bp, torso_index, false)
 	editor_summary_label.text = "行动模块绑定完成：%d%s -> %s。" % [attack_key, _attack_key_label(attack_key), _short_part_name(String(module_part.get("name", "MODULE")))] if _ui_is_zh() else "Action module bound: %d%s -> %s." % [attack_key, _attack_key_label(attack_key), _short_part_name(String(module_part.get("name", "MODULE")))]
 	_trigger_editor_snap("module", String(module_part.get("name", "MODULE")))
 	_update_editor_ui()
+	_refresh_editor_visual_views()
+	_refresh_unit_editor_power_allocation_dock()
+	if engine_momentum_allocation_view != null and engine_momentum_allocation_view.visible:
+		_refresh_engine_momentum_allocation_view()
+	return true
+
+
+func _tryout_editor_bound_module(attack_key: int) -> bool:
+	if game_state != STATE_EDITOR:
+		return false
+	var role_key: String = ROLE_ORDER[editor_role_index]
+	if not _role_uses_body_board(role_key):
+		return false
+	var unit_bp: Dictionary = _editor_current_blueprint()
+	if unit_bp.is_empty() or not unit_bp.has("custom_topology"):
+		return false
+	var runtime_bindings := _runtime_module_bindings_for_blueprint(role_key, unit_bp)
+	var matched: Dictionary = {}
+	for raw_binding in runtime_bindings:
+		if not (raw_binding is Dictionary):
+			continue
+		var binding: Dictionary = raw_binding
+		if int(binding.get("attack_key", 0)) != attack_key:
+			continue
+		matched = binding
+		break
+	if matched.is_empty():
+		if editor_board_hint_label != null:
+			editor_board_hint_label.text = ("攻击键 %d 还没有绑定行动模块。" if _ui_is_zh() else "Attack key %d has no bound action module.") % attack_key
+		return false
+	if not bool(matched.get("runtime_valid", true)):
+		if editor_summary_label != null:
+			editor_summary_label.text = ("试用失败：%s" if _ui_is_zh() else "Tryout failed: %s") % String(matched.get("binding_valid_note", "invalid binding"))
+		_play_sfx_wave("alarm", 170.0, 0.08, -16.0)
+		return true
+	var module_part: Dictionary = matched.get("module_part", {}) if matched.get("module_part", {}) is Dictionary else {}
+	var profile := String(matched.get("module_action_profile", module_part.get("module_action_profile", "")))
+	var preview_kind := "projectile" if _gun_activation_profiles().has(profile) else "melee"
+	var target_nodes: Array = Array(matched.get("target_nodes", []))
+	var range_m := float(module_part.get("range", 0.52))
+	var travel_path := "melee"
+	if preview_kind == "projectile" and not target_nodes.is_empty():
+		var topology: Dictionary = unit_bp.get("custom_topology", {})
+		var nodes: Array = Array(topology.get("nodes", []))
+		var root_index := int(target_nodes[target_nodes.size() - 1])
+		if root_index >= 0 and root_index < nodes.size() and nodes[root_index] is Dictionary:
+			var gun_part := _topology_node_part(role_key, nodes[root_index], unit_bp)
+			range_m = float(gun_part.get("projectile_range", gun_part.get("range", module_part.get("module_range", 2.2))))
+			travel_path = String(gun_part.get("travel_path", _gun_activation_spec(String(gun_part.get("gun_kind", _gun_kind_for_data(gun_part))), profile).get("travel_path", "straight")))
+	else:
+		range_m = maxf(range_m, float(module_part.get("module_extension_m", module_part.get("required_extension_m", 0.52))))
+	editor_bound_module_tryout = {
+		"attack_key": attack_key,
+		"profile": profile,
+		"preview_kind": preview_kind,
+		"target_nodes": target_nodes.duplicate(true),
+		"state": "normal",
+		"range": range_m,
+		"travel_path": travel_path,
+		"duration": 0.72,
+		"timer": 0.72,
+		"joint_drive_allocation_total": float(matched.get("joint_drive_allocation_total", matched.get("joint_drive_demand", 0.0))),
+	}
+	var stats := _compute_unit_stats(_editor_player(), role_key, -1, unit_bp)
+	var drive_scale := float(stats.get("action_drive_scale", 1.0))
+	var drive_note := String(stats.get("drive_note", stats.get("engine_momentum_note", "")))
+	if drive_scale < 0.999 and drive_note != "":
+		editor_bound_module_tryout["drive_warning"] = drive_note
+	if editor_summary_label != null:
+		var module_name := _short_part_name(String(module_part.get("name", "MODULE")))
+		if _ui_is_zh():
+			editor_summary_label.text = "画板试用：%d%s %s（无伤害/不耗弹），行动驱动 %.2f。" % [attack_key, _attack_key_label(attack_key), module_name, drive_scale]
+		else:
+			editor_summary_label.text = "Board tryout: %d%s %s (no damage/ammo), action drive %.2f." % [attack_key, _attack_key_label(attack_key), module_name, drive_scale]
+	if editor_board_hint_label != null:
+		var preview_hint := "无伤害预览：进入训练才会结算伤害、热量与弹药。" if _ui_is_zh() else "Preview only: training resolves damage, heat, and ammo."
+		editor_board_hint_label.text = String(editor_bound_module_tryout.get("drive_warning", preview_hint))
+	_trigger_editor_snap("module_tryout", profile)
+	_refresh_editor_visual_views()
 	return true
 
 
 func _clear_module_binding_for_payload_index(unit_bp: Dictionary, payload_index: int, shift_after_removed: bool = false) -> void:
 	var removed_module_indices := {}
+	var removed_attack_keys := {}
 	for raw_binding in Array(unit_bp.get("module_bindings", [])):
 		if raw_binding is Dictionary and int(Dictionary(raw_binding).get("software_slot_index", -1)) == payload_index:
-			removed_module_indices[int(Dictionary(raw_binding).get("module_index", -1))] = true
+			var removed_binding: Dictionary = Dictionary(raw_binding)
+			removed_module_indices[int(removed_binding.get("module_index", -1))] = true
+			var removed_key := int(removed_binding.get("attack_key", 0))
+			if removed_key > 0:
+				removed_attack_keys[clampi(removed_key, 1, ATTACK_GROUP_COUNT)] = true
 	var kept: Array = []
 	for raw_binding in Array(unit_bp.get("module_bindings", [])):
 		if not (raw_binding is Dictionary):
@@ -22133,6 +24814,14 @@ func _clear_module_binding_for_payload_index(unit_bp: Dictionary, payload_index:
 			binding["software_slot_index"] = slot_index - 1
 		kept.append(binding)
 	unit_bp["module_bindings"] = kept
+	if not editor_pending_module_binding.is_empty():
+		var pending_payload := int(editor_pending_module_binding.get("payload_index", -1))
+		if pending_payload == payload_index:
+			editor_pending_module_binding = {}
+		elif shift_after_removed and pending_payload > payload_index:
+			editor_pending_module_binding["payload_index"] = pending_payload - 1
+	if not editor_bound_module_tryout.is_empty() and removed_attack_keys.has(clampi(int(editor_bound_module_tryout.get("attack_key", 0)), 1, ATTACK_GROUP_COUNT)):
+		editor_bound_module_tryout = {}
 	if not unit_bp.has("custom_topology") or removed_module_indices.is_empty():
 		return
 	var still_bound_modules := {}
@@ -22215,6 +24904,23 @@ func _drop_catalog_part_on_torso_detail(slot_key: String, part_index: int, slot_
 	_add_torso_payload_component(slot_key, part_index, part, slot_index if slot_kind == "plugin" else -1)
 
 
+func _scroll_editor_catalog_page_from_card(direction: int) -> void:
+	if game_state != STATE_EDITOR or editor_panel_mode == "load":
+		return
+	var page_size := maxi(1, editor_catalog_buttons.size())
+	var role_key: String = ROLE_ORDER[editor_role_index]
+	var slot_key := String(BUILD_SLOTS[editor_slot_index])
+	var entries := _editor_catalog_entries(role_key, slot_key)
+	var max_page := maxi(0, int(ceilf(float(entries.size()) / float(page_size))) - 1)
+	var step := -1 if direction < 0 else 1
+	var next_page := clampi(editor_catalog_page + step, 0, max_page)
+	if next_page == editor_catalog_page:
+		return
+	editor_catalog_page = next_page
+	mark_editor_dirty(EDITOR_DIRTY_CATALOG | EDITOR_DIRTY_ACTION_BUTTONS, "catalog.card_wheel_page")
+	flush_editor_dirty(1200)
+
+
 func _remove_torso_payload_at(payload_index: int) -> void:
 	var player_id := _editor_player()
 	var role_key: String = ROLE_ORDER[editor_role_index]
@@ -22237,6 +24943,10 @@ func _remove_torso_payload_at(payload_index: int) -> void:
 	_play_sfx_wave("clack", 520.0, 0.045, -18.0)
 	ai_team_manual_lock[player_id] = true
 	_update_editor_ui()
+	_refresh_unit_editor_power_allocation_dock()
+	if engine_momentum_allocation_view != null and engine_momentum_allocation_view.visible:
+		_refresh_engine_momentum_allocation_view()
+	_refresh_editor_visual_views()
 
 
 func _close_editor_torso_detail() -> void:
@@ -22251,6 +24961,7 @@ func _close_editor_torso_detail() -> void:
 	editor_open_torso_node_index = -1
 	editor_selected_torso_slot_index = -1
 	editor_selected_torso_slot_kind = ""
+	_set_editor_torso_detail_binding_layout(false)
 	if editor_torso_detail_view != null:
 		editor_torso_detail_view.visible = false
 	_clear_editor_hover_card()
@@ -22263,7 +24974,10 @@ func _editor_action(action_key: String) -> void:
 	if action_key.begins_with("bind_key_"):
 		var pieces := action_key.split("_")
 		var key_value := int(pieces[pieces.size() - 1]) if pieces.size() > 0 else 1
-		_set_pending_module_attack_key(key_value)
+		if editor_pending_module_binding.is_empty():
+			_tryout_editor_bound_module(key_value)
+		else:
+			_set_pending_module_attack_key(key_value)
 		if hot_path_profiler != null:
 			hot_path_profiler.scope_end("editor_action")
 		return
@@ -22322,7 +25036,7 @@ func _editor_action(action_key: String) -> void:
 		"training_import":
 			if hot_path_profiler != null:
 				hot_path_profiler.scope_begin("bottom_button.action")
-			_import_editor_canvas_to_training()
+			_start_editor_canvas_training_test()
 			if hot_path_profiler != null:
 				hot_path_profiler.scope_end("bottom_button.action")
 		"import_team":
@@ -22840,6 +25554,10 @@ func _make_topology_node(unit_bp: Dictionary, index: int, pos: Vector2, slot_key
 	if resolved_slot == "muscle" and _component_is_torso(part):
 		node["is_torso"] = true
 		node["material_class"] = "torso"
+	elif part.has("root_socket"):
+		node["root_socket"] = String(part.get("root_socket", ""))
+		if part.has("distal_socket"):
+			node["distal_socket"] = String(part.get("distal_socket", ""))
 	if resolved_slot == "muscle" and _part_counts_as_terminal_weapon(part, "muscle"):
 		node["terminal_weapon"] = true
 		node["terminal_weapon_kind"] = _terminal_weapon_kind_for_part(part, "muscle")
@@ -22874,6 +25592,10 @@ func _make_topology_node(unit_bp: Dictionary, index: int, pos: Vector2, slot_key
 		node["shape"] = String(template.get("shape", node.get("shape", resolved_slot)))
 		node["projectile"] = bool(template.get("projectile", node.get("projectile", false)))
 		node["is_torso"] = bool(template.get("is_torso", node.get("is_torso", false)))
+		if String(template.get("root_socket", "")) != "":
+			node["root_socket"] = String(template.get("root_socket", ""))
+		if String(template.get("distal_socket", "")) != "":
+			node["distal_socket"] = String(template.get("distal_socket", ""))
 	return node
 
 
@@ -23100,14 +25822,27 @@ func _tick_editor_visuals(delta: float) -> void:
 		editor_material_warning_nodes = []
 		editor_visual_pulse_accumulator = 0.0
 		visual_dirty = true
+	if not editor_bound_module_tryout.is_empty():
+		editor_bound_module_tryout["timer"] = maxf(0.0, float(editor_bound_module_tryout.get("timer", 0.0)) - delta)
+		editor_visual_pulse_accumulator += delta
+		if float(editor_bound_module_tryout.get("timer", 0.0)) <= 0.0:
+			editor_bound_module_tryout = {}
+			visual_dirty = true
+		elif editor_visual_pulse_accumulator >= 1.0 / 24.0:
+			editor_visual_pulse_accumulator = 0.0
+			visual_dirty = true
 	if editor_save_success_flash_timer > 0.0:
 		editor_save_success_flash_timer = maxf(0.0, editor_save_success_flash_timer - delta)
 		if editor_save_unit_feedback_label != null:
 			editor_save_unit_feedback_label.visible = true
-			var pulse := 0.5 + 0.5 * sin((1.7 - editor_save_success_flash_timer) * 18.0)
-			editor_save_unit_feedback_label.modulate = Color(0.45 + pulse * 0.25, 1.0, 0.62 + pulse * 0.2, 0.78 + pulse * 0.22)
+			var pulse := 0.5 + 0.5 * sin(Time.get_ticks_msec() * 0.018)
+			if editor_save_feedback_is_error:
+				editor_save_unit_feedback_label.modulate = Color(1.0, 0.38 + pulse * 0.16, 0.22, 0.82 + pulse * 0.18)
+			else:
+				editor_save_unit_feedback_label.modulate = Color(0.45 + pulse * 0.25, 1.0, 0.62 + pulse * 0.2, 0.78 + pulse * 0.22)
 	elif editor_save_unit_feedback_label != null and editor_save_unit_feedback_label.visible:
 		editor_save_unit_feedback_label.visible = false
+		editor_save_feedback_is_error = false
 	if preview_budget > 0 and assembly_board_view != null:
 		var flushed_components := assembly_board_view.flush_deferred_retained_components(1)
 		if hot_path_profiler != null and flushed_components > 0:
@@ -23222,24 +25957,14 @@ func _prewarm_adjacent_catalog_card_bodies() -> void:
 			var model: Dictionary = raw_model
 			var entry_slot := String(model.get("slot", slot_key))
 			var part: Dictionary = model.get("part", {})
-			var title := String(model.get("title", ""))
-			var line_a := String(model.get("line_a", ""))
-			var line_b := String(model.get("line_b", ""))
-			var selected_card := bool(model.get("selected", false))
 			var art_size := Vector2(116.0, 44.0)
-			var preview_size := Vector2(116.0, 30.0)
 			if not editor_catalog_buttons.is_empty() and editor_catalog_buttons[0] is PartCatalogCardButton:
 				var button: PartCatalogCardButton = editor_catalog_buttons[0]
 				if button.retained_item != null:
 					art_size = button.retained_item._art_rect().size
-					preview_size = button.retained_item._body_texture_rect().size
-				elif button.text_layer != null:
-					preview_size = button.text_layer.size
 			var preview_pending_before := PartPreviewTextureCache.pending_order.size()
 			var preview_texture := PartPreviewTextureCache.request_preview(self, entry_slot, part, false, 0.0, art_size)
 			if preview_texture == null and PartPreviewTextureCache.pending_order.size() > preview_pending_before:
-				return
-			if CatalogCardBodyTextureCache.prewarm(self, entry_slot, part, title, line_a, line_b, selected_card, preview_size):
 				return
 
 
@@ -23791,8 +26516,6 @@ func _two_link_binding_root_for_selection(role_key: String, unit_bp: Dictionary,
 	var best_distance := 999999
 	for raw_candidate in candidates:
 		var candidate := int(raw_candidate)
-		if not _topology_node_parent_is_torso(role_key, unit_bp, nodes, edges, candidate):
-			continue
 		var chain := _two_link_chain_node_indices(role_key, unit_bp, candidate)
 		if chain.size() != 2:
 			continue
@@ -23817,8 +26540,6 @@ func _two_link_forward_snap_invalid_reason(module_part: Dictionary, attack_node:
 	var edges: Array = topology.get("edges", [])
 	if source_index < 0 or source_index >= nodes.size():
 		return "needs a bound two-segment limb in custom topology."
-	if not _topology_node_parent_is_torso(role_key, unit_bp, nodes, edges, source_index):
-		return "first segment must be connected directly to a torso joint slot."
 	var chain := _two_link_chain_node_indices(role_key, unit_bp, source_index)
 	if chain.size() != 2:
 		return "needs exactly two connected muscle segments and no third downstream segment."
@@ -23826,17 +26547,21 @@ func _two_link_forward_snap_invalid_reason(module_part: Dictionary, attack_node:
 	var second_index := int(chain[1])
 	var first_node: Dictionary = nodes[first_index]
 	var second_node: Dictionary = nodes[second_index]
-	if _topology_node_slot(first_node) != "limb_muscle":
-		return "first segment must be a normal limb muscle connected to the torso port."
+	var first_slot := _topology_node_slot(first_node)
+	if not (first_slot in ["limb_muscle", "muscle"]):
+		return "first segment must be a limb muscle or rotating melee terminal muscle."
 	var second_slot := _topology_node_slot(second_node)
 	if not (second_slot in ["limb_muscle", "muscle"]):
 		return "second segment must be a limb muscle or a rotating melee terminal muscle."
 	var first_part := _topology_node_part(role_key, first_node, unit_bp)
 	var second_part := _topology_node_part(role_key, second_node, unit_bp)
+	if first_slot == "muscle":
+		if not _part_counts_as_terminal_weapon(first_part, "muscle"):
+			return "first muscle must be a terminal weapon if it uses the muscle catalog."
 	if second_slot == "muscle":
 		if not _part_counts_as_terminal_weapon(second_part, "muscle"):
 			return "second muscle must be a terminal weapon if it uses the muscle catalog."
-	var first_profile := _embedded_joint_profile_for_part(first_part, "limb_muscle", module_part)
+	var first_profile := _embedded_joint_profile_for_part(first_part, first_slot, module_part)
 	var second_profile := _embedded_joint_profile_for_part(second_part, second_slot, module_part)
 	if String(first_profile.get("kind", "")) != "ball":
 		return "first segment needs a rotating embedded joint."
@@ -23982,7 +26707,7 @@ func _topology_rule_note(unit_bp: Dictionary, role_key: String, stats: Dictionar
 			var socket_ids := _topology_socket_ids_for_node(role_key, node, unit_bp)
 			if slot_key == "limb_muscle" and (not socket_ids.has("root_joint") or not socket_ids.has("distal")):
 				return "INVALID: node %d limb muscle must have root_joint and distal interfaces." % [i + 1]
-			if slot_key == "muscle" and not bool(part.get("is_torso", false)) and not socket_ids.has("root_joint"):
+			if slot_key == "muscle" and not _component_is_torso(part) and not socket_ids.has("root_joint"):
 				return "INVALID: node %d terminal/torso muscle needs a root_joint interface." % [i + 1]
 			var occupied_interfaces := _connected_topology_neighbors(edges, i, nodes.size()).size()
 			var interface_limit := _topology_node_connection_limit(role_key, node, unit_bp)
@@ -24277,11 +27002,24 @@ func _tick_battle(delta: float) -> void:
 	_update_anti_stall_summons(delta)
 	_update_puppets(delta)
 	_update_barriers(delta)
+	_update_units(delta, false)
 	_update_camera_center()
+	_tick_mobius_visual_twist(delta)
+	_refresh_mobius_surface_view()
 	_update_parallax_background()
-	_update_units(delta)
+	_refresh_unit_screen_positions()
 	_update_aim_lines(delta)
+	_update_combat_geometry_debug_overlay()
 	_update_battle_ui()
+
+
+func _refresh_battle_camera_projection_now() -> void:
+	if game_state != STATE_BATTLE:
+		return
+	_update_camera_center()
+	_refresh_mobius_surface_view()
+	_update_parallax_background()
+	_refresh_unit_screen_positions()
 
 
 func _apply_lease_costs(delta: float) -> void:
@@ -24393,7 +27131,8 @@ func _apply_speed_lanes(delta: float) -> void:
 func _unit_in_speed_lane(lane_node, unit) -> bool:
 	var radius := maxf(0.1, float(lane_node.stats.get("speed_lane_radius", 0.72)))
 	var width := maxf(0.06, float(lane_node.stats.get("speed_lane_width", 0.2)))
-	return absf(_ring_delta(lane_node.ring_pos, unit.ring_pos)) <= radius + float(unit.stats.get("radius", 0.2)) and absf(lane_node.lane - unit.lane) <= width + float(unit.stats.get("radius", 0.2)) * 0.5
+	var delta := _mobius_delta_vec_between(lane_node, unit)
+	return absf(delta.x) <= radius + float(unit.stats.get("radius", 0.2)) and absf(delta.y) <= width + float(unit.stats.get("radius", 0.2)) * 0.5
 
 
 func _apply_speed_lane_to_unit(lane_node, unit, delta: float) -> void:
@@ -24497,7 +27236,8 @@ func _coin_collector(coin: Dictionary):
 	for unit in all_units:
 		if not _is_live_unit(unit) or not _unit_is_mech_physics_subject(unit):
 			continue
-		var distance := absf(_ring_delta(unit.ring_pos, coin_ring)) + absf(unit.lane - coin_lane) * 1.25
+		var coin_delta := _mobius_delta_unit_to_point(unit, coin_ring, coin_lane, 1.25)
+		var distance := absf(coin_delta.x) + absf(coin_delta.y)
 		var reach := pickup_radius + float(unit.stats.get("radius", 0.1)) * 0.8
 		if distance <= reach and distance < best_distance:
 			best_distance = distance
@@ -24536,7 +27276,7 @@ func _unit_in_support_area(support, target) -> bool:
 	if bool(support.stats.get("is_support_platform", false)) or String(support.stats.get("support_field_shape", "")) == "rectangle":
 		var range := maxf(0.1, float(support.stats.get("platform_pair_range", support.stats.get("support_radius", 0.8))))
 		var width := maxf(0.05, float(support.stats.get("platform_width", 0.32)))
-		var delta_vec := Vector2(_ring_delta(support.ring_pos, target.ring_pos), target.lane - support.lane)
+		var delta_vec := _mobius_delta_vec_between(support, target)
 		return absf(delta_vec.x) <= range + float(target.stats.get("radius", 0.2)) and absf(delta_vec.y) <= width + float(target.stats.get("radius", 0.2)) * 0.42
 	return _unit_in_barrier_aura(support, target, maxf(0.1, float(support.stats.get("support_radius", 0.6))), "support")
 
@@ -24644,8 +27384,9 @@ func _nearest_homing_target(launcher, radius: float):
 	for target in _field_targets_for(int(launcher.owner_id), String(launcher.stats.get("homing_affects", "enemy"))):
 		if target == launcher or not _is_live_unit(target):
 			continue
-		var distance := absf(_ring_delta(launcher.ring_pos, target.ring_pos))
-		var lane_distance := absf(launcher.lane - target.lane)
+		var target_delta := _mobius_delta_vec_between(launcher, target)
+		var distance := absf(target_delta.x)
+		var lane_distance := absf(target_delta.y)
 		var target_radius := float(target.stats.get("radius", 0.2))
 		if distance > radius + target_radius or lane_distance > radius * 0.72 + target_radius * 0.5:
 			continue
@@ -24659,7 +27400,7 @@ func _nearest_homing_target(launcher, radius: float):
 func _fire_homing_missile(launcher, target, radius: float) -> void:
 	var damage_type := String(launcher.stats.get("homing_damage_type", "bullet"))
 	var accuracy := clampf(float(launcher.stats.get("homing_accuracy", 0.65)), 0.0, 1.0)
-	var delta_vec := Vector2(_ring_delta(launcher.ring_pos, target.ring_pos), (target.lane - launcher.lane) * 1.25)
+	var delta_vec := _mobius_delta_vec_between(launcher, target, 1.25)
 	if delta_vec.length() <= 0.01:
 		delta_vec = Vector2(float(launcher.facing), 0.0)
 	var error_angle := randf_range(-1.0, 1.0) * (1.0 - accuracy) * 0.82
@@ -24736,7 +27477,7 @@ func _update_escape_pods(delta: float) -> void:
 			continue
 		var target_ring := float(pod.get_meta("escape_target_ring", pod.ring_pos))
 		var target_lane := float(pod.get_meta("escape_target_lane", pod.lane))
-		var delta_vec := Vector2(_ring_delta(pod.ring_pos, target_ring), (target_lane - pod.lane) * 1.25)
+		var delta_vec := _mobius_delta_unit_to_point(pod, target_ring, target_lane, 1.25)
 		if delta_vec.length() <= 0.06:
 			var carried := int(pod.get_meta("carried_modules", 0))
 			_detach_unit(pod)
@@ -24915,7 +27656,7 @@ func _execute_burst_break(player_id: int, hero, input_vector: Vector2, burst_cos
 	for target in _enemy_units(player_id):
 		if not _is_live_unit(target) or not _unit_role_is_mech(target):
 			continue
-		var direction := Vector2(_ring_delta(burst_origin.x, target.ring_pos), target.lane - burst_origin.y)
+		var direction := _mobius_delta_points(burst_origin.x, burst_origin.y, target.ring_pos, target.lane)
 		if direction.length() <= 0.001:
 			direction = input_vector if input_vector.length() > 0.01 else _unit_forward_vector(hero)
 		if direction.length() <= 0.001:
@@ -25018,12 +27759,16 @@ func _handle_player_battle_input(player_id: int, delta: float, prefix: String) -
 		aim_action_name[player_id] = ""
 		_show_battle_message("P%d SIGNAL JAM %.1fs" % [player_id, float(hero.get_meta("jammed_timer", 0.0))], 0.25)
 		return
+	var surface_input_vector := _mobius_surface_input_for_unit(hero, input_vector)
+	var gameplay_input_vector := GameplayTransform.screen_input_to_gameplay_motion(input_vector)
 	if input_vector.length() <= 0.04 and hero.has_method("note_movement_input_released"):
 		hero.note_movement_input_released()
 	if movement_just_pressed and hero.has_method("note_movement_input_pressed"):
 		hero.note_movement_input_pressed(input_vector)
 	if hero.has_method("set_meta"):
 		hero.set_meta("move_input_vector", input_vector)
+		hero.set_meta("surface_move_input_vector", surface_input_vector)
+		hero.set_meta("gameplay_move_input_vector", gameplay_input_vector)
 		hero.set_meta("move_input_just_pressed", movement_just_pressed)
 
 	_tick_runtime_gun_activation(player_id, prefix, delta)
@@ -25037,8 +27782,9 @@ func _handle_player_battle_input(player_id: int, delta: float, prefix: String) -
 		if not _unit_uses_direct_runtime_topology(hero):
 			_record_command_input(player_id, prefix)
 		_handle_direction_taps(player_id, prefix)
-		hero.move_by(input_vector, delta, RING_LENGTH)
-		hero.try_cancel(input_vector, delta)
+	hero.move_by(gameplay_input_vector, delta, RING_LENGTH)
+	if not attack_window_active and not gun_activation_active:
+		hero.try_cancel(gameplay_input_vector, delta)
 
 	var requested_attack_state := "normal" if _unit_uses_direct_runtime_topology(hero) else _melee_command_attack_kind(player_id, hero, false, input_vector)
 	var handled_attack := false
@@ -25276,6 +28022,7 @@ func _handle_direction_taps(player_id: int, prefix: String) -> void:
 				var boost_dir := _input_vector_for(prefix)
 				if boost_dir.length() <= 0.04:
 					boost_dir = directions[name]
+				boost_dir = _mobius_surface_input_for_unit(hero, boost_dir)
 				if _is_live_unit(hero) and hero.boost(boost_dir, RING_LENGTH):
 					_show_battle_message("P%d BOOST %s" % [player_id, String(name).to_upper()], 0.35)
 			last_direction_taps[player_id][name] = now
@@ -25297,6 +28044,8 @@ func _handle_face_chord_boost(player_id: int, prefix: String, input_vector: Vect
 	var boost_dir := input_vector
 	if boost_dir.length() < 0.16:
 		boost_dir = _unit_forward_vector(hero)
+	else:
+		boost_dir = _mobius_surface_input_for_unit(hero, boost_dir)
 	if hero.boost(boost_dir, RING_LENGTH):
 		_show_battle_message("P%d BOOST CHORD" % player_id, 0.35)
 
@@ -25419,7 +28168,7 @@ func _runtime_binding_profile(binding: Dictionary) -> String:
 
 
 func _gun_activation_profiles() -> Array:
-	return ["gun_activate", "rifle_burst_activate", "laser_beam_activate", "missile_lock_activate", "web_tether_activate"]
+	return ["gun_activate", "rifle_burst_activate", "grenade_arc_activate", "laser_beam_activate", "missile_lock_activate", "web_tether_activate"]
 
 
 func _runtime_binding_is_gun_activation(binding: Dictionary) -> bool:
@@ -25432,6 +28181,8 @@ func _gun_activation_profile_for_kind(gun_kind: String) -> String:
 			return "gun_activate"
 		"rifle":
 			return "rifle_burst_activate"
+		"grenade_launcher":
+			return "grenade_arc_activate"
 		"laser_gun":
 			return "laser_beam_activate"
 		"missile_launcher":
@@ -25457,6 +28208,10 @@ func _gun_activation_spec(gun_kind: String, profile: String = "") -> Dictionary:
 			if profile != "rifle_burst_activate":
 				return {}
 			return {"profile": "rifle_burst_activate", "semantic": "hold_burst", "projectile_damage_type": "bullet", "projectile_style": "bullet_hell", "projectile_behavior": "bullet_hell", "travel_path": "straight", "default_width": 0.12, "default_fire_interval": 0.18}
+		"grenade_launcher":
+			if profile != "grenade_arc_activate":
+				return {}
+			return {"profile": "grenade_arc_activate", "semantic": "hold_grenade_arc", "projectile_damage_type": "explosion", "projectile_style": "explosive", "projectile_behavior": "explosive", "travel_path": "arc_u", "default_width": 0.18, "default_range": 2.65, "default_fire_interval": 1.111111}
 		"laser_gun":
 			if profile != "laser_beam_activate":
 				return {}
@@ -25480,6 +28235,8 @@ func _gun_activation_profile_supports_kind(profile: String, gun_kind: String, am
 		return gun_kind == "laser_gun" and ammo_kind == "laser"
 	if profile == "rifle_burst_activate":
 		return gun_kind == "rifle" and ammo_kind == "bullet"
+	if profile == "grenade_arc_activate":
+		return gun_kind == "grenade_launcher" and ammo_kind == "explosive"
 	if profile == "web_tether_activate":
 		return gun_kind == "web_gun" and ammo_kind == "web"
 	if profile == "missile_lock_activate":
@@ -25493,6 +28250,67 @@ func _gun_activate_supports_kind(gun_kind: String) -> bool:
 
 func _runtime_gun_activation_active(player_id: int) -> bool:
 	return gun_activation_state.has(player_id) and gun_activation_state[player_id] is Dictionary and not Dictionary(gun_activation_state[player_id]).is_empty()
+
+
+func _binding_drive_allocation_for_node(binding: Dictionary, node_index: int, fallback: float = 0.0) -> float:
+	var by_node = binding.get("joint_drive_allocation_by_node", {})
+	if not (by_node is Dictionary) or Dictionary(by_node).is_empty():
+		by_node = binding.get("allocated_limb_momentum_by_node", {})
+	if by_node is Dictionary:
+		var node_key := str(node_index)
+		if Dictionary(by_node).has(node_key):
+			return maxf(0.0, float(Dictionary(by_node).get(node_key, fallback)))
+		if Dictionary(by_node).has(node_index):
+			return maxf(0.0, float(Dictionary(by_node).get(node_index, fallback)))
+	var target_count := maxi(1, Array(binding.get("target_nodes", [])).size())
+	if binding.has("joint_drive_allocation_total"):
+		return maxf(0.0, float(binding.get("joint_drive_allocation_total", 0.0)) / float(target_count))
+	if binding.has("allocated_limb_momentum"):
+		return maxf(0.0, float(binding.get("allocated_limb_momentum", 0.0)) / float(target_count))
+	return maxf(0.0, fallback)
+
+
+func _gun_drive_info_for_binding(unit, binding: Dictionary, node_index: int) -> Dictionary:
+	var segment := _runtime_gun_segment_for_binding(unit, binding)
+	var min_momentum := maxf(0.0, float(segment.get("momentum_min", 0.0)))
+	var max_momentum := maxf(min_momentum, float(segment.get("momentum_max", min_momentum)))
+	var fallback := maxf(0.0, float(segment.get("allocated_limb_momentum", segment.get("joint_output_momentum_base", 0.0))))
+	var allocated := clampf(_binding_drive_allocation_for_node(binding, node_index, fallback), min_momentum, max_momentum if max_momentum > min_momentum else maxf(min_momentum, fallback))
+	var ratio := allocated / maxf(1.0, min_momentum)
+	var ratio_to_max := allocated / maxf(1.0, max_momentum)
+	return {
+		"allocated": allocated,
+		"min": min_momentum,
+		"max": max_momentum,
+		"ratio": ratio,
+		"ratio_to_max": ratio_to_max,
+	}
+
+
+func _gun_drive_aim_speed_mult(gun_drive_ratio: float) -> float:
+	if gun_drive_ratio < 1.0:
+		return clampf(0.45 + gun_drive_ratio * 0.55, 0.28, 1.0)
+	return clampf(1.0 + sqrt(maxf(0.0, gun_drive_ratio - 1.0)) * 0.26, 1.0, 1.45)
+
+
+func _gun_drive_projectile_momentum_mult(gun_drive_ratio: float) -> float:
+	return 1.0
+
+
+func _projectile_drive_momentum_mult_for_event(event: Dictionary) -> float:
+	if not event.has("gun_drive_ratio"):
+		return 1.0
+	return _gun_drive_projectile_momentum_mult(float(event.get("gun_drive_ratio", 1.0)))
+
+
+func _sync_projectile_drive_momentum_fields(event: Dictionary) -> void:
+	if not bool(event.get("projectile", false)):
+		return
+	var base_momentum := maxf(0.0, float(event.get("projectile_base_momentum", event.get("projectile_momentum", 0.0))))
+	var drive_mult := _projectile_drive_momentum_mult_for_event(event)
+	event["projectile_base_momentum"] = base_momentum
+	event["projectile_drive_momentum_mult"] = drive_mult
+	event["projectile_effective_momentum"] = base_momentum * drive_mult
 
 
 func _runtime_gun_segment_for_binding(unit, binding: Dictionary) -> Dictionary:
@@ -25513,6 +28331,14 @@ func _runtime_gun_group_for_binding(unit, binding: Dictionary) -> Dictionary:
 		return {}
 	var node_index := int(target_nodes[target_nodes.size() - 1])
 	var group: Dictionary = unit.runtime_group_for_node(node_index)
+	var drive_info := _gun_drive_info_for_binding(unit, binding, node_index)
+	group["gun_drive_allocated"] = float(drive_info.get("allocated", 0.0))
+	group["gun_drive_min"] = float(drive_info.get("min", 0.0))
+	group["gun_drive_max"] = float(drive_info.get("max", 0.0))
+	group["gun_drive_ratio"] = float(drive_info.get("ratio", 0.0))
+	group["gun_drive_ratio_to_max"] = float(drive_info.get("ratio_to_max", 0.0))
+	group["gun_projectile_damage_mult"] = _gun_projectile_damage_mult_max_for_data(group)
+	group["gun_projectile_damage_mult_current"] = _gun_projectile_damage_mult_for_event(group)
 	group["projectile"] = true
 	group["projectile_only"] = true
 	if String(group.get("material_class", "")).to_lower() == "":
@@ -25542,17 +28368,21 @@ func _rotate_direction_toward(current_direction: Vector2, target_direction: Vect
 	return current.rotated(step).normalized()
 
 
-func _gun_activation_rotated_direction(unit, current_direction: Vector2, input_vector: Vector2, rotate_speed: float, delta: float) -> Vector2:
+func _gun_activation_local_turn_sign(unit, input_vector: Vector2) -> int:
 	if input_vector.length() <= 0.18:
-		return current_direction.normalized() if current_direction.length() > 0.01 else _unit_forward_vector(unit)
-	var forward := _unit_forward_vector(unit)
-	var input_dir := input_vector.normalized()
-	var dot := input_dir.dot(forward)
-	if dot > 0.42:
-		return _rotate_direction_toward(current_direction, forward, maxf(0.0, rotate_speed) * delta)
-	if dot < -0.42:
-		return _rotate_direction_toward(current_direction, -forward, maxf(0.0, rotate_speed) * delta)
-	return current_direction.normalized() if current_direction.length() > 0.01 else forward
+		return 0
+	if absf(input_vector.x) < 0.18:
+		return 0
+	return -1 if input_vector.x < 0.0 else 1
+
+
+func _gun_activation_rotated_direction(unit, current_direction: Vector2, input_vector: Vector2, rotate_speed: float, delta: float) -> Vector2:
+	var current := current_direction.normalized() if current_direction.length() > 0.01 else _unit_forward_vector(unit)
+	var turn_sign := _gun_activation_local_turn_sign(unit, input_vector)
+	if turn_sign == 0:
+		return current
+	var step := float(turn_sign) * maxf(0.0, rotate_speed) * maxf(0.0, delta)
+	return current.rotated(step).normalized()
 
 
 func _runtime_gun_activation_event_for(player_id: int) -> Dictionary:
@@ -25573,8 +28403,11 @@ func _runtime_gun_activation_event_for(player_id: int) -> Dictionary:
 		direction = state.get("aim_direction", Vector2.ZERO)
 	if direction.length() <= 0.01:
 		direction = _runtime_gun_activation_direction(unit, binding)
+	direction = direction.normalized() if direction.length() > 0.01 else _unit_forward_vector(unit)
 	var target_nodes: Array = Array(binding.get("target_nodes", []))
 	var node_index := int(target_nodes[target_nodes.size() - 1]) if not target_nodes.is_empty() else int(binding.get("attack_key", 1)) - 1
+	if unit.has_method("set_aim_pose"):
+		unit.set_aim_pose(node_index, direction, 0.16)
 	var gun_kind := String(group.get("gun_kind", _gun_kind_for_data(group)))
 	var ammo_kind := String(group.get("ammo_kind", _ammo_kind_for_data(group)))
 	var profile := _runtime_binding_profile(binding)
@@ -25604,9 +28437,15 @@ func _runtime_gun_activation_event_for(player_id: int) -> Dictionary:
 	event["projectile_behavior"] = projectile_behavior
 	event["travel_path"] = String(spec.get("travel_path", group.get("travel_path", "instant_line")))
 	event["projectile_width_m"] = float(group.get("projectile_width_m", default_width))
-	event["projectile_damage_coeff"] = float(group.get("projectile_damage_coeff", PART_DAMAGE_COEFF_TERMINAL_MELEE * STANDARD_SNIPER_PROJECTILE_DAMAGE_MULT))
 	event["projectile_break_coeff"] = float(group.get("projectile_break_coeff", 0.0))
 	event["projectile_consumes_on_fire"] = bool(group.get("projectile_consumes_on_fire", true))
+	event["gun_drive_allocated"] = float(group.get("gun_drive_allocated", 0.0))
+	event["gun_drive_min"] = float(group.get("gun_drive_min", 0.0))
+	event["gun_drive_max"] = float(group.get("gun_drive_max", 0.0))
+	event["gun_drive_ratio"] = float(group.get("gun_drive_ratio", 1.0))
+	event["gun_drive_ratio_to_max"] = float(group.get("gun_drive_ratio_to_max", 1.0))
+	event["gun_projectile_damage_mult"] = _gun_projectile_damage_mult_max_for_data(group)
+	event["gun_projectile_damage_mult_current"] = _gun_projectile_damage_mult_for_event(event)
 	event["normal_heat"] = float(group.get("normal_heat", 0.0))
 	event["sniper_fire_delay"] = float(group.get("sniper_fire_delay", group.get("bullet_lock_time", TRUE_BULLET_DEFAULT_LOCK_SECONDS)))
 	event["bullet_lock_time"] = event["sniper_fire_delay"]
@@ -25630,6 +28469,13 @@ func _runtime_gun_activation_event_for(player_id: int) -> Dictionary:
 			event["range"] = maxf(0.1, float(group.get("projectile_range", group.get("range", 2.8))))
 			event["lane_range"] = maxf(0.01, float(event.get("projectile_width_m", default_width)) * 0.5)
 			event["projectile_speed_mult"] = float(group.get("projectile_speed_mult", BULLET_HELL_DEFAULT_SPEED_MULT))
+		"hold_grenade_arc":
+			event["range"] = maxf(0.1, float(group.get("projectile_range", group.get("range", spec.get("default_range", 2.65)))))
+			event["lane_range"] = maxf(0.01, float(event.get("projectile_width_m", default_width)) * 0.5)
+			event["projectile_speed_mult"] = float(group.get("projectile_speed_mult", 1.35))
+			event["projectile_momentum"] = maxf(float(group.get("projectile_momentum", 72.0)), float(event.get("projectile_momentum", 0.0)))
+			event["explosion_radius"] = maxf(0.01, float(group.get("explosion_radius", 0.56)))
+			event["explosion_style"] = String(group.get("explosion_style", "grenade"))
 		"release_web":
 			event["range"] = maxf(0.1, float(group.get("projectile_range", group.get("range", spec.get("default_range", STANDARD_WEB_TETHER_RANGE_M)))))
 			event["lane_range"] = maxf(0.01, float(event.get("projectile_width_m", default_width)) * 0.5)
@@ -25647,10 +28493,7 @@ func _runtime_gun_activation_event_for(player_id: int) -> Dictionary:
 			event["lane_range"] = maxf(0.01, float(event.get("projectile_width_m", default_width)) * 0.5)
 			event["projectile_speed_mult"] = float(group.get("projectile_speed_mult", STANDARD_MISSILE_SPEED_MULT))
 			event["projectile_momentum"] = maxf(float(group.get("projectile_momentum", STANDARD_MISSILE_PROJECTILE_MOMENTUM)), float(event.get("projectile_momentum", 0.0)))
-			event["projectile_damage_coeff"] = float(group.get("projectile_damage_coeff", STANDARD_MISSILE_PROJECTILE_DAMAGE_COEFF))
 			event["explosion_radius"] = maxf(0.01, float(group.get("explosion_radius", STANDARD_MISSILE_EXPLOSION_RADIUS)))
-			event["explosion_damage"] = maxi(1, int(group.get("explosion_damage", 9)))
-			event["explosion_damage_type"] = String(group.get("explosion_damage_type", "bullet"))
 			event["explosion_style"] = String(group.get("explosion_style", "missile"))
 			event["missile_lock_priority"] = String(module_part.get("missile_lock_priority", group.get("missile_lock_priority", "screen_hero_first")))
 			event["missile_lock_cone_degrees"] = float(module_part.get("missile_lock_cone_degrees", group.get("missile_lock_cone_degrees", 52.0)))
@@ -25660,6 +28503,7 @@ func _runtime_gun_activation_event_for(player_id: int) -> Dictionary:
 		_:
 			event["range"] = maxf(float(group.get("projectile_range", 0.0)), _laser_visible_world_range(unit, direction))
 			event["lane_range"] = maxf(STANDARD_SNIPER_PROJECTILE_WIDTH_M * 0.5, float(event.get("projectile_width_m", STANDARD_SNIPER_PROJECTILE_WIDTH_M)) * 0.5)
+	_sync_projectile_drive_momentum_fields(event)
 	return event
 
 
@@ -25684,6 +28528,7 @@ func _start_runtime_gun_activation(player_id: int, prefix: String, attack_index:
 	var rotate_speed := float(module_part.get("gun_rotate_speed", 0.0))
 	if rotate_speed <= 0.0:
 		rotate_speed = _unit2_turn_speed_reference()
+	rotate_speed *= _gun_drive_aim_speed_mult(float(group.get("gun_drive_ratio", 1.0)))
 	var aim_direction := _runtime_gun_activation_direction(unit, binding)
 	gun_activation_state[player_id] = {
 		"prefix": prefix,
@@ -25707,6 +28552,8 @@ func _start_runtime_gun_activation(player_id: int, prefix: String, attack_index:
 			_show_battle_message("P%d 棱镜照射：激光" % player_id if _ui_is_zh() else "P%d Prism Beam: laser" % player_id, 0.45)
 		"hold_burst":
 			_show_battle_message("P%d 来复枪点射" % player_id if _ui_is_zh() else "P%d Rifle burst" % player_id, 0.45)
+		"hold_grenade_arc":
+			_show_battle_message("P%d 榴弹弧射" % player_id if _ui_is_zh() else "P%d Grenade arc" % player_id, 0.45)
 		"release_web":
 			_show_battle_message("P%d 蛛丝牵引准备" % player_id if _ui_is_zh() else "P%d Web tether ready" % player_id, 0.45)
 		"release_missile_lock":
@@ -25751,7 +28598,7 @@ func _tick_runtime_gun_activation(player_id: int, prefix: String, delta: float) 
 		gun_activation_state[player_id] = state
 		return
 	var semantic := String(state.get("activation_semantic", ""))
-	if semantic in ["hold_stream", "hold_beam", "hold_burst"]:
+	if semantic in ["hold_stream", "hold_beam", "hold_burst", "hold_grenade_arc"]:
 		var fire_timer := float(state.get("fire_timer", 0.0)) - delta
 		if fire_timer <= 0.0:
 			if not _runtime_gun_activation_fire_once(unit, event):
@@ -26290,7 +29137,7 @@ func _apply_module_event_fields(event: Dictionary, group: Dictionary) -> void:
 
 
 func _copy_control_event_fields(event: Dictionary, group: Dictionary) -> void:
-	for event_key in ["non_damage", "web_strength", "web_break_force", "web_pull_mode", "blind_radius", "blind_duration", "blind_strength", "takeover_on_hit", "takeover_seconds", "takeover_power", "takeover_damage_rate", "takeover_damage_type", "explosion_radius", "explosion_damage", "explosion_damage_type", "explosion_style", "back_hit_heat_bonus", "back_hit_heat_mult", "laser_aim_time", "projectile_behavior", "projectile_momentum", "projectile_mass", "projectile_collision_speed", "projectile_speed_mult", "recoil_transfer_mult", "fire_rate", "fire_interval", "carried_ammo", "ammo_capacity", "bullet_lock_time", "bullet_lock_radius", "chemical_dot_duration", "chemical_dot_mult", "chemical_frontload", "chemical_pellets", "chemical_spread", "missile_lock_priority", "missile_lock_cone_degrees", "missile_lock_range", "missile_lock_target_classes", "missile_occlusion_grace"]:
+	for event_key in ["non_damage", "web_strength", "web_break_force", "web_pull_mode", "blind_radius", "blind_duration", "blind_strength", "takeover_on_hit", "takeover_seconds", "takeover_power", "takeover_damage_rate", "takeover_damage_type", "explosion_radius", "explosion_damage_type", "explosion_style", "back_hit_heat_bonus", "back_hit_heat_mult", "laser_aim_time", "projectile_behavior", "projectile_momentum", "projectile_base_momentum", "projectile_effective_momentum", "projectile_drive_momentum_mult", "projectile_mass", "projectile_collision_speed", "projectile_speed_mult", "gun_projectile_damage_mult", "gun_projectile_damage_mult_current", "gun_drive_allocated", "gun_drive_min", "gun_drive_max", "gun_drive_ratio", "gun_drive_ratio_to_max", "fire_rate", "fire_interval", "carried_ammo", "ammo_capacity", "bullet_lock_time", "bullet_lock_radius", "chemical_dot_duration", "chemical_dot_mult", "chemical_frontload", "chemical_pellets", "chemical_spread", "missile_lock_priority", "missile_lock_cone_degrees", "missile_lock_range", "missile_lock_target_classes", "missile_occlusion_grace"]:
 		if group.has(event_key):
 			event[event_key] = group[event_key]
 	if bool(event.get("non_damage", false)):
@@ -26476,8 +29323,9 @@ func _try_combine_or_separate(unit) -> bool:
 			continue
 		if bool(ally.get_meta("combined", false)):
 			continue
-		var distance := absf(_ring_delta(unit.ring_pos, ally.ring_pos)) + absf(unit.lane - ally.lane) * 0.72
-		if absf(_ring_delta(unit.ring_pos, ally.ring_pos)) <= range and absf(unit.lane - ally.lane) <= range * 0.72:
+		var delta := _mobius_delta_vec_between(unit, ally)
+		var distance := absf(delta.x) + absf(delta.y) * 0.72
+		if absf(delta.x) <= range and absf(delta.y) <= range * 0.72:
 			candidates.append({"unit": ally, "distance": distance})
 	candidates.sort_custom(func(a, b): return float(a["distance"]) < float(b["distance"]))
 	var partners: Array = []
@@ -26628,7 +29476,8 @@ func _try_racket_serve(hero, input_vector: Vector2) -> bool:
 	for ally in _friendly_units(int(hero.owner_id)):
 		if ally == hero or not _is_live_unit(ally) or not bool(ally.stats.get("ball_puppet", false)):
 			continue
-		var distance := absf(_ring_delta(hero.ring_pos, ally.ring_pos)) + absf(hero.lane - ally.lane) * 0.82
+		var delta := _mobius_delta_vec_between(hero, ally)
+		var distance := absf(delta.x) + absf(delta.y) * 0.82
 		if distance <= serve_range and distance < best_distance:
 			best_distance = distance
 			best = ally
@@ -26658,8 +29507,9 @@ func _update_served_balls(delta: float) -> void:
 		for target in _enemy_units(owner):
 			if not _is_live_unit(target):
 				continue
-			var distance := absf(_ring_delta(ball.ring_pos, target.ring_pos))
-			var lane_distance := absf(ball.lane - target.lane)
+			var ball_delta := _mobius_delta_vec_between(ball, target)
+			var distance := absf(ball_delta.x)
+			var lane_distance := absf(ball_delta.y)
 			var radius := float(ball.stats.get("radius", 0.18)) + float(target.stats.get("radius", 0.18))
 			if distance > radius + 0.16 or lane_distance > radius * 0.62 + 0.12:
 				continue
@@ -26691,7 +29541,7 @@ func _morph_shape_for(current_shape: String, mode: String) -> String:
 
 func _is_recoil_countered(player_id: int, prefix: String, attack_direction: Vector2) -> bool:
 	var hero = active_units[player_id]["hero"]
-	if not _is_live_unit(hero) or float(hero.stats.get("boost_total_momentum", hero.stats.get("boost_momentum", 0.0))) <= 0.0:
+	if not _is_live_unit(hero) or float(hero.stats.get("boost_total_momentum", 0.0)) <= 0.0:
 		return false
 	var held := _input_vector_for(prefix)
 	if held.length() < 0.2:
@@ -26997,8 +29847,9 @@ func _update_ai_player(player_id: int, delta: float) -> void:
 	if not _is_live_unit(target):
 		return
 
-	var delta_ring: float = _ring_delta(ai_hero.ring_pos, target.ring_pos)
-	var delta_lane: float = target.lane - ai_hero.lane
+	var target_delta := _mobius_delta_vec_between(ai_hero, target)
+	var delta_ring: float = target_delta.x
+	var delta_lane: float = target_delta.y
 	var to_target := Vector2(delta_ring, delta_lane)
 	var distance_2d := to_target.length()
 	var approach_dir := to_target.normalized() if distance_2d > 0.01 else _unit_forward_vector(ai_hero)
@@ -27187,21 +30038,31 @@ func _update_training_dummy(delta: float) -> void:
 		else:
 			dummy.tick(delta, RING_LENGTH)
 		if training_dummy_state == "idle_brake":
-			var speed: float = dummy.velocity.length()
-			if speed > 0.001:
-				var mass := maxf(0.1, float(dummy.stats.get("mass", 1.0)))
-				var duration := maxf(0.08, float(dummy.stats.get("boost_duration", 0.3)))
-				var brake_delta := maxf(0.0, float(dummy.stats.get("brake_power", 0.0)))
-				if brake_delta <= 0.0:
-					brake_delta = maxf(0.0, float(dummy.stats.get("thruster_allocated_momentum", 0.0))) * maxf(0.1, float(dummy.stats.get("brake_efficiency", 1.0))) / mass
-				var brake_accel := brake_delta / duration
-				var next_speed := maxf(speed * 0.25, speed - brake_accel * delta)
-				dummy.velocity = dummy.velocity.normalized() * next_speed if next_speed > 0.001 else Vector2.ZERO
+			_apply_training_dummy_auto_brake(dummy, delta)
 		return
 	training_respawn_timer -= delta
 	if training_respawn_timer <= 0.0:
 		_summon_role(dummy_player, "hero", true)
-		_show_battle_message("单位2训练靶已恢复。" if _ui_is_zh() else "Unit 2 training target restored.", 1.0)
+		_show_battle_message("单位4训练靶已恢复。" if _ui_is_zh() else "Unit 4 training target restored.", 1.0)
+
+
+func _apply_training_dummy_auto_brake(dummy, delta: float) -> void:
+	if not _is_live_unit(dummy) or delta <= 0.0:
+		return
+	var speed: float = dummy.velocity.length()
+	if speed > 0.001:
+		var mass := maxf(0.1, float(dummy.stats.get("mass", 1.0)))
+		var duration := maxf(0.08, float(dummy.stats.get("boost_duration", 0.3)))
+		var brake_delta := maxf(0.0, float(dummy.stats.get("brake_power", 0.0)))
+		if brake_delta <= 0.0:
+			brake_delta = maxf(0.0, float(dummy.stats.get("move_momentum", 0.0))) * maxf(0.1, float(dummy.stats.get("brake_efficiency", 1.0))) / mass
+		var brake_accel := brake_delta / duration
+		if brake_accel > 0.0001:
+			var next_speed := move_toward(speed, 0.0, brake_accel * delta)
+			dummy.velocity = dummy.velocity.normalized() * next_speed if next_speed > 0.001 else Vector2.ZERO
+	if absf(float(dummy.angular_velocity)) > 0.001:
+		var turn_brake := maxf(0.1, float(dummy.stats.get("turn_speed", 0.0)) + float(dummy.stats.get("turn_command_rate", 0.0)))
+		dummy.angular_velocity = move_toward(float(dummy.angular_velocity), 0.0, turn_brake * delta)
 
 
 func _summon_role(player_id: int, role_key: String, free: bool, immediate: bool = false, alarm: bool = true) -> bool:
@@ -27725,13 +30586,14 @@ func _barrier_entry_blocker(player_id: int, stats: Dictionary, spawn: Dictionary
 	var candidate_colliders := _barrier_colliders_from_stats(stats, center_ring, center_lane)
 	var enemy_colliders := _unit_part_colliders(enemy_barrier)
 	if not candidate_colliders.is_empty() and not enemy_colliders.is_empty():
-		if _gpu_collider_sets_contact(candidate_colliders, enemy_colliders, 1.0 / 60.0):
+		if _gpu_collider_sets_contact(candidate_colliders, enemy_colliders, BATTLE_FRAME_DELTA):
 			return enemy_barrier
 		return null
 	var radius := maxf(float(stats.get("space_size", stats.get("cage_radius", stats.get("radius", 0.35)))), float(stats.get("radius", 0.35)))
 	var enemy_radius := maxf(float(enemy_barrier.stats.get("space_size", enemy_barrier.stats.get("cage_radius", enemy_barrier.stats.get("radius", 0.35)))), float(enemy_barrier.stats.get("radius", 0.35)))
-	var overlap_ring := absf(_ring_delta(center_ring, enemy_barrier.ring_pos))
-	var overlap_lane := absf(center_lane - enemy_barrier.lane)
+	var overlap_delta := _mobius_delta_points(center_ring, center_lane, enemy_barrier.ring_pos, enemy_barrier.lane)
+	var overlap_ring := absf(overlap_delta.x)
+	var overlap_lane := absf(overlap_delta.y)
 	var tolerance := (radius + enemy_radius) * 0.52
 	if overlap_ring <= tolerance and overlap_lane <= tolerance * 0.72:
 		return enemy_barrier
@@ -27781,7 +30643,7 @@ func _push_overlapping_mechs_from_barrier(barrier, player_id: int) -> void:
 			if unit == barrier or not _is_live_unit(unit) or not _unit_is_mech_physics_subject(unit):
 				continue
 			var target_colliders := _unit_part_colliders(unit)
-			var responses := _gpu_collider_set_responses(barrier_colliders, target_colliders, 1.0 / 60.0)
+			var responses := _gpu_collider_set_responses(barrier_colliders, target_colliders, BATTLE_FRAME_DELTA)
 			if responses.is_empty():
 				continue
 			var first_response: Dictionary = Dictionary(responses[0])
@@ -27790,8 +30652,7 @@ func _push_overlapping_mechs_from_barrier(barrier, player_id: int) -> void:
 				best_direction = Vector2(float(1 if int(unit.owner_id) == player_id else -1), 0.0)
 			best_direction = best_direction.normalized()
 			var push := maxf(0.0, float(first_response.get("penetration", 0.0))) * 0.72
-			unit.ring_pos = wrapf(unit.ring_pos + best_direction.x * push, 0.0, RING_LENGTH)
-			unit.lane = clampf(unit.lane + best_direction.y * push * 0.72, -BATTLE_HALF_HEIGHT, BATTLE_HALF_HEIGHT)
+			_apply_unit_displacement(unit, Vector2(best_direction.x, best_direction.y * 0.72), push)
 			unit.velocity += Vector2(best_direction.x, best_direction.y * 0.62) * maxf(0.18, push * 1.4)
 			_spawn_hit_effect(unit, 0, "blunt", false, "shield")
 		return
@@ -27799,15 +30660,14 @@ func _push_overlapping_mechs_from_barrier(barrier, player_id: int) -> void:
 	for unit in all_units:
 		if unit == barrier or not _is_live_unit(unit) or not _unit_is_mech_physics_subject(unit):
 			continue
-		var delta_vec := Vector2(_ring_delta(barrier.ring_pos, unit.ring_pos), (unit.lane - barrier.lane) * 1.35)
+		var delta_vec := _mobius_delta_vec_between(barrier, unit, 1.35)
 		var distance := delta_vec.length()
 		var min_distance := radius + float(unit.stats.get("radius", 0.2)) + 0.08
 		if distance >= min_distance:
 			continue
 		var dir := delta_vec.normalized() if distance > 0.01 else Vector2(float(1 if int(unit.owner_id) == player_id else -1), 0.0)
 		var push := (min_distance - distance) * 0.72
-		unit.ring_pos = wrapf(unit.ring_pos + dir.x * push, 0.0, RING_LENGTH)
-		unit.lane = clampf(unit.lane + dir.y * push * 0.72, -BATTLE_HALF_HEIGHT, BATTLE_HALF_HEIGHT)
+		_apply_unit_displacement(unit, Vector2(dir.x, dir.y * 0.72), push)
 		unit.velocity += Vector2(dir.x, dir.y * 0.62) * maxf(0.18, push * 1.4)
 		_spawn_hit_effect(unit, 0, "blunt", false, "shield")
 
@@ -28335,8 +31195,6 @@ func _update_puppets(delta: float) -> void:
 			if target == null:
 				unit.move_by(Vector2(0.2 * float(1 if player_id == 1 else -1), 0.0), delta, RING_LENGTH)
 				continue
-			var delta_ring: float = _ring_delta(unit.ring_pos, target.ring_pos)
-			var delta_lane: float = target.lane - unit.lane
 			var condition := _puppet_condition(unit, target, player_id)
 			unit.set_meta("source_condition", condition)
 			var move := _puppet_move_vector(unit, target, player_id, unit_index, group.size(), delta, condition)
@@ -28345,8 +31203,9 @@ func _update_puppets(delta: float) -> void:
 
 
 func _puppet_move_vector(unit, target, player_id: int, unit_index: int, group_size: int, delta: float, condition: String = "default") -> Vector2:
-	var delta_ring: float = _ring_delta(unit.ring_pos, target.ring_pos)
-	var delta_lane: float = target.lane - unit.lane
+	var target_delta := _mobius_delta_vec_between(unit, target)
+	var delta_ring: float = target_delta.x
+	var delta_lane: float = target_delta.y
 	var target_vec := Vector2(delta_ring, delta_lane)
 	var move := target_vec.normalized() if target_vec.length() > 0.01 else Vector2(float(unit.facing), 0.0)
 	var ai_kind := String(unit.stats.get("ai", "line"))
@@ -28706,6 +31565,9 @@ func _try_puppet_action(unit, target, player_id: int, unit_index: int, delta: fl
 					event["travel_path"] = "instant_line"
 					event["range"] = maxf(float(event["range"]), _laser_visible_world_range(unit, event["direction"]))
 				_copy_control_event_fields(event, group)
+				if _map_line_occluded(unit, target, event):
+					unit.set_meta("fire_timer", 0.22 + cadence)
+					return
 			if String(group.get("module_effect", "")) != "":
 				_apply_module_event_fields(event, group)
 			if ai_kind == "mine_dance":
@@ -28824,8 +31686,9 @@ func _apply_cage_wall(barrier, player_id: int, delta: float) -> void:
 	for target in _field_targets_for(player_id, String(barrier.stats.get("cage_affects", "enemy"))):
 		if target == barrier or not _is_live_unit(target) or not _unit_is_mech_physics_subject(target):
 			continue
-		var ring_delta := _ring_delta(barrier.ring_pos, target.ring_pos)
-		var lane_delta: float = target.lane - barrier.lane
+		var cage_delta := _mobius_delta_vec_between(barrier, target)
+		var ring_delta := cage_delta.x
+		var lane_delta := cage_delta.y
 		var edge_metric := maxf(absf(ring_delta), absf(lane_delta) * 1.42)
 		var target_radius := float(target.stats.get("radius", 0.2))
 		var edge_distance := absf(edge_metric - radius)
@@ -28886,9 +31749,9 @@ func _apply_gravity_field(barrier, player_id: int, delta: float) -> void:
 func _gravity_direction_vector(mode: String, barrier, unit) -> Vector2:
 	match mode:
 		"inward":
-			return Vector2(_ring_delta(unit.ring_pos, barrier.ring_pos), (barrier.lane - unit.lane) * 1.25)
+			return -_mobius_delta_vec_between(barrier, unit, 1.25)
 		"outward":
-			return Vector2(_ring_delta(barrier.ring_pos, unit.ring_pos), (unit.lane - barrier.lane) * 1.25)
+			return _mobius_delta_vec_between(barrier, unit, 1.25)
 		"right":
 			return Vector2.RIGHT
 		"left":
@@ -28939,7 +31802,7 @@ func _apply_repulsion_field(barrier, player_id: int, delta: float) -> void:
 	for unit in all_units:
 		if not _is_live_unit(unit) or unit == barrier or not _unit_is_mech_physics_subject(unit) or not _unit_in_barrier_aura(barrier, unit, radius, "repulsion"):
 			continue
-		var dir := Vector2(_ring_delta(barrier.ring_pos, unit.ring_pos), (unit.lane - barrier.lane) * 1.25)
+		var dir := _mobius_delta_vec_between(barrier, unit, 1.25)
 		if dir.length() <= 0.01:
 			dir = Vector2(float(unit.facing), 0.0)
 		var falloff := clampf(1.0 - dir.length() / maxf(0.1, radius * 1.4), 0.18, 1.0)
@@ -29038,12 +31901,12 @@ func _fire_trap_field(trap, player_id: int, targets: Array, input_vector: Vector
 			"laser_fan":
 				_apply_trap_damage(trap, target, player_id, "laser", maxi(damage, 18), "beam")
 			"gravity_burst":
-				var dir := Vector2(_ring_delta(target.ring_pos, trap.ring_pos), (trap.lane - target.lane) * 1.2)
+				var dir := -_mobius_delta_vec_between(trap, target, 1.2)
 				if dir.length() > 0.01:
 					target.velocity += Vector2(dir.normalized().x, dir.normalized().y * 0.62) * power
 				_apply_trap_damage(trap, target, player_id, damage_type, damage, "field")
 			"repulse_burst":
-				var away := Vector2(_ring_delta(trap.ring_pos, target.ring_pos), (target.lane - trap.lane) * 1.2)
+				var away := _mobius_delta_vec_between(trap, target, 1.2)
 				if away.length() > 0.01:
 					target.velocity += Vector2(away.normalized().x, away.normalized().y * 0.62) * power
 				_apply_trap_damage(trap, target, player_id, damage_type, damage, "field")
@@ -29053,8 +31916,8 @@ func _fire_trap_field(trap, player_id: int, targets: Array, input_vector: Vector
 				_spawn_hit_effect(target, 1, "blunt", false, "web")
 			"spring_launch":
 				target.velocity += Vector2(launch_direction.x, launch_direction.y * 0.62) * power
-				target.ring_pos = wrapf(target.ring_pos + launch_direction.x * 0.06 * power, 0.0, RING_LENGTH)
-				target.lane = clampf(target.lane + launch_direction.y * 0.05 * power, -BATTLE_HALF_HEIGHT, BATTLE_HALF_HEIGHT)
+				var launch_offset := Vector2(launch_direction.x * 0.06, launch_direction.y * 0.05) * power
+				_apply_unit_displacement(target, launch_offset, launch_offset.length())
 				_apply_trap_damage(trap, target, player_id, damage_type, damage, "field")
 			_:
 				_apply_trap_damage(trap, target, player_id, damage_type, damage, "field")
@@ -29244,10 +32107,12 @@ func _unit_in_barrier_aura(barrier, unit, aura_range: float, field_tag: String =
 			var tile_extent := maxf(float(tile.get("radius", 0.08)), float(tile.get("length", 0.2)) * 0.5)
 			var range_x := aura_range + tile_extent + unit_radius
 			var range_y := aura_range * 0.72 + tile_extent * 0.5 + unit_radius
-			if absf(_ring_delta(tile_pos.x, unit.ring_pos)) <= range_x and absf(tile_pos.y - unit.lane) <= range_y:
+			var tile_delta := _mobius_delta_points(tile_pos.x, tile_pos.y, unit.ring_pos, unit.lane)
+			if absf(tile_delta.x) <= range_x and absf(tile_delta.y) <= range_y:
 				return true
 		return false
-	return absf(_ring_delta(barrier.ring_pos, unit.ring_pos)) <= aura_range + float(unit.stats.get("radius", 0.2)) and absf(barrier.lane - unit.lane) <= aura_range * 0.72 + float(unit.stats.get("radius", 0.2))
+	var delta := _mobius_delta_vec_between(barrier, unit)
+	return absf(delta.x) <= aura_range + float(unit.stats.get("radius", 0.2)) and absf(delta.y) <= aura_range * 0.72 + float(unit.stats.get("radius", 0.2))
 
 
 func _friendly_units(player_id: int) -> Array:
@@ -29302,7 +32167,7 @@ func _resolve_unit_body_spacing(delta: float) -> void:
 
 
 func _separate_unit_pair(a, b, delta: float) -> void:
-	var offset := Vector2(_ring_delta(a.ring_pos, b.ring_pos), b.lane - a.lane)
+	var offset := _mobius_delta_vec_between(a, b)
 	var distance := offset.length()
 	var exact_runtime_pair := _unit_uses_direct_runtime_topology(a) or _unit_uses_direct_runtime_topology(b)
 	if exact_runtime_pair:
@@ -29349,7 +32214,9 @@ func _separate_unit_part_pair(a, b, delta: float) -> void:
 		a_colliders = _runtime_contact_sorted_colliders(a_colliders)
 		b_colliders = _runtime_contact_sorted_colliders(b_colliders)
 	var contact_padding := 0.0 if exact_runtime_pair else UNIT_PART_SPACING_PADDING
-	var origin_x: float = a.ring_pos
+	var patch_origin := _combat_patch_origin_for_unit(a)
+	var origin_x: float = patch_origin.x
+	var origin_lane: float = patch_origin.y
 	var mass_a := _unit_effective_mass(a)
 	var mass_b := _unit_effective_mass(b)
 	var total_mass := mass_a + mass_b
@@ -29362,13 +32229,13 @@ func _separate_unit_part_pair(a, b, delta: float) -> void:
 		if not (raw_a is Dictionary):
 			continue
 		var raw_collider_a: Dictionary = raw_a
-		shifted_a_colliders.append({"raw": raw_collider_a, "shifted": _shift_collider_to_origin(raw_collider_a, origin_x)})
+		shifted_a_colliders.append({"raw": raw_collider_a, "shifted": _shift_collider_to_origin(raw_collider_a, origin_x, origin_lane)})
 	var shifted_b_colliders: Array = []
 	for raw_b in b_colliders:
 		if not (raw_b is Dictionary):
 			continue
 		var raw_collider_b: Dictionary = raw_b
-		shifted_b_colliders.append({"raw": raw_collider_b, "shifted": _shift_collider_to_origin(raw_collider_b, origin_x)})
+		shifted_b_colliders.append({"raw": raw_collider_b, "shifted": _shift_collider_to_origin(raw_collider_b, origin_x, origin_lane)})
 	for entry_a in shifted_a_colliders:
 		var raw_collider_a: Dictionary = Dictionary(entry_a.get("raw", {}))
 		var collider_a: Dictionary = Dictionary(entry_a.get("shifted", {}))
@@ -29390,7 +32257,7 @@ func _separate_unit_part_pair(a, b, delta: float) -> void:
 				continue
 			var direction := _collider_center(collider_b) - _collider_center(collider_a)
 			if direction.length() <= 0.001:
-				direction = Vector2(_ring_delta(a.ring_pos, b.ring_pos), b.lane - a.lane)
+				direction = _mobius_delta_vec_between(a, b)
 			if direction.length() <= 0.001:
 				direction = Vector2(float(1 if int(a.owner_id) <= int(b.owner_id) else -1), 0.0)
 			direction = direction.normalized()
@@ -29567,12 +32434,14 @@ func _force_runtime_collision_recovery_from_gpu(unit, collider: Dictionary) -> v
 		unit.force_runtime_recovery_from_collision(node_index)
 
 
-func _append_gpu_collision_unit_colliders(unit, colliders: Array, origin_x: float, unit_key: int, entries: Array, gpu_colliders: Array) -> void:
+func _append_gpu_collision_unit_colliders(unit, colliders: Array, origin_x: float, unit_key: int, entries: Array, gpu_colliders: Array, origin_lane: float = 1.0e20, query_event: Dictionary = {}) -> void:
 	for raw in colliders:
 		if not (raw is Dictionary):
 			continue
 		var raw_collider: Dictionary = raw
-		var shifted := _shift_collider_to_origin(raw_collider, origin_x)
+		var shifted := _shift_collider_to_origin(raw_collider, origin_x, origin_lane)
+		if bool(query_event.get("projectile", false)):
+			shifted = _target_collider_for_projectile_query(unit, shifted, query_event)
 		shifted["gpu_unit_key"] = unit_key
 		shifted["gpu_team_key"] = int(unit.owner_id) if unit != null and is_instance_valid(unit) else 0
 		shifted["gpu_mass"] = maxf(1.0, _unit_effective_mass(unit)) if unit != null and is_instance_valid(unit) else maxf(1.0, float(raw_collider.get("mass", 1.0)))
@@ -29584,6 +32453,7 @@ func _append_gpu_collision_unit_colliders(unit, colliders: Array, origin_x: floa
 		entries.append({
 			"unit": unit,
 			"raw": raw_collider,
+			"query": shifted.duplicate(true),
 			"shifted": shifted,
 		})
 		gpu_colliders.append(shifted)
@@ -30203,7 +33073,7 @@ func _event_direction_vector(attacker, target, event: Dictionary, fallback: Vect
 	if event_direction.length() > 0.001:
 		return event_direction.normalized()
 	if attacker != null and is_instance_valid(attacker) and target != null and is_instance_valid(target):
-		var target_delta := Vector2(_ring_delta(attacker.ring_pos, target.ring_pos), target.lane - attacker.lane)
+		var target_delta := _mobius_delta_vec_between(attacker, target)
 		if target_delta.length() > 0.001:
 			return target_delta.normalized()
 	if attacker != null and is_instance_valid(attacker):
@@ -30300,7 +33170,7 @@ func _projectile_mass_for_event(event: Dictionary, collision_speed: float = -1.0
 		return maxf(0.0, float(event["projectile_mass"]))
 	var speed := collision_speed if collision_speed > 0.0 else _projectile_collision_speed_for_event(event)
 	if event.has("projectile_momentum") and float(event.get("projectile_momentum", 0.0)) > 0.0 and speed > 0.001:
-		return maxf(0.01, float(event["projectile_momentum"]) / speed)
+		return maxf(0.01, float(event["projectile_momentum"]) * _projectile_drive_momentum_mult_for_event(event) / speed)
 	match _projectile_behavior_key(event):
 		"true_bullet":
 			return PROJECTILE_MASS_TRUE_BULLET
@@ -30338,7 +33208,7 @@ func _projectile_collision_momentum(attacker, target, event: Dictionary, momentu
 	var relative_velocity := projectile_velocity - target_velocity
 	var closing_speed := maxf(0.0, relative_velocity.dot(projectile_direction))
 	var projectile_mass := _projectile_mass_for_event(event, projectile_speed)
-	var explicit_momentum := float(event.get("projectile_momentum", 0.0))
+	var explicit_momentum := _projectile_momentum_for_event(event)
 	var momentum := projectile_mass * closing_speed * maxf(0.0, momentum_scale)
 	if explicit_momentum > 0.0 and _projectile_behavior_key(event) == "true_bullet":
 		momentum = explicit_momentum * maxf(0.0, momentum_scale)
@@ -30358,10 +33228,84 @@ func _projectile_momentum_for_event(event: Dictionary) -> float:
 	if not bool(event.get("projectile", false)):
 		return 0.0
 	if float(event.get("projectile_momentum", 0.0)) > 0.0:
-		return maxf(0.0, float(event.get("projectile_momentum", 0.0)))
+		var effective := maxf(0.0, float(event.get("projectile_momentum", 0.0)) * _projectile_drive_momentum_mult_for_event(event))
+		event["projectile_base_momentum"] = maxf(0.0, float(event.get("projectile_momentum", 0.0)))
+		event["projectile_drive_momentum_mult"] = _projectile_drive_momentum_mult_for_event(event)
+		event["projectile_effective_momentum"] = effective
+		return effective
 	var speed := _projectile_collision_speed_for_event(event)
 	var mass := _projectile_mass_for_event(event, speed)
 	return maxf(0.0, mass * speed)
+
+
+func _ammo_damage_coeff_for_data(_data: Dictionary) -> float:
+	return 1.0
+
+
+func _gun_projectile_damage_mult_max_for_data(data: Dictionary) -> float:
+	if bool(data.get("non_damage", false)):
+		return 0.0
+	if data.has("gun_projectile_damage_mult"):
+		return maxf(0.0, float(data.get("gun_projectile_damage_mult", 0.0)))
+	var gun_kind := String(data.get("gun_kind", _gun_kind_for_data(data))).to_lower()
+	var ammo_kind := String(data.get("ammo_kind", _ammo_kind_for_data(data))).to_lower()
+	match gun_kind:
+		"sniper":
+			return STANDARD_SNIPER_GUN_DAMAGE_COEFF
+		"rifle":
+			return 4.0
+		"laser_gun":
+			return 3.0
+		"sprayer":
+			return 2.0
+		"grenade_launcher":
+			return 4.0
+		"missile_launcher":
+			return 5.0
+		"web_gun":
+			return 0.0
+	match ammo_kind:
+		"laser":
+			return 3.0
+		"chemical":
+			return 2.0
+		"explosive":
+			return 4.0
+		"web":
+			return 0.0
+	return 1.0
+
+
+func _gun_projectile_damage_mult_for_event(event: Dictionary) -> float:
+	if bool(event.get("non_damage", false)):
+		return 0.0
+	if event.has("gun_projectile_damage_mult_current") and not event.has("gun_drive_allocated") and not event.has("gun_drive_max"):
+		return maxf(0.0, float(event.get("gun_projectile_damage_mult_current", 0.0)))
+	var max_mult := _gun_projectile_damage_mult_max_for_data(event)
+	var max_drive := maxf(0.0, float(event.get("gun_drive_max", event.get("momentum_max", 0.0))))
+	if max_drive <= 0.001:
+		return max_mult
+	var allocated := clampf(float(event.get("gun_drive_allocated", max_drive)), 0.0, max_drive)
+	return maxf(0.0, max_mult * (allocated / max_drive))
+
+
+func _gun_damage_coeff_for_data(data: Dictionary) -> float:
+	return _gun_projectile_damage_mult_max_for_data(data)
+
+
+func _projectile_damage_coeffs_for_event(event: Dictionary) -> Dictionary:
+	var gun_mult := _gun_projectile_damage_mult_for_event(event)
+	event["gun_projectile_damage_mult_current"] = gun_mult
+	event["gun_projectile_damage_mult"] = _gun_projectile_damage_mult_max_for_data(event)
+	return {"ammo": 1.0, "gun": gun_mult}
+
+
+func _projectile_raw_damage_for_event(attacker, target, event: Dictionary) -> float:
+	var projectile_momentum := _projectile_collision_momentum(attacker, target, event)
+	if projectile_momentum <= 0.0:
+		return 0.0
+	var coeffs := _projectile_damage_coeffs_for_event(event)
+	return projectile_momentum * float(coeffs.get("gun", 1.0))
 
 
 func _default_recoil_transfer_for_projectile(event: Dictionary) -> float:
@@ -30390,20 +33334,19 @@ func _apply_weapon_recoil_from_momentum(shooter, event: Dictionary) -> void:
 	var launch_momentum := _projectile_momentum_for_event(event)
 	if launch_momentum <= 0.001:
 		return
-	var recoil_transfer := maxf(0.0, float(event.get("recoil_transfer_mult", _default_recoil_transfer_for_projectile(event))))
-	var recoil_value := maxf(0.0, float(event.get("recoil", PROJECTILE_RECOIL_REFERENCE)))
-	var gun_recoil_mult := clampf(recoil_value / PROJECTILE_RECOIL_REFERENCE, 0.18, 4.0)
 	var shooter_mass := _unit_effective_mass(shooter)
-	var recoil_amount := launch_momentum / maxf(1.0, shooter_mass) * recoil_transfer * gun_recoil_mult * PROJECTILE_RECOIL_IMPULSE_SCALE
+	var recoil_amount := launch_momentum / maxf(1.0, shooter_mass)
 	if recoil_amount <= 0.0001:
 		return
 	var direction := projectile_velocity.normalized()
-	event["weapon_recoil_momentum"] = launch_momentum * recoil_transfer * gun_recoil_mult
+	event["weapon_recoil_momentum"] = launch_momentum
 	event["weapon_recoil_amount"] = recoil_amount
 	event["weapon_recoil_direction"] = -direction
 	event["weapon_recoil_applied"] = true
-	if shooter.has_method("apply_recoil"):
-		shooter.apply_recoil(direction, recoil_amount, bool(event.get("recoil_countered", false)))
+	if shooter.has_method("apply_projectile_recoil"):
+		shooter.apply_projectile_recoil(direction, launch_momentum)
+	elif shooter.has_method("apply_recoil"):
+		shooter.apply_recoil(direction, recoil_amount, false)
 
 
 func _apply_projectile_momentum_stagger(attacker, target, event: Dictionary, momentum_scale: float = 1.0) -> void:
@@ -30503,8 +33446,9 @@ func _apply_melee_momentum_stagger_pair(a, momentum_a: float, b, momentum_b: flo
 	var direction := normal_a_to_b.normalized() if normal_a_to_b.length() > 0.001 else Vector2.RIGHT
 	if staggered == a:
 		direction = -direction
-	var b_near_x: float = a.ring_pos + _ring_delta(a.ring_pos, b.ring_pos)
-	var impact_combat := Vector2(wrapf(lerpf(a.ring_pos, b_near_x, 0.5), 0.0, RING_LENGTH), (a.lane + b.lane) * 0.5)
+	var ab_delta := _mobius_delta_vec_between(a, b)
+	var b_near_x: float = a.ring_pos + ab_delta.x
+	var impact_combat := Vector2(wrapf(lerpf(a.ring_pos, b_near_x, 0.5), 0.0, RING_LENGTH), a.lane + ab_delta.y * 0.5)
 	_spawn_combo_ripple(impact_combat, int(staggered.owner_id), clampf(actual_duration / maxf(0.1, MELEE_STAGGER_MAX_SECONDS), 0.8, 1.45))
 	_spawn_hit_effect(staggered, 2, "blunt", false, "impact", impact_combat)
 	_show_battle_message("%s %s %.2fs" % [staggered.unit_name, "硬直" if _ui_is_zh() else "STAGGER", duration], 0.42)
@@ -30672,7 +33616,7 @@ func _unit_thruster_power(unit) -> float:
 	if unit == null or not is_instance_valid(unit):
 		return 0.0
 	var mass := maxf(1.0, float(unit.stats.get("mass", 1.0)))
-	return maxf(0.0, float(unit.stats.get("boost_total_momentum", unit.stats.get("boost_momentum", 0.0)))) / mass
+	return maxf(0.0, float(unit.stats.get("boost_total_momentum", 0.0))) / mass
 
 
 func _unit_knockback_resist(unit) -> float:
@@ -30706,16 +33650,31 @@ func _apply_unit_displacement(unit, direction: Vector2, distance: float) -> void
 	if unit == null or not is_instance_valid(unit) or direction.length() <= 0.001 or distance <= 0.0:
 		return
 	var dir := direction.normalized()
+	if mobius_enabled and unit.get("mobius_s") != null:
+		var next_coord := Vector2(float(unit.get("mobius_s")), float(unit.get("mobius_v"))) + dir * distance
+		next_coord.y = clampf(next_coord.y, -BATTLE_HALF_HEIGHT, BATTLE_HALF_HEIGHT)
+		unit.set("mobius_s", next_coord.x)
+		unit.set("mobius_v", next_coord.y)
+		unit.ring_pos = fposmod(next_coord.x, RING_LENGTH)
+		unit.lane = next_coord.y
+		return
 	unit.ring_pos = wrapf(unit.ring_pos + dir.x * distance, 0.0, RING_LENGTH)
 	unit.lane = clampf(unit.lane + dir.y * distance, -BATTLE_HALF_HEIGHT, BATTLE_HALF_HEIGHT)
 
 
 func _heat_reason_for_projectile_event(event: Dictionary) -> String:
-	var tags: Array = ["projectile"]
+	var tags: Array = ["heat:projectile"]
+	var tag_source := ""
 	for key in ["gun_kind", "ammo_kind", "projectile_style", "projectile_behavior", "module_action_profile"]:
 		var value := String(event.get(key, ""))
 		if value != "":
-			tags.append(value)
+			tag_source += " " + value.to_lower()
+	if tag_source.contains("laser"):
+		tags.append("heat:laser")
+	if tag_source.contains("chemical"):
+		tags.append("heat:chemical")
+	if tag_source.contains("missile") or tag_source.contains("explosive") or tag_source.contains("grenade"):
+		tags.append("heat:missile")
 	return " ".join(tags)
 
 
@@ -30755,7 +33714,7 @@ func _apply_hit_displacement(attacker, target, event: Dictionary, damage: int, n
 		var direct_target_mass := _unit_effective_mass(target)
 		var event_momentum := maxf(
 			float(event.get("momentum", 0.0)),
-			maxf(float(event.get("fixed_output_momentum", 0.0)), float(event.get("projectile_momentum", 0.0)))
+			maxf(float(event.get("fixed_output_momentum", 0.0)), _projectile_momentum_for_event(event) if bool(event.get("projectile", false)) else 0.0)
 		)
 		if event_momentum <= 0.001:
 			event_momentum = maxf(base_knock * direct_attacker_mass, float(damage_for_knock) * 0.42)
@@ -30823,7 +33782,7 @@ func _apply_hit_displacement(attacker, target, event: Dictionary, damage: int, n
 		target.boost_flash_timer = maxf(float(target.boost_flash_timer), 0.06 + target_anchor * 0.04)
 
 
-func _update_units(delta: float) -> void:
+func _update_units(delta: float, refresh_screen_positions: bool = true) -> void:
 	for unit in all_units.duplicate():
 		if not is_instance_valid(unit):
 			all_units.erase(unit)
@@ -30845,14 +33804,35 @@ func _update_units(delta: float) -> void:
 			continue
 		_clear_combo_opportunity_if_expired(unit)
 	_resolve_unit_body_spacing(delta)
+	if refresh_screen_positions:
+		_refresh_unit_screen_positions()
+
+
+func _refresh_unit_screen_positions() -> void:
 	for unit in all_units:
 		if not _is_live_unit(unit):
 			continue
-		var screen := _screen_from_ring(unit.ring_pos, unit.lane)
+		_sync_unit_mobius_from_compat(unit)
+		var screen := _mobius_project_coord(_unit_mobius_coord(unit)) if mobius_enabled else _screen_from_ring(unit.ring_pos, unit.lane)
 		var visible_in_view := bool(screen["visible"])
 		if not visible_in_view and _barrier_has_map_tiles(unit):
 			visible_in_view = _barrier_has_visible_tile(unit)
-		unit.set_screen_position(screen["position"], visible_in_view)
+		if mobius_enabled and unit.has_method("set_mobius_screen_projection"):
+			unit.set_mobius_screen_projection(screen, visible_in_view)
+		else:
+			unit.set_screen_position(screen["position"], visible_in_view)
+
+
+func _gameplay_direction_screen_vector(direction: Vector2, fallback: Vector2 = Vector2.RIGHT) -> Vector2:
+	var result := direction if direction.length() > 0.01 else fallback
+	if result.length() <= 0.01:
+		result = Vector2.RIGHT
+	return result.normalized()
+
+
+func _gameplay_ray_screen_end(start_screen: Vector2, direction: Vector2, world_range: float, min_pixels: float = 80.0) -> Vector2:
+	var screen_length := maxf(min_pixels, maxf(0.0, world_range) * _battle_world_to_screen_scale())
+	return start_screen + _gameplay_direction_screen_vector(direction) * screen_length
 
 
 func _update_aim_lines(delta: float) -> void:
@@ -30871,11 +33851,13 @@ func _update_aim_lines(delta: float) -> void:
 			var start_world: Vector2 = collider.get("a", Vector2(hero.ring_pos, hero.lane))
 			var end_world: Vector2 = collider.get("b", start_world)
 			var start_screen: Dictionary = _screen_from_ring(wrapf(start_world.x, 0.0, RING_LENGTH), clampf(start_world.y, -BATTLE_HALF_HEIGHT, BATTLE_HALF_HEIGHT))
-			var end_screen: Dictionary = _screen_from_ring(wrapf(end_world.x, 0.0, RING_LENGTH), clampf(end_world.y, -BATTLE_HALF_HEIGHT, BATTLE_HALF_HEIGHT))
+			var aim_direction: Vector2 = event.get("direction", end_world - start_world)
+			var ray_range := maxf(float(event.get("range", 0.0)), start_world.distance_to(end_world))
 			var state: Dictionary = gun_activation_state[player_id]
 			line.default_color = Color(1.0, 0.72, 0.16, 0.86) if _is_live_unit(state.get("locked_target", null)) else Color(0.62, 0.94, 1.0, 0.42)
-			line.points = PackedVector2Array([start_screen.get("position", hero.position), end_screen.get("position", hero.position)])
-			line.visible = bool(start_screen.get("visible", true)) or bool(end_screen.get("visible", true))
+			var start_pos: Vector2 = start_screen.get("position", hero.position)
+			line.points = PackedVector2Array([start_pos, _gameplay_ray_screen_end(start_pos, aim_direction, ray_range, 120.0)])
+			line.visible = bool(start_screen.get("visible", true))
 			continue
 		if not bool(aim_holding[player_id]) or not _is_live_unit(hero) or not hero.visible:
 			line.visible = false
@@ -30902,12 +33884,87 @@ func _update_aim_lines(delta: float) -> void:
 			line.default_color = Color(0.55, 0.9, 1.0, 0.55)
 		var end := start + direction * length
 		if hero.has_method("muzzle_position_for_part"):
-			var muzzle_world_for_end: Vector2 = hero.muzzle_position_for_part(int(aim_attack_index[player_id]))
-			var aim_world_end := muzzle_world_for_end + direction.normalized() * (VIEW_WIDTH * 1.15 if true_bullet_aim else maxf(1.0, float(hero.stats.get("normal_range", 0.4)) * 2.4))
-			var end_screen: Dictionary = _screen_from_ring(wrapf(aim_world_end.x, 0.0, RING_LENGTH), clampf(aim_world_end.y, -BATTLE_HALF_HEIGHT, BATTLE_HALF_HEIGHT))
-			end = end_screen.get("position", end)
+			var screen_range := VIEW_WIDTH * 1.15 if true_bullet_aim else maxf(1.0, float(hero.stats.get("normal_range", 0.4)) * 2.4)
+			end = _gameplay_ray_screen_end(start, direction, screen_range, length)
 		line.points = PackedVector2Array([start, end])
 		line.visible = true
+
+
+func _clear_combat_geometry_debug_overlay() -> void:
+	if combat_geometry_debug_root == null or not is_instance_valid(combat_geometry_debug_root):
+		return
+	for child in combat_geometry_debug_root.get_children():
+		child.queue_free()
+
+
+func _debug_screen_from_gameplay_point(point: Vector2) -> Vector2:
+	return _screen_from_ring(wrapf(point.x, 0.0, RING_LENGTH), clampf(point.y, -BATTLE_HALF_HEIGHT, BATTLE_HALF_HEIGHT)).get("position", Vector2.ZERO)
+
+
+func _add_combat_geometry_debug_line(points: PackedVector2Array, color: Color, width: float = 1.0) -> void:
+	if combat_geometry_debug_root == null or points.size() < 2:
+		return
+	var line := Line2D.new()
+	line.points = points
+	line.width = width
+	line.default_color = color
+	line.z_index = 96
+	combat_geometry_debug_root.add_child(line)
+
+
+func _debug_draw_gameplay_collider(collider: Dictionary, color: Color) -> void:
+	var shape := String(collider.get("shape", "circle"))
+	if shape == "polygon":
+		var points := PackedVector2Array()
+		for raw_point in Array(collider.get("polygon", [])):
+			if raw_point is Vector2:
+				points.append(_debug_screen_from_gameplay_point(raw_point))
+		if points.size() >= 2:
+			points.append(points[0])
+			_add_combat_geometry_debug_line(points, color, 1.2)
+	elif shape == "capsule":
+		var a: Vector2 = collider.get("a", Vector2.ZERO)
+		var b: Vector2 = collider.get("b", a)
+		_add_combat_geometry_debug_line(PackedVector2Array([_debug_screen_from_gameplay_point(a), _debug_screen_from_gameplay_point(b)]), color, maxf(1.2, float(collider.get("radius", 0.02)) * _battle_world_to_screen_scale() * 2.0))
+	else:
+		var center: Vector2 = collider.get("center", Vector2.ZERO)
+		var radius := maxf(0.02, float(collider.get("radius", 0.1))) * _battle_world_to_screen_scale()
+		var points := PackedVector2Array()
+		var screen_center := _debug_screen_from_gameplay_point(center)
+		for i in range(24):
+			var angle := TAU * float(i) / 24.0
+			points.append(screen_center + Vector2(cos(angle), sin(angle)) * radius)
+		points.append(points[0])
+		_add_combat_geometry_debug_line(points, color, 1.0)
+
+
+func _update_combat_geometry_debug_overlay() -> void:
+	if combat_geometry_debug_root == null or not is_instance_valid(combat_geometry_debug_root):
+		return
+	combat_geometry_debug_root.visible = combat_geometry_debug and game_state == STATE_BATTLE
+	_clear_combat_geometry_debug_overlay()
+	if not combat_geometry_debug_root.visible:
+		return
+	for unit in all_units:
+		if not _is_live_unit(unit):
+			continue
+		var color := Color(0.2, 0.92, 1.0, 0.44) if int(unit.owner_id) == 1 else Color(1.0, 0.28, 0.42, 0.44)
+		for raw_collider in _unit_part_colliders(unit):
+			if raw_collider is Dictionary:
+				_debug_draw_gameplay_collider(raw_collider, color)
+		var projected: Dictionary = _screen_from_ring(unit.ring_pos, unit.lane)
+		var center: Vector2 = projected.get("position", unit.position)
+		_add_combat_geometry_debug_line(PackedVector2Array([center - Vector2(5.0, 0.0), center + Vector2(5.0, 0.0)]), Color.WHITE, 1.0)
+		_add_combat_geometry_debug_line(PackedVector2Array([center - Vector2(0.0, 5.0), center + Vector2(0.0, 5.0)]), Color.WHITE, 1.0)
+	for player_id in [1, 2]:
+		var hero = active_units[player_id]["hero"]
+		if not _is_live_unit(hero):
+			continue
+		var direction: Vector2 = aim_directions[player_id] if bool(aim_holding[player_id]) else hero.get_meta("move_input_vector", Vector2.ZERO)
+		if direction.length() <= 0.01:
+			continue
+		var start: Vector2 = _debug_screen_from_gameplay_point(Vector2(hero.ring_pos, hero.lane))
+		_add_combat_geometry_debug_line(PackedVector2Array([start, _gameplay_ray_screen_end(start, direction, 2.2, 100.0)]), Color(1.0, 0.92, 0.18, 0.82), 2.0)
 
 
 func _laser_telegraph_color(attacker) -> Color:
@@ -30970,6 +34027,9 @@ func _laser_screen_segment(attacker, event: Dictionary) -> Dictionary:
 		if event.has("direction") and event["direction"] is Vector2:
 			direction = event["direction"]
 		end_combat = start_combat + direction.normalized() * float(event.get("range", VIEW_WIDTH))
+	var occlusion := _map_occlusion_query_for_event(attacker, event)
+	if not occlusion.is_empty():
+		end_combat = occlusion.get("position", end_combat)
 	var start_screen: Vector2 = _screen_from_ring(wrapf(start_combat.x, 0.0, RING_LENGTH), clampf(start_combat.y, -BATTLE_HALF_HEIGHT, BATTLE_HALF_HEIGHT))["position"]
 	var end_screen: Vector2 = _screen_from_ring(wrapf(end_combat.x, 0.0, RING_LENGTH), clampf(end_combat.y, -BATTLE_HALF_HEIGHT, BATTLE_HALF_HEIGHT))["position"]
 	return {"start": start_screen, "end": end_screen}
@@ -31143,7 +34203,7 @@ func _true_bullet_lock_color(attacker) -> Color:
 func _true_bullet_direction_to_target(attacker, target) -> Vector2:
 	if not _is_live_unit(attacker) or not _is_live_unit(target):
 		return _unit_forward_vector(attacker)
-	var delta := Vector2(_ring_delta(attacker.ring_pos, target.ring_pos), target.lane - attacker.lane)
+	var delta := _mobius_delta_vec_between(attacker, target)
 	if delta.length() <= 0.01:
 		return _unit_forward_vector(attacker)
 	return delta.normalized()
@@ -31161,7 +34221,7 @@ func _true_bullet_event_for_aim(attacker, direction: Vector2, group: Dictionary,
 	event["direction"] = locked_direction
 	event["muscle_node"] = attack_index
 	event["collision_group"] = group.duplicate(true)
-	event["range"] = _laser_visible_world_range(attacker, locked_direction)
+	event["range"] = maxf(float(group.get("projectile_range", group.get("range", 0.0))), _laser_visible_world_range(attacker, locked_direction))
 	event["lane_range"] = maxf(float(event.get("lane_range", 0.16)), float(group.get("bullet_lock_radius", TRUE_BULLET_DEFAULT_LOCK_RADIUS)))
 	return event
 
@@ -31190,11 +34250,15 @@ func _acquire_true_bullet_target(attacker, event: Dictionary):
 		if hit.is_empty():
 			continue
 		var hit_position: Vector2 = hit.get("position", Vector2(target.ring_pos, target.lane))
-		var delta := Vector2(_ring_delta(start.x, hit_position.x), hit_position.y - start.y)
+		var delta := _mobius_delta_points(start.x, start.y, hit_position.x, hit_position.y)
 		var distance := delta.dot(direction)
 		if distance >= 0.0 and distance < best_distance:
 			best_distance = distance
 			best = target
+	if best == null:
+		var wrapped_hit := _sniper_wrapped_aim_query(attacker, start, direction)
+		if not wrapped_hit.is_empty() and _is_live_unit(wrapped_hit.get("target", null)):
+			best = wrapped_hit.get("target", null)
 	return best
 
 
@@ -31241,7 +34305,7 @@ func _missile_target_visible_same_screen(target) -> bool:
 
 
 func _missile_lock_score(attacker, target, event: Dictionary, direction: Vector2) -> float:
-	var target_delta := Vector2(_ring_delta(attacker.ring_pos, target.ring_pos), target.lane - attacker.lane)
+	var target_delta := _mobius_delta_vec_between(attacker, target)
 	var distance := target_delta.length()
 	var target_dir := target_delta.normalized() if distance > 0.001 else direction
 	var aim_error := acos(clampf(direction.normalized().dot(target_dir), -1.0, 1.0))
@@ -31282,12 +34346,14 @@ func _acquire_missile_lock_target(attacker, event: Dictionary):
 		var target_class := _missile_target_class(target)
 		if not _missile_target_class_allowed(target_class, event):
 			continue
-		var delta := Vector2(_ring_delta(attacker.ring_pos, target.ring_pos), target.lane - attacker.lane)
+		var delta := _mobius_delta_vec_between(attacker, target)
 		var distance := delta.length()
 		if distance <= 0.001 or distance > max_range:
 			continue
 		var target_dir := delta / distance
 		if direction.dot(target_dir) < cone_cos:
+			continue
+		if _map_line_occluded(attacker, target, event):
 			continue
 		var score := _missile_lock_score(attacker, target, event, direction)
 		if score < best_score:
@@ -31298,7 +34364,7 @@ func _acquire_missile_lock_target(attacker, event: Dictionary):
 
 func _missile_direction_to_target(attacker, target, fallback: Vector2 = Vector2.ZERO) -> Vector2:
 	if _is_live_unit(attacker) and _is_live_unit(target):
-		var delta := Vector2(_ring_delta(attacker.ring_pos, target.ring_pos), target.lane - attacker.lane)
+		var delta := _mobius_delta_vec_between(attacker, target)
 		if delta.length() > 0.01:
 			return delta.normalized()
 	if fallback.length() > 0.01:
@@ -31306,21 +34372,138 @@ func _missile_direction_to_target(attacker, target, fallback: Vector2 = Vector2.
 	return _unit_forward_vector(attacker)
 
 
+func _map_occlusion_kind_for_data(data: Dictionary, fallback: Dictionary = {}) -> String:
+	var material_class := String(data.get("material_class", fallback.get("material_class", ""))).to_lower()
+	var shape := String(data.get("shape", fallback.get("shape", ""))).to_lower()
+	var family := String(data.get("panel_family", fallback.get("panel_family", ""))).to_lower()
+	if bool(data.get("is_one_way_shield", fallback.get("is_one_way_shield", false))) or material_class == "one_way_shield":
+		return MAP_OCCLUSION_ONE_WAY
+	if bool(data.get("is_cage_wall", fallback.get("is_cage_wall", false))):
+		return MAP_OCCLUSION_CAGE
+	if bool(data.get("reflect_projectiles", fallback.get("reflect_projectiles", false))) or material_class == "reflector" or family == "reflector":
+		return MAP_OCCLUSION_REFLECTOR
+	if material_class in ["barrier_wall", "signal_jammer"] or material_class.contains("wall_joint") or material_class.contains("corner_joint"):
+		return MAP_OCCLUSION_SOLID
+	if family == "wall" or shape.contains("wall") or shape.contains("bulkhead") or shape.contains("cage") or shape.contains("corner"):
+		return MAP_OCCLUSION_SOLID
+	return MAP_OCCLUSION_NONE
+
+
+func _map_occlusion_kind_for_collider(unit, collider: Dictionary) -> String:
+	var fallback: Dictionary = unit.stats if _is_live_unit(unit) else {}
+	if String(collider.get("part_kind", "")) == "barrier_tile" and _is_live_unit(unit):
+		var tile := _barrier_tile_by_index(unit, int(collider.get("part_index", -1)))
+		if not tile.is_empty():
+			return _map_occlusion_kind_for_data(tile, fallback)
+	return _map_occlusion_kind_for_data(collider, fallback)
+
+
+func _map_occlusion_collider_for_event(attacker, event: Dictionary) -> Dictionary:
+	if not _is_live_unit(attacker):
+		return {}
+	var direction: Vector2 = event.get("direction", _unit_forward_vector(attacker))
+	if direction.length() <= 0.01:
+		direction = _unit_forward_vector(attacker)
+	direction = direction.normalized()
+	var start := _combat_patch_origin_for_unit(attacker)
+	var path_range := maxf(0.04, float(event.get("range", event.get("projectile_range", VIEW_WIDTH))))
+	var width := maxf(float(event.get("projectile_width_m", 0.0)), float(event.get("lane_range", 0.08)))
+	return {
+		"shape": "capsule",
+		"a": start,
+		"b": start + direction * path_range,
+		"radius": maxf(0.018, width * 0.5),
+	}
+
+
+func _map_occlusion_collider_between(attacker, target, event: Dictionary) -> Dictionary:
+	if not _is_live_unit(attacker) or not _is_live_unit(target):
+		return {}
+	var start := _combat_patch_origin_for_unit(attacker)
+	var delta := _mobius_delta_vec_between(attacker, target)
+	if delta.length() <= 0.01:
+		return {}
+	var width := maxf(float(event.get("projectile_width_m", 0.0)), float(event.get("lane_range", 0.08)))
+	return {
+		"shape": "capsule",
+		"a": start,
+		"b": start + delta,
+		"radius": maxf(0.018, width * 0.5),
+	}
+
+
+func _map_occlusion_query_for_path(attacker, path_collider: Dictionary, event: Dictionary, skip_units: Array = []) -> Dictionary:
+	if not _is_live_unit(attacker) or path_collider.is_empty():
+		return {}
+	var start: Vector2 = path_collider.get("a", _collider_center(path_collider))
+	var end: Vector2 = path_collider.get("b", start)
+	var direction := end - start
+	var path_length := direction.length()
+	if path_length <= 0.01:
+		return {}
+	direction = direction / path_length
+	var best: Dictionary = {}
+	var best_distance := 999999.0
+	for blocker in all_units:
+		if blocker == attacker or skip_units.has(blocker) or not _is_live_unit(blocker):
+			continue
+		for raw_collider in _unit_part_colliders(blocker):
+			if not (raw_collider is Dictionary):
+				continue
+			var raw_blocker_collider: Dictionary = raw_collider
+			var kind := _map_occlusion_kind_for_collider(blocker, raw_blocker_collider)
+			if kind == MAP_OCCLUSION_NONE:
+				continue
+			var blocker_collider := _shift_collider_to_origin(raw_blocker_collider, start.x, start.y)
+			if _collider_gap(path_collider, blocker_collider) > 0.0:
+				continue
+			if kind == MAP_OCCLUSION_ONE_WAY and _one_way_shield_allows_projectile(blocker, attacker, direction):
+				continue
+			var center := _collider_center(blocker_collider)
+			var projection := (center - start).dot(direction)
+			var extent := _collider_extent_radius(blocker_collider)
+			if projection < -extent or projection > path_length + extent:
+				continue
+			var distance := clampf(projection, 0.0, path_length)
+			if distance >= best_distance:
+				continue
+			best_distance = distance
+			best = {
+				"kind": kind,
+				"blocker": blocker,
+				"blocker_name": String(blocker.unit_name),
+				"position": start + direction * distance,
+				"distance": distance,
+				"collider": blocker_collider.duplicate(true),
+			}
+	return best
+
+
+func _map_occlusion_query_for_event(attacker, event: Dictionary, skip_units: Array = []) -> Dictionary:
+	return _map_occlusion_query_for_path(attacker, _map_occlusion_collider_for_event(attacker, event), event, skip_units)
+
+
+func _map_occlusion_query_between(attacker, target, event: Dictionary = {}) -> Dictionary:
+	return _map_occlusion_query_for_path(attacker, _map_occlusion_collider_between(attacker, target, event), event, [target])
+
+
+func _map_occlusion_kind_between(attacker, target, event: Dictionary = {}) -> String:
+	var query := _map_occlusion_query_between(attacker, target, event)
+	return String(query.get("kind", MAP_OCCLUSION_NONE))
+
+
+func _map_line_occluded(attacker, target, event: Dictionary = {}) -> bool:
+	return _map_occlusion_kind_between(attacker, target, event) != MAP_OCCLUSION_NONE
+
+
+func _map_line_of_sight_clear(attacker, target, event: Dictionary = {}) -> bool:
+	return not _map_line_occluded(attacker, target, event)
+
+
 func _missile_target_occluded(attacker, target, event: Dictionary) -> bool:
 	if not _is_live_unit(attacker) or not _is_live_unit(target):
 		return true
-	var direction := _missile_direction_to_target(attacker, target, Vector2(event.get("direction", _unit_forward_vector(attacker))))
-	for shield in all_units:
-		if shield == attacker or shield == target or not _is_live_unit(shield):
-			continue
-		if not bool(shield.stats.get("is_one_way_shield", false)) and not bool(shield.stats.get("is_cage_wall", false)):
-			continue
-		if not _one_way_shield_between(shield, attacker, target):
-			continue
-		if bool(shield.stats.get("is_one_way_shield", false)) and _one_way_shield_allows_projectile(shield, attacker, direction):
-			continue
-		return true
-	return false
+	return _map_line_occluded(attacker, target, event)
 
 
 func _spawn_true_bullet_lock_effect(target, attacker, lock_time: float) -> TrueBulletTargetLockEffect:
@@ -31349,8 +34532,10 @@ func _queue_true_bullet_lock(attacker, event: Dictionary) -> bool:
 	shot_event["direction"] = direction
 	if attacker.has_method("set_aim_pose"):
 		attacker.set_aim_pose(int(shot_event.get("muscle_node", 0)), direction, 0.18)
-	shot_event["range"] = _laser_visible_world_range(attacker, direction)
+	shot_event["range"] = maxf(float(shot_event.get("range", 0.0)), _laser_visible_world_range(attacker, direction))
 	var target = shot_event.get("locked_target", null)
+	if _is_live_unit(target) and _map_line_occluded(attacker, target, shot_event):
+		target = null
 	if not _is_live_unit(target):
 		target = _acquire_true_bullet_target(attacker, shot_event)
 	if not _is_live_unit(target):
@@ -31402,7 +34587,7 @@ func _update_true_bullet_locks(delta: float) -> void:
 			if attacker.has_method("set_aim_pose"):
 				attacker.set_aim_pose(int(event.get("muscle_node", 0)), direction, 0.2)
 			event["direction"] = direction
-			event["range"] = _laser_visible_world_range(attacker, direction)
+			event["range"] = maxf(float(event.get("range", 0.0)), _laser_visible_world_range(attacker, direction))
 			event["true_bullet_ready"] = true
 			event["aim_locked"] = true
 			event["locked_target"] = target
@@ -31515,7 +34700,7 @@ func _is_missile_projectile_event(event: Dictionary) -> bool:
 func _missile_projectile_travel_time(attacker, target, event: Dictionary) -> float:
 	var range_hint := maxf(0.4, float(event.get("range", event.get("projectile_range", STANDARD_MISSILE_RANGE_M))))
 	if _is_live_unit(attacker) and _is_live_unit(target):
-		range_hint = maxf(0.2, Vector2(_ring_delta(attacker.ring_pos, target.ring_pos), target.lane - attacker.lane).length())
+		range_hint = maxf(0.2, _mobius_delta_vec_between(attacker, target).length())
 	var speed_mult := clampf(float(event.get("projectile_speed_mult", STANDARD_MISSILE_SPEED_MULT)), 0.45, 1.45)
 	return clampf(range_hint / (2.05 * speed_mult), 0.38, 2.2)
 
@@ -31537,7 +34722,7 @@ func _queue_missile_projectile(attacker, event: Dictionary) -> bool:
 	shot_event["locked_target"] = target
 	shot_event["aim_locked"] = true
 	shot_event["direction"] = direction
-	shot_event["range"] = maxf(float(shot_event.get("range", STANDARD_MISSILE_RANGE_M)), Vector2(_ring_delta(attacker.ring_pos, target.ring_pos), target.lane - attacker.lane).length())
+	shot_event["range"] = maxf(float(shot_event.get("range", STANDARD_MISSILE_RANGE_M)), _mobius_delta_vec_between(attacker, target).length())
 	_apply_weapon_recoil_from_momentum(attacker, shot_event)
 	_spawn_projectile_trace(attacker, shot_event)
 	shot_event["projectile_trace_spawned"] = true
@@ -31620,7 +34805,7 @@ func _resolve_chemical_firework(attacker, event: Dictionary) -> void:
 func _projection_to_target(attacker, target, direction: Vector2) -> float:
 	if not _is_live_unit(attacker) or not _is_live_unit(target):
 		return 999999.0
-	var delta := Vector2(_ring_delta(attacker.ring_pos, target.ring_pos), target.lane - attacker.lane)
+	var delta := _mobius_delta_vec_between(attacker, target)
 	return delta.dot(direction.normalized() if direction.length() > 0.01 else _unit_forward_vector(attacker))
 
 
@@ -31632,6 +34817,8 @@ func _true_bullet_unit_before_locked_target(attacker, unit, locked_target, event
 
 
 func _true_bullet_target_blocked(attacker, locked_target, event: Dictionary) -> bool:
+	if _map_line_occluded(attacker, locked_target, event):
+		return true
 	for blocker in _enemy_units(int(attacker.owner_id)):
 		if blocker == locked_target or not _is_live_unit(blocker):
 			continue
@@ -31658,7 +34845,7 @@ func _projectile_projection_from(attacker, position: Vector2, direction: Vector2
 	if not _is_live_unit(attacker):
 		return 999999.0
 	var normalized := direction.normalized() if direction.length() > 0.01 else _unit_forward_vector(attacker)
-	var delta := Vector2(_ring_delta(attacker.ring_pos, position.x), position.y - attacker.lane)
+	var delta := _mobius_delta_unit_to_point(attacker, position.x, position.y)
 	return delta.dot(normalized)
 
 
@@ -31712,14 +34899,16 @@ func _first_projectile_impact_gpu(attacker, event: Dictionary) -> Dictionary:
 	var direction: Vector2 = event.get("direction", _unit_forward_vector(attacker))
 	if direction.length() > 0.01:
 		var range := maxf(float(event.get("range", event.get("projectile_range", start.distance_to(end)))), start.distance_to(end))
-		end = start + direction.normalized() * range
+		var ray := GameplayTransform.projectile_ray(start, direction, range)
+		end = ray.get("end", end)
+		direction = ray.get("direction", direction.normalized())
 	var gpu_colliders: Array = []
 	var entries: Array = []
 	var unit_key := 2
 	for target in _enemy_units(int(attacker.owner_id)):
 		if not _is_live_unit(target):
 			continue
-		_append_gpu_collision_unit_colliders(target, _unit_part_colliders(target), 0.0, unit_key, entries, gpu_colliders)
+		_append_gpu_collision_unit_colliders(target, _unit_part_colliders(target), start.x, unit_key, entries, gpu_colliders, start.y, event)
 		unit_key += 1
 	if gpu_colliders.is_empty():
 		return {}
@@ -31747,10 +34936,12 @@ func _first_projectile_impact_gpu(attacker, event: Dictionary) -> Dictionary:
 		var target = entry.get("unit", null)
 		if not _is_live_unit(target):
 			continue
+		if _map_line_occluded(attacker, target, event):
+			continue
 		var distance := float(hit_record.get("distance", 999999.0))
 		if distance >= best_distance:
 			continue
-		var target_collider: Dictionary = Dictionary(entry.get("raw", {}))
+		var target_collider: Dictionary = Dictionary(entry.get("query", entry.get("raw", {})))
 		best_distance = distance
 		best = {
 			"target": target,
@@ -31774,6 +34965,60 @@ func _first_projectile_impact_gpu(attacker, event: Dictionary) -> Dictionary:
 			"distance": best_distance,
 		}
 	return best
+
+
+func _sniper_wrapped_aim_query(unit, muzzle: Vector2, aim_dir: Vector2) -> Dictionary:
+	if not _is_live_unit(unit):
+		return {}
+	var direction := aim_dir.normalized() if aim_dir.length() > 0.01 else _unit_forward_vector(unit)
+	var event := {
+		"projectile": true,
+		"gun_activation": true,
+		"module_action_profile": "gun_activate",
+		"projectile_behavior": "true_bullet",
+		"projectile_style": "true_bullet",
+		"damage_type": "bullet",
+		"projectile_damage_type": "bullet",
+		"direction": direction,
+		"range": maxf(VIEW_WIDTH, RING_LENGTH * 0.5),
+		"lane_range": STANDARD_SNIPER_PROJECTILE_WIDTH_M * 0.5,
+	}
+	var impact := _first_projectile_impact_gpu(unit, event)
+	if not impact.is_empty():
+		return impact
+	var best = null
+	var best_distance := 1.0e20
+	for target in _enemy_units(int(unit.owner_id)):
+		if not _is_live_unit(target):
+			continue
+		if _map_line_occluded(unit, target, event):
+			continue
+		var delta := _mobius_delta_points(muzzle.x, muzzle.y, target.ring_pos, target.lane)
+		var projection := delta.dot(direction)
+		if projection < 0.0 or projection > float(event["range"]):
+			continue
+		var lateral := absf(delta.cross(direction))
+		var radius := maxf(0.08, float(target.stats.get("radius", 0.2)) * _projectile_target_hitbox_scale(target, event))
+		if lateral > radius + float(event["lane_range"]):
+			continue
+		if projection < best_distance:
+			best_distance = projection
+			best = target
+	if _is_live_unit(best):
+		var position := Vector2(wrapf(muzzle.x + direction.x * best_distance, 0.0, RING_LENGTH), clampf(muzzle.y + direction.y * best_distance, -BATTLE_HALF_HEIGHT, BATTLE_HALF_HEIGHT))
+		return {
+			"target": best,
+			"position": position,
+			"distance": best_distance,
+			"hit": {
+				"part_kind": "core",
+				"part_index": -1,
+				"part_name": "CORE",
+				"position": position,
+				"contact_normal": direction,
+			},
+		}
+	return {}
 
 
 func _gpu_collider_sets_contact(colliders_a: Array, colliders_b: Array, delta: float) -> bool:
@@ -31860,8 +35105,10 @@ func _resolve_attack(attacker, event: Dictionary) -> void:
 		_play_module_fail_sfx()
 		_show_battle_message("投射物必须由枪械末端肌肉发射" if _ui_is_zh() else "Projectile requires a gun terminal muscle", 0.62)
 		return
-	if _is_missile_projectile_event(event) and not _is_live_unit(event.get("locked_target", null)):
-		var missile_target = _acquire_missile_lock_target(attacker, event)
+	if _is_missile_projectile_event(event):
+		var missile_target = event.get("locked_target", null)
+		if not _is_live_unit(missile_target) or _map_line_occluded(attacker, missile_target, event):
+			missile_target = _acquire_missile_lock_target(attacker, event)
 		if not _is_live_unit(missile_target):
 			_show_battle_message("%s MISSILE: no lock" % String(attacker.unit_name), 0.52)
 			return
@@ -31901,9 +35148,8 @@ func _resolve_attack(attacker, event: Dictionary) -> void:
 			event["projectile_style"] = "explosive"
 		event["projectile_speed_mult"] = clampf(float(event.get("projectile_speed_mult", 1.6)), 0.45, 2.4)
 		event["explosion_radius"] = maxf(float(event.get("explosion_radius", 0.0)), STANDARD_MISSILE_EXPLOSION_RADIUS if String(event.get("projectile_style", "")) == "missile" else 0.58)
-		event["explosion_damage"] = maxi(int(event.get("explosion_damage", 0)), maxi(1, int(roundf(float(event.get("damage", 1.0)) * 0.72))))
-		if String(event.get("explosion_damage_type", "")) == "":
-			event["explosion_damage_type"] = String(event.get("damage_type", "bullet"))
+		event.erase("explosion_damage")
+		event.erase("explosion_damage_type")
 		if String(event.get("explosion_style", "")) == "":
 			event["explosion_style"] = String(event.get("projectile_style", "explosive"))
 	if _is_laser_telegraph_event(event):
@@ -31982,9 +35228,7 @@ func _resolve_attack(attacker, event: Dictionary) -> void:
 			if raw_damage <= 0.001:
 				continue
 		else:
-			var projectile_momentum := _projectile_collision_momentum(attacker, target, event)
-			if projectile_momentum > 0.0 and float(event.get("projectile_damage_coeff", 0.0)) > 0.0:
-				raw_damage = projectile_momentum * float(event.get("projectile_damage_coeff", 1.0)) * CONTACT_DAMAGE_SCALE
+			raw_damage = _projectile_raw_damage_for_event(attacker, target, event)
 		var impact_direction := _event_direction_vector(attacker, target, event)
 		if _maybe_detach_barrier_tile_from_momentum(attacker, target, event, impact_direction, _event_momentum_magnitude(event, maxf(0.0, float(event.get("momentum", 0.0))))):
 			continue
@@ -32004,7 +35248,18 @@ func _resolve_attack(attacker, event: Dictionary) -> void:
 			chemical_dot_total = maxi(1, int(roundf(float(damage) * float(event.get("chemical_dot_mult", CHEMICAL_DOT_DEFAULT_MULT)))))
 			damage = maxi(1, int(roundf(float(damage) * clampf(float(event.get("chemical_frontload", CHEMICAL_DOT_DEFAULT_FRONTLOAD)), 0.18, 0.82))))
 		var effect_style := "threshold" if contact_gate_blocked else projectile_style
-		_spawn_hit_effect(target, counter_tier, damage_type, nullified or contact_gate_blocked, effect_style, Vector2(event.get("hit_position_combat", Vector2(target.ring_pos, target.lane))))
+		var hit_vfx_position := Vector2(event.get("hit_position_combat", Vector2(target.ring_pos, target.lane)))
+		if bool(event.get("projectile", false)):
+			_spawn_projectile_hit_vfx_on_target({
+				"target": target,
+				"counter_tier": counter_tier,
+				"damage_type": damage_type,
+				"nullified": nullified or contact_gate_blocked,
+				"projectile_style": effect_style,
+				"contact_point": hit_vfx_position,
+			})
+		else:
+			_spawn_hit_effect(target, counter_tier, damage_type, nullified or contact_gate_blocked, effect_style, hit_vfx_position)
 		if contact_gate_blocked:
 			if bool(event.get("projectile", false)):
 				_apply_projectile_momentum_stagger(attacker, target, event)
@@ -32061,6 +35316,12 @@ func _attack_part_hit(attacker, target, event: Dictionary) -> Dictionary:
 	var best_hit: Dictionary = {}
 	var best_gap := 999999.0
 	var is_projectile := bool(event.get("projectile", false)) and _event_is_explicit_gun_activation(event)
+	if is_projectile:
+		var occlusion := _map_occlusion_query_between(attacker, target, event)
+		if not occlusion.is_empty():
+			event["map_occlusion_kind"] = String(occlusion.get("kind", MAP_OCCLUSION_NONE))
+			event["map_occlusion_blocker"] = String(occlusion.get("blocker_name", ""))
+			return {}
 	var direct_runtime_hit := _unit_uses_direct_runtime_topology(attacker) or _unit_uses_direct_runtime_topology(target)
 	var hit_slop := 0.0 if is_projectile else 0.16
 	if direct_runtime_hit:
@@ -32075,7 +35336,9 @@ func _attack_part_hit(attacker, target, event: Dictionary) -> Dictionary:
 	for raw_collider in target_colliders:
 		if not (raw_collider is Dictionary):
 			continue
-		var target_collider: Dictionary = _shift_collider_to_origin(raw_collider, origin_x)
+		var target_collider: Dictionary = _shift_collider_to_origin(raw_collider, origin_x, _collider_center(attack_collider).y)
+		if is_projectile:
+			target_collider = _target_collider_for_projectile_query(target, target_collider, event)
 		if is_projectile and event.has("direction") and event["direction"] is Vector2:
 			var attack_direction: Vector2 = event["direction"]
 			if attack_direction.length() > 0.01:
@@ -32131,13 +35394,15 @@ func _attack_collider_for_event(attacker, event: Dictionary) -> Dictionary:
 	if direction.length() <= 0.01:
 		direction = Vector2(float(attacker.facing), 0.0)
 	direction = direction.normalized()
+	var attack_start := _combat_patch_origin_for_unit(attacker)
+	var ray := GameplayTransform.projectile_ray(attack_start, direction, maxf(0.04, float(event.get("range", 0.35))))
 	return {
 		"shape": "capsule",
 		"part_kind": "fallback_attack",
 		"part_index": int(event.get("muscle_node", 0)),
 		"name": String(event.get("group_name", "ATTACK")),
-		"a": Vector2(attacker.ring_pos, attacker.lane),
-		"b": Vector2(attacker.ring_pos, attacker.lane) + direction * maxf(0.04, float(event.get("range", 0.35))),
+		"a": ray.get("start", attack_start),
+		"b": ray.get("end", attack_start + direction * maxf(0.04, float(event.get("range", 0.35)))),
 		"radius": maxf(0.02, float(event.get("lane_range", 0.2)) * 0.35),
 	}
 
@@ -32160,37 +35425,93 @@ func _unit_part_colliders(unit) -> Array:
 	}]
 
 
-func _shift_collider_to_origin(collider: Dictionary, origin_x: float) -> Dictionary:
+func _visual_hitbox_scale_for_unit(unit) -> float:
+	if unit == null or not is_instance_valid(unit):
+		return 1.0
+	if unit.get("visual_hitbox_scale") != null:
+		return clampf(float(unit.get("visual_hitbox_scale")), VISUAL_HITBOX_SCALE_MIN, VISUAL_HITBOX_SCALE_MAX)
+	return GameplayTransform.hitbox_scale_for_visual_scale(float(unit.get("mobius_visual_scale")) if unit.get("mobius_visual_scale") != null else 1.0, VISUAL_HITBOX_SCALE_STRENGTH, VISUAL_HITBOX_SCALE_MIN, VISUAL_HITBOX_SCALE_MAX)
+
+
+func _projectile_target_hitbox_scale(unit, event: Dictionary) -> float:
+	if not bool(event.get("projectile", false)):
+		return 1.0
+	return _visual_hitbox_scale_for_unit(unit)
+
+
+func _scale_collider_around_center(collider: Dictionary, scale_value: float) -> Dictionary:
+	var scale := maxf(0.001, scale_value)
+	if absf(scale - 1.0) <= 0.001:
+		return collider
+	var scaled := collider.duplicate(true)
+	var center := _collider_center(collider)
+	scaled["visual_hitbox_scale"] = scale
+	if scaled.has("radius"):
+		scaled["radius"] = maxf(0.0, float(scaled.get("radius", 0.0)) * scale)
+	if scaled.has("center") and scaled["center"] is Vector2:
+		var center_value: Vector2 = scaled["center"]
+		scaled["center"] = center + (center_value - center) * scale
+	if scaled.has("a") and scaled["a"] is Vector2:
+		var a_value: Vector2 = scaled["a"]
+		scaled["a"] = center + (a_value - center) * scale
+	if scaled.has("b") and scaled["b"] is Vector2:
+		var b_value: Vector2 = scaled["b"]
+		scaled["b"] = center + (b_value - center) * scale
+	if scaled.has("pivot") and scaled["pivot"] is Vector2:
+		var pivot_value: Vector2 = scaled["pivot"]
+		scaled["pivot"] = center + (pivot_value - center) * scale
+	if scaled.has("local_joint_center") and scaled["local_joint_center"] is Vector2:
+		var joint_value: Vector2 = scaled["local_joint_center"]
+		scaled["local_joint_center"] = center + (joint_value - center) * scale
+	if scaled.has("polygon"):
+		var scaled_polygon: Array = []
+		for raw_point in Array(scaled.get("polygon", [])):
+			if raw_point is Vector2:
+				var point: Vector2 = raw_point
+				scaled_polygon.append(center + (point - center) * scale)
+		if scaled_polygon.size() >= 3:
+			scaled["polygon"] = scaled_polygon
+	return scaled
+
+
+func _target_collider_for_projectile_query(unit, collider: Dictionary, event: Dictionary) -> Dictionary:
+	return _scale_collider_around_center(collider, _projectile_target_hitbox_scale(unit, event))
+
+
+func _shift_collider_to_origin(collider: Dictionary, origin_x: float, origin_lane: float = 1.0e20) -> Dictionary:
 	var shifted := collider.duplicate(true)
 	var center: Vector2 = _collider_center(collider)
-	var shifted_center_x := origin_x + _ring_delta(origin_x, center.x)
-	var offset_x := shifted_center_x - center.x
+	var shifted_center := Vector2(origin_x + _ring_delta(origin_x, center.x), center.y)
+	if mobius_enabled and absf(origin_lane) < 1.0e10:
+		var delta := _mobius_delta_points(origin_x, origin_lane, center.x, center.y)
+		shifted_center = Vector2(origin_x, origin_lane) + delta
+	var offset := shifted_center - center
 	if shifted.has("center") and shifted["center"] is Vector2:
 		var center_value: Vector2 = shifted["center"]
-		center_value.x += offset_x
+		center_value += offset
 		shifted["center"] = center_value
 	if shifted.has("a") and shifted["a"] is Vector2:
 		var a_value: Vector2 = shifted["a"]
-		a_value.x += offset_x
+		a_value += offset
 		shifted["a"] = a_value
 	if shifted.has("b") and shifted["b"] is Vector2:
 		var b_value: Vector2 = shifted["b"]
-		b_value.x += offset_x
+		b_value += offset
 		shifted["b"] = b_value
 	if shifted.has("pivot") and shifted["pivot"] is Vector2:
 		var pivot_value: Vector2 = shifted["pivot"]
-		pivot_value.x += offset_x
+		pivot_value += offset
 		shifted["pivot"] = pivot_value
 	if shifted.has("local_joint_center") and shifted["local_joint_center"] is Vector2:
 		var joint_value: Vector2 = shifted["local_joint_center"]
-		joint_value.x += offset_x
+		joint_value += offset
 		shifted["local_joint_center"] = joint_value
 	if shifted.has("polygon"):
 		var shifted_polygon: Array = []
 		for raw_point in Array(shifted.get("polygon", [])):
 			if raw_point is Vector2:
 				var point: Vector2 = raw_point
-				point.x += offset_x
+				point += offset
 				shifted_polygon.append(point)
 		if shifted_polygon.size() >= 3:
 			shifted["polygon"] = shifted_polygon
@@ -32424,7 +35745,7 @@ func _is_back_hit(attacker, target, event: Dictionary) -> bool:
 		return false
 	var x_axis := direction.normalized().x
 	if absf(x_axis) < BACK_HIT_ANGLE_THRESHOLD:
-		var attacker_side := _ring_delta(target.ring_pos, attacker.ring_pos)
+		var attacker_side := _mobius_delta_vec_between(target, attacker).x
 		if absf(attacker_side) <= 0.01:
 			return false
 		x_axis = -signf(attacker_side)
@@ -32455,22 +35776,10 @@ func _apply_back_hit_heat(attacker, target, event: Dictionary, damage: int) -> v
 func _one_way_shield_intercept(attacker, target, event: Dictionary) -> bool:
 	if attacker == null or target == null or not is_instance_valid(attacker) or not is_instance_valid(target):
 		return false
-	var attack_direction: Vector2 = _event_direction_vector(attacker, target, event, Vector2(float(attacker.facing), 0.0))
-	var best = null
-	var best_score := 999.0
-	for shield in all_units:
-		if shield == attacker or shield == target or not _is_live_unit(shield):
-			continue
-		if not bool(shield.stats.get("is_one_way_shield", false)):
-			continue
-		if not _one_way_shield_between(shield, attacker, target):
-			continue
-		if _one_way_shield_allows_projectile(shield, attacker, attack_direction):
-			continue
-		var score := absf(_ring_delta(attacker.ring_pos, shield.ring_pos))
-		if score < best_score:
-			best_score = score
-			best = shield
+	var occlusion := _map_occlusion_query_between(attacker, target, event)
+	if String(occlusion.get("kind", MAP_OCCLUSION_NONE)) != MAP_OCCLUSION_ONE_WAY:
+		return false
+	var best = occlusion.get("blocker", null)
 	if best == null:
 		return false
 	var damage_type := String(event.get("damage_type", "bullet"))
@@ -32493,26 +35802,12 @@ func _one_way_shield_intercept(attacker, target, event: Dictionary) -> bool:
 	return true
 
 
-func _one_way_shield_between(shield, attacker, target) -> bool:
-	var total := _ring_delta(attacker.ring_pos, target.ring_pos)
-	if absf(total) < 0.01:
-		return false
-	var to_shield := _ring_delta(attacker.ring_pos, shield.ring_pos)
-	if signf(to_shield) != signf(total):
-		return false
-	var radius := maxf(0.1, float(shield.stats.get("shield_radius", 0.74)))
-	if absf(to_shield) > absf(total) + radius:
-		return false
-	var t := clampf(absf(to_shield) / maxf(0.01, absf(total)), 0.0, 1.0)
-	var expected_lane := lerpf(attacker.lane, target.lane, t)
-	var lane_width := maxf(0.05, float(shield.stats.get("shield_lane_width", 0.2)))
-	return absf(shield.lane - expected_lane) <= lane_width + radius * 0.25
-
-
 func _one_way_shield_allows_projectile(shield, attacker, attack_direction: Vector2) -> bool:
 	var mode := String(shield.stats.get("shield_pass_mode", "directional"))
-	if mode == "iff":
+	if mode in ["iff", "ally"]:
 		return int(attacker.owner_id) == int(shield.owner_id)
+	if mode == "enemy":
+		return int(attacker.owner_id) != int(shield.owner_id)
 	var dir_sign := signf(attack_direction.x)
 	if dir_sign == 0.0:
 		dir_sign = float(attacker.facing)
@@ -32715,7 +36010,8 @@ func _nearest_repair_station(unit, owner: int):
 	for candidate in _friendly_units(owner):
 		if candidate == unit or not _is_live_unit(candidate) or not bool(candidate.stats.get("is_repair_station", false)):
 			continue
-		var distance := absf(_ring_delta(unit.ring_pos, candidate.ring_pos)) + absf(unit.lane - candidate.lane) * 0.65
+		var delta := _mobius_delta_vec_between(unit, candidate)
+		var distance := absf(delta.x) + absf(delta.y) * 0.65
 		if distance < best_distance:
 			best_distance = distance
 			best = candidate
@@ -32800,7 +36096,8 @@ func _detonate_suicide_puppet(attacker, primary_target) -> void:
 	for target in _enemy_units(owner):
 		if not _is_live_unit(target) or not _unit_is_mech_physics_subject(target):
 			continue
-		if absf(_ring_delta(attacker.ring_pos, target.ring_pos)) <= radius + float(target.stats.get("radius", 0.2)) and absf(attacker.lane - target.lane) <= radius * 0.72 + float(target.stats.get("radius", 0.2)):
+		var delta := _mobius_delta_vec_between(attacker, target)
+		if absf(delta.x) <= radius + float(target.stats.get("radius", 0.2)) and absf(delta.y) <= radius * 0.72 + float(target.stats.get("radius", 0.2)):
 			_apply_vulnerability(target, String(attacker.stats.get("vuln_kind", "all")), float(attacker.stats.get("vuln_mult", 2.0)), float(attacker.stats.get("vuln_duration", 4.0)))
 			_spawn_hit_effect(target, 2, String(attacker.stats.get("damage_type", "chemical")), false, "missile")
 	_detach_unit(attacker)
@@ -32903,9 +36200,7 @@ func _booster_style_momentum_mult(style: String, sustain: float) -> float:
 
 
 func _booster_normal_momentum_for_part(part: Dictionary) -> float:
-	if part.has("allocated_momentum"):
-		return maxf(0.0, float(part.get("allocated_momentum", 0.0)) * _thruster_move_efficiency_for_part(part))
-	return 0.0
+	return maxf(0.0, _thruster_drive_demand_for_part(part) * _thruster_move_efficiency_for_part(part))
 
 
 func _booster_boost_momentum_for_part(part: Dictionary) -> float:
@@ -32914,13 +36209,53 @@ func _booster_boost_momentum_for_part(part: Dictionary) -> float:
 	return 0.0
 
 
+func _thruster_drive_allocation_min_for_part(part: Dictionary) -> float:
+	return maxf(0.0, _thruster_drive_demand_for_part(_thruster_with_drive_defaults(part)))
+
+
+func _thruster_drive_allocation_max_for_part(part: Dictionary) -> float:
+	var minimum := _thruster_drive_allocation_min_for_part(part)
+	return minimum * THRUSTER_ALLOCATION_MAX_MULT if minimum > 0.0 else 0.0
+
+
+func _thruster_boost_brake_allocation_min_for_part(part: Dictionary) -> float:
+	return maxf(0.0, _booster_boost_momentum_for_part(_thruster_with_drive_defaults(part)))
+
+
+func _thruster_boost_brake_allocation_max_for_part(part: Dictionary) -> float:
+	var minimum := _thruster_boost_brake_allocation_min_for_part(part)
+	return minimum * THRUSTER_ALLOCATION_MAX_MULT if minimum > 0.0 else 0.0
+
+
+func _thruster_drive_allocated_for_payload(payload: Dictionary, part: Dictionary) -> float:
+	var minimum := _thruster_drive_allocation_min_for_part(part)
+	var maximum := _thruster_drive_allocation_max_for_part(part)
+	if maximum <= minimum:
+		return minimum
+	var value := minimum
+	if payload.has("thruster_drive_allocated_momentum"):
+		value = float(payload.get("thruster_drive_allocated_momentum", minimum))
+	return clampf(value, minimum, maximum)
+
+
+func _thruster_boost_brake_allocated_for_payload(payload: Dictionary, part: Dictionary) -> float:
+	var minimum := _thruster_boost_brake_allocation_min_for_part(part)
+	var maximum := _thruster_boost_brake_allocation_max_for_part(part)
+	if maximum <= minimum:
+		return minimum
+	var value := minimum
+	if payload.has("thruster_boost_brake_allocated_momentum"):
+		value = float(payload.get("thruster_boost_brake_allocated_momentum", minimum))
+	return clampf(value, minimum, maximum)
+
+
 func _thruster_boost_total_momentum_for_part(part: Dictionary) -> float:
 	var boost_extra := _booster_boost_momentum_for_part(part)
 	var duration := maxf(0.0, float(part.get("boost_duration", ECONOMY_THRUSTER_TARGET_DURATION)))
 	if boost_extra <= 0.0 or duration <= 0.0:
 		return 0.0
-	var allocated := _thruster_allocated_momentum_for_part(part)
-	return maxf(0.0, (allocated + boost_extra) * _thruster_boost_efficiency_for_part(part))
+	var demand := _thruster_drive_demand_for_part(part)
+	return maxf(0.0, (demand + boost_extra) * _thruster_boost_efficiency_for_part(part))
 
 
 func _boost_duration_for_stats(stats: Dictionary) -> float:
@@ -32928,7 +36263,7 @@ func _boost_duration_for_stats(stats: Dictionary) -> float:
 		var explicit_duration := float(stats.get("boost_duration", 0.0))
 		if explicit_duration > 0.0:
 			return explicit_duration
-	return ECONOMY_THRUSTER_TARGET_DURATION if float(stats.get("boost_momentum", 0.0)) > 0.0 else 0.0
+	return ECONOMY_THRUSTER_TARGET_DURATION if float(stats.get("thruster_boost_extra_demand", 0.0)) > 0.0 else 0.0
 
 
 func _apply_thruster_momentum_stats(stats: Dictionary, role_key: String) -> void:
@@ -32937,7 +36272,15 @@ func _apply_thruster_momentum_stats(stats: Dictionary, role_key: String) -> void
 		stats["thruster_allocated_momentum"] = 0.0
 		stats["boost_momentum"] = 0.0
 		stats["boost_total_momentum"] = 0.0
+		stats["thruster_boost_extra_demand"] = 0.0
+		stats["thruster_boost_peak_demand"] = 0.0
+		stats["thruster_effective_drive_demand"] = 0.0
+		stats["thruster_effective_boost_peak_demand"] = 0.0
+		stats["engine_drive_chain_ratio"] = 0.0
+		stats["engine_boost_chain_ratio"] = 0.0
 		stats["body_move_speed"] = 0.0
+		stats["move_speed"] = 0.0
+		stats["move_acceleration"] = 0.0
 		stats["boost_speed"] = 0.0
 		stats["thruster_acceleration"] = 0.0
 		stats["thruster_duration"] = 0.0
@@ -32946,7 +36289,9 @@ func _apply_thruster_momentum_stats(stats: Dictionary, role_key: String) -> void
 		stats["speed_limit"] = 0.0
 		return
 	var mass := maxf(1.0, float(stats.get("mass", 1.0)))
-	var allocated_momentum := maxf(0.0, float(stats.get("thruster_allocated_momentum", stats.get("allocated_momentum", 0.0))))
+	var drive_demand := maxf(0.0, float(stats.get("thruster_drive_demand", 0.0)))
+	var drive_chain_ratio := clampf(float(stats.get("engine_drive_chain_ratio", 0.0)), 0.0, 1.0)
+	var allocated_momentum := maxf(0.0, float(stats.get("thruster_effective_drive_demand", drive_demand * drive_chain_ratio)))
 	var efficiency_weight := maxf(0.0, float(stats.get("thruster_efficiency_weight", 0.0)))
 	var move_efficiency := clampf(float(stats.get("move_efficiency", 1.0)), 0.2, 3.0)
 	var boost_efficiency := clampf(float(stats.get("boost_efficiency", ECONOMY_BOOST_MOMENTUM_MULT)), 0.2, 4.0)
@@ -32956,23 +36301,38 @@ func _apply_thruster_momentum_stats(stats: Dictionary, role_key: String) -> void
 		boost_efficiency = clampf(float(stats.get("boost_efficiency_sum", 0.0)) / efficiency_weight, 0.2, 4.0)
 		turn_efficiency = clampf(float(stats.get("turn_efficiency_sum", 0.0)) / efficiency_weight, 0.2, 3.0)
 	var thruster_momentum := allocated_momentum * move_efficiency
-	var boost_momentum := maxf(0.0, float(stats.get("boost_momentum", 0.0)))
+	var boost_extra_demand := maxf(0.0, float(stats.get("thruster_boost_extra_demand", 0.0)))
+	var boost_peak_demand := maxf(0.0, float(stats.get("thruster_boost_peak_demand", drive_demand + boost_extra_demand)))
+	if boost_peak_demand <= 0.0:
+		boost_peak_demand = drive_demand + boost_extra_demand
+	var boost_chain_ratio := clampf(float(stats.get("engine_boost_chain_ratio", drive_chain_ratio)), 0.0, 1.0)
+	var effective_boost_peak := maxf(0.0, float(stats.get("thruster_effective_boost_peak_demand", boost_peak_demand * boost_chain_ratio)))
+	var boost_momentum := boost_extra_demand
 	var boost_duration := _boost_duration_for_stats(stats)
 	var boost_total_momentum := 0.0
-	if boost_momentum > 0.0 and boost_duration > 0.0 and boost_efficiency > 0.0:
-		boost_total_momentum = maxf(0.0, (allocated_momentum + boost_momentum) * boost_efficiency)
+	if boost_extra_demand > 0.0 and effective_boost_peak > 0.0 and boost_duration > 0.0 and boost_efficiency > 0.0:
+		boost_total_momentum = maxf(0.0, effective_boost_peak * boost_efficiency)
 	var thruster_acceleration := thruster_momentum / mass
 	var body_move_speed := maxf(0.0, thruster_acceleration)
 	var boost_speed := maxf(0.0, boost_total_momentum / mass)
-	var explicit_speed_limit := maxf(0.0, float(stats.get("speedometer_max_speed", stats.get("speed_limit", 0.0))))
 	var torso_speed_mult := maxf(0.25, float(stats.get("speedometer_mult", stats.get("speed_limit_mult", 1.0))))
 	var derived_speed_limit := maxf(1.0, maxf(body_move_speed * 3.0, boost_speed * 2.0) * 1.5 * torso_speed_mult)
-	var speedometer_max_speed := explicit_speed_limit if explicit_speed_limit > 0.001 else derived_speed_limit
+	var speedometer_max_speed := derived_speed_limit
 	stats["move_momentum"] = thruster_momentum
 	stats["boost_momentum"] = boost_momentum
 	stats["boost_total_momentum"] = boost_total_momentum
-	stats["thruster_allocated_momentum"] = allocated_momentum
+	stats["thruster_drive_demand"] = drive_demand
+	stats["thruster_allocated_momentum"] = drive_demand
+	stats["thruster_boost_extra_demand"] = boost_extra_demand
+	stats["thruster_boost_brake_allocated_momentum"] = boost_extra_demand
+	stats["thruster_boost_peak_demand"] = boost_peak_demand
+	stats["thruster_effective_drive_demand"] = allocated_momentum
+	stats["thruster_effective_boost_peak_demand"] = effective_boost_peak
+	stats["engine_drive_chain_ratio"] = drive_chain_ratio
+	stats["engine_boost_chain_ratio"] = boost_chain_ratio
 	stats["body_move_speed"] = body_move_speed
+	stats["move_speed"] = body_move_speed
+	stats["move_acceleration"] = thruster_acceleration
 	stats["boost_speed"] = boost_speed
 	stats["move_efficiency"] = move_efficiency
 	stats["boost_efficiency"] = boost_efficiency
@@ -32982,7 +36342,7 @@ func _apply_thruster_momentum_stats(stats: Dictionary, role_key: String) -> void
 	stats["thruster_acceleration"] = thruster_acceleration
 	stats["thruster_duration"] = maxf(float(stats.get("thruster_duration", 0.0)), ECONOMY_THRUSTER_TARGET_DURATION if thruster_momentum > 0.0 else 0.0)
 	stats["boost_duration"] = boost_duration
-	stats["brake_power"] = maxf(0.0, allocated_momentum * clampf(float(stats.get("brake_efficiency", 1.0)), 0.1, 3.0) / mass)
+	stats["brake_power"] = maxf(0.0, effective_boost_peak * clampf(float(stats.get("brake_efficiency", 1.0)), 0.1, 3.0) / mass)
 	if body_move_speed > 0.0:
 		stats["speed"] = body_move_speed / MOMENTUM_MOVE_SPEED_MULT
 
@@ -32992,7 +36352,7 @@ func _estimated_boost_attack_speed(stats: Dictionary) -> float:
 	if stat_boost_speed > 0.0:
 		return stat_boost_speed
 	var mass := maxf(1.0, float(stats.get("mass", 1.0)))
-	return maxf(0.0, float(stats.get("boost_total_momentum", stats.get("boost_momentum", 0.0)))) / mass
+	return maxf(0.0, float(stats.get("boost_total_momentum", 0.0))) / mass
 
 
 func _group_limb_end_mass(group: Dictionary, stats: Dictionary) -> float:
@@ -33650,7 +37010,7 @@ func _apply_projectile_reflection(attacker, event: Dictionary) -> void:
 		var reflect_types: Array = reflector.stats.get("reflect_types", [])
 		if not reflect_types.is_empty() and not reflect_types.has(damage_type):
 			continue
-		var delta_vec := Vector2(_ring_delta(attacker.ring_pos, reflector.ring_pos), (reflector.lane - attacker.lane) * 1.25)
+		var delta_vec := _mobius_delta_vec_between(attacker, reflector, 1.25)
 		var distance := delta_vec.length()
 		if distance <= 0.01 or distance > float(event.get("range", 1.0)) + float(reflector.stats.get("radius", 0.2)):
 			continue
@@ -33705,7 +37065,7 @@ func _reflect_projectile_from_target_shield(target, attacker, event: Dictionary)
 	event_copy["damage"] = maxi(1, int(roundf(float(event.get("damage", 1)) * (0.58 + power * 0.34))))
 	var reflected_dir := Vector2(float(target.facing), randf_range(-0.38, 0.38)).normalized()
 	if attacker != null and is_instance_valid(attacker):
-		var delta_vec := Vector2(_ring_delta(target.ring_pos, attacker.ring_pos), (attacker.lane - target.lane) * 1.25)
+		var delta_vec := _mobius_delta_vec_between(target, attacker, 1.25)
 		if delta_vec.length() > 0.01:
 			reflected_dir = delta_vec.normalized()
 	event_copy["direction"] = reflected_dir
@@ -33718,12 +37078,13 @@ func _reflect_projectile_from_target_shield(target, attacker, event: Dictionary)
 	for reflected_target in _enemy_units(int(target.owner_id)):
 		if reflected_target == attacker or reflected_target == target or not _is_live_unit(reflected_target):
 			continue
-		var distance := absf(_ring_delta(target.ring_pos, reflected_target.ring_pos))
-		var lane_distance := absf(target.lane - reflected_target.lane)
+		var reflected_delta := _mobius_delta_vec_between(target, reflected_target, 1.25)
+		var distance := absf(reflected_delta.x)
+		var lane_distance := absf(reflected_delta.y)
 		var target_radius := float(reflected_target.stats.get("radius", 0.2))
 		if distance > float(event_copy["range"]) + target_radius or lane_distance > float(event_copy["lane_range"]) + target_radius * 0.6:
 			continue
-		var target_vector := Vector2(_ring_delta(target.ring_pos, reflected_target.ring_pos), (reflected_target.lane - target.lane) * 1.25)
+		var target_vector := reflected_delta
 		if target_vector.length() > 0.01 and reflected_dir.dot(target_vector.normalized()) < 0.24:
 			continue
 		var final_damage := maxi(1, int(roundf(float(event_copy["damage"]) * _vulnerability_multiplier(reflected_target, event_copy))))
@@ -33757,8 +37118,9 @@ func _apply_explosion_damage(attacker, primary_target, event: Dictionary) -> Arr
 	for target in _enemy_units(owner):
 		if not _is_live_unit(target) or target == primary_target:
 			continue
-		var distance := absf(_ring_delta(center_ring, target.ring_pos))
-		var lane_distance := absf(center_lane - target.lane)
+		var blast_delta := _mobius_delta_points(center_ring, center_lane, target.ring_pos, target.lane)
+		var distance := absf(blast_delta.x)
+		var lane_distance := absf(blast_delta.y)
 		var target_radius := float(target.stats.get("radius", 0.2))
 		if distance > radius + target_radius or lane_distance > radius * 0.72 + target_radius * 0.6:
 			continue
@@ -33766,7 +37128,7 @@ func _apply_explosion_damage(attacker, primary_target, event: Dictionary) -> Arr
 		var event_copy := event.duplicate(true)
 		event_copy["damage_type"] = damage_type
 		event_copy["projectile"] = false
-		var blast_direction := Vector2(_ring_delta(center_ring, target.ring_pos), target.lane - center_lane)
+		var blast_direction := blast_delta
 		if blast_direction.length() <= 0.001:
 			blast_direction = _event_direction_vector(attacker, target, event, Vector2.RIGHT)
 		var blast_momentum := _projectile_momentum_for_event(event) * falloff
@@ -34285,7 +37647,13 @@ func _spawn_projectile_trace(attacker, event: Dictionary) -> void:
 			direction = Vector2(float(attacker.facing), 0.0)
 		end_combat = start_combat + direction.normalized() * maxf(0.4, float(event.get("range", 1.2)))
 	var start_screen: Vector2 = _screen_from_ring(wrapf(start_combat.x, 0.0, RING_LENGTH), clampf(start_combat.y, -BATTLE_HALF_HEIGHT, BATTLE_HALF_HEIGHT))["position"]
-	var end_screen: Vector2 = _screen_from_ring(wrapf(end_combat.x, 0.0, RING_LENGTH), clampf(end_combat.y, -BATTLE_HALF_HEIGHT, BATTLE_HALF_HEIGHT))["position"]
+	var trace_direction := Vector2(event.get("direction", end_combat - start_combat))
+	if trace_direction.length() <= 0.01:
+		trace_direction = end_combat - start_combat
+	if trace_direction.length() <= 0.01:
+		trace_direction = Vector2(float(attacker.facing), 0.0)
+	var trace_range := maxf(float(event.get("range", 0.0)), start_combat.distance_to(end_combat))
+	var end_screen: Vector2 = _gameplay_ray_screen_end(start_screen, trace_direction, trace_range, 92.0)
 	var trace := ProjectileTraceEffect.new()
 	trace.setup(
 		start_screen,
@@ -34319,6 +37687,25 @@ func _spawn_hit_effect(target, counter_tier: int, damage_type: String, nullified
 	effect.setup(counter_tier, damage_type, nullified, projectile_style, combat_vfx_texture, _hit_effect_nullified_label(projectile_style))
 	effects_root.add_child(effect)
 	_play_hit_sfx(damage_type, projectile_style, nullified, counter_tier)
+
+
+func _spawn_projectile_hit_vfx_on_target(hit_record: Dictionary) -> void:
+	var target = hit_record.get("target", null)
+	if target == null or not is_instance_valid(target):
+		return
+	var contact_point := Vector2(target.ring_pos, target.lane)
+	if hit_record.get("contact_point", Vector2(1.0e20, 1.0e20)) is Vector2:
+		contact_point = hit_record.get("contact_point", contact_point)
+	elif hit_record.get("position", Vector2(1.0e20, 1.0e20)) is Vector2:
+		contact_point = hit_record.get("position", contact_point)
+	_spawn_hit_effect(
+		target,
+		int(hit_record.get("counter_tier", _counter_tier_for_hit(target, String(hit_record.get("damage_type", "bullet"))))),
+		String(hit_record.get("damage_type", "bullet")),
+		bool(hit_record.get("nullified", false)),
+		String(hit_record.get("projectile_style", "")),
+		contact_point
+	)
 
 
 func _hit_effect_nullified_label(projectile_style: String = "") -> String:
@@ -34455,11 +37842,19 @@ func _clear_all_units() -> void:
 		effects_root = Node2D.new()
 		effects_root.name = "CombatEffects"
 		add_child(effects_root)
+	if combat_geometry_debug_root == null:
+		combat_geometry_debug_root = Node2D.new()
+		combat_geometry_debug_root.name = "CombatGeometryDebug"
+		combat_geometry_debug_root.visible = false
+		combat_geometry_debug_root.z_index = 96
+		add_child(combat_geometry_debug_root)
 	for unit in all_units:
 		if is_instance_valid(unit):
 			unit.queue_free()
 	for effect in effects_root.get_children():
 		effect.queue_free()
+	for debug_child in combat_geometry_debug_root.get_children():
+		debug_child.queue_free()
 	battle_contact_vfx_pool = BattleContactVfxPool.new()
 	battle_contact_vfx_pool.name = "BattleContactVfxPool"
 	battle_contact_vfx_pool.setup_pool(int(_runtime_quality_value("contact_particle_pool", 128)), float(_runtime_quality_value("vfx_scale", 1.0)))
@@ -34604,9 +37999,9 @@ func _engine_with_philosophy_defaults(part: Dictionary) -> Dictionary:
 	if adjusted.has("recoil_stability") and not adjusted.has("engine_recoil_stability"):
 		adjusted["engine_recoil_stability"] = adjusted["recoil_stability"]
 	if not adjusted.has("engine_momentum_output"):
-		adjusted["engine_momentum_output"] = _engine_momentum_output_for_part(adjusted)
+		adjusted["engine_momentum_output"] = _engine_momentum_output_raw_for_part(adjusted)
 	if not adjusted.has("engine_momentum_budget"):
-		adjusted["engine_momentum_budget"] = float(adjusted.get("engine_momentum_output", 0.0))
+		adjusted["engine_momentum_budget"] = float(adjusted.get("engine_momentum_output", _engine_momentum_output_raw_for_part(adjusted)))
 	return adjusted
 
 
@@ -34617,15 +38012,21 @@ func _thruster_with_drive_defaults(part: Dictionary) -> Dictionary:
 	for key in defaults.keys():
 		if not adjusted.has(key):
 			adjusted[key] = defaults[key]
-	var boost_momentum := maxf(0.0, float(adjusted.get("boost_momentum", 0.0)))
 	var move_eff := clampf(float(adjusted.get("move_efficiency", defaults.get("move_efficiency", 1.0))), 0.2, 3.0)
 	var boost_eff := clampf(float(adjusted.get("boost_efficiency", defaults.get("boost_efficiency", ECONOMY_BOOST_MOMENTUM_MULT))), 0.2, 4.0)
 	if not adjusted.has("allocated_momentum"):
 		var rank := float(_part_slot_volume_rank(adjusted, "booster"))
-		adjusted["allocated_momentum"] = _economy_median_mass_for_rank(int(rank)) * 0.82
+		adjusted["allocated_momentum"] = _economy_median_mass_for_rank(int(rank)) * 2.0 / maxf(0.2, move_eff)
 	adjusted["allocated_momentum"] = maxf(0.0, float(adjusted.get("allocated_momentum", 0.0)))
+	if adjusted.has("drive_demand") and not adjusted.has("momentum_min"):
+		adjusted["momentum_min"] = maxf(0.0, float(adjusted.get("drive_demand", 0.0)))
 	if not adjusted.has("momentum_min"):
 		adjusted["momentum_min"] = maxf(1.0, float(adjusted["allocated_momentum"]) * 0.55)
+	adjusted["momentum_min"] = maxf(0.0, float(adjusted.get("momentum_min", 0.0)))
+	if not adjusted.has("drive_demand"):
+		adjusted["drive_demand"] = adjusted["momentum_min"]
+	else:
+		adjusted["drive_demand"] = maxf(0.0, float(adjusted.get("drive_demand", adjusted["momentum_min"])))
 	if not adjusted.has("momentum_max"):
 		adjusted["momentum_max"] = maxf(float(adjusted.get("momentum_min", 0.0)), float(adjusted["allocated_momentum"]) * 1.65)
 	adjusted["move_efficiency"] = move_eff
@@ -34643,7 +38044,7 @@ func _thruster_with_drive_defaults(part: Dictionary) -> Dictionary:
 	return adjusted
 
 
-func _engine_momentum_output_for_part(part: Dictionary, scale: float = 1.0) -> float:
+func _engine_momentum_output_raw_for_part(part: Dictionary, scale: float = 1.0) -> float:
 	if part.has("engine_momentum_output"):
 		return maxf(0.0, float(part["engine_momentum_output"]) * scale)
 	if part.has("engine_momentum_budget"):
@@ -34652,6 +38053,10 @@ func _engine_momentum_output_for_part(part: Dictionary, scale: float = 1.0) -> f
 	var family_defaults := _engine_family_defaults(String(part.get("engine_family", "balanced")))
 	var family_supply := clampf(float(part.get("engine_supply_load", family_defaults.get("engine_supply_load", 1.0))), 0.55, 1.65)
 	return maxf(0.0, _economy_engine_momentum_target(int(rank)) * family_supply * scale)
+
+
+func _engine_momentum_output_for_part(part: Dictionary, scale: float = 1.0) -> float:
+	return _engine_momentum_output_raw_for_part(part, scale) * ENGINE_MOMENTUM_OUTPUT_SCALE
 
 
 func _engine_momentum_budget_for_part(part: Dictionary, scale: float = 1.0) -> float:
@@ -34669,13 +38074,26 @@ func _engine_thruster_budget_mult_for_part(part: Dictionary) -> float:
 
 
 func _thruster_engine_demand_for_part(part: Dictionary, scale: float = 1.0) -> float:
-	return _thruster_allocated_momentum_for_part(part, scale)
+	return _thruster_drive_demand_for_part(part, scale)
+
+
+func _thruster_drive_demand_for_part(part: Dictionary, scale: float = 1.0) -> float:
+	if part.has("drive_demand"):
+		return maxf(0.0, float(part.get("drive_demand", 0.0)) * scale)
+	if part.has("momentum_min"):
+		return maxf(0.0, float(part.get("momentum_min", 0.0)) * scale)
+	if part.has("allocated_momentum"):
+		return maxf(1.0, float(part.get("allocated_momentum", 0.0)) * 0.55) * scale
+	var rank := 1
+	if part.has("slot_volume_tier"):
+		rank = _volume_rank_from_value(part.get("slot_volume_tier", "XS"), 1)
+	elif part.has("size_tier") or part.has("size_class"):
+		rank = _size_tier_rank(_part_size_tier_label(part, "booster"))
+	return maxf(1.0, _economy_median_mass_for_rank(rank) * 0.82 * 0.55) * scale
 
 
 func _thruster_allocated_momentum_for_part(part: Dictionary, scale: float = 1.0) -> float:
-	if part.has("allocated_momentum"):
-		return maxf(0.0, float(part["allocated_momentum"]) * scale)
-	return 0.0
+	return _thruster_drive_demand_for_part(part, scale)
 
 
 func _thruster_move_efficiency_for_part(part: Dictionary) -> float:
@@ -34693,17 +38111,24 @@ func _thruster_boost_efficiency_for_part(part: Dictionary) -> float:
 
 
 func _booster_idle_heat_for_part(part: Dictionary, scale: float = 1.0) -> float:
+	var allocated := _thruster_drive_demand_for_part(part)
+	return _booster_idle_heat_for_allocation(part, allocated, scale)
+
+
+func _booster_idle_heat_for_allocation(part: Dictionary, drive_allocation: float, scale: float = 1.0) -> float:
+	return maxf(0.0, maxf(0.0, drive_allocation) * _thruster_idle_heat_coeff_for_part(part) * scale)
+
+
+func _thruster_idle_heat_coeff_for_part(part: Dictionary) -> float:
 	var defaults := _thruster_family_defaults(String(part.get("thruster_family", "cruise_blue")))
-	var allocated := _thruster_allocated_momentum_for_part(part)
-	var heat_coeff := maxf(0.0, float(part.get("thruster_idle_heat_coeff", defaults.get("thruster_idle_heat_coeff", 0.016))))
-	return maxf(0.0, allocated * heat_coeff * scale)
+	return maxf(0.0, float(part.get("thruster_idle_heat_coeff", defaults.get("thruster_idle_heat_coeff", 0.016))))
 
 
 func _cooling_heat_capacity_for_part(part: Dictionary, scale: float = 1.0) -> float:
-	if part.has("heat_capacity"):
-		return maxf(0.0, float(part["heat_capacity"]) * scale)
-	var cooling := maxf(0.0, float(part.get("cooling", part.get("cooling_rate", 0.0))))
-	return maxf(0.0, (36.0 + cooling * 1.35) * scale)
+	if part.is_empty():
+		return 0.0
+	var adjusted := _cooling_with_v3_defaults(part)
+	return maxf(0.0, float(adjusted.get("heat_capacity", 0.0)) * scale)
 
 
 func _cooling_tags_for_part(part: Dictionary) -> Array:
@@ -34757,15 +38182,46 @@ func _cooling_with_v3_defaults(part: Dictionary) -> Dictionary:
 	var family := _cooling_family_for_part(adjusted)
 	var defaults := _cooling_family_defaults(family)
 	var rank := int(_part_slot_volume_rank(adjusted, "cooling"))
-	var cooling_target := _economy_cooling_target(rank) * float(defaults.get("cooling_mult", 1.0))
-	var capacity_target := _economy_heat_capacity_target(rank) * float(defaults.get("capacity_mult", 1.0))
+	var base_cooling_target := _economy_cooling_target(rank)
+	var base_capacity_target := _economy_heat_capacity_target(rank)
+	var cooling_target := maxf(base_cooling_target, base_cooling_target * float(defaults.get("cooling_mult", 1.0)))
+	var capacity_target := maxf(base_capacity_target, base_capacity_target * float(defaults.get("capacity_mult", 1.0)))
+	var raw_rate := maxf(float(adjusted.get("cooling_rate", adjusted.get("cooling", 0.0))), cooling_target)
+	var raw_cooling := maxf(float(adjusted.get("cooling", 0.0)), raw_rate)
+	var raw_dissipation := maxf(float(adjusted.get("heat_dissipation", 0.0)), raw_rate * float(defaults.get("dissipation_mult", 1.0)))
+	var raw_capacity := maxf(float(adjusted.get("heat_capacity", 0.0)), capacity_target)
+	var pool_scale_marker := float(adjusted.get("cooling_pool_scale", 0.0))
+	var pool_already_scaled := bool(adjusted.get("_cooling_pool_scaled", false)) or pool_scale_marker >= COOLING_POOL_SCALE
 	adjusted["cooling_family"] = family
-	adjusted["cooling_rate"] = maxf(float(adjusted.get("cooling_rate", adjusted.get("cooling", 0.0))), cooling_target)
-	adjusted["heat_capacity"] = maxf(float(adjusted.get("heat_capacity", 0.0)), capacity_target)
-	adjusted["heat_dissipation"] = maxf(float(adjusted.get("heat_dissipation", 0.0)), float(adjusted["cooling_rate"]) * float(defaults.get("dissipation_mult", 1.0)))
+	adjusted["cooling_rate"] = raw_rate
+	adjusted["cooling"] = raw_cooling
+	adjusted["heat_dissipation"] = raw_dissipation
+	if pool_already_scaled:
+		adjusted["heat_capacity"] = raw_capacity
+	else:
+		adjusted["heat_capacity"] = raw_capacity * COOLING_POOL_SCALE
+		adjusted["_cooling_pool_scaled"] = true
+	adjusted["cooling_output_scale"] = COOLING_OUTPUT_SCALE
+	adjusted["cooling_pool_scale"] = COOLING_POOL_SCALE
+	adjusted.erase("_cooling_output_scaled")
 	if not adjusted.has("slot_volume_tier"):
 		adjusted["slot_volume_tier"] = _volume_rank_label(float(rank))
 	return adjusted
+
+
+func _cooling_rate_for_part(part: Dictionary) -> float:
+	if part.is_empty():
+		return 0.0
+	var adjusted := _cooling_with_v3_defaults(part)
+	return maxf(0.0, float(adjusted.get("cooling_rate", adjusted.get("cooling", 0.0))))
+
+
+func _cooling_dissipation_for_part(part: Dictionary) -> float:
+	if part.is_empty():
+		return 0.0
+	var adjusted := _cooling_with_v3_defaults(part)
+	var rate := maxf(0.0, float(adjusted.get("cooling_rate", adjusted.get("cooling", 0.0))))
+	return maxf(rate, float(adjusted.get("heat_dissipation", rate)))
 
 
 func _merge_cooling_profile_stats(stats: Dictionary, part: Dictionary) -> void:
@@ -34799,7 +38255,7 @@ func _blank_canvas_stats(stats: Dictionary, player_id: int, role_key: String, re
 		"armor_heat", "active_heat", "move_heat", "engine_power", "aux_power", "engine_count", "engine_torque", "engine_volume_rank",
 		"engine_momentum_budget", "engine_joint_momentum_budget", "engine_thruster_momentum_budget", "engine_momentum_required", "engine_momentum_margin", "engine_momentum_ratio",
 		"thruster_engine_demand", "bound_joint_engine_demand", "bound_joint_count", "bound_joint_output_momentum", "estimated_joint_motion_speed", "estimated_module_duration",
-		"engine_idle_heat", "booster_idle_heat", "idle_heat_load", "thermal_margin", "heat_dissipation", "cooling_heat_capacity",
+		"engine_idle_heat", "booster_idle_heat", "idle_heat_load", "thermal_margin", "thermal_pool", "thermal_load_pool", "thermal_dissipation_rate", "heat_dissipation", "cooling_heat_capacity", "cooling_pool", "cooling_rate", "runtime_cooling_rate",
 		"required_power", "power_margin", "module_slots", "torso_slots", "joint_ports", "weapon_bays", "engine_slots", "booster_slots",
 		"cooling_slots", "slot_payload_count", "slot_payload_mass", "slot_payload_volume_rank", "ammo_slot_count", "ammo_slot_mass",
 		"electronic_armor_max", "electronic_armor_regen", "electronic_armor_coverage", "shield_max", "shield_regen", "shield_coverage",
@@ -34860,7 +38316,7 @@ func _scrub_legacy_power_stats(stats: Dictionary) -> Dictionary:
 		"load_capacity",
 		"momentum_capacity",
 		"damage_unit" + "_threshold",
-		"reference_damage",
+		"reference_" + "damage",
 		"torso_damage_unit" + "_threshold",
 	]:
 		cleaned.erase(key)
@@ -34909,7 +38365,13 @@ func _compute_unit_stats(player_id: int, role_key: String, unit_index: int = -1,
 		"idle_heat_load": 0.0,
 		"thermal_margin": 0.0,
 		"thermal_note": "",
+		"thermal_pool": 0.0,
+		"thermal_load_pool": 0.0,
+		"thermal_dissipation_rate": 0.0,
 		"heat_dissipation": 0.0,
+		"cooling_pool": 0.0,
+		"cooling_rate": 0.0,
+		"runtime_cooling_rate": 0.0,
 		"radius": 0.08,
 		"speed_mult": 1.0,
 		"cornering": 1.0,
@@ -35055,6 +38517,7 @@ func _compute_unit_stats(player_id: int, role_key: String, unit_index: int = -1,
 		"boost_angle_degrees": 360.0,
 		"boost_cooldown": 0.5,
 		"boost_heat": 0.0,
+		"thruster_drive_demand": 0.0,
 		"thruster_allocated_momentum": 0.0,
 		"thruster_efficiency_weight": 0.0,
 		"move_efficiency_sum": 0.0,
@@ -35069,6 +38532,12 @@ func _compute_unit_stats(player_id: int, role_key: String, unit_index: int = -1,
 		"thruster_acceleration": 0.0,
 		"brake_power": 0.0,
 		"boost_duration": 0.0,
+		"thruster_boost_extra_demand": 0.0,
+		"thruster_boost_peak_demand": 0.0,
+		"thruster_effective_drive_demand": 0.0,
+		"thruster_effective_boost_peak_demand": 0.0,
+		"engine_drive_chain_ratio": 0.0,
+		"engine_boost_chain_ratio": 0.0,
 		"turn_speed": 2.4,
 		"turn_acceleration": 4.2,
 		"turn_damping": 3.2,
@@ -35367,6 +38836,8 @@ func _compute_unit_stats(player_id: int, role_key: String, unit_index: int = -1,
 	for part in parts:
 		var part_kind := String(part.get("kind", ""))
 		var slot_kind := String(part.get("_slot_key", ""))
+		if slot_kind == "cooling":
+			part = _cooling_with_v3_defaults(part)
 		var part_is_torso := _component_is_torso(part)
 		var puppet_only_inactive := role_key != "puppet" and bool(part.get("puppet_only_module", false))
 		var pure_software_component := part_kind in ["soul", "code", "ether"]
@@ -35395,10 +38866,11 @@ func _compute_unit_stats(player_id: int, role_key: String, unit_index: int = -1,
 			stats["length"] = float(stats["length"]) + float(part.get("length", 0.0))
 		if pure_software_component:
 			stats["deploy_wait"] = maxf(float(stats.get("deploy_wait", DEPLOY_WAIT_SECONDS)), float(part.get("deploy_wait", _special_deploy_wait(part, role_key))))
-		var part_cooling := float(part.get("cooling", 0.0))
+		var part_cooling := _cooling_rate_for_part(part) if slot_kind == "cooling" else float(part.get("cooling", 0.0))
 		stats["cooling"] = float(stats["cooling"]) + part_cooling
 		if slot_kind == "cooling" or part_cooling > 0.0:
-			stats["heat_dissipation"] = float(stats.get("heat_dissipation", 0.0)) + part_cooling
+			var part_dissipation := _cooling_dissipation_for_part(part) if slot_kind == "cooling" else part_cooling
+			stats["heat_dissipation"] = float(stats.get("heat_dissipation", 0.0)) + part_dissipation
 			stats["cooling_heat_capacity"] = float(stats.get("cooling_heat_capacity", 0.0)) + _cooling_heat_capacity_for_part(part)
 			_merge_cooling_profile_stats(stats, part)
 		stats["heat_capacity"] = float(stats["heat_capacity"]) + float(part.get("heat_capacity", 0.0))
@@ -35470,8 +38942,6 @@ func _compute_unit_stats(player_id: int, role_key: String, unit_index: int = -1,
 		for missile_key in ["missile_lock_priority", "missile_lock_cone_degrees", "missile_lock_range", "missile_lock_target_classes", "missile_occlusion_grace"]:
 			if part.has(missile_key) and not part_is_torso:
 				stats[missile_key] = part[missile_key]
-		if part.has("recoil_transfer_mult") and not part_is_torso:
-			stats["recoil_transfer_mult"] = maxf(float(stats.get("recoil_transfer_mult", 0.0)), float(part["recoil_transfer_mult"]))
 		if part.has("travel_path") and not part_is_torso:
 			stats["travel_path"] = String(part["travel_path"])
 		if part.has("laser_aim_time") and not part_is_torso:
@@ -35915,19 +39385,133 @@ func _ammo_payload_variant(part: Dictionary, size_value: Variant) -> Dictionary:
 	return adjusted
 
 
+func _catalog_role_for_part(slot_key: String, part: Dictionary) -> String:
+	var explicit := String(part.get("catalog_role", "")).to_lower()
+	if explicit != "":
+		return explicit
+	match slot_key:
+		"special":
+			var kind := String(part.get("kind", "software_core")).to_lower()
+			if kind in ["soul", "code", "ether"]:
+				return kind
+			return "software_core"
+		"module":
+			return "action_module"
+		"engine":
+			return "engine"
+		"cooling":
+			return "cooling"
+		"booster":
+			return "booster"
+		"joint":
+			return "logic_joint"
+		"limb_muscle":
+			if bool(part.get("barrier_tile_component", false)) or bool(part.get("barrier_panel", false)) or String(part.get("barrier_logic", "")) != "":
+				return "barrier_tile"
+			return "limb"
+		"muscle":
+			var material_class := String(part.get("material_class", "")).to_lower()
+			if _part_is_ammo_payload(part) or material_class == "ammo_payload":
+				return "ammo_payload"
+			if bool(part.get("electronic_armor", false)) or bool(part.get("shield_payload", false)) or material_class == "shield_payload":
+				return "shield_payload"
+			if _component_is_torso(part) or material_class == "torso":
+				return "brain_torso" if _component_is_brain_torso(part) else "torso"
+			if bool(part.get("barrier_tile_component", false)) or bool(part.get("barrier_panel", false)) or String(part.get("barrier_logic", "")) != "" or bool(part.get("is_support_node", false)) or bool(part.get("is_gravity_field", false)) or bool(part.get("is_trap_field", false)):
+				return "barrier_tile"
+			if bool(part.get("projectile", false)) or material_class in ["gun", "missile_launcher", "web_gun"]:
+				return "gun"
+			if bool(part.get("terminal_weapon", false)) or material_class in ["weapon", "racket"] or int(part.get("connection_ends", 1)) <= 1:
+				return "melee_weapon"
+			if int(part.get("connection_ends", 1)) >= 2:
+				return "connector"
+	return slot_key
+
+
+func _catalog_part_category_for_part(slot_key: String, part: Dictionary) -> String:
+	var explicit := String(part.get("part_category", "")).to_lower()
+	if explicit != "":
+		return explicit
+	var role := _catalog_role_for_part(slot_key, part)
+	if role == "gun":
+		return "gun:%s" % String(part.get("gun_kind", _gun_kind_for_data(part))).to_lower()
+	if role == "melee_weapon":
+		var family := String(part.get("weapon_family", "")).to_lower()
+		if family == "":
+			family = String(part.get("damage_type", "melee")).to_lower()
+		return "melee:%s" % family
+	if role == "action_module":
+		return "module:%s" % _module_category_for_part(part)
+	return role
+
+
+func _catalog_part_with_metadata(slot_key: String, part: Dictionary) -> Dictionary:
+	var adjusted := part.duplicate(true)
+	adjusted["catalog_role"] = _catalog_role_for_part(slot_key, adjusted)
+	adjusted["part_category"] = _catalog_part_category_for_part(slot_key, adjusted)
+	var lifecycle := _catalog_lifecycle_for_part(slot_key, adjusted)
+	adjusted["catalog_lifecycle"] = String(lifecycle.get("catalog_lifecycle", "live"))
+	adjusted["catalog_lifecycle_reason"] = String(lifecycle.get("reason", ""))
+	adjusted["future_dev_tag"] = String(lifecycle.get("future_dev_tag", adjusted.get("future_dev_tag", "")))
+	return adjusted
+
+
+func _normalized_catalog_part(slot_key: String, raw_part: Dictionary, context: String) -> Dictionary:
+	var part := raw_part.duplicate(true)
+	match context:
+		"runtime":
+			match slot_key:
+				"engine", "booster", "cooling", "ammo":
+					part = _economy_rebalanced_plugin_component(part, slot_key)
+				"limb_muscle", "muscle":
+					part = _limb_drive_component_with_defaults(part, slot_key)
+					part = _combat_model_normalized_component(part, slot_key)
+				_:
+					part = _combat_model_normalized_component(part, slot_key)
+			part = _without_legacy_power_fields(part)
+			part = _scrub_nonphysical_catalog_part(part, slot_key)
+			if slot_key == "cooling":
+				part.erase("cooling")
+			return _catalog_part_with_metadata(slot_key, part)
+		"display":
+			part = _component_with_size_design(part, slot_key)
+			part = _economy_priced_component(part)
+			part = _economy_rebalanced_plugin_component(part, slot_key)
+			part = _gun_part_with_runtime_defaults(part, slot_key)
+			part = _limb_drive_component_with_defaults(part, slot_key)
+			part = _combat_model_normalized_component(part, slot_key)
+			if slot_key == "muscle" and _part_is_ammo_payload(part):
+				part = _ammo_payload_variant(part, editor_ammo_size_rank)
+			if slot_key == "muscle" and _part_counts_as_terminal_weapon(part, "muscle"):
+				part = _part_with_effective_terminal_geometry(part, "muscle")
+			return _catalog_part_with_metadata(slot_key, _scrub_nonphysical_catalog_part(_without_legacy_power_fields(part), slot_key))
+		_:
+			part = _component_with_size_design(part, slot_key)
+			part = _economy_priced_component(part)
+			part = _economy_rebalanced_plugin_component(part, slot_key)
+			part = _gun_part_with_runtime_defaults(part, slot_key)
+			if slot_key == "joint":
+				part = _software_joint_component(part)
+			elif slot_key == "limb_muscle":
+				var shortened_limb := part.duplicate(true)
+				var original_length := float(shortened_limb.get("length", 0.0))
+				shortened_limb["raw_length"] = original_length
+				shortened_limb["length"] = maxf(0.04, original_length * LIMB_MUSCLE_LENGTH_MULTIPLIER)
+				shortened_limb["length_rule_mult"] = LIMB_MUSCLE_LENGTH_MULTIPLIER
+				shortened_limb["connection_ends"] = 2
+				part = shortened_limb
+			part = _limb_drive_component_with_defaults(part, slot_key)
+			part = _combat_model_normalized_component(part, slot_key)
+			part = _without_legacy_power_fields(part)
+			part = _scrub_nonphysical_catalog_part(part, slot_key)
+			if slot_key == "booster":
+				part["torso_slot_payload"] = true
+				part = _scrub_nonphysical_catalog_part(_without_legacy_power_fields(part), slot_key)
+			return _catalog_part_with_metadata(slot_key, part)
+
+
 func _catalog_display_part(slot_key: String, part: Dictionary) -> Dictionary:
-	var display := part.duplicate(true)
-	display = _component_with_size_design(display, slot_key)
-	display = _economy_priced_component(display)
-	display = _economy_rebalanced_plugin_component(display, slot_key)
-	display = _gun_part_with_runtime_defaults(display, slot_key)
-	display = _limb_drive_component_with_defaults(display, slot_key)
-	display = _combat_model_normalized_component(display, slot_key)
-	if slot_key == "muscle" and _part_is_ammo_payload(display):
-		display = _ammo_payload_variant(display, editor_ammo_size_rank)
-	if slot_key == "muscle" and _part_counts_as_terminal_weapon(display, "muscle"):
-		display = _part_with_effective_terminal_geometry(display, "muscle")
-	return _without_legacy_power_fields(display)
+	return _normalized_catalog_part(slot_key, part, "display")
 
 
 func _catalog_lifecycle_for_part(slot_key: String, part: Dictionary) -> Dictionary:
@@ -35936,11 +39520,17 @@ func _catalog_lifecycle_for_part(slot_key: String, part: Dictionary) -> Dictiona
 	var motion := String(part.get("motion", "")).to_lower()
 	var module_effect := String(part.get("module_effect", "")).to_lower()
 	var profile := String(part.get("module_action_profile", "")).to_lower()
+	var explicit_lifecycle := String(part.get("catalog_lifecycle", "")).to_lower()
 	var result := {
 		"catalog_lifecycle": "live",
 		"reason": "",
 		"future_dev_tag": "",
 	}
+	if explicit_lifecycle in ["live", "frozen"]:
+		result["catalog_lifecycle"] = explicit_lifecycle
+		result["reason"] = String(part.get("catalog_lifecycle_reason", part.get("freeze_reason", "")))
+		result["future_dev_tag"] = String(part.get("future_dev_tag", part.get("unlock_profile", "")))
+		return result
 	if slot_key == "module":
 		var live_profiles := [
 			"two_link_forward_snap",
@@ -36226,21 +39816,28 @@ func _movement_profile_priority(profile: String) -> int:
 			return 0
 
 
-func _merge_thruster_drive_stats(stats: Dictionary, part: Dictionary) -> void:
+func _merge_thruster_drive_stats(stats: Dictionary, part: Dictionary, payload: Dictionary = {}) -> void:
 	var normalized := _thruster_with_drive_defaults(part)
-	var allocated := _thruster_allocated_momentum_for_part(normalized)
+	var drive_alloc := _thruster_drive_allocated_for_payload(payload, normalized) if not payload.is_empty() else _thruster_drive_allocation_min_for_part(normalized)
 	var move_eff := _thruster_move_efficiency_for_part(normalized)
 	var boost_eff := _thruster_boost_efficiency_for_part(normalized)
 	var turn_eff := clampf(float(normalized.get("turn_efficiency", 1.0)), 0.2, 3.0)
 	var brake_eff := clampf(float(normalized.get("brake_efficiency", 1.0)), 0.2, 3.0)
-	stats["booster_idle_heat"] = float(stats.get("booster_idle_heat", 0.0)) + _booster_idle_heat_for_part(normalized)
-	stats["move_momentum"] = float(stats.get("move_momentum", 0.0)) + _booster_normal_momentum_for_part(normalized)
-	stats["boost_momentum"] = float(stats.get("boost_momentum", 0.0)) + _booster_boost_momentum_for_part(normalized)
-	stats["thruster_allocated_momentum"] = float(stats.get("thruster_allocated_momentum", 0.0)) + allocated
-	stats["thruster_efficiency_weight"] = float(stats.get("thruster_efficiency_weight", 0.0)) + allocated
-	stats["move_efficiency_sum"] = float(stats.get("move_efficiency_sum", 0.0)) + move_eff * allocated
-	stats["boost_efficiency_sum"] = float(stats.get("boost_efficiency_sum", 0.0)) + boost_eff * allocated
-	stats["turn_efficiency_sum"] = float(stats.get("turn_efficiency_sum", 0.0)) + turn_eff * allocated
+	var boost_extra := _thruster_boost_brake_allocated_for_payload(payload, normalized) if not payload.is_empty() else _thruster_boost_brake_allocation_min_for_part(normalized)
+	var boost_peak := drive_alloc + boost_extra
+	stats["booster_idle_heat"] = float(stats.get("booster_idle_heat", 0.0)) + _booster_idle_heat_for_allocation(normalized, drive_alloc)
+	stats["move_momentum"] = float(stats.get("move_momentum", 0.0)) + drive_alloc * move_eff
+	stats["boost_momentum"] = float(stats.get("boost_momentum", 0.0)) + boost_extra
+	stats["thruster_boost_extra_demand"] = float(stats.get("thruster_boost_extra_demand", 0.0)) + boost_extra
+	stats["thruster_boost_brake_allocated_momentum"] = float(stats.get("thruster_boost_brake_allocated_momentum", 0.0)) + boost_extra
+	stats["thruster_boost_peak_demand"] = float(stats.get("thruster_boost_peak_demand", 0.0)) + boost_peak
+	stats["thruster_drive_demand"] = float(stats.get("thruster_drive_demand", 0.0)) + drive_alloc
+	stats["thruster_allocated_momentum"] = float(stats.get("thruster_allocated_momentum", 0.0)) + drive_alloc
+	var efficiency_weight := maxf(0.001, drive_alloc)
+	stats["thruster_efficiency_weight"] = float(stats.get("thruster_efficiency_weight", 0.0)) + efficiency_weight
+	stats["move_efficiency_sum"] = float(stats.get("move_efficiency_sum", 0.0)) + move_eff * efficiency_weight
+	stats["boost_efficiency_sum"] = float(stats.get("boost_efficiency_sum", 0.0)) + boost_eff * efficiency_weight
+	stats["turn_efficiency_sum"] = float(stats.get("turn_efficiency_sum", 0.0)) + turn_eff * efficiency_weight
 	stats["brake_efficiency"] = maxf(float(stats.get("brake_efficiency", 1.0)), brake_eff)
 	stats["boost_angle_degrees"] = maxf(float(stats.get("boost_angle_degrees", 0.0)), float(normalized.get("boost_angle_degrees", 360.0)))
 	stats["boost_heat"] = float(stats.get("boost_heat", 0.0)) + maxf(0.0, float(normalized.get("boost_heat", 0.0)))
@@ -36379,7 +39976,7 @@ func _apply_recoil_stabilization(stats: Dictionary) -> void:
 	var radius := maxf(0.04, float(stats.get("radius", 0.08)))
 	var control := clampf(float(stats.get("attitude_control", 0.85)), 0.25, 3.2)
 	var melee_stability_core := clampf(float(stats.get("melee_stability_core", control)), 0.25, 3.6)
-	var thruster_executor := sqrt(maxf(0.0, float(stats.get("boost_total_momentum", stats.get("boost_momentum", 0.0))) * 0.012 + float(stats.get("move_momentum", 0.0)) * 0.018))
+	var thruster_executor := sqrt(maxf(0.0, float(stats.get("boost_total_momentum", 0.0)) * 0.012 + float(stats.get("move_momentum", 0.0)) * 0.018))
 	var engine_motion := clampf(float(stats.get("engine_momentum_output", stats.get("engine_momentum_budget", 0.0))) / maxf(1.0, float(stats.get("engine_momentum_required", 1.0))), 0.72, 1.22)
 	var inertia_drag := 1.0 + sqrt(mass) * 0.052 + radius * 0.16
 	var engine_recoil := clampf(float(stats.get("engine_recoil_stability", 1.0)), 0.72, 1.45)
@@ -36402,7 +39999,9 @@ func _apply_recoil_stabilization(stats: Dictionary) -> void:
 	]
 
 
-func _merge_internal_payload_stats(stats: Dictionary, part: Dictionary, slot_key: String) -> void:
+func _merge_internal_payload_stats(stats: Dictionary, part: Dictionary, slot_key: String, payload: Dictionary = {}) -> void:
+	if slot_key == "cooling":
+		part = _cooling_with_v3_defaults(part)
 	stats["cost"] = int(stats["cost"]) + int(part.get("cost", 0))
 	stats["mass"] = float(stats["mass"]) + float(part.get("mass", 0.0))
 	var payload_power_load := 0.0
@@ -36422,11 +40021,34 @@ func _merge_internal_payload_stats(stats: Dictionary, part: Dictionary, slot_key
 	if slot_key == "engine":
 		_merge_engine_stats(stats, part)
 	elif slot_key == "cooling":
-		var cooling_value := float(part.get("cooling", part.get("cooling_rate", 0.0)))
+		var cooling_value := _cooling_rate_for_part(part)
+		var dissipation_value := _cooling_dissipation_for_part(part)
 		stats["cooling"] = float(stats.get("cooling", 0.0)) + cooling_value
-		stats["heat_dissipation"] = float(stats.get("heat_dissipation", 0.0)) + cooling_value
+		stats["heat_dissipation"] = float(stats.get("heat_dissipation", 0.0)) + dissipation_value
 	elif slot_key == "booster":
-		_merge_thruster_drive_stats(stats, part)
+		_merge_thruster_drive_stats(stats, part, payload)
+
+
+func _thermal_load_pool_for_stats(stats: Dictionary) -> float:
+	var pool := maxf(0.0, float(stats.get("cooling_heat_capacity", 0.0)))
+	if pool <= 0.0:
+		pool = maxf(0.0, float(stats.get("heat_capacity", 0.0)))
+	if pool <= 0.0:
+		pool = maxf(0.0, float(stats.get("thermal_load_pool", 0.0)))
+	if pool <= 0.0:
+		pool = maxf(0.0, float(stats.get("cooling_pool", 0.0)))
+	if pool <= 0.0:
+		pool = maxf(0.0, float(stats.get("cooling", 0.0)))
+	return pool
+
+
+func _thermal_runtime_cooling_rate_for_stats(stats: Dictionary) -> float:
+	var rate := maxf(0.0, float(stats.get("cooling_rate", stats.get("cooling", 0.0))))
+	rate = maxf(rate, float(stats.get("cooling", 0.0)))
+	rate = maxf(rate, float(stats.get("heat_dissipation", 0.0)))
+	rate = maxf(rate, float(stats.get("thermal_dissipation_rate", 0.0)))
+	rate = maxf(rate, float(stats.get("runtime_cooling_rate", 0.0)))
+	return rate
 
 
 func _apply_engine_momentum_budget_with_runtime_modifiers(stats: Dictionary, role_key: String, include_attack_load: bool, apply_penalty: bool = false) -> void:
@@ -36464,24 +40086,33 @@ func _apply_thermal_budget(stats: Dictionary, role_key: String) -> void:
 	var booster_idle := maxf(0.0, float(stats.get("booster_idle_heat", 0.0)))
 	var limb_idle := maxf(0.0, float(stats.get("bound_limb_idle_heat", 0.0)))
 	var idle_load := engine_idle + booster_idle + limb_idle
-	var cooling := maxf(0.0, float(stats.get("cooling", 0.0)))
-	var capacity := maxf(0.0, float(stats.get("cooling_heat_capacity", stats.get("heat_capacity", 0.0))))
-	var dissipation := maxf(cooling, float(stats.get("heat_dissipation", 0.0)))
+	var cooling_rate := maxf(0.0, float(stats.get("cooling_rate", stats.get("cooling", 0.0))))
+	cooling_rate = maxf(cooling_rate, float(stats.get("cooling", 0.0)))
+	var capacity := _thermal_load_pool_for_stats(stats)
+	var dissipation := _thermal_runtime_cooling_rate_for_stats(stats)
 	stats["engine_idle_heat"] = engine_idle
 	stats["booster_idle_heat"] = booster_idle
 	stats["bound_limb_idle_heat"] = limb_idle
 	stats["idle_heat_load"] = idle_load
+	stats["cooling"] = cooling_rate
+	stats["cooling_rate"] = cooling_rate
+	stats["thermal_load_pool"] = capacity
+	stats["cooling_pool"] = capacity
+	stats["cooling_heat_capacity"] = capacity
+	stats["thermal_pool"] = capacity
 	stats["heat_capacity"] = capacity
 	stats["heat_dissipation"] = dissipation
-	stats["thermal_margin"] = cooling - idle_load
-	if idle_load <= 0.0 and cooling <= 0.0:
+	stats["thermal_dissipation_rate"] = dissipation
+	stats["runtime_cooling_rate"] = dissipation
+	stats["thermal_margin"] = capacity - idle_load
+	if idle_load <= 0.0 and capacity <= 0.0 and cooling_rate <= 0.0:
 		stats["thermal_note"] = "THERMAL IDLE: no engine/thruster/bound limb heat load."
 	elif capacity <= 0.0:
 		stats["thermal_note"] = "INVALID: no radiator heat capacity. Install cooling software."
-	elif cooling <= idle_load:
-		stats["thermal_note"] = "INVALID: cooling %.1f must exceed engine+thruster+bound limb idle heat %.1f." % [cooling, idle_load]
+	elif capacity <= idle_load:
+		stats["thermal_note"] = "INVALID: heat pool %.1f must exceed engine+thruster+bound limb idle heat %.1f." % [capacity, idle_load]
 	else:
-		stats["thermal_note"] = "THERMAL OK: cooling %.1f > idle heat %.1f, capacity %.0f, dissipation %.1f." % [cooling, idle_load, capacity, dissipation]
+		stats["thermal_note"] = "THERMAL OK: heat pool %.1f > idle heat %.1f, cooling speed %.1f, runtime cooling %.1f." % [capacity, idle_load, cooling_rate, dissipation]
 
 
 func _apply_turn_stats(stats: Dictionary, role_key: String) -> void:
@@ -36490,7 +40121,7 @@ func _apply_turn_stats(stats: Dictionary, role_key: String) -> void:
 	var turn_inertia := 1.0 + mass * 0.035 + radius * 0.72
 	if role_key == "barrier":
 		turn_inertia *= 1.35
-	var allocated_momentum := maxf(0.0, float(stats.get("thruster_allocated_momentum", stats.get("allocated_momentum", 0.0))))
+	var allocated_momentum := maxf(0.0, float(stats.get("thruster_effective_drive_demand", 0.0)))
 	var turn_efficiency := clampf(float(stats.get("turn_efficiency", 1.0)), 0.2, 3.0)
 	var thruster_velocity := allocated_momentum * turn_efficiency / mass
 	var turn_speed := clampf(thruster_velocity * MOMENTUM_TURN_SPEED_MULT, 0.0, 7.2)
@@ -37054,13 +40685,10 @@ func _apply_torso_slot_payload_stats(stats: Dictionary, role_key: String, unit_b
 				_merge_internal_payload_stats(stats, engine_part, "engine")
 			elif payload_kind == "booster":
 				var booster_part := _selected_component(role_key, "booster", int(payload.get("booster", unit_bp.get("booster", 0))))
-				if payload.has("allocated_momentum"):
-					booster_part = booster_part.duplicate(true)
-					booster_part["allocated_momentum"] = maxf(0.0, float(payload.get("allocated_momentum", 0.0)))
 				payload_count += 1
 				payload_mass += float(booster_part.get("mass", 0.0))
 				payload_volume_rank += _payload_slot_volume_rank(payload_kind, booster_part, payload, "booster")
-				_merge_internal_payload_stats(stats, booster_part, "booster")
+				_merge_internal_payload_stats(stats, booster_part, "booster", payload)
 			elif payload_kind == "cooling":
 				var cooling_part := _selected_component(role_key, "cooling", int(payload.get("cooling", unit_bp.get("cooling", 0))))
 				payload_count += 1
@@ -37093,7 +40721,7 @@ func _apply_torso_slot_payload_stats(stats: Dictionary, role_key: String, unit_b
 				payload_count += 1
 				payload_mass += float(payload_part.get("mass", 0.0))
 				payload_volume_rank += _payload_slot_volume_rank(payload_kind, payload_part, payload, payload_slot)
-				_merge_internal_payload_stats(stats, payload_part, payload_slot)
+				_merge_internal_payload_stats(stats, payload_part, payload_slot, payload)
 	var escape_index := int(unit_bp.get("escape_pod", -1))
 	if escape_index >= 0 and not component_priced:
 		var pod_part := _selected_component(role_key, "muscle", escape_index)
@@ -37254,6 +40882,24 @@ func _combat_model_normalized_component(part: Dictionary, slot_kind: String) -> 
 	if part.is_empty() or not _component_has_combat_volume(part, slot_kind):
 		return part
 	var normalized := part.duplicate(true)
+	if slot_kind == "limb_muscle":
+		normalized["connection_ends"] = 2
+		normalized["root_socket"] = "root_joint"
+		normalized["distal_socket"] = "distal"
+	elif slot_kind == "muscle":
+		if _component_is_torso(normalized):
+			normalized["is_torso"] = true
+			if String(normalized.get("material_class", "")).strip_edges() == "":
+				normalized["material_class"] = "torso"
+		else:
+			normalized["root_socket"] = "root_joint"
+			var connection_ends := maxi(1, int(normalized.get("connection_ends", 1)))
+			normalized["connection_ends"] = connection_ends
+			var terminal_like := _part_counts_as_terminal_weapon(normalized, "muscle") or bool(normalized.get("projectile", false)) or connection_ends <= 1
+			if terminal_like:
+				normalized.erase("distal_socket")
+			else:
+				normalized["distal_socket"] = "distal"
 	if _part_counts_as_terminal_weapon(normalized, slot_kind):
 		normalized["terminal_weapon_kind"] = _terminal_weapon_kind_for_part(normalized, slot_kind)
 		if _component_is_blade_weapon(normalized):
@@ -37780,7 +41426,46 @@ func _joint_engine_demand_for_part(part: Dictionary, slot_key: String, module_pa
 		"flexible_chain":
 			family_mult = 0.92
 	var module_mult := clampf(float(module_part.get("engine_demand_mult", 1.0)), 0.35, 2.2)
-	return maxf(0.0, (output * 0.018 + mass * 0.18 + length * 5.0) * family_mult * module_mult)
+	var gun_drive_mult := _gun_drive_demand_multiplier(part, slot_key)
+	return maxf(0.0, (output * 0.018 + mass * 0.18 + length * 5.0) * family_mult * module_mult * gun_drive_mult)
+
+
+func _gun_drive_demand_multiplier(part: Dictionary, slot_key: String) -> float:
+	if not _component_is_gun_muscle(part, slot_key):
+		return 1.0
+	return 1.0
+
+
+func _limb_drive_heat_coeff_for_part(part: Dictionary, slot_key: String, module_part: Dictionary = {}) -> float:
+	if module_part.has("limb_idle_heat_coeff"):
+		return maxf(0.0, float(module_part.get("limb_idle_heat_coeff", DEFAULT_LIMB_DRIVE_IDLE_HEAT_COEFF)))
+	if module_part.has("drive_heat_coeff"):
+		return maxf(0.0, float(module_part.get("drive_heat_coeff", DEFAULT_LIMB_DRIVE_IDLE_HEAT_COEFF)))
+	if part.has("limb_idle_heat_coeff"):
+		return maxf(0.0, float(part.get("limb_idle_heat_coeff", DEFAULT_LIMB_DRIVE_IDLE_HEAT_COEFF)))
+	if part.has("drive_heat_coeff"):
+		return maxf(0.0, float(part.get("drive_heat_coeff", DEFAULT_LIMB_DRIVE_IDLE_HEAT_COEFF)))
+	return DEFAULT_LIMB_DRIVE_IDLE_HEAT_COEFF
+
+
+func _limb_drive_heat_coeff_for_segment(segment: Dictionary, module_part: Dictionary = {}) -> float:
+	if module_part.has("limb_idle_heat_coeff"):
+		return maxf(0.0, float(module_part.get("limb_idle_heat_coeff", DEFAULT_LIMB_DRIVE_IDLE_HEAT_COEFF)))
+	if module_part.has("drive_heat_coeff"):
+		return maxf(0.0, float(module_part.get("drive_heat_coeff", DEFAULT_LIMB_DRIVE_IDLE_HEAT_COEFF)))
+	if segment.has("limb_idle_heat_coeff"):
+		return maxf(0.0, float(segment.get("limb_idle_heat_coeff", DEFAULT_LIMB_DRIVE_IDLE_HEAT_COEFF)))
+	if segment.has("drive_heat_coeff"):
+		return maxf(0.0, float(segment.get("drive_heat_coeff", DEFAULT_LIMB_DRIVE_IDLE_HEAT_COEFF)))
+	return DEFAULT_LIMB_DRIVE_IDLE_HEAT_COEFF
+
+
+func _limb_drive_idle_heat_for_allocation(part: Dictionary, slot_key: String, module_part: Dictionary, momentum: float, scale: float = 1.0) -> float:
+	return maxf(0.0, maxf(0.0, momentum) * _limb_drive_heat_coeff_for_part(part, slot_key, module_part) * scale)
+
+
+func _limb_drive_idle_heat_for_segment(segment: Dictionary, module_part: Dictionary, momentum: float, scale: float = 1.0) -> float:
+	return maxf(0.0, maxf(0.0, momentum) * _limb_drive_heat_coeff_for_segment(segment, module_part) * scale)
 
 
 func _limb_momentum_min_for_part(part: Dictionary, slot_key: String) -> float:
@@ -37808,7 +41493,7 @@ func _limb_momentum_min_for_part(part: Dictionary, slot_key: String) -> float:
 	return maxf(0.0, demand * ratio)
 
 
-func _limb_momentum_max_for_part(part: Dictionary, slot_key: String) -> float:
+func _limb_momentum_raw_max_for_part(part: Dictionary, slot_key: String) -> float:
 	if part.has("momentum_max"):
 		return maxf(0.0, float(part["momentum_max"]))
 	var drive_kind := _joint_drive_kind_for_part(part, slot_key)
@@ -37831,6 +41516,10 @@ func _limb_momentum_max_for_part(part: Dictionary, slot_key: String) -> float:
 		"flexible_chain":
 			ratio = 1.42
 	return maxf(demand * 1.08, demand * ratio)
+
+
+func _limb_momentum_max_for_part(part: Dictionary, slot_key: String) -> float:
+	return _limb_momentum_raw_max_for_part(part, slot_key) * LIMB_MOMENTUM_MAX_SCALE
 
 
 func _default_limb_allocated_momentum_for_part(part: Dictionary, slot_key: String, module_part: Dictionary = {}) -> float:
@@ -37865,12 +41554,20 @@ func _limb_drive_component_with_defaults(part: Dictionary, slot_key: String) -> 
 		adjusted["joint_output_momentum_base"] = _joint_output_momentum_base_for_part(adjusted, slot_key)
 	if not adjusted.has("joint_engine_demand"):
 		adjusted["joint_engine_demand"] = _joint_engine_demand_for_part(adjusted, slot_key)
+	if not adjusted.has("limb_idle_heat_coeff") and not adjusted.has("drive_heat_coeff"):
+		adjusted["limb_idle_heat_coeff"] = _limb_drive_heat_coeff_for_part(adjusted, slot_key)
+	var resolved_min_momentum := _limb_momentum_min_for_part(adjusted, slot_key)
+	var resolved_raw_max_momentum := _limb_momentum_raw_max_for_part(adjusted, slot_key)
+	var resolved_max_momentum := resolved_raw_max_momentum * LIMB_MOMENTUM_MAX_SCALE
 	if not adjusted.has("momentum_min"):
-		adjusted["momentum_min"] = _limb_momentum_min_for_part(adjusted, slot_key)
-	if not adjusted.has("momentum_max"):
-		adjusted["momentum_max"] = _limb_momentum_max_for_part(adjusted, slot_key)
+		adjusted["momentum_min"] = resolved_min_momentum
+	adjusted["momentum_max_raw"] = resolved_raw_max_momentum
+	adjusted["momentum_max"] = resolved_max_momentum
 	if not adjusted.has("allocated_limb_momentum"):
-		adjusted["allocated_limb_momentum"] = _default_limb_allocated_momentum_for_part(adjusted, slot_key)
+		var desired_momentum := _joint_engine_demand_for_part(adjusted, slot_key)
+		if desired_momentum <= 0.0:
+			desired_momentum = (float(adjusted.get("momentum_min", resolved_min_momentum)) + resolved_max_momentum) * 0.5
+		adjusted["allocated_limb_momentum"] = clampf(desired_momentum, float(adjusted.get("momentum_min", resolved_min_momentum)), resolved_max_momentum)
 	if not adjusted.has("joint_angle_range"):
 		adjusted["joint_angle_range"] = float(_embedded_joint_profile_for_part(adjusted, slot_key).get("angle", 0.0))
 	if not adjusted.has("joint_extension_m"):
@@ -37951,8 +41648,8 @@ func _complete_attack_group_physics(group: Dictionary, stats: Dictionary) -> Dic
 			completed["projectile_collision_speed"] = _projectile_collision_speed_for_event(completed_projectile_event)
 		if float(completed.get("projectile_mass", 0.0)) <= 0.0:
 			completed["projectile_mass"] = _projectile_mass_for_event(completed_projectile_event, float(completed["projectile_collision_speed"]))
-		if float(completed.get("recoil_transfer_mult", 0.0)) <= 0.0:
-			completed["recoil_transfer_mult"] = _default_recoil_transfer_for_projectile(completed_projectile_event)
+		completed.erase("recoil_transfer_mult")
+		_sync_projectile_drive_momentum_fields(completed)
 	completed["limb_end_mass"] = _group_limb_end_mass(completed, stats)
 	if not completed.has("swing_speed_bonus"):
 		completed["swing_speed_bonus"] = 0.0
@@ -39406,12 +43103,18 @@ func _runtime_topology_segments_for_blueprint(role_key: String, unit_bp: Diction
 			"size_rank": _component_size_rank(part),
 			"terminal_weapon_kind": _terminal_weapon_kind_for_part(part, slot_key) if _part_counts_as_terminal_weapon(part, slot_key) else "",
 			"projectile": bool(part.get("projectile", false)),
+			"shape": String(part.get("shape", "")),
+			"source_shape": String(part.get("shape", "")),
+			"weapon_family": String(part.get("weapon_family", "")),
+			"blunt_shield": bool(part.get("blunt_shield", false)),
+			"blunt_gauntlet": bool(part.get("blunt_gauntlet", false)),
+			"blunt_hammer": bool(part.get("blunt_hammer", false)),
 			"damage_type": String(part.get("damage_type", "blunt")),
 			"projectile_damage_type": String(part.get("projectile_damage_type", part.get("damage_type", "bullet"))),
 			"projectile_style": String(part.get("projectile_style", "")),
 			"projectile_behavior": String(part.get("projectile_behavior", "")),
 			"projectile_momentum": float(part.get("projectile_momentum", 0.0)),
-			"projectile_damage_coeff": float(part.get("projectile_damage_coeff", 0.0)),
+			"gun_projectile_damage_mult": _gun_projectile_damage_mult_max_for_data(part),
 			"projectile_width_m": float(part.get("projectile_width_m", 0.0)),
 			"projectile_range": float(part.get("projectile_range", part.get("range", 0.0))),
 			"projectile_speed_mult": float(part.get("projectile_speed_mult", 0.0)),
@@ -39446,14 +43149,14 @@ func _runtime_topology_segments_for_blueprint(role_key: String, unit_bp: Diction
 			"momentum_min": _limb_momentum_min_for_part(part, slot_key) if slot_key in ["limb_muscle", "muscle"] and not _component_is_torso(part) else 0.0,
 			"momentum_max": _limb_momentum_max_for_part(part, slot_key) if slot_key in ["limb_muscle", "muscle"] and not _component_is_torso(part) else 0.0,
 			"allocated_limb_momentum": _default_limb_allocated_momentum_for_part(part, slot_key) if slot_key in ["limb_muscle", "muscle"] and not _component_is_torso(part) else 0.0,
+			"limb_idle_heat_coeff": _limb_drive_heat_coeff_for_part(part, slot_key) if slot_key in ["limb_muscle", "muscle"] and not _component_is_torso(part) else 0.0,
 			"joint_angle_range": float(part.get("joint_angle_range", float(_embedded_joint_profile_for_part(part, slot_key).get("angle", 0.0)))) if slot_key in ["limb_muscle", "muscle"] and not _component_is_torso(part) else 0.0,
 			"joint_extension_m": float(part.get("joint_extension_m", float(_embedded_joint_profile_for_part(part, slot_key).get("extension", 0.0)))) if slot_key in ["limb_muscle", "muscle"] and not _component_is_torso(part) else 0.0,
 		}
 		if _topology_node_is_torso(role_key, node, unit_bp):
 			var torso_part := part
-			# PartArt.torso_saddle_local_points() is the single source for the
-			# 2x torso geometry scale used by TeamEdit. Do not pre-scale here,
-			# or combat colliders become larger than the board-drawn torso.
+			# PartArt.torso_hull_local_points() is the shared source for the
+			# visible torso hull and its runtime collider.
 			var length := maxf(0.08, float(torso_part.get("length", 0.32)))
 			var radius := maxf(0.018, float(torso_part.get("radius", 0.09)))
 			var center := (_topology_node_position(node) - origin) * TOPOLOGY_BOARD_PHYSICAL_UNITS
@@ -39461,7 +43164,7 @@ func _runtime_topology_segments_for_blueprint(role_key: String, unit_bp: Diction
 			var front_width := radius * 1.2
 			var rear_width := radius * 2.4
 			var polygon_local: Array = []
-			for raw_point in AssemblyBoardRenderer.saddle_polygon(center, axis, length, front_width, rear_width):
+			for raw_point in AssemblyBoardRenderer.torso_hull_polygon(center, axis, torso_part, length, front_width, rear_width):
 				polygon_local.append(raw_point)
 			segment["part_kind"] = "torso"
 			segment["shape"] = "polygon"
@@ -39540,6 +43243,7 @@ func _bound_joint_budget_for_stats(stats: Dictionary) -> Dictionary:
 	var counted := {}
 	var allocation := 0.0
 	var output := 0.0
+	var heat_load := 0.0
 	var count := 0
 	var total_mass := 0.0
 	var max_span := 0.0
@@ -39568,12 +43272,19 @@ func _bound_joint_budget_for_stats(stats: Dictionary) -> Dictionary:
 			var min_momentum := maxf(0.0, float(segment.get("momentum_min", 0.0)))
 			var max_momentum := maxf(0.0, float(segment.get("momentum_max", 0.0)))
 			var allocated := maxf(0.0, float(segment.get("allocated_limb_momentum", 0.0)))
-			var by_node = binding.get("allocated_limb_momentum_by_node", {})
+			var heat_coeff := _limb_drive_heat_coeff_for_segment(segment, module_part)
+			var by_node = binding.get("joint_drive_allocation_by_node", binding.get("allocated_limb_momentum_by_node", {}))
 			var node_key := str(node_index)
 			if by_node is Dictionary and Dictionary(by_node).has(node_key):
 				allocated = maxf(0.0, float(Dictionary(by_node).get(node_key, 0.0)))
 			elif by_node is Dictionary and Dictionary(by_node).has(node_index):
 				allocated = maxf(0.0, float(Dictionary(by_node).get(node_index, 0.0)))
+			elif binding.has("joint_drive_allocation_total"):
+				var target_count_drive := maxi(1, Array(binding.get("target_nodes", [])).size())
+				allocated = maxf(0.0, float(binding["joint_drive_allocation_total"]) / float(target_count_drive))
+			elif binding.has("joint_drive_demand"):
+				var target_count_demand := maxi(1, Array(binding.get("target_nodes", [])).size())
+				allocated = maxf(0.0, float(binding["joint_drive_demand"]) / float(target_count_demand))
 			elif binding.has("allocated_limb_momentum"):
 				var target_count := maxi(1, Array(binding.get("target_nodes", [])).size())
 				allocated = maxf(0.0, float(binding["allocated_limb_momentum"]) / float(target_count))
@@ -39588,6 +43299,7 @@ func _bound_joint_budget_for_stats(stats: Dictionary) -> Dictionary:
 				joint_output = _joint_output_momentum_base_for_part(part, slot_key, module_part)
 				min_momentum = _limb_momentum_min_for_part(part, slot_key)
 				max_momentum = _limb_momentum_max_for_part(part, slot_key)
+				heat_coeff = _limb_drive_heat_coeff_for_part(part, slot_key, module_part)
 				if allocated <= 0.0:
 					allocated = _default_limb_allocated_momentum_for_part(part, slot_key, module_part)
 			if allocated <= 0.0:
@@ -39598,6 +43310,7 @@ func _bound_joint_budget_for_stats(stats: Dictionary) -> Dictionary:
 			count += 1
 			allocation += allocated
 			output += joint_output
+			heat_load += maxf(0.0, allocated) * heat_coeff
 			if min_momentum > 0.0 and allocated + 0.001 < min_momentum:
 				invalid_count += 1
 				invalid_notes.append("node %d allocation %.0f < min %.0f" % [node_index, allocated, min_momentum])
@@ -39610,19 +43323,37 @@ func _bound_joint_budget_for_stats(stats: Dictionary) -> Dictionary:
 			max_span = maxf(max_span, a.distance_to(b))
 	var estimated_speed := allocation / maxf(1.0, total_mass) if count > 0 else 0.0
 	var estimated_duration := max_span / maxf(0.001, estimated_speed) if estimated_speed > 0.0 and max_span > 0.0 else 0.0
-	return {"allocation": allocation, "demand": allocation, "output": output, "count": count, "estimated_speed": estimated_speed, "estimated_duration": estimated_duration, "invalid_count": invalid_count, "invalid_note": "; ".join(invalid_notes)}
+	return {"allocation": allocation, "demand": allocation, "output": output, "heat_load": heat_load, "count": count, "estimated_speed": estimated_speed, "estimated_duration": estimated_duration, "invalid_count": invalid_count, "invalid_note": "; ".join(invalid_notes)}
 
 
 func _apply_engine_momentum_budget(stats: Dictionary, role_key: String) -> void:
 	var bound := _bound_joint_budget_for_stats(stats)
-	var thruster_allocation := maxf(0.0, float(stats.get("thruster_allocated_momentum", 0.0)))
+	var thruster_allocation := maxf(0.0, float(stats.get("thruster_drive_demand", 0.0)))
+	var thruster_boost_brake_allocation := maxf(0.0, float(stats.get("thruster_boost_extra_demand", stats.get("thruster_boost_brake_allocated_momentum", 0.0))))
 	var limb_allocation := maxf(0.0, float(bound.get("allocation", bound.get("demand", 0.0))))
-	var required := thruster_allocation + limb_allocation
+	var required := thruster_allocation + thruster_boost_brake_allocation + limb_allocation
 	var engine_budget := maxf(0.0, float(stats.get("engine_momentum_output", stats.get("engine_momentum_budget", 0.0))))
 	var ratio := engine_budget / maxf(1.0, required)
+	var chain_ratio := clampf(ratio, 0.0, 1.0)
+	var boost_extra_demand := thruster_boost_brake_allocation
+	var boost_peak_demand := maxf(0.0, float(stats.get("thruster_boost_peak_demand", thruster_allocation + boost_extra_demand)))
+	var limb_heat_load := maxf(0.0, float(bound.get("heat_load", 0.0)))
+	if int(bound.get("count", 0)) <= 0 and limb_heat_load <= 0.0:
+		limb_heat_load = maxf(0.0, float(stats.get("bound_limb_idle_heat", 0.0)))
+	if boost_peak_demand <= 0.0:
+		boost_peak_demand = thruster_allocation + boost_extra_demand
+	var boost_chain_ratio := chain_ratio
 	stats["engine_momentum_output"] = engine_budget
 	stats["engine_momentum_budget"] = engine_budget
+	stats["thruster_drive_demand"] = thruster_allocation
 	stats["thruster_allocated_momentum"] = thruster_allocation
+	stats["thruster_boost_extra_demand"] = boost_extra_demand
+	stats["thruster_boost_brake_allocated_momentum"] = boost_extra_demand
+	stats["thruster_boost_peak_demand"] = boost_peak_demand
+	stats["engine_drive_chain_ratio"] = chain_ratio
+	stats["engine_boost_chain_ratio"] = boost_chain_ratio
+	stats["thruster_effective_drive_demand"] = thruster_allocation * chain_ratio
+	stats["thruster_effective_boost_peak_demand"] = boost_peak_demand * boost_chain_ratio
 	stats["bound_limb_allocated_momentum"] = limb_allocation
 	stats["bound_joint_count"] = int(bound.get("count", 0))
 	stats["bound_joint_output_momentum"] = maxf(0.0, float(bound.get("output", 0.0)))
@@ -39631,19 +43362,19 @@ func _apply_engine_momentum_budget(stats: Dictionary, role_key: String) -> void:
 	stats["engine_momentum_required"] = required
 	stats["engine_momentum_margin"] = engine_budget - required
 	stats["engine_momentum_ratio"] = ratio
-	stats["bound_limb_idle_heat"] = limb_allocation * 0.018
+	stats["bound_limb_idle_heat"] = limb_heat_load
 	if role_key == "barrier":
-		stats["engine_momentum_note"] = "BARRIER STATIC: no engine momentum budget required."
+		stats["engine_momentum_note"] = "BARRIER STATIC: no drive budget required."
 	elif int(bound.get("invalid_count", 0)) > 0:
-		stats["engine_momentum_note"] = "INVALID: bound limb momentum allocation outside limb range (%s)." % String(bound.get("invalid_note", "range error"))
+		stats["engine_momentum_note"] = "INVALID: bound limb drive demand outside limb range (%s)." % String(bound.get("invalid_note", "range error"))
 	elif required <= 0.0:
-		stats["engine_momentum_note"] = "BUDGET OK: no thruster or bound limb allocation."
+		stats["engine_momentum_note"] = "BUDGET OK: no thruster or bound limb drive demand."
 	elif engine_budget <= 0.0:
-		stats["engine_momentum_note"] = "INVALID: no engine momentum output for thrusters or bound limbs."
+		stats["engine_momentum_note"] = "INVALID: no engine output for thrusters or bound limbs."
 	elif engine_budget < required:
-		stats["engine_momentum_note"] = "INVALID: engine momentum output %.0f < thruster %.0f + bound limbs %.0f." % [engine_budget, thruster_allocation, limb_allocation]
+		stats["engine_momentum_note"] = "INVALID: engine output %.0f < thruster drive %.0f + boost/brake %.0f + bound limbs %.0f." % [engine_budget, thruster_allocation, boost_extra_demand, limb_allocation]
 	else:
-		stats["engine_momentum_note"] = "BUDGET OK: engine momentum %.0f covers thruster %.0f + bound limbs %.0f%s." % [engine_budget, thruster_allocation, limb_allocation, " with reserve" if ratio >= 1.18 else ""]
+		stats["engine_momentum_note"] = "BUDGET OK: engine output %.0f covers thruster drive %.0f + boost/brake %.0f + bound limbs %.0f%s." % [engine_budget, thruster_allocation, boost_extra_demand, limb_allocation, " with reserve" if ratio >= 1.18 else ""]
 
 
 func _topology_chain_rotation_radius_units(entries: Array) -> float:
@@ -39772,9 +43503,9 @@ func _format_unit_stats(stats: Dictionary) -> String:
 		return _format_unit_stats_zh(stats)
 	var resist: Dictionary = stats["resistances"]
 	var tiers: Dictionary = stats.get("counter_tiers", {})
-	var heat_line := "HERO HEAT CAP %.0f  %s" % [float(stats.get("heat_capacity", 0.0)), String(stats.get("soul_heat_note", ""))] if String(stats.get("role", "")) == "hero" else "NO HEAT SLOT: puppets and barriers do not track heat"
+	var heat_line := "HERO HEAT POOL %.0f  %s" % [float(stats.get("heat_capacity", 0.0)), String(stats.get("soul_heat_note", ""))] if String(stats.get("role", "")) == "hero" else "NO HEAT SLOT: puppets and barriers do not track heat"
 	if String(stats.get("role", "")) == "hero":
-		heat_line = "%s\nHEAT SOURCES: back hits, heat fields, and future explicit heat specials only; boost and universal attacks spend no heat." % heat_line
+		heat_line = "%s\nHEAT SOURCES: idle heat is build pressure; boost, back hits, heat fields, and explicit heat specials add runtime heat." % heat_line
 	var electronic_armor_line := String(stats.get("electronic_armor_note", ""))
 	if electronic_armor_line != "":
 		heat_line = "%s\n%s" % [heat_line, electronic_armor_line]
@@ -39785,29 +43516,32 @@ func _format_unit_stats(stats: Dictionary) -> String:
 	]
 	momentum_line = "%s\nMELEE STABILITY %.0f: momentum gap under this value causes no stagger; glove/drill/katana tips get terminal momentum bonus" % [momentum_line, float(stats.get("melee_stability_threshold", 0.0))]
 	momentum_line = "%s\n%s\n%s" % [momentum_line, String(stats.get("joint_slot_note", "")), String(stats.get("swept_collision_note", ""))]
-	var power_line := "ENGINE x%d  POWER %.0f  ALLOC %.0f  LEFT %.0f  %s\nTHERMAL %.1f idle %.1f margin %.1f  %s" % [
+	var thruster_demand := float(stats.get("thruster_drive_demand", stats.get("thruster_allocated_momentum", 0.0)))
+	var thermal_pool := _thermal_load_pool_for_stats(stats)
+	var power_line := "ENGINE x%d  DRIVE %.0f  DEMAND %.0f  LEFT %.0f  %s\nTHERMAL pool %.1f idle %.1f margin %.1f cool %.1f  %s" % [
 		int(stats.get("engine_count", 0)),
 		float(stats.get("engine_momentum_output", stats.get("engine_momentum_budget", 0.0))),
 		float(stats.get("engine_momentum_required", 0.0)),
 		float(stats.get("engine_momentum_margin", 0.0)),
 		String(stats.get("engine_momentum_note", "")),
-		float(stats.get("cooling", 0.0)),
+		thermal_pool,
 		float(stats.get("idle_heat_load", 0.0)),
 		float(stats.get("thermal_margin", 0.0)),
+		float(stats.get("cooling", 0.0)),
 		String(stats.get("thermal_note", "")),
 	]
-	var movement_line := "MOMENTUM MOVE body %.2f  boost %.2f  accel %.2f  boost %.2fs  alloc %.0f/move %.0f/B+%.0f/Btot%.0f" % [
+	var movement_line := "MOMENTUM MOVE body %.2f  boost %.2f  accel %.2f  boost %.2fs  req %.0f/move %.0f/B+%.0f/Btot%.0f" % [
 		float(stats.get("body_move_speed", float(stats.get("speed", 0.0)) * MOMENTUM_MOVE_SPEED_MULT)),
 		float(stats.get("boost_speed", 0.0)),
 		float(stats.get("thruster_acceleration", 0.0)),
 		float(stats.get("boost_duration", 0.0)),
-		float(stats.get("thruster_allocated_momentum", 0.0)),
+		thruster_demand,
 		float(stats.get("move_momentum", 0.0)),
 		float(stats.get("boost_momentum", 0.0)),
 		float(stats.get("boost_total_momentum", 0.0)),
 	]
 	var stiffness_line := String(stats.get("stiffness_note", ""))
-	return "HP %d  MASS %.0f  POWER %.0f  ALLOC %.0f  LEFT %.0f  LEN %.2f  RAD %.2f  SPD %.2f  TURN %.2f  SEC %.2f\n%s\n%s\n%s\n%s\n%s\n%s\nDMG %s normal/front/rear %d/%d/%d  RNG %.2f/%.2f/%.2f  MOVE %.0f / BOOST+ %.0f %s\nAI %s  FIELD %s  MAT %s  SIZE %s  PORT/BAY/SOFT %d/%d/%d\n%s  %s\n%s\n%s  %s\nMELEE TAKEN x B/P/T %.2f/%.2f/%.2f  CTR %d/%d/%d" % [
+	return "HP %d  MASS %.0f  DRIVE %.0f  DEMAND %.0f  LEFT %.0f  LEN %.2f  RAD %.2f  SPD %.2f  TURN %.2f  SEC %.2f\n%s\n%s\n%s\n%s\n%s\n%s\nDMG %s normal/front/rear %d/%d/%d  RNG %.2f/%.2f/%.2f  MOVE %.0f / BOOST+ %.0f %s\nAI %s  FIELD %s  MAT %s  SIZE %s  PORT/BAY/SOFT %d/%d/%d\n%s  %s\n%s\n%s  %s\nMELEE TAKEN x B/P/T %.2f/%.2f/%.2f  CTR %d/%d/%d" % [
 		int(stats["health"]),
 		float(stats["mass"]),
 		float(stats.get("engine_momentum_output", stats.get("engine_momentum_budget", 0.0))),
@@ -39858,29 +43592,32 @@ func _format_unit_stats(stats: Dictionary) -> String:
 func _format_unit_stats_zh(stats: Dictionary) -> String:
 	var resist: Dictionary = stats.get("resistances", {})
 	var tiers: Dictionary = stats.get("counter_tiers", {})
-	var heat_line := "英雄热槽 %.0f  %s" % [float(stats.get("heat_capacity", 0.0)), _localized_system_text(String(stats.get("soul_heat_note", "")))] if String(stats.get("role", "")) == "hero" else "无热力槽：傀儡和结界不显示热力"
+	var heat_line := "英雄热力池 %.0f  %s" % [float(stats.get("heat_capacity", 0.0)), _localized_system_text(String(stats.get("soul_heat_note", "")))] if String(stats.get("role", "")) == "hero" else "无热力槽：傀儡和结界不显示热力"
 	if String(stats.get("role", "")) == "hero":
-		heat_line = "%s\n热力来源：背刺加热、结界热场和未来明确消耗热力的强力必杀；boost 与通用攻击不消耗热力。" % heat_line
+		heat_line = "%s\n热力来源：常态热只做构筑压力；Boost、背刺加热、结界热场和明确消耗热力的强力必杀会产生运行时热。" % heat_line
 	var electronic_armor_line := _localized_system_text(String(stats.get("electronic_armor_note", "")))
 	if electronic_armor_line != "":
 		heat_line = "%s\n%s" % [heat_line, electronic_armor_line]
-	var power_line := "引擎 x%d  动力 %.0f / 已分配 %.0f / 余量 %.0f  %s\n热管理 散热 %.1f / 常态热 %.1f / 余量 %.1f  %s" % [
+	var thruster_demand := float(stats.get("thruster_drive_demand", stats.get("thruster_allocated_momentum", 0.0)))
+	var thermal_pool := _thermal_load_pool_for_stats(stats)
+	var power_line := "引擎 x%d  动力预算 %.0f / 需求 %.0f / 余量 %.0f  %s\n热管理 热力池 %.1f / 常态热 %.1f / 余量 %.1f / 散热速度 %.1f  %s" % [
 		int(stats.get("engine_count", 0)),
 		float(stats.get("engine_momentum_output", stats.get("engine_momentum_budget", 0.0))),
 		float(stats.get("engine_momentum_required", 0.0)),
 		float(stats.get("engine_momentum_margin", 0.0)),
 		_localized_system_text(String(stats.get("engine_momentum_note", ""))),
-		float(stats.get("cooling", 0.0)),
+		thermal_pool,
 		float(stats.get("idle_heat_load", 0.0)),
 		float(stats.get("thermal_margin", 0.0)),
+		float(stats.get("cooling", 0.0)),
 		_localized_system_text(String(stats.get("thermal_note", ""))),
 	]
-	var movement_line := "动力移动 机体速度 %.2f  Boost速度 %.2f  推进加速 %.2f  Boost持续 %.2fs  分配 %.0f/移动 %.0f/B+%.0f/B总%.0f" % [
+	var movement_line := "动力移动 机体速度 %.2f  Boost速度 %.2f  推进加速 %.2f  Boost持续 %.2fs  需求 %.0f/移动 %.0f/B+%.0f/B总%.0f" % [
 		float(stats.get("body_move_speed", float(stats.get("speed", 0.0)) * MOMENTUM_MOVE_SPEED_MULT)),
 		float(stats.get("boost_speed", 0.0)),
 		float(stats.get("thruster_acceleration", 0.0)),
 		float(stats.get("boost_duration", 0.0)),
-		float(stats.get("thruster_allocated_momentum", 0.0)),
+		thruster_demand,
 		float(stats.get("move_momentum", 0.0)),
 		float(stats.get("boost_momentum", 0.0)),
 		float(stats.get("boost_total_momentum", 0.0)),
@@ -39893,7 +43630,7 @@ func _format_unit_stats_zh(stats: Dictionary) -> String:
 	]
 	momentum_line = "%s\n%s\n%s" % [momentum_line, _localized_system_text(String(stats.get("joint_slot_note", ""))), _localized_system_text(String(stats.get("swept_collision_note", "")))]
 	var stiffness_line := _localized_system_text(String(stats.get("stiffness_note", "")))
-	return "生命 %d  质量 %.0f  动力 %.0f  已分配 %.0f  余量 %.0f  长 %.2f  半径 %.2f  速度 %.2f  转向 %.2f  信息安全 %.2f\n%s\n%s\n%s\n%s\n%s\n%s\n伤害 %s 普通/正面护甲/背面激活 %d/%d/%d  射程 %.2f/%.2f/%.2f  移动动量 %.0f / Boost额外 %.0f %s\n傀儡AI %s  结界逻辑 %s  材料 %s  尺寸 %s  接口/武器/软件槽 %d/%d/%d\n%s  %s\n%s\n%s  %s\n承受近战 钝/刺/斩 %.2f/%.2f/%.2f  克制 %d/%d/%d" % [
+	return "生命 %d  质量 %.0f  动力预算 %.0f  需求 %.0f  余量 %.0f  长 %.2f  半径 %.2f  速度 %.2f  转向 %.2f  信息安全 %.2f\n%s\n%s\n%s\n%s\n%s\n%s\n伤害 %s 普通/正面护甲/背面激活 %d/%d/%d  射程 %.2f/%.2f/%.2f  移动动量 %.0f / Boost额外 %.0f %s\n傀儡AI %s  结界逻辑 %s  材料 %s  尺寸 %s  接口/武器/软件槽 %d/%d/%d\n%s  %s\n%s\n%s  %s\n承受近战 钝/刺/斩 %.2f/%.2f/%.2f  克制 %d/%d/%d" % [
 		int(stats.get("health", 0)),
 		float(stats.get("mass", 0.0)),
 		float(stats.get("engine_momentum_output", stats.get("engine_momentum_budget", 0.0))),
@@ -39991,7 +43728,14 @@ func _economy_rebalanced_plugin_component(part: Dictionary, slot_key: String) ->
 		"booster":
 			var normal_momentum := median_mass * ECONOMY_THRUSTER_TARGET_SPEED
 			if not adjusted.has("allocated_momentum"):
-				adjusted["allocated_momentum"] = normal_momentum
+				var defaults := _thruster_family_defaults(String(adjusted.get("thruster_family", "cruise_blue")))
+				var move_eff := clampf(float(adjusted.get("move_efficiency", defaults.get("move_efficiency", 1.0))), 0.2, 3.0)
+				adjusted["allocated_momentum"] = normal_momentum / maxf(0.2, move_eff)
+			if not adjusted.has("momentum_min") and not adjusted.has("drive_demand"):
+				adjusted["momentum_min"] = maxf(0.0, float(adjusted.get("allocated_momentum", normal_momentum)))
+			elif adjusted.has("drive_demand") and not adjusted.has("momentum_min"):
+				adjusted["momentum_min"] = maxf(0.0, float(adjusted.get("drive_demand", 0.0)))
+			adjusted["drive_demand"] = maxf(0.0, float(adjusted.get("momentum_min", 0.0)))
 			if not adjusted.has("thruster_duration"):
 				adjusted["thruster_duration"] = ECONOMY_THRUSTER_TARGET_DURATION
 			if not adjusted.has("boost_momentum"):
@@ -40011,7 +43755,6 @@ func _economy_rebalanced_plugin_component(part: Dictionary, slot_key: String) ->
 				adjusted.erase(legacy_key)
 		"cooling":
 			adjusted = _cooling_with_v3_defaults(adjusted)
-			adjusted.erase("cooling")
 	return adjusted
 
 
@@ -40134,6 +43877,8 @@ func _gun_part_with_runtime_defaults(part: Dictionary, slot_key: String) -> Dict
 		gun["gun_kind"] = _gun_kind_for_data(gun)
 	if not gun.has("ammo_kind"):
 		gun["ammo_kind"] = _ammo_kind_for_data(gun)
+	if not gun.has("gun_projectile_damage_mult"):
+		gun["gun_projectile_damage_mult"] = _gun_projectile_damage_mult_max_for_data(gun)
 	if not gun.has("fire_rate"):
 		gun["fire_rate"] = _gun_default_fire_rate(gun, profile_key)
 	if not gun.has("fire_interval"):
@@ -40152,7 +43897,7 @@ func _gun_part_with_runtime_defaults(part: Dictionary, slot_key: String) -> Dict
 			gun["carried_ammo"] = STANDARD_SNIPER_AMMO_CAPACITY
 			gun["ammo_capacity"] = {"bullet": STANDARD_SNIPER_AMMO_CAPACITY}
 			gun["projectile_momentum"] = _unit2_boost_momentum_reference() / 10.0
-			gun["projectile_damage_coeff"] = PART_DAMAGE_COEFF_TERMINAL_MELEE * STANDARD_SNIPER_PROJECTILE_DAMAGE_MULT
+			gun["gun_projectile_damage_mult"] = STANDARD_SNIPER_GUN_DAMAGE_COEFF
 			gun["projectile_width_m"] = STANDARD_SNIPER_PROJECTILE_WIDTH_M
 			gun["projectile_consumes_on_fire"] = true
 			gun["projectile_break_coeff"] = 0.0
@@ -40173,7 +43918,7 @@ func _gun_part_with_runtime_defaults(part: Dictionary, slot_key: String) -> Dict
 			gun["carried_ammo"] = STANDARD_CHEMICAL_SPRAYER_AMMO_CAPACITY
 			gun["ammo_capacity"] = {"chemical": STANDARD_CHEMICAL_SPRAYER_AMMO_CAPACITY}
 			gun["projectile_momentum"] = _unit2_boost_momentum_reference() / STANDARD_CHEMICAL_SPRAYER_MOMENTUM_DIVISOR
-			gun["projectile_damage_coeff"] = PART_DAMAGE_COEFF_TERMINAL_MELEE * STANDARD_CHEMICAL_SPRAYER_DOT_DAMAGE_MULT
+			gun["gun_projectile_damage_mult"] = _gun_projectile_damage_mult_max_for_data(gun)
 			gun["projectile_width_m"] = STANDARD_CHEMICAL_SPRAYER_WIDTH_M
 			gun["projectile_range"] = STANDARD_CHEMICAL_SPRAYER_RANGE_M
 			gun["range"] = STANDARD_CHEMICAL_SPRAYER_RANGE_M
@@ -40201,7 +43946,7 @@ func _gun_part_with_runtime_defaults(part: Dictionary, slot_key: String) -> Dict
 			gun["carried_ammo"] = STANDARD_LASER_AMMO_CAPACITY
 			gun["ammo_capacity"] = {"laser": STANDARD_LASER_AMMO_CAPACITY}
 			gun["projectile_momentum"] = STANDARD_LASER_PROJECTILE_MOMENTUM
-			gun["projectile_damage_coeff"] = STANDARD_LASER_PROJECTILE_DAMAGE_COEFF
+			gun["gun_projectile_damage_mult"] = _gun_projectile_damage_mult_max_for_data(gun)
 			gun["projectile_width_m"] = STANDARD_LASER_WIDTH_M
 			gun["projectile_range"] = STANDARD_LASER_RANGE_M
 			gun["range"] = STANDARD_LASER_RANGE_M
@@ -40222,15 +43967,13 @@ func _gun_part_with_runtime_defaults(part: Dictionary, slot_key: String) -> Dict
 			gun["carried_ammo"] = STANDARD_MISSILE_AMMO_CAPACITY
 			gun["ammo_capacity"] = {"explosive": STANDARD_MISSILE_AMMO_CAPACITY}
 			gun["projectile_momentum"] = STANDARD_MISSILE_PROJECTILE_MOMENTUM
-			gun["projectile_damage_coeff"] = STANDARD_MISSILE_PROJECTILE_DAMAGE_COEFF
+			gun["gun_projectile_damage_mult"] = _gun_projectile_damage_mult_max_for_data(gun)
 			gun["projectile_width_m"] = STANDARD_MISSILE_WIDTH_M
 			gun["projectile_range"] = STANDARD_MISSILE_RANGE_M
 			gun["range"] = STANDARD_MISSILE_RANGE_M
 			gun["lane_range"] = STANDARD_MISSILE_WIDTH_M * 0.5
 			gun["projectile_speed_mult"] = STANDARD_MISSILE_SPEED_MULT
 			gun["explosion_radius"] = STANDARD_MISSILE_EXPLOSION_RADIUS
-			gun["explosion_damage"] = 9
-			gun["explosion_damage_type"] = "bullet"
 			gun["explosion_style"] = "missile"
 			gun["missile_lock_priority"] = "screen_hero_first"
 			gun["missile_lock_cone_degrees"] = 52.0
@@ -40247,7 +43990,7 @@ func _gun_part_with_runtime_defaults(part: Dictionary, slot_key: String) -> Dict
 			gun["carried_ammo"] = STANDARD_WEB_TETHER_AMMO_CAPACITY
 			gun["ammo_capacity"] = {"web": STANDARD_WEB_TETHER_AMMO_CAPACITY}
 			gun["projectile_momentum"] = _unit2_boost_momentum_reference() / STANDARD_WEB_TETHER_MOMENTUM_DIVISOR
-			gun["projectile_damage_coeff"] = 0.0
+			gun["gun_projectile_damage_mult"] = 0.0
 			gun["projectile_break_coeff"] = 0.0
 			gun["projectile_width_m"] = STANDARD_WEB_TETHER_WIDTH_M
 			gun["projectile_range"] = STANDARD_WEB_TETHER_RANGE_M
@@ -40301,6 +44044,9 @@ func _gun_part_with_runtime_defaults(part: Dictionary, slot_key: String) -> Dict
 	elif String(gun.get("gun_kind", "")) == "sniper" and String(gun.get("ammo_kind", "")) == "bullet":
 		var sniper_speed := maxf(1.0, float(gun.get("projectile_collision_speed", PROJECTILE_SPEED_UNIT * 2.4)))
 		gun["projectile_mass"] = maxf(0.01, float(gun.get("projectile_momentum", 0.0)) / sniper_speed)
+	for legacy_damage_key in ["normal_damage", "projectile_damage", "projectile_damage_coeff", "ammo_damage_coeff", "gun_damage_coeff", "explosion_damage", "explosion_damage_type"]:
+		gun.erase(legacy_damage_key)
+	gun["gun_projectile_damage_mult"] = _gun_projectile_damage_mult_max_for_data(gun)
 	return gun
 
 
@@ -40346,29 +44092,7 @@ func _software_joint_component(part: Dictionary) -> Dictionary:
 func _selected_component(role_key: String, slot_key: String, index: int) -> Dictionary:
 	var catalog: Array = _catalog_for(role_key, slot_key)
 	var part: Dictionary = catalog[clampi(index, 0, catalog.size() - 1)]
-	part = _component_with_size_design(part, slot_key)
-	part = _economy_priced_component(part)
-	part = _economy_rebalanced_plugin_component(part, slot_key)
-	part = _gun_part_with_runtime_defaults(part, slot_key)
-	if slot_key == "joint":
-		part = _software_joint_component(part)
-	elif slot_key == "limb_muscle":
-		var shortened_limb := part.duplicate(true)
-		var original_length := float(shortened_limb.get("length", 0.0))
-		shortened_limb["raw_length"] = original_length
-		shortened_limb["length"] = maxf(0.04, original_length * LIMB_MUSCLE_LENGTH_MULTIPLIER)
-		shortened_limb["length_rule_mult"] = LIMB_MUSCLE_LENGTH_MULTIPLIER
-		shortened_limb["connection_ends"] = 2
-		part = shortened_limb
-	part = _limb_drive_component_with_defaults(part, slot_key)
-	part = _combat_model_normalized_component(part, slot_key)
-	part = _without_legacy_power_fields(part)
-	if slot_key == "booster":
-		var software_thruster := part.duplicate(true)
-		software_thruster["hp"] = 0
-		software_thruster["torso_slot_payload"] = true
-		return _without_legacy_power_fields(software_thruster)
-	return part
+	return _normalized_catalog_part(slot_key, part, "selected")
 
 
 func _blueprint_for(player_id: int, role_key: String, unit_index: int) -> Dictionary:
@@ -40413,16 +44137,7 @@ func _normalize_unit_to_component_topology(role_key: String, unit_bp: Dictionary
 
 
 func _catalog_runtime_part(raw_part: Dictionary, slot_key: String) -> Dictionary:
-	var part := raw_part.duplicate(true)
-	match slot_key:
-		"engine", "booster", "cooling", "ammo":
-			part = _economy_rebalanced_plugin_component(part, slot_key)
-		"limb_muscle", "muscle":
-			part = _limb_drive_component_with_defaults(part, slot_key)
-			part = _combat_model_normalized_component(part, slot_key)
-		_:
-			part = _combat_model_normalized_component(part, slot_key)
-	return _without_legacy_power_fields(part)
+	return _normalized_catalog_part(slot_key, raw_part, "runtime")
 
 
 func _append_unique_catalog_parts(target: Array, source: Array, seen: Dictionary, slot_key: String) -> void:
@@ -40575,8 +44290,8 @@ func _apply_manufacturer_synergy(stats: Dictionary, counts: Dictionary) -> void:
 		notes.append("RAZOR DMG +%.0f" % (2.0 * strength))
 	if counts.has("AFTERBURN UNION"):
 		var strength := clampf(float(counts["AFTERBURN UNION"]) / 4.0, 0.0, 1.5)
-		stats["move_momentum"] = float(stats.get("move_momentum", 0.0)) * (1.0 + 0.05 * strength)
-		stats["boost_momentum"] = float(stats.get("boost_momentum", 0.0)) * (1.0 + 0.08 * strength)
+		stats["move_efficiency_sum"] = float(stats.get("move_efficiency_sum", 0.0)) * (1.0 + 0.05 * strength)
+		stats["boost_efficiency_sum"] = float(stats.get("boost_efficiency_sum", 0.0)) * (1.0 + 0.08 * strength)
 		stats["brake_efficiency"] = maxf(float(stats.get("brake_efficiency", 1.0)), 1.0 + 0.04 * strength)
 		stats["cooling"] = float(stats.get("cooling", 0.0)) + 2.5 * strength
 		notes.append("BOOST +%.0f%%" % (8.0 * strength))
@@ -40693,21 +44408,20 @@ func _manufacturer_discount_from_counts(counts: Dictionary) -> float:
 
 
 func _build_parallax_sky() -> void:
+	if BATTLE_MINIMAL_BACKGROUND:
+		return
 	_add_parallax_starfield("FarStarVeil", 170, 0.025, Color(0.58, 0.76, 1.0, 1.0), 1.0, -110)
 	_add_parallax_starfield("WarmStarScatter", 96, 0.07, Color(1.0, 0.82, 0.48, 1.0), 1.35, -104)
 	_add_parallax_nebula("BlueRiftNebula", Vector2(880.0, 198.0), Vector2(360.0, 128.0), [
-		Color(0.08, 0.46, 1.0, 0.12),
-		Color(0.36, 0.1, 0.92, 0.1),
-		Color(0.0, 0.9, 1.0, 0.08),
+		Color(0.08, 0.46, 1.0, 0.07),
+		Color(0.36, 0.1, 0.92, 0.06),
+		Color(0.0, 0.9, 1.0, 0.045),
 	], 0.045, -108)
 	_add_parallax_nebula("RedClusterWake", Vector2(285.0, 520.0), Vector2(250.0, 108.0), [
-		Color(1.0, 0.22, 0.24, 0.1),
-		Color(1.0, 0.68, 0.18, 0.08),
-		Color(0.66, 0.1, 0.9, 0.09),
+		Color(1.0, 0.22, 0.24, 0.055),
+		Color(1.0, 0.68, 0.18, 0.045),
+		Color(0.66, 0.1, 0.9, 0.05),
 	], 0.13, -103)
-	_add_parallax_planet("DistantDawnPlanet", Vector2(1054.0, 156.0), 86.0, Color(0.16, 0.44, 0.92, 0.72), Color(0.74, 0.92, 1.0, 0.32), 0.08, true, -102)
-	_add_parallax_planet("AmberMoon", Vector2(178.0, 220.0), 42.0, Color(0.96, 0.54, 0.18, 0.62), Color(1.0, 0.86, 0.42, 0.28), 0.18, false, -100)
-	_add_parallax_planet("LowVioletGasGiant", Vector2(1116.0, 570.0), 62.0, Color(0.52, 0.3, 0.88, 0.5), Color(0.9, 0.72, 1.0, 0.22), 0.24, false, -99)
 	_add_parallax_dust_lanes("NearIonDust", 38, 0.32, -98)
 	_update_parallax_background()
 
@@ -40715,7 +44429,7 @@ func _build_parallax_sky() -> void:
 func _add_parallax_node(node: Node2D, base_position: Vector2, parallax: float) -> void:
 	node.position = base_position
 	add_child(node)
-	parallax_nodes.append({"node": node, "base": base_position, "parallax": parallax})
+	parallax_nodes.append({"node": node, "base": base_position, "base_scale": node.scale, "base_rotation": node.rotation, "parallax": parallax})
 
 
 func _add_parallax_starfield(layer_name: String, count: int, parallax: float, tint: Color, scale_mult: float, z: int) -> void:
@@ -40731,18 +44445,18 @@ func _add_parallax_starfield(layer_name: String, count: int, parallax: float, ti
 		star.position = Vector2(x, y)
 		star.polygon = _space_diamond(Vector2.ZERO, size)
 		var star_color := tint.lerp(Color.WHITE, 0.18 + float(i % 5) * 0.05)
-		star_color.a = 0.28 + float(i % 7) * 0.055
+		star_color.a = 0.16 + float(i % 7) * 0.032
 		star.color = star_color
 		layer.add_child(star)
 		if i % 13 == 0:
 			var flare_h := Line2D.new()
 			flare_h.width = maxf(0.7, size * 0.5)
-			flare_h.default_color = Color(star.color.r, star.color.g, star.color.b, 0.2)
+			flare_h.default_color = Color(star.color.r, star.color.g, star.color.b, 0.1)
 			flare_h.points = PackedVector2Array([Vector2(-size * 4.0, 0.0), Vector2(size * 4.0, 0.0)])
 			star.add_child(flare_h)
 			var flare_v := Line2D.new()
 			flare_v.width = maxf(0.7, size * 0.42)
-			flare_v.default_color = Color(star.color.r, star.color.g, star.color.b, 0.16)
+			flare_v.default_color = Color(star.color.r, star.color.g, star.color.b, 0.08)
 			flare_v.points = PackedVector2Array([Vector2(0.0, -size * 3.0), Vector2(0.0, size * 3.0)])
 			star.add_child(flare_v)
 	_add_parallax_node(layer, Vector2.ZERO, parallax)
@@ -40821,7 +44535,7 @@ func _add_parallax_dust_lanes(layer_name: String, count: int, parallax: float, z
 		var lane := Line2D.new()
 		lane.name = "DustLane%d" % i
 		lane.width = 1.0 + float(i % 4) * 0.55
-		lane.default_color = Color(0.42, 0.82, 1.0, 0.07 + float(i % 5) * 0.012)
+		lane.default_color = Color(0.42, 0.82, 1.0, 0.035 + float(i % 5) * 0.007)
 		var x := -280.0 + float((i * 193 + 17) % 1840)
 		var y := 80.0 + float((i * 71 + 29) % 560)
 		lane.rotation = -0.18 + float(i % 9) * 0.045
@@ -40856,9 +44570,16 @@ func _space_diamond(center: Vector2, size: float) -> PackedVector2Array:
 func _update_parallax_background() -> void:
 	if parallax_nodes.is_empty():
 		_update_world_coordinate_background()
+		_update_near_cosmic_dust()
 		return
 	var screen_scale := _battle_world_to_screen_scale()
 	var camera_world := Vector2(camera_center, camera_lane_center)
+	var center_screen := Vector2((ARENA_LEFT + ARENA_RIGHT) * 0.5, (ARENA_TOP + ARENA_BOTTOM) * 0.5)
+	var twist_phase := float(mobius_rotation_state.get("twist_phase", mobius_rotation_state.get("angle", 0.0)))
+	var mobius_depth := 0.5 + sin(twist_phase * 0.67) * 0.08
+	if mobius_enabled:
+		var center_projection := _mobius_project_coord(_mobius_camera_coord())
+		mobius_depth = float(center_projection.get("depth01", mobius_depth))
 	for entry in parallax_nodes:
 		var layer_info: Dictionary = entry
 		var node: Node2D = layer_info.get("node", null)
@@ -40867,11 +44588,35 @@ func _update_parallax_background() -> void:
 		var base_position: Vector2 = layer_info.get("base", Vector2.ZERO)
 		var parallax := float(layer_info.get("parallax", 0.0))
 		var offset := Vector2(camera_world.x * screen_scale * parallax, camera_world.y * screen_scale * parallax)
-		node.position = base_position - offset
+		var base_scale: Vector2 = layer_info.get("base_scale", node.scale)
+		var base_rotation := float(layer_info.get("base_rotation", 0.0))
+		var shifted := base_position - offset
+		if mobius_enabled:
+			var drift := Vector2(sin(twist_phase * 0.31 + parallax * 11.0), cos(twist_phase * 0.27 + parallax * 7.0)) * parallax * 22.0
+			node.position = shifted + drift
+			node.rotation = base_rotation
+			var depth_pulse := 1.0 + ((mobius_depth - 0.5) * 1.2 + sin(twist_phase + parallax * 9.0) * 0.28) * MOBIUS_PARALLAX_STRENGTH * parallax
+			node.scale = base_scale * clampf(depth_pulse, 0.84, 1.24)
+		else:
+			node.position = shifted
+			node.rotation = base_rotation
+			node.scale = base_scale
 	_update_world_coordinate_background()
+	_update_near_cosmic_dust()
 
 
 func _update_world_coordinate_background() -> void:
+	if BATTLE_MINIMAL_BACKGROUND:
+		for raw_line in world_coordinate_grid_lines:
+			if raw_line is Line2D:
+				var line := raw_line as Line2D
+				line.visible = false
+		for raw_entry in world_background_art_nodes:
+			if raw_entry is Dictionary:
+				var node: Node2D = Dictionary(raw_entry).get("node", null)
+				if node != null and is_instance_valid(node):
+					node.visible = false
+		return
 	for raw_line in world_coordinate_grid_lines:
 		if raw_line is Line2D:
 			var line := raw_line as Line2D
@@ -40890,10 +44635,65 @@ func _update_world_coordinate_background() -> void:
 		if node == null or not is_instance_valid(node):
 			continue
 		var world_pos: Vector2 = entry.get("world_pos", Vector2.ZERO)
-		var ring_delta: float = _ring_delta(camera_center, wrapf(world_pos.x, 0.0, RING_LENGTH))
-		var lane_delta: float = world_pos.y - camera_lane_center
-		node.position = center_screen + Vector2(ring_delta, lane_delta) * screen_scale
-		node.visible = absf(ring_delta) <= half_width_units + 0.8 and absf(lane_delta) <= half_height_units + 0.8
+		if mobius_enabled:
+			var coord := MobiusWorld.lift_ring_lane_near(camera_mobius_s, world_pos.x, world_pos.y, RING_LENGTH)
+			var projection := _mobius_project_coord(coord)
+			node.position = projection.get("position", center_screen)
+			node.visible = bool(projection.get("visible", false))
+			var depth := float(projection.get("depth01", 0.5))
+			node.scale = Vector2.ONE * clampf(float(projection.get("scale", 1.0)) * lerpf(0.52, 0.86, depth), 0.38, 1.22)
+			node.z_index = int(projection.get("z_index", -32)) - 52
+			node.modulate = Color(1.0, 1.0, 1.0, lerpf(0.42, 1.0, depth))
+		else:
+			var ring_delta: float = _ring_delta(camera_center, wrapf(world_pos.x, 0.0, RING_LENGTH))
+			var lane_delta: float = world_pos.y - camera_lane_center
+			node.position = center_screen + Vector2(ring_delta, lane_delta) * screen_scale
+			node.visible = absf(ring_delta) <= half_width_units + 0.8 and absf(lane_delta) <= half_height_units + 0.8
+			node.modulate = Color.WHITE
+
+
+func _update_near_cosmic_dust() -> void:
+	if BATTLE_MINIMAL_BACKGROUND:
+		for raw_entry in world_near_dust_nodes:
+			if raw_entry is Dictionary:
+				var node: Node = Dictionary(raw_entry).get("node", null)
+				if node != null and is_instance_valid(node):
+					node.visible = false
+		return
+	if world_near_dust_nodes.is_empty():
+		return
+	var center_screen := Vector2((ARENA_LEFT + ARENA_RIGHT) * 0.5, (ARENA_TOP + ARENA_BOTTOM) * 0.5)
+	var twist_phase := float(mobius_rotation_state.get("twist_phase", mobius_rotation_state.get("angle", 0.0)))
+	var pivot_depth := 0.5
+	if mobius_enabled:
+		var pivot_projection := _mobius_project_coord(_mobius_camera_coord())
+		pivot_depth = float(pivot_projection.get("depth01", 0.5))
+	for raw_entry in world_near_dust_nodes:
+		if not (raw_entry is Dictionary):
+			continue
+		var entry: Dictionary = raw_entry
+		var node: Line2D = entry.get("node", null)
+		if node == null or not is_instance_valid(node):
+			continue
+		var base_points: PackedVector2Array = entry.get("base_points", PackedVector2Array())
+		var parallax := float(entry.get("parallax", 0.08))
+		var phase := float(entry.get("phase", 0.0))
+		var drift := Vector2(
+			sin(twist_phase * 0.6 + phase) * 22.0,
+			cos(twist_phase * 0.42 + phase * 1.7) * 14.0
+		) * parallax * 4.0
+		var transformed := PackedVector2Array()
+		var depth_scale := clampf(0.86 + (pivot_depth - 0.5) * 0.26 + sin(twist_phase + phase) * 0.045, 0.76, 1.14)
+		for i in range(base_points.size()):
+			var p := base_points[i]
+			var wave := Vector2(0.0, sin(twist_phase * 0.82 + phase + float(i) * 0.37) * parallax * 12.0)
+			var shifted := p + drift + wave
+			transformed.append(center_screen + (shifted - center_screen) * depth_scale)
+		node.points = transformed
+		node.width = float(entry.get("base_width", node.width)) * depth_scale
+		var color: Color = entry.get("base_color", node.default_color)
+		node.default_color = Color(color.r, color.g, color.b, color.a * (0.72 + pivot_depth * 0.44))
+		node.visible = game_state == STATE_BATTLE
 
 
 func _build_world_background_art() -> void:
@@ -40903,6 +44703,8 @@ func _build_world_background_art() -> void:
 			if old_node != null and is_instance_valid(old_node):
 				old_node.queue_free()
 	world_background_art_nodes.clear()
+	if BATTLE_MINIMAL_BACKGROUND:
+		return
 	for i in range(96):
 		var world_x := fposmod((float((i * 73) % 997) / 997.0) * RING_LENGTH + float(i % 7) * 0.11, RING_LENGTH)
 		var lane_ratio := float((i * 137) % 991) / 990.0
@@ -40912,7 +44714,7 @@ func _build_world_background_art() -> void:
 			var vein := Line2D.new()
 			vein.name = "WorldDustLane%d" % i
 			vein.width = 1.2 + float(i % 4) * 0.5
-			vein.default_color = Color(0.20, 0.68, 1.0, 0.10 + float(i % 3) * 0.018)
+			vein.default_color = Color(0.20, 0.68, 1.0, 0.045 + float(i % 3) * 0.01)
 			var local_points := PackedVector2Array()
 			var span := 34.0 + float(i % 6) * 8.0
 			for p in range(5):
@@ -40927,7 +44729,7 @@ func _build_world_background_art() -> void:
 			var w := 10.0 + float(i % 5) * 5.0
 			var h := 3.0 + float(i % 4) * 2.0
 			shard.polygon = PackedVector2Array([Vector2(-w * 0.5, 0.0), Vector2(w * 0.5, 1.5), Vector2(w * 0.18, h), Vector2(-w * 0.42, h - 1.2)])
-			shard.color = Color(0.68, 0.94, 1.0, 0.13 + float(i % 4) * 0.02)
+			shard.color = Color(0.68, 0.94, 1.0, 0.06 + float(i % 4) * 0.012)
 			shard.rotation = -0.9 + float(i % 17) * 0.12
 			node = shard
 		else:
@@ -40935,7 +44737,7 @@ func _build_world_background_art() -> void:
 			star.name = "WorldStarCluster%d" % i
 			var r := 2.8 + float(i % 6) * 1.25
 			star.polygon = _space_diamond(Vector2.ZERO, r)
-			star.color = Color(0.86, 0.92, 1.0, 0.18 + float(i % 5) * 0.025)
+			star.color = Color(0.86, 0.92, 1.0, 0.08 + float(i % 5) * 0.014)
 			node = star
 		node.z_index = -36
 		add_child(node)
@@ -40955,28 +44757,53 @@ func _build_stage() -> void:
 		battle_backdrop.position = Vector2(-144.0, -82.0)
 		var texture_size := space_backdrop_texture.get_size()
 		battle_backdrop.scale = Vector2(1568.0 / maxf(1.0, texture_size.x), 884.0 / maxf(1.0, texture_size.y))
-		battle_backdrop.modulate = Color(1.0, 1.0, 1.0, 0.78)
+		battle_backdrop.modulate = Color(1.0, 1.0, 1.0, 0.46)
 		battle_backdrop.z_index = -219
+		battle_backdrop.visible = not mobius_enabled
 		add_child(battle_backdrop)
-		parallax_nodes.append({"node": battle_backdrop, "base": battle_backdrop.position, "parallax": 0.02})
+		if not BATTLE_MINIMAL_BACKGROUND:
+			parallax_nodes.append({"node": battle_backdrop, "base": battle_backdrop.position, "base_scale": battle_backdrop.scale, "base_rotation": battle_backdrop.rotation, "parallax": 0.02})
 	_build_parallax_sky()
-	var arena_plane := _add_rect("ArenaPlane", Vector2(ARENA_LEFT, ARENA_TOP), Vector2(ARENA_WIDTH, ARENA_HEIGHT), Color(0.018, 0.026, 0.036, 0.44), self)
+	mobius_strip_surface_view = MobiusStripSurfaceView.new()
+	mobius_strip_surface_view.name = "MobiusStripSurface"
+	mobius_strip_surface_view.position = Vector2.ZERO
+	mobius_strip_surface_view.size = Vector2(1280.0, 720.0)
+	mobius_strip_surface_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	mobius_strip_surface_view.z_index = -42
+	mobius_strip_surface_view.visible = false
+	var mobius_material := ShaderMaterial.new()
+	mobius_material.shader = MobiusStripSurfaceShader
+	mobius_strip_surface_view.material = mobius_material
+	mobius_strip_surface_view.set_surface_texture(mobius_surface_texture)
+	add_child(mobius_strip_surface_view)
+	var arena_plane := _add_rect("ArenaPlane", Vector2(ARENA_LEFT, ARENA_TOP), Vector2(ARENA_WIDTH, ARENA_HEIGHT), Color(0.018, 0.026, 0.036, 0.0), self)
 	arena_plane.z_index = -40
+	arena_plane.visible = false
 	world_coordinate_grid_lines.clear()
+	world_near_dust_nodes.clear()
 	_build_world_background_art()
-	for i in range(18):
-		var vein := Line2D.new()
-		vein.name = "NebulaCurrent%d" % i
-		vein.width = 1.2 + float(i % 4) * 0.4
-		vein.default_color = Color(0.22, 0.68, 1.0, 0.035 + float(i % 3) * 0.012)
-		var y := ARENA_TOP + 22.0 + float((i * 47) % int(ARENA_HEIGHT - 44.0))
-		var points := PackedVector2Array()
-		for p in range(7):
-			var t := float(p) / 6.0
-			points.append(Vector2(lerpf(ARENA_LEFT - 80.0, ARENA_RIGHT + 80.0, t), y + sin(t * TAU + float(i) * 0.8) * (12.0 + float(i % 5) * 5.0)))
-		vein.points = points
-		vein.z_index = -34
-		add_child(vein)
+	if not BATTLE_MINIMAL_BACKGROUND:
+		for i in range(18):
+			var vein := Line2D.new()
+			vein.name = "NebulaCurrent%d" % i
+			vein.width = 1.2 + float(i % 4) * 0.4
+			vein.default_color = Color(0.22, 0.68, 1.0, 0.02 + float(i % 3) * 0.007)
+			var y := ARENA_TOP + 22.0 + float((i * 47) % int(ARENA_HEIGHT - 44.0))
+			var points := PackedVector2Array()
+			for p in range(7):
+				var t := float(p) / 6.0
+				points.append(Vector2(lerpf(ARENA_LEFT - 80.0, ARENA_RIGHT + 80.0, t), y + sin(t * TAU + float(i) * 0.8) * (12.0 + float(i % 5) * 5.0)))
+			vein.points = points
+			vein.z_index = -34
+			add_child(vein)
+			world_near_dust_nodes.append({
+				"node": vein,
+				"base_points": points,
+				"base_width": vein.width,
+				"base_color": vein.default_color,
+				"phase": float(i) * 0.37,
+				"parallax": 0.08 + float(i % 6) * 0.018,
+			})
 	var border := Line2D.new()
 	border.width = 8.0
 	border.default_color = Color(0.72, 0.94, 1.0, 0.52)
@@ -40988,12 +44815,14 @@ func _build_stage() -> void:
 		Vector2(ARENA_LEFT, ARENA_TOP),
 	])
 	border.z_index = 22
+	border.visible = false
 	add_child(border)
 	var border_glow := Line2D.new()
 	border_glow.width = 18.0
 	border_glow.default_color = Color(0.16, 0.82, 1.0, 0.16)
 	border_glow.points = border.points
 	border_glow.z_index = 21
+	border_glow.visible = false
 	add_child(border_glow)
 	for corner in [Vector2(ARENA_LEFT, ARENA_TOP), Vector2(ARENA_RIGHT, ARENA_TOP), Vector2(ARENA_RIGHT, ARENA_BOTTOM), Vector2(ARENA_LEFT, ARENA_BOTTOM)]:
 		var marker := Polygon2D.new()
@@ -41004,6 +44833,7 @@ func _build_stage() -> void:
 		marker.polygon = PackedVector2Array([Vector2.ZERO, Vector2(52.0 * sx, 0.0), Vector2(0.0, 52.0 * sy)])
 		marker.color = Color(0.84, 0.96, 1.0, 0.2)
 		marker.z_index = 23
+		marker.visible = false
 		add_child(marker)
 	arena_top_boundary_line = Line2D.new()
 	arena_top_boundary_line.name = "TopWorldBoundary"
@@ -41033,6 +44863,11 @@ func _build_stage() -> void:
 	effects_root = Node2D.new()
 	effects_root.name = "CombatEffects"
 	add_child(effects_root)
+	combat_geometry_debug_root = Node2D.new()
+	combat_geometry_debug_root.name = "CombatGeometryDebug"
+	combat_geometry_debug_root.visible = false
+	combat_geometry_debug_root.z_index = 96
+	add_child(combat_geometry_debug_root)
 	battle_contact_vfx_pool = BattleContactVfxPool.new()
 	battle_contact_vfx_pool.name = "BattleContactVfxPool"
 	battle_contact_vfx_pool.setup_pool(int(_runtime_quality_value("contact_particle_pool", 128)), float(_runtime_quality_value("vfx_scale", 1.0)))
@@ -41040,59 +44875,17 @@ func _build_stage() -> void:
 
 
 func _build_menu_ui() -> void:
-	menu_layer = CanvasLayer.new()
-	add_child(menu_layer)
-	var root := Control.new()
-	root.set_anchors_preset(Control.PRESET_FULL_RECT)
-	menu_layer.add_child(root)
-	menu_backdrop = BackdropView.new()
-	menu_backdrop.set_anchors_preset(Control.PRESET_FULL_RECT)
-	menu_backdrop.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	menu_backdrop.set_mode("menu")
-	menu_backdrop.set_background_texture(space_backdrop_texture)
-	root.add_child(menu_backdrop)
-	_add_ui_rect(root, "MenuHeaderBand", Vector2(42.0, 34.0), Vector2(1136.0, 130.0), Color(0.012, 0.022, 0.032, 0.72))
-	_make_label(root, "GameTitle", _game_title(), Vector2(64.0, 40.0), Vector2(690.0, 56.0), 40, Color.WHITE, HORIZONTAL_ALIGNMENT_LEFT)
-	_make_label(root, "Subtitle", _game_subtitle(), Vector2(68.0, 112.0), Vector2(520.0, 28.0), 18, Color(0.26, 0.88, 1.0, 1.0), HORIZONTAL_ALIGNMENT_LEFT)
-	_add_ui_rect(root, "Accent", Vector2(68.0, 148.0), Vector2(346.0, 4.0), Color(1.0, 0.88, 0.22, 1.0))
-	_make_label(root, "MenuCallsign", "拓扑机甲 / 资源召唤" if _ui_is_zh() else "topology mechs / resource summons", Vector2(656.0, 112.0), Vector2(480.0, 28.0), 15, Color(1.0, 0.86, 0.38, 1.0), HORIZONTAL_ALIGNMENT_RIGHT)
-	_add_ui_rect(root, "MenuListPanel", Vector2(54.0, 184.0), Vector2(438.0, 430.0), Color(0.01, 0.018, 0.026, 0.72))
-	_add_ui_rect(root, "MenuInfoPanel", Vector2(536.0, 184.0), Vector2(620.0, 226.0), Color(0.014, 0.024, 0.034, 0.82))
-	menu_description_label = _make_label(root, "MenuDescription", "", Vector2(570.0, 212.0), Vector2(552.0, 138.0), 23, Color(0.9, 0.94, 0.98, 1.0), HORIZONTAL_ALIGNMENT_LEFT)
-	menu_description_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	menu_status_label = _make_label(root, "MenuStatus", "", Vector2(570.0, 354.0), Vector2(552.0, 42.0), 14, Color(0.32, 0.94, 1.0, 1.0), HORIZONTAL_ALIGNMENT_LEFT)
-	menu_status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_make_label(root, "MenuTelemetry", ("实验室就绪 / %s / 首发200" if _ui_is_zh() else "LAB READY / %s / START 200") % _match_format_short(), Vector2(540.0, 438.0), Vector2(604.0, 26.0), 16, Color(1.0, 0.88, 0.32, 1.0), HORIZONTAL_ALIGNMENT_CENTER)
-	_make_label(root, "MenuHelp", "鼠标点击菜单；键盘/手柄仍可用。" if _ui_is_zh() else "Click menus; keyboard/controller optional.", Vector2(64.0, 656.0), Vector2(980.0, 28.0), 17, Color(0.78, 0.84, 0.9, 1.0), HORIZONTAL_ALIGNMENT_LEFT)
-	for i in range(MENU_ITEMS.size()):
-		var button := Button.new()
-		button.text = _menu_item(i)
-		button.position = Vector2(82.0, 204.0 + float(i) * 56.0)
-		button.size = Vector2(382.0, 44.0)
-		button.focus_mode = Control.FOCUS_NONE
-		button.mouse_filter = Control.MOUSE_FILTER_STOP
-		button.mouse_entered.connect(_hover_menu_item.bind(i))
-		button.pressed.connect(_activate_menu_item.bind(i))
-		button.gui_input.connect(_handle_menu_button_gui_input.bind(i))
-		root.add_child(button)
-		menu_buttons.append(button)
-	menu_ai_seat_panel = _add_ui_rect(root, "MenuAISeatPanel", Vector2(536.0, 466.0), Vector2(620.0, 114.0), Color(0.012, 0.028, 0.038, 0.86))
-	menu_ai_seat_label = _make_label(root, "MenuAISeatLabel", "AI 对战席位" if _ui_is_zh() else "AI BATTLE SEAT", Vector2(566.0, 476.0), Vector2(560.0, 24.0), 16, Color(1.0, 0.88, 0.32, 1.0), HORIZONTAL_ALIGNMENT_LEFT)
-	var menu_seat_specs := [
-		[1, "P1 左侧", "操控玩家 1"],
-		[2, "P2 右侧", "操控玩家 2"],
-		[3, "P3 观战", "自由镜头"],
-	]
-	for i in range(menu_seat_specs.size()):
-		var seat_button := Button.new()
-		seat_button.text = "%s\n%s" % [String(menu_seat_specs[i][1]), String(menu_seat_specs[i][2])]
-		seat_button.position = Vector2(566.0 + float(i) * 190.0, 512.0)
-		seat_button.size = Vector2(170.0, 48.0)
-		seat_button.focus_mode = Control.FOCUS_NONE
-		seat_button.mouse_filter = Control.MOUSE_FILTER_STOP
-		seat_button.pressed.connect(_start_ai_battle_from_menu.bind(int(menu_seat_specs[i][0])))
-		root.add_child(seat_button)
-		menu_ai_seat_buttons.append(seat_button)
+	if menu_view == null:
+		menu_view = MenuView.new()
+		menu_view.bind(self)
+	menu_layer = menu_view.build_main_menu(self, space_backdrop_texture, BackdropView)
+	menu_backdrop = menu_view.menu_backdrop
+	menu_description_label = menu_view.menu_description_label
+	menu_status_label = menu_view.menu_status_label
+	menu_ai_seat_panel = menu_view.menu_ai_seat_panel
+	menu_ai_seat_label = menu_view.menu_ai_seat_label
+	menu_buttons = menu_view.menu_buttons
+	menu_ai_seat_buttons = menu_view.menu_ai_seat_buttons
 
 
 func _build_saved_units_ui() -> void:
@@ -41267,8 +45060,10 @@ func _build_editor_ui() -> void:
 	editor_backdrop.set_mode("editor")
 	editor_backdrop.set_background_texture(space_backdrop_texture)
 	root.add_child(editor_backdrop)
-	_make_label(root, "EditorTitle", "单位编辑", Vector2(54.0, 24.0), Vector2(470.0, 42.0), 32, Color.WHITE, HORIZONTAL_ALIGNMENT_LEFT)
-	_make_label(root, "EditorHelp", "默认是自由画布；需要预设拓扑时再打开模板导入。", Vector2(534.0, 32.0), Vector2(486.0, 28.0), 14, Color(0.8, 0.87, 0.92, 1.0), HORIZONTAL_ALIGNMENT_RIGHT)
+	var editor_title_label := _make_label(root, "EditorTitle", "", Vector2.ZERO, Vector2.ZERO, 1, Color.TRANSPARENT, HORIZONTAL_ALIGNMENT_LEFT)
+	editor_title_label.visible = false
+	var editor_help_label := _make_label(root, "EditorHelp", "", Vector2.ZERO, Vector2.ZERO, 1, Color.TRANSPARENT, HORIZONTAL_ALIGNMENT_LEFT)
+	editor_help_label.visible = false
 	var editor_back_button := Button.new()
 	editor_back_button.name = "EditorBackButton"
 	editor_back_button.text = "选项"
@@ -41277,7 +45072,7 @@ func _build_editor_ui() -> void:
 	editor_back_button.focus_mode = Control.FOCUS_NONE
 	editor_back_button.pressed.connect(_show_page_options.bind("editor"))
 	root.add_child(editor_back_button)
-	_add_ui_rect(root, "EditorCanvasPanel", Vector2(28.0, 76.0), Vector2(888.0, 608.0), Color(0.01, 0.018, 0.026, 0.58))
+	_add_ui_rect(root, "EditorCanvasPanel", Vector2(8.0, 70.0), Vector2(908.0, 614.0), Color(0.01, 0.018, 0.026, 0.46))
 	_add_ui_rect(root, "EditorDrawerPanel", Vector2(924.0, 76.0), Vector2(294.0, 608.0), Color(0.012, 0.022, 0.03, 0.72))
 	var panel_specs := [
 		["load", "单位库"],
@@ -41417,8 +45212,8 @@ func _build_editor_ui() -> void:
 	editor_structure_reference_label = _make_label(root, "StructureReferenceLabel", "结构示意", Vector2(936.0, 260.0), Vector2(270.0, 18.0), 10, Color(0.72, 0.94, 1.0, 1.0), HORIZONTAL_ALIGNMENT_LEFT)
 	editor_structure_reference_label.visible = false
 	assembly_board_view = AssemblyBoardView.new()
-	assembly_board_view.position = Vector2(236.0, 136.0)
-	assembly_board_view.size = Vector2(656.0, 482.0)
+	assembly_board_view.position = Vector2(8.0, 94.0)
+	assembly_board_view.size = Vector2(908.0, 548.0)
 	assembly_board_view.clip_contents = true
 	assembly_board_view.mouse_filter = Control.MOUSE_FILTER_STOP
 	assembly_board_view.gui_input.connect(_handle_editor_board_input)
@@ -41426,8 +45221,8 @@ func _build_editor_ui() -> void:
 	root.add_child(assembly_board_view)
 	editor_stats_rail_view = EditorStatsRailView.new()
 	editor_stats_rail_view.name = "EditorStatsRail"
-	editor_stats_rail_view.position = Vector2(52.0, 136.0)
-	editor_stats_rail_view.size = Vector2(170.0, 482.0)
+	editor_stats_rail_view.position = Vector2(18.0, 104.0)
+	editor_stats_rail_view.size = Vector2(164.0, 508.0)
 	editor_stats_rail_view.mouse_filter = Control.MOUSE_FILTER_STOP
 	root.add_child(editor_stats_rail_view)
 	editor_hover_popup_view = EditorPartHoverPopupView.new()
@@ -41448,9 +45243,9 @@ func _build_editor_ui() -> void:
 	root.add_child(editor_unit_hover_view)
 	editor_torso_detail_view = TorsoDetailPanelView.new()
 	editor_torso_detail_view.name = "EditorTorsoDetail"
-	editor_torso_detail_view.position = Vector2(236.0, 414.0)
-	editor_torso_detail_view.size = Vector2(656.0, 300.0)
-	editor_torso_detail_view.z_index = 210
+	editor_torso_detail_view.position = Vector2(18.0, 338.0)
+	editor_torso_detail_view.size = Vector2(888.0, 346.0)
+	editor_torso_detail_view.z_index = 285
 	editor_torso_detail_view.mouse_filter = Control.MOUSE_FILTER_STOP
 	editor_torso_detail_view.visible = false
 	editor_torso_detail_view.payload_dropped.connect(_drop_catalog_part_on_torso_detail)
@@ -41468,12 +45263,13 @@ func _build_editor_ui() -> void:
 	engine_momentum_allocation_view.name = "EngineMomentumAllocationPanel"
 	engine_momentum_allocation_view.position = assembly_board_view.position
 	engine_momentum_allocation_view.size = assembly_board_view.size
-	engine_momentum_allocation_view.z_index = 240
+	engine_momentum_allocation_view.z_index = 290
 	engine_momentum_allocation_view.mouse_filter = Control.MOUSE_FILTER_STOP
 	engine_momentum_allocation_view.visible = false
 	engine_momentum_allocation_view.close_requested.connect(_close_engine_momentum_allocation_panel)
 	engine_momentum_allocation_view.equalize_requested.connect(_equalize_engine_momentum_allocation)
 	engine_momentum_allocation_view.allocation_changed.connect(_set_engine_momentum_allocation_ratio)
+	engine_momentum_allocation_view.allocation_value_submitted.connect(_set_engine_momentum_allocation_value)
 	engine_momentum_allocation_view.allocation_drag_finished.connect(_finish_engine_momentum_allocation_drag)
 	root.add_child(engine_momentum_allocation_view)
 	editor_drag_ghost_view = PartDragGhostView.new()
@@ -41486,7 +45282,7 @@ func _build_editor_ui() -> void:
 	editor_perf_overlay_label.z_index = 330
 	editor_perf_overlay_label.visible = false
 	editor_perf_overlay_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	editor_save_unit_feedback_label = _make_label(root, "SaveUnitFeedback", "", Vector2(236.0, 108.0), Vector2(656.0, 26.0), 14, Color(0.45, 1.0, 0.62, 1.0), HORIZONTAL_ALIGNMENT_CENTER)
+	editor_save_unit_feedback_label = _make_label(root, "SaveUnitFeedback", "", Vector2(28.0, 70.0), Vector2(868.0, 22.0), 12, Color(0.45, 1.0, 0.62, 1.0), HORIZONTAL_ALIGNMENT_CENTER)
 	editor_save_unit_feedback_label.z_index = 300
 	editor_save_unit_feedback_label.visible = false
 	editor_save_unit_name_panel = ColorRect.new()
@@ -41503,13 +45299,12 @@ func _build_editor_ui() -> void:
 	editor_save_unit_name_edit.position = Vector2(18.0, 48.0)
 	editor_save_unit_name_edit.size = Vector2(402.0, 30.0)
 	editor_save_unit_name_edit.placeholder_text = "单位名称" if _ui_is_zh() else "Unit name"
-	editor_save_unit_name_edit.text_submitted.connect(_confirm_save_unit_name_dialog.bind("stay"))
+	editor_save_unit_name_edit.text_submitted.connect(_confirm_save_unit_name_dialog.bind("save"))
 	editor_save_unit_name_panel.add_child(editor_save_unit_name_edit)
 	var save_name_buttons := [
-		["save_name_stay", "保存", "stay", Vector2(18.0, 102.0), Vector2(82.0, 30.0)],
-		["save_name_library", "保存并打开单位库", "library", Vector2(110.0, 102.0), Vector2(146.0, 30.0)],
-		["save_name_train", "保存并训练", "train", Vector2(266.0, 102.0), Vector2(114.0, 30.0)],
-		["save_name_cancel", "取消", "cancel", Vector2(316.0, 140.0), Vector2(104.0, 26.0)],
+		["save_name_stay", "保存", "save", Vector2(18.0, 102.0), Vector2(124.0, 30.0)],
+		["save_name_save_as", "另存为", "save_as", Vector2(156.0, 102.0), Vector2(124.0, 30.0)],
+		["save_name_cancel", "取消", "cancel", Vector2(294.0, 102.0), Vector2(124.0, 30.0)],
 	]
 	for spec in save_name_buttons:
 		var button := Button.new()
@@ -41562,27 +45357,40 @@ func _build_editor_ui() -> void:
 		roster_thumb.visible = false
 		root.add_child(roster_thumb)
 		editor_roster_slot_thumb_views.append(roster_thumb)
-	editor_power_topbar_view = UnitEditorPowerTopbarView.new()
-	editor_power_topbar_view.name = "UnitEditorPowerTopbar"
-	editor_power_topbar_view.position = Vector2(236.0, 78.0)
-	editor_power_topbar_view.size = Vector2(656.0, 44.0)
-	editor_power_topbar_view.mouse_filter = Control.MOUSE_FILTER_STOP
-	editor_power_topbar_view.allocation_changed.connect(_set_engine_momentum_allocation_ratio)
-	editor_power_topbar_view.allocation_drag_finished.connect(_finish_engine_momentum_allocation_drag)
-	editor_power_topbar_view.open_requested.connect(_open_dashboard_engine_allocation)
-	root.add_child(editor_power_topbar_view)
-	editor_section_labels["board"] = _make_label(root, "BoardTitle", "自由画布", Vector2(236.0, 124.0), Vector2(210.0, 18.0), 14, Color(0.9, 0.96, 1.0, 1.0), HORIZONTAL_ALIGNMENT_LEFT)
-	editor_board_hint_label = _make_label(root, "BoardHint", "", Vector2(470.0, 124.0), Vector2(422.0, 18.0), 10, Color(1.0, 0.9, 0.45, 1.0), HORIZONTAL_ALIGNMENT_RIGHT)
+	editor_power_dock_view = UnitEditorPowerDockView.new()
+	editor_power_dock_view.name = "UnitEditorPowerAllocationDock"
+	editor_power_dock_view.position = Vector2(190.0, 24.0)
+	editor_power_dock_view.size = Vector2(726.0, 132.0)
+	editor_power_dock_view.z_index = 254
+	editor_power_dock_view.mouse_filter = Control.MOUSE_FILTER_STOP
+	editor_power_dock_view.allocation_changed.connect(_set_engine_momentum_allocation_ratio)
+	editor_power_dock_view.allocation_drag_finished.connect(_finish_engine_momentum_allocation_drag)
+	editor_power_dock_view.open_requested.connect(_toggle_engine_momentum_allocation_for_active_target)
+	root.add_child(editor_power_dock_view)
+	editor_section_labels["board"] = _make_label(root, "BoardTitle", "", Vector2.ZERO, Vector2.ZERO, 1, Color.TRANSPARENT, HORIZONTAL_ALIGNMENT_LEFT)
+	editor_section_labels["board"].visible = false
+	editor_board_hint_label = _make_label(root, "BoardHint", "", Vector2(296.0, 72.0), Vector2(620.0, 18.0), 10, Color(1.0, 0.9, 0.45, 1.0), HORIZONTAL_ALIGNMENT_RIGHT)
 	editor_engine_allocation_button = Button.new()
 	editor_engine_allocation_button.name = "DashboardPowerAllocationButton"
-	editor_engine_allocation_button.text = "动力分配"
+	editor_engine_allocation_button.text = "动力预算"
 	editor_engine_allocation_button.position = Vector2(52.0, 108.0)
 	editor_engine_allocation_button.size = Vector2(82.0, 24.0)
 	editor_engine_allocation_button.focus_mode = Control.FOCUS_NONE
+	editor_engine_allocation_button.visible = false
+	editor_engine_allocation_button.disabled = true
 	editor_engine_allocation_button.pressed.connect(_open_dashboard_engine_allocation)
 	root.add_child(editor_engine_allocation_button)
+	editor_torso_detail_button = Button.new()
+	editor_torso_detail_button.name = "DashboardTorsoDetailButton"
+	editor_torso_detail_button.text = "躯干详情"
+	editor_torso_detail_button.position = Vector2(228.0, 108.0)
+	editor_torso_detail_button.size = Vector2(86.0, 24.0)
+	editor_torso_detail_button.focus_mode = Control.FOCUS_NONE
+	editor_torso_detail_button.pressed.connect(_toggle_dashboard_torso_detail)
+	root.add_child(editor_torso_detail_button)
 	editor_engine_allocation_summary_label = _make_label(root, "DashboardPowerAllocationSummary", "", Vector2(140.0, 109.0), Vector2(82.0, 22.0), 9, Color(0.78, 0.92, 1.0, 0.94), HORIZONTAL_ALIGNMENT_LEFT)
 	editor_engine_allocation_summary_label.autowrap_mode = TextServer.AUTOWRAP_OFF
+	editor_engine_allocation_summary_label.visible = false
 	var board_primary_actions := [
 		["save_canvas", "保存为单位"],
 		["training_import", "训练测试"],
@@ -41592,13 +45400,14 @@ func _build_editor_ui() -> void:
 		var quick_button := Button.new()
 		quick_button.name = "BoardPrimary%s" % String(board_primary_actions[i][0])
 		quick_button.text = String(board_primary_actions[i][1])
-		quick_button.position = Vector2(408.0 + float(i) * 122.0, 600.0)
-		quick_button.size = Vector2(114.0, 24.0)
+		quick_button.position = Vector2(352.0 + float(i) * 156.0, 652.0)
+		quick_button.size = Vector2(146.0, 28.0)
 		quick_button.focus_mode = Control.FOCUS_NONE
 		quick_button.pressed.connect(_editor_action.bind(String(board_primary_actions[i][0])))
 		root.add_child(quick_button)
 		editor_action_buttons[String(board_primary_actions[i][0])] = quick_button
-	editor_section_labels["canvas_tools"] = _make_label(root, "CanvasToolsTitle", "画布工具", Vector2(52.0, 634.0), Vector2(96.0, 16.0), 11, Color(0.36, 0.95, 1.0, 1.0), HORIZONTAL_ALIGNMENT_LEFT)
+	editor_section_labels["canvas_tools"] = _make_label(root, "CanvasToolsTitle", "", Vector2.ZERO, Vector2.ZERO, 1, Color.TRANSPARENT, HORIZONTAL_ALIGNMENT_LEFT)
+	editor_section_labels["canvas_tools"].visible = false
 	var canvas_tools := [
 		["blank_canvas", "空白画布"],
 		["board_tool_layout", "布局"],
@@ -41612,7 +45421,7 @@ func _build_editor_ui() -> void:
 	for i in range(canvas_tools.size()):
 		var canvas_button := Button.new()
 		canvas_button.text = String(canvas_tools[i][1])
-		canvas_button.position = Vector2(190.0 + float(i) * 94.0, 630.0)
+		canvas_button.position = Vector2(24.0 + float(i) * 94.0, 688.0)
 		canvas_button.size = Vector2(90.0, 24.0)
 		canvas_button.focus_mode = Control.FOCUS_NONE
 		canvas_button.pressed.connect(_editor_action.bind(String(canvas_tools[i][0])))
@@ -41635,13 +45444,14 @@ func _build_editor_ui() -> void:
 		button.pressed.connect(_select_editor_body_part.bind(part_key))
 		root.add_child(button)
 		editor_board_labels[part_key] = button
-	editor_section_labels["canvas_note"] = _make_label(root, "CanvasTopologyText", "自由拓扑：从零件库拖入画布；肌肉直连肌肉，运动由下游肌肉内置根部关节旋转/伸缩产生", Vector2(52.0, 660.0), Vector2(840.0, 20.0), 11, Color(0.72, 0.86, 0.94, 0.86), HORIZONTAL_ALIGNMENT_CENTER)
+	editor_section_labels["canvas_note"] = _make_label(root, "CanvasTopologyText", "", Vector2.ZERO, Vector2.ZERO, 1, Color.TRANSPARENT, HORIZONTAL_ALIGNMENT_CENTER)
 	editor_section_labels["canvas_note"].autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	editor_section_labels["canvas_note"].visible = false
 	for key_index in range(1, ATTACK_GROUP_COUNT + 1):
 		var bind_button := Button.new()
 		bind_button.name = "ModuleBindKey%d" % key_index
 		bind_button.text = "键%d" % key_index
-		bind_button.position = Vector2(236.0 + float(key_index - 1) * 56.0, 684.0)
+		bind_button.position = Vector2(286.0 + float(key_index - 1) * 56.0, 618.0)
 		bind_button.size = Vector2(50.0, 24.0)
 		bind_button.focus_mode = Control.FOCUS_NONE
 		bind_button.mouse_filter = Control.MOUSE_FILTER_STOP
@@ -41650,11 +45460,12 @@ func _build_editor_ui() -> void:
 		bind_button.pressed.connect(_editor_action.bind("bind_key_%d" % key_index))
 		root.add_child(bind_button)
 		editor_action_buttons["bind_key_%d" % key_index] = bind_button
-	_make_label(root, "BoardZoomTitle", "画板缩放", Vector2(52.0, 604.0), Vector2(96.0, 18.0), 11, Color(0.36, 0.95, 1.0, 1.0), HORIZONTAL_ALIGNMENT_LEFT)
+	var board_zoom_title := _make_label(root, "BoardZoomTitle", "", Vector2.ZERO, Vector2.ZERO, 1, Color.TRANSPARENT, HORIZONTAL_ALIGNMENT_LEFT)
+	board_zoom_title.visible = false
 	var zoom_button_specs := [
-		["board_zoom_out", "-", Vector2(152.0, 600.0), Vector2(42.0, 24.0)],
-		["board_zoom_in", "+", Vector2(260.0, 600.0), Vector2(42.0, 24.0)],
-		["board_zoom_reset", "重置", Vector2(310.0, 600.0), Vector2(70.0, 24.0)],
+		["board_zoom_out", "-", Vector2(24.0, 652.0), Vector2(42.0, 24.0)],
+		["board_zoom_in", "+", Vector2(132.0, 652.0), Vector2(42.0, 24.0)],
+		["board_zoom_reset", "重置", Vector2(182.0, 652.0), Vector2(70.0, 24.0)],
 	]
 	for i in range(zoom_button_specs.size()):
 		var zoom_button := Button.new()
@@ -41665,7 +45476,7 @@ func _build_editor_ui() -> void:
 		zoom_button.pressed.connect(_editor_action.bind(String(zoom_button_specs[i][0])))
 		root.add_child(zoom_button)
 		editor_action_buttons[String(zoom_button_specs[i][0])] = zoom_button
-	editor_board_zoom_label = _make_label(root, "BoardZoomValue", "100%", Vector2(200.0, 604.0), Vector2(54.0, 18.0), 11, Color(1.0, 0.86, 0.28, 1.0), HORIZONTAL_ALIGNMENT_CENTER)
+	editor_board_zoom_label = _make_label(root, "BoardZoomValue", "100%", Vector2(72.0, 656.0), Vector2(54.0, 18.0), 11, Color(1.0, 0.86, 0.28, 1.0), HORIZONTAL_ALIGNMENT_CENTER)
 	var template_menu_button := Button.new()
 	template_menu_button.text = "导入模板"
 	template_menu_button.position = Vector2(936.0, 146.0)
@@ -41812,6 +45623,7 @@ func _build_editor_ui() -> void:
 		catalog_button.pressed.connect(_select_catalog_component.bind(i))
 		catalog_button.mouse_entered.connect(_hover_catalog_component.bind(i))
 		catalog_button.mouse_exited.connect(_clear_editor_hover_card)
+		catalog_button.page_scroll.connect(_scroll_editor_catalog_page_from_card)
 		root.add_child(catalog_button)
 		editor_catalog_buttons.append(catalog_button)
 
@@ -41856,6 +45668,30 @@ func _load_generated_asset_sheet() -> Texture2D:
 
 func _load_generated_shop_cards() -> Texture2D:
 	return null
+
+
+func _load_space_backdrop_texture() -> Texture2D:
+	return _load_source_image_texture(GENERATED_SPACE_BACKDROP_PATH)
+
+
+func _load_mobius_surface_texture() -> Texture2D:
+	return _load_source_image_texture(MOBIUS_SURFACE_TEXTURE_PATH)
+
+
+func _load_source_image_texture(path: String) -> Texture2D:
+	if not FileAccess.file_exists(path):
+		return null
+	var bytes := FileAccess.get_file_as_bytes(path)
+	if bytes.is_empty():
+		return null
+	var image := Image.new()
+	if image.load_png_from_buffer(bytes) != OK:
+		return null
+	var texture := ImageTexture.create_from_image(image)
+	texture.set_meta("runtime_source_loader", "source_image")
+	texture.set_meta("runtime_source_path", path)
+	texture.set_meta("runtime_source_size", image.get_size())
+	return texture
 
 
 func _load_generated_texture(path: String) -> Texture2D:
@@ -42157,6 +45993,13 @@ func _build_battle_ui() -> void:
 	battle_mode_label = _make_label(hud, "Mode", "", Vector2(440.0, 16.0), Vector2(400.0, 24.0), 18, Color(0.9, 0.96, 1.0, 1.0), HORIZONTAL_ALIGNMENT_CENTER)
 	match_timer_label = _make_label(hud, "Timer", "", Vector2(540.0, 72.0), Vector2(200.0, 24.0), 18, Color(1.0, 0.9, 0.35, 1.0), HORIZONTAL_ALIGNMENT_CENTER)
 	battle_message_label = _make_label(hud, "Message", "", Vector2(330.0, 44.0), Vector2(620.0, 28.0), 19, Color(1.0, 0.9, 0.35, 1.0), HORIZONTAL_ALIGNMENT_CENTER)
+	training_entry_intro_view = TrainingEntryIntroView.new()
+	training_entry_intro_view.name = "TrainingEntryIntro"
+	training_entry_intro_view.set_anchors_preset(Control.PRESET_FULL_RECT)
+	training_entry_intro_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	training_entry_intro_view.visible = false
+	training_entry_intro_view.z_index = 45
+	hud.add_child(training_entry_intro_view)
 	var battle_menu_button := Button.new()
 	battle_menu_button.name = "BattleMenuButton"
 	battle_menu_button.text = "选项"
@@ -42170,90 +46013,47 @@ func _build_battle_ui() -> void:
 
 
 func _build_battle_runtime_menu(root: Control) -> void:
-	battle_runtime_menu_panel = Control.new()
-	battle_runtime_menu_panel.name = "BattleRuntimeOptions"
-	battle_runtime_menu_panel.position = Vector2(856.0, 252.0)
-	battle_runtime_menu_panel.size = Vector2(330.0, 340.0)
-	battle_runtime_menu_panel.visible = false
-	root.add_child(battle_runtime_menu_panel)
-	_add_ui_rect(battle_runtime_menu_panel, "BattleRuntimeOptionsBack", Vector2.ZERO, battle_runtime_menu_panel.size, Color(0.01, 0.018, 0.026, 0.9))
-	_make_label(battle_runtime_menu_panel, "BattleRuntimeOptionsTitle", "训练选项" if _ui_is_zh() else "TRAINING OPTIONS", Vector2(18.0, 12.0), Vector2(294.0, 28.0), 20, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER)
-	var actions := [
-		["continue", "继续", "CONTINUE"],
-		["reset_positions", "重置位置", "RESET POS"],
-		["reset_resources", "重置 HP/护盾/弹药", "RESET HP/AMMO"],
-		["dummy_state", "靶机：静止待机", "DUMMY: IDLE"],
-		["input", "输入设置", "INPUTS"],
-		["settings", "画面/声音", "VIDEO/SOUND"],
-		["training_config", "返回训练配置", "TRAINING CFG"],
-		["main_menu", "主菜单", "MAIN MENU"],
-	]
-	for i in range(actions.size()):
-		var button := Button.new()
-		button.name = "BattleRuntimeOption%s" % String(actions[i][0])
-		button.text = String(actions[i][1])
-		button.position = Vector2(24.0, 52.0 + float(i) * 34.0)
-		button.size = Vector2(282.0, 28.0)
-		button.focus_mode = Control.FOCUS_NONE
-		button.pressed.connect(_battle_runtime_menu_action.bind(String(actions[i][0])))
-		battle_runtime_menu_panel.add_child(button)
-		battle_runtime_menu_buttons[String(actions[i][0])] = button
+	if menu_view == null:
+		menu_view = MenuView.new()
+		menu_view.bind(self)
+	battle_runtime_menu_panel = menu_view.build_battle_runtime_menu(root)
+	battle_runtime_menu_buttons = menu_view.battle_runtime_menu_buttons
 
 
 func _toggle_battle_runtime_menu() -> void:
-	if battle_runtime_menu_panel == null:
+	if menu_view == null or battle_runtime_menu_panel == null:
 		return
-	battle_runtime_menu_panel.visible = not battle_runtime_menu_panel.visible
+	menu_view.toggle_battle_runtime()
 	_update_battle_runtime_menu_ui()
 
 
 func _hide_battle_runtime_menu() -> void:
-	if battle_runtime_menu_panel != null:
+	if menu_view != null:
+		menu_view.hide_battle_runtime()
+	elif battle_runtime_menu_panel != null:
 		battle_runtime_menu_panel.visible = false
 
 
 func _update_battle_runtime_menu_ui() -> void:
-	if battle_runtime_menu_panel == null:
+	if battle_runtime_menu_panel == null or menu_controller == null or menu_view == null:
 		return
-	_set_named_label(battle_runtime_menu_panel, "BattleRuntimeOptionsTitle", "训练选项" if battle_mode == MODE_TRAINING and _ui_is_zh() else ("TRAINING OPTIONS" if battle_mode == MODE_TRAINING else ("战斗选项" if _ui_is_zh() else "BATTLE OPTIONS")))
-	for key in battle_runtime_menu_buttons.keys():
-		var button: Button = battle_runtime_menu_buttons[key]
-		match String(key):
-			"continue":
-				button.text = "继续" if _ui_is_zh() else "CONTINUE"
-			"reset_positions":
-				button.text = "重置位置" if _ui_is_zh() else "RESET POS"
-			"reset_resources":
-				button.text = "重置 HP/护盾/弹药" if _ui_is_zh() else "RESET HP/AMMO"
-			"dummy_state":
-				var state_label := "静止待机" if training_dummy_state == "idle_brake" else ("自由物理" if training_dummy_state == "free_physics" else "固定位置")
-				var state_label_en := "IDLE" if training_dummy_state == "idle_brake" else ("FREE" if training_dummy_state == "free_physics" else "FIXED")
-				button.text = ("靶机：%s" % state_label) if _ui_is_zh() else ("DUMMY: %s" % state_label_en)
-				button.disabled = battle_mode != MODE_TRAINING
-			"input":
-				button.text = "输入设置" if _ui_is_zh() else "INPUTS"
-			"settings":
-				button.text = "画面/声音" if _ui_is_zh() else "VIDEO/SOUND"
-			"training_config":
-				button.text = "返回训练配置" if _ui_is_zh() else "TRAINING CFG"
-				button.disabled = battle_mode != MODE_TRAINING
-			"main_menu":
-				button.text = "主菜单" if _ui_is_zh() else "MAIN MENU"
+	menu_view.update_battle_runtime(menu_controller.battle_runtime_model(ui_language, battle_mode, MODE_TRAINING, training_dummy_state))
 
 
 func _battle_runtime_menu_action(action_key: String) -> void:
-	match action_key:
+	var action := menu_controller.battle_runtime_action(action_key) if menu_controller != null else {"action": action_key}
+	match String(action.get("action", action_key)):
 		"continue":
 			_hide_battle_runtime_menu()
-		"reset_positions", "reset_resources":
+		"battle_reset":
 			_hide_battle_runtime_menu()
-			_begin_battle(battle_mode)
-		"dummy_state":
+			_begin_battle(battle_mode, false, "battle_reset")
+		"cycle_dummy_state":
 			var order := ["idle_brake", "free_physics", "fixed"]
 			var index := order.find(training_dummy_state)
 			training_dummy_state = String(order[_wrapped_index(index + 1, order.size())])
 			_update_battle_runtime_menu_ui()
-		"input":
+		"settings_input":
 			_hide_battle_runtime_menu()
 			_show_settings()
 			_show_settings_category("input")
@@ -42269,116 +46069,78 @@ func _battle_runtime_menu_action(action_key: String) -> void:
 
 
 func _build_page_options_ui() -> void:
-	page_options_layer = CanvasLayer.new()
-	page_options_layer.name = "PageOptionsLayer"
-	page_options_layer.layer = 90
-	page_options_layer.visible = false
-	add_child(page_options_layer)
-	var root := Control.new()
-	root.set_anchors_preset(Control.PRESET_FULL_RECT)
-	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	page_options_layer.add_child(root)
-	page_options_panel = Control.new()
-	page_options_panel.name = "PageOptionsPanel"
-	page_options_panel.position = Vector2(952.0, 72.0)
-	page_options_panel.size = Vector2(246.0, 228.0)
-	page_options_panel.mouse_filter = Control.MOUSE_FILTER_STOP
-	root.add_child(page_options_panel)
-	_add_ui_rect(page_options_panel, "PageOptionsBack", Vector2.ZERO, page_options_panel.size, Color(0.01, 0.018, 0.026, 0.94))
-	_add_ui_rect(page_options_panel, "PageOptionsAccent", Vector2(16.0, 42.0), Vector2(214.0, 2.0), Color(0.24, 0.9, 1.0, 0.85))
-	_make_label(page_options_panel, "PageOptionsTitle", "选项" if _ui_is_zh() else "OPTIONS", Vector2(16.0, 12.0), Vector2(214.0, 26.0), 18, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER)
-	var actions := [
-		["back", "返回上级", "BACK"],
-		["main_menu", "主菜单", "MAIN MENU"],
-		["settings", "设置", "SETTINGS"],
-		["help", "帮助/说明", "HELP"],
-		["close", "关闭", "CLOSE"],
-	]
-	for i in range(actions.size()):
-		var button := Button.new()
-		button.name = "PageOptions%s" % String(actions[i][0])
-		button.text = String(actions[i][1])
-		button.position = Vector2(18.0, 56.0 + float(i) * 32.0)
-		button.size = Vector2(210.0, 28.0)
-		button.focus_mode = Control.FOCUS_NONE
-		button.pressed.connect(_page_options_action.bind(String(actions[i][0])))
-		page_options_panel.add_child(button)
-		page_options_buttons[String(actions[i][0])] = button
+	if menu_view == null:
+		menu_view = MenuView.new()
+		menu_view.bind(self)
+	page_options_layer = menu_view.build_page_options(self)
+	page_options_panel = menu_view.page_options_panel
+	page_options_buttons = menu_view.page_options_buttons
 
 
 func _show_page_options(context: String) -> void:
 	if page_options_layer == null:
 		return
-	page_options_context = context
-	page_options_layer.visible = true
+	var route_context := _navigation_current_page()
+	if route_context == "" or route_context == STATE_LOADING:
+		route_context = context
+	page_options_context = route_context
+	if menu_view != null:
+		menu_view.show_page_options(route_context)
+	else:
+		page_options_layer.visible = true
 	_update_page_options_ui()
 
 
 func _hide_page_options() -> void:
-	if page_options_layer != null:
+	if menu_view != null:
+		menu_view.hide_page_options()
+	elif page_options_layer != null:
 		page_options_layer.visible = false
 	page_options_context = ""
 
 
 func _update_page_options_ui() -> void:
-	if page_options_layer == null or page_options_panel == null:
+	if page_options_layer == null or page_options_panel == null or menu_controller == null or menu_view == null:
 		return
-	_set_named_label(page_options_panel, "PageOptionsTitle", "选项" if _ui_is_zh() else "OPTIONS")
-	for key in page_options_buttons.keys():
-		var button: Button = page_options_buttons[key]
-		match String(key):
-			"back":
-				button.text = "返回上级" if _ui_is_zh() else "BACK"
-			"main_menu":
-				button.text = "主菜单" if _ui_is_zh() else "MAIN MENU"
-			"settings":
-				button.text = "设置" if _ui_is_zh() else "SETTINGS"
-			"help":
-				button.text = "帮助/说明" if _ui_is_zh() else "HELP"
-			"close":
-				button.text = "关闭" if _ui_is_zh() else "CLOSE"
-	var help_button: Button = page_options_buttons.get("help", null)
-	if help_button != null:
-		help_button.disabled = false
+	menu_view.update_page_options(menu_controller.page_options_model(ui_language))
 
 
 func _page_options_action(action_key: String) -> void:
 	var context := page_options_context
+	var current_subroute := settings_category if context == STATE_SETTINGS else ""
+	var action := {"action": "close"}
+	if navigation_service != null:
+		action = navigation_service.resolve_option_action(action_key, current_subroute)
+	if menu_controller != null:
+		action = menu_controller.page_option_action(action_key, action)
 	_hide_page_options()
-	match action_key:
-		"back":
-			_page_options_back(context)
-		"main_menu":
-			_show_menu()
-		"settings":
-			_show_settings()
-		"help":
-			_show_context_help(context)
-		"close":
-			return
+	_execute_page_options_action(action, context)
 
 
 func _page_options_back(context: String) -> void:
-	match context:
-		"settings":
-			if settings_category != "root":
-				_show_settings_category("root")
-			else:
-				_show_menu()
-		"scout":
-			if pending_battle_mode == MODE_TRAINING:
-				_show_menu()
-			else:
-				_show_menu()
-		"editor":
+	var current_subroute := settings_category if context == STATE_SETTINGS else ""
+	var action := {"action": "navigate_menu", "to_page": STATE_MENU, "reason": "page_options_back_legacy"}
+	if navigation_service != null:
+		action = navigation_service.resolve_option_action("back", current_subroute)
+	_execute_page_options_action(action, context)
+
+
+func _execute_page_options_action(action: Dictionary, context: String) -> void:
+	match String(action.get("action", "close")):
+		"close":
+			return
+		"show_help":
+			_show_context_help(context if context != "" else String(action.get("context", "")))
+		"settings_root":
+			_show_settings_category("root")
+		"navigate_menu":
 			_show_menu()
-		"saved_units":
-			if saved_units_return_context == "editor":
-				_show_editor_preserve_canvas()
-			else:
-				_show_menu()
+		"navigate_settings":
+			_show_settings()
+		"navigate_return_target":
+			_navigate_to_page_target(String(action.get("to_page", "")), String(action.get("reason", "page_options_back")))
 		_:
-			_show_menu()
+			return
 
 
 func _show_context_help(context: String) -> void:
@@ -42602,36 +46364,21 @@ func _update_music() -> void:
 
 
 func _update_menu_ui() -> void:
-	for i in range(menu_buttons.size()):
-		menu_buttons[i].text = "%s%02d  %s" % ["> " if i == menu_index else "  ", i + 1, _menu_item(i)]
-		menu_buttons[i].modulate = Color(0.35, 0.95, 1.0, 1.0) if i == menu_index else Color(0.86, 0.9, 0.94, 1.0)
-	menu_description_label.text = _menu_description(menu_index)
-	var ai_seat_visible := menu_index == 3
-	if menu_ai_seat_panel != null:
-		menu_ai_seat_panel.visible = ai_seat_visible
-	if menu_ai_seat_label != null:
-		menu_ai_seat_label.visible = ai_seat_visible
-	for i in range(menu_ai_seat_buttons.size()):
-		var seat_button: Button = menu_ai_seat_buttons[i]
-		seat_button.visible = ai_seat_visible
-		seat_button.disabled = not ai_seat_visible
-		var seat_index := i + 1
-		seat_button.modulate = Color(0.35, 0.95, 1.0, 1.0) if ai_seat_visible and ai_battle_seat == seat_index else Color(0.86, 0.9, 0.94, 1.0)
-	if ai_seat_visible:
-		menu_description_label.text = "%s\n\n%s" % [_menu_description(menu_index), "请用鼠标点击下方 P1、P2 或 P3 进入 AI 对战。" if _ui_is_zh() else "Click P1, P2, or P3 below with the mouse to enter AI Battle."]
-	if menu_status_label != null:
-		var summary := _team_summary(1)
-		var starter := _starter_sortie_entry(1)
-		menu_status_label.text = "队伍 %d/%d  造价 %d/%d  出战 %d/%d  首发 %s  %s" % [
-			int(summary.get("units", 0)),
-			_current_roster_cap(),
-			int(summary.get("cost", 0)),
-			START_BUDGET,
-			int(summary.get("sortie_count", 0)),
-			_current_sortie_cap(),
-			_sortie_entry_label(1, starter),
-			"合法" if bool(summary.get("valid", false)) else "需要编辑",
-		]
+	if menu_controller == null or menu_view == null:
+		return
+	var summary := _team_summary(1)
+	var starter := _starter_sortie_entry(1)
+	var team_status := "队伍 %d/%d  造价 %d/%d  出战 %d/%d  首发 %s  %s" % [
+		int(summary.get("units", 0)),
+		_current_roster_cap(),
+		int(summary.get("cost", 0)),
+		START_BUDGET,
+		int(summary.get("sortie_count", 0)),
+		_current_sortie_cap(),
+		_sortie_entry_label(1, starter),
+		"合法" if bool(summary.get("valid", false)) else "需要编辑",
+	]
+	menu_view.update_main_menu(menu_controller.main_menu_model(ui_language, ai_battle_seat, _match_format_short(), team_status))
 
 
 func _scout_opponent_player_id() -> int:
@@ -42939,10 +46686,10 @@ func _scout_unit_detail(player_id: int, entry: Dictionary) -> String:
 	if String(stats.get("electronic_armor_note", "")) != "":
 		lines.append(String(stats.get("electronic_armor_note", "")))
 	if role_key == "hero":
-		lines.append("速度 %.2f  加速 %.2f  转向 %.2f  散热 %.1f  英雄热槽 %.0f  常态热 %.1f" % [float(stats.get("speed", 0.0)), float(stats.get("acceleration", 0.0)), float(stats.get("turn_speed", 0.0)), float(stats.get("cooling", 0.0)), float(stats.get("heat_capacity", 0.0)), float(stats.get("idle_heat_load", 0.0))])
+		lines.append("速度 %.2f  加速 %.2f  转向 %.2f  散热速度 %.1f  热力池 %.0f  常态热 %.1f" % [float(stats.get("speed", 0.0)), float(stats.get("acceleration", 0.0)), float(stats.get("turn_speed", 0.0)), float(stats.get("cooling", 0.0)), float(stats.get("heat_capacity", 0.0)), float(stats.get("idle_heat_load", 0.0))])
 		if String(stats.get("soul_heat_note", "")) != "":
 			lines.append(String(stats.get("soul_heat_note", "")))
-		lines.append("热力：只由背刺加热、结界热场和未来明确消耗热力的强力必杀增加；boost 和通用攻击不消耗热力")
+		lines.append("热力：常态热只做构筑压力；Boost、背刺加热、结界热场和明确消耗热力的强力必杀会产生运行时热。")
 	else:
 		lines.append("速度 %.2f  加速 %.2f  转向 %.2f  散热 %.1f  无热力槽" % [float(stats.get("speed", 0.0)), float(stats.get("acceleration", 0.0)), float(stats.get("turn_speed", 0.0)), float(stats.get("cooling", 0.0))])
 	lines.append("伤害 %s  普通/正面护甲/背面激活 %d/%d/%d  距离 %.2f/%.2f/%.2f" % [
@@ -43051,7 +46798,7 @@ func _scout_unit_detail(player_id: int, entry: Dictionary) -> String:
 		projectile_event["projectile"] = true
 		var projectile_speed := _projectile_collision_speed_for_event(projectile_event)
 		var projectile_mass := _projectile_mass_for_event(projectile_event, projectile_speed)
-		var projectile_momentum := projectile_mass * projectile_speed
+		var projectile_momentum := _projectile_momentum_for_event(projectile_event)
 		var gun_kind := String(stats.get("gun_kind", ""))
 		var ammo_kind := String(stats.get("ammo_kind", ""))
 		if gun_kind != "" or ammo_kind != "":
@@ -43063,7 +46810,7 @@ func _scout_unit_detail(player_id: int, entry: Dictionary) -> String:
 		elif projectile_behavior == "explosive":
 			projectile_note += " / blast %.2f / ammo %s" % [float(stats.get("explosion_radius", 0.0)), ammo_kind if ammo_kind != "" else "explosive"]
 		if projectile_momentum > 0.0:
-			projectile_note += " / P-MASS %.2f / V %.1f / P-MOM %.0f / RECOIL %.2f" % [projectile_mass, projectile_speed, projectile_momentum, float(stats.get("recoil_transfer_mult", _default_recoil_transfer_for_projectile(projectile_event)))]
+			projectile_note += " / P-MASS %.2f / V %.1f / P-MOM %.0f / RECOIL-MOM %.0f" % [projectile_mass, projectile_speed, projectile_momentum, projectile_momentum]
 		special_lines.append("PROJECTILE: %s %s / range %.2f / path %s%s" % [String(stats.get("projectile_style", "shot")), projectile_behavior.to_upper(), float(stats.get("projectile_range", 0.0)), String(stats.get("travel_path", "straight")), projectile_note])
 	if bool(stats.get("is_homing_launcher", false)):
 		special_lines.append("HOMING: radius %.2f / interval %.2f / accuracy %.2f / dmg %d %s" % [float(stats.get("homing_radius", 0.0)), float(stats.get("homing_interval", 0.0)), float(stats.get("homing_accuracy", 0.0)), int(stats.get("homing_damage", 0)), _damage_name(String(stats.get("homing_damage_type", "bullet")))])
@@ -43233,7 +46980,8 @@ func _update_editor_ui(force_now: bool = false) -> void:
 	var class_label := _zh_part_name(String(selected_component.get("material_class", "part")).to_upper()) if _ui_is_zh() else String(selected_component.get("material_class", "part")).to_upper()
 	var compact_detail_bits: Array = []
 	compact_detail_bits.append(("价%d" if _ui_is_zh() else "C%d") % int(selected_component.get("cost", 0)))
-	compact_detail_bits.append(("HP%d" if _ui_is_zh() else "HP%d") % int(selected_component.get("hp", 0)))
+	if _component_has_combat_volume(selected_component, selected_slot_key):
+		compact_detail_bits.append(("HP%d" if _ui_is_zh() else "HP%d") % int(selected_component.get("hp", 0)))
 	compact_detail_bits.append(("质%.0f" if _ui_is_zh() else "M%.0f") % float(selected_component.get("mass", 0.0)))
 	if float(selected_component.get("length", 0.0)) > 0.0:
 		compact_detail_bits.append(("长%.2f" if _ui_is_zh() else "L%.2f") % float(selected_component.get("length", 0.0)))
@@ -43268,17 +47016,29 @@ func _refresh_editor_module_binding_buttons() -> void:
 	var pending := not editor_pending_module_binding.is_empty()
 	var target_ready := pending and bool(editor_pending_module_binding.get("target_selected", false))
 	var selected_key := clampi(int(editor_pending_module_binding.get("attack_key", 0)), 1, ATTACK_GROUP_COUNT) if target_ready and int(editor_pending_module_binding.get("attack_key", 0)) > 0 else 0
+	var bound_keys := {}
+	if not pending:
+		var role_key: String = ROLE_ORDER[editor_role_index]
+		var unit_bp: Dictionary = _editor_current_blueprint()
+		if _role_uses_body_board(role_key) and unit_bp.has("custom_topology"):
+			for raw_binding in _runtime_module_bindings_for_blueprint(role_key, unit_bp):
+				if raw_binding is Dictionary and bool(Dictionary(raw_binding).get("runtime_valid", true)):
+					bound_keys[clampi(int(Dictionary(raw_binding).get("attack_key", 0)), 1, ATTACK_GROUP_COUNT)] = true
 	for key_index in range(1, ATTACK_GROUP_COUNT + 1):
 		var button_key := "bind_key_%d" % key_index
 		if not editor_action_buttons.has(button_key):
 			continue
 		var button: Button = editor_action_buttons[button_key]
-		var should_show := target_ready and editor_layer != null and editor_layer.visible
+		var bound_ready := bound_keys.has(key_index)
+		var should_show := bound_ready and not pending and editor_layer != null and editor_layer.visible
 		_set_canvas_item_visible_if_changed(button, should_show)
 		_set_button_disabled_if_changed(button, not should_show)
-		_set_control_text_if_changed(button, "%d %s" % [key_index, _attack_key_label(key_index)])
-		_set_control_tooltip_if_changed(button, ("绑定到攻击键 %d（键盘 %s）" if _ui_is_zh() else "Bind to attack key %d (keyboard %s)") % [key_index, _attack_key_label(key_index)])
-		_set_canvas_item_modulate_if_changed(button, Color(1.0, 0.86, 0.22, 1.0) if key_index == selected_key else Color(0.58, 0.82, 1.0, 0.92))
+		var label_prefix := "试" if bound_ready and not pending and _ui_is_zh() else ("TRY" if bound_ready and not pending else "")
+		var button_text := "%s%d %s" % [label_prefix, key_index, _attack_key_label(key_index)] if label_prefix != "" else "%d %s" % [key_index, _attack_key_label(key_index)]
+		_set_control_text_if_changed(button, button_text)
+		var tip := ("试用攻击键 %d（无伤害、不耗弹、不发热）" if _ui_is_zh() else "Try attack key %d (no damage, ammo, or heat)") % key_index if bound_ready and not pending else (("绑定到攻击键 %d（键盘 %s）" if _ui_is_zh() else "Bind to attack key %d (keyboard %s)") % [key_index, _attack_key_label(key_index)])
+		_set_control_tooltip_if_changed(button, tip)
+		_set_canvas_item_modulate_if_changed(button, Color(1.0, 0.86, 0.22, 1.0) if key_index == selected_key else (Color(0.42, 1.0, 0.76, 0.96) if bound_ready and not pending else Color(0.58, 0.82, 1.0, 0.92)))
 		if button.visible:
 			button.move_to_front()
 
@@ -43487,8 +47247,8 @@ func _apply_editor_panel_visibility(role_key: String, unit_bp: Dictionary) -> vo
 		if board_primary_action_keys.has(String(action_key)):
 			_set_canvas_item_visible_if_changed(action_button, true)
 			_set_button_disabled_if_changed(action_button, false)
-			_set_control_position_if_changed(action_button, Vector2(408.0 + float(board_primary_action_keys.find(String(action_key))) * 122.0, 600.0))
-			_set_control_size_if_changed(action_button, Vector2(114.0, 24.0))
+			_set_control_position_if_changed(action_button, Vector2(352.0 + float(board_primary_action_keys.find(String(action_key))) * 156.0, 600.0))
+			_set_control_size_if_changed(action_button, Vector2(146.0, 28.0))
 			if String(action_key) == "save_canvas":
 				_set_control_text_if_changed(action_button, "保存为单位" if _ui_is_zh() else "SAVE UNIT")
 				_set_canvas_item_modulate_if_changed(action_button, Color(1.0, 0.86, 0.28, 1.0))
@@ -44009,15 +47769,15 @@ func _catalog_card_data_lines(slot_key: String, part: Dictionary) -> Array:
 			"engine":
 				return ["价%d %s 动%.0f" % [cost, _engine_family_label(String(part.get("engine_family", "balanced"))), _engine_momentum_output_for_part(part)], "热%.1f 质%.0f %s" % [_engine_idle_heat_for_part(part, _engine_momentum_output_for_part(part)), mass, volume]]
 			"cooling":
-				return ["价%d 散%.1f 质%.0f" % [cost, float(part.get("cooling_rate", part.get("cooling", 0.0))), mass], "%s / 体积%s" % [String(part.get("cooling_family", _cooling_family_for_part(part))), volume]]
+				return ["价%d 散%.1f 池%.0f" % [cost, _cooling_rate_for_part(part), _cooling_heat_capacity_for_part(part)], "质%.0f %s / 体积%s" % [mass, String(part.get("cooling_family", _cooling_family_for_part(part))), volume]]
 			"booster":
 				var thruster := _thruster_with_drive_defaults(part)
-				return ["价%d %s 分%.0f" % [cost, _thruster_family_label(String(thruster.get("thruster_family", ""))), _thruster_allocated_momentum_for_part(thruster)], "移%.1f B+%.1f 冷%.1fs 热%.1f" % [_booster_normal_momentum_for_part(thruster), _booster_boost_momentum_for_part(thruster), float(thruster.get("boost_cooldown", 0.0)), float(thruster.get("boost_heat", 0.0))]]
+				return ["价%d %s 需%.0f" % [cost, _thruster_family_label(String(thruster.get("thruster_family", ""))), _thruster_drive_demand_for_part(thruster)], "移%.1f B+%.1f 冷%.1fs 热%.1f" % [_booster_normal_momentum_for_part(thruster), _booster_boost_momentum_for_part(thruster), float(thruster.get("boost_cooldown", 0.0)), float(thruster.get("boost_heat", 0.0))]]
 			"special":
 				return ["价%d 无动力消耗" % cost, "%s / 软件" % _zh_part_name(String(part.get("kind", "特殊")).to_upper())]
 			"module":
 				var model := _module_action_card_model(part)
-				return ["价%d %s %s" % [cost, String(model.get("input_short", "X")), String(model.get("weapon_short", ""))], "适配%s / %s" % [String(model.get("joint_short", "")), String(model.get("damage_source", ""))]]
+				return ["价%d %s %s" % [cost, String(model.get("input_short", "X")), String(model.get("weapon_short", ""))], "%s / %s" % [String(model.get("category_short", "模块>近战")), String(model.get("joint_short", ""))]]
 			"joint":
 				return ["价%d 软件式 质%.0f" % [cost, mass], "输出动量%.0f 刚度%.0f" % [_joint_fixed_output_momentum(part), _part_stiffness(part, slot_key)]]
 			"limb_muscle":
@@ -44038,15 +47798,15 @@ func _catalog_card_data_lines(slot_key: String, part: Dictionary) -> Array:
 		"engine":
 			return ["C%d %s PWR%.0f" % [cost, _engine_family_label(String(part.get("engine_family", "balanced"))).to_upper(), _engine_momentum_output_for_part(part)], "H%.1f M%.0f %s" % [_engine_idle_heat_for_part(part, _engine_momentum_output_for_part(part)), mass, volume]]
 		"cooling":
-			return ["C%d COOL %.1f M%.0f" % [cost, float(part.get("cooling_rate", part.get("cooling", 0.0))), mass], "%s VOL %s" % [String(part.get("cooling_family", _cooling_family_for_part(part))).to_upper(), volume]]
+			return ["C%d COOL %.1f POOL%.0f" % [cost, _cooling_rate_for_part(part), _cooling_heat_capacity_for_part(part)], "M%.0f %s VOL %s" % [mass, String(part.get("cooling_family", _cooling_family_for_part(part))).to_upper(), volume]]
 		"booster":
 			var thruster_en := _thruster_with_drive_defaults(part)
-			return ["C%d %s AL%.0f" % [cost, _thruster_family_label(String(thruster_en.get("thruster_family", ""))).to_upper(), _thruster_allocated_momentum_for_part(thruster_en)], "MV%.1f B+%.1f CD%.1fs H%.1f" % [_booster_normal_momentum_for_part(thruster_en), _booster_boost_momentum_for_part(thruster_en), float(thruster_en.get("boost_cooldown", 0.0)), float(thruster_en.get("boost_heat", 0.0))]]
+			return ["C%d %s REQ%.0f" % [cost, _thruster_family_label(String(thruster_en.get("thruster_family", ""))).to_upper(), _thruster_drive_demand_for_part(thruster_en)], "MV%.1f B+%.1f CD%.1fs H%.1f" % [_booster_normal_momentum_for_part(thruster_en), _booster_boost_momentum_for_part(thruster_en), float(thruster_en.get("boost_cooldown", 0.0)), float(thruster_en.get("boost_heat", 0.0))]]
 		"special":
 			return ["C%d NO POWER" % cost, "%s / SOFTWARE" % String(part.get("kind", "SPECIAL")).to_upper()]
 		"module":
 			var model_en := _module_action_card_model(part)
-			return ["C%d %s %s" % [cost, String(model_en.get("input_short", "X")).to_upper(), String(model_en.get("weapon_short", "")).to_upper()], "FIT %s / %s" % [String(model_en.get("joint_short", "")).to_upper(), String(model_en.get("damage_source", "")).to_upper()]]
+			return ["C%d %s %s" % [cost, String(model_en.get("input_short", "X")).to_upper(), String(model_en.get("weapon_short", "")).to_upper()], "%s / %s" % [String(model_en.get("category_short", "MOD>MELEE")), String(model_en.get("joint_short", "")).to_upper()]]
 		"joint":
 			return ["C%d SOFTWARE M%.0f" % [cost, mass], "OUT%.0f STIFF%.0f" % [_joint_fixed_output_momentum(part), _part_stiffness(part, slot_key)]]
 		"limb_muscle":
@@ -44175,7 +47935,7 @@ func _editor_part_has_sort_property(slot_key: String, part: Dictionary, sort_key
 		"cost":
 			return part.has("cost")
 		"hp":
-			return float(part.get("hp", 0.0)) > 0.0
+			return _component_has_combat_volume(part, slot_key) and float(part.get("hp", 0.0)) > 0.0
 		"mass":
 			return float(part.get("mass", 0.0)) > 0.0
 		"length":
@@ -44185,8 +47945,12 @@ func _editor_part_has_sort_property(slot_key: String, part: Dictionary, sort_key
 		"engine_momentum":
 			return slot_key == "engine" and _engine_momentum_output_for_part(part) > 0.0
 		"allocated_momentum":
+			if slot_key == "booster":
+				return _thruster_drive_demand_for_part(part) > 0.0
 			return _part_has_positive_numeric(part, ["allocated_momentum", "allocated_limb_momentum", "boost_momentum", "cooling_rate", "gravity_force", "repulsion_force", "pull_power", "trap_power"])
 		"damage":
+			if slot_key == "module" or _part_is_nonphysical_equipment_or_software(slot_key, part):
+				return false
 			if slot_key == "muscle" and _component_is_torso(part):
 				return false
 			return _part_has_positive_numeric(part, ["normal_damage", "armor_damage", "active_damage", "projectile_damage", "damage", "explosion_damage", "trap_damage", "barrage_damage", "homing_damage", "cage_damage"])
@@ -44217,12 +47981,25 @@ func _editor_catalog_part_passes_filter(slot_key: String, part: Dictionary) -> b
 	if _part_is_catalog_frozen(slot_key, part):
 		return false
 	var filter_key := editor_part_filter_mode
+	var catalog_role := _catalog_role_for_part(slot_key, part)
+	var part_category := _catalog_part_category_for_part(slot_key, part)
 	if filter_key in ["all", ""]:
 		return true
 	if filter_key in ["booster", "engine", "cooling"]:
 		return slot_key == filter_key
-	if filter_key == "module":
-		return slot_key == "module"
+	if filter_key in ["module", "module_all", "module_melee", "module_ranged", "module_other"]:
+		if slot_key != "module":
+			return false
+		if filter_key in ["module", "module_all"]:
+			return true
+		var category := _module_category_for_part(part)
+		if filter_key == "module_melee":
+			return category == "melee"
+		if filter_key == "module_ranged":
+			return category == "ranged"
+		if filter_key == "module_other":
+			return category == "other"
+		return true
 	if slot_key == "special":
 		var special_kind := String(part.get("kind", "")).to_lower()
 		match filter_key:
@@ -44234,7 +48011,7 @@ func _editor_catalog_part_passes_filter(slot_key: String, part: Dictionary) -> b
 				return special_kind == "ether"
 		return true
 	if slot_key == "limb_muscle":
-		var limb_barrier := bool(part.get("barrier_tile_component", false)) or bool(part.get("barrier_panel", false)) or String(part.get("barrier_logic", "")) != ""
+		var limb_barrier := catalog_role == "barrier_tile" or bool(part.get("barrier_tile_component", false)) or bool(part.get("barrier_panel", false)) or String(part.get("barrier_logic", "")) != ""
 		if filter_key == "barrier_muscle":
 			return limb_barrier
 		return filter_key in ["ordinary", "connector_limb"] and not limb_barrier
@@ -44262,8 +48039,8 @@ func _editor_catalog_part_passes_filter(slot_key: String, part: Dictionary) -> b
 	if slot_key == "muscle":
 		var material_class := String(part.get("material_class", "")).to_lower()
 		var damage_type := String(part.get("damage_type", "")).to_lower()
-		var ammo_payload := bool(part.get("ammo_slot_payload", false)) or material_class == "ammo_payload"
-		var shield_payload := bool(part.get("electronic_armor", false)) or bool(part.get("shield_payload", false)) or material_class == "shield_payload"
+		var ammo_payload := catalog_role == "ammo_payload" or bool(part.get("ammo_slot_payload", false)) or material_class == "ammo_payload"
+		var shield_payload := catalog_role == "shield_payload" or bool(part.get("electronic_armor", false)) or bool(part.get("shield_payload", false)) or material_class == "shield_payload"
 		var software_muscle_payload := bool(part.get("torso_slot_payload", false)) or ammo_payload or shield_payload
 		if filter_key == "ammo":
 			return ammo_payload
@@ -44271,13 +48048,13 @@ func _editor_catalog_part_passes_filter(slot_key: String, part: Dictionary) -> b
 			return shield_payload
 		if filter_key == "software_muscle":
 			return software_muscle_payload
-		var projectile := bool(part.get("projectile", false)) or material_class in ["gun", "missile_launcher", "web_gun"]
-		var torso := bool(part.get("is_torso", false)) or material_class == "torso"
-		var brain_torso := torso and _component_is_brain_torso(part)
-		var barrier := bool(part.get("barrier_tile_component", false)) or bool(part.get("barrier_panel", false)) or String(part.get("barrier_logic", "")) != "" or bool(part.get("is_support_node", false)) or bool(part.get("is_gravity_field", false)) or bool(part.get("is_trap_field", false))
-		var terminal_weapon := bool(part.get("terminal_weapon", false)) or material_class in ["weapon", "gun", "missile_launcher", "web_gun", "racket"]
-		var two_ended_connector := int(part.get("connection_ends", 1)) >= 2 and not projectile and not terminal_weapon
-		var terminal_candidate := not torso and not barrier and not software_muscle_payload and (terminal_weapon or projectile or int(part.get("connection_ends", 1)) <= 1)
+		var projectile := catalog_role == "gun" or bool(part.get("projectile", false)) or material_class in ["gun", "missile_launcher", "web_gun"]
+		var torso := catalog_role in ["torso", "brain_torso"] or bool(part.get("is_torso", false)) or material_class == "torso"
+		var brain_torso := catalog_role == "brain_torso" or (torso and _component_is_brain_torso(part))
+		var barrier := catalog_role == "barrier_tile" or bool(part.get("barrier_tile_component", false)) or bool(part.get("barrier_panel", false)) or String(part.get("barrier_logic", "")) != "" or bool(part.get("is_support_node", false)) or bool(part.get("is_gravity_field", false)) or bool(part.get("is_trap_field", false))
+		var terminal_weapon := catalog_role in ["gun", "melee_weapon"] or bool(part.get("terminal_weapon", false)) or material_class in ["weapon", "gun", "missile_launcher", "web_gun", "racket"]
+		var two_ended_connector := catalog_role == "connector" or (int(part.get("connection_ends", 1)) >= 2 and not projectile and not terminal_weapon)
+		var terminal_candidate := catalog_role in ["gun", "melee_weapon"] or (not torso and not barrier and not software_muscle_payload and (terminal_weapon or projectile or int(part.get("connection_ends", 1)) <= 1))
 		var terminal_kind := _terminal_weapon_kind_for_part(part, "muscle") if terminal_candidate else ""
 		var terminal_melee := terminal_candidate and terminal_kind == "melee" and damage_type in ["blunt", "pierce", "tear", "explosive"]
 		match filter_key:
@@ -44320,7 +48097,7 @@ func _editor_catalog_part_passes_filter(slot_key: String, part: Dictionary) -> b
 			"connector_limb":
 				return false
 			"ordinary":
-				return torso or barrier or two_ended_connector
+				return torso or barrier or two_ended_connector or part_category == "connector"
 			"barrier_muscle":
 				return barrier
 		return true
@@ -44436,7 +48213,7 @@ func _editor_part_sort_value(slot_key: String, part: Dictionary) -> float:
 		"cost":
 			return float(part.get("cost", 0.0))
 		"hp":
-			return float(part.get("hp", 0.0))
+			return float(part.get("hp", 0.0)) if _component_has_combat_volume(part, slot_key) else 0.0
 		"mass":
 			return float(part.get("mass", 0.0))
 		"length":
@@ -44447,13 +48224,15 @@ func _editor_part_sort_value(slot_key: String, part: Dictionary) -> float:
 			return _engine_momentum_output_for_part(part) if slot_key == "engine" else 0.0
 		"allocated_momentum":
 			if slot_key == "booster":
-				return _thruster_allocated_momentum_for_part(part)
+				return _thruster_drive_demand_for_part(part)
 			if slot_key in ["limb_muscle", "muscle"] and not _component_is_torso(part):
 				return _default_limb_allocated_momentum_for_part(part, slot_key)
 			if slot_key == "cooling":
-				return float(part.get("cooling_rate", part.get("cooling", 0.0)))
+				return _cooling_rate_for_part(part)
 			return float(part.get("allocated_momentum", 0.0))
 		"damage":
+			if slot_key == "module" or _part_is_nonphysical_equipment_or_software(slot_key, part):
+				return 0.0
 			if slot_key == "muscle" and _component_is_torso(part):
 				return 0.0
 			return maxf(float(part.get("normal_damage", 0.0)), maxf(float(part.get("armor_damage", 0.0)), float(part.get("active_damage", 0.0))))
@@ -44667,7 +48446,14 @@ func _clear_editor_hover_card() -> void:
 		_refresh_editor_stats_rail(stats)
 
 
+func _editor_binding_ui_active() -> bool:
+	return game_state == STATE_EDITOR and editor_torso_detail_view != null and editor_torso_detail_view.visible and editor_torso_detail_view.binding_mode
+
+
 func _show_editor_part_hover(slot_key: String, part_index: int, part: Dictionary) -> void:
+	if _editor_binding_ui_active():
+		_clear_editor_hover_card()
+		return
 	if editor_hover_slot_key == slot_key and editor_hover_part_index == part_index and editor_hover_popup_view != null and editor_hover_popup_view.visible:
 		return
 	editor_hover_preview_refresh_count += 1
@@ -44808,6 +48594,7 @@ func _module_action_card_model(part: Dictionary) -> Dictionary:
 		profile = String(part.get("gun_activation", part.get("motion", "")))
 	var command_profile := String(part.get("command_window_profile", ""))
 	var target_kind := String(part.get("module_target_kind", part.get("target_kind", "")))
+	var category := _module_category_for_part(part)
 	var joint_label := _module_joint_fit_label(target_kind, zh)
 	var weapon_label := _module_weapon_fit_label(part, profile, command_profile, target_kind, zh)
 	var joint_icon := _module_joint_fit_icon(target_kind)
@@ -44817,6 +48604,10 @@ func _module_action_card_model(part: Dictionary) -> Dictionary:
 		"profile": profile,
 		"command_profile": command_profile,
 		"target_kind": target_kind,
+		"category": category,
+		"category_label": _module_category_label(category, zh),
+		"category_path": _module_category_path(category, zh),
+		"category_short": _module_category_short_path(category, zh),
 		"target_label": _module_target_kind_label(target_kind, zh),
 		"joint_label": joint_label,
 		"joint_short": _module_short_fit_label(joint_label),
@@ -44832,6 +48623,71 @@ func _module_action_card_model(part: Dictionary) -> Dictionary:
 		"icon_tags": [joint_icon, weapon_icon, "input", "projectile" if _gun_activation_profiles().has(profile) else "contact"],
 	}
 	return model
+
+
+func _module_category_for_part(part: Dictionary) -> String:
+	var explicit := String(part.get("module_category", "")).to_lower()
+	if explicit in ["melee", "ranged", "other"]:
+		return explicit
+	var profile := String(part.get("module_action_profile", ""))
+	if profile == "":
+		profile = String(part.get("gun_activation", part.get("motion", "")))
+	profile = profile.to_lower()
+	var command_profile := String(part.get("command_window_profile", "")).to_lower()
+	var target_kind := String(part.get("module_target_kind", part.get("target_kind", ""))).to_lower()
+	var motion := String(part.get("motion", "")).to_lower()
+	var effect := String(part.get("module_effect", "")).to_lower()
+	var key := "%s %s %s %s %s %s %s" % [
+		profile,
+		command_profile,
+		target_kind,
+		motion,
+		effect,
+		String(part.get("travel_path", "")).to_lower(),
+		String(part.get("projectile_behavior", "")).to_lower(),
+	]
+	if _gun_activation_profiles().has(profile) \
+			or target_kind.find("gun") >= 0 \
+			or bool(part.get("requires_connected_gun", false)) \
+			or bool(part.get("projectile", false)) \
+			or key.find("projectile") >= 0 \
+			or key.find("bullet") >= 0 \
+			or key.find("missile") >= 0 \
+			or key.find("laser") >= 0 \
+			or key.find("web") >= 0 \
+			or key.find("salvo") >= 0 \
+			or key.find("beam") >= 0:
+		return "ranged"
+	if effect in ["capture", "eject", "takeover", "control", "repair", "heal", "buff", "debuff"] \
+			or key.find("capture") >= 0 \
+			or key.find("eject") >= 0 \
+			or key.find("takeover") >= 0 \
+			or key.find("hijack") >= 0 \
+			or key.find("grapple") >= 0 \
+			or key.find("support") >= 0 \
+			or bool(part.get("non_damage", false)):
+		return "other"
+	if target_kind == "" and profile == "":
+		return "other"
+	return "melee"
+
+
+func _module_category_label(category: String, zh: bool) -> String:
+	match category:
+		"ranged":
+			return "远程" if zh else "Ranged"
+		"other":
+			return "其他" if zh else "Other"
+		_:
+			return "近战" if zh else "Melee"
+
+
+func _module_category_path(category: String, zh: bool) -> String:
+	return ("行动模块 > %s" if zh else "Action Module > %s") % _module_category_label(category, zh)
+
+
+func _module_category_short_path(category: String, zh: bool) -> String:
+	return ("模块>%s" if zh else "MOD>%s") % _module_category_label(category, zh).to_upper()
 
 
 func _module_short_fit_label(label: String) -> String:
@@ -44955,7 +48811,7 @@ func _module_input_mode_label(part: Dictionary, profile: String, command_profile
 			return "X+必杀" if zh else "X+Special"
 	if bool(part.get("hold_to_activate", false)):
 		return "按住" if zh else "Hold"
-	if float(part.get("armor_damage", 0.0)) > 0.0 or float(part.get("active_damage", 0.0)) > 0.0:
+	if command_profile in ["blade_complex_236_214", "gauntlet_4_6_236_214", "blunt_terminal_4_6_236_214"]:
 		return "X+必杀" if zh else "X+Special"
 	return "X"
 
@@ -45023,11 +48879,7 @@ func _module_input_rows_for_part(part: Dictionary, profile: String, command_prof
 				rows.append("236X必杀：护甲强化动作。" if zh else "236X special: armor action.")
 				rows.append("214X必杀：激活强化动作。" if zh else "214X special: active action.")
 	if rows.is_empty():
-		if float(part.get("armor_damage", 0.0)) > 0.0 or float(part.get("active_damage", 0.0)) > 0.0:
-			rows.append("X：普通动作。" if zh else "X: normal action.")
-			rows.append("236X必杀：护甲强化动作；214X必杀：激活动作。" if zh else "236X special: armor action; 214X special: active action.")
-		else:
-			rows.append("X：普通动作。" if zh else "X: normal action.")
+		rows.append("X：普通动作。" if zh else "X: normal action.")
 	return rows
 
 
@@ -45039,11 +48891,6 @@ func _module_action_data_line(part: Dictionary, profile: String, command_profile
 		data.append(("启动%.0f%%" if zh else "start %.0f%%") % (startup * 100.0))
 	if recovery > 0.0:
 		data.append(("恢复%.0f%%" if zh else "recover %.0f%%") % (recovery * 100.0))
-	var normal := float(part.get("normal_damage", 0.0))
-	var armor := float(part.get("armor_damage", 0.0))
-	var active := float(part.get("active_damage", 0.0))
-	if maxf(normal, maxf(armor, active)) > 0.0:
-		data.append(("伤害%.0f/%.0f/%.0f" if zh else "damage %.0f/%.0f/%.0f") % [normal, armor, active])
 	var arc := float(part.get("swing_arc_degrees", 0.0))
 	if arc > 0.0:
 		data.append(("弧%.0f°" if zh else "arc %.0f deg") % arc)
@@ -45064,7 +48911,7 @@ func _module_action_data_line(part: Dictionary, profile: String, command_profile
 			data.append(("射程%.1fm" if zh else "range %.1fm") % float(part.get("module_range", 0.0)))
 		data.append("弹药/热量看绑定武器" if zh else "ammo/heat from bound weapon")
 	if data.is_empty():
-		data.append("数据随绑定部位与动力分配结算" if zh else "stats resolve from target and power allocation")
+		data.append("数据随绑定部位与动力预算结算" if zh else "stats resolve from target and drive budget")
 	return ("数据：" if zh else "Data: ") + " / ".join(data) + "。"
 
 
@@ -45072,6 +48919,7 @@ func _hover_card_module_stat_entries(part: Dictionary) -> Array:
 	var entries: Array = []
 	var model := _module_action_card_model(part)
 	_add_hover_stat(entries, "价格" if _ui_is_zh() else "Cost", float(part.get("cost", 0.0)), 180.0, "", Color(1.0, 0.84, 0.24, 1.0), "cost")
+	_add_hover_stat_text(entries, "分类" if _ui_is_zh() else "Type", String(model.get("category_label", "")), Color(0.78, 0.88, 1.0, 1.0), "software")
 	_add_hover_stat_text(entries, "输入" if _ui_is_zh() else "Input", String(model.get("input_short", "X")), Color(0.72, 0.98, 0.82, 1.0), "input")
 	_add_hover_stat_text(entries, "关节" if _ui_is_zh() else "Joint", String(model.get("joint_short", "")), Color(0.42, 0.98, 1.0, 1.0), String(model.get("joint_icon", "joint_ball")))
 	_add_hover_stat_text(entries, "武器" if _ui_is_zh() else "Weapon", String(model.get("weapon_short", "")), Color(1.0, 0.72, 0.28, 1.0), String(model.get("weapon_icon", "weapon_blunt")))
@@ -45085,8 +48933,7 @@ func _hover_card_module_stat_entries(part: Dictionary) -> Array:
 		_add_hover_stat(entries, "恢复" if _ui_is_zh() else "Recover", recovery * 100.0, 100.0, "%", Color(0.52, 0.78, 1.0, 1.0), "cool")
 	else:
 		_add_hover_stat_text(entries, "结束" if _ui_is_zh() else "End", "松开" if _ui_is_zh() and _gun_activation_profiles().has(String(model.get("profile", ""))) else ("Release" if _gun_activation_profiles().has(String(model.get("profile", ""))) else "Pose"), Color(0.52, 0.78, 1.0, 1.0), "cool")
-	var damage := maxf(float(part.get("normal_damage", 0.0)), maxf(float(part.get("armor_damage", 0.0)), float(part.get("active_damage", 0.0))))
-	_add_hover_stat(entries, "伤害" if _ui_is_zh() else "Damage", damage, 24.0, "", Color(1.0, 0.4, 0.24, 1.0), String(model.get("source_icon", "contact")))
+	_add_hover_stat_text(entries, "伤害结算" if _ui_is_zh() else "Damage Resolve", String(model.get("damage_source", "")), Color(1.0, 0.72, 0.34, 1.0), String(model.get("source_icon", "contact")))
 	var heat := float(part.get("special_heat_fraction", 0.0)) * 100.0
 	if heat <= 0.0:
 		heat = maxf(float(part.get("armor_heat", 0.0)), float(part.get("active_heat", 0.0)))
@@ -45107,7 +48954,7 @@ func _hover_card_stat_entries(slot_key: String, part: Dictionary) -> Array:
 	var entries: Array = []
 	_add_hover_stat(entries, "价格" if _ui_is_zh() else "Cost", float(part.get("cost", 0.0)), 180.0, "", Color(1.0, 0.84, 0.24, 1.0), "cost")
 	_add_hover_stat(entries, "质量" if _ui_is_zh() else "Mass", float(part.get("mass", 0.0)), 180.0, "", Color(0.78, 0.88, 0.96, 1.0), "mass")
-	if slot_key != "joint":
+	if _component_has_combat_volume(part, slot_key):
 		_add_hover_stat(entries, "生命" if _ui_is_zh() else "HP", float(part.get("hp", 0.0)), 220.0, "", Color(0.32, 1.0, 0.62, 1.0), "hp")
 	if slot_key in ["limb_muscle", "muscle"] and _component_has_combat_volume(part, slot_key) and not _component_is_torso(part):
 		_add_hover_stat(entries, "刚度" if _ui_is_zh() else "Stiffness", _part_stiffness(part, slot_key), PART_STIFFNESS_BASE_MOMENTUM * 8.0, "", Color(1.0, 0.42, 0.28, 1.0), "power")
@@ -45128,11 +48975,11 @@ func _hover_card_stat_entries(slot_key: String, part: Dictionary) -> Array:
 		_add_hover_stat(entries, "推进控制" if _ui_is_zh() else "Boost Ctrl", float(part.get("engine_boost_control", 1.0)), 1.55, "x", Color(0.42, 0.98, 1.0, 1.0), "boost")
 		_add_hover_stat(entries, "常态热" if _ui_is_zh() else "Idle Heat", _engine_idle_heat_for_part(part, _engine_momentum_output_for_part(part)), 32.0, "", Color(1.0, 0.2, 0.12, 1.0), "heat")
 	elif slot_key == "cooling":
-		_add_hover_stat(entries, "散热" if _ui_is_zh() else "Cooling", float(part.get("cooling", part.get("cooling_rate", 0.0))), 90.0, "", Color(0.28, 1.0, 0.72, 1.0), "cool")
-		_add_hover_stat(entries, "热槽" if _ui_is_zh() else "Heat Cap", _cooling_heat_capacity_for_part(part), 120.0, "", Color(1.0, 0.36, 0.22, 1.0), "heat")
+		_add_hover_stat(entries, "散热" if _ui_is_zh() else "Cooling", _cooling_rate_for_part(part), 180.0, "", Color(0.28, 1.0, 0.72, 1.0), "cool")
+		_add_hover_stat(entries, "热力池" if _ui_is_zh() else "Heat Pool", _cooling_heat_capacity_for_part(part), 120.0, "", Color(1.0, 0.36, 0.22, 1.0), "heat")
 		_add_hover_stat(entries, "手动冷却" if _ui_is_zh() else "Manual", float(part.get("manual_cooling_bonus", 0.0)), 32.0, "", Color(0.42, 0.98, 1.0, 1.0), "cool")
 	elif slot_key == "booster":
-		_add_hover_stat(entries, "分配" if _ui_is_zh() else "Allocated", _thruster_allocated_momentum_for_part(part), 520.0, "", Color(0.78, 0.52, 1.0, 1.0), "power")
+		_add_hover_stat(entries, "需求下限" if _ui_is_zh() else "REQ", _thruster_drive_demand_for_part(part), 520.0, "", Color(0.78, 0.52, 1.0, 1.0), "power")
 		_add_hover_stat(entries, "推进" if _ui_is_zh() else "Move", _booster_normal_momentum_for_part(part), 520.0, "", Color(1.0, 0.64, 0.24, 1.0), "boost")
 		_add_hover_stat(entries, "Boost额外" if _ui_is_zh() else "Boost Extra", _booster_boost_momentum_for_part(part), 720.0, "", Color(1.0, 0.86, 0.24, 1.0), "boost")
 		_add_hover_stat(entries, "Boost总" if _ui_is_zh() else "Boost Total", _thruster_boost_total_momentum_for_part(part), 980.0, "", Color(1.0, 0.72, 0.18, 1.0), "boost")
@@ -45151,14 +48998,21 @@ func _hover_card_stat_entries(slot_key: String, part: Dictionary) -> Array:
 			_add_hover_stat(entries, "机内槽" if _ui_is_zh() else "Internal", float(_torso_plugin_capacity_for_part(part)), 10.0, "", Color(0.42, 0.98, 0.78, 1.0), "slot")
 		else:
 			var is_ranged := _terminal_weapon_kind_for_part(part, "muscle") == "ranged"
-			_add_hover_stat(entries, "伤害" if _ui_is_zh() else "Damage", maxf(float(part.get("projectile_damage", 0.0)), maxf(float(part.get("normal_damage", 0.0)), maxf(float(part.get("armor_damage", 0.0)), float(part.get("active_damage", 0.0))))), 140.0, "", Color(1.0, 0.36, 0.26, 1.0), "action")
+			if is_ranged and bool(part.get("projectile", false)):
+				var projectile_preview := part.duplicate(true)
+				projectile_preview["projectile"] = true
+				_add_hover_stat(entries, "投射动量" if _ui_is_zh() else "Proj Mom", _projectile_momentum_for_event(projectile_preview), 140.0, "", Color(1.0, 0.52, 0.24, 1.0), "action")
+				_add_hover_stat(entries, "倍率上限" if _ui_is_zh() else "Max Mult", _gun_projectile_damage_mult_max_for_data(part), 12.0, "x", Color(1.0, 0.48, 0.28, 1.0), "action")
+				_add_hover_stat(entries, "后坐动量" if _ui_is_zh() else "Recoil Mom", _projectile_momentum_for_event(projectile_preview), 140.0, "", Color(0.95, 0.42, 1.0, 1.0), "action")
+			else:
+				_add_hover_stat(entries, "近战伤害系数" if _ui_is_zh() else "Melee Damage Coeff", _part_damage_coeff(part, slot_key), 3.0, "x", Color(1.0, 0.36, 0.26, 1.0), "contact")
 			_add_hover_stat(entries, "射程" if _ui_is_zh() else "Range", float(part.get("projectile_range", part.get("range", part.get("normal_range", part.get("length", 0.0))))), 6.0, "m", Color(0.42, 0.82, 1.0, 1.0), "range" if is_ranged else "length")
 			if bool(part.get("projectile", false)):
 				_add_hover_stat(entries, "弹药" if _ui_is_zh() else "Ammo", float(part.get("carried_ammo", 0)), 32.0, "", Color(1.0, 0.86, 0.24, 1.0), "ammo")
 				_add_hover_stat(entries, "热耗" if _ui_is_zh() else "Heat", float(part.get("normal_heat", part.get("heat_cost", 0.0))), 60.0, "", Color(1.0, 0.3, 0.18, 1.0), "heat")
 	elif slot_key == "module":
 		_add_hover_stat(entries, "绑定键" if _ui_is_zh() else "Bind Key", 1.0, 1.0, "", Color(0.72, 0.98, 0.82, 1.0), "action")
-		_add_hover_stat(entries, "倍率" if _ui_is_zh() else "Mult", float(part.get("module_damage_mult", 1.0)), 4.0, "x", Color(1.0, 0.48, 0.28, 1.0), "action")
+		_add_hover_stat_text(entries, "伤害结算" if _ui_is_zh() else "Damage Resolve", _module_damage_source_label(String(part.get("module_action_profile", "")), String(part.get("module_target_kind", "")), _ui_is_zh()), Color(1.0, 0.72, 0.34, 1.0), "contact")
 		if String(part.get("module_action_profile", "")) == "blunt_gauntlet_extend_swing":
 			_add_hover_stat(entries, "热耗" if _ui_is_zh() else "Heat Cost", float(part.get("special_heat_fraction", GAUNTLET_SPECIAL_HEAT_FRACTION)) * 100.0, 50.0, "%", Color(1.0, 0.36, 0.22, 1.0), "heat")
 			_add_hover_stat(entries, "伸出" if _ui_is_zh() else "Extend", float(part.get("module_extension_m", STANDARD_GAUNTLET_EXTENSION_M)), 3.0, "m", Color(0.42, 0.98, 1.0, 1.0), "length")
@@ -45247,7 +49101,8 @@ func _hover_card_player_detail_lines(slot_key: String, part: Dictionary) -> Arra
 						fire_text = "按住喷洒；适合压制和持续伤害。" if zh else "Hold to spray; good for pressure and damage over time."
 					_:
 						fire_text = "锁定后松开发射；适合精确单发。" if zh else "Lock then release; suited to precise single shots."
-				lines.append(("射程 %.2fm，弹药 %d，热耗 %.0f。" if zh else "Range %.2fm, ammo %d, heat %.0f.") % [float(part.get("projectile_range", part.get("range", 0.0))), int(part.get("carried_ammo", 0)), float(part.get("normal_heat", part.get("heat_cost", 0.0)))])
+				lines.append(("射程 %.2fm，弹药 %d，热耗 %.0f，投射动量 %.0f。" if zh else "Range %.2fm, ammo %d, heat %.0f, projectile momentum %.0f.") % [float(part.get("projectile_range", part.get("range", 0.0))), int(part.get("carried_ammo", 0)), float(part.get("normal_heat", part.get("heat_cost", 0.0))), _projectile_momentum_for_event({"projectile": true, "projectile_momentum": float(part.get("projectile_momentum", 0.0)), "projectile_behavior": String(part.get("projectile_behavior", "")), "projectile_style": String(part.get("projectile_style", ""))})])
+				lines.append(("伤害=投射物动量×枪械倍率；倍率随分配给枪械肌肉的动力线性变化，上限 %.1fx。" if zh else "Damage = projectile momentum x gun multiplier; multiplier scales linearly with gun-muscle allocation, max %.1fx.") % [_gun_projectile_damage_mult_max_for_data(part)])
 				lines.append(fire_text)
 			elif _part_is_standard_blunt_gauntlet(part):
 				lines.append("#%s" % ("钝击拳套" if zh else "Blunt Gauntlet"))
@@ -45266,19 +49121,19 @@ func _hover_card_player_detail_lines(slot_key: String, part: Dictionary) -> Arra
 		"cooling":
 			var cooling_tags := ", ".join(_cooling_tags_for_part(part))
 			lines.append(("#%s" if zh else "#%s") % String(part.get("cooling_profile", "balanced")).capitalize())
-			lines.append(("散热 %.1f，热槽 %.0f，手动冷却 +%.0f。" if zh else "Cooling %.1f, heat cap %.0f, manual +%.0f.") % [float(part.get("cooling", part.get("cooling_rate", 0.0))), _cooling_heat_capacity_for_part(part), float(part.get("manual_cooling_bonus", 0.0))])
+			lines.append(("散热速度 %.1f，热力池 %.0f，手动冷却 +%.0f。" if zh else "Cooling speed %.1f, heat pool %.0f, manual +%.0f.") % [_cooling_rate_for_part(part), _cooling_heat_capacity_for_part(part), float(part.get("manual_cooling_bonus", 0.0))])
 			lines.append(("适配：%s。" if zh else "Fit: %s.") % (cooling_tags if cooling_tags != "" else ("通用热管理" if zh else "general heat control")))
 		"booster":
 			var thruster := _thruster_with_drive_defaults(part)
 			var thruster_family := String(thruster.get("thruster_family", ""))
 			lines.append("#%s" % _thruster_family_label(thruster_family))
-			lines.append(("分配动力 %.0f，推进 %.0f，Boost额外 %.0f，总Boost %.0f；角度 %.0f°，间隔 %.2fs，热 %.1f。" if zh else "Allocated power %.0f, move %.0f, boost extra %.0f, total boost %.0f; angle %.0f deg, cooldown %.2fs, heat %.1f.") % [_thruster_allocated_momentum_for_part(thruster), _booster_normal_momentum_for_part(thruster), _booster_boost_momentum_for_part(thruster), _thruster_boost_total_momentum_for_part(thruster), float(thruster.get("boost_angle_degrees", 360.0)), float(thruster.get("boost_cooldown", 0.0)), float(thruster.get("boost_heat", 0.0))])
+			lines.append(("需求下限 %.0f，推进 %.0f，Boost峰值额外 %.0f，总Boost %.0f；角度 %.0f°，间隔 %.2fs，Boost热 %.1f。" if zh else "Fixed demand %.0f, move %.0f, boost peak extra %.0f, total boost %.0f; angle %.0f deg, cooldown %.2fs, boost heat %.1f.") % [_thruster_drive_demand_for_part(thruster), _booster_normal_momentum_for_part(thruster), _booster_boost_momentum_for_part(thruster), _thruster_boost_total_momentum_for_part(thruster), float(thruster.get("boost_angle_degrees", 360.0)), float(thruster.get("boost_cooldown", 0.0)), float(thruster.get("boost_heat", 0.0))])
 			lines.append(("移动方式 %s；刹车 %.2f，转向 %.2f。" if zh else "Movement %s; brake %.2f, turn %.2f.") % [String(thruster.get("movement_profile", "omni")), float(thruster.get("brake_efficiency", 1.0)), float(thruster.get("turn_efficiency", 1.0))])
 			lines.append(_thruster_family_summary(thruster_family))
 		"module":
 			var model := _module_action_card_model(part)
-			lines.append(("#行动模块 / %s / %s" if zh else "#Action Module / %s / %s") % [String(model.get("joint_label", "")), String(model.get("weapon_label", ""))])
-			lines.append(("绑定：%s；伤害来源：%s。" if zh else "Bind: %s; source: %s.") % [String(model.get("target_label", "")), String(model.get("damage_source", ""))])
+			lines.append(("%s / %s / %s" if zh else "%s / %s / %s") % [String(model.get("category_path", "")), String(model.get("joint_label", "")), String(model.get("weapon_label", ""))])
+			lines.append(("绑定：%s；结算来源：%s。" if zh else "Bind: %s; resolve: %s.") % [String(model.get("target_label", "")), String(model.get("damage_source", ""))])
 			var input_rows: Array = Array(model.get("input_rows", []))
 			for i in range(mini(3, input_rows.size())):
 				lines.append(String(input_rows[i]))
@@ -45300,145 +49155,6 @@ func _hover_card_player_detail_lines(slot_key: String, part: Dictionary) -> Arra
 
 func _hover_card_detail_lines(slot_key: String, part: Dictionary, current_stats: Dictionary, preview_stats: Dictionary) -> Array:
 	return _hover_card_player_detail_lines(slot_key, part)
-	var lines: Array = []
-	var cost := int(part.get("cost", 0))
-	var hp := int(part.get("hp", 0))
-	var mass := float(part.get("mass", 0.0))
-	var energy := 0.0
-	var length := float(part.get("length", 0.0))
-	var radius := float(part.get("radius", 0.0))
-	var current_cost := int(current_stats.get("cost", 0))
-	var preview_cost := int(preview_stats.get("cost", current_cost))
-	var no_energy_software := energy <= 0.0
-	if _ui_is_zh():
-		var energy_text := "无动力分配" if no_energy_software else "兼容负载 %.1f" % energy
-		var interface_count := int(part.get("joint_ports", part.get("connection_ends", 0)))
-		lines.append("购买词条：价格 %d / 生命 %d / 质量 %.1f / %s" % [cost, hp, mass, energy_text])
-		lines.append("尺寸：长度 %.2fm / 半径 %.2fm / 接口 %d / 体积 %s" % [length, radius, interface_count, _volume_rank_label(_part_slot_volume_rank(part, slot_key))])
-		var category_path := _terminal_weapon_category_path(part, slot_key, true)
-		if category_path != "":
-			lines.append("分类：%s" % category_path)
-		lines.append("装入预览：单位造价 %d -> %d，质量 %.0f -> %.0f，动力分配 %.0f -> %.0f" % [current_cost, preview_cost, float(current_stats.get("mass", 0.0)), float(preview_stats.get("mass", 0.0)), float(current_stats.get("engine_momentum_required", 0.0)), float(preview_stats.get("engine_momentum_required", 0.0))])
-		match slot_key:
-			"joint":
-				lines.append("软件式关节：安装在逻辑关节点，无体积、无HP、无碰撞体；固定输出动量 %.0f。它只驱动远离躯干侧的肢体组，躯干不会被主动挥动带着走。" % _joint_fixed_output_momentum(part))
-			"limb_muscle":
-				var profile := _embedded_joint_profile_for_part(part, slot_key)
-				lines.append("连接肌肉：族系 %s，驱动 %s；可承载动量 %.0f-%.0f，默认分配 %.0f。动作总时长由分配动量、下游质量和运动距离计算；碰撞结算使用刚度 %.0f、伤害系数 %.2f、破防系数 %.2f。" % [String(part.get("limb_family", _limb_family_for_part(part, slot_key))), String(part.get("joint_drive_kind", _joint_drive_kind_for_part(part, slot_key))), _limb_momentum_min_for_part(part, slot_key), _limb_momentum_max_for_part(part, slot_key), _default_limb_allocated_momentum_for_part(part, slot_key), _part_stiffness(part, slot_key), _part_damage_coeff(part, slot_key), _part_break_coeff(part, slot_key)])
-			"muscle":
-				if _part_is_ammo_payload(part):
-					var caps: Dictionary = part.get("ammo_capacity", {})
-					var total_ammo := int(caps.get("bullet", 0)) + int(caps.get("chemical", 0)) + int(caps.get("laser", 0))
-					lines.append("弹药插件：尺寸 %s / 子弹 %d / 化学 %d / 激光 %d / 总弹数 %d / 质量 %.1f / 价格 %d；只能装入尺寸上限不小于它的机内插件槽。" % [String(part.get("ammo_size_tier", part.get("slot_volume_tier", "XS"))), int(caps.get("bullet", 0)), int(caps.get("chemical", 0)), int(caps.get("laser", 0)), total_ammo, float(part.get("mass", 0.0)), int(part.get("cost", 0))])
-				elif _component_is_torso(part):
-					lines.append("%s连接件：接口 %d 个；负责连接、机内插件槽/软件槽、姿态控制和生命结构；机内插件槽 %d，软件槽 %d，没有射程和伤害值。" % ["大脑式" if _component_is_brain_torso(part) else "躯干式", interface_count, _torso_plugin_capacity_for_part(part), _torso_software_capacity_for_part(part)])
-				elif _part_is_standard_blunt_gauntlet(part):
-					lines.append("钝击拳套：末端自带旋转+伸缩混合关节，最大伸出 %.1fm；质量约为同尺寸近战末端的 2 倍，主动接触动量系数 %.2f；永远按近战实体碰撞处理，不发射投射物。" % [float(part.get("embedded_joint_extension", STANDARD_GAUNTLET_EXTENSION_M)), float(part.get("terminal_momentum_mult", STANDARD_GAUNTLET_MOMENTUM_MULT))])
-				elif _terminal_weapon_kind_for_part(part, "muscle") == "ranged" and bool(part.get("projectile", false)):
-					var projectile_preview := part.duplicate(true)
-					projectile_preview["projectile"] = true
-					var projectile_speed := _projectile_collision_speed_for_event(projectile_preview)
-					var projectile_mass := _projectile_mass_for_event(projectile_preview, projectile_speed)
-					var projectile_momentum := _projectile_momentum_for_event(projectile_preview)
-					var gun_kind := String(part.get("gun_kind", _gun_kind_for_data(part)))
-					var ammo_kind := String(part.get("ammo_kind", _ammo_kind_for_data(part)))
-					if gun_kind == "sprayer":
-						lines.append("远程武器：化学喷射器 / 弹药 %s / 容量 %d / 射程 %.2fm / 喷宽 %.2fm / 投射物动量 %.0f / 即时低伤 + %.1fs DoT。" % [ammo_kind, int(part.get("carried_ammo", 0)), float(part.get("projectile_range", part.get("range", STANDARD_CHEMICAL_SPRAYER_RANGE_M))), float(part.get("projectile_width_m", STANDARD_CHEMICAL_SPRAYER_WIDTH_M)), projectile_momentum, float(part.get("chemical_dot_duration", STANDARD_CHEMICAL_SPRAYER_DOT_SECONDS))])
-					elif gun_kind == "laser_gun":
-						lines.append("远程武器：标准激光枪 / 弹药 %s / 容量 %d / 射程 %.2fm / 光束宽 %.2fm / 间隔 %.2fs / 投射物动量 %.0f。" % [ammo_kind, int(part.get("carried_ammo", 0)), float(part.get("projectile_range", part.get("range", STANDARD_LASER_RANGE_M))), float(part.get("projectile_width_m", STANDARD_LASER_WIDTH_M)), float(part.get("fire_interval", STANDARD_LASER_FIRE_INTERVAL)), projectile_momentum])
-					else:
-						lines.append("远程武器：枪械 %s / 弹药 %s / 容量 %d / 弹道 %.2fm / 锁定 %.2fs / 投射物动量 %.0f / 伤害系数 %.1f。" % [gun_kind, ammo_kind, int(part.get("carried_ammo", 0)), float(part.get("projectile_width_m", STANDARD_SNIPER_PROJECTILE_WIDTH_M)), float(part.get("sniper_fire_delay", part.get("bullet_lock_time", TRUE_BULLET_DEFAULT_LOCK_SECONDS))), projectile_momentum, float(part.get("projectile_damage_coeff", 0.0))])
-					lines.append("兼容显示：射程 %.2f / 射速 %.2f/s / 弹药质量 %.1f / 投射物质量 %.2f / 碰撞速度 %.1f / 后坐力传递 %.2f。" % [float(part.get("projectile_range", part.get("range", 0.0))), float(part.get("fire_rate", 0.0)), _ammo_capacity_mass(part.get("ammo_capacity", {})), projectile_mass, projectile_speed, float(part.get("recoil_transfer_mult", _default_recoil_transfer_for_projectile(projectile_preview)))])
-				else:
-					lines.append("近战武器：伤害 %s，武器只提供系数，底层仍按动量结算。" % _damage_name(String(part.get("damage_type", "blunt"))))
-			"engine":
-				var engine_family := String(part.get("engine_family", "balanced"))
-				lines.append("引擎插件：%s / 动力 %.0f / 发热系数 %.3f / 常态热 %.1f / 插槽体积 %s。动力是可分配动量，推进器与已绑定肢体共享同一池。" % [_engine_family_label(engine_family), _engine_momentum_output_for_part(part), float(part.get("engine_heat_coeff", _engine_family_defaults(engine_family).get("engine_heat_coeff", 0.055))), _engine_idle_heat_for_part(part, _engine_momentum_output_for_part(part)), _volume_rank_label(_part_slot_volume_rank(part, slot_key))])
-				lines.append("作战哲学：%s" % _engine_family_summary(engine_family))
-				lines.append("适配：%s / 队伍角色 %s / 热模型 %s / 火控 %.2f / 推进 %.2f / 指令驱动 %.2f / 支援负载 %.2f。" % [", ".join(Array(part.get("engine_weapon_tags", []))), String(part.get("engine_team_role", "")), String(part.get("engine_heat_profile", "")), float(part.get("engine_recoil_stability", part.get("recoil_stability", 1.0))), float(part.get("engine_boost_control", 1.0)), float(part.get("engine_command_drive", 1.0)), float(part.get("engine_supply_load", 1.0))])
-			"cooling":
-				var cooling_tags := ", ".join(_cooling_tags_for_part(part))
-				lines.append("散热插件：散热 %.1f，热槽上限 %.0f，手动冷却 +%.0f；需要高于引擎和推进器常态热。" % [float(part.get("cooling", part.get("cooling_rate", 0.0))), _cooling_heat_capacity_for_part(part), float(part.get("manual_cooling_bonus", 0.0))])
-				lines.append("作战哲学：%s；适配标签：%s。" % [String(part.get("cooling_profile", "balanced")), cooling_tags if cooling_tags != "" else "通用"])
-			"booster":
-				var thruster := _thruster_with_drive_defaults(part)
-				var thruster_family := String(thruster.get("thruster_family", ""))
-				lines.append("推进插件：%s / 可接收 %.0f-%.0f / 当前分配 %.0f / 移动 %.0f / Boost额外 %.0f / 总Boost %.0f。" % [_thruster_family_label(thruster_family), float(thruster.get("momentum_min", 0.0)), float(thruster.get("momentum_max", 0.0)), _thruster_allocated_momentum_for_part(thruster), _booster_normal_momentum_for_part(thruster), _booster_boost_momentum_for_part(thruster), _thruster_boost_total_momentum_for_part(thruster)])
-				lines.append("移动方式 %s；Boost 角度 %.0f° / 持续 %.2fs / 间隔 %.2fs / 热 %.1f；刹车 %.2f / 转向 %.2f / 反作用力抵消 %.2f。" % [String(thruster.get("movement_profile", "omni")), float(thruster.get("boost_angle_degrees", 360.0)), float(thruster.get("boost_duration", 0.0)), float(thruster.get("boost_cooldown", 0.0)), float(thruster.get("boost_heat", 0.0)), float(thruster.get("brake_efficiency", 1.0)), float(thruster.get("turn_efficiency", 1.0)), float(thruster.get("recoil_cancel", 0.0))])
-				lines.append("作战哲学：%s；火焰 %s。" % [_thruster_family_summary(thruster_family), String(thruster.get("flame_color", "blue"))])
-			"module":
-				lines.append("行动模块：需要绑定六个攻击键之一，并框选合法执行部位；指令窗口由模块自身声明，未声明的模块只响应同键普通攻击。")
-				if String(part.get("module_action_profile", "")) == "blunt_gauntlet_extend_swing":
-					lines.append("拳套伸摆：只能绑定旋转+伸缩混合钝击拳套。输入表：X伸缩 / 4X外摆 / 6X内摆 / 236X护甲内摆伸缩 / 214X激活外摆伸缩；236/214 消耗当前英雄热槽上限的 10%。")
-				elif String(part.get("command_window_profile", "")) == "blade_simple_4_6":
-					lines.append("刃系简单模块：绑定旋转型斩击末端或刃系肢体链。输入表：X普通斩 / 6X护甲态 / 4X激活态；4/6 是该模块专属规则。")
-				elif String(part.get("command_window_profile", "")) == "blade_complex_236_214":
-					lines.append("刃系复杂模块：绑定指定刃系武器或三段/伸旋链。输入表：X普通斩 / 236X护甲必杀 / 214X激活必杀；26/24 可作为宽松输入，必杀消耗热槽上限 10%。")
-			"special":
-				lines.append("核心软件：英魂/源代码/以太影响身份、入场、热槽或结界半径；无动力消耗。")
-		var summary_lines := _localized_component_summary(part, slot_key).split("\n", false)
-		for raw_line in summary_lines:
-			var text := String(raw_line).strip_edges()
-			if text != "":
-				lines.append(_localized_system_text(text))
-		return lines
-	var energy_text_en := "no power load" if no_energy_software else "power load %.1f" % energy
-	var interface_count_en := int(part.get("joint_ports", part.get("connection_ends", 0)))
-	lines.append("Entry: cost %d / HP %d / mass %.1f / %s" % [cost, hp, mass, energy_text_en])
-	lines.append("Size: length %.2fm / radius %.2fm / ports %d / volume %s" % [length, radius, interface_count_en, _volume_rank_label(_part_slot_volume_rank(part, slot_key))])
-	var category_path_en := _terminal_weapon_category_path(part, slot_key, false)
-	if category_path_en != "":
-		lines.append("Category: %s" % category_path_en)
-	lines.append("Preview: unit cost %d -> %d, mass %.0f -> %.0f, allocated power %.0f -> %.0f" % [current_cost, preview_cost, float(current_stats.get("mass", 0.0)), float(preview_stats.get("mass", 0.0)), float(current_stats.get("engine_momentum_required", 0.0)), float(preview_stats.get("engine_momentum_required", 0.0))])
-	if slot_key == "joint":
-		lines.append("Software joint: installed at the logical joint point, no volume, HP, or collider. Fixed output momentum %.0f. It drives only the limb group away from the torso; active limb motion does not drag the torso." % _joint_fixed_output_momentum(part))
-	elif slot_key == "muscle" and _part_is_ammo_payload(part):
-		var caps_en: Dictionary = part.get("ammo_capacity", {})
-		var total_ammo_en := int(caps_en.get("bullet", 0)) + int(caps_en.get("chemical", 0)) + int(caps_en.get("laser", 0))
-		lines.append("Ammo plugin: size %s / bullet %d / chemical %d / laser %d / total %d / mass %.1f / cost %d; it only fits internal slots with an equal or larger size limit." % [String(part.get("ammo_size_tier", part.get("slot_volume_tier", "XS"))), int(caps_en.get("bullet", 0)), int(caps_en.get("chemical", 0)), int(caps_en.get("laser", 0)), total_ammo_en, float(part.get("mass", 0.0)), int(part.get("cost", 0))])
-	elif slot_key == "muscle" and _component_is_torso(part):
-		lines.append("%s connector muscle: %d joint ports, internal plugin slots %d, software slots %d, attitude control, and structure only; no range or damage value." % ["Brain" if _component_is_brain_torso(part) else "Torso", interface_count_en, _torso_plugin_capacity_for_part(part), _torso_software_capacity_for_part(part)])
-	elif slot_key == "muscle" and _part_is_standard_blunt_gauntlet(part):
-		lines.append("Blunt gauntlet: terminal with a hybrid rotate+extend joint, %.1fm max extension, about 2x same-size melee terminal mass, %.2fx active-contact momentum multiplier. It is always resolved as melee body contact and never fires projectiles." % [float(part.get("embedded_joint_extension", STANDARD_GAUNTLET_EXTENSION_M)), float(part.get("terminal_momentum_mult", STANDARD_GAUNTLET_MOMENTUM_MULT))])
-	elif slot_key == "muscle" and _terminal_weapon_kind_for_part(part, "muscle") == "ranged" and bool(part.get("projectile", false)):
-		var projectile_preview := part.duplicate(true)
-		projectile_preview["projectile"] = true
-		var projectile_speed := _projectile_collision_speed_for_event(projectile_preview)
-		var projectile_mass := _projectile_mass_for_event(projectile_preview, projectile_speed)
-		var projectile_momentum := _projectile_momentum_for_event(projectile_preview)
-		var gun_kind_en := String(part.get("gun_kind", _gun_kind_for_data(part)))
-		var ammo_kind_en := String(part.get("ammo_kind", _ammo_kind_for_data(part)))
-		if gun_kind_en == "sprayer":
-			lines.append("Ranged weapon: chemical sprayer / ammo %s / capacity %d / range %.2fm / spray %.2fm / projectile momentum %.0f / low instant hit + %.1fs DoT." % [ammo_kind_en, int(part.get("carried_ammo", 0)), float(part.get("projectile_range", part.get("range", STANDARD_CHEMICAL_SPRAYER_RANGE_M))), float(part.get("projectile_width_m", STANDARD_CHEMICAL_SPRAYER_WIDTH_M)), projectile_momentum, float(part.get("chemical_dot_duration", STANDARD_CHEMICAL_SPRAYER_DOT_SECONDS))])
-		elif gun_kind_en == "laser_gun":
-			lines.append("Ranged weapon: standard laser gun / ammo %s / capacity %d / range %.2fm / beam %.2fm / interval %.2fs / projectile momentum %.0f." % [ammo_kind_en, int(part.get("carried_ammo", 0)), float(part.get("projectile_range", part.get("range", STANDARD_LASER_RANGE_M))), float(part.get("projectile_width_m", STANDARD_LASER_WIDTH_M)), float(part.get("fire_interval", STANDARD_LASER_FIRE_INTERVAL)), projectile_momentum])
-		else:
-			lines.append("Ranged weapon: gun %s / ammo %s / capacity %d / trace %.2fm / lock %.2fs / projectile momentum %.0f / damage coeff %.1f." % [gun_kind_en, ammo_kind_en, int(part.get("carried_ammo", 0)), float(part.get("projectile_width_m", STANDARD_SNIPER_PROJECTILE_WIDTH_M)), float(part.get("sniper_fire_delay", part.get("bullet_lock_time", TRUE_BULLET_DEFAULT_LOCK_SECONDS))), projectile_momentum, float(part.get("projectile_damage_coeff", 0.0))])
-		lines.append("Compat view: range %.2f / fire %.2f/s / ammo mass %.1f / projectile mass %.2f / collision speed %.1f / recoil transfer %.2f." % [float(part.get("projectile_range", part.get("range", 0.0))), float(part.get("fire_rate", 0.0)), _ammo_capacity_mass(part.get("ammo_capacity", {})), projectile_mass, projectile_speed, float(part.get("recoil_transfer_mult", _default_recoil_transfer_for_projectile(projectile_preview)))])
-	elif slot_key == "booster":
-		var thruster_en := _thruster_with_drive_defaults(part)
-		var thruster_family_en := String(thruster_en.get("thruster_family", ""))
-		lines.append("Thruster plugin: %s / range %.0f-%.0f / allocated %.0f / move %.0f / boost extra %.0f / total boost %.0f." % [_thruster_family_label(thruster_family_en), float(thruster_en.get("momentum_min", 0.0)), float(thruster_en.get("momentum_max", 0.0)), _thruster_allocated_momentum_for_part(thruster_en), _booster_normal_momentum_for_part(thruster_en), _booster_boost_momentum_for_part(thruster_en), _thruster_boost_total_momentum_for_part(thruster_en)])
-		lines.append("Movement %s; boost angle %.0f deg / duration %.2fs / cooldown %.2fs / heat %.1f; brake %.2f / turn %.2f / recoil cancel %.2f." % [String(thruster_en.get("movement_profile", "omni")), float(thruster_en.get("boost_angle_degrees", 360.0)), float(thruster_en.get("boost_duration", 0.0)), float(thruster_en.get("boost_cooldown", 0.0)), float(thruster_en.get("boost_heat", 0.0)), float(thruster_en.get("brake_efficiency", 1.0)), float(thruster_en.get("turn_efficiency", 1.0)), float(thruster_en.get("recoil_cancel", 0.0))])
-		lines.append("Philosophy: %s Flame %s." % [_thruster_family_summary(thruster_family_en), String(thruster_en.get("flame_color", "blue"))])
-	elif slot_key == "engine":
-		var engine_family_en := String(part.get("engine_family", "balanced"))
-		lines.append("Engine plugin: %s / power %.0f / heat coeff %.3f / idle heat %.1f / internal slot size %s. Power is allocatable momentum shared by thrusters and bound limbs." % [_engine_family_label(engine_family_en), _engine_momentum_output_for_part(part), float(part.get("engine_heat_coeff", _engine_family_defaults(engine_family_en).get("engine_heat_coeff", 0.055))), _engine_idle_heat_for_part(part, _engine_momentum_output_for_part(part)), _volume_rank_label(_part_slot_volume_rank(part, slot_key))])
-		lines.append("Team philosophy: %s" % _engine_family_summary(engine_family_en))
-		lines.append("Fit: %s / team role %s / heat model %s / fire %.2f / boost %.2f / command %.2f / support load %.2f." % [", ".join(Array(part.get("engine_weapon_tags", []))), String(part.get("engine_team_role", "")), String(part.get("engine_heat_profile", "")), float(part.get("engine_recoil_stability", part.get("recoil_stability", 1.0))), float(part.get("engine_boost_control", 1.0)), float(part.get("engine_command_drive", 1.0)), float(part.get("engine_supply_load", 1.0))])
-	elif slot_key == "cooling":
-		var cooling_tags_en := ", ".join(_cooling_tags_for_part(part))
-		lines.append("Cooling plugin: cooling %.1f / heat capacity %.0f / manual cooling +%.0f. It must exceed engine and thruster idle heat." % [float(part.get("cooling", part.get("cooling_rate", 0.0))), _cooling_heat_capacity_for_part(part), float(part.get("manual_cooling_bonus", 0.0))])
-		lines.append("Philosophy: %s; fit tags: %s." % [String(part.get("cooling_profile", "balanced")), cooling_tags_en if cooling_tags_en != "" else "general"])
-	elif slot_key == "module" and String(part.get("module_action_profile", "")) == "blunt_gauntlet_extend_swing":
-		lines.append("Gauntlet Extend-Swing: binds only a blunt gauntlet terminal with a hybrid rotate+extend joint. Inputs: X extend / 4X outward / 6X inward / 236X armor inward extend-swing / 214X active outward extend-swing. 236/214 consume 10% of the current hero heat capacity.")
-	elif slot_key == "module" and String(part.get("command_window_profile", "")) == "blade_simple_4_6":
-		lines.append("Blade simple module: binds a rotating blade terminal or blade limb chain. Inputs: X normal cut / 6X armor / 4X active. This 4/6 rule is module-specific.")
-	elif slot_key == "module" and String(part.get("command_window_profile", "")) == "blade_complex_236_214":
-		lines.append("Blade complex module: binds the required blade weapon or three-link / extend-slash chain. Inputs: X normal cut / 236X armor special / 214X active special. 26/24 are accepted, and specials consume 10% heat capacity.")
-	lines.append(_localized_component_summary(part, slot_key))
-	return lines
-
 
 func _refresh_editor_stats_rail(current_stats: Dictionary, preview_stats: Dictionary = {}, preview_summary: Dictionary = {}, preview_bp: Dictionary = {}, hover_title: String = "") -> void:
 	if editor_stats_rail_view == null:
@@ -45500,7 +49216,7 @@ func _editor_rule_status_note(flags: Dictionary) -> String:
 	if bool(flags.get("material", false)):
 		return "！材料组非法" if _ui_is_zh() else "! MATERIAL GROUP INVALID"
 	if bool(flags.get("power", false)):
-		return "！动力分配不足" if _ui_is_zh() else "! MOMENTUM ALLOCATION SHORTAGE"
+		return "！动力预算不足" if _ui_is_zh() else "! DRIVE BUDGET SHORTAGE"
 	if bool(flags.get("thermal", false)):
 		return "！散热不足" if _ui_is_zh() else "! THERMAL SHORTAGE"
 	if bool(flags.get("slot", false)):
@@ -45550,40 +49266,55 @@ func _editor_stats_entries(current_stats: Dictionary, preview_stats: Dictionary,
 	var plugin_label := ("机内插件槽 %d/%d" if _ui_is_zh() else "Internal %d/%d") % [int(current_stats.get("slot_payload_count", 0)), current_plugin_cap]
 	_append_editor_stat(entries, software_label, "software_payload_count", current_stats, preview_stats, maxf(1.0, float(maxi(current_software_cap, preview_software_cap))), "", bool(flags.get("slot", false)), true)
 	_append_editor_stat(entries, plugin_label, "slot_payload_count", current_stats, preview_stats, maxf(1.0, float(maxi(current_plugin_cap, preview_plugin_cap))), "", bool(flags.get("slot", false)), true)
+	_append_editor_section(entries, "机体" if _ui_is_zh() else "BODY", Color(0.62, 0.86, 1.0, 0.9))
 	_append_editor_stat(entries, "生命" if _ui_is_zh() else "HP", "health", current_stats, preview_stats, 760.0, "", false)
 	_append_editor_stat(entries, "护盾" if _ui_is_zh() else "Shield", "shield_max", current_stats, preview_stats, 380.0, "", bool(flags.get("slot", false)))
 	_append_editor_stat(entries, "质量" if _ui_is_zh() else "Mass", "mass", current_stats, preview_stats, 900.0, "", false)
-	_append_editor_balance_stat(entries, "动力分配" if _ui_is_zh() else "Momentum Allocation", current_stats, preview_stats, "engine_momentum_output", "engine_momentum_required", "总" if _ui_is_zh() else "T", "分配" if _ui_is_zh() else "A", bool(flags.get("power", false)))
-	_append_editor_stat(entries, "推进器分配" if _ui_is_zh() else "Thr Allocation", "thruster_allocated_momentum", current_stats, preview_stats, 520.0, "", bool(flags.get("power", false)))
-	_append_editor_stat(entries, "绑定肢体分配" if _ui_is_zh() else "Bound Limb Allocation", "bound_limb_allocated_momentum", current_stats, preview_stats, 520.0, "", bool(flags.get("power", false)))
-	_append_editor_balance_stat(entries, "热管理平衡" if _ui_is_zh() else "Thermal Balance", current_stats, preview_stats, "cooling", "idle_heat_load", "散热" if _ui_is_zh() else "C", "常热" if _ui_is_zh() else "H", bool(flags.get("thermal", false)))
+	_append_editor_stat_from_values(entries, "尺寸等级" if _ui_is_zh() else "Size Tier", _stats_size_rank_value(current_stats), _stats_size_rank_value(preview_stats), 5.0, "级" if _ui_is_zh() else "x", false)
+	_append_editor_section(entries, "动力" if _ui_is_zh() else "DRIVE", Color(1.0, 0.82, 0.28, 0.94))
+	_append_editor_balance_stat(entries, "动力预算" if _ui_is_zh() else "Drive Budget", current_stats, preview_stats, "engine_momentum_output", "engine_momentum_required", "总" if _ui_is_zh() else "T", "需求" if _ui_is_zh() else "REQ", bool(flags.get("power", false)))
+	_append_editor_stat(entries, "推进器需求" if _ui_is_zh() else "Thr Demand", "thruster_drive_demand", current_stats, preview_stats, 520.0, "", bool(flags.get("power", false)))
+	_append_editor_stat(entries, "绑定肢体动力" if _ui_is_zh() else "Bound Limb Drive", "bound_limb_allocated_momentum", current_stats, preview_stats, 520.0, "", bool(flags.get("power", false)))
+	_append_editor_section(entries, "热" if _ui_is_zh() else "HEAT", Color(0.34, 1.0, 0.68, 0.9))
+	_append_editor_balance_stat(entries, "热管理平衡" if _ui_is_zh() else "Thermal Balance", current_stats, preview_stats, "heat_capacity", "idle_heat_load", "池" if _ui_is_zh() else "POOL", "常热" if _ui_is_zh() else "H", bool(flags.get("thermal", false)))
+	_append_editor_stat(entries, "散热速度" if _ui_is_zh() else "Cooling Rate", "cooling", current_stats, preview_stats, 180.0, "", false)
+	if String(current_stats.get("role", "")) == "hero":
+		_append_editor_stat(entries, "热槽" if _ui_is_zh() else "Heat", "heat_capacity", current_stats, preview_stats, 260.0, "", false)
+	_append_editor_stat(entries, "Boost热量" if _ui_is_zh() else "Boost Heat", "boost_heat", current_stats, preview_stats, 40.0, "", false)
+	_append_editor_section(entries, "机动" if _ui_is_zh() else "MOTION", Color(0.42, 0.92, 1.0, 0.92))
 	_append_editor_stat(entries, "机体速度" if _ui_is_zh() else "Body Speed", "body_move_speed", current_stats, preview_stats, 8.0, "m/s", false)
 	_append_editor_stat(entries, "Boost速度" if _ui_is_zh() else "Boost Speed", "boost_speed", current_stats, preview_stats, 9.0, "m/s", false)
 	_append_editor_stat(entries, "移动动量" if _ui_is_zh() else "Move Momentum", "move_momentum", current_stats, preview_stats, 520.0, "", false)
 	_append_editor_stat(entries, "Boost额外动量" if _ui_is_zh() else "Boost Extra", "boost_momentum", current_stats, preview_stats, 520.0, "", false)
 	_append_editor_stat(entries, "Boost总动量" if _ui_is_zh() else "Boost Total", "boost_total_momentum", current_stats, preview_stats, 860.0, "", false)
-	_append_editor_stat(entries, "Boost热量" if _ui_is_zh() else "Boost Heat", "boost_heat", current_stats, preview_stats, 40.0, "", false)
 	_append_editor_stat(entries, "Boost冷却" if _ui_is_zh() else "Boost CD", "boost_cooldown", current_stats, preview_stats, 2.0, "s", false)
 	_append_editor_stat(entries, "推进加速" if _ui_is_zh() else "Thr Accel", "thruster_acceleration", current_stats, preview_stats, 8.0, "m/s²" if _ui_is_zh() else "m/s2", false)
 	_append_editor_stat(entries, "推进持续" if _ui_is_zh() else "Thr Dur", "thruster_duration", current_stats, preview_stats, 1.0, "s", false)
 	_append_editor_stat(entries, "Boost持续" if _ui_is_zh() else "Boost Dur", "boost_duration", current_stats, preview_stats, 1.0, "s", false)
 	_append_editor_stat(entries, "转向角速" if _ui_is_zh() else "Turn Speed", "turn_speed", current_stats, preview_stats, 10.0, "rad/s", false)
 	_append_editor_stat(entries, "转向加速" if _ui_is_zh() else "Turn Accel", "turn_acceleration", current_stats, preview_stats, 40.8, "rad/s²" if _ui_is_zh() else "rad/s2", false)
+	_append_editor_section(entries, "行动" if _ui_is_zh() else "ACTION", Color(0.9, 0.58, 1.0, 0.92))
 	_append_editor_stat(entries, "绑定肢体输出" if _ui_is_zh() else "Bound Limb Output", "bound_joint_output_momentum", current_stats, preview_stats, 5200.0, "", bool(flags.get("power", false)))
 	_append_editor_stat(entries, "预估动作速度" if _ui_is_zh() else "Est Action Speed", "estimated_joint_motion_speed", current_stats, preview_stats, 8.0, "m/s", false)
 	_append_editor_stat(entries, "预估动作时长" if _ui_is_zh() else "Est Action Time", "estimated_module_duration", current_stats, preview_stats, 4.0, "s", false)
 	_append_editor_stat(entries, "槽位数量" if _ui_is_zh() else "Joint Slots", "joint_slot_count", current_stats, preview_stats, 8.0, "", bool(flags.get("sweep", false)))
 	_append_editor_stat(entries, "扫掠冲突" if _ui_is_zh() else "Sweep Hits", "swept_collision_count", current_stats, preview_stats, 8.0, "", bool(flags.get("sweep", false)))
-	if String(current_stats.get("role", "")) == "hero":
-		_append_editor_stat(entries, "热槽" if _ui_is_zh() else "Heat", "heat_capacity", current_stats, preview_stats, 260.0, "", false)
-	else:
+	if String(current_stats.get("role", "")) != "hero":
 		_append_editor_stat(entries, "软件槽" if _ui_is_zh() else "Software", "module_slots", current_stats, preview_stats, 12.0, "", bool(flags.get("action", false)))
 	_append_editor_stat(entries, "信息安全" if _ui_is_zh() else "Security", "data_security", current_stats, preview_stats, 6.0, "x", false)
+	_append_editor_section(entries, "插槽" if _ui_is_zh() else "SLOTS", Color(0.64, 0.86, 1.0, 0.88))
 	_append_editor_stat(entries, "最大插件尺寸" if _ui_is_zh() else "Max Plug Size", "internal_slot_max_installed_rank", current_stats, preview_stats, 5.0, "级" if _ui_is_zh() else "x", bool(flags.get("slot", false)))
 	_append_editor_stat(entries, "最大空槽" if _ui_is_zh() else "Max Free Slot", "internal_slot_max_empty_rank", current_stats, preview_stats, 5.0, "级" if _ui_is_zh() else "x", bool(flags.get("slot", false)))
 	_append_editor_stat(entries, "插槽体积" if _ui_is_zh() else "Slot Vol", "slot_payload_volume_rank", current_stats, preview_stats, 5.0, "x", bool(flags.get("slot", false)))
-	_append_editor_stat_from_values(entries, "尺寸等级" if _ui_is_zh() else "Size Tier", _stats_size_rank_value(current_stats), _stats_size_rank_value(preview_stats), 5.0, "级" if _ui_is_zh() else "x", false)
 	return entries
+
+
+func _append_editor_section(entries: Array, label: String, color: Color) -> void:
+	entries.append({
+		"kind": "section",
+		"label": label,
+		"color": color,
+	})
 
 
 func _append_editor_stat(entries: Array, label: String, key: String, current_stats: Dictionary, preview_stats: Dictionary, base_max: float, unit: String, illegal: bool, pinned: bool = false) -> void:
@@ -45693,6 +49424,7 @@ func _prewarm_torso_detail_template(part: Dictionary) -> bool:
 func _apply_torso_detail_template(state: Dictionary) -> void:
 	if editor_torso_detail_view == null:
 		return
+	_set_editor_torso_detail_binding_layout(false)
 	editor_torso_detail_view.set_detail(
 		String(state.get("title", "")),
 		String(state.get("subtitle", "")),
@@ -45714,11 +49446,13 @@ func _refresh_torso_detail_view() -> void:
 	var role_key: String = ROLE_ORDER[editor_role_index]
 	var unit_bp: Dictionary = _editor_current_blueprint()
 	if editor_open_torso_node_index < 0 or not unit_bp.has("custom_topology"):
+		_set_editor_torso_detail_binding_layout(false)
 		editor_torso_detail_view.visible = false
 		return
 	var topology: Dictionary = unit_bp.get("custom_topology", {})
 	var nodes: Array = topology.get("nodes", [])
 	if editor_open_torso_node_index >= nodes.size() or not _topology_node_is_torso(role_key, nodes[editor_open_torso_node_index], unit_bp):
+		_set_editor_torso_detail_binding_layout(false)
 		editor_torso_detail_view.visible = false
 		return
 	var part := _topology_node_part(role_key, nodes[editor_open_torso_node_index], unit_bp)
@@ -45760,6 +49494,7 @@ func _refresh_torso_detail_view() -> void:
 		editor_selected_torso_slot_index,
 		ui_language
 	)
+	var binding_active := false
 	if not editor_pending_module_binding.is_empty():
 		var payload_index := int(editor_pending_module_binding.get("payload_index", -1))
 		var payloads: Array = Array(unit_bp.get("slot_payloads", []))
@@ -45767,6 +49502,7 @@ func _refresh_torso_detail_view() -> void:
 			var payload: Dictionary = Dictionary(payloads[payload_index])
 			var payload_torso := int(payload.get("torso_node", editor_open_torso_node_index))
 			if payload_torso == editor_open_torso_node_index:
+				binding_active = true
 				var module_part := _selected_component(role_key, "module", int(editor_pending_module_binding.get("module_index", payload.get("module", 0))))
 				var candidates := _torso_detail_module_binding_candidates(unit_bp, payload_index, module_part)
 				var selected_index := -1
@@ -45785,6 +49521,7 @@ func _refresh_torso_detail_view() -> void:
 			editor_torso_detail_view.set_binding_state(false)
 	else:
 		editor_torso_detail_view.set_binding_state(false)
+	_set_editor_torso_detail_binding_layout(binding_active)
 
 
 func _editor_side_preview_signature(slot_key: String, part: Dictionary, snap_amount: float) -> String:
@@ -45818,7 +49555,7 @@ func _refresh_editor_selected_part_preview(slot_key: String, part: Dictionary, s
 
 
 func _editor_visual_revision_signature(role_key: String, unit_bp: Dictionary, stats: Dictionary, custom_board_cache_key: String, update_side_panels: bool) -> String:
-	return "%s|%s|%s|%d|%d|%s|%s|%s|%s|%s|%d|%s|%s|%s|%s|%s" % [
+	return "%s|%s|%s|%d|%d|%s|%s|%s|%s|%s|%d|%s|%s|%s|%s|%s|%s|%s" % [
 		role_key,
 		custom_board_cache_key,
 		editor_selected_body_part,
@@ -45835,6 +49572,8 @@ func _editor_visual_revision_signature(role_key: String, unit_bp: Dictionary, st
 		str(editor_selected_topology_nodes.hash()),
 		str(snappedf(editor_board_zoom, 0.001)),
 		str(editor_board_view_offset),
+		_editor_pending_binding_signature(),
+		_editor_tryout_signature(),
 	]
 
 
@@ -45928,6 +49667,11 @@ func _refresh_editor_visual_views(precomputed_stats: Dictionary = {}, update_sid
 				node["size_class"] = String(part.get("size_class", part.get("slot_volume_tier", "")))
 				node["material_class"] = String(part.get("material_class", slot_key))
 				node["shape"] = String(part.get("shape", slot_key))
+				node["source_shape"] = String(part.get("shape", ""))
+				node["weapon_family"] = String(part.get("weapon_family", ""))
+				node["blunt_shield"] = bool(part.get("blunt_shield", false))
+				node["blunt_gauntlet"] = bool(part.get("blunt_gauntlet", false))
+				node["blunt_hammer"] = bool(part.get("blunt_hammer", false))
 				node["projectile"] = bool(part.get("projectile", false))
 				node["is_torso"] = bool(part.get("is_torso", false))
 				node["module_slots"] = _torso_software_capacity_for_part(part) if _component_is_torso(part) else int(part.get("module_slots", 0))
@@ -45975,6 +49719,11 @@ func _refresh_editor_visual_views(precomputed_stats: Dictionary = {}, update_sid
 			node["size_class"] = String(muscle_part.get("size_class", muscle_part.get("slot_volume_tier", "")))
 			node["material_class"] = String(muscle_part.get("material_class", "part"))
 			node["shape"] = String(muscle_part.get("shape", "part"))
+			node["source_shape"] = String(muscle_part.get("shape", ""))
+			node["weapon_family"] = String(muscle_part.get("weapon_family", ""))
+			node["blunt_shield"] = bool(muscle_part.get("blunt_shield", false))
+			node["blunt_gauntlet"] = bool(muscle_part.get("blunt_gauntlet", false))
+			node["blunt_hammer"] = bool(muscle_part.get("blunt_hammer", false))
 			node["projectile"] = bool(muscle_part.get("projectile", false))
 			node["is_torso"] = bool(muscle_part.get("is_torso", false))
 			node["module_slots"] = _torso_software_capacity_for_part(muscle_part) if _component_is_torso(muscle_part) else int(muscle_part.get("module_slots", 0))
@@ -46273,6 +50022,15 @@ func _localized_system_text(value: String) -> String:
 		["SORTIE", "出战"],
 		["INIT", "首发"],
 		["BUDGET", "预算"],
+		["DRIVE", "动力"],
+		["DEMAND", "需求"],
+		["BOUND LIMBS", "绑定肢体"],
+		["BOUND LIMB", "绑定肢体"],
+		["THRUSTERS", "推进器"],
+		["THRUSTER", "推进器"],
+		["BOOSTERS", "推进器"],
+		["BOOSTER", "推进器"],
+		["torso has", "躯体已有"],
 		["torso", "躯干"],
 		["limb", "肢体"],
 		["terminal", "末端武器"],
@@ -46288,6 +50046,10 @@ func _localized_system_text(value: String) -> String:
 		["radiator", "散热器"],
 		["capacity", "容量"],
 		["dissipation", "散热速度"],
+		["heat pool", "热力池"],
+		["cooling speed", "散热速度"],
+		["runtime cooling", "运行散热"],
+		["pool", "热力池"],
 		["INTERNAL SLOTS", "机内插件槽"],
 		["BARRIER INTERNAL", "结界机内插件"],
 		["SOFTWARE SLOTS", "软件槽"],
@@ -46361,7 +50123,7 @@ func _localized_component_summary(part: Dictionary, slot_key: String) -> String:
 	elif bool(part.get("projectile", false)):
 		tags.append("投射武器")
 	elif slot_key in ["engine", "cooling", "booster"]:
-		tags.append("软件式插槽构件")
+		tags.append("装备")
 	if bool(part.get("electronic_armor", false)) or bool(part.get("shield_payload", false)):
 		tags.append("电子护盾")
 	if bool(part.get("barrier_tile_component", false)) or bool(part.get("barrier_panel", false)):
@@ -46506,7 +50268,7 @@ func _rebuild_settings_list() -> void:
 		"video":
 			_settings_add_info_row("画面" if _ui_is_zh() else "VIDEO")
 			var spec := _performance_profile_spec(performance_profile)
-			_settings_add_action_row("performance_profile", "性能档" if _ui_is_zh() else "Performance Profile", _performance_profile_label(performance_profile), "点击切换 4080S/兼容档" if _ui_is_zh() else "click to cycle 4080S/compat")
+			_settings_add_action_row("performance_profile", "性能档" if _ui_is_zh() else "Performance Profile", _performance_profile_label(performance_profile), "点击切换 4080S/兼容72档" if _ui_is_zh() else "click to cycle 4080S/Compat 72")
 			_settings_add_action_row("display_mode", "显示模式" if _ui_is_zh() else "Display Mode", _display_mode_label(display_mode_setting), "窗口/无边框/全屏" if _ui_is_zh() else "window/borderless/full")
 			_settings_add_action_row("window_size", "窗口大小" if _ui_is_zh() else "Window Size", _window_size_label(window_size_setting), "窗口模式生效" if _ui_is_zh() else "used in window mode")
 			_settings_add_static_row("帧率上限" if _ui_is_zh() else "FPS Cap", str(int(spec.get("fps_cap", 120))))
@@ -46677,7 +50439,7 @@ func _update_battle_instrument_gauge() -> void:
 	var speed: float = unit.velocity.length()
 	var boost_speed := float(unit.stats.get("boost_speed", 0.0))
 	var body_speed := float(unit.stats.get("body_move_speed", 0.0))
-	var configured_limit := maxf(0.0, float(unit.stats.get("speedometer_max_speed", unit.stats.get("speed_limit", 0.0))))
+	var configured_limit := maxf(0.0, float(unit.stats.get("speedometer_max_speed", 0.0)))
 	var fallback_limit := maxf(1.0, maxf(boost_speed * 2.0, body_speed * 3.0) * 1.5)
 	var speed_max: float = maxf(speed, configured_limit if configured_limit > 0.001 else fallback_limit)
 	var ammo := _live_unit_ammo_breakdown(unit)
@@ -46836,12 +50598,25 @@ func _update_battle_minimap() -> void:
 
 
 func _update_arena_boundary_lines() -> void:
-	_update_single_world_boundary_line(arena_top_boundary_line, -BATTLE_HALF_HEIGHT, Color(0.22, 0.88, 1.0, 1.0))
-	_update_single_world_boundary_line(arena_bottom_boundary_line, BATTLE_HALF_HEIGHT, Color(1.0, 0.2, 0.36, 1.0))
+	if arena_top_boundary_line != null:
+		arena_top_boundary_line.visible = false
+	if arena_bottom_boundary_line != null:
+		arena_bottom_boundary_line.visible = false
 
 
 func _update_single_world_boundary_line(line: Line2D, lane_value: float, base_color: Color) -> void:
 	if line == null:
+		return
+	if mobius_enabled:
+		var points := _mobius_boundary_points(lane_value)
+		line.visible = points.size() >= 2
+		if not line.visible:
+			return
+		var edge_distance := BATTLE_HALF_HEIGHT - absf(camera_lane_center)
+		var proximity := 1.0 - clampf(edge_distance / maxf(0.001, MOBIUS_EDGE_FOG_WIDTH * 3.2), 0.0, 1.0)
+		line.default_color = Color(base_color.r, base_color.g, base_color.b, 0.055 + proximity * 0.17)
+		line.width = 24.0 + proximity * 22.0
+		line.points = points
 		return
 	var screen_scale := ARENA_HEIGHT / VIEW_HEIGHT
 	var y := (ARENA_TOP + ARENA_BOTTOM) * 0.5 + (lane_value - camera_lane_center) * screen_scale
@@ -46856,6 +50631,146 @@ func _update_single_world_boundary_line(line: Line2D, lane_value: float, base_co
 	line.default_color = Color(base_color.r, base_color.g, base_color.b, alpha)
 	line.width = 10.0 + proximity * 10.0
 	line.points = PackedVector2Array([Vector2(ARENA_LEFT, y), Vector2(ARENA_RIGHT, y)])
+
+
+func _mobius_config() -> Dictionary:
+	var screen_rect := Rect2(Vector2(ARENA_LEFT, ARENA_TOP), Vector2(ARENA_WIDTH, ARENA_HEIGHT))
+	var config := MobiusWorld.default_config(RING_LENGTH, BATTLE_HALF_HEIGHT * 2.0, VIEW_WIDTH, VIEW_HEIGHT, screen_rect)
+	config["enabled"] = mobius_enabled
+	config["surface_segments"] = MOBIUS_SURFACE_SEGMENTS
+	config["width_segments"] = MOBIUS_WIDTH_SEGMENTS
+	config["near_scale"] = MOBIUS_NEAR_SCALE
+	config["far_scale"] = MOBIUS_FAR_SCALE
+	config["depth_strength"] = MOBIUS_DEPTH_STRENGTH
+	config["parallax_strength"] = MOBIUS_PARALLAX_STRENGTH
+	config["rotation_interval_min"] = MOBIUS_TWIST_INTERVAL_MIN
+	config["rotation_interval_max"] = MOBIUS_TWIST_INTERVAL_MAX
+	config["rotation_blend_seconds"] = MOBIUS_TWIST_BLEND_SECONDS
+	config["twist_wave_speed"] = MOBIUS_TWIST_WAVE_SPEED
+	config["twist_wave_amplitude"] = MOBIUS_TWIST_WAVE_AMPLITUDE
+	config["twist_wave_scale"] = MOBIUS_TWIST_WAVE_SCALE
+	config["boundary_fog_width"] = MOBIUS_BOUNDARY_FOG_WIDTH
+	config["frame_rotation_strength"] = MOBIUS_FRAME_ROTATION_STRENGTH
+	config["input_frame_strength"] = MOBIUS_INPUT_FRAME_STRENGTH
+	config["fairness_radius"] = MOBIUS_FAIRNESS_RADIUS
+	config["edge_fog_width"] = MOBIUS_EDGE_FOG_WIDTH
+	config["surface_detail_density"] = MOBIUS_SURFACE_DETAIL_DENSITY
+	config["near_alpha"] = MOBIUS_NEAR_ALPHA
+	config["far_alpha"] = MOBIUS_FAR_ALPHA
+	config["depth_contrast"] = MOBIUS_DEPTH_CONTRAST
+	config["screen_scale"] = _battle_world_to_screen_scale()
+	config["local_rectangular_projection"] = true
+	config["show_surface_boundary_guides"] = false
+	return config
+
+
+func _mobius_camera_coord() -> Vector2:
+	return Vector2(camera_mobius_s, camera_lane_center)
+
+
+func _camera_lane_center_limit() -> float:
+	return maxf(0.0, BATTLE_HALF_HEIGHT - VIEW_HEIGHT * 0.5)
+
+
+func _clamp_camera_lane_center(lane_value: float) -> float:
+	var limit := _camera_lane_center_limit()
+	return clampf(lane_value, -limit, limit)
+
+
+func _mobius_project_coord(coord: Vector2) -> Dictionary:
+	if not mobius_enabled:
+		return {}
+	return MobiusWorld.project_to_screen(coord, _mobius_camera_coord(), _mobius_config(), mobius_rotation_state)
+
+
+func _mobius_surface_input_for_unit(unit, input_vector: Vector2) -> Vector2:
+	var readable_input := GameplayTransform.screen_input_to_gameplay_motion(input_vector)
+	return readable_input
+
+
+func _mobius_boundary_points(lane_value: float) -> PackedVector2Array:
+	var points := PackedVector2Array()
+	var config := _mobius_config()
+	config["twist_visual_enabled"] = true
+	var segment_count := 72
+	var span := VIEW_WIDTH * 1.2
+	for i in range(segment_count + 1):
+		var t := float(i) / float(segment_count)
+		var s := camera_mobius_s + lerpf(-span, span, t)
+		var projection := MobiusWorld.project_to_screen(Vector2(s, lane_value), _mobius_camera_coord(), config, mobius_rotation_state)
+		points.append(projection.get("position", Vector2.ZERO))
+	return points
+
+
+func _tick_mobius_visual_twist(delta: float) -> void:
+	if not mobius_enabled:
+		return
+	mobius_rotation_state = MobiusWorld.advance_rotation_state(mobius_rotation_state, delta, _mobius_config())
+
+
+func _tick_mobius_visual_rotation(delta: float) -> void:
+	_tick_mobius_visual_twist(delta)
+
+
+func _sync_camera_mobius_from_compat() -> void:
+	camera_mobius_s = MobiusWorld.nearest_lifted_s(camera_mobius_s, camera_center, RING_LENGTH)
+	camera_center = fposmod(camera_mobius_s, RING_LENGTH)
+
+
+func _sync_unit_mobius_from_compat(unit) -> void:
+	if unit != null and is_instance_valid(unit) and unit.has_method("sync_mobius_from_compat"):
+		unit.sync_mobius_from_compat(RING_LENGTH)
+
+
+func _unit_mobius_coord(unit) -> Vector2:
+	if unit != null and is_instance_valid(unit) and unit.get("mobius_s") != null:
+		return Vector2(float(unit.get("mobius_s")), float(unit.get("mobius_v")))
+	return MobiusWorld.lift_ring_lane_near(camera_mobius_s, float(unit.ring_pos), float(unit.lane), RING_LENGTH) if unit != null and is_instance_valid(unit) else Vector2.ZERO
+
+
+func _combat_patch_origin_for_unit(unit) -> Vector2:
+	if not _is_live_unit(unit):
+		return Vector2.ZERO
+	if mobius_enabled:
+		return _unit_mobius_coord(unit)
+	return Vector2(float(unit.ring_pos), float(unit.lane))
+
+
+func _mobius_local_patch_delta_from_coord(from_coord: Vector2, to_ring: float, to_lane: float, lane_scale: float = 1.0) -> Vector2:
+	var to_coord := MobiusWorld.lift_ring_lane_near(from_coord.x, to_ring, to_lane, RING_LENGTH)
+	var result := MobiusWorld.delta_vec(from_coord, to_coord, RING_LENGTH)
+	result.y *= lane_scale
+	return result
+
+
+func _mobius_delta_vec_between(from_unit, to_unit, lane_scale: float = 1.0) -> Vector2:
+	return GameplayTransform.unit_delta(from_unit, to_unit, RING_LENGTH, lane_scale)
+
+
+func _mobius_delta_points(from_ring: float, from_lane: float, to_ring: float, to_lane: float, lane_scale: float = 1.0) -> Vector2:
+	if not mobius_enabled:
+		return GameplayTransform.point_delta(from_ring, from_lane, to_ring, to_lane, camera_mobius_s, RING_LENGTH, lane_scale)
+	var from_coord := Vector2(from_ring, from_lane)
+	if from_ring >= 0.0 and from_ring < RING_LENGTH:
+		from_coord = MobiusWorld.lift_ring_lane_near(camera_mobius_s, from_ring, from_lane, RING_LENGTH)
+	return _mobius_local_patch_delta_from_coord(from_coord, to_ring, to_lane, lane_scale)
+
+
+func _mobius_delta_unit_to_point(unit, to_ring: float, to_lane: float, lane_scale: float = 1.0) -> Vector2:
+	return GameplayTransform.unit_to_point_delta(unit, to_ring, to_lane, RING_LENGTH, lane_scale)
+
+
+func _refresh_mobius_surface_view() -> void:
+	if mobius_strip_surface_view == null:
+		return
+	mobius_strip_surface_view.visible = mobius_enabled and game_state == STATE_BATTLE
+	var battle_backdrop := find_child("GeneratedSpaceBackdrop", true, false) as CanvasItem
+	if battle_backdrop != null:
+		battle_backdrop.visible = game_state == STATE_BATTLE and not mobius_strip_surface_view.visible
+	if not mobius_strip_surface_view.visible:
+		return
+	mobius_strip_surface_view.set_surface_texture(mobius_surface_texture)
+	mobius_strip_surface_view.set_world(_mobius_config(), mobius_rotation_state, _mobius_camera_coord())
 
 
 func _battle_mode_title() -> String:
@@ -46884,12 +50799,12 @@ func _update_camera_center() -> void:
 		var target_lane := _camera_lane_focus_for_player(player_id)
 		if battle_mode in [MODE_TRAINING, MODE_AI, MODE_PVP] and ai_battle_seat in [1, 2]:
 			player_camera_centers[player_id] = wrapf(target_center, 0.0, RING_LENGTH)
-			player_camera_lanes[player_id] = clampf(target_lane, -BATTLE_HALF_HEIGHT, BATTLE_HALF_HEIGHT)
+			player_camera_lanes[player_id] = _clamp_camera_lane_center(target_lane)
 		else:
 			var current := _camera_center_for_player(player_id)
 			player_camera_centers[player_id] = wrapf(current + _ring_delta(current, target_center) * BATTLE_CAMERA_FOLLOW, 0.0, RING_LENGTH)
 			var current_lane := _camera_lane_for_player(player_id)
-			player_camera_lanes[player_id] = clampf(lerpf(current_lane, target_lane, BATTLE_CAMERA_FOLLOW), -BATTLE_HALF_HEIGHT, BATTLE_HALF_HEIGHT)
+			player_camera_lanes[player_id] = _clamp_camera_lane_center(lerpf(current_lane, target_lane, BATTLE_CAMERA_FOLLOW))
 	if battle_mode in [MODE_AI, MODE_TRAINING, MODE_PVP] and ai_battle_seat == 2:
 		camera_center = _camera_center_for_player(2)
 		camera_lane_center = _camera_lane_for_player(2)
@@ -46904,12 +50819,13 @@ func _update_camera_center() -> void:
 			SPECTATOR_VIEW_MID:
 				var spectator_target := _spectator_camera_focus()
 				spectator_camera_center = wrapf(spectator_camera_center + _ring_delta(spectator_camera_center, spectator_target) * BATTLE_CAMERA_FOLLOW, 0.0, RING_LENGTH)
-				spectator_camera_lane = lerpf(spectator_camera_lane, _spectator_lane_focus(), BATTLE_CAMERA_FOLLOW)
+				spectator_camera_lane = _clamp_camera_lane_center(lerpf(spectator_camera_lane, _spectator_lane_focus(), BATTLE_CAMERA_FOLLOW))
 		camera_center = spectator_camera_center
-		camera_lane_center = spectator_camera_lane
+		camera_lane_center = _clamp_camera_lane_center(spectator_camera_lane)
 	else:
 		camera_center = _camera_center_for_player(1)
-		camera_lane_center = _camera_lane_for_player(1)
+		camera_lane_center = _clamp_camera_lane_center(_camera_lane_for_player(1))
+	_sync_camera_mobius_from_compat()
 
 
 func _camera_center_for_player(player_id: int) -> float:
@@ -46917,7 +50833,7 @@ func _camera_center_for_player(player_id: int) -> float:
 
 
 func _camera_lane_for_player(player_id: int) -> float:
-	return float(player_camera_lanes.get(player_id, camera_lane_center))
+	return _clamp_camera_lane_center(float(player_camera_lanes.get(player_id, camera_lane_center)))
 
 
 func _camera_focus_for_player(player_id: int) -> float:
@@ -46956,6 +50872,9 @@ func _spectator_camera_focus() -> float:
 	if not _is_live_unit(right):
 		right = _first_live_unit_any_role(2)
 	if _is_live_unit(left) and _is_live_unit(right):
+		if mobius_enabled:
+			var delta := _mobius_delta_vec_between(left, right)
+			return fposmod(float(left.get("mobius_s")) + delta.x * 0.5, RING_LENGTH)
 		return wrapf(left.ring_pos + _ring_delta(left.ring_pos, right.ring_pos) * 0.5, 0.0, RING_LENGTH)
 	if _is_live_unit(left):
 		return left.ring_pos
@@ -46994,6 +50913,9 @@ func _first_live_unit_any_role(player_id: int):
 
 
 func _screen_from_ring(ring_value: float, lane_value: float) -> Dictionary:
+	if mobius_enabled:
+		var coord := MobiusWorld.lift_ring_lane_near(camera_mobius_s, ring_value, lane_value, RING_LENGTH)
+		return _mobius_project_coord(coord)
 	var delta: float = _ring_delta(camera_center, ring_value)
 	var lane_delta := lane_value - camera_lane_center
 	var screen_scale := _battle_world_to_screen_scale()
@@ -47012,6 +50934,15 @@ func _battle_world_to_screen_scale() -> float:
 func _world_point_visible_for_player(ring_value: float, lane_value: float, player_id: int, margin_mult: float = 1.0) -> bool:
 	var center := _camera_center_for_player(player_id)
 	var lane_center := _camera_lane_for_player(player_id)
+	if mobius_enabled:
+		var reference_s := MobiusWorld.nearest_lifted_s(camera_mobius_s, center, RING_LENGTH)
+		var from_coord := Vector2(reference_s, lane_center)
+		var to_coord := MobiusWorld.lift_ring_lane_near(reference_s, ring_value, lane_value, RING_LENGTH)
+		var delta_vec := MobiusWorld.delta_vec(from_coord, to_coord, RING_LENGTH)
+		var screen_scale_mobius := _battle_world_to_screen_scale()
+		var half_width_mobius := ARENA_WIDTH / screen_scale_mobius * 0.5
+		var half_height_mobius := VIEW_HEIGHT * 0.5
+		return absf(delta_vec.x) <= half_width_mobius * margin_mult and absf(delta_vec.y) <= half_height_mobius * margin_mult
 	var delta: float = _ring_delta(center, ring_value)
 	var lane_delta := lane_value - lane_center
 	var screen_scale := _battle_world_to_screen_scale()
@@ -47073,7 +51004,8 @@ func _nearest_enemy(unit, player_id: int):
 	var best = null
 	var best_distance := 999.0
 	for target in _enemy_units(player_id):
-		var distance: float = absf(_ring_delta(unit.ring_pos, target.ring_pos)) + absf(unit.lane - target.lane) * 0.65
+		var delta := _mobius_delta_vec_between(unit, target, 0.65)
+		var distance: float = absf(delta.x) + absf(delta.y)
 		if distance < best_distance:
 			best_distance = distance
 			best = target
@@ -47154,7 +51086,8 @@ func _source_target_for_puppet(unit, player_id: int):
 
 
 func _source_target_distance(unit, target) -> float:
-	return absf(_ring_delta(unit.ring_pos, target.ring_pos)) + absf(unit.lane - target.lane) * 0.65
+	var delta := _mobius_delta_vec_between(unit, target, 0.65)
+	return absf(delta.x) + absf(delta.y)
 
 
 func _source_target_score(unit, target, player_id: int, policy: String) -> float:
@@ -47162,6 +51095,11 @@ func _source_target_score(unit, target, player_id: int, policy: String) -> float
 	var hp_ratio: float = float(target.health_ratio()) if target != null and target.has_method("health_ratio") else 1.0
 	var score: float = -distance * 8.0 + (1.0 - hp_ratio) * 18.0
 	var target_role := String(target.role)
+	var sight_delta := _mobius_delta_vec_between(unit, target, 0.65)
+	var sight_event := {"direction": sight_delta.normalized() if sight_delta.length() > 0.01 else _unit_forward_vector(unit), "range": maxf(0.1, sight_delta.length()), "lane_range": 0.08, "ai_line_of_sight": true}
+	var sight_blocked := _map_line_occluded(unit, target, sight_event)
+	if sight_blocked:
+		score -= 30.0
 	match policy:
 		"heat_pressure_first":
 			var heat_focus_ratio := clampf(float(unit.stats.get("source_heat_focus_ratio", 0.68)), 0.0, 1.0)
@@ -47173,12 +51111,14 @@ func _source_target_score(unit, target, player_id: int, policy: String) -> float
 			score += 12.0 if target_role == "barrier" and _source_target_is_support_barrier(target) else 0.0
 			score += (1.0 - hp_ratio) * 16.0
 			score -= distance * 1.4
+			score -= 48.0 if sight_blocked else 0.0
 		"hero_low_hp_ranged":
 			score += 120.0 if target_role == "hero" else 0.0
 			score += (1.0 - hp_ratio) * 54.0
 			score += 12.0 if target_role == "puppet" else 0.0
 			score -= 42.0 if target_role == "barrier" else 0.0
 			score -= distance * 2.5
+			score -= 72.0 if sight_blocked else 0.0
 		"low_hp_first":
 			score += (1.0 - hp_ratio) * 118.0
 			score += 22.0 if target_role == "hero" else 0.0

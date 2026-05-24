@@ -20,10 +20,20 @@ func _make_unit(name: String, mass: float):
 		"stats": {
 			"health": 100,
 			"mass": mass,
+			"thruster_drive_demand": 80.0,
+			"thruster_effective_drive_demand": 80.0,
+			"thruster_boost_extra_demand": 120.0,
+			"thruster_boost_peak_demand": 200.0,
+			"thruster_effective_boost_peak_demand": 200.0,
+			"engine_drive_chain_ratio": 1.0,
+			"engine_boost_chain_ratio": 1.0,
+			"move_momentum": 80.0,
 			"body_move_speed": 4.0,
+			"move_speed": 4.0,
 			"thruster_acceleration": 80.0 / mass,
 			"boost_momentum": 120.0,
-			"boost_speed": 120.0 / mass,
+			"boost_total_momentum": 200.0,
+			"boost_speed": 200.0 / mass,
 			"boost_duration": 0.24,
 			"turn_speed": 1.0,
 			"turn_acceleration": 1.0,
@@ -40,10 +50,12 @@ func _init() -> void:
 	var main = MainScene.new()
 	root.add_child(main)
 	main._ready()
-	var light_stats := {"mass": 12.0, "speed_mult": 1.0, "thruster_allocated_momentum": 80.0, "move_efficiency": 1.0, "boost_efficiency": 1.0, "boost_momentum": 160.0, "boost_duration": 0.3, "brake_efficiency": 1.0, "speed": 1.0}
+	var light_stats := {"mass": 12.0, "speed_mult": 1.0, "thruster_drive_demand": 80.0, "thruster_allocated_momentum": 9999.0, "thruster_boost_extra_demand": 160.0, "thruster_boost_peak_demand": 240.0, "engine_momentum_output": 240.0, "move_efficiency": 1.0, "boost_efficiency": 1.0, "boost_momentum": 160.0, "boost_duration": 0.3, "brake_efficiency": 1.0, "speed": 1.0}
 	var heavy_stats := light_stats.duplicate(true)
 	heavy_stats["mass"] = 48.0
+	main._apply_engine_momentum_budget(light_stats, "hero")
 	main._apply_thruster_momentum_stats(light_stats, "hero")
+	main._apply_engine_momentum_budget(heavy_stats, "hero")
 	main._apply_thruster_momentum_stats(heavy_stats, "hero")
 	if float(light_stats.get("thruster_acceleration", 0.0)) <= float(heavy_stats.get("thruster_acceleration", 0.0)):
 		_fail("Same thruster should accelerate the lighter mech faster.")

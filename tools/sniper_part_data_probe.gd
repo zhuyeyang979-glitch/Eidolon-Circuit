@@ -36,10 +36,11 @@ func _init() -> void:
 	var expected_momentum := main._unit2_boost_momentum_reference() / 10.0
 	if absf(float(sniper.get("projectile_momentum", 0.0)) - expected_momentum) > 0.05:
 		_fail("Standard sniper projectile_momentum should be unit2 boost momentum / 10.")
-	var expected_coeff := MainScene.PART_DAMAGE_COEFF_TERMINAL_MELEE * MainScene.STANDARD_SNIPER_PROJECTILE_DAMAGE_MULT
-	if absf(float(sniper.get("projectile_damage_coeff", 0.0)) - expected_coeff) > 0.01:
-		_fail("Standard sniper projectile damage coeff should be melee standard * 20.")
+	if sniper.has("projectile_damage_coeff") or sniper.has("gun_damage_coeff") or sniper.has("ammo_damage_coeff") or sniper.has("projectile_damage"):
+		_fail("Standard sniper should not expose legacy gun/ammo/projectile damage coeff fields after normalization.")
+	if absf(float(sniper.get("gun_projectile_damage_mult", 0.0)) - MainScene.STANDARD_SNIPER_GUN_DAMAGE_COEFF) > 0.01:
+		_fail("Standard sniper gun projectile damage multiplier should use the sniper max multiplier.")
 	if float(sniper.get("projectile_break_coeff", 1.0)) != 0.0:
 		_fail("Standard sniper projectile should not use a projectile break coeff.")
-	print("SNIPER_PART_DATA_PROBE ok momentum=%.2f coeff=%.2f" % [float(sniper.get("projectile_momentum", 0.0)), float(sniper.get("projectile_damage_coeff", 0.0))])
+	print("SNIPER_PART_DATA_PROBE ok momentum=%.2f gun_mult=%.2f" % [float(sniper.get("projectile_momentum", 0.0)), float(sniper.get("gun_projectile_damage_mult", 0.0))])
 	quit()

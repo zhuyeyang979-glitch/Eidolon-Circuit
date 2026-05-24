@@ -20,7 +20,10 @@ func _unit(profile: String, angle: float = 360.0):
 			"mass": 12.0,
 			"body_move_speed": 4.0,
 			"thruster_acceleration": 4.0,
+			"move_acceleration": 4.0,
 			"boost_momentum": 48.0,
+			"boost_total_momentum": 48.0,
+			"thruster_boost_extra_demand": 8.0,
 			"boost_speed": 4.0,
 			"boost_duration": 0.3,
 			"boost_cooldown": 0.5,
@@ -44,8 +47,8 @@ func _init() -> void:
 	var car = _unit("car")
 	car.move_by(Vector2.UP, 0.2, 32.0)
 	car.tick(0.2, 32.0)
-	if absf(car.lane) > 0.001:
-		_fail("Car thruster should not side-drive.")
+	if absf(car.lane) <= 0.001:
+		_fail("Car profile should not block ordinary side/up movement.")
 	car.move_by(Vector2.RIGHT, 0.2, 32.0)
 	car.tick(0.2, 32.0)
 	if car.ring_pos <= 0.001:
@@ -53,11 +56,17 @@ func _init() -> void:
 	var vector = _unit("vector", 90.0)
 	vector.move_by(Vector2.UP, 0.2, 32.0)
 	vector.tick(0.2, 32.0)
-	if vector.lane > 0.01:
-		_fail("Vector profile should not accept pure side movement outside cone.")
+	if absf(vector.lane) <= 0.001:
+		_fail("Vector profile should not block ordinary side/up movement.")
 	vector.move_by(Vector2.RIGHT, 0.2, 32.0)
 	vector.tick(0.2, 32.0)
 	if vector.ring_pos <= 0.001:
 		_fail("Vector profile should accept forward movement.")
+	var car_boost = _unit("car")
+	if car_boost.boost(Vector2.UP, 32.0):
+		_fail("Car profile should still constrain boost direction.")
+	var vector_boost = _unit("vector", 90.0)
+	if vector_boost.boost(Vector2.UP, 32.0):
+		_fail("Vector profile should still constrain boost direction outside cone.")
 	print("MOVEMENT_PROFILE_PROBE ok")
 	quit()

@@ -42,7 +42,7 @@ func _init() -> void:
 	if limb_keys != ["connector_limb"]:
 		_fail("Limb filter mismatch: %s." % str(limb_keys))
 	var weapon_keys := _option_keys(main._part_filter_options_for_group("terminal_weapon"))
-	for required in ["terminal", "terminal_ranged", "terminal_melee"]:
+	for required in ["weapon_all", "weapon_gun", "weapon_melee"]:
 		if not weapon_keys.has(required):
 			_fail("Weapon filter missing %s." % required)
 	var barrier_keys := _option_keys(main._part_filter_options_for_group("barrier_panel"))
@@ -51,7 +51,7 @@ func _init() -> void:
 	var software_muscle_keys := _option_keys(main._part_filter_options_for_group("software_muscle"))
 	for required in ["engine", "booster", "cooling", "ammo", "shield_payload"]:
 		if not software_muscle_keys.has(required):
-			_fail("Software-muscle filter missing %s." % required)
+			_fail("Equipment filter missing %s." % required)
 	var software_keys := _option_keys(main._part_filter_options_for_group("software"))
 	for required in ["soul", "code", "ether", "module"]:
 		if not software_keys.has(required):
@@ -60,10 +60,10 @@ func _init() -> void:
 	var summary: Dictionary = main._team_summary(1)
 	var entries: Array = main._editor_stats_entries(stats, {}, summary, {}, {})
 	var labels := _entry_labels(entries)
-	for required_label in ["当前画布造价", "动力分配", "热管理平衡", "机内插件槽 0/0", "软件槽 0/0"]:
+	for required_label in ["当前画布造价", "动力预算", "热管理平衡", "机内插件槽 0/0", "软件槽 0/0"]:
 		if not labels.has(required_label):
 			_fail("Dashboard missing %s in labels %s." % [required_label, str(labels)])
 	if labels.has("全队总价"):
 		_fail("Unit-first blank canvas should not show team total in the default dashboard.")
-	print("PART_LIBRARY_UI_PROBE groups=%s weapon=%d software_muscle=%d software=%d dashboard=%d" % [str(MainScene.EDITOR_PART_GROUP_ORDER), weapon_keys.size(), software_muscle_keys.size(), software_keys.size(), entries.size()])
+	print("PART_LIBRARY_UI_PROBE groups=%s weapon=%d equipment=%d software=%d dashboard=%d" % [str(MainScene.EDITOR_PART_GROUP_ORDER), weapon_keys.size(), software_muscle_keys.size(), software_keys.size(), entries.size()])
 	quit()

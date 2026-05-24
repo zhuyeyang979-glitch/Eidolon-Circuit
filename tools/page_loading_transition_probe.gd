@@ -25,6 +25,8 @@ func _init() -> void:
 	root.add_child(main)
 	main._ready()
 	main.loading_auto_transitions_enabled = true
+	if main.game_state == MainScene.STATE_LOADING:
+		_drain_loading(main, MainScene.STATE_MENU)
 	main._show_editor()
 	_drain_loading(main, MainScene.STATE_EDITOR)
 	main._show_saved_units_library()

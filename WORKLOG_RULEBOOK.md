@@ -1,14 +1,391 @@
 # Eidolon Circuit Worklog Rulebook
 
-Last updated: 2026-05-21
+Last updated: 2026-05-25
 
 This document is a handoff log written like a tabletop rulebook. Use it to brief another AI agent or human collaborator before changing the Godot project.
 
-Project root: `C:\Users\Administrator\Documents\New project`
+Project root: `E:\New project`
+
+Mirror note: `C:\Users\Administrator\Documents\New project` is a mirror/secondary copy. Development, probes, and Godot checks should use `E:\New project` unless explicitly stated otherwise.
 
 Primary implementation file: `scripts/main.gd`
 
 Godot version in workspace: `tools/godot-4.6.2/Godot_v4.6.2-stable_win64_console.exe`
+
+## 2026-05-25 Navigation Service Contract
+
+Rules:
+- Page navigation is recorded through `NavigationService`; page transitions carry `from_page`, `to_page`, `reason`, `return_target`, and `payload`.
+- Existing `_show_*` entrypoints stay as compatibility wrappers, but page-state commits go through `_commit_page_state()`.
+- Page options ask the router for `back`, `main_menu`, `settings`, `help`, and `close` actions instead of owning page-specific return branches.
+
+Implementation notes:
+- Added `scripts/services/navigation_service.gd` with begin/commit transition tracking, return-target resolution, option action resolution, and a debug/probe snapshot.
+- Connected loading transitions to navigation begin records and target page commits, so headed loading paths retain the original source and intended target.
+- Saved Units and Settings now mirror return targets from the router; returning from Saved Units to Unit Edit preserves the active canvas, and Settings can return to Battle without resetting runtime state.
+
+Verification:
+- New headed probes passed: `navigation_service_contract_probe`, `page_options_router_back_probe`, `saved_units_return_target_probe`, `loading_navigation_contract_probe`, `settings_return_target_probe`.
+- Updated headed probes passed: `options_menu_unification_probe`, `saved_units_back_to_editor_probe`, `page_loading_transition_probe`, `main_menu_navigation_probe`.
+
+## 2026-05-25 Torso Hull Visual Reference Pass
+
+Rules:
+- `E:\New project` remains the active implementation workspace; the Documents folder is a mirror/secondary copy.
+- Torso art is procedural and must stay unified across part library cards, hover/large preview, Unit Edit board geometry, and runtime combat geometry.
+- Robot, spacecraft, and mechanized-biological torso silhouettes should be visually distinct without adding scene-specific image-sheet fallbacks.
+
+Implementation notes:
+- Added `PartArt.torso_visual_family()` and new `torso_hull_*` helpers for robot cores, spacecraft hulls, carapace/mantle bodies, spine bodies, and hybrid hulls.
+- Routed torso polygons, external joint port positions, port directions, Unit Edit topology slot profiles, and runtime torso colliders through the new hull helpers.
+- Updated `AssemblyBoardRenderer._draw_torso()` with family-specific procedural marks: robot chest/core lines, spacecraft keel/panel lines, carapace/mantle ribs, and spine vertebrae.
+- Kept legacy `torso_saddle_*` helpers available for compatibility, but current visible/runtime torso art now uses the new hull source.
+
+References:
+- Boston Dynamics Atlas: humanoid shoulder/chest shell layering.
+- NASA Orion Spacecraft: spacecraft hull, service ring, and panel-line language.
+- Festo Bionic Learning Network: biomimetic/mechanized body segmentation cues.
+
+Verification:
+- New probe passed: `torso_visual_family_art_probe`.
+- Updated probes passed: `torso_saddle_ports_probe`, `part_preview_board_art_identity_probe`, `battle_preview_art_identity_probe`.
+- Regressions passed: `rounded_collision_shape_probe`, `board_battle_art_identity_probe`, `runtime_geometry_identity_probe`, `part_library_ui_probe`, `ui_layout_probe`, `text_overflow_probe`, `tools/run_godot_checked.ps1 -CheckOnly -Headless -TimeoutSec 120`.
+
+## 2026-05-25 Unit Edit Power UI And Verification Gate Cleanup
+
+Rules:
+- Unit Edit has one always-visible power allocation surface: `UnitEditorPowerAllocationDock`. The old `UnitEditorPowerTopbarView` banner must not be instantiated or connected.
+- The detailed `EngineMomentumAllocationPanelView` is an explicit tool panel. It opens only from the power dock/detail entry or torso engine allocation entry, and closes by its close button, Esc, or right-click.
+- Unit Edit high-priority input order is centralized: value-submit Enter, power detail panel, torso binding sidebar, catalog drag, then generic UI buttons.
+- Project verification defaults to headed Godot. Use headless only as an explicit parser/auxiliary fallback.
+
+Implementation notes:
+- Removed creation and signal wiring for the old power topbar, renamed the refresh path to `_refresh_unit_editor_power_allocation_dock()`, and updated probes that read allocation rows to use `editor_power_dock_view`.
+- Added `_route_unit_editor_priority_input()` so the UI event priority is visible in one place instead of being split across `_input()`.
+- Added `PowerAllocationService` for power-budget totals and percent equalize calculations; `main.gd` now delegates those pure allocation helpers to the service.
+- `tools/run_godot_checked.ps1` now runs headed by default; `-Headless` is the explicit opt-in for parser/fallback checks.
+
+Verification tiers:
+- Primary gate: headed real-window gesture probes for Unit Edit, battle movement, binding, power allocation, and performance.
+- Supporting gate: focused functional probes that inspect data, cache keys, or pure helpers.
+- Auxiliary only: headless parser/check-only runs and old probes kept for compatibility.
+
+## 2026-05-24 Melee Terminal Weapon Shape Identity
+
+Rules:
+- `E:\New project` remains the active implementation source. Documents and OneDrive are mirrors, and `WORKLOG_RULEBOOK.md` is the shared development log synced through `tools/sync_worklog.ps1`.
+- Melee terminal weapons must read as their real top-down weapon family in every scene that draws board/runtime geometry. Scythes, shields, drills, and gauntlets may not collapse back to generic blade, capsule, or point silhouettes.
+- `AssemblyBoardRenderer` stays the single source for board, battle, preview, and runtime contact visual polygons. No old child visuals, atlas fallback, attack groups, or scene-specific weapon rectangles are restored.
+
+Implementation notes:
+- Added concrete terminal families in `AssemblyBoardRenderer`: scythe, shield, drill, and gauntlet now keep their `source_shape` / `weapon_family` through part preview and runtime segment conversion.
+- Refined the shared terminal polygons: scythes use an asymmetric hooked crescent, shields use a broad top-down tile/guard face, drills use a tapered bit body, and gauntlets use a cuff/palm/knuckle iron-fist outline.
+- Added procedural detail layers on the same draw path: scythe inner cutting edge, shield rim/ridge seams, drill spiral/rib texture, and gauntlet knuckle plates.
+- Updated `PartArt.terminal_profile_for()` so any remaining procedural metadata callers see `crescent_scythe`, `shield_tile_face`, `spiral_drill`, or `iron_fist` instead of generic terminal profiles.
+
+Verification:
+- New/updated focused probes passed:
+  - `melee_weapon_specific_polygon_probe`
+  - `melee_weapon_shape_family_probe`
+  - `melee_weapon_visual_layers_probe`
+  - `runtime_contact_visual_identity_probe`
+- Regressions passed:
+  - `part_preview_board_art_identity_probe`
+  - `board_battle_art_identity_probe`
+  - `runtime_geometry_identity_probe`
+  - `part_size_visual_probe`
+  - `part_library_ui_probe`
+  - `blunt_weapon_gradient_probe`
+  - `gauntlet_part_data_probe`
+  - `shield_guard_bash_binding_probe`
+  - `runtime_melee_never_projectile_gate_probe`
+  - `combat_probe`
+  - `ui_layout_probe`
+  - `text_overflow_probe`
+  - `no_legacy_runtime_pointers_probe`
+  - `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120`
+
+Findings:
+- The existing shared renderer already had the correct seam for all scenes; this pass strengthened the silhouettes and metadata instead of adding a second art path.
+- Some probes still print Godot `ObjectDB instances leaked` warnings on exit. The relevant checks pass with exit code `0`.
+
+Sync:
+- Implemented in `E:\New project`; this entry and touched files were mirrored to Documents and OneDrive at the end of the pass.
+
+## 2026-05-24 Battle Vertical Movement And Rectangular Mobius Surface Texture
+
+Rules:
+- `E:\New project` is the active development workspace. The Documents copy can be stale and may lack helper scripts.
+- Battle gameplay stays in stable 2D Euclidean screen-readable space: player input, unit movement, bullets, aim rays, and collision must not be rotated or bent by Mobius visuals.
+- The local battle map projection is an equal-height rectangle. Mobius topology is expressed by lifted `mobius_s/mobius_v`, seamless wrapping, surface UVs, and texture half-twist, not by bending local unit/projectile coordinates.
+- The generated combat art is a texture painted onto the Mobius strip surface. It may twist through UV sampling while the surface geometry remains rectangular.
+
+Implementation notes:
+- `_handle_player_battle_input()` now always sends ordinary locomotion through `GameplayTransform.screen_input_to_gameplay_motion(input_vector)` and calls `hero.move_by(...)` even while attack-command windows or runtime gun activation are active.
+- The old `surface_move_input_vector` meta remains as a visual/debug alias, but the authoritative `gameplay_move_input_vector` is the stable screen input.
+- `MobiusWorld.project_to_screen()` already had rectangular projection enabled by battle config; this rule is now guarded by probes so visual depth/twist cannot move local gameplay positions.
+- `mobius_strip_surface.gdshader` now samples the Mobius surface texture with repeat-enabled UVs, blends normal and vertically mirrored samples across one loop, and adds mild `u_shear` / `v_warp` so the art reads as twisting on the strip without changing geometry.
+- Updated old Mobius movement-input probes to assert that visual rotation does not rotate gameplay input.
+
+Verification:
+- New probes passed:
+  - `battle_vertical_real_input_path_probe`
+  - `battle_vertical_input_during_activation_probe`
+  - `mobius_rect_projection_texture_twist_probe`
+- Updated probes passed:
+  - `mobius_surface_half_twist_uv_probe`
+  - `mobius_surface_movement_input_probe`
+  - `mobius_input_constraint_frame_probe`
+- Regressions passed:
+  - `battle_screen_input_vertical_probe`
+  - `battle_vertical_movement_all_profiles_probe`
+  - `battle_mobius_vertical_movement_probe`
+  - `mobius_local_rectangular_projection_probe`
+  - `mobius_surface_uv_motion_probe`
+  - `mobius_background_not_static_probe`
+  - `gameplay_visual_transform_separation_probe`
+  - `aim_line_straight_euclidean_probe`
+  - `mobius_no_top_bottom_border_probe`
+  - `mobius_no_gameplay_box_probe`
+  - `ui_layout_probe`
+  - `text_overflow_probe`
+  - `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120`
+
+Findings:
+- Existing direct `move_by()` probes were already passing; the broken player-facing behavior was in the real battle input path, where attack windows or gun activation skipped locomotion.
+- The Mobius surface texture path was present, but the shader needed stronger UV-level twist cues so the rectangular projection still reads as a painted Mobius strip.
+- Some probes still print Godot `ObjectDB instances leaked` warnings on exit; the relevant checks pass with exit code `0`.
+
+## 2026-05-24 Battle Motion 72Hz Smoothing
+
+Rules:
+- Battle movement, turning, camera-follow projection, and limb inertia use a shared 72Hz battle frame constant. Do not leave runtime battle motion paths on hard-coded `1/60` deltas.
+- The lowest runtime profile still exposes saved-setting key `compat_60` for compatibility, but runtime frame and physics ticks must both run at least 72Hz.
+- Smoothing is a frame-rate/tick-rate change only; do not alter combat formulas, Mobius topology, occlusion, damage, or action-module semantics.
+
+Implementation notes:
+- Added `BATTLE_SIMULATION_FPS = 72.0` and `BATTLE_FRAME_DELTA = 1.0 / BATTLE_SIMULATION_FPS` to `scripts/main.gd`.
+- `_apply_performance_profile()` now sets `Engine.physics_ticks_per_second` to 72 alongside the existing `Engine.max_fps >= 72` guard.
+- Replaced remaining runtime battle `1/60` deltas in barrier-entry GPU contact checks and barrier push responses with `BATTLE_FRAME_DELTA`.
+- Updated battle frame-budget/camera probes to tick battle at `BATTLE_FRAME_DELTA`.
+- Added `battle_motion_72hz_tick_probe` to verify movement, turn, and limb-inertia frame steps stay fine-grained at 72Hz.
+
+Verification:
+- `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120` passed.
+- New/updated 72Hz probes passed:
+  - `battle_motion_72hz_tick_probe` (`move_step=0.0417`, `turn_step=0.0583`, `limb_step=0.0180`)
+  - `battle_minimum_72fps_probe` (`fps_cap=72`, latest p95 `1.71ms`, max `1.94ms`)
+  - `battle_gpu_frame_budget_probe` (`p95=1.66ms`, max `2.21ms`)
+  - `battle_runtime_frame_budget_probe` (`avg=3.193ms`, max `73.513ms`)
+  - `battle_movement_camera_no_lag_probe`
+- Regression probes passed:
+  - `settings_functional_video_probe`
+  - `battle_vfx_budget_probe`
+  - `combat_probe`
+  - `runtime_geometry_identity_probe`
+  - `battle_backdrop_runtime_source_probe`
+  - `ui_layout_probe`
+  - `text_overflow_probe`
+
+Sync:
+- Implemented in `E:\New project`; Documents and OneDrive mirrors were refreshed from this source.
+- Mirror hash check passed for touched files. `scripts/main.gd` SHA256 after this pass was `018FC3C6595DBA1E10A6237C799DC5B997E8C7166F0D7F34470C662EB1235B51`.
+
+## 2026-05-24 Battle Backdrop Source Load and 72fps Floor
+
+Rules:
+- The generated Mobius battle backdrop must be loaded from the PNG source bytes, not from stale Godot `.ctex` import cache.
+- The lowest runtime performance profile must target at least 72fps. The historical key `compat_60` may remain for saved-setting compatibility, but player-facing text must read `Compat 72 / 兼容 72`.
+- Raising the floor must reduce lowest-profile VFX/background budget instead of changing combat rules, Mobius movement, occlusion, or barrier gameplay.
+
+Implementation notes:
+- Added a dedicated `space_battle_backdrop.png` loader using `FileAccess.get_file_as_bytes()` and `Image.load_png_from_buffer()` before creating an `ImageTexture`; runtime metadata marks it as `source_image`.
+- Kept `combat_vfx_atlas` and other generated atlases on the existing imported-texture path.
+- Raised `compat_60` `fps_cap` to `72`, renamed its labels, and clamped applied runtime fps caps to `MINIMUM_RUNTIME_FPS_CAP = 72`.
+- Reduced lowest-profile render/VFX budgets for the 72fps floor: render scale `0.78`, VFX scale `0.55`, projectile trace budget `40`, hit-effect budget `36`, battle VFX budget `92`, contact particle pool `56`, topology segment budget `420`.
+- Added runtime-source and 72fps probes; updated settings and VFX probes to reject old 60fps wording/behavior.
+
+Verification:
+- `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120` passed.
+- New/updated probes passed:
+  - `battle_backdrop_runtime_source_probe` (`loader=source_image`, hash `DA28562B25E42B8C6A6A64092E8B54E861F295645EBB999F13B71FF6D3253EC7`)
+  - `battle_minimum_72fps_probe` (`fps_cap=72`, latest p95 `3.45ms`, max `3.68ms`)
+  - `battle_vfx_budget_probe` (`accepted=40`, `dropped=160`)
+  - `settings_functional_video_probe`
+- Regression probes passed:
+  - `mobius_background_continuity_probe`
+  - `barrier_tile_readability_probe`
+  - `battle_gpu_frame_budget_probe`
+  - `mobius_visual_rotation_timer_probe`
+  - `mobius_boundary_visual_probe`
+  - `battle_xy_background_probe`
+  - `map_occlusion_kind_probe`
+  - `map_occlusion_projectile_integration_probe`
+  - `runtime_geometry_identity_probe`
+  - `combat_probe`
+  - `ui_layout_probe`
+  - `text_overflow_probe`
+
+Sync:
+- Implemented in `E:\New project`; Documents and OneDrive mirrors were refreshed from this source.
+- Mirror hash check passed for touched files. Background SHA256 remains `DA28562B25E42B8C6A6A64092E8B54E861F295645EBB999F13B71FF6D3253EC7`; `scripts/main.gd` SHA256 after this pass was `3483FE356E990D00C2656364EB1C6A4C65BE3406FF025BB29F3C6F9A88EED6EA`.
+
+## 2026-05-24 Unit Edit Enter Routing And Training Error Feedback
+
+Rules:
+- In Unit Edit, `Enter` is not a page navigation shortcut. It is a no-op unless a power-allocation numeric field is focused.
+- A focused power-allocation value field treats `Enter` / keypad `Enter` as "confirm this number"; invalid text restores the current value and stays in Unit Edit.
+- `TEST / 训练测试` must explain why an illegal canvas cannot enter training. Silent failure is not allowed.
+
+Implementation notes:
+- Removed the old Unit Edit `menu_confirm -> main menu` behavior from `_handle_editor_input()`.
+- Added focused value helpers to `EngineMomentumAllocationPanelView` and routed Unit Edit `Enter` through `_handle_unit_editor_enter_key()` before other editor input paths.
+- Added `_show_unit_editor_blocking_error()` so illegal training attempts write the localized first blocking reason to the summary, board hint, and visible top feedback strip, with alarm SFX and red feedback styling.
+- Added headed probes for Enter-confirm, invalid Enter, no-navigation Enter, and illegal-training feedback.
+
+Verification:
+- Headed probes passed:
+  - `power_allocation_enter_confirms_value_probe`
+  - `power_allocation_invalid_enter_no_navigation_probe`
+  - `unit_editor_enter_no_navigation_probe`
+  - `unit_editor_training_illegal_feedback_probe`
+  - `power_allocation_equalize_button_real_ui_probe`
+  - `power_allocation_detail_open_close_probe`
+  - `teamedit_probe`
+  - `ui_layout_probe`
+  - `text_overflow_probe`
+  - `tools/run_godot_checked.ps1 -Headed -CheckOnly -TimeoutSec 120`
+
+## 2026-05-24 Power Allocation Equalize Button Hit Routing
+
+Rules:
+- All project UI verification for this stream uses headed Godot. Headless remains a parser/check helper only.
+- The power allocation detail panel's explicit controls must be handled at the visible panel layer before lower editor hover/board/catalog routes can consume the click.
+- Equalize keeps the existing percent-fill algorithm: all adjustable thruster drive, thruster boost/brake, and bound-limb entries receive the same fill percentage inside their own min/max ranges; surplus stays in the pool UI.
+
+Implementation notes:
+- The equalize algorithm already passed headed functional probes, so the broken real UI behavior was narrowed to button hit routing.
+- Added a global panel hit guard for `EngineMomentumAllocationPanelView._equalize_rect()`, matching the previous close-button guard. A real click on the equalize button now calls `_equalize_engine_momentum_allocation()` and marks the event handled before other editor routes run.
+- Added `power_allocation_equalize_button_real_ui_probe`, which opens the allocation panel and clicks the actual on-screen equalize button using global coordinates.
+
+Verification:
+- Headed probes passed:
+  - `power_allocation_equalize_button_real_ui_probe` (`changed=4`, `entries=4`)
+  - `power_allocation_equalize_percent_all_entries_probe` (`percent=0.621`)
+  - `power_allocation_detail_open_close_probe`
+  - `teamedit_probe`
+
+## 2026-05-24 Mobius Map Background Replacement and Barrier Readability
+
+Rules:
+- The battle backdrop is atmosphere only. Nebula, dust streams, and Mobius grid can carry mood and continuity, but they must stay below real gameplay objects in contrast and opacity.
+- The map remains a Mobius strip in movement/topology; the backdrop must read as one continuous loop from start to end. Euclidean combat traces and unified occlusion helpers remain unchanged.
+- Barrier tiles that can collide, block lock, block shots, supply, cool, heat, trap, or otherwise interact must read as harder and brighter than any background grid, star, dust, or nebula element.
+
+Implementation notes:
+- Generated a new dark Mobius-loop battle panorama with `imagegen` and replaced `assets/generated/space_battle_backdrop.png`.
+- Lowered the generated battle backdrop alpha and reduced Mobius surface/shader atmospheric intensity (`near_alpha`, `far_alpha`, and shader `cosmic_mix`) so units, projectiles, and tiles retain priority.
+- Removed the old dominant parallax planet layer from the battle sky and dimmed starfield, nebula, world-bound dust, and near cosmic current layers.
+- Brightened and thickened barrier tile runtime visuals in `scripts/fighter.gd`; wall, laser, chemical, coolant, heat, gravity, cache, and one-way shield tiles now use stronger alpha/width so they read as foreground hard geometry.
+- Added `barrier_tile_readability_probe` and extended `mobius_background_continuity_probe` to verify the loaded backdrop dimensions, low backdrop alpha, no dominant planet nodes, subdued Mobius surface alpha, and hard tile readability.
+
+Verification:
+- `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120` passed.
+- New/updated probes passed:
+  - `mobius_background_continuity_probe` (`backdrop=(1672.0, 941.0)`)
+  - `barrier_tile_readability_probe` (`width=36.16`, `alpha=0.96`)
+- Regression probes passed:
+  - `mobius_visual_rotation_timer_probe`
+  - `mobius_boundary_visual_probe`
+  - `battle_xy_background_probe`
+  - `map_occlusion_kind_probe`
+  - `map_occlusion_projectile_integration_probe`
+  - `runtime_geometry_identity_probe`
+  - `combat_probe`
+  - `ui_layout_probe`
+  - `text_overflow_probe`
+
+Sync:
+- Implemented in `E:\New project`; Documents and OneDrive mirrors were refreshed from this source.
+- Mirror hash check passed for touched files; worklog hashes matched after sync. Background SHA256: `DA28562B25E42B8C6A6A64092E8B54E861F295645EBB999F13B71FF6D3253EC7`.
+
+## 2026-05-24 Unit Edit Power Budget Duplicate Removal
+
+Rules:
+- Unit Edit must expose one always-visible power-budget surface: the allocation dock. The old topbar banner is not a player-facing surface.
+- The legacy `DashboardPowerAllocationButton` and `DashboardPowerAllocationSummary` must remain hidden so they cannot overlap the left dashboard or create a second "动力预算" entry.
+- `EngineMomentumAllocationPanelView` is now the explicit allocation detail panel only. Engine slot clicks and dock "more" requests may open it; dirty refreshes and non-explicit context changes must not.
+- The allocation dock must sit in the former topbar band and must not cover the left dashboard scroll region.
+
+Implementation notes:
+- Hid and disabled the legacy dashboard power-budget button and summary at creation and during every refresh.
+- Hid `UnitEditorPowerTopbarView` and stopped refreshing it as a player-facing surface.
+- Moved `UnitEditorPowerAllocationDock` to `Vector2(190, 24)` so it replaces the old topbar band while staying clear of the left dashboard.
+- Restored explicit allocation-detail opening for engine slot clicks and dock "more" requests. Dirty refreshes and non-explicit context updates keep the detail panel closed unless the player already opened it.
+- Added a global close-button hit guard for the allocation detail panel. Clicking the visible `X` closes the panel before board/catalog/hover routing can consume the event; Esc and right-click close behavior remain intact.
+- Updated `engine_momentum_allocation_open_probe` so explicit engine-slot entry opens the detail panel, while non-explicit refresh probes keep it closed.
+- Kept the torso-detail button as the separate torso panel entry.
+- Added `unit_editor_power_budget_no_duplicate_probe` to guard the hidden topbar, hidden legacy controls, and non-overlapping dock/dashboard rectangles.
+- Added `unit_editor_legacy_power_table_removed_probe` to guard against non-explicit detail-panel reopening.
+
+Verification:
+- Headed RTX 4080 SUPER checks passed:
+  - `tools/run_godot_checked.ps1 -Headed -CheckOnly -TimeoutSec 120`
+  - `unit_editor_no_power_topbar_probe`
+  - `unit_editor_power_dock_moved_up_probe`
+  - `unit_editor_power_budget_no_duplicate_probe`
+  - `unit_editor_legacy_power_table_removed_probe`
+  - `power_allocation_detail_open_close_probe`
+  - `engine_momentum_allocation_open_probe`
+  - `unit_editor_power_allocation_topbar_probe`
+  - `ui_layout_probe`
+  - `text_overflow_probe`
+  - `teamedit_probe`
+  - `performance_profile_4080s_probe`
+
+Findings:
+- The requested duplicate power UI is now removed by hiding the topbar banner and keeping only the moved dock plus explicit detail panel.
+- Current headed performance profile remains acceptable for most gestures; `teamedit.bound_pose_drag` is still the hottest gesture (`p95=10.62ms`) with `pose.drag.visual_diff` / `pose.visual.dynamic` as the next concrete optimization target.
+
+## 2026-05-24 Gun Damage Multiplier, Recoil, And Aim Normal Unification
+
+Rules:
+- Gun terminal muscles now provide only `gun_projectile_damage_mult`, the projectile damage multiplier at max legal gun-muscle momentum allocation.
+- Current projectile damage is `projectile_momentum * current_gun_multiplier`, where `current_gun_multiplier = max_multiplier * allocated_gun_momentum / gun_momentum_max`.
+- Ammo no longer contributes a damage coefficient. Ammo keeps type/effect semantics such as bullet, laser, chemical, explosive, or web visuals/effects.
+- Gun recoil is physical momentum on the whole unit: `delta_velocity = -shot_dir * projectile_momentum / unit_mass`. It must not use visual shake/sway or legacy recoil-transfer multipliers.
+- Gun aim line, gun segment normal, and projectile route must stay collinear. Runtime aim pose rotates ranged gun segments to the final firing direction before projectile events fire.
+
+Implementation notes:
+- Replaced legacy gun/ammo/projectile damage coefficient reads with `_gun_projectile_damage_mult_max_for_data()` and `_gun_projectile_damage_mult_for_event()`.
+- Normalized gun catalog parts erase legacy `projectile_damage_coeff`, `ammo_damage_coeff`, `gun_damage_coeff`, direct projectile damage, and explosion damage fields from the player-facing runtime path.
+- Removed runtime recoil-transfer stats and changed projectile recoil to call `Fighter.apply_projectile_recoil()`, which applies the equal-and-opposite velocity delta and then lets normal brake behavior settle it.
+- Added runtime aim pose support in `Fighter` so ranged segments render and query along the current aim/firing normal.
+
+Verification:
+- Headed RTX 4080 SUPER checks passed:
+  - `tools/run_godot_checked.ps1 -Headed -CheckOnly -TimeoutSec 120`
+  - `gun_damage_multiplier_from_allocation_probe`
+  - `gun_no_legacy_damage_coeff_probe`
+  - `gun_momentum_range_matches_melee_probe`
+  - `gun_recoil_momentum_probe`
+  - `gun_recoil_brake_probe`
+  - `gun_aim_normal_alignment_probe`
+  - `sniper_delayed_fire_realign_probe`
+  - `projectile_damage_formula_probe`
+  - `sniper_part_data_probe`
+  - `gun_drive_fire_control_probe`
+  - `gun_drive_projectile_momentum_probe`
+  - `machine_gun_bind_train_practice_probe`
+  - `teamedit_probe`
+  - `training_saved_unit_control_probe`
+  - `combat_probe`
+  - `ui_layout_probe`
+  - `text_overflow_probe`
+
+Findings:
+- The old raw catalog still contains historical damage fields in literal dictionaries, but normalized player-facing gun parts and projectile events no longer read them for damage.
+- The old lower-drive gun special case is removed; remaining per-part range differences come from normal size/mass/geometry data, not a gun-only multiplier.
 
 ## 2026-05-21 Git Workspace Cleanup
 
@@ -3144,6 +3521,1406 @@ Findings:
 Sync:
 - Implemented in `E:\New project`; mirror sync and local commit recorded by the surrounding Git history.
 
+## 2026-05-25 Weapon Silhouette Pass: Remaining Melee and Ranged Shapes
+
+Rules:
+- `AssemblyBoardRenderer` remains the single source for terminal weapon geometry in board previews, runtime combat segments, and shared component polygons.
+- Weapon visuals must read from human top-down expectations: blade, hammer, shield, drill, gauntlet, launcher, missile pod, sprayer, web spool, and rifle families should be recognizable from silhouette before details.
+- Visual family can differ from gameplay projectile behavior when the name/shape clearly says otherwise. Example: a chemical mortar should keep a mortar body instead of being flattened into the sprayer silhouette.
+- No old child visual, attack group, atlas fallback, or independent combat-side shape path may be restored.
+
+Implementation notes:
+- Extended terminal shape families and `PartArt.terminal_profile_for()` for katana, greatsword, hammer, lance, rapier, claw, racket, chain, sniper, rifle, laser gun, sprayer, grenade/mortar/cannon launcher, missile launcher, and web gun.
+- Added dedicated polygons and detail marks for the remaining weapon families. Hammer, claw, racket, sprayer, launcher, missile pod, and web gun silhouettes were widened/segmented so the primary polygon itself carries the object identity.
+- Runtime `segment_to_component_node()` now preserves `gun_kind`, `ammo_kind`, `projectile_style`, and `projectile_behavior` so battle-side segment drawing can classify ranged weapons with the same renderer logic used by the board and catalog cards.
+- Projectile shape classification now prioritizes explicit launcher words such as `mortar`, `cannon`, and `grenade` over generic chemical/spray behavior unless the item is explicitly a sprayer/nozzle.
+- Fixed a stray `}` in the existing untracked `scripts/services/navigation_service.gd` so Godot parsing and probes can run again.
+- Added `ranged_weapon_specific_polygon_probe.gd` and expanded melee shape, detail-tag, and runtime visual identity probes to cover the new families.
+
+Verification:
+- `tools/run_godot_checked.ps1 -Headless -CheckOnly -TimeoutSec 120` passed.
+- Shape probes passed:
+  - `melee_weapon_shape_family_probe`
+  - `melee_weapon_specific_polygon_probe`
+  - `melee_weapon_visual_layers_probe`
+  - `ranged_weapon_specific_polygon_probe`
+  - `runtime_contact_visual_identity_probe`
+- Core regressions passed:
+  - `board_battle_art_identity_probe`
+  - `runtime_geometry_identity_probe`
+  - `part_size_visual_probe`
+  - `combat_probe`
+  - `ui_layout_probe`
+  - `text_overflow_probe`
+- Some runs still print the known ObjectDB cleanup warning on exit; no functional assertion failed.
+
+References:
+- Browser image/reference pass used real-world top-down/silhouette cues for scythes, hammers, shields, firearms, sci-fi laser guns, launchers, and small arms.
+
+Sync:
+- Implemented in `E:\New project`; after this entry, sync `WORKLOG_RULEBOOK.md` and touched files to Documents and OneDrive mirrors, then verify SHA256 equality.
+
+## 2026-05-24 Dedicated Melee Weapon Silhouettes
+
+Rules:
+- Scythes, shields, drills, and gauntlets are no longer rendered as generic terminal capsules/tapers. They use dedicated top-down silhouettes from `AssemblyBoardRenderer`.
+- The renderer is still the single source for catalog previews, hover/drag ghosts, Unit Edit board art, training/power thumbnails, battle drawing, and runtime contact polygons.
+- Weapon shape identity is inferred from explicit `weapon_family` / `shape` / blunt flags first, then from name and damage type. Combat values, damage formulas, action module inputs, and save schema are unchanged.
+
+Implementation notes:
+- Added `AssemblyBoardRenderer.terminal_shape_family()` and `terminal_visual_detail_tags()` as the shared terminal weapon classifier.
+- Added dedicated polygons and detail layers:
+  - scythe: long handle plus one-sided crescent hook blade silhouette.
+  - shield: broad tile/shield hull with inner plate/ridge lines.
+  - drill: pointed cone hull with spiral/rib texture lines.
+  - gauntlet: broad fist hull with wrist cuff and finger knuckle marks.
+- Passed `weapon_family`, `source_shape`, and blunt family flags through TeamEdit board snapshots, runtime topology segments, and Fighter draw groups so battle/board collision art reads the same family data as catalog previews.
+- Updated stale art identity probe torso ratio thresholds to match the current torso display profile already used by the renderer.
+
+Verification:
+- Headed probes passed:
+  - `melee_weapon_shape_family_probe`
+  - `melee_weapon_specific_polygon_probe`
+  - `melee_weapon_visual_layers_probe`
+  - `part_preview_board_art_identity_probe`
+  - `battle_preview_art_identity_probe`
+  - `board_battle_art_identity_probe`
+  - `runtime_contact_visual_identity_probe`
+  - `rounded_collision_shape_probe`
+  - `teamedit_probe`
+  - `combat_probe`
+  - `ui_layout_probe`
+  - `text_overflow_probe`
+
+Sync:
+- Implemented in `E:\New project`; Documents and OneDrive mirrors should be refreshed from this source.
+
+## 2026-05-24 Brake / Reverse Boost Guard Restoration
+
+Rules:
+- Reverse and brake requests are movement/braking states only. They must not arm boost drive, even on omni thrusters.
+- Boost range continues to be governed by the installed thruster's `boost_angle_degrees`; directions outside that range brake instead of boosting.
+- Normal reverse movement is allowed only after the brake-to-stop state has been released and re-pressed. Holding reverse through the stop frame must not auto-launch reverse drive.
+
+Implementation notes:
+- Reconnected `Fighter.move_by()` to `_movement_command_mode()` and `_drive_direction_for_command()` so the brake/reverse state machine is used by the actual battle movement path again.
+- Added `_boost_request_is_reverse_only()` and applied it before boost arming. Rear/reverse requests now either brake existing velocity or return false without creating a boost state.
+- Kept ordinary drive and side/valid boost behavior intact: side directions inside the thruster boost cone can still boost; rear/reverse cannot.
+- Updated stale movement probes that still expected deleted direct-reverse behavior.
+
+Verification:
+- Headed probes passed:
+  - `brake_reverse_input_probe`
+  - `brake_reverse_after_stop_probe`
+  - `brake_reverse_direction_tolerance_probe`
+  - `brake_reverse_input_layer_probe`
+  - `rear_100_brake_zone_probe`
+  - `brake_rear_100_probe`
+  - `reverse_rear_boost_block_probe`
+  - `reverse_cannot_boost_probe`
+  - `boost_unusable_direction_brakes_probe`
+  - `brake_input_tolerance_probe`
+  - `brake_unusable_direction_probe`
+  - `movement_profile_probe`
+  - `boost_cooldown_probe`
+  - `boost_cooldown_heat_probe`
+  - `thruster_dual_motion_formula_probe`
+  - `battle_screen_input_vertical_probe`
+  - `combat_probe`
+  - `teamedit_probe`
+  - `ui_layout_probe`
+  - `text_overflow_probe`
+
+Sync:
+- Implemented in `E:\New project`; Documents and OneDrive mirrors should be refreshed from this source.
+
+## 2026-05-24 Battle Scale Continuity and Shooting Stability
+
+Rules:
+- Battle units may continue to change size from Mobius projection, depth, camera relation, and map twist. The game must not force runtime fighters back to `Vector2.ONE`.
+- Shooting, aiming, locking, firing, and hit VFX are not allowed to write or reset `Fighter.scale`, `mobius_visual_scale`, or `visual_hitbox_scale`.
+- Projectile hit queries read the current projected hitbox scale from the already-applied frame projection. Shooting events may consume that scale but must not create their own temporary scale.
+
+Implementation notes:
+- Added `mobius_visual_scale_target` and a per-projection max step in `Fighter.set_mobius_screen_projection()`, so projection scale changes smoothly instead of jumping when camera/projection and shooting updates happen in the same frame.
+- Added a scale guard around `set_aim_pose()`. Gun local pose and runtime geometry can refresh, but the whole fighter's current projected scale and visual hitbox scale are restored unchanged afterward.
+- Added meta diagnostics for applied/target Mobius scale, and reset projection-scale state on deploy/screen-position reset.
+- Added focused probes for continuous projection scale, shooting/aim scale stability, and projectile hitbox use of the current visual scale.
+
+Verification:
+- Headed RTX 4080 SUPER / Vulkan probes passed:
+  - `battle_mobius_scale_continuity_probe`
+  - `shooting_no_scale_jump_probe`
+  - `projectile_hitbox_uses_current_visual_scale_probe`
+  - `gun_aim_normal_alignment_probe`
+  - `battle_screen_input_vertical_probe`
+  - `battle_movement_camera_no_lag_probe`
+  - `combat_probe`
+  - `training_saved_unit_control_probe`
+  - `ui_layout_probe`
+  - `text_overflow_probe`
+  - `tools/run_godot_checked.ps1 -Headed -CheckOnly -TimeoutSec 120`
+
+Findings:
+- The scale jump risk was not in projectile hitbox scaling itself; projectile queries already read `visual_hitbox_scale`. The unsafe part was that aim/shot pose refreshes could share the same frame with a projection update and had no explicit guard against whole-fighter scale changes.
+- The fix keeps normal Mobius size variation intact while preventing shooting actions from adding their own sudden scale change.
+
+Sync:
+- Implemented in `E:\New project`; Documents and OneDrive mirrors should be refreshed from this source after verification.
+
+## 2026-05-24 Unified Map Occlusion Query
+
+Rules:
+- Map occlusion is a shared combat-system query, not a missile-only special case. Missile lock, missile homing loss, sniper line checks, laser beam/telegraph lines, and AI sight should all ask the same helper.
+- Unit movement remains Mobius-surface movement, but combat line checks remain local Euclidean patch checks between attacker, target, and blockers.
+- Occluders are concrete map blockers: barrier walls, cage walls, one-way screens, and reflector walls. Field/support panels such as heat, cooling, gravity, ammo, repair, and speed lanes are not treated as line-of-sight walls unless their catalog data explicitly marks them as wall/screen/reflector blockers.
+
+Implementation notes:
+- Added map occlusion constants plus `_map_occlusion_kind_for_data()`, `_map_occlusion_query_for_path()`, `_map_occlusion_query_for_event()`, `_map_occlusion_query_between()`, `_map_occlusion_kind_between()`, `_map_line_occluded()`, and `_map_line_of_sight_clear()`.
+- Replaced missile's bespoke one-way/cage loop with `_map_line_occluded()`. Missile target acquisition now refuses targets behind cover, while in-flight missiles still drop guidance after the configured occlusion grace and continue along the last direction.
+- Sniper target acquisition, delayed true-bullet firing, laser beam hit tests, and laser telegraph end points now use the same occlusion query. The old `_one_way_shield_between()` helper was removed; one-way directional/pass rules remain in `_one_way_shield_allows_projectile()`.
+- AI source targeting now penalizes occluded lines of sight, and puppet projectile firing holds fire when the current target is behind map occlusion.
+- `shield_pass_mode="ally"` is now handled explicitly so allied shots pass through ally one-way screens while enemy fire is blocked.
+
+Verification:
+- New probes passed:
+  - `map_occlusion_kind_probe`
+  - `map_occlusion_projectile_integration_probe`
+  - `map_occlusion_ai_sight_probe`
+- Focused regressions passed:
+  - `missile_occlusion_break_lock_probe`
+  - `sniper_first_obstruction_probe`
+  - `laser_projectile_gate_probe`
+  - `source_heat_pressure_policy_probe`
+  - `missile_lock_runtime_fire_probe`
+  - `laser_beam_runtime_fire_probe`
+  - `projectile_path_not_bent_by_mobius_probe`
+  - `combat_probe`
+- `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120` passed headless. ObjectDB cleanup warnings appeared on script probes and remain non-failing Godot exit cleanup noise.
+
+Sync:
+- Implemented in `E:\New project`.
+- Touched files to mirror: `scripts/main.gd`, `tools/map_occlusion_kind_probe.gd`, `tools/map_occlusion_projectile_integration_probe.gd`, `tools/map_occlusion_ai_sight_probe.gd`, `WORKLOG_RULEBOOK.md`.
+- Fixed `tools/worklog_projects.json` to store the OneDrive Japanese path as JSON `\u` escapes so Windows PowerShell can parse the registry consistently.
+- Mirror hash check matched for `scripts/main.gd`, the three new map occlusion probes, and `tools/worklog_projects.json`; final worklog sync was run after this entry.
+
+## 2026-05-24 Mobius Background Twist Without Rotation
+
+Rules:
+- The Mobius strip remains the map philosophy, but the background presentation must feel like a slow flexible twist, not like the whole arena or camera is rotating.
+- Combat and aiming stay on the local Euclidean patch, and stable gameplay projection/input must not be driven by a visual rotation angle.
+- Background surface, boundary haze, and cosmic dust may breathe/drift with a slow twist phase; units and input should not inherit an arbitrary rotating frame.
+
+Implementation notes:
+- Reworked `MobiusWorld.default_rotation_state()` / `advance_rotation_state()` into a compatibility wrapper around a twist state: `angle`, `angular_velocity`, and `target_angular_velocity` now stay at `0`, while `twist_phase`, `twist_speed`, and `twist_amplitude` advance slowly.
+- `MobiusWorld.frame_at()` no longer rotates the projected plane around a pivot. It applies optional `twist_visual_enabled` waveform offsets to the strip phase/depth/tangent only.
+- `screen_input_to_surface_motion()` explicitly uses a stable non-animated config, so visual twist does not change player input mapping.
+- `MobiusStripSurfaceView` enables visual twist for the background strip and passes `twist_phase` to the shader. The shader uniform was renamed from `rotation_angle` to `twist_phase`.
+- Parallax background and near cosmic dust no longer rotate around a pivot; they now use small drift, breathing scale, and point-level wave offsets.
+- Boundary haze samples use visual twist so the strip edge moves with the background surface, while ordinary unit projection remains stable.
+
+Verification:
+- `mobius_visual_rotation_timer_probe` updated and passed: `angle=0.000`, `twist_phase` advances, and stable projection ignores rotation state.
+- Passed:
+  - `mobius_surface_movement_input_probe`
+  - `projectile_path_not_bent_by_mobius_probe`
+  - `mobius_background_continuity_probe`
+  - `mobius_boundary_visual_probe`
+  - `mobius_local_euclidean_combat_patch_probe`
+- `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120` passed headless. ObjectDB cleanup warnings remain non-failing Godot exit cleanup noise.
+
+Sync:
+- Implemented in `E:\New project`.
+- Touched files to mirror: `scripts/main.gd`, `scripts/mobius_world.gd`, `shaders/mobius_strip_surface.gdshader`, `tools/mobius_visual_rotation_timer_probe.gd`, `WORKLOG_RULEBOOK.md`.
+
+## 2026-05-24 Unit Edit Binding And Allocation UI Convergence
+
+Rules:
+- Unit Edit has one explicit power-allocation context per torso. Binding, topbar, dock, and detail panel read that context; only an explicit "详细 / MORE" or engine-slot body click opens the full allocation panel.
+- Action-module binding is a panel-first flow. Catalog hover must clear/stand down while the torso-detail binding UI is active, and binding key clicks must be consumed before any catalog or allocation handler sees the event.
+- Torso-detail slot clicks resolve to one action only: `delete`, `rebind`, `engine_allocation`, or `select`, in that priority order. Delete/rebind never falls through into allocation.
+- Bound module limbs are part of the same allocation surface as thrusters. The topbar and dock list thruster drive, thruster boost/brake, and bound-limb rows from the same allocation helper.
+
+Implementation notes:
+- Added `_engine_payload_index_for_torso()` and `_set_engine_allocation_context_for_torso()` to centralize torso/engine context without automatically opening the full allocation panel.
+- Loading a saved unit into Unit Edit now keeps the allocation panel closed until the player explicitly opens it.
+- Starting a module-binding flow clears catalog hover and closes the full allocation panel, then raises the binding dock above hover popups.
+- Binding completion now activates the target torso allocation context without opening the full panel, refreshes the topbar/dock, and keeps all bound-limb allocation rows available immediately.
+- `UnitEditorPowerDockView` now receives the same allocation data as the topbar instead of being hidden on every refresh.
+- `TorsoDetailPanelView` now accepts slot-click events after delete/rebind/allocation/select routing so they cannot bubble into the wrong UI layer.
+
+Verification:
+- Headed `tools/run_godot_checked.ps1 -Headed -CheckOnly -TimeoutSec 120` passed.
+- Headed probes passed:
+  - `module_payload_delete_no_allocation_probe`
+  - `module_payload_delete_real_ui_probe`
+  - `module_binding_power_allocation_real_ui_probe`
+  - `power_topbar_all_bound_limbs_visible_probe`
+  - `module_binding_hover_does_not_cover_keys_probe`
+  - `teamedit_probe`
+
+## 2026-05-24 Unit Edit Left Dashboard Grouping
+
+Rules:
+- The left Unit Edit dashboard is a status rail, not a second editor. It should summarize legality and core derived stats without competing with the power-allocation dock or torso detail panel.
+- Keep existing stat labels for probe compatibility, but group them visually by purpose: body, drive, heat, motion, action, and slots.
+- Rule status gets a dedicated chip at the top. Individual bad stats remain red in their own rows.
+
+Implementation notes:
+- Added section rows to `EditorStatsRailView`, with variable-height scrolling so dividers do not waste full stat-row space.
+- Reworked the status line into a compact colored chip below the dashboard header.
+- Reordered `_editor_stats_entries()` into stable groups:
+  - pinned cost/deploy/software/internal-slot rows
+  - Body: HP, shield, mass, size
+  - Drive: drive budget, thruster demand, bound-limb drive
+  - Heat: thermal balance, cooling speed, heat pool, Boost heat
+  - Motion: move/Boost speeds, motion/Boost momentum, cooldown, acceleration, turning
+  - Action: bound limb output, estimated action speed/time, sweep information
+  - Slots: plug size and slot volume details
+- Preserved existing labels such as `动力预算`, `热管理平衡`, `机内插件槽`, `软件槽`, and `Boost总动量` so current probes and user-facing terms remain stable.
+
+Verification:
+- Headed `tools/run_godot_checked.ps1 -Headed -CheckOnly -TimeoutSec 120` passed.
+- Headed probes passed:
+  - `ui_layout_probe`
+  - `text_overflow_probe`
+  - `part_library_ui_probe`
+  - `teamedit_probe`
+  - `editor_balance_stat_probe`
+
+## 2026-05-24 Unit Edit Wheel Region Routing
+
+Rules:
+- Mouse wheel events belong to the UI region under the cursor. Scrolling the left dashboard must scroll the dashboard, not zoom the board.
+- Scrolling a visible catalog card must page the catalog, not zoom the board.
+- Board zoom by wheel is only for wheel input that reaches the board itself.
+
+Implementation notes:
+- `EditorStatsRailView` now uses `MOUSE_FILTER_STOP`, so its existing wheel handler consumes dashboard scroll events before the board can zoom.
+- `PartCatalogCardButton` now emits a `page_scroll(direction)` signal on wheel up/down and accepts the event.
+- Catalog cards connect that signal to `_scroll_editor_catalog_page_from_card()`, which turns pages through the catalog dirty/cache path without touching board zoom.
+
+Verification:
+- Headed `tools/run_godot_checked.ps1 -Headed -CheckOnly -TimeoutSec 120` passed.
+- Headed probes passed:
+  - `editor_scroll_regions_probe`
+  - `ui_layout_probe`
+  - `text_overflow_probe`
+  - `teamedit_probe`
+
+## 2026-05-24 Part Catalog Role and Normalization Unification
+
+Rules:
+- Catalog data must expose stable player-facing taxonomy. Use `catalog_role` for broad behavior and purchase grouping, and `part_category` for the more specific family such as `gun:laser_gun`, `melee:shield`, `module:ranged`, `engine`, `cooling`, or `ether`.
+- All catalog reads that enter editor display, selected components, or runtime setup must pass through one normalization path. Do not let display-only cleanup, runtime cleanup, and selected-component import drift into separate hidden rules again.
+- Catalog lifecycle is explicit metadata. A part may be `live` or `frozen`; frozen parts remain index-readable for old saves and future development, but player purchase lists must skip them.
+- Player UI must not expose old engineering/debug terms. Action modules may explain damage source as a player rule, but old combat fields such as damage units, attack groups, compatibility views, projectile mass, collision speed, and reference damage stay out of scripts and hover cards.
+
+Implementation notes:
+- Added catalog role/category helpers and a shared `_normalized_catalog_part()` path used by `_catalog_display_part()`, `_selected_component()`, and `_catalog_runtime_part()`.
+- Updated lifecycle handling so explicit `catalog_lifecycle`, `catalog_lifecycle_reason`, `freeze_reason`, and `future_dev_tag` are honored before fallback freeze rules.
+- Switched editor catalog filtering to prefer stable role/category metadata, while keeping legacy inference as a compatibility fallback for old data.
+- Removed unreachable legacy detail-line code after `_hover_card_detail_lines()` and kept hover detail generation routed through the new player-facing card model.
+- Updated English cooling catalog summary from `CAP` to `POOL` to match the heat/cooling vocabulary.
+- Removed the remaining old `reference_damage` script symbol from action-module scrub metadata.
+- Added `catalog_role_unification_probe` and updated the no-equipment HP/damage probe so module cards may show the allowed `Damage Resolve` damage-source rule without reintroducing raw damage numbers.
+
+Verification:
+- Catalog/UI probes passed:
+  - `catalog_role_unification_probe`
+  - `catalog_ui_no_equipment_hp_damage_probe`
+  - `catalog_lifecycle_freeze_probe`
+  - `catalog_live_purchase_probe`
+  - `catalog_economy_math_probe`
+  - `catalog_gradient_anchor_probe`
+  - `part_hover_detail_page_probe`
+  - `catalog_ui_terms_probe`
+  - `part_library_ui_probe`
+  - `module_catalog_filter_probe`
+  - `part_catalog_no_legacy_fields_probe`
+  - `part_catalog_balance_probe`
+- Editor/layout regressions passed:
+  - `teamedit_catalog_cache_probe`
+  - `part_catalog_schema_v3_probe`
+  - `catalog_card_size_badge_probe`
+  - `equipment_no_hp_catalog_probe`
+  - `software_no_hp_catalog_probe`
+  - `ui_layout_probe`
+  - `text_overflow_probe`
+- Legacy cleanup passed:
+  - `no_old_combat_terms_probe`
+  - `no_legacy_runtime_pointers_probe`
+- `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120` passed headless. ObjectDB leak warnings appeared on several probes and remain treated as runner cleanup noise, not functional failures.
+
+Sync:
+- Implemented in `E:\New project`.
+- Documents and OneDrive mirrors must receive the touched files from this source after this log entry is written.
+
+## 2026-05-24 Mobius Surface Movement and Local Euclidean Combat Patch
+
+Rules:
+- The battle map is a continuously rotating Mobius band, not a flat arena with a Mobius decoration. Unit position and movement live on the lifted surface coordinate `mobius_s / mobius_v`.
+- `ring_pos / lane` remain compatibility projections for older code and UI. Crossing the loop may wrap `ring_pos`, but the authoritative `mobius_s / mobius_v` must continue smoothly and must not suddenly flip lane.
+- Player movement and boost vectors are screen input mapped through the current local Mobius surface frame. Directional command parsing and shot aiming remain screen-readable.
+- Shooting, collision, explosion, shielding, and contact are still solved in a local Euclidean patch. Before geometric tests, nearby targets/colliders are lifted into the attacker's local patch; visual Mobius rotation must not bend projectile ordering or hit distance.
+
+Implementation notes:
+- `_mobius_surface_input_for_unit()` now maps live-unit movement input through `MobiusWorld.screen_input_to_surface_motion()` when Mobius mode is active.
+- Player movement, cancel movement, direction-tap boost, and face-chord boost now use the surface movement vector; raw input remains available for command/aim semantics.
+- Added `_combat_patch_origin_for_unit()` and `_mobius_local_patch_delta_from_coord()` so combat geometry can explicitly choose the unit's local Euclidean patch instead of relying on wrapped compatibility coordinates.
+- `_mobius_delta_points()` now treats lifted origins as authoritative and only uses camera lifting for wrapped compatibility points.
+- Fallback attack colliders and runtime unit part separation now anchor to the Mobius combat patch origin, so crossing the loop does not create a hard geometry jump.
+- AI hero and puppet movement now use Mobius nearest-surface deltas instead of raw wrapped ring/lane differences.
+- Added probes for surface movement input and local Euclidean combat across the Mobius seam.
+
+Verification:
+- New Mobius probes passed:
+  - `mobius_surface_movement_input_probe`
+  - `mobius_local_euclidean_combat_patch_probe`
+- Existing Mobius/combat projection probes passed:
+  - `mobius_continuous_wrap_probe`
+  - `mobius_collision_sheet_probe`
+  - `projectile_path_not_bent_by_mobius_probe`
+  - `gameplay_visual_transform_separation_probe`
+  - `battle_mobius_vertical_movement_probe`
+  - `mobius_full_loop_inversion_probe`
+  - `mobius_input_constraint_frame_probe`
+  - `mobius_fair_input_probe`
+  - `mobius_delta_shortest_path_probe`
+  - `mobius_no_gameplay_box_probe`
+  - `battle_xy_isometric_probe`
+  - `battle_xy_background_probe`
+  - `visual_scale_does_not_move_collision_probe`
+  - `hitbox_scale_clamp_probe`
+- Core regressions passed:
+  - `combat_probe`
+  - `runtime_geometry_identity_probe`
+  - `training_topology_visual_consistency_probe`
+  - `runtime_contact_damage_probe`
+  - `missile_occlusion_break_lock_probe`
+  - `missile_homing_speed_dodge_probe`
+  - `ui_layout_probe`
+  - `text_overflow_probe`
+  - `no_old_combat_terms_probe`
+  - `no_legacy_runtime_pointers_probe`
+  - `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120`
+- Known blocker: `training_saved_unit_control_probe` currently rejects saved Unit4 because attack key 2 is bound to multiple action modules. This is saved-data/import state, not a Mobius geometry failure; no save migration was performed this round.
+- ObjectDB cleanup warnings appeared on several Godot script exits and remain treated as runner cleanup noise unless paired with a real assertion failure.
+
+Sync:
+- Implemented in `E:\New project`; Documents and OneDrive mirrors should be refreshed with `scripts/main.gd`, the two new Mobius probes, and this log.
+
+## 2026-05-24 Equipment / Software HP Removal and Action Module Combat Field Cleanup
+
+Rules:
+- Equipment and software are nonphysical payloads. Engines, boosters, cooling, ammo, electronic shields, souls, source code, ether, logical joints, and action modules do not expose HP and do not contribute to unit max HP.
+- Action modules do not own damage, break, stiffness, or damage-type fields. They only describe binding targets, inputs, motion structure, timing ratios, state/heat behavior, and editor tryout information.
+- Runtime damage remains contextual: physical weapons, limbs, guns, barrier bodies, momentum allocation, contact geometry, and projectile hit records provide the combat numbers.
+
+Implementation notes:
+- Added a normalized scrub layer for nonphysical equipment/software and action modules. Catalog runtime/display/selected-component paths remove HP from nonphysical payloads and strip action-module combat fields before UI, stats, binding, and probes can read them.
+- Added legacy saved-data rejection for nonphysical HP and action-module combat fields, matching the current "do not migrate old schema" rule.
+- Updated hover/detail/sort behavior so equipment/software cards do not show HP, and module cards show binding/source/timing/heat/reach instead of damage or module multipliers.
+- Updated the action module execution fixture so test module dictionaries no longer carry damage fields; physical test segments still carry physical context.
+
+Verification:
+- Headed RTX 4080 SUPER / Forward+ probes passed:
+  - `action_module_no_damage_fields_probe`
+  - `equipment_no_hp_catalog_probe`
+  - `software_no_hp_catalog_probe`
+  - `catalog_ui_no_equipment_hp_damage_probe`
+  - `module_damage_from_runtime_context_probe`
+  - `part_catalog_schema_v3_probe`
+  - `action_module_execution_matrix_probe`
+  - `teamedit_probe`
+  - `combat_probe`
+  - `ui_layout_probe`
+  - `text_overflow_probe`
+  - `run_godot_checked.ps1 -Headed -CheckOnly -TimeoutSec 120`
+- `git diff --check` reported only existing line-ending normalization warnings.
+
+Notes:
+- Raw action-module dictionaries were mechanically scrubbed of `hp` and damage/break/stiffness fields. Raw equipment literals for boosters, ammo payloads, and shield payloads were also scrubbed of HP-style fields, so future catalog work should not see the removed concepts in normal data.
+
+## 2026-05-24 Battle Controlled Unit Camera Lock Init Fix
+
+Rules:
+- Battle entry must project the controlled unit with the same camera contract used by the live battle tick. The first visible battle frame must not wait for the next `_tick_battle()` to center the camera.
+- P1/P2 controlled seats lock the camera to the controlled side immediately after initial summons. Spectator mode keeps its existing midpoint/free-view behavior.
+- Mobius surface projection, parallax background, and unit screen positions are refreshed together whenever battle camera state is initialized.
+
+Implementation notes:
+- Added `_refresh_battle_camera_projection_now()` in `scripts/main.gd` and call it at the end of `_begin_battle()` after P1/P2 units are summoned and training/AI/PVP entry messages are prepared.
+- The helper runs `_update_camera_center()`, `_refresh_mobius_surface_view()`, `_update_parallax_background()`, and `_refresh_unit_screen_positions()` as one immediate projection pass.
+- Added `battle_controlled_unit_center_on_begin_probe.gd` to assert that P1 and P2 training entry both spawn the controlled hero at the arena center on the first battle frame.
+
+Verification:
+- `battle_controlled_unit_center_on_begin_probe` passed. Before the fix it reported the controlled unit about `736px` off center and camera ring `3.0m` away on the first frame.
+- `battle_movement_camera_no_lag_probe` passed, confirming moving controlled units still recenter after physics before screen projection.
+- `battle_xy_isometric_probe` and `battle_xy_background_probe` passed, confirming Mobius/isometric projection and background still render after the immediate camera refresh.
+
+## 2026-05-24 Weapon Art Reference Pass: Fist Gauntlet, Powered Drill, Arc Shield, Saber, Right-Angle Scythe
+
+Rules:
+- Weapon terminal art remains procedural and shared by card preview, TeamEdit board, and battle runtime. No external texture sheet or gameplay number changed in this pass.
+- Gauntlets must read as a real fist: four front knuckles, broad palm, and a slim piston/telescopic rod handle that resembles an ordinary limb actuator.
+- Drills must read as powered electric drills: rear motor body, chuck collar, pointed drill bit, and spiral/rib texture. During runtime action the spiral texture offset animates from action progress.
+- Shields are top-down thick curved plates: broad arc hull, inner/outer thickness cues, and a grip/ridge line. They should not read as a flat front-view emblem.
+- The previous crescent/swept blade silhouette is now the saber visual family. Scythes now use a straight handle with a clearly right-angle crescent hook blade.
+
+Reference notes:
+- Sickle/scythe: Britannica sickle reference and war-scythe descriptions support a handle plus curved blade, with war-scythe blade geometry distinct from generic swords.
+- Saber: museum dragoon saber reference supports a single-edged, slightly curved blade silhouette.
+- Drill: drill-bit reference supports visible spiral/flute texture and a pointed bit.
+- Shield: curved riot-shield and buckler references support top-down thickness/curvature cues rather than a flat front plate.
+
+Implementation notes:
+- `AssemblyBoardRenderer` now distinguishes `saber` from `scythe` in terminal shape family classification.
+- Added/rewrote procedural polygons and detail layers for right-angle scythe, curved saber, thick arc shield, powered drill, and piston-fist gauntlet.
+- `Fighter` now passes `runtime_action_progress` through runtime segment draw data so drill spiral marks can roll during active module poses.
+- `PartArt.terminal_profile_for()` now reports `right_angle_scythe`, `curved_saber`, `thick_arc_shield`, `powered_spiral_drill`, and `piston_fist`.
+
+Verification:
+- Passed: `melee_weapon_specific_polygon_probe`, `melee_weapon_visual_layers_probe`, `melee_weapon_shape_family_probe`, `drill_runtime_spin_visual_probe`.
+- Passed shared-art regressions: `board_battle_art_identity_probe`, `training_topology_visual_consistency_probe`, `runtime_contact_visual_identity_probe`, `part_preview_board_art_identity_probe`.
+- Passed UI/load regressions: `teamedit_probe`, `ui_layout_probe`, `text_overflow_probe`, `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120`.
+- Note: `weapon_subcategory_filter_probe` still has a pre-existing probe exit-code issue where it prints OK and then emits missing-filter errors; this pass did not change filter availability.
+
+## 2026-05-24 Heat Tag and Thermal Pool Unification
+
+Rules:
+- Player-facing heat capacity terminology is `Heat Pool / 热力池`; `heat_capacity` remains the runtime field, while editor stats now also publish `thermal_pool` as the canonical design-budget alias.
+- Runtime heat reasons should use canonical `heat:<tag>` tokens such as `heat:boost`, `heat:repeat`, `heat:projectile`, `heat:laser`, `heat:chemical`, and `heat:missile`.
+- Legacy free-text heat reasons remain import/runtime-compatible, but new firing and module paths should emit canonical tags so future modules do not depend on substring accidents.
+- `heat_dissipation` is now a real runtime cooling source through `thermal_dissipation_rate`; `cooling` remains the visible cooling-speed field and compatibility alias.
+
+Implementation notes:
+- `fighter.gd` now resolves heat relief through `_canonical_heat_tags_for_reason()` and `_append_heat_tag()`, preserving old strings like `projectile laser gun` while allowing explicit `heat:*` tags.
+- Boost, blunt, blade, and gauntlet special heat now use canonical heat tags.
+- Runtime natural cooling now uses the max of `cooling`, `thermal_dissipation_rate`, and `heat_dissipation`, keeping editor thermal dissipation aligned with battle behavior.
+- `main.gd` projectile/gun heat reasons now emit canonical tags instead of raw gun/profile strings.
+- `_apply_thermal_budget()` now writes `thermal_pool` and `thermal_dissipation_rate` while retaining `heat_capacity`, `cooling_heat_capacity`, and `heat_dissipation` for compatibility.
+- Cooling hover probe terminology was updated to assert `Heat Pool / 热力池`; the old-combat-terms probe no longer trips over import-cleanup references to `reference_damage`.
+
+Verification:
+- Passed: `heat_event_tag_unification_probe`, `cooling_runtime_heat_probe`, `thermal_chain_v3_probe`, `thermal_allocation_probe`, `cooler_pool_double_probe`, `cooling_gradient_probe`, `cooling_weapon_fit_probe`, `engine_thruster_cooling_economy_probe`, `boost_cooldown_heat_probe`, `laser_ammo_heat_probe`, `missile_ammo_heat_probe`, `cooling_ui_terms_probe`, `combat_probe`, `no_old_combat_terms_probe`, `no_legacy_runtime_pointers_probe`.
+- Passed: `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120`.
+- Observed pre-existing unrelated failure: `chemical_heat_probe` still fails projectile queue/DoT/boost-motion assertions while its straight inertial cooling assertion passes; this is not caused by the heat tag or thermal pool changes and should be handled with the current movement/projectile dirty-worktree context.
+- Godot still reports ObjectDB cleanup warnings in several script probes; no functional heat assertion failed in the passing probes.
+
+Sync:
+- Implemented in `E:\New project`; Documents and OneDrive mirror hashes are recorded after file sync in the assistant turn notes.
+
+## 2026-05-24 Cooling Pool Double
+
+Rules:
+- All cooler pool / heat capacity output is globally scaled by `COOLING_POOL_SCALE = 2.0`.
+- Cooler rate and heat dissipation are not doubled by this pass; `cooling_rate` and `heat_dissipation` remain the normal cooling ability fields.
+- Catalog cards, payload detail lines, hover stats, unit stats, and thermal heat capacity must read cooler pool through `_cooling_heat_capacity_for_part()`.
+- Manual cooling bonuses are not doubled by the cooler pool scale.
+- Runtime catalog output for cooling parts no longer exposes the legacy `cooling` alias; new UI and stats paths use `cooling_rate` and `heat_dissipation`.
+
+Implementation notes:
+- Added `COOLING_POOL_SCALE = 2.0` and made `_cooling_with_v3_defaults()` scale only `heat_capacity`.
+- Kept `COOLING_OUTPUT_SCALE = 1.0` so rate and dissipation are not accidentally scaled.
+- Made `_cooling_with_v3_defaults()` idempotent when only the public `cooling_pool_scale` marker remains.
+- Updated cooling catalog card lines and compact payload detail to show both cooling rate and doubled pool/heat-capacity values.
+- Replaced the misleading `cooler_output_double_probe` with `cooler_pool_double_probe`.
+
+Verification:
+- Headed `tools/run_godot_checked.ps1 -Headed -CheckOnly -TimeoutSec 120` passed.
+- Headed probes passed:
+  - `cooler_pool_double_probe`
+  - `cooling_gradient_v3_probe`
+  - `thermal_chain_v3_probe`
+  - `teamedit_probe`
+  - `part_library_ui_probe`
+  - `cooling_ui_terms_probe`
+  - `ui_layout_probe`
+  - `text_overflow_probe`
+
+Sync:
+- Implemented in `E:\New project`; Documents and OneDrive mirrors were refreshed for `scripts/main.gd`, `WORKLOG_RULEBOOK.md`, and `tools/cooler_pool_double_probe.gd`.
+
+## 2026-05-24 Unit Edit Torso Detail Button and Heat Accounting
+
+Rules:
+- Unit Edit must expose an explicit torso-detail button. Opening torso detail must not require double-clicking the board or accidentally routing through the power allocation panel.
+- Power allocation heat bars must reconcile with the total cooling pool. The total idle heat is `engine idle heat + allocation heat`; if per-row bars are shown, engine idle heat must be represented as its own read-only row.
+- All validation for this project is run headed unless a check is explicitly parser-only.
+
+Implementation notes:
+- Added `DashboardTorsoDetailButton` beside the drive-budget control. It opens or closes the active/selected torso detail panel and uses the existing active torso target selection.
+- Added an `engine_heat` display row to the detailed power allocation panel. It is read-only, does not participate in equalize or allocation writeback, and makes displayed row heat totals match the panel total.
+- Split allocation data into normal `entries` for power math and `display_entries` for the detailed panel, so compact topbar and equalize logic do not treat engine idle heat as allocatable power.
+- Updated the panel heat summary text to show `total = engine + allocation`, making the previous mismatch visible and explainable instead of hidden.
+
+Verification:
+- Headed `tools/run_godot_checked.ps1 -Headed -CheckOnly -TimeoutSec 120` passed.
+- Headed new probes passed:
+  - `unit_editor_torso_detail_button_probe`
+  - `power_allocation_heat_accounting_probe`
+- Headed regressions passed:
+  - `teamedit_probe`
+  - `ui_layout_probe`
+  - `text_overflow_probe`
+  - `performance_profile_4080s_probe`
+
+Finding:
+- The heat mismatch root cause was accounting, not a heat formula error: row bars represented only per-part allocation heat, while the total cooling pool compared against engine idle heat plus allocation heat. The engine idle heat row now closes that gap.
+
+Sync:
+- Implemented in `E:\New project`; Documents and OneDrive mirrors should be refreshed from this source.
+
+## 2026-05-24 Thruster Dual Allocation and Limb Range Scale
+
+Rules:
+- Thrusters now expose two independent allocation rows in Unit Edit: drive allocation for normal movement/turning, and Boost-brake allocation for Boost and braking amplification.
+- Drive allocation defaults to the existing fixed drive demand. Its valid range is `drive_min..drive_min * 3`.
+- Boost-brake allocation defaults to the existing Boost extra momentum. Its valid range is `boost_min..boost_min * 3`; no-Boost thrusters remain `0..0` and are legal.
+- Engine budget legality now counts `thruster drive + thruster Boost-brake + bound limb allocation <= engine_momentum_output`.
+- Movement and turn speed read only drive allocation. Boost speed and brake power read `drive allocation + Boost-brake allocation`.
+- Boost heat remains a runtime heat-slot event. It is not part of build legality.
+- Limb maximum allocatable momentum is globally scaled to `3x` through the limb momentum helper. UI, hover, legality, and runtime binding previews must all read that helper instead of raw catalog fields.
+- Equalize keeps current thruster allocations unchanged and distributes only the remaining engine pool across bound limbs by equal percentage, clamped to each limb's scaled min/max range.
+
+Implementation notes:
+- Added `THRUSTER_ALLOCATION_MAX_MULT = 3.0` and `LIMB_MOMENTUM_MAX_SCALE = 3.0`.
+- Added drive and Boost-brake allocation helpers for thruster payloads. Missing saved payload fields derive defaults from the part helpers, then write back only after the player adjusts sliders.
+- Split thruster allocation UI rows into `推进 / MOVE` and `Boost刹车 / BOOST-BRAKE`, with range sliders and numeric inputs for both.
+- Updated engine budget, Dashboard totals, hover text, allocation panel, topbar, dock, and probe helpers to use the two thruster rows.
+- Kept raw limb max available for diagnostics, but routed the public `_limb_momentum_max_for_part()` through the `3x` scale.
+
+Headed verification:
+- `tools/run_godot_checked.ps1 -Headed -CheckOnly -TimeoutSec 120` passed.
+- New probes passed:
+  - `thruster_dual_allocation_range_probe`: all checked boosters expose drive and Boost-brake rows with `3x` max ranges.
+  - `thruster_dual_slider_writeback_probe`: both rows write back to payload and clamp inside range.
+  - `thruster_dual_budget_legality_probe`: budget counts drive + Boost-brake + limbs.
+  - `thruster_dual_motion_formula_probe`: move/turn follow drive; Boost/brake follow drive + Boost-brake.
+  - `limb_momentum_max_triple_probe`: limb max range is `3x` through catalog/UI/runtime helpers.
+- Updated allocation regressions passed:
+  - `engine_momentum_allocation_slider_probe`
+  - `power_allocation_equalize_percent_range_probe`
+  - `power_allocation_panel_limb_slider_rows_probe`
+  - `unit_editor_power_slider_writeback_probe`
+  - `teamedit_slider_drag_no_full_rebuild_probe`
+  - `engine_allocation_slider_writeback_probe`
+  - `engine_momentum_allocation_normalization_probe`
+  - `power_allocation_panel_boost_dash_probe`
+  - `thruster_hover_boost_terms_probe`
+- Older movement/power regressions passed:
+  - `boost_formula_allocation_plus_extra_probe`
+  - `thruster_same_power_chain_probe`
+  - `engine_thruster_cooling_economy_probe`
+  - `thruster_momentum_range_probe`
+
+Findings:
+- The old single `allocated_momentum + boost_momentum` interpretation was too rigid for player tuning. Splitting drive from Boost-brake lets normal movement stay stable while Boost/brake response is tuned independently.
+- Keeping no-Boost thrusters at `0..0` avoids incorrectly making non-Boost builds illegal.
+
+Sync:
+- Implemented in `E:\New project`. Documents and OneDrive mirrors should be refreshed from this source after this worklog entry and final headed checks.
+
+## 2026-05-24 Equal-Percent Power Allocation and Equipment Group Naming
+
+Rules:
+- The Unit Edit power allocation panel `均衡 / BAL` action now uses equal range percentage across every adjustable row owned by the selected torso: thruster drive, thruster Boost-brake, and bound limbs.
+- Each row first receives its minimum valid allocation. The remaining engine pool fills `(max - min)` by the same percentage for every row. Rows never go below min or above max.
+- If every adjustable row reaches max and engine output still has surplus, the surplus remains visible as total-pool margin. It is not forced into any row.
+- Each torso may install at most one booster payload. Existing saved data with multiple boosters on one torso is illegal and reports that as a slot payload error.
+- The player-facing part-library group formerly shown as `软肌肉 / SOFT-MUS` is now `装备 / EQUIPMENT`. The internal key remains `software_muscle` to avoid save/cache churn.
+
+Implementation notes:
+- `_equalize_engine_momentum_allocation()` now includes `booster_drive`, `booster_boost_brake`, and `limb` entries in a shared percentage fill.
+- Added torso booster counting and used it both in payload installation rejection and saved-unit legality through `slot_payload_note`.
+- Updated equipment group labels and related probe output. Remaining `software_muscle` identifiers are internal implementation keys only.
+
+Headed verification:
+- `tools/run_godot_checked.ps1 -Headed -CheckOnly -TimeoutSec 120` passed.
+- New probes passed:
+  - `power_allocation_equalize_percent_all_entries_probe`
+  - `power_allocation_equalize_surplus_probe`
+  - `power_allocation_equalize_clamp_probe`
+  - `single_booster_per_torso_install_probe`
+  - `single_booster_per_torso_legality_probe`
+  - `equipment_group_label_probe`
+- Updated regression probe passed:
+  - `power_allocation_equalize_percent_range_probe`
+
+Findings:
+- The previous equalize behavior still treated boosters as fixed and only distributed to limbs. That conflicted with the new dual-thruster allocation UI, so the equalize gate now proves both thruster rows participate.
+- Several torso catalog entries still declare more than one historical booster slot. The new rule is enforced at payload install and legality level instead of rewriting catalog shape data in-place.
+
+Sync:
+- Implemented in `E:\New project`; Documents and OneDrive mirrors should be refreshed from this source after final regression checks.
+
+## 2026-05-24 Battle Movement Camera Phase Fix
+
+Finding:
+- The visible forward/back "breathing" during battle movement came from update order, not from collision or GPU work. `_tick_battle()` updated the camera from the unit's previous ring/lane, then `_update_units()` advanced velocity and position, and only after that projected units to screen. A moving controlled unit was therefore drawn against a one-physics-tick stale camera center. In the headed probe this old ordering would create about `19.7px` of forward offset for the sample speed, which is enough to read as front/back jitter when acceleration, brake, or Boost changes speed.
+
+Implementation:
+- `_update_units(delta, refresh_screen_positions := true)` now separates physics ticking/body spacing from screen projection.
+- Normal battle ticks call `_update_units(delta, false)`, then update the camera/parallax from the just-integrated positions, then call `_refresh_unit_screen_positions()`.
+- Hitstop and legacy callers keep the default screen-refresh behavior.
+
+Verification:
+- Headed `battle_movement_camera_no_lag_probe`: passed, `old_order_lag_px=19.692`, `center_error=0.000`.
+- Headed `tools/run_godot_checked.ps1 -Headed -CheckOnly -TimeoutSec 120`: passed.
+- Headed `combat_probe`: passed.
+- Headed `training_saved_unit_control_probe`: passed.
+
+Sync:
+- Implemented in `E:\New project`; touched files to mirror: `scripts/main.gd`, `tools/battle_movement_camera_no_lag_probe.gd`, `WORKLOG_RULEBOOK.md`.
+
+## 2026-05-24 Power Allocation Equalize by Limb Range
+
+Rules:
+- Unit Edit power-allocation "均衡 / BAL" no longer splits the remaining engine pool by absolute equal values or default weights. It first subtracts all fixed thruster drive demand from the selected torso's engine output, then applies one shared percentage across every bound limb's own `momentum_min..momentum_max` range.
+- If the remaining pool is enough to fill every bound limb to max, all limbs stop at their own max and any surplus stays visible as remaining engine-pool margin.
+- If the remaining pool is below the sum of limb minimums, limbs still stay at their minimums; the build may show over-budget, but limb allocation values never drop below their allowed ranges.
+- All direct limb allocation writes now clamp through the same min/max guard, so slider, numeric entry, equalize, and runtime-binding preview cannot write an out-of-range limb drive value.
+
+Implementation notes:
+- `_equalize_engine_momentum_allocation()` now computes `available_for_limbs = engine_output - fixed_thruster_demand`, derives `shared_range_percent = clamp((available - sum_min) / sum_range, 0..1)`, and writes `min + range * shared_range_percent` per limb.
+- `_write_engine_allocation_entry_momentum()` clamps limb values before updating `allocated_limb_momentum_by_node` and synchronized `joint_drive_allocation_by_node`.
+- Ratio-based slider writes now route through `_engine_allocation_clamped_momentum_from_entries()` so programmatic ratio calls obey limb min/max as well.
+- Updated older allocation probes that assumed `pool * ratio` as the raw expected value; they now assert the clamped in-range value.
+
+Verification:
+- Headed `tools/run_godot_checked.ps1 -Headed -CheckOnly -TimeoutSec 120` passed on Forward+/Vulkan.
+- New headed probe passed:
+  - `power_allocation_equalize_percent_range_probe`: `percent=1.000`, `used=0.310`, `pool=114.5`, fixed thrusters `22.6`, limbs capped at `12.8`, leaving surplus in the pool.
+- Headed allocation regressions passed:
+  - `engine_momentum_allocation_normalization_probe`
+  - `engine_momentum_allocation_slider_probe`
+  - `engine_allocation_slider_writeback_probe`
+  - `power_allocation_limb_slider_range_length_probe`
+  - `power_allocation_panel_limb_slider_rows_probe`
+  - `power_allocation_panel_numeric_input_probe`
+  - `unit_editor_power_slider_writeback_probe`
+  - `power_slider_updates_runtime_binding_probe`
+  - `teamedit_dashboard_slider_full_refresh_probe`
+  - `teamedit_probe`
+  - `ui_layout_probe`
+  - `text_overflow_probe`
+
+## 2026-05-23 Shooting Turn, Sniper VFX, and Unit4 Training Dummy
+
+Rules:
+- Gun activation `4X/6X` is always local to the unit body normal. `4X` rotates toward the unit-local left side and `6X` rotates toward the unit-local right side; screen position, target position, shortest world angle, and current muzzle angle must not flip this meaning.
+- Sniper and true-bullet hit feedback must be attached to the hit target contact point. Edge/wrap targets use the nearest visible ring image for lock, hit, and VFX placement.
+- Training defaults to the latest saved Unit4. Unit2 is no longer the implicit training dummy baseline for new probes.
+- Training dummy "idle" means no active player/AI input. The dummy remains physical: hits can move it, and the `静止待机 / idle` dummy auto-brakes back to rest using the same thruster/brake power chain.
+- All project verification for gameplay/UI changes is headed/real-window by default. Headless is only a parsing or auxiliary fallback.
+
+Implementation notes:
+- Added `_gun_activation_local_turn_sign()` and rewired `_gun_activation_rotated_direction()` so editor tryout, training, and combat use the same fixed local 4/6 turn sign.
+- Extended true-bullet/sniper targeting with `_sniper_wrapped_aim_query()` and passed the shooter `start.x` into GPU collider image generation so targets near the ring edge can be queried through the nearest wrapped image.
+- Added `_spawn_projectile_hit_vfx_on_target()` and routed projectile hit feedback through target contact data instead of allowing effects to fall back to muzzle/end positions.
+- Repointed training dummy selection to latest saved Unit4 through `_latest_training_dummy_unit_path()` / `_training_dummy_unit4_entry()`. The repair helper clamps out-of-range bound-limb allocations and writes a fresh Unit4 save only if the current latest file is not training-legal.
+- Added `_apply_training_dummy_auto_brake()` and used it for idle training dummies after their normal physics tick.
+- Updated training saved-unit control validation to use Unit4 and to bypass asynchronous Loading/Scout page transitions when testing the import/spawn/control chain.
+
+Headed verification:
+- `tools/run_godot_checked.ps1 -Headed -CheckOnly -TimeoutSec 120` passed.
+- Passed targeted headed probes:
+  - `gun_activation_local_4_6_direction_probe`
+  - `gun_activate_rotate_command_probe`
+  - `chemical_sprayer_rotate_command_probe`
+  - `sniper_hit_vfx_on_target_probe`
+  - `sniper_edge_target_lock_probe`
+  - `training_default_dummy_unit4_probe`
+  - `unit4_training_dummy_repair_probe`
+  - `unit4_illegal_reason_probe`
+  - `unit4_after_engine_x3_probe`
+  - `training_dummy_auto_brake_probe`
+  - `machine_gun_bind_train_practice_probe`
+  - `gun_activate_binding_real_ui_probe`
+  - `two_link_binding_real_ui_probe`
+  - `training_entry_name_thumbnail_probe`
+  - `training_saved_unit_control_probe`
+- Headed regressions passed:
+  - `combat_probe`
+  - `teamedit_probe`
+  - `ui_layout_probe`
+  - `text_overflow_probe`
+  - `performance_profile_4080s_probe`
+
+Findings:
+- Latest saved Unit4 is `user://saved_units/4_1779542366.json` and is currently legal after the engine-output and allocation-range changes. The headed Unit4 probes report the engine budget as sufficient, so Unit4 is now suitable as the default training dummy.
+- The old `training_saved_unit_control_probe` failed because it still hard-coded saved Unit2 and then checked `active_units` before the Loading/Scout transition had completed. It now tests the Unit4 import/spawn/control chain directly.
+- The sniper VFX failure was a test-event mismatch first: the probe event was not marked as explicit `gun_activate`, so projectile fields were correctly stripped by the melee/projectile isolation logic. After using the real gun activation profile, the VFX path produced target-side hit effects.
+
+Sync:
+- Implemented in `E:\New project`. Documents and OneDrive mirrors should be refreshed from this source after final commit/sync.
+
+## 2026-05-24 Power Allocation Limb Slider Range
+
+Rules:
+- In the Unit Edit power allocation detail panel, a bound-limb slider represents that limb's own `momentum_min..momentum_max` range, not the full engine pool.
+- The full engine pool may remain visible as a faint budget rail, but the active draggable limb track is the segment corresponding to the limb's allowed range. Dragging to the right end maps to `momentum_max`; dragging to the left end maps to `momentum_min`.
+- The slider label for a limb row shows the current allocated momentum plus the legal range, e.g. `current / min-max`, so over-allocation is immediately visible.
+
+Implementation notes:
+- `EngineMomentumAllocationPanelView._entry_slider_rect()` now returns a range-aware active rect for limb entries and keeps `_entry_full_slider_rect()` as the budget rail.
+- `EngineMomentumAllocationPanelView._emit_slider_change()` converts the local slider position back to an engine-pool ratio after mapping through the limb's min/max range. Existing writeback code can therefore keep using the canonical `allocated_limb_momentum_by_node` path.
+- Added `power_allocation_limb_slider_range_length_probe` to verify active track length, containment inside the full rail, and right-end mapping to limb max momentum.
+
+Headed verification:
+- `tools/run_godot_checked.ps1 -Headed -CheckOnly -TimeoutSec 120` passed.
+- Passed headed probes:
+  - `power_allocation_limb_slider_range_length_probe`
+  - `power_allocation_panel_limb_slider_rows_probe`
+  - `power_allocation_panel_numeric_input_probe`
+  - `engine_momentum_allocation_slider_probe`
+  - `unit_editor_power_slider_writeback_probe`
+  - `power_slider_updates_runtime_binding_probe`
+  - `ui_layout_probe`
+  - `text_overflow_probe`
+
+## 2026-05-23 Headed Binding, Engine Scale, Allocation Aspect, and Training Entry Pass
+
+Rules:
+- This project now treats headed Godot verification as the primary acceptance path. Headless runs are parser/regression helpers only.
+- Action-module binding key UI is the top interaction layer while binding is active. Catalog hover must hide immediately and must never cover or steal clicks from the two-row attack-key grid.
+- Gun/rifle action modules bind only to real projectile gun terminal muscles. Generic `rifle + bullet` inference is not enough unless the part is also a gun terminal.
+- Engine visible power is globally scaled through the single helper path: `engine_momentum_output * ENGINE_MOMENTUM_OUTPUT_SCALE`, currently `3.0`.
+- Power-allocation panel thumbnails and training-entry thumbnails use aspect-fit rendering. X/Y non-uniform stretching is forbidden.
+
+Implementation notes:
+- Added `TrainingEntryIntroView` and `_show_training_entry_intro()` so training entry displays unit names and aspect-correct baked topology miniatures.
+- Suppressed catalog hover during module binding via `_editor_binding_ui_active()` and cleared hover when routing binding-panel mouse/key input.
+- Raised torso detail and allocation panel z-order so binding keys remain above catalog hover and other editor overlays.
+- Changed gun-terminal detection to accept the topology muscle family and require `_component_is_gun_muscle(part, "muscle")`, so rifle burst modules can bind actual rifle terminals while non-gun defaults are rejected.
+- The machine-gun/rifle practice probe now selects a real gun muscle before checking `rifle_burst_activate`.
+- Power allocation panel silhouette drawing now maps every segment through the same aspect-fit transform and draws components with mapped endpoints, preventing panel-local unit model stretching.
+
+Verification:
+- Headed checks passed on Vulkan / RTX 4080 SUPER:
+  - `tools/run_godot_checked.ps1 -Headed -CheckOnly -TimeoutSec 120`
+  - `module_binding_hover_does_not_cover_keys_probe`
+  - `module_binding_key_grid_real_ui_probe`
+  - `two_link_binding_real_ui_probe`
+  - `gun_activate_binding_real_ui_probe`
+  - `machine_gun_bind_train_practice_probe`
+  - `engine_output_triple_probe` (`raw=38.16`, `scaled=114.48`)
+  - `power_allocation_panel_model_aspect_probe`
+  - `training_entry_name_thumbnail_probe`
+  - `teamedit_probe`
+  - `combat_probe`
+  - `ui_layout_probe`
+  - `text_overflow_probe`
+- `training_saved_unit_control_probe` still fails because the current saved Unit2 does not spawn as a controllable training hero. This is saved-data/import state, not this binding/hover/aspect fix; it should be handled with the next saved-unit legality pass.
+
+Findings:
+- The binding-key overlay bug was real UI layering plus hover persistence, not module data. Once binding mode owns hover suppression and z-order, the two-row key grid accepts clicks reliably.
+- The rifle/machine-gun failure was a test and helper mismatch: broad `gun_kind` inference could pick non-gun parts, while runtime terminal validation needed a real gun muscle. The fixed path now tests actual rifle terminals.
+- Engine 3x is active through the single helper and should not be multiplied again elsewhere.
+
+Sync:
+- Implemented in `E:\New project`; Documents and OneDrive mirrors should be refreshed from this source after this pass.
+
+## 2026-05-23 Power Allocation Detail Routing and Aspect-Fit Silhouette Fix
+
+Rules:
+- The Unit Edit power topbar `详细 / MORE` control is an explicit power-allocation panel toggle. It must not fall through to the board or torso detail hit chain.
+- Power allocation panel drawing must use one aspect-fit transform for the entire unit silhouette. Component body geometry, binding halos, and allocation halos all share that transform.
+- The legacy `power_topbar_more_does_not_open_panel` probe now verifies the current behavior: MORE opens the allocation panel and a second MORE click closes it.
+
+Implementation notes:
+- Raised the topbar and power dock z-order and changed the dock mouse filter to `STOP`, preventing clicks from leaking into board/torso detail controls.
+- Reworked `EngineMomentumAllocationPanelView._draw_silhouette()` to draw each segment from local component polygons mapped through `_map_local_point()`. This removes the previous mixed local/pixel component draw path that could still produce visible non-uniform stretching.
+- `_segment_local_bound_points()` now falls back to renderer component polygons, so panel bounds include the same display profile used for drawing instead of only raw endpoints/radius.
+- Updated `power_topbar_more_does_not_open_panel_probe.gd` to assert that topbar MORE opens allocation, does not open torso detail, and toggles closed.
+
+Verification:
+- Headed Vulkan checks passed:
+  - `power_topbar_more_does_not_open_panel_probe`
+  - `power_allocation_panel_toggle_real_ui_probe`
+  - `power_allocation_panel_close_probe`
+  - `power_allocation_panel_model_aspect_probe`
+  - `teamedit_probe`
+  - `ui_layout_probe`
+  - `text_overflow_probe`
+
+Findings:
+- The topbar/dock issue was not the allocation helper itself; the UI layer was still low enough and permissive enough for clicks to pass through into underlying editor controls. Raising the retained power UI and stopping mouse propagation fixes the wrong destination.
+- The aspect probe previously passed because the point mapping was uniform, but the actual component renderer was still being fed mapped endpoints and pixel radii. Drawing mapped local polygons directly makes the visible model follow the same uniform transform the probe measures.
+
+Sync:
+- Implemented in `E:\New project`; mirror copies should be refreshed after this pass.
+
+## 2026-05-23 Topology Interface Normalization and Unit4 Diagnosis Fix
+
+Rules:
+- New component topology treats `material_class="torso"` as a torso even when the raw catalog row forgot `is_torso=true`.
+- Every live `limb_muscle` exposes exactly the two assembly interfaces `root_joint` and `distal`.
+- Every non-torso `muscle` component exposes at least `root_joint`; two-ended connectors also expose `distal`, while terminal weapons/guns remain one-ended.
+- Training legality must validate the same entry pose that the unit will use in battle, so saved component graphs with entry-pose FK do not fail on stale socket positions.
+- Runtime movement reads the new drive-facing `move_speed` / `move_acceleration` contract first. Legacy movement names are only fallback compatibility for direct probes.
+
+Implementation notes:
+- Normalized topology socket fields in `_combat_model_normalized_component()` so torso, limb, terminal, gun, connector, and barrier-style muscle rows all enter the board with the same interface contract.
+- Fixed topology validation to use `_component_is_torso(part)` instead of raw `part["is_torso"]`, which removed the false Unit4 `node 1 terminal/torso muscle needs a root_joint interface` error.
+- Fixed hard assembly torso-vs-torso detection to honor node `is_torso` as well as the older `is_torso_node` key.
+- New dropped/component-template nodes now carry normalized `root_socket` / `distal_socket` fields where applicable.
+- Training legality applies entry pose on its candidate copy before topology socket-gap validation.
+- Added `move_speed` and `move_acceleration` stats from the current thrust calculation and updated Fighter movement/boost fallback reads to prefer the new fields.
+- Updated the Unit4 diagnostic probe: Unit4 now passes the torso/limb interface stage and correctly surfaces the next real issue, limb drive allocation outside node ranges.
+- Updated the saved Unit2 control probe to add default drive payloads only to its in-memory duplicate when the old fixture has no torso payloads, so it tests current movement control without mutating the saved file.
+
+Verification:
+- `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120` passed.
+- New/updated probes passed:
+  - `all_limb_topology_interfaces_probe`: checked 45 limb rows and 768 muscle rows across hero/puppet/barrier catalogs.
+  - `unit4_illegal_reason_probe`: first error is now allocation range, not root_joint/interface.
+  - `unit4_after_engine_x3_probe`
+  - `unit2_training_probe`
+  - `editor_endpoint_socket_probe`
+  - `teamedit_probe`
+  - `module_binding_board_highlight_probe`
+  - `action_module_execution_matrix_probe`
+  - `projectile_profile_whitelist_probe`
+  - `runtime_melee_never_projectile_gate_probe`
+  - `training_saved_unit_control_probe`
+  - `boost_cooldown_probe`
+  - `eight_direction_boost_probe`
+  - `boost_unusable_direction_brakes_probe`
+  - `ui_layout_probe`
+  - `text_overflow_probe`
+
+Finding:
+- Unit4 node 1 was never a bad limb. It was a torso catalog row whose raw data only said `material_class="torso"`; one validator accepted that, while another demanded the explicit `is_torso` flag. The fix makes the catalog/runtime contract single-source and prevents the same false root-joint error on other torso-like or limb-like components.
+
+## 2026-05-23 Power Allocation Toggle, Aspect Fit, Engine x3, and Unit4 Diagnosis
+
+Rules:
+- Power allocation is an explicit tool panel. It may open only from `动力分配 / 详细` style explicit controls or the engine slot body, and the same explicit entry can close it. Dirty refresh, board zoom, hover, binding refresh, and slider refresh must not auto-open it.
+- The allocation panel must show the unit with the same art proportions as the board/battle. Bounds are computed from full segment polygons where available and then letterboxed with a single uniform scale.
+- Engine player-facing `动力` is globally scaled by `ENGINE_MOMENTUM_OUTPUT_SCALE = 3.0`. The raw catalog values remain untouched; all catalog/stat/legality reads go through the helper.
+- Unit legality summaries must report the first real blocker instead of blaming engine power when topology or limb allocation range is blocking first.
+
+Implementation notes:
+- Connected the Unit Edit power topbar/dock `open_requested` signals to a real toggle handler. `_open_dashboard_engine_allocation()` now toggles the active torso panel instead of acting as open-only.
+- `_refresh_engine_momentum_allocation_view()` now supports `engine_payload_index = -1`, so no-engine torsos can still show disabled bound-limb rows instead of hiding the panel.
+- The dashboard power button stays enabled for a selected torso without an engine and opens the same panel with a clear disabled-row state.
+- Added `_engine_momentum_output_raw_for_part()` and made `_engine_momentum_output_for_part()` apply the 3x multiplier exactly once, avoiding double-scaling generated default engine dictionaries.
+- Allocation panel silhouette/group bounds now include `polygon_local`/`PackedVector2Array` points, not only segment endpoints, before applying uniform scale.
+- `tools/run_godot_checked.ps1 -Headed -CheckOnly` now truly runs headed check-only, matching the project verification rule.
+
+Verification:
+- Headed RTX 4080 SUPER checks passed:
+  - `tools/run_godot_checked.ps1 -Headed -CheckOnly -TimeoutSec 120`
+  - `engine_output_triple_probe`
+  - `power_allocation_panel_toggle_real_ui_probe`
+  - `power_allocation_panel_close_probe`
+  - `power_allocation_panel_model_aspect_probe`
+  - `power_allocation_panel_limb_slider_rows_probe`
+  - `board_zoom_no_power_allocation_popup_probe`
+  - `engine_slot_allocation_click_probe`
+  - `module_payload_delete_no_allocation_probe`
+  - `unit4_illegal_reason_probe`
+  - `unit4_after_engine_x3_probe`
+  - `teamedit_probe`
+  - `combat_probe`
+  - `ui_layout_probe`
+  - `text_overflow_probe`
+  - `performance_profile_4080s_probe`
+
+Unit4 diagnosis:
+- Latest saved Unit4 is `4_1779537583.json`.
+- First blocker remains topology/interface: `INVALID: node 1 terminal/torso muscle needs a root_joint interface.`
+- After engine x3, engine budget is no longer the blocker: `engine 452.88 >= thruster + bound limbs 147.65`.
+- Secondary blocker remains limb allocation range: node 2 `16 > max 8`, node 5 `18 > max 8`, node 1 `20 > max 8`, node 4 `20 > max 6`.
+
+Findings:
+- The headed performance matrix now reports most TeamEdit gestures under budget, but `teamedit.bound_pose_drag` still shows `p95=10.66ms` with hot leaf `pose.drag.visual_diff`. If the next user-visible slow point persists, this is the next precise scope to cut.
+
+Sync:
+- Implemented in `E:\New project`; Documents and OneDrive mirrors should be refreshed from this source after commit.
+
+## 2026-05-24 Battle Vertical Movement, Camera Follow, And Minimal Background
+
+Rules:
+- Battle movement input remains in the player-readable screen/gameplay frame. Mobius visual projection may still wrap/project units, but pressing up/down must directly change the unit lane up/down instead of being remapped through a rotating surface tangent frame.
+- The battle camera follows the controlled unit's ring and lane after physics each tick, then unit screen positions are projected with the updated camera.
+- Battle background is intentionally minimal: keep the generated space backdrop image and top/bottom map boundary borders only. Do not build parallax star fields, nebulae, world-bound debris, near dust/current lines, coordinate grid clutter, or the Mobius surface decoration in the normal battle view.
+
+Implementation notes:
+- `_mobius_surface_input_for_unit()` now returns `GameplayTransform.screen_input_to_gameplay_motion()` directly, so vertical input is stable and does not invert or drift with the Mobius projection frame.
+- Added `BATTLE_MINIMAL_BACKGROUND`; `_build_parallax_sky()`, `_build_world_background_art()`, near dust updates, and the Mobius strip surface view are disabled under that flag.
+- `_build_stage()` no longer registers the backdrop as a parallax layer or creates near-nebula current lines while minimal background mode is active.
+- Updated the old background probes to assert the new minimal contract and added focused battle movement/background probes.
+
+Verification:
+- Headed `battle_screen_input_vertical_probe` passed: screen-down input advanced unit lane and camera lane together.
+- Headed `battle_mobius_vertical_movement_probe` passed.
+- Headed `battle_movement_camera_no_lag_probe` passed.
+- Headed `battle_minimal_background_probe` passed.
+- Headed `battle_xy_background_probe` passed with the new minimal background contract.
+- Headed `mobius_background_continuity_probe` passed with the new minimal background contract.
+- Headed `battle_backdrop_runtime_source_probe` passed.
+- Headed `combat_probe` passed.
+- Headed `run_godot_checked.ps1 -CheckOnly -TimeoutSec 120` passed.
+
+Findings:
+- The vertical movement bug came from applying a Mobius surface-frame conversion to player movement input. That made up/down depend on visual projection state instead of the screen controls.
+- The remaining battle background clutter came from parallax sky/world art/near dust plus the Mobius strip surface layer. Those are now suppressed in battle so the scene shows only the backdrop and map boundary frame.
+
+## 2026-05-23 Bound Pose Drag Hot Scope Cut
+
+Rules:
+- Unit Edit pose dragging must use the real headed gesture matrix as the gate. Counter-only probes are not enough for performance claims.
+- Pose dragging is a retained visual diff operation. It must not call the full editor UI refresh, catalog refresh, saved-unit scans, stats/legal recompute, battle GPU query, or CPU combat geometry.
+- During pose drag, topology occupancy does not change. Socket occupancy can be inherited from the previous retained marker state; only socket positions and adjacent edge endpoints need updating.
+
+Implementation notes:
+- Added leaf profiler scopes under `pose.drag.visual_diff`: `pose.visual.snapshot`, `pose.visual.art_positions`, `pose.visual.dynamic`, and `pose.visual.apply_diff`.
+- `AssemblyBoardView.apply_board_diff()` now supports retained component diffs that also update edge/socket/overlay retained items without falling through to full `set_board()`.
+- Pose start/drag/finish now call `_refresh_editor_visual_views_fast_drag(..., retained_pose_diff=true)`.
+- Added `_apply_editor_board_pose_dynamic_fields()` for pose-specific dynamic updates. It replaces only changed-node socket markers and adjacent edge states, reuses current binding/tryout overlay state, and skips full socket marker rebuild.
+- Removed per-frame socket occupancy recomputation from pose drag; occupied flags are inherited from the previous marker set because pose movement does not add/remove connections.
+
+Verification:
+- Headed RTX 4080 SUPER:
+  - `teamedit_bound_pose_drag_frame_budget_probe`: p95 reduced from about `10.7ms` to `7.93ms`.
+  - `performance_profile_4080s_probe`: all listed gestures pass; `teamedit.bound_pose_drag` reports `p95=8.29ms`.
+  - `pose_drag_no_full_refresh_probe` passed.
+  - `pose_rotate_each_torso_port_no_torso_drift_probe` passed.
+  - `tools/run_godot_checked.ps1 -Headed -CheckOnly -TimeoutSec 120` passed.
+  - `combat_probe`, `ui_layout_probe`, and `text_overflow_probe` passed.
+
+Findings:
+- The real hot leaf was not FK math; it was the dynamic board field path, especially socket marker/edge state rebuild during pose drag.
+- The next precise target, if the editor still feels sticky in real hands, is to cut `pose.visual.dynamic` further by caching per-node socket specs and updating edge endpoints directly from cached socket ids.
+
+Sync:
+- Implemented in `E:\New project`; Documents and OneDrive mirrors should be refreshed from this source after commit.
+
+## 2026-05-23 Power Allocation Panel Event Routing and Visible Binding Context
+
+Rules:
+- The fullscreen power allocation panel is an explicit tool panel. It may only open from the engine slot body or the dedicated Power Allocation button.
+- Board zoom, hover, dirty refresh, topbar summary controls, binding-state refresh, and module delete/rebind actions must not open the fullscreen allocation panel.
+- While the fullscreen panel is visible, binding/allocation group halos are drawn inside that panel's unit silhouette and slider list. The covered board should not keep misleading allocation halos underneath.
+- The panel must always be closable by the close button, Esc, or right-click. Closing clears the active allocation payload context so a later dirty refresh cannot reopen it.
+- Module payload delete takes precedence over rebind, engine allocation, and normal slot selection.
+
+Implementation notes:
+- Added global allocation-panel input routing for Esc and right-click, with a null-safe input-handled helper for probe/early-window states.
+- `EngineMomentumAllocationPanelView` now closes on right-click as well as its close button.
+- Board zoom closes the allocation panel before applying zoom, and fullscreen panel visibility suppresses board-side binding/allocation highlights.
+- Topbar/dock summary `open_requested` signals are intentionally disconnected from the fullscreen panel; they remain summary/light adjustment UI only.
+- Allocation panel data carries `allocation_groups`, and the panel draws clickable group halos inside its own silhouette while right-side rows show both boosters and bound limbs with the same slider UI.
+- Added `power_allocation_panel_close_probe` to cover close button, Esc, and right-click.
+
+Verification:
+- Headed RTX 4080 SUPER / Forward+ probes passed:
+  - `power_allocation_panel_close_probe`
+  - `board_zoom_no_power_allocation_popup_probe`
+  - `module_payload_delete_no_allocation_probe`
+  - `module_payload_delete_real_ui_probe`
+  - `engine_slot_allocation_click_probe`
+  - `power_allocation_panel_limb_slider_rows_probe`
+  - `power_allocation_panel_group_halo_probe`
+  - `power_topbar_more_does_not_open_panel_probe`
+  - `module_binding_nonblocking_layout_probe`
+- Regressions passed:
+  - `teamedit_probe`
+  - `ui_layout_probe`
+  - `text_overflow_probe`
+  - `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120`
+
+Findings:
+- The "delete module jumps to power allocation" failure was an event routing problem: action hot zones must terminate the event immediately and never fall through to engine allocation or selection.
+- The "panel appears while zooming" failure was also routing/state leakage. Zoom now explicitly closes the fullscreen panel and the summary UI no longer opens it implicitly.
+- The important binding/power context must be visible in the panel that currently owns the screen. Drawing a halo only on the board is not sufficient when the panel covers the board.
+
+Sync:
+- Implemented in `E:\New project`; Documents and OneDrive mirrors should be refreshed from this source after this pass.
+
+## 2026-05-23 Action Module Binding Key Grid
+
+Rules:
+- The action-module binding panel must keep target selection and attack-key selection visible in the same dock. It must not place attack keys outside the panel bounds.
+- The six attack keys are arranged as two rows of three keys. The candidate list reserves space for those two rows so key buttons do not overlap the candidate/background region.
+- Binding completion must immediately write the binding and refresh the power-allocation summary so bound limbs become allocatable.
+
+Implementation notes:
+- `TorsoDetailPanelView._binding_key_rect()` now computes a 3-column / 2-row grid that fits inside the current narrow binding dock.
+- `_binding_list_rect()` reserves extra bottom space for the two-row key grid.
+- Added a key-row hint that changes from "pick target first" to "pick attack key" once a candidate is selected.
+- Added `module_binding_key_grid_real_ui_probe`, which clicks a real candidate row and then a real key button, verifies the binding, and verifies bound limbs appear in the power allocation topbar.
+
+Verification:
+- Headed RTX 4080 SUPER / Forward+ probes passed:
+  - `module_binding_key_grid_real_ui_probe`
+  - `module_binding_panel_click_probe`
+  - `module_binding_group_halo_visual_probe`
+  - `module_binding_power_allocation_real_ui_probe`
+  - `power_allocation_panel_limb_slider_rows_probe`
+  - `ui_layout_probe`
+  - `text_overflow_probe`
+  - `teamedit_probe`
+
+Findings:
+- The real binding failure after candidate selection was layout geometry: the old one-row key bar was wider than the right-side binding panel, so several keys were drawn into the background/under other regions and were hard or impossible to click reliably.
+- Two rows keeps all six keys inside the dock and leaves the candidate list with a clean bottom boundary.
+- Follow-up routing fix: binding-dock mouse events are now captured at the global input layer and translated into the dock's local coordinates before generic button/catalog hit testing. This prevents clicks on the visible binding key grid from falling through to catalog hover/card handlers when visual and functional layers disagree.
+- During a pending binding, the old global bottom attack-key buttons are hidden. Attack-key selection is owned by the binding sidebar; bottom attack-key buttons return only after a module is actually bound, where they serve as tryout buttons.
+
+Sync:
+- Implemented in `E:\New project`; Documents and OneDrive mirrors should be refreshed from this source after this pass.
+
+## 2026-05-23 Power Allocation Close Lock and Dock Removal
+
+Rules:
+- The fullscreen power allocation panel has a user-close lock. Once closed by X, Esc, or right-click, normal dashboard/topbar dirty refresh must not reopen it.
+- The topbar summary is allowed to display lightweight allocation data, but it must not mutate the fullscreen panel's active payload/torso context.
+- The old persistent `UnitEditorPowerAllocationDock` is disabled in Unit Edit. It had no close affordance and was perceived as an unclosable power allocation page.
+- Explicit open remains available only through the engine slot body or the dedicated Power button.
+
+Implementation notes:
+- Added `editor_engine_allocation_panel_user_closed`.
+- `_open_engine_momentum_allocation_for_payload()` clears the close lock; `_close_engine_momentum_allocation_panel()` sets it.
+- `_refresh_engine_momentum_allocation_view()` now respects the close lock and only shows the panel after an explicit open.
+- `_refresh_unit_editor_power_allocation_topbar()` no longer rewrites `editor_engine_allocation_payload_index` / `editor_engine_allocation_torso_node_index`; topbar slider fallback reads `_editor_active_engine_allocation_target()` instead.
+- `editor_power_dock_view` is forced hidden and no longer receives refreshed data, leaving one clear fullscreen allocation panel plus the compact topbar summary.
+- `power_allocation_panel_close_probe` now verifies close button, Esc, and right-click closes survive subsequent topbar/panel refreshes, and verifies the old dock remains hidden.
+
+Verification:
+- Headed RTX 4080 SUPER / Forward+ probes passed:
+  - `power_allocation_panel_close_probe`
+  - `board_zoom_no_power_allocation_popup_probe`
+  - `power_topbar_more_does_not_open_panel_probe`
+  - `module_payload_delete_no_allocation_probe`
+  - `power_allocation_panel_limb_slider_rows_probe`
+  - `power_allocation_panel_group_halo_probe`
+  - `engine_slot_allocation_click_probe`
+  - `teamedit_probe`
+  - `ui_layout_probe`
+  - `text_overflow_probe`
+
+Findings:
+- The previous probe only proved the X/Esc/right-click signal could hide the fullscreen view. The real UI could still feel unclosable because a second persistent allocation dock stayed visible, and topbar refresh rearmed fullscreen panel context.
+- The current fix removes that second visible page and prevents dirty refresh from undoing a manual close.
+
+Sync:
+- Implemented in `E:\New project`; Documents and OneDrive mirrors should be refreshed from this source after this pass.
+
+## 2026-05-23 Power Allocation Panel Limb Sliders and In-Panel Group Halo
+
+Rules:
+- The fullscreen power allocation page covers the Unit Edit board, so any bound/allocatable limb-group halo that matters for choosing power must also be visible inside the allocation panel's own unit art.
+- Limb allocation controls must use the same row-style slider treatment as thrusters. Small floating bars near the silhouette are not acceptable as the only control.
+- Clicking a limb group halo inside the allocation panel should select/highlight the corresponding bound group without invoking board or battle geometry.
+
+Implementation notes:
+- `EngineMomentumAllocationPanelView` now receives `allocation_groups` alongside `entries` and `segments`.
+- Bound module groups are drawn over the allocation panel silhouette as translucent group halos with labels, using the same runtime segment coordinates as the panel art.
+- Fullscreen allocation entries now all render in the right-side unified slider list. Limb entries no longer become tiny floating controls over the model; they keep a leader line to the model while using the same row slider form as thrusters.
+- Wheel scrolling was added for the allocation page's right-side slider list so a larger set of bound limbs remains accessible.
+- `_engine_momentum_allocation_data()` now tags limb rows with `group_id` and `target_nodes`, and emits one allocation group per bound module.
+
+Verification:
+- `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120` passed.
+- New probes passed:
+  - `power_allocation_panel_group_halo_probe`
+  - `power_allocation_panel_limb_slider_rows_probe`
+- Related regressions passed:
+  - `module_binding_group_halo_visual_probe`
+  - `module_binding_power_allocation_real_ui_probe`
+  - `power_topbar_all_bound_limbs_visible_probe`
+  - `module_payload_delete_no_allocation_probe`
+  - `module_payload_delete_real_ui_probe`
+  - `teamedit_probe`
+  - `ui_layout_probe`
+  - `text_overflow_probe`
+
+Findings:
+- The previous power allocation page already had limb entries in data, but the fullscreen panel drew limb sliders as small model-adjacent bars. That made them effectively invisible compared with thruster rows, and the board-level limb halo was hidden by the allocation panel itself.
+- The fix is UI-level: the data path remains the same, while the fullscreen page now makes bound groups and limb sliders visible in the place the player is actually looking.
+
+Sync:
+- Implemented in `E:\New project`; Documents and OneDrive mirrors should be refreshed from this source after verification.
+
+## 2026-05-23 Board Zoom and Power Allocation Popup Guard
+
+Rules:
+- Board zoom is a board-only operation. Mouse wheel zoom and zoom buttons must never open the fullscreen power allocation panel.
+- The lightweight Unit Edit topbar/dock is allowed to show and edit power values, but its tiny `MORE` affordance must not be another accidental path into the fullscreen panel.
+- When the fullscreen power allocation panel is visible, board-level binding/allocation halos are intentionally suppressed. The panel covers the board, so the relevant bound-limb group halo belongs inside the panel silhouette.
+
+Implementation notes:
+- Removed the topbar/dock `open_requested -> _open_dashboard_engine_allocation` connections. The fullscreen panel now opens only from explicit engine/allocation actions.
+- `_handle_editor_board_zoom_wheel()` and `_set_editor_board_zoom()` close the fullscreen allocation panel before applying zoom, preventing stuck overlay state during board scaling.
+- `_apply_editor_board_dynamic_fields()` no longer submits board binding/allocation highlights while the fullscreen allocation panel is visible. The allocation panel uses its own `allocation_groups` halo data instead.
+- Added probes for zoom/popup protection and for preventing the topbar/dock MORE path from opening the fullscreen panel.
+
+Verification:
+- `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120` passed.
+- New probes passed:
+  - `board_zoom_no_power_allocation_popup_probe`
+  - `power_topbar_more_does_not_open_panel_probe`
+- Related regressions passed:
+  - `power_allocation_panel_group_halo_probe`
+  - `power_allocation_panel_limb_slider_rows_probe`
+  - `teamedit_probe`
+  - `ui_layout_probe`
+  - `text_overflow_probe`
+  - `module_payload_delete_no_allocation_probe`
+
+Findings:
+- The previous UI had too many routes into fullscreen power allocation: explicit engine actions plus topbar/dock custom controls. That made accidental overlay opens possible during nearby board interactions.
+- Keeping the fullscreen panel as an explicit action while preserving lightweight topbar/dock editing reduces surprise and removes the “zoom then panel appears” path.
+
+Sync:
+- Implemented in `E:\New project`; Documents and OneDrive mirrors should be refreshed from this source after verification.
+
+## 2026-05-23 Module Payload Click Routing and Binding Sidebar Fix
+
+Rules:
+- Torso detail slot clicks resolve to exactly one action: `delete`, `rebind`, `engine_allocation`, `select`, or `none`.
+- Hit priority is fixed as `delete > rebind > engine_allocation > select`. Delete and rebind accept the event and return immediately; they must never fall through to engine allocation or normal slot selection.
+- Engine allocation is only opened by clicking the body of an installed engine slot outside action hot rects.
+- Module binding UI is a right-side dock while active. It must not cover the assembly board; legal targets remain highlighted on the board as complete target-node groups.
+- Bound driven limbs stay visible in the power allocation topbar. If the torso has no engine, limb sliders stay visible but disabled with the no-engine state instead of disappearing.
+
+Implementation notes:
+- Reworked `TorsoDetailPanelView._slot_hit()` to return a single `action` string and `payload_index`.
+- Updated torso detail `_gui_input()`, drag/drop, and hover routing to ignore delete/rebind hot zones for ordinary slot behavior.
+- Added binding-mode layout switching for `editor_torso_detail_view`: normal detail panel remains low/wide; binding mode moves to the right dock at `936,94` with `280x548`, outside the board rect.
+- Extended the active allocation target path so a selected torso without an engine still produces visible disabled limb entries. This makes it obvious which bound limbs will become allocatable after installing an engine.
+- Added focused probes for module delete not opening allocation, engine slot allocation routing, and binding dock non-overlap.
+
+Verification:
+- `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120` passed.
+- New / focused probes passed:
+  - `module_payload_delete_no_allocation_probe`
+  - `engine_slot_allocation_click_probe`
+  - `module_binding_nonblocking_layout_probe`
+  - `module_payload_delete_real_ui_probe`
+  - `module_payload_rebind_keeps_module_probe`
+  - `module_binding_group_highlight_probe`
+  - `module_binding_power_allocation_real_ui_probe`
+  - `power_topbar_all_bound_limbs_visible_probe`
+- Regressions passed:
+  - `teamedit_probe`
+  - `ui_layout_probe`
+  - `text_overflow_probe`
+
+Findings:
+- The delete-button-to-power-allocation bug was an event routing issue, not a data cleanup issue. The old hit result could represent multiple booleans at once, and `_gui_input()` continued into generic slot handling after action hot zones.
+- The binding panel overlap was layout state leaking from the normal torso detail panel. Binding mode now has a separate dock layout, and closing/canceling/normal refresh restores the standard detail position.
+
+Sync:
+- Implemented in `E:\New project`; Documents and OneDrive mirrors should be refreshed from this source.
+
+## 2026-05-23 Action Module Allocation Sliders and Catalog Text Clarity
+
+Rules:
+- Binding an action module must immediately expose every driven limb in the Unit Edit power allocation topbar, using the same slider semantics as thrusters.
+- Torso detail action buttons are priority hit targets. Delete/rebind hot zones must be resolved before generic slot selection or drag handling.
+- Catalog card body text is a retained/vector overlay. The cached card texture path may draw part art/background, but title/category/stat text must not be baked into a low-resolution body texture.
+
+Implementation notes:
+- `UnitEditorPowerTopbarView` now draws all allocation entries in a horizontal scroll strip instead of hard-capping at five entries. Wheel scrolling exposes extra bound limbs without opening the detailed panel.
+- Module binding finalization now records `root_index`, activates the module torso as the current allocation target, and refreshes the topbar immediately so bound limb sliders appear as soon as the attack key is chosen.
+- Torso detail `_slot_hit()` now performs a delete/rebind hot-zone pass before normal slot hit detection. The UI event path emits delete/rebind before selecting or dragging a payload.
+- Retained catalog cards no longer request or draw `CatalogCardBodyTextureCache` text textures. Card title, short path, data rows, and size badges stay crisp because they are drawn directly by the retained item.
+- Adjacent catalog prewarm no longer queues body-text texture baking; only part preview textures are prewarmed.
+
+Verification:
+- `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120` passed.
+- New probes passed:
+  - `module_binding_power_allocation_real_ui_probe`
+  - `power_topbar_all_bound_limbs_visible_probe`
+  - `module_payload_delete_real_ui_probe`
+  - `catalog_card_text_vector_overlay_probe`
+- Related regressions passed:
+  - `power_slider_updates_runtime_binding_probe`
+  - `module_payload_rebind_keeps_module_probe`
+  - `catalog_card_text_readability_probe`
+  - `weapon_catalog_text_overlap_probe`
+  - `module_binding_group_highlight_probe`
+  - `module_binding_panel_click_probe`
+  - `two_link_binding_real_ui_probe`
+  - `gun_activate_binding_real_ui_probe`
+  - `bound_module_tryout_ui_probe`
+  - `teamedit_probe`
+  - `ui_layout_probe`
+  - `text_overflow_probe`
+
+Findings:
+- The visible allocation failure was a UI reachability problem: binding data existed, but the topbar rendered only the first few entries and did not reliably switch to the bound module torso after finalizing the key.
+- The blurry catalog text came from replacing vector fallback text with a cached low-resolution body texture after async load. Removing text from the body texture path keeps card text stable before and after thumbnail loading.
+
+## 2026-05-23 Board Zoom Socket Follow and Catalog Card Readability
+
+Rules:
+- TeamEdit board zoom is a display transform. Component bodies, socket markers, edge socket endpoints, hit-test anchors, and retained socket overlays must all consume the same current art-aware visual nodes and current zoom/offset.
+- Cached board snapshots may reuse topology/base component data, but any pixel-space socket marker or edge endpoint must be refreshed when dynamic board state changes.
+- Catalog card body text must remain readable after retained/texture rendering. The body texture may be cached, but the text style must use a dark backing plate, readable font sizes, and high-contrast colors.
+
+Implementation notes:
+- `_apply_editor_board_dynamic_fields()` now recomputes `socket_markers` from the current snapshot visual nodes on every dynamic board refresh. This fixes the zoom case where component art scaled/moved while joint/socket markers stayed at the old cached pixel coordinates.
+- Added `_refresh_editor_board_dynamic_socket_geometry()` to refresh socket markers and the cached `pa/pb` edge socket endpoints without rebuilding the whole board model.
+- Added catalog-card text constants and raised retained/body-text rendering to readable sizes with a contrast plate and text shadow. The fallback retained card path and the cached card body texture path now share the same readability rules. The card body texture key now includes `CATALOG_CARD_BODY_TEXTURE_STYLE_REVISION=2` so older low-contrast body textures are not reused.
+- Added probes:
+  - `board_zoom_socket_follow_probe`
+  - `catalog_card_text_readability_probe`
+
+Verification:
+- `board_zoom_socket_follow_probe` passed: zoomed socket marker moved by `36.711px` and matched dynamic expected position.
+- `catalog_card_text_readability_probe` passed: title size `11`, line size `9`, plate alpha `0.62`, body style revision `2`.
+- Regressions passed:
+  - `editor_board_zoom_probe`
+  - `board_art_anchor_zero_gap_probe`
+  - `board_visual_pos_art_scale_probe`
+  - `catalog_card_size_badge_probe`
+  - `teamedit_probe`
+  - `ui_layout_probe`
+  - `text_overflow_probe`
+  - `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120`
+
+Findings:
+- The socket/joint drift was not a torso-size problem. It came from storing socket markers as absolute board pixel coordinates inside the base snapshot while component bodies used dynamic zoom-aware positions.
+- Catalog card thumbnails were using the correct art, but the retained card body text was too small and too low contrast after being cached into a compact texture.
+
+Sync:
+- Implemented in `E:\New project`; Documents and OneDrive mirrors should be refreshed from this source after validation.
+
+## 2026-05-23 Action Module Binding UI, Tryout, Allocation Bridge, and Unit Edit Fullscreen
+
+Rules:
+- Action module binding candidates are groups, not single root nodes. A legal candidate must expose `candidate_id`, `root_index`, `target_nodes`, legality, reason, and drive data; clicking any node in that group selects the same candidate.
+- Binding completion writes one canonical limb allocation map: `allocated_limb_momentum_by_node`. Existing joint-drive fields are synchronized from it so Dashboard sliders, stats, and runtime bindings read the same value.
+- Unit Edit is a single-unit work surface. Large title/help copy and repeated board section labels are removed from the fixed layout; short status/hover/detail surfaces carry explanation instead.
+- Bound-module tryout in Unit Edit is preview-only. It can show melee arcs or gun/projectile rays on the board but must not apply damage, heat, ammo consumption, or battle state.
+
+Implementation notes:
+- `_editor_binding_highlights_for_board()` now highlights every node in a candidate `target_nodes` group, with a shared `candidate_id`.
+- `_pending_module_binding_candidate_for_node()` now resolves clicks on any highlighted group member, so Two-Link chains and gun terminals can be selected from the board or torso-detail binding panel.
+- Torso-detail binding rows show node groups and required drive, then expose the attack-key row after a legal candidate is selected.
+- Binding finalization and power sliders now update both `allocated_limb_momentum_by_node` and the legacy internal `joint_drive_allocation_by_node` mirror, preventing UI/stat/runtime drift.
+- Existing bound keys display compact `TRY` buttons in Unit Edit; pressing them calls the editor tryout preview path.
+- Unit Edit layout now gives the reclaimed header space to the power-allocation topbar and expands the board area, while title/help/section labels are hidden and language refresh writes them as empty strings.
+
+Verification:
+- `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120` passed.
+- New binding/allocation/layout probes passed:
+  - `module_binding_group_highlight_probe`
+  - `module_binding_panel_click_probe`
+  - `two_link_binding_real_ui_probe`
+  - `gun_activate_binding_real_ui_probe`
+  - `bound_module_tryout_ui_probe`
+  - `module_binding_power_allocation_bridge_probe`
+  - `power_slider_updates_runtime_binding_probe`
+  - `unit_editor_fullscreen_layout_probe`
+  - `unit_editor_no_header_help_probe`
+- Regressions passed:
+  - `module_binding_board_highlight_probe`
+  - `torso_detail_module_drive_allocation_probe`
+  - `teamedit_bound_module_tryout_probe`
+  - `unit_editor_rename_probe`
+  - `teamedit_probe`
+  - `ui_layout_probe`
+  - `text_overflow_probe`
+- Headed `performance_profile_4080s_probe` passed on Vulkan Forward+ / RTX 4080 SUPER. Current samples: catalog click `p95=0.97ms`, drag-to-board `p95=1.75ms`, existing-node release `p95=1.00ms`, manual unlink `p95=0.31ms`, bottom buttons `p95=2.79ms`, bound pose drag `p95=2.03ms`, saved-unit page hover `p95=1.57ms`, battle tick `p95=0.11ms`.
+
+Findings:
+- The current real-gesture matrix does not point at binding UI, board hover, saved units, or GPU readback as the hot layer. The largest cumulative leaf in this run was still pose visual diff over the whole gesture, but frame p95 stayed under the target.
+- If the player still feels a delay, the next modification should inspect actual interactive target hit testing and OS/window frame pacing in the opened build, not expand combat GPU work.
+
+Sync:
+- Implemented in `E:\New project`; Documents and OneDrive mirrors should be refreshed from this source after validation.
+
+## 2026-05-23 Action Module Delete/Rebind Cleanup and Allocation Highlight Pass
+
+Rules:
+- Installed action-module deletion is explicit only: right-click or the delete hot zone removes a payload; canceling a payload drag must not delete it.
+- Deleting an action-module payload must remove its `module_bindings`, clear stale node `modules/module/attack_key` fields when no remaining binding uses that module, clear pending binding if it targeted that payload, clear active editor tryout if it used that binding key, and shift later `software_slot_index` values.
+- Rebind keeps the installed payload. It only clears that payload's old binding and enters the binding candidate/key flow again.
+- Bound, power-allocatable target limbs are highlighted on the board in the same visual family as pending binding highlights, so players can see which nodes correspond to the power sliders.
+
+Implementation notes:
+- `TorsoDetailPanelView` no longer emits `remove_payload` from `NOTIFICATION_DRAG_END` when a drag is canceled.
+- `_clear_module_binding_for_payload_index()` now centralizes binding cleanup for delete and rebind, including pending/tryout cleanup and later payload index shifting.
+- Board dynamic revision includes a bound-allocation signature, and `_editor_allocation_highlights_for_board()` feeds existing retained board highlight drawing when no pending binding is active.
+- Allocation highlights use `allocation_bound` state and expose per-node allocated drive from `allocated_limb_momentum_by_node` with `joint_drive_allocation_by_node` fallback.
+
+Verification:
+- `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120` passed.
+- New probes passed:
+  - `module_payload_delete_cleanup_probe`
+  - `module_payload_rebind_keeps_module_probe`
+  - `module_binding_power_allocation_highlight_probe`
+  - `torso_payload_drag_cancel_no_delete_probe`
+- Existing binding/allocation regressions passed:
+  - `module_binding_group_highlight_probe`
+  - `two_link_binding_real_ui_probe`
+  - `gun_activate_binding_real_ui_probe`
+  - `bound_module_tryout_ui_probe`
+  - `module_binding_power_allocation_bridge_probe`
+  - `power_slider_updates_runtime_binding_probe`
+- General regressions passed:
+  - `teamedit_probe`
+  - `ui_layout_probe`
+  - `text_overflow_probe`
+- Headed `performance_profile_4080s_probe` passed on Vulkan Forward+ / RTX 4080 SUPER. Samples stayed within target: catalog click `p95=1.06ms`, drag-to-board `p95=1.71ms`, existing-node release `p95=0.26ms`, manual unlink `p95=0.33ms`, bottom buttons `p95=2.89ms`, bound pose drag `p95=2.44ms`, saved-unit page hover `p95=1.66ms`, battle tick `p95=0.12ms`.
+
+Next direction:
+- If the opened desktop build still feels slow, profile the exact gesture that feels delayed in-window. Current matrix still points to cumulative `pose.drag.visual_diff` as the largest leaf, but frame p95 remains below target.
+
+Sync:
+- Implemented in `E:\New project`; Documents and OneDrive mirrors should be refreshed from this source.
+
+## 2026-05-23 Module Binding Highlight, Tryout, and Drive Allocation Closure
+
+Rules:
+- TeamEdit action-module binding must be visible on the board. Pending binding writes a dedicated `binding_highlights` snapshot layer: valid targets are blue-green and clickable, invalid targets are red-orange with a reason. This layer is separate from socket/material highlights.
+- Torso Detail and board click selection now use the same candidate data. A target shown as bindable in the detail list must resolve to the same board candidate, target nodes, target kind, and required drive.
+- Binding a module immediately creates new drive allocation fields on the binding: `joint_drive_allocation_by_node`, `joint_drive_allocation_total`, `joint_drive_demand`, and `joint_output_momentum`. Stats prefer these fields over old allocation names.
+- Bound modules can be tried on the TeamEdit board with `U/I/O/J/K/L`. Tryout is preview-only: it draws melee pose/contact or projectile aim paths, never deals damage, never spends ammo, and never bypasses the projectile whitelist.
+- Projectile profiles are explicitly whitelisted as `gun_activate / rifle_burst_activate / grenade_arc_activate / laser_beam_activate / missile_lock_activate / web_tether_activate`. Melee runtime modules must not retain projectile fields.
+- `双段正锋折返 / TWO-LINK FORWARD SNAP` now binds any connected two-part non-torso chain whose two segments both have rotating embedded joints. The first segment no longer needs to connect directly to the torso.
+
+Implementation notes:
+- Added board binding highlights and a TeamEdit bound-module tryout state to `scripts/main.gd`.
+- Added the missing common catalog entries for `长视制式来复枪 / LONGSIGHT PATTERN RIFLE`, `红线跳爆榴弹枪 / REDLINE HOPPER GRENADE LAUNCHER`, `来复枪点射启动 / RIFLE BURST ACTIVATE`, and `榴弹弧射启动 / GRENADE ARC ACTIVATE`.
+- Extended gun activation profile routing and runtime event generation with `grenade_arc_activate`, preserving `explosive / arc_u` projectile fields only through the explicit gun-activation gate.
+- Added generic runtime melee support in `scripts/fighter.gd` for live profiles that previously failed as unsupported, including pierce, lance, drill, reeling hook, dual extension, pincer, and chain backlash profiles. These create runtime actions, active collider nodes, and no projectile fields.
+- Binding completion now stores drive allocation data in the binding itself, so the torso detail drive summary and runtime stats can follow the module target immediately after target selection.
+
+Verification:
+- `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120` passed.
+- New probes passed:
+  - `module_binding_board_highlight_probe`
+  - `torso_detail_module_drive_allocation_probe`
+  - `gun_module_binding_matrix_probe`
+  - `teamedit_bound_module_tryout_probe`
+  - `action_module_execution_matrix_probe`
+  - `projectile_profile_whitelist_probe`
+- Regressions passed:
+  - `two_link_forward_snap_module_probe`
+  - `gun_activate_binding_probe`
+  - `runtime_melee_never_projectile_gate_probe`
+  - `module_binding_torso_detail_pick_probe`
+  - `module_binding_direct_trigger_probe`
+  - `teamedit_probe`
+  - `ui_layout_probe`
+  - `text_overflow_probe`
+
+Findings:
+- The binding failure was a real editor-flow mismatch: board clicks used a direct selection path, while Torso Detail had its own candidate list. The new candidate helper is the shared source for list, highlight, click, and probe validation.
+- The old two-link restriction was still enforced in runtime validation and root search. Removing the direct-torso-parent requirement restores the newer rule from the design log.
+- Rifle support existed in runtime routing but not as a usable module/catalog loop; grenade was missing from the explicit whitelist. Both are now present and guarded by gun kind plus ammo kind.
+
+Sync:
+- Implemented in `E:\New project`; Documents and OneDrive mirrors refreshed from this source after verification.
+
 ## 2026-05-23 Unit Edit / Saved Units Team Builder Split
 
 Rules:
@@ -3185,6 +4962,38 @@ Findings:
 
 Sync:
 - Implemented in `E:\New project`; Documents and OneDrive mirrors should be refreshed from this source after this worklog update.
+
+## 2026-05-23 Action Module Category Filters
+
+Rules:
+- Action modules are grouped into three player-facing catalog categories: melee, ranged, and other.
+- The category affects only Unit Edit catalog filtering, card text, hover path, and catalog cache keys. It does not change binding, input commands, runtime combat, or saved-unit schema.
+- Explicit `module_category` on a module part wins. Otherwise the category is inferred from module semantics: gun/projectile/query modules are ranged, real-contact limb/weapon modules are melee, and capture/eject/control/non-damage utility modules are other.
+
+Implementation notes:
+- Added `_module_category_for_part()` plus short/path labels for catalog card and hover output.
+- Extended the Software catalog filter row with `全部模块 / 近战 / 远程 / 其他`.
+- Added module filter handling to `_editor_catalog_part_passes_filter()` using the existing `editor_part_filter_mode` cache path, so switching module categories refreshes catalog cards without touching board visuals, stats, or GPU geometry.
+- Module card text now shows a compact category path such as `模块>近战` or `MOD>RANGED`; full `行动模块 > ...` path appears in hover/details.
+
+Verification:
+- `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120` passed.
+- New probes passed:
+  - `module_catalog_category_probe`
+  - `module_catalog_filter_probe`
+  - `module_catalog_text_overlap_probe`
+  - `module_category_cache_probe`
+- Regressions passed:
+  - `teamedit_probe`
+  - `ui_layout_probe`
+  - `text_overflow_probe`
+
+Findings:
+- Existing weapon submenu code already had the right pattern for lightweight nested filters. Reusing the same filter/cache mechanism avoided adding a new state object or touching runtime module behavior.
+- Category cache probe confirmed module category switching changes the catalog revision while keeping stats, GPU query submission, and board visual refresh unchanged.
+
+Sync:
+- Implemented in `E:\New project`; Documents and OneDrive mirrors should be refreshed from this source.
 
 ## 2026-05-23 Board Art Anchors and Dashboard Power Allocation
 

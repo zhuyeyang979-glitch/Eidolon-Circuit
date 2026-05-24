@@ -8,7 +8,7 @@ func _fail(message: String) -> void:
 	quit(1)
 
 
-func _latest_unit2_path() -> String:
+func _latest_training_unit_path() -> String:
 	var dir := DirAccess.open("user://saved_units")
 	if dir == null:
 		return ""
@@ -25,7 +25,7 @@ func _latest_unit2_path() -> String:
 		if not (parsed is Dictionary):
 			continue
 		var data: Dictionary = parsed
-		if String(data.get("unit_name", "")) != "2":
+		if String(data.get("unit_name", "")) != "4":
 			continue
 		var mtime := int(FileAccess.get_modified_time(path))
 		if mtime >= best_time:
@@ -34,31 +34,65 @@ func _latest_unit2_path() -> String:
 	return best_path
 
 
+func _ensure_probe_drive_payloads(unit_bp: Dictionary) -> void:
+	if not Array(unit_bp.get("slot_payloads", [])).is_empty():
+		return
+	var topology: Dictionary = unit_bp.get("custom_topology", {})
+	var nodes: Array = topology.get("nodes", [])
+	var torso_node := -1
+	for i in range(nodes.size()):
+		if not (nodes[i] is Dictionary):
+			continue
+		var node: Dictionary = nodes[i]
+		if String(node.get("slot", "")) == "muscle" and (bool(node.get("is_torso", false)) or String(node.get("material_class", "")).to_lower() == "torso"):
+			torso_node = i
+			break
+	if torso_node < 0:
+		return
+	unit_bp["slot_payloads"] = [
+		{"kind": "engine", "engine": int(unit_bp.get("engine", 0)), "internal_slot_index": 0, "torso_node": torso_node},
+		{"kind": "booster", "booster": int(unit_bp.get("booster", 0)), "internal_slot_index": 1, "torso_node": torso_node},
+		{"kind": "cooling", "cooling": int(unit_bp.get("cooling", 0)), "internal_slot_index": 2, "torso_node": torso_node},
+	]
+
+
 func _init() -> void:
 	var main = MainScene.new()
 	root.add_child(main)
 	main._ready()
-	var path := _latest_unit2_path()
+	var path := _latest_training_unit_path()
 	if path == "":
-		_fail("No saved unit named 2 found.")
+		_fail("No saved training unit named 4 found.")
+		return
 	var file := FileAccess.open(path, FileAccess.READ)
 	var parsed = JSON.parse_string(file.get_as_text())
 	if not (parsed is Dictionary):
-		_fail("Saved unit 2 JSON is invalid.")
+		_fail("Saved unit 4 JSON is invalid.")
+		return
 	var saved: Dictionary = main._json_restore_value(Dictionary(parsed))
 	var role_key := String(saved.get("unit_role", "hero"))
 	var unit_bp: Dictionary = Dictionary(saved.get("blueprint", {})).duplicate(true)
+	_ensure_probe_drive_payloads(unit_bp)
 	main.training_import_units = [{"role": role_key, "blueprint": unit_bp.duplicate(true)}]
 	main.training_import_role_key = role_key
 	main.training_import_blueprint = unit_bp.duplicate(true)
-	main._start_battle(MainScene.MODE_TRAINING)
-	main._select_ai_battle_seat(1)
-	main._try_begin_battle_from_scout()
+	main.ai_battle_seat = 1
+	main.training_seat_confirmed = true
+	if not main._prepare_training_battle_loadouts():
+		_fail("Saved unit 4 training loadout was rejected: %s" % String(main.training_import_error_note))
+		return
+	if not main._configure_training_sides_for_seat():
+		_fail("Saved unit 4 training sides could not be configured: %s" % String(main.training_import_error_note))
+		return
+	main._begin_battle(MainScene.MODE_TRAINING, true)
 	var hero = main.active_units[1]["hero"]
 	if not main._is_live_unit(hero):
-		_fail("Saved unit 2 did not spawn as a controllable training hero.")
-	if float(hero.stats.get("body_move_speed", 0.0)) <= 0.001 or float(hero.stats.get("turn_speed", 0.0)) <= 0.001:
-		_fail("Saved unit 2 has no thruster-derived movement/turn speed in training.")
+		_fail("Saved unit 4 did not spawn as a controllable training hero.")
+		return
+	var move_speed := float(hero.stats.get("move_speed", hero.stats.get("body_move_speed", 0.0)))
+	if move_speed <= 0.001 or float(hero.stats.get("turn_speed", 0.0)) <= 0.001:
+		_fail("Saved unit 4 has no drive-derived movement/turn speed in training.")
+		return
 	var before_pos := Vector2(hero.ring_pos, hero.lane)
 	var before_angle: float = hero.facing_angle
 	hero.move_by(Vector2.RIGHT, 0.25, MainScene.RING_LENGTH)

@@ -19,6 +19,14 @@ func _init() -> void:
 	var y_step: Vector2 = main._screen_from_ring(6.0, 1.0)["position"]
 	var dx := origin.distance_to(x_step)
 	var dy := origin.distance_to(y_step)
+	if main.mobius_enabled:
+		if dx <= 0.01 or dy <= 0.01:
+			_fail("Möbius projection should keep positive screen movement for both axes.")
+		if absf(dx - dy) < 0.25:
+			_fail("Möbius projection should no longer collapse to flat isometric scale: dx=%.4f dy=%.4f." % [dx, dy])
+		print("BATTLE_XY_ISOMETRIC_PROBE mobius dx=%.4f dy=%.4f" % [dx, dy])
+		quit()
+		return
 	if absf(dx - dy) > 0.001:
 		_fail("Battle screen scale is not isometric: dx=%.4f dy=%.4f." % [dx, dy])
 	var scale := main._battle_world_to_screen_scale()

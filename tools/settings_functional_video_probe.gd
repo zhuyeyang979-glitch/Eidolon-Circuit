@@ -25,8 +25,15 @@ func _init() -> void:
 	if main.performance_profile == "balanced_4080s":
 		_fail("Activating the video profile row did not cycle the profile.")
 		return
+	var cycled_label := main._performance_profile_label(main.performance_profile)
+	if not cycled_label.contains("72") or cycled_label.contains("60"):
+		_fail("Lowest visible performance profile should be labeled as Compat 72, got '%s'." % cycled_label)
+		return
 	if Engine.max_fps != int(main._runtime_quality_value("fps_cap", 0)):
 		_fail("Engine FPS cap does not match runtime quality config.")
+		return
+	if Engine.max_fps < 72:
+		_fail("Engine FPS cap should stay at least 72fps, got %d." % Engine.max_fps)
 		return
 	main._apply_performance_profile("balanced_4080s", true)
 	print("SETTINGS_FUNCTIONAL_VIDEO_PROBE ok cycled profile and restored balanced")

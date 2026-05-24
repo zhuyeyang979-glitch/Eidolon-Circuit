@@ -36,7 +36,7 @@ func _assert_ratio(label: String, node: Dictionary, expected_min: float, expecte
 
 
 func _init() -> void:
-	_assert_ratio("torso", {"slot": "muscle", "is_torso": true, "shape": "torso", "connection_ends": 4}, 0.45, 0.49)
+	_assert_ratio("torso", {"slot": "muscle", "is_torso": true, "shape": "torso", "connection_ends": 4}, 0.66, 0.74)
 	_assert_ratio("limb", {"slot": "limb_muscle", "shape": "limb", "connection_ends": 2}, 0.10, 0.12)
 	_assert_ratio("terminal", {"slot": "muscle", "terminal_weapon": true, "connection_ends": 1, "damage_type": "blunt"}, 0.22, 0.24)
 	_assert_ratio("barrier", {"slot": "barrier_tile", "is_barrier_tile": true, "shape": "barrier"}, 0.15, 0.18)

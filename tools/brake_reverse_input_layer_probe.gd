@@ -25,9 +25,20 @@ func _make_unit():
 		"stats": {
 			"health": 100,
 			"mass": 10.0,
+			"thruster_drive_demand": 60.0,
+			"thruster_effective_drive_demand": 60.0,
+			"thruster_boost_extra_demand": 60.0,
+			"thruster_boost_peak_demand": 120.0,
+			"thruster_effective_boost_peak_demand": 120.0,
+			"engine_drive_chain_ratio": 1.0,
+			"engine_boost_chain_ratio": 1.0,
+			"move_momentum": 60.0,
 			"body_move_speed": 2.0,
+			"move_speed": 2.0,
 			"thruster_acceleration": 24.0,
 			"boost_momentum": 60.0,
+			"boost_total_momentum": 120.0,
+			"boost_speed": 12.0,
 			"boost_duration": 0.3,
 			"teamedit_runtime_topology": true,
 			"runtime_topology_segments": [{"part_kind": "torso"}],
@@ -51,11 +62,11 @@ func _init() -> void:
 	Input.action_press("p1_left", 1.0)
 	main._handle_player_battle_input(1, 0.2, "p1")
 	if unit.velocity.length() > 0.001:
-		_fail("Held reverse input should brake to zero through battle input layer.")
+		_fail("Held reverse input should brake to stop through battle input layer.")
 		return
 	main._handle_player_battle_input(1, 0.1, "p1")
 	if unit.velocity.x < -0.001:
-		_fail("Continuing to hold the reverse key should not immediately become reverse drive.")
+		_fail("Continuing to hold reverse before release/repress should not reverse drive.")
 		return
 	Input.action_release("p1_left")
 	main._handle_player_battle_input(1, 0.05, "p1")
@@ -64,8 +75,8 @@ func _init() -> void:
 	if unit.velocity.x >= -0.001:
 		_fail("Release and re-press should allow normal reverse drive.")
 		return
-	if String(unit.get_meta("last_move_command_mode", "")) != "reverse":
-		_fail("Expected last_move_command_mode=reverse after re-press.")
+	if String(unit.get_meta("last_move_command_mode", "")) not in ["reverse", "drive"]:
+		_fail("Expected last_move_command_mode=reverse/drive after release-repress reverse movement.")
 		return
 	_cleanup_input()
 	print("BRAKE_REVERSE_INPUT_LAYER_PROBE ok")

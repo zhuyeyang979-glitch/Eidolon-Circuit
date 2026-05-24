@@ -310,7 +310,7 @@ func _run_battle_tick(main, lines: Array) -> void:
 	main.hot_path_profiler.begin_interaction("battle.tick_300")
 	for i in range(300):
 		main.hot_path_profiler.begin_frame()
-		main._tick_battle(1.0 / 60.0)
+		main._tick_battle(MainScene.BATTLE_FRAME_DELTA)
 		main.hot_path_profiler.end_frame()
 	main.hot_path_profiler.end_interaction("battle.tick_300")
 	lines.append(_summary_line(main, "battle.tick_300", before))

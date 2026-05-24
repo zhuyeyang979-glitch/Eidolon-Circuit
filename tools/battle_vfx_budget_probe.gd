@@ -13,6 +13,9 @@ func _init() -> void:
 	root.add_child(main)
 	main._ready()
 	main._apply_performance_profile("compat_60", false)
+	if Engine.max_fps < 72:
+		_fail("Compat profile should guarantee at least 72fps, got %d." % Engine.max_fps)
+		return
 	main._reset_battle_vfx_frame_budget()
 	var accepted := 0
 	for i in range(200):

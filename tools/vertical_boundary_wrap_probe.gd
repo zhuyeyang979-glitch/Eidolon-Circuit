@@ -2,7 +2,7 @@ extends SceneTree
 
 const FighterScene := preload("res://scripts/fighter.gd")
 const RING_LENGTH := 24.0
-const BATTLE_HALF_HEIGHT := 5.0
+const BATTLE_HALF_HEIGHT := 7.5
 
 
 func _fail(message: String) -> void:

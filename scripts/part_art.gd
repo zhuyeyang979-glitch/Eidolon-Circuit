@@ -224,6 +224,87 @@ static func torso_saddle_port_count(part: Dictionary) -> int:
 	return clampi(maxi(1, raw_ports), 1, 6)
 
 
+static func torso_visual_family(part: Dictionary) -> String:
+	var key := "%s %s %s %s %s" % [
+		String(part.get("name", "")).to_lower(),
+		String(part.get("shape", "")).to_lower(),
+		String(part.get("archetype", "")).to_lower(),
+		String(part.get("maker", "")).to_lower(),
+		String(part.get("material_visual", part.get("torso_material", ""))).to_lower(),
+	]
+	if key.contains("human") or key.contains("humanoid") or key.contains("duel") or key.contains("pilot") or key.contains("chest") or key.contains("head") or key.contains("scout_core"):
+		return "robot_core"
+	if key.contains("tank") or key.contains("arsenal") or key.contains("stage") or key.contains("ship") or key.contains("hull") or key.contains("midfield") or key.contains("syntax"):
+		return "spacecraft_hull"
+	if key.contains("crab") or key.contains("shrimp") or key.contains("prawn") or key.contains("lobster") or key.contains("bull") or bool(part.get("carapace_style", false)):
+		return "carapace"
+	if key.contains("octopus") or key.contains("mantle") or key.contains("tentacle"):
+		return "mantle"
+	if key.contains("hound") or key.contains("dog") or key.contains("snake") or key.contains("serpent") or key.contains("centipede") or key.contains("leviathan") or key.contains("spine"):
+		return "spine"
+	return "hybrid_hull"
+
+
+static func _torso_width_profile(family: String, rear_to_front_t: float, rear_half: float, front_half: float) -> float:
+	var t := clampf(rear_to_front_t, 0.0, 1.0)
+	var base := lerpf(rear_half, front_half, t)
+	match family:
+		"robot_core":
+			var shoulder := exp(-pow((t - 0.62) / 0.22, 2.0)) * 0.30
+			var waist := exp(-pow((t - 0.34) / 0.18, 2.0)) * 0.18
+			return maxf(front_half * 0.72, base * (0.94 + shoulder - waist))
+		"spacecraft_hull":
+			var service_ring := exp(-pow((t - 0.16) / 0.18, 2.0)) * 0.22
+			var nose_taper := smoothstep(0.66, 1.0, t) * 0.24
+			return maxf(front_half * 0.68, base * (1.02 + service_ring - nose_taper))
+		"carapace":
+			var shell := exp(-pow((t - 0.34) / 0.28, 2.0)) * 0.28
+			var beak := smoothstep(0.72, 1.0, t) * 0.18
+			return maxf(front_half * 0.84, base * (1.02 + shell - beak))
+		"mantle":
+			var bulb := exp(-pow((t - 0.22) / 0.30, 2.0)) * 0.34
+			var neck := exp(-pow((t - 0.74) / 0.20, 2.0)) * 0.16
+			return maxf(front_half * 0.76, base * (0.95 + bulb - neck))
+		"spine":
+			var rib_cage := exp(-pow((t - 0.44) / 0.26, 2.0)) * 0.20
+			var tail_taper := smoothstep(0.0, 0.28, t) * 0.12
+			return maxf(front_half * 0.62, base * (0.80 + rib_cage + tail_taper))
+		_:
+			var core_belly := exp(-pow((t - 0.42) / 0.30, 2.0)) * 0.18
+			return maxf(front_half * 0.72, base * (0.96 + core_belly))
+
+
+static func torso_hull_local_points(part: Dictionary, length: float = 2.0, front_width: float = 0.72, rear_width: float = 1.56) -> PackedVector2Array:
+	length *= TORSO_GEOMETRY_SCALE
+	front_width *= TORSO_GEOMETRY_SCALE
+	rear_width *= TORSO_GEOMETRY_SCALE
+	var family := torso_visual_family(part)
+	var half_length := maxf(0.01, length) * 0.5
+	var front_half := maxf(0.01, front_width) * 0.5
+	var rear_half := maxf(front_half + 0.01, rear_width) * 0.5
+	var t_values := [0.0, 0.08, 0.18, 0.30, 0.44, 0.58, 0.72, 0.86, 0.96, 1.0]
+	var top: Array = []
+	var bottom: Array = []
+	for raw_t in t_values:
+		var t := float(raw_t)
+		var x := lerpf(-half_length, half_length, t)
+		var width := _torso_width_profile(family, t, rear_half, front_half)
+		var facet := 1.0
+		if family in ["spacecraft_hull", "robot_core"]:
+			facet = 0.96 + 0.04 * absf(sin(t * PI * 3.0))
+		elif family == "spine":
+			facet = 0.88 + 0.08 * absf(sin(t * PI * 5.0))
+		width *= facet
+		top.append(Vector2(x, -width))
+		bottom.push_front(Vector2(x, width))
+	var points := PackedVector2Array()
+	for point in top:
+		points.append(point)
+	for point in bottom:
+		points.append(point)
+	return points
+
+
 static func torso_saddle_local_points(length: float = 2.0, front_width: float = 0.72, rear_width: float = 1.56) -> PackedVector2Array:
 	length *= TORSO_GEOMETRY_SCALE
 	front_width *= TORSO_GEOMETRY_SCALE
@@ -237,6 +318,40 @@ static func torso_saddle_local_points(length: float = 2.0, front_width: float = 
 		Vector2(-half_length, rear_half),
 		Vector2(-half_length, -rear_half),
 	])
+
+
+static func torso_hull_port_local_offsets(part: Dictionary, port_count: int, length: float = 2.0, front_width: float = 0.72, rear_width: float = 1.56) -> Array:
+	length *= TORSO_GEOMETRY_SCALE
+	front_width *= TORSO_GEOMETRY_SCALE
+	rear_width *= TORSO_GEOMETRY_SCALE
+	var family := torso_visual_family(part)
+	var count := clampi(port_count, 1, 6)
+	var half_length := maxf(0.01, length) * 0.5
+	var front_half := maxf(0.01, front_width) * 0.5
+	var rear_half := maxf(front_half + 0.01, rear_width) * 0.5
+	var offsets: Array = []
+	if count in [1, 3, 5]:
+		offsets.append(Vector2(half_length, 0.0))
+	var front_to_rear: Array = []
+	match count:
+		2, 3:
+			front_to_rear = [0.22]
+		4, 5:
+			front_to_rear = [0.18, 0.48]
+		6:
+			front_to_rear = [0.14, 0.36, 0.62]
+	for raw_t in front_to_rear:
+		var front_rear_t := float(raw_t)
+		var rear_front_t := 1.0 - front_rear_t
+		var x := lerpf(half_length, -half_length, front_rear_t)
+		var width := _torso_width_profile(family, rear_front_t, rear_half, front_half) * 0.88
+		if family == "spine":
+			width *= 0.82
+		elif family == "carapace":
+			width *= 0.94
+		offsets.append(Vector2(x, -width))
+		offsets.append(Vector2(x, width))
+	return offsets
 
 
 static func torso_saddle_port_local_offsets(port_count: int, length: float = 2.0, front_width: float = 0.72, rear_width: float = 1.56) -> Array:
@@ -270,6 +385,14 @@ static func torso_saddle_port_local_offsets(port_count: int, length: float = 2.0
 	return offsets
 
 
+static func torso_hull_port_directions(part: Dictionary, port_count: int) -> Array:
+	var dirs: Array = []
+	for offset in torso_hull_port_local_offsets(part, port_count):
+		var v: Vector2 = offset
+		dirs.append(v.normalized() if v.length() > 0.001 else Vector2.RIGHT)
+	return dirs
+
+
 static func torso_saddle_port_directions(port_count: int) -> Array:
 	var dirs: Array = []
 	for offset in torso_saddle_port_local_offsets(port_count):
@@ -280,7 +403,58 @@ static func torso_saddle_port_directions(port_count: int) -> Array:
 
 static func terminal_profile_for(part: Dictionary) -> String:
 	if _is_projectile_weapon(part):
+		var projectile_key := _part_key(part)
+		var gun_kind := String(part.get("gun_kind", "")).to_lower()
+		var style := String(part.get("projectile_style", "")).to_lower()
+		var damage_type := String(part.get("projectile_damage_type", part.get("damage_type", ""))).to_lower()
+		var material_class := String(part.get("material_class", "")).to_lower()
+		if material_class == "web_gun" or gun_kind == "web_gun" or projectile_key.contains("web"):
+			return "web_spool_gun"
+		if material_class == "missile_launcher" or gun_kind == "missile_launcher" or style == "missile" or projectile_key.contains("missile"):
+			return "missile_tube_pod"
+		if gun_kind == "laser_gun" or style == "beam" or projectile_key.contains("laser"):
+			return "prism_laser_gun"
+		if gun_kind == "sprayer" or projectile_key.contains("sprayer") or projectile_key.contains("siphon") or projectile_key.contains("nozzle"):
+			return "chemical_sprayer"
+		if gun_kind == "grenade_launcher" or projectile_key.contains("grenade"):
+			return "grenade_launcher"
+		if projectile_key.contains("mortar") or projectile_key.contains("cannon") or projectile_key.contains("turret"):
+			return "heavy_launcher"
+		if style == "spray" or damage_type == "chemical" or projectile_key.contains("spray") or projectile_key.contains("caustic") or projectile_key.contains("chemical"):
+			return "chemical_sprayer"
+		if gun_kind == "sniper" or style == "true_bullet" or projectile_key.contains("sniper") or projectile_key.contains("rail"):
+			return "scoped_sniper"
+		if gun_kind == "rifle" or style == "bullet_hell" or projectile_key.contains("rifle"):
+			return "stocked_rifle"
 		return "muzzle"
+	var key := _part_key(part)
+	var family := String(part.get("weapon_family", "")).to_lower()
+	if family in ["saber", "sabre"] or key.contains("saber") or key.contains("sabre"):
+		return "curved_saber"
+	if family == "scythe" or key.contains("scythe") or key.contains("crescent"):
+		return "right_angle_scythe"
+	if family == "katana" or key.contains("katana") or key.contains("wakizashi") or key.contains("odachi"):
+		return "single_edge_katana"
+	if family == "greatsword" or key.contains("greatsword") or key.contains("great_sword") or key.contains("buster"):
+		return "broad_greatsword"
+	if bool(part.get("blunt_shield", false)) or family == "shield" or key.contains("shield") or key.contains("buckler"):
+		return "thick_arc_shield"
+	if bool(part.get("blunt_hammer", false)) or family == "hammer" or key.contains("hammer") or key.contains("maul") or key.contains("mace") or key.contains("jack"):
+		return "hammer_head"
+	if family == "rapier" or key.contains("rapier") or key.contains("foil") or key.contains("epee") or key.contains("stiletto"):
+		return "needle_rapier"
+	if family == "lance" or key.contains("lance") or key.contains("spear") or key.contains("pike") or key.contains("harpoon") or key.contains("needle") or key.contains("spike"):
+		return "spear_lance"
+	if family == "drill" or key.contains("drill") or key.contains("auger") or key.contains("borer"):
+		return "powered_spiral_drill"
+	if bool(part.get("blunt_gauntlet", false)) or family == "gauntlet" or key.contains("gauntlet") or key.contains("glove") or key.contains("fist"):
+		return "piston_fist"
+	if family == "claw" or key.contains("claw") or key.contains("jaw") or key.contains("talon") or key.contains("paw") or key.contains("hoof"):
+		return "paired_claw"
+	if family == "racket" or key.contains("racket") or key.contains("rake"):
+		return "racket_frame"
+	if family == "chain" or key.contains("chain") or key.contains("whip") or key.contains("antenna"):
+		return "chain_whip"
 	var damage := damage_style_for(part)
 	match damage:
 		"tear":

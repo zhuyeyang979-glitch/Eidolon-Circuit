@@ -10,8 +10,14 @@ func _fail(message: String) -> void:
 
 func _make_stats(mult: float) -> Dictionary:
 	return {
+		"role": "hero",
 		"mass": 20.0,
-		"thruster_momentum": 40.0,
+		"thruster_drive_demand": 40.0,
+		"thruster_boost_extra_demand": 80.0,
+		"thruster_boost_peak_demand": 120.0,
+		"engine_momentum_output": 120.0,
+		"move_efficiency": 1.0,
+		"boost_efficiency": 1.0,
 		"boost_momentum": 80.0,
 		"boost_duration": 0.3,
 		"speedometer_mult": mult,
@@ -24,7 +30,9 @@ func _init() -> void:
 	main._ready()
 	var small_limit := _make_stats(0.8)
 	var large_limit := _make_stats(1.6)
+	main._apply_engine_momentum_budget(small_limit, "hero")
 	main._apply_thruster_momentum_stats(small_limit, "hero")
+	main._apply_engine_momentum_budget(large_limit, "hero")
 	main._apply_thruster_momentum_stats(large_limit, "hero")
 	var a := float(small_limit.get("speedometer_max_speed", 0.0))
 	var b := float(large_limit.get("speedometer_max_speed", 0.0))
