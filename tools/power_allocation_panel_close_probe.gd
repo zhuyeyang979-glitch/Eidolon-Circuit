@@ -63,8 +63,8 @@ func _init() -> void:
 	main._refresh_engine_momentum_allocation_view()
 	if main.engine_momentum_allocation_view.visible:
 		_fail("Dashboard/topbar refresh reopened the panel after close button.")
-	if main.editor_power_dock_view != null and main.editor_power_dock_view.visible:
-		_fail("The old power allocation dock is still visible after close; it has no close affordance.")
+	if main.editor_power_dock_view == null or not main.editor_power_dock_view.visible:
+		_fail("The always-visible power allocation dock should remain available after closing the detail panel.")
 
 	_open_panel(main)
 	var escape_event := InputEventKey.new()

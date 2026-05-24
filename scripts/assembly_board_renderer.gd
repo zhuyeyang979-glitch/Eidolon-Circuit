@@ -153,7 +153,12 @@ static func part_to_component_node(slot_key: String, part: Dictionary) -> Dictio
 		return node
 	node["slot"] = "limb_muscle"
 	node["connection_ends"] = 2
-	node["shape"] = "limb"
+	var limb_shape := String(part.get("shape", part.get("source_shape", ""))).to_lower()
+	node["shape"] = limb_shape if limb_shape != "" else PartArt.limb_visual_family(node)
+	node["limb_visual_family"] = PartArt.limb_visual_family(node)
+	node["limb_material_visual"] = PartArt.limb_material_visual(node)
+	node["limb_role_tags"] = PartArt.limb_role_tags_for(node)
+	node["barrier_fit_tags"] = PartArt.limb_barrier_fit_tags_for(node)
 	return node
 
 
@@ -204,7 +209,13 @@ static func segment_to_component_node(segment: Dictionary) -> Dictionary:
 		_:
 			node["slot"] = "limb_muscle"
 			node["connection_ends"] = 2
-			node["shape"] = "limb"
+			var source_shape := String(node.get("source_shape", ""))
+			var collision_shape := String(node.get("shape", "")).to_lower()
+			node["shape"] = source_shape if source_shape != "" and not (collision_shape in ["capsule", "polygon", "circle"]) else (collision_shape if collision_shape != "" and not (collision_shape in ["capsule", "polygon", "circle"]) else PartArt.limb_visual_family(node))
+			node["limb_visual_family"] = PartArt.limb_visual_family(node)
+			node["limb_material_visual"] = PartArt.limb_material_visual(node)
+			node["limb_role_tags"] = PartArt.limb_role_tags_for(node)
+			node["barrier_fit_tags"] = PartArt.limb_barrier_fit_tags_for(node)
 	return node
 
 
@@ -375,7 +386,7 @@ static func component_polygon(center: Vector2, node: Dictionary, axis: Vector2, 
 		"barrier":
 			return capsule_polygon(center, forward, float(metrics.get("length", 0.0)), float(metrics.get("body_width", display_radius)), 6)
 		_:
-			return capsule_polygon(center, forward, float(metrics.get("length", 0.0)), float(metrics.get("body_width", display_radius)), 6)
+			return limb_polygon(center, node, forward, physical_radius, visual_length_px, pixel_minimums)
 
 
 static func saddle_polygon(center: Vector2, axis: Vector2, length: float, front_width: float, rear_width: float) -> PackedVector2Array:
@@ -426,6 +437,213 @@ static func capsule_polygon(center: Vector2, axis: Vector2, length: float, width
 		var local := Vector2(-shaft_half + cos(theta) * half_width, sin(theta) * half_width)
 		points.append(center + forward * local.x + right * local.y)
 	return points
+
+
+static func limb_polygon(center: Vector2, node: Dictionary, axis: Vector2, physical_radius: float, visual_length_px: float = -1.0, pixel_minimums: bool = true) -> PackedVector2Array:
+	var forward := _safe_axis(axis)
+	var right := Vector2(-forward.y, forward.x)
+	var metrics := component_display_metrics(node, physical_radius, visual_length_px, pixel_minimums)
+	var length := maxf(float(metrics.get("length", visual_length_px if visual_length_px > 0.0 else physical_radius * 1.9)), 8.0 if pixel_minimums else 0.001)
+	var body_width := maxf(float(metrics.get("body_width", maxf(0.001, physical_radius * 0.76))), 5.0 if pixel_minimums else 0.001)
+	var half_width := body_width * 0.5
+	match PartArt.limb_visual_family(node):
+		"forearm_myomer":
+			return _limb_local_polygon(center, forward, right, [
+				Vector2(-length * 0.50, -half_width * 0.72),
+				Vector2(-length * 0.36, -half_width * 1.16),
+				Vector2(-length * 0.06, -half_width * 0.96),
+				Vector2(length * 0.25, -half_width * 1.36),
+				Vector2(length * 0.44, -half_width * 0.84),
+				Vector2(length * 0.50, 0.0),
+				Vector2(length * 0.44, half_width * 0.84),
+				Vector2(length * 0.25, half_width * 1.36),
+				Vector2(-length * 0.06, half_width * 0.96),
+				Vector2(-length * 0.36, half_width * 1.16),
+				Vector2(-length * 0.50, half_width * 0.72),
+			])
+		"thigh_myomer":
+			return _limb_local_polygon(center, forward, right, [
+				Vector2(-length * 0.50, -half_width * 0.90),
+				Vector2(-length * 0.34, -half_width * 1.50),
+				Vector2(0.0, -half_width * 1.82),
+				Vector2(length * 0.34, -half_width * 1.42),
+				Vector2(length * 0.50, -half_width * 0.86),
+				Vector2(length * 0.50, half_width * 0.86),
+				Vector2(length * 0.34, half_width * 1.42),
+				Vector2(0.0, half_width * 1.82),
+				Vector2(-length * 0.34, half_width * 1.50),
+				Vector2(-length * 0.50, half_width * 0.90),
+			])
+		"flex_tendon":
+			return _limb_wave_polygon(center, forward, right, length, half_width * 0.92, 9, 0.24)
+		"chain_muscle":
+			return _limb_chain_outline(center, forward, right, length, half_width * 1.34, 7, false)
+		"tentacle":
+			return _limb_wave_polygon(center, forward, right, length, half_width * 1.12, 10, 0.36)
+		"steel_sinew_beam":
+			return _limb_ibeam_polygon(center, forward, right, length, half_width * 1.62)
+		"ceramic_linear_strut":
+			return _limb_linear_strut_polygon(center, forward, right, length, half_width * 1.28)
+		"colossus_girder_muscle":
+			return _limb_girder_polygon(center, forward, right, length, half_width * 1.90)
+		"barrier_strut":
+			return _limb_barrier_strut_polygon(center, forward, right, length, half_width * 1.68)
+		"fur_sleeve":
+			return capsule_polygon(center, forward, length, half_width * 1.78, 10)
+		_:
+			return capsule_polygon(center, forward, length, body_width, 6)
+
+
+static func limb_visual_detail_tags(node: Dictionary) -> PackedStringArray:
+	var tags := PackedStringArray()
+	for raw_tag in PartArt.limb_role_tags_for(node):
+		tags.append(String(raw_tag))
+	for raw_tag in PartArt.limb_barrier_fit_tags_for(node):
+		if not tags.has(String(raw_tag)):
+			tags.append(String(raw_tag))
+	match PartArt.limb_visual_family(node):
+		"forearm_myomer":
+			tags.append_array(PackedStringArray(["paired_myomer", "wrist_cuff", "light_limb"]))
+		"thigh_myomer":
+			tags.append_array(PackedStringArray(["thick_myomer", "load_belly", "standard_limb"]))
+		"flex_tendon":
+			tags.append_array(PackedStringArray(["fiber_bundle", "flex_tendon", "wide_angle"]))
+		"chain_muscle":
+			tags.append_array(PackedStringArray(["chain_segments", "linked_limb", "weighted_return"]))
+		"tentacle":
+			tags.append_array(PackedStringArray(["soft_curve", "organic_segments", "wide_angle"]))
+		"steel_sinew_beam":
+			tags.append_array(PackedStringArray(["i_beam", "rivet_line", "load_bearing"]))
+		"ceramic_linear_strut":
+			tags.append_array(PackedStringArray(["ceramic_panels", "linear_rail", "telescopic_sleeve"]))
+		"colossus_girder_muscle":
+			tags.append_array(PackedStringArray(["truss_girder", "giant_muscle_wrap", "anchor_mount"]))
+		"barrier_strut":
+			tags.append_array(PackedStringArray(["hard_barrier_beam", "maze_fit", "panel_mount"]))
+		"fur_sleeve":
+			tags.append_array(PackedStringArray(["padded_sleeve", "impact_fur", "shove_absorb"]))
+		_:
+			tags.append("fallback_two_end_muscle")
+	match PartArt.limb_material_visual(node):
+		"metal", "chain":
+			tags.append_array(PackedStringArray(["metal_rivets", "hard_edges"]))
+		"ceramic":
+			tags.append_array(PackedStringArray(["ceramic_plate_lines", "clean_hard_panels"]))
+		"wood":
+			tags.append_array(PackedStringArray(["wood_grain", "timber_support"]))
+		"flex":
+			tags.append_array(PackedStringArray(["fiber_strands", "soft_bundle"]))
+		"hardlight":
+			tags.append_array(PackedStringArray(["barrier_glow_edges", "hardlight_plate"]))
+		"fur":
+			tags.append_array(PackedStringArray(["fur_edge", "padded_texture"]))
+	return tags
+
+
+static func _limb_local_polygon(center: Vector2, forward: Vector2, right: Vector2, points: Array) -> PackedVector2Array:
+	var polygon := PackedVector2Array()
+	for raw_point in points:
+		var p: Vector2 = raw_point
+		polygon.append(center + forward * p.x + right * p.y)
+	return polygon
+
+
+static func _limb_wave_polygon(center: Vector2, forward: Vector2, right: Vector2, length: float, half_width: float, steps: int, amplitude: float) -> PackedVector2Array:
+	var points := PackedVector2Array()
+	var count := maxi(5, steps)
+	for i in range(count + 1):
+		var t := float(i) / float(count)
+		var x := lerpf(-length * 0.5, length * 0.5, t)
+		var width := half_width * lerpf(0.72, 1.0, sin(t * PI))
+		var wave := sin(t * TAU * 2.0) * half_width * amplitude
+		points.append(center + forward * x + right * (width + wave))
+	for i in range(count, -1, -1):
+		var t := float(i) / float(count)
+		var x := lerpf(-length * 0.5, length * 0.5, t)
+		var width := half_width * lerpf(0.72, 1.0, sin(t * PI))
+		var wave := sin(t * TAU * 2.0 + PI * 0.6) * half_width * amplitude
+		points.append(center + forward * x - right * (width + wave))
+	return points
+
+
+static func _limb_chain_outline(center: Vector2, forward: Vector2, right: Vector2, length: float, half_width: float, segments: int, tapered: bool) -> PackedVector2Array:
+	var points := PackedVector2Array()
+	var count := maxi(5, segments)
+	for i in range(count + 1):
+		var t := float(i) / float(count)
+		var x := lerpf(-length * 0.5, length * 0.5, t)
+		var tooth := 0.72 + (0.26 if i % 2 == 0 else -0.08)
+		var taper := lerpf(1.0, 0.58, t) if tapered else 1.0
+		points.append(center + forward * x + right * half_width * tooth * taper)
+	for i in range(count, -1, -1):
+		var t := float(i) / float(count)
+		var x := lerpf(-length * 0.5, length * 0.5, t)
+		var tooth := 0.72 + (0.26 if i % 2 == 0 else -0.08)
+		var taper := lerpf(1.0, 0.58, t) if tapered else 1.0
+		points.append(center + forward * x - right * half_width * tooth * taper)
+	return points
+
+
+static func _limb_ibeam_polygon(center: Vector2, forward: Vector2, right: Vector2, length: float, half_width: float) -> PackedVector2Array:
+	var flange := half_width
+	var web := half_width * 0.34
+	return _limb_local_polygon(center, forward, right, [
+		Vector2(-length * 0.50, -flange),
+		Vector2(-length * 0.36, -flange),
+		Vector2(-length * 0.32, -web),
+		Vector2(length * 0.32, -web),
+		Vector2(length * 0.36, -flange),
+		Vector2(length * 0.50, -flange),
+		Vector2(length * 0.50, flange),
+		Vector2(length * 0.36, flange),
+		Vector2(length * 0.32, web),
+		Vector2(-length * 0.32, web),
+		Vector2(-length * 0.36, flange),
+		Vector2(-length * 0.50, flange),
+	])
+
+
+static func _limb_linear_strut_polygon(center: Vector2, forward: Vector2, right: Vector2, length: float, half_width: float) -> PackedVector2Array:
+	return _limb_local_polygon(center, forward, right, [
+		Vector2(-length * 0.50, -half_width * 0.54),
+		Vector2(-length * 0.22, -half_width * 0.78),
+		Vector2(length * 0.05, -half_width * 0.48),
+		Vector2(length * 0.38, -half_width * 0.48),
+		Vector2(length * 0.50, -half_width * 0.30),
+		Vector2(length * 0.50, half_width * 0.30),
+		Vector2(length * 0.38, half_width * 0.48),
+		Vector2(length * 0.05, half_width * 0.48),
+		Vector2(-length * 0.22, half_width * 0.78),
+		Vector2(-length * 0.50, half_width * 0.54),
+	])
+
+
+static func _limb_girder_polygon(center: Vector2, forward: Vector2, right: Vector2, length: float, half_width: float) -> PackedVector2Array:
+	return _limb_local_polygon(center, forward, right, [
+		Vector2(-length * 0.50, -half_width * 0.72),
+		Vector2(-length * 0.36, -half_width * 1.02),
+		Vector2(-length * 0.12, -half_width * 0.86),
+		Vector2(length * 0.12, -half_width * 1.08),
+		Vector2(length * 0.36, -half_width * 0.92),
+		Vector2(length * 0.50, -half_width * 0.62),
+		Vector2(length * 0.50, half_width * 0.62),
+		Vector2(length * 0.36, half_width * 0.92),
+		Vector2(length * 0.12, half_width * 1.08),
+		Vector2(-length * 0.12, half_width * 0.86),
+		Vector2(-length * 0.36, half_width * 1.02),
+		Vector2(-length * 0.50, half_width * 0.72),
+	])
+
+
+static func _limb_barrier_strut_polygon(center: Vector2, forward: Vector2, right: Vector2, length: float, half_width: float) -> PackedVector2Array:
+	return _limb_local_polygon(center, forward, right, [
+		Vector2(-length * 0.50, -half_width * 0.86),
+		Vector2(length * 0.46, -half_width * 0.86),
+		Vector2(length * 0.50, -half_width * 0.62),
+		Vector2(length * 0.50, half_width * 0.62),
+		Vector2(length * 0.46, half_width * 0.86),
+		Vector2(-length * 0.50, half_width * 0.86),
+	])
 
 
 static func terminal_polygon(center: Vector2, node: Dictionary, axis: Vector2, physical_radius: float, visual_length_px: float = -1.0, pixel_minimums: bool = true) -> PackedVector2Array:
@@ -1089,18 +1307,97 @@ static func _draw_torso_design_marks(canvas: CanvasItem, center: Vector2, forwar
 
 static func _draw_limb(canvas: CanvasItem, center: Vector2, axis: Vector2, color: Color, radius: float, pulse: float, visual_length_px: float, node: Dictionary) -> void:
 	var forward := _safe_axis(axis)
-	var length := visual_length_px if visual_length_px > 0.0 else radius * 1.9
-	var body_width := maxf(4.0, radius * 0.76)
-	var body := capsule_polygon(center, forward, length, body_width, 6)
-	canvas.draw_colored_polygon(body, color.darkened(0.18))
+	var metrics := component_display_metrics(node, radius, visual_length_px, true)
+	var length := float(metrics.get("length", visual_length_px if visual_length_px > 0.0 else radius * 1.9))
+	var body_width := float(metrics.get("body_width", maxf(4.0, radius * 0.76)))
+	var body := limb_polygon(center, node, forward, radius, visual_length_px, true)
+	canvas.draw_colored_polygon(_drawable_polygon(body), color.darkened(0.18))
 	_draw_outline(canvas, body, color.lerp(Color.WHITE, 0.28), 1.6)
 	_draw_material_marks(canvas, center, forward, length * 0.9, body_width * 0.86, _node_material_style(node), 0.92)
+	_draw_limb_family_details(canvas, center, forward, color, radius, length, body_width, node)
 	for raw_offset in [-0.5, 0.5]:
 		var p := center + forward * length * float(raw_offset)
 		var socket_r := maxf(3.2, body_width * 0.42)
 		canvas.draw_circle(p, socket_r, Color(0.05, 0.08, 0.1, 0.88))
 		canvas.draw_arc(p, socket_r * 1.18, 0.0, TAU, 24, color.lerp(Color.WHITE, 0.44), 1.5)
 		canvas.draw_circle(p, socket_r * 0.42, Color(0.28, 0.96, 1.0, 0.62))
+
+
+static func _draw_limb_family_details(canvas: CanvasItem, center: Vector2, forward: Vector2, color: Color, radius: float, length: float, body_width: float, node: Dictionary) -> void:
+	var right := Vector2(-forward.y, forward.x)
+	var bright := color.lerp(Color.WHITE, 0.44)
+	var dark := color.darkened(0.52)
+	var half_width := maxf(1.0, body_width * 0.5)
+	match PartArt.limb_visual_family(node):
+		"forearm_myomer":
+			for side in [-1.0, 1.0]:
+				_draw_local_polyline(canvas, center, forward, right, [
+					Vector2(-length * 0.36, half_width * 0.38 * side),
+					Vector2(-length * 0.04, half_width * 0.20 * side),
+					Vector2(length * 0.28, half_width * 0.46 * side),
+				], bright, maxf(1.0, radius * 0.045), false)
+			canvas.draw_line(center + forward * length * 0.34 - right * half_width * 0.48, center + forward * length * 0.34 + right * half_width * 0.48, dark.lerp(Color.WHITE, 0.22), maxf(1.0, radius * 0.05))
+		"thigh_myomer":
+			for t in [-0.26, 0.0, 0.26]:
+				canvas.draw_line(center + forward * length * float(t) - right * half_width * 0.72, center + forward * length * float(t) + right * half_width * 0.72, Color(bright.r, bright.g, bright.b, 0.58), maxf(1.0, radius * 0.04))
+			_draw_local_polyline(canvas, center, forward, right, [
+				Vector2(-length * 0.38, 0.0),
+				Vector2(-length * 0.10, half_width * 0.48),
+				Vector2(length * 0.22, half_width * 0.36),
+				Vector2(length * 0.40, 0.0),
+			], dark.lerp(Color.WHITE, 0.18), maxf(1.0, radius * 0.045), false)
+		"flex_tendon", "tentacle":
+			for strand in [-0.44, -0.16, 0.16, 0.44]:
+				var points := []
+				for i in range(6):
+					var t := float(i) / 5.0
+					points.append(Vector2(lerpf(-length * 0.42, length * 0.42, t), half_width * float(strand) + sin(t * TAU * 1.5 + strand) * half_width * 0.14))
+				_draw_local_polyline(canvas, center, forward, right, points, bright, maxf(1.0, radius * 0.035), false)
+		"chain_muscle":
+			var segments := maxi(4, int(node.get("chain_segments", 7)))
+			for i in range(segments):
+				var t := (float(i) + 0.5) / float(segments)
+				var p := center + forward * lerpf(-length * 0.40, length * 0.40, t)
+				canvas.draw_arc(p, half_width * 0.42, 0.0, TAU, 18, bright if i % 2 == 0 else dark.lerp(Color.WHITE, 0.24), maxf(1.0, radius * 0.035))
+				canvas.draw_line(p - right * half_width * 0.34, p + right * half_width * 0.34, Color(dark.r, dark.g, dark.b, 0.42), maxf(1.0, radius * 0.025))
+		"steel_sinew_beam":
+			canvas.draw_line(center - forward * length * 0.40, center + forward * length * 0.40, bright, maxf(1.0, radius * 0.055))
+			for x in [-0.32, -0.16, 0.0, 0.16, 0.32]:
+				var p := center + forward * length * float(x)
+				canvas.draw_circle(p - right * half_width * 0.58, maxf(1.4, radius * 0.035), bright)
+				canvas.draw_circle(p + right * half_width * 0.58, maxf(1.4, radius * 0.035), bright)
+		"ceramic_linear_strut":
+			for x in [-0.26, 0.0, 0.26]:
+				canvas.draw_line(center + forward * length * float(x) - right * half_width * 0.50, center + forward * length * float(x) + right * half_width * 0.50, dark.lerp(Color.WHITE, 0.24), maxf(1.0, radius * 0.04))
+			var rail_a := center - forward * length * 0.36
+			var rail_b := center + forward * length * 0.38
+			canvas.draw_line(rail_a - right * half_width * 0.20, rail_b - right * half_width * 0.20, bright, maxf(1.0, radius * 0.035))
+			canvas.draw_line(rail_a + right * half_width * 0.20, rail_b + right * half_width * 0.20, bright, maxf(1.0, radius * 0.035))
+		"colossus_girder_muscle":
+			_draw_local_polyline(canvas, center, forward, right, [
+				Vector2(-length * 0.40, -half_width * 0.58),
+				Vector2(-length * 0.20, half_width * 0.58),
+				Vector2(0.0, -half_width * 0.58),
+				Vector2(length * 0.20, half_width * 0.58),
+				Vector2(length * 0.40, -half_width * 0.58),
+			], bright, maxf(1.0, radius * 0.045), false)
+			_draw_local_polyline(canvas, center, forward, right, [
+				Vector2(-length * 0.42, half_width * 0.54),
+				Vector2(length * 0.42, half_width * 0.54),
+			], dark.lerp(Color.WHITE, 0.28), maxf(1.0, radius * 0.045), false)
+		"barrier_strut":
+			canvas.draw_line(center - forward * length * 0.42 - right * half_width * 0.46, center + forward * length * 0.42 - right * half_width * 0.46, bright, maxf(1.0, radius * 0.04))
+			canvas.draw_line(center - forward * length * 0.42 + right * half_width * 0.46, center + forward * length * 0.42 + right * half_width * 0.46, bright, maxf(1.0, radius * 0.04))
+			for x in [-0.28, 0.0, 0.28]:
+				canvas.draw_line(center + forward * length * float(x) - right * half_width * 0.58, center + forward * length * float(x) + right * half_width * 0.58, dark.lerp(Color.WHITE, 0.24), maxf(1.0, radius * 0.04))
+		"fur_sleeve":
+			for i in range(12):
+				var t := -0.44 + float(i) / 11.0 * 0.88
+				var p := center + forward * length * t
+				canvas.draw_line(p - right * half_width * 0.76, p - right * half_width * 1.02 + forward * half_width * 0.12, bright, maxf(1.0, radius * 0.026))
+				canvas.draw_line(p + right * half_width * 0.76, p + right * half_width * 1.02 + forward * half_width * 0.12, bright, maxf(1.0, radius * 0.026))
+		_:
+			return
 
 
 static func _draw_terminal(canvas: CanvasItem, center: Vector2, axis: Vector2, color: Color, radius: float, pulse: float, visual_length_px: float, node: Dictionary) -> void:
@@ -1430,6 +1727,25 @@ static func _draw_material_marks(canvas: CanvasItem, center: Vector2, axis: Vect
 				for side in [-1.0, 1.0]:
 					var base: Vector2 = center + forward * length * t + right * width * 0.5 * float(side)
 					canvas.draw_line(base, base + right * side * width * 0.22 + forward * width * 0.05 * sin(float(i) * 1.7), Color(0.92, 0.74, 0.46, 0.52 * alpha), maxf(1.0, width * 0.045))
+		"flex":
+			for i in range(5):
+				var y := -0.32 + float(i) * 0.16
+				var points := []
+				for step in range(5):
+					var t := float(step) / 4.0
+					points.append(Vector2(lerpf(-length * 0.42, length * 0.42, t), width * y + sin(t * TAU * 1.2 + float(i)) * width * 0.055))
+				_draw_local_polyline(canvas, center, forward, right, points, Color(0.95, 1.0, 1.0, 0.36 * alpha), maxf(1.0, width * 0.035), false)
+		"chain":
+			for i in range(6):
+				var t := (float(i) + 0.5) / 6.0
+				var p := center + forward * lerpf(-length * 0.40, length * 0.40, t)
+				canvas.draw_arc(p, width * 0.20, 0.0, TAU, 16, Color(0.98, 1.0, 1.0, 0.44 * alpha), maxf(1.0, width * 0.035))
+		"hardlight":
+			canvas.draw_line(center - forward * length * 0.46 - right * width * 0.46, center + forward * length * 0.46 - right * width * 0.46, Color(0.42, 1.0, 1.0, 0.62 * alpha), maxf(1.0, width * 0.055))
+			canvas.draw_line(center - forward * length * 0.46 + right * width * 0.46, center + forward * length * 0.46 + right * width * 0.46, Color(0.42, 1.0, 1.0, 0.62 * alpha), maxf(1.0, width * 0.055))
+			for i in range(4):
+				var x := -0.30 + float(i) * 0.20
+				canvas.draw_line(center + forward * length * x - right * width * 0.34, center + forward * length * x + right * width * 0.34, Color(0.72, 1.0, 1.0, 0.34 * alpha), maxf(1.0, width * 0.035))
 
 
 static func _plugin_preview_color(slot_key: String, part: Dictionary, fallback: Color) -> Color:

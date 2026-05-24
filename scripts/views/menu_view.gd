@@ -1,6 +1,16 @@
 extends RefCounted
 class_name MenuView
 
+signal main_menu_hovered(index: int)
+signal main_menu_pressed(index: int)
+signal main_menu_gui_input(event: InputEvent, index: int)
+signal ai_seat_pressed(seat: int)
+signal page_option_pressed(action_key: String)
+signal battle_runtime_pressed(action_key: String)
+
+const MenuControllerModel = preload("res://scripts/controllers/menu_controller.gd")
+const UILayoutTokens = preload("res://scripts/ui_layout_tokens.gd")
+
 var main_ref: Object
 var menu_layer: CanvasLayer
 var menu_backdrop: Control
@@ -34,40 +44,38 @@ func build_main_menu(parent: Node, background_texture: Texture2D, backdrop_scrip
 	menu_backdrop.set_mode("menu")
 	menu_backdrop.set_background_texture(background_texture)
 	root.add_child(menu_backdrop)
-	main_ref._add_ui_rect(root, "MenuHeaderBand", Vector2(42.0, 34.0), Vector2(1136.0, 130.0), Color(0.012, 0.022, 0.032, 0.72))
-	main_ref._make_label(root, "GameTitle", "", Vector2(64.0, 40.0), Vector2(690.0, 56.0), 40, Color.WHITE, HORIZONTAL_ALIGNMENT_LEFT)
-	main_ref._make_label(root, "Subtitle", "", Vector2(68.0, 112.0), Vector2(520.0, 28.0), 18, Color(0.26, 0.88, 1.0, 1.0), HORIZONTAL_ALIGNMENT_LEFT)
-	main_ref._add_ui_rect(root, "Accent", Vector2(68.0, 148.0), Vector2(346.0, 4.0), Color(1.0, 0.88, 0.22, 1.0))
-	main_ref._make_label(root, "MenuCallsign", "", Vector2(656.0, 112.0), Vector2(480.0, 28.0), 15, Color(1.0, 0.86, 0.38, 1.0), HORIZONTAL_ALIGNMENT_RIGHT)
-	main_ref._add_ui_rect(root, "MenuListPanel", Vector2(54.0, 184.0), Vector2(438.0, 430.0), Color(0.01, 0.018, 0.026, 0.72))
-	main_ref._add_ui_rect(root, "MenuInfoPanel", Vector2(536.0, 184.0), Vector2(620.0, 226.0), Color(0.014, 0.024, 0.034, 0.82))
-	menu_description_label = main_ref._make_label(root, "MenuDescription", "", Vector2(570.0, 212.0), Vector2(552.0, 138.0), 23, Color(0.9, 0.94, 0.98, 1.0), HORIZONTAL_ALIGNMENT_LEFT)
+	_add_rect(root, "MenuHeaderBand", UILayoutTokens.main_menu_header_rect(), Color(0.012, 0.022, 0.032, 0.72))
+	_add_label(root, "GameTitle", "", UILayoutTokens.main_menu_title_rect(), 40, Color.WHITE, HORIZONTAL_ALIGNMENT_LEFT)
+	_add_label(root, "Subtitle", "", UILayoutTokens.main_menu_subtitle_rect(), 18, Color(0.26, 0.88, 1.0, 1.0), HORIZONTAL_ALIGNMENT_LEFT)
+	_add_rect(root, "Accent", UILayoutTokens.main_menu_accent_rect(), Color(1.0, 0.88, 0.22, 1.0))
+	_add_label(root, "MenuCallsign", "", UILayoutTokens.main_menu_callsign_rect(), 15, Color(1.0, 0.86, 0.38, 1.0), HORIZONTAL_ALIGNMENT_RIGHT)
+	_add_rect(root, "MenuListPanel", UILayoutTokens.main_menu_list_panel_rect(), Color(0.01, 0.018, 0.026, 0.72))
+	_add_rect(root, "MenuInfoPanel", UILayoutTokens.main_menu_info_panel_rect(), Color(0.014, 0.024, 0.034, 0.82))
+	menu_description_label = _add_label(root, "MenuDescription", "", UILayoutTokens.main_menu_description_rect(), 23, Color(0.9, 0.94, 0.98, 1.0), HORIZONTAL_ALIGNMENT_LEFT)
 	menu_description_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	menu_status_label = main_ref._make_label(root, "MenuStatus", "", Vector2(570.0, 354.0), Vector2(552.0, 42.0), 14, Color(0.32, 0.94, 1.0, 1.0), HORIZONTAL_ALIGNMENT_LEFT)
+	menu_status_label = _add_label(root, "MenuStatus", "", UILayoutTokens.main_menu_status_rect(), 14, Color(0.32, 0.94, 1.0, 1.0), HORIZONTAL_ALIGNMENT_LEFT)
 	menu_status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	main_ref._make_label(root, "MenuTelemetry", "", Vector2(540.0, 438.0), Vector2(604.0, 26.0), 16, Color(1.0, 0.88, 0.32, 1.0), HORIZONTAL_ALIGNMENT_CENTER)
-	main_ref._make_label(root, "MenuHelp", "", Vector2(64.0, 656.0), Vector2(980.0, 28.0), 17, Color(0.78, 0.84, 0.9, 1.0), HORIZONTAL_ALIGNMENT_LEFT)
-	for i in range(MenuController.MAIN_MENU_SPECS.size()):
+	_add_label(root, "MenuTelemetry", "", UILayoutTokens.main_menu_telemetry_rect(), 16, Color(1.0, 0.88, 0.32, 1.0), HORIZONTAL_ALIGNMENT_CENTER)
+	_add_label(root, "MenuHelp", "", UILayoutTokens.main_menu_help_rect(), 17, Color(0.78, 0.84, 0.9, 1.0), HORIZONTAL_ALIGNMENT_LEFT)
+	for i in range(MenuControllerModel.MAIN_MENU_SPECS.size()):
 		var button := Button.new()
-		button.position = Vector2(82.0, 204.0 + float(i) * 56.0)
-		button.size = Vector2(382.0, 44.0)
+		_apply_rect(button, UILayoutTokens.main_menu_button_rect(i))
 		button.focus_mode = Control.FOCUS_NONE
 		button.mouse_filter = Control.MOUSE_FILTER_STOP
-		button.mouse_entered.connect(main_ref._hover_menu_item.bind(i))
-		button.pressed.connect(main_ref._activate_menu_item.bind(i))
-		button.gui_input.connect(main_ref._handle_menu_button_gui_input.bind(i))
+		button.mouse_entered.connect(_emit_main_menu_hovered.bind(i))
+		button.pressed.connect(_emit_main_menu_pressed.bind(i))
+		button.gui_input.connect(_emit_main_menu_gui_input.bind(i))
 		root.add_child(button)
 		menu_buttons.append(button)
-	menu_ai_seat_panel = main_ref._add_ui_rect(root, "MenuAISeatPanel", Vector2(536.0, 466.0), Vector2(620.0, 114.0), Color(0.012, 0.028, 0.038, 0.86))
-	menu_ai_seat_label = main_ref._make_label(root, "MenuAISeatLabel", "", Vector2(566.0, 476.0), Vector2(560.0, 24.0), 16, Color(1.0, 0.88, 0.32, 1.0), HORIZONTAL_ALIGNMENT_LEFT)
-	for i in range(MenuController.AI_SEAT_SPECS.size()):
-		var spec: Dictionary = MenuController.AI_SEAT_SPECS[i]
+	menu_ai_seat_panel = _add_rect(root, "MenuAISeatPanel", UILayoutTokens.main_menu_ai_seat_panel_rect(), Color(0.012, 0.028, 0.038, 0.86))
+	menu_ai_seat_label = _add_label(root, "MenuAISeatLabel", "", UILayoutTokens.main_menu_ai_seat_label_rect(), 16, Color(1.0, 0.88, 0.32, 1.0), HORIZONTAL_ALIGNMENT_LEFT)
+	for i in range(MenuControllerModel.AI_SEAT_SPECS.size()):
+		var spec: Dictionary = MenuControllerModel.AI_SEAT_SPECS[i]
 		var seat_button := Button.new()
-		seat_button.position = Vector2(566.0 + float(i) * 190.0, 512.0)
-		seat_button.size = Vector2(170.0, 48.0)
+		_apply_rect(seat_button, UILayoutTokens.main_menu_ai_seat_button_rect(i))
 		seat_button.focus_mode = Control.FOCUS_NONE
 		seat_button.mouse_filter = Control.MOUSE_FILTER_STOP
-		seat_button.pressed.connect(main_ref._start_ai_battle_from_menu.bind(int(spec.get("seat", i + 1))))
+		seat_button.pressed.connect(_emit_ai_seat_pressed.bind(int(spec.get("seat", i + 1))))
 		root.add_child(seat_button)
 		menu_ai_seat_buttons.append(seat_button)
 	return menu_layer
@@ -124,22 +132,20 @@ func build_page_options(parent: Node) -> CanvasLayer:
 	page_options_layer.add_child(root)
 	page_options_panel = Control.new()
 	page_options_panel.name = "PageOptionsPanel"
-	page_options_panel.position = Vector2(952.0, 72.0)
-	page_options_panel.size = Vector2(246.0, 228.0)
+	_apply_rect(page_options_panel, UILayoutTokens.page_options_rect())
 	page_options_panel.mouse_filter = Control.MOUSE_FILTER_STOP
 	root.add_child(page_options_panel)
-	main_ref._add_ui_rect(page_options_panel, "PageOptionsBack", Vector2.ZERO, page_options_panel.size, Color(0.01, 0.018, 0.026, 0.94))
-	main_ref._add_ui_rect(page_options_panel, "PageOptionsAccent", Vector2(16.0, 42.0), Vector2(214.0, 2.0), Color(0.24, 0.9, 1.0, 0.85))
-	main_ref._make_label(page_options_panel, "PageOptionsTitle", "", Vector2(16.0, 12.0), Vector2(214.0, 26.0), 18, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER)
-	for i in range(MenuController.PAGE_OPTION_SPECS.size()):
-		var spec: Dictionary = MenuController.PAGE_OPTION_SPECS[i]
+	_add_rect(page_options_panel, "PageOptionsBack", UILayoutTokens.local_rect(page_options_panel.size), Color(0.01, 0.018, 0.026, 0.94))
+	_add_rect(page_options_panel, "PageOptionsAccent", UILayoutTokens.page_options_accent_rect(), Color(0.24, 0.9, 1.0, 0.85))
+	_add_label(page_options_panel, "PageOptionsTitle", "", UILayoutTokens.page_options_title_rect(), 18, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER)
+	for i in range(MenuControllerModel.PAGE_OPTION_SPECS.size()):
+		var spec: Dictionary = MenuControllerModel.PAGE_OPTION_SPECS[i]
 		var key := String(spec.get("key", ""))
 		var button := Button.new()
 		button.name = "PageOptions%s" % key
-		button.position = Vector2(18.0, 56.0 + float(i) * 32.0)
-		button.size = Vector2(210.0, 28.0)
+		_apply_rect(button, UILayoutTokens.page_options_button_rect(i))
 		button.focus_mode = Control.FOCUS_NONE
-		button.pressed.connect(main_ref._page_options_action.bind(key))
+		button.pressed.connect(_emit_page_option_pressed.bind(key))
 		page_options_panel.add_child(button)
 		page_options_buttons[key] = button
 	return page_options_layer
@@ -177,21 +183,19 @@ func update_page_options(model: Dictionary) -> void:
 func build_battle_runtime_menu(root: Control) -> Control:
 	battle_runtime_menu_panel = Control.new()
 	battle_runtime_menu_panel.name = "BattleRuntimeOptions"
-	battle_runtime_menu_panel.position = Vector2(856.0, 252.0)
-	battle_runtime_menu_panel.size = Vector2(330.0, 340.0)
+	_apply_rect(battle_runtime_menu_panel, UILayoutTokens.battle_runtime_options_rect())
 	battle_runtime_menu_panel.visible = false
 	root.add_child(battle_runtime_menu_panel)
-	main_ref._add_ui_rect(battle_runtime_menu_panel, "BattleRuntimeOptionsBack", Vector2.ZERO, battle_runtime_menu_panel.size, Color(0.01, 0.018, 0.026, 0.9))
-	main_ref._make_label(battle_runtime_menu_panel, "BattleRuntimeOptionsTitle", "", Vector2(18.0, 12.0), Vector2(294.0, 28.0), 20, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER)
-	for i in range(MenuController.BATTLE_RUNTIME_OPTION_SPECS.size()):
-		var spec: Dictionary = MenuController.BATTLE_RUNTIME_OPTION_SPECS[i]
+	_add_rect(battle_runtime_menu_panel, "BattleRuntimeOptionsBack", UILayoutTokens.local_rect(battle_runtime_menu_panel.size), Color(0.01, 0.018, 0.026, 0.9))
+	_add_label(battle_runtime_menu_panel, "BattleRuntimeOptionsTitle", "", UILayoutTokens.battle_runtime_title_rect(), 20, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER)
+	for i in range(MenuControllerModel.BATTLE_RUNTIME_OPTION_SPECS.size()):
+		var spec: Dictionary = MenuControllerModel.BATTLE_RUNTIME_OPTION_SPECS[i]
 		var key := String(spec.get("key", ""))
 		var button := Button.new()
 		button.name = "BattleRuntimeOption%s" % key
-		button.position = Vector2(24.0, 52.0 + float(i) * 34.0)
-		button.size = Vector2(282.0, 28.0)
+		_apply_rect(button, UILayoutTokens.battle_runtime_button_rect(i))
 		button.focus_mode = Control.FOCUS_NONE
-		button.pressed.connect(main_ref._battle_runtime_menu_action.bind(key))
+		button.pressed.connect(_emit_battle_runtime_pressed.bind(key))
 		battle_runtime_menu_panel.add_child(button)
 		battle_runtime_menu_buttons[key] = button
 	return battle_runtime_menu_panel
@@ -224,3 +228,66 @@ func update_battle_runtime(model: Dictionary) -> void:
 			continue
 		button.text = String(item.get("label", ""))
 		button.disabled = bool(item.get("disabled", false))
+
+
+func _add_rect(parent: Node, node_name: String, rect: Rect2, color: Color) -> ColorRect:
+	var color_rect := ColorRect.new()
+	color_rect.name = node_name
+	_apply_rect(color_rect, rect)
+	color_rect.color = color
+	color_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	parent.add_child(color_rect)
+	return color_rect
+
+
+func _add_label(parent: Node, node_name: String, text: String, rect: Rect2, font_size: int, color: Color, align: HorizontalAlignment) -> Label:
+	var label := Label.new()
+	label.name = node_name
+	label.text = text
+	_apply_rect(label, rect)
+	label.horizontal_alignment = align
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	label.add_theme_font_size_override("font_size", font_size)
+	label.add_theme_color_override("font_color", color)
+	label.add_theme_color_override("font_outline_color", Color(0.0, 0.0, 0.0, 0.76))
+	label.add_theme_constant_override("outline_size", 4)
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	parent.add_child(label)
+	return label
+
+
+func _apply_rect(control: Control, rect: Rect2) -> void:
+	var screen_rect := _screen_rect(rect)
+	control.position = screen_rect.position
+	control.size = screen_rect.size
+
+
+func _screen_rect(rect: Rect2) -> Rect2:
+	var viewport_size := UILayoutTokens.DESIGN_SIZE
+	if main_ref != null and main_ref.has_method("_ui_viewport_size"):
+		viewport_size = main_ref._ui_viewport_size()
+	return UILayoutTokens.to_screen_rect(rect, viewport_size)
+
+
+func _emit_main_menu_hovered(index: int) -> void:
+	main_menu_hovered.emit(index)
+
+
+func _emit_main_menu_pressed(index: int) -> void:
+	main_menu_pressed.emit(index)
+
+
+func _emit_main_menu_gui_input(event: InputEvent, index: int) -> void:
+	main_menu_gui_input.emit(event, index)
+
+
+func _emit_ai_seat_pressed(seat: int) -> void:
+	ai_seat_pressed.emit(seat)
+
+
+func _emit_page_option_pressed(action_key: String) -> void:
+	page_option_pressed.emit(action_key)
+
+
+func _emit_battle_runtime_pressed(action_key: String) -> void:
+	battle_runtime_pressed.emit(action_key)

@@ -13,6 +13,9 @@ const GpuGeometryService = preload("res://scripts/services/gpu_geometry_service.
 const PartCatalogService = preload("res://scripts/services/part_catalog_service.gd")
 const UnitStatsService = preload("res://scripts/services/unit_stats_service.gd")
 const PowerAllocationService = preload("res://scripts/services/power_allocation_service.gd")
+const ActionProfileRegistry = preload("res://scripts/services/action_profile_registry.gd")
+const DriveSystemService = preload("res://scripts/services/drive_system_service.gd")
+const UnitBlueprintValidator = preload("res://scripts/services/unit_blueprint_validator.gd")
 const NavigationService = preload("res://scripts/services/navigation_service.gd")
 const TeamEditController = preload("res://scripts/controllers/team_edit_controller.gd")
 const BattleController = preload("res://scripts/controllers/battle_controller.gd")
@@ -21,7 +24,9 @@ const SettingsController = preload("res://scripts/controllers/settings_controlle
 const ScoutController = preload("res://scripts/controllers/scout_controller.gd")
 const MenuController = preload("res://scripts/controllers/menu_controller.gd")
 const LoadingController = preload("res://scripts/controllers/loading_controller.gd")
+const LoadingTask = preload("res://scripts/services/loading_task.gd")
 const MenuView = preload("res://scripts/views/menu_view.gd")
+const UILayoutTokens = preload("res://scripts/ui_layout_tokens.gd")
 const MotionBudget = preload("res://scripts/motion_budget.gd")
 const MobiusWorld = preload("res://scripts/mobius_world.gd")
 const GameplayTransform = preload("res://scripts/gameplay_transform.gd")
@@ -8893,6 +8898,36 @@ const AMMO_TYPES = ["bullet", "laser", "chemical", "explosive", "web"]
 const AMMO_UNIT_MASS = {"bullet": 0.16, "laser": 0.11, "chemical": 0.24, "explosive": 0.42, "web": 0.09}
 const GUN_DEFAULT_FIRE_RATE = {"true_bullet": 0.72, "bullet_hell": 5.2, "laser": 0.82, "chemical": 2.1, "explosive": 0.58, "missile": 0.52}
 const GUN_DEFAULT_CARRIED_AMMO = {"true_bullet": 6, "bullet_hell": 24, "laser": 7, "chemical": 10, "explosive": 4, "missile": 3}
+const LIVE_BACKFILLED_MODULE_NAMES = {
+	"COMBO ROUTER: BALANCE STRING": {"module_action_profile": "swing_180", "module_target_kind": "ball_joint", "required_joint_degrees": 120, "swing_arc_degrees": 120.0, "armor_heat": 30.0, "active_heat": 36.0},
+	"CLAMP ROUTER: VISE CLOSE": {"module_action_profile": "inward_pincer_clamp", "module_target_kind": "dual_ball_joint", "required_joint_degrees": 120, "swing_arc_degrees": 120.0, "requires_joint_pair": true, "paired_attack_key": true, "paired_joint_count": 2, "dual_joint_action": true, "paired_motion": "inward_clamp", "pincer_close_until_contact": true, "clamp_close_angle_degrees": 150.0, "armor_heat": 38.0, "active_heat": 44.0},
+	"ROUTE ROUTER: PICKUP DASH": {"module_action_profile": "swing_180", "module_target_kind": "ball_joint", "required_joint_degrees": 180, "swing_arc_degrees": 180.0, "armor_heat": 28.0, "active_heat": 34.0},
+	"MONSTER ROUTER: CRUSH WINDUP": {"module_action_profile": "swing_180", "module_target_kind": "ball_joint", "required_joint_degrees": 90, "swing_arc_degrees": 180.0, "duration": 0.96, "startup_ratio": 0.46, "recovery_ratio": 0.54, "cooldown": 0.92, "armor_heat": 42.0, "active_heat": 52.0},
+	"DUEL ROUTER: FEINT THRUST": {"module_action_profile": "rapier_feint_thrust", "module_target_kind": "telescopic_joint", "required_extension_m": 1.0, "module_extension_m": 1.0, "startup_ratio": 0.24, "recovery_ratio": 0.76, "armor_heat": 30.0, "active_heat": 36.0},
+	"SALVO ROUTER: EXPLOSIVE ARC": {"module_action_profile": "grenade_arc_activate", "gun_activation": "grenade_arc_activate", "module_target_kind": "gun_terminal", "required_gun_kind": "grenade_launcher", "required_ammo_kind": "explosive", "hold_to_activate": true, "projectile": true, "projectile_behavior": "explosive", "projectile_style": "explosive", "travel_path": "arc_u", "module_range": 2.65, "module_lane_range": 0.09},
+}
+const LIVE_BACKFILLED_PROJECTILE_NAMES = {
+	"KINETIC BULLET GUN": {"gun_kind": "sniper", "ammo_kind": "bullet", "profile": "gun_activate", "projectile_behavior": "true_bullet", "projectile_style": "true_bullet", "travel_path": "instant_line"},
+	"AUTOCANNON TURRET": {"gun_kind": "rifle", "ammo_kind": "bullet", "profile": "rifle_burst_activate", "projectile_behavior": "bullet_hell", "projectile_style": "bullet_hell", "travel_path": "straight"},
+	"HEAVY RAIL CANNON TURRET": {"gun_kind": "sniper", "ammo_kind": "bullet", "profile": "gun_activate", "projectile_behavior": "true_bullet", "projectile_style": "true_bullet", "travel_path": "instant_line"},
+	"LONGSIGHT PATTERN RIFLE": {"gun_kind": "rifle", "ammo_kind": "bullet", "profile": "rifle_burst_activate", "projectile_behavior": "bullet_hell", "projectile_style": "bullet_hell", "travel_path": "straight"},
+	"DUAL-RAIL HEAVY CANNON": {"gun_kind": "sniper", "ammo_kind": "bullet", "profile": "gun_activate", "projectile_behavior": "true_bullet", "projectile_style": "true_bullet", "travel_path": "instant_line"},
+	"CAUSTIC SPRAY GUN": {"gun_kind": "sprayer", "ammo_kind": "chemical", "profile": "gun_activate", "projectile_behavior": "chemical_line", "projectile_style": "spray", "travel_path": "straight"},
+	"SIPHON CHEM NOZZLE": {"gun_kind": "sprayer", "ammo_kind": "chemical", "profile": "gun_activate", "projectile_behavior": "chemical_line", "projectile_style": "spray", "travel_path": "straight"},
+	"CHEM SPLASH NOZZLE": {"gun_kind": "sprayer", "ammo_kind": "chemical", "profile": "gun_activate", "projectile_behavior": "chemical_line", "projectile_style": "spray", "travel_path": "straight"},
+	"CHEM SIEGE MORTAR": {"gun_kind": "sprayer", "ammo_kind": "chemical", "profile": "gun_activate", "projectile_behavior": "chemical_line", "projectile_style": "spray", "travel_path": "straight"},
+	"LASER EMITTER GUN": {"gun_kind": "laser_gun", "ammo_kind": "laser", "profile": "laser_beam_activate", "projectile_behavior": "laser", "projectile_style": "beam", "travel_path": "instant_line"},
+	"LASER LANCE TURRET": {"gun_kind": "laser_gun", "ammo_kind": "laser", "profile": "laser_beam_activate", "projectile_behavior": "laser", "projectile_style": "beam", "travel_path": "instant_line"},
+	"UMBRA HEAT NEEDLER": {"gun_kind": "laser_gun", "ammo_kind": "laser", "profile": "laser_beam_activate", "projectile_behavior": "laser", "projectile_style": "beam", "travel_path": "instant_line"},
+	"ANTI-TANK MICRO MISSILE": {"gun_kind": "grenade_launcher", "ammo_kind": "explosive", "profile": "grenade_arc_activate", "projectile_behavior": "explosive", "projectile_style": "explosive", "travel_path": "arc_u"},
+	"BUNKER POPPER MISSILE": {"gun_kind": "grenade_launcher", "ammo_kind": "explosive", "profile": "grenade_arc_activate", "projectile_behavior": "explosive", "projectile_style": "explosive", "travel_path": "arc_u"},
+	"REDLINE BREACH SHELL CANNON": {"gun_kind": "grenade_launcher", "ammo_kind": "explosive", "profile": "grenade_arc_activate", "projectile_behavior": "explosive", "projectile_style": "explosive", "travel_path": "arc_u"},
+	"REDLINE HOPPER GRENADE LAUNCHER": {"gun_kind": "grenade_launcher", "ammo_kind": "explosive", "profile": "grenade_arc_activate", "projectile_behavior": "explosive", "projectile_style": "explosive", "travel_path": "arc_u"},
+	"WEB SILK PISTOL": {"gun_kind": "web_gun", "ammo_kind": "web", "profile": "web_tether_activate", "projectile_behavior": "web_tether", "projectile_style": "web", "travel_path": "tether"},
+	"ANCHOR SILK CANNON": {"gun_kind": "web_gun", "ammo_kind": "web", "profile": "web_tether_activate", "projectile_behavior": "web_tether", "projectile_style": "web", "travel_path": "tether"},
+	"GRAVITY CABLE LAUNCHER": {"gun_kind": "web_gun", "ammo_kind": "web", "profile": "web_tether_activate", "projectile_behavior": "web_tether", "projectile_style": "web", "travel_path": "tether"},
+}
+const FROZEN_SPECIAL_PROJECTILE_MARKERS = ["SEEKER", "MIRV", "ROTARY", "BARRAGE", "STARBURST", "ECLIPSE", "LIGHT-SINK", "LIGHT SINK", "HOMING", "AREA"]
 const CHEMICAL_PROJECTILE_DEFAULT_SPEED_MULT = 0.72
 const CHEMICAL_PROJECTILE_MIN_TRAVEL = 0.32
 const CHEMICAL_PROJECTILE_MAX_TRAVEL = 1.25
@@ -10102,6 +10137,9 @@ var gpu_geometry_service: GpuGeometryService
 var part_catalog_service: PartCatalogService
 var unit_stats_service: UnitStatsService
 var power_allocation_service: PowerAllocationService
+var action_profile_registry: ActionProfileRegistry
+var drive_system_service: DriveSystemService
+var unit_blueprint_validator: UnitBlueprintValidator
 var navigation_service: NavigationService
 var team_edit_controller: TeamEditController
 var battle_controller: BattleController
@@ -10335,6 +10373,9 @@ func _initialize_hot_path_state_layer() -> void:
 	unit_stats_service = UnitStatsService.new()
 	unit_stats_service.bind(self, derived_state_cache)
 	power_allocation_service = PowerAllocationService.new()
+	action_profile_registry = ActionProfileRegistry.new()
+	drive_system_service = DriveSystemService.new()
+	unit_blueprint_validator = UnitBlueprintValidator.new()
 	navigation_service = NavigationService.new()
 	navigation_service.commit_transition(game_state, "ready")
 	team_edit_controller = TeamEditController.new()
@@ -11130,6 +11171,12 @@ const LEGACY_POWER_FIELD_KEYS := [
 ]
 
 
+func _legacy_power_field_keys() -> Array:
+	if unit_blueprint_validator != null:
+		return unit_blueprint_validator.legacy_drive_keys()
+	return LEGACY_POWER_FIELD_KEYS.duplicate()
+
+
 func _remove_user_json_file(path: String) -> bool:
 	if path == "" or not FileAccess.file_exists(path):
 		return false
@@ -11137,9 +11184,11 @@ func _remove_user_json_file(path: String) -> bool:
 
 
 func _saved_payload_has_legacy_power_fields(value: Variant) -> bool:
+	if unit_blueprint_validator != null:
+		return unit_blueprint_validator.has_legacy_drive_data(value)
 	if value is Dictionary:
 		var dict: Dictionary = value
-		for key in LEGACY_POWER_FIELD_KEYS:
+		for key in _legacy_power_field_keys():
 			if dict.has(key):
 				return true
 		for child_key in dict.keys():
@@ -11154,7 +11203,7 @@ func _saved_payload_has_legacy_power_fields(value: Variant) -> bool:
 
 func _without_legacy_power_fields(part: Dictionary) -> Dictionary:
 	var cleaned := part.duplicate(true)
-	for key in LEGACY_POWER_FIELD_KEYS:
+	for key in _legacy_power_field_keys():
 		cleaned.erase(key)
 	return cleaned
 
@@ -14359,8 +14408,8 @@ func _sortie_entry_is_battle_legal(player_id: int, entry: Dictionary, require_st
 	var topology_note := _topology_rule_note(unit_bp, role_key, stats)
 	if topology_note.begins_with("INVALID"):
 		return false
-	for note_key in ["joint_momentum_note", "slot_payload_note", "engine_momentum_note", "stiffness_note"]:
-		if role_key == "barrier" and note_key in ["slot_payload_note", "engine_momentum_note"]:
+	for note_key in ["joint_momentum_note", "slot_payload_note", "drive_note", "stiffness_note"]:
+		if role_key == "barrier" and note_key in ["slot_payload_note", "drive_note"]:
 			continue
 		if String(stats.get(note_key, "")).begins_with("INVALID"):
 			return false
@@ -14484,8 +14533,8 @@ func _team_battle_entry_summary(player_id: int) -> Dictionary:
 		if topology_note.begins_with("INVALID"):
 			invalid = true
 			notes.append("%s topology" % unit_label)
-		for note_key in ["joint_momentum_note", "slot_payload_note", "engine_momentum_note", "stiffness_note"]:
-			if role_key == "barrier" and note_key in ["slot_payload_note", "engine_momentum_note"]:
+		for note_key in ["joint_momentum_note", "slot_payload_note", "drive_note", "stiffness_note"]:
+			if role_key == "barrier" and note_key in ["slot_payload_note", "drive_note"]:
 				continue
 			if String(stats.get(note_key, "")).begins_with("INVALID"):
 				invalid = true
@@ -14905,6 +14954,8 @@ func _navigation_current_page() -> String:
 
 
 func _navigation_return_target_for(target_state: String, explicit_return_target: String = "") -> String:
+	if navigation_service != null:
+		return navigation_service.return_target_for(target_state, explicit_return_target)
 	if explicit_return_target != "":
 		return explicit_return_target
 	var current := _navigation_current_page()
@@ -14948,16 +14999,17 @@ func _show_battle_layer_without_reset(reason: String = "return_battle") -> void:
 
 
 func _navigate_to_page_target(target_state: String, reason: String = "navigation_return") -> void:
-	match target_state:
-		STATE_EDITOR:
+	var action := navigation_service.resolve_target_navigation(target_state, reason) if navigation_service != null else {"action": "navigate_menu", "reason": reason}
+	match String(action.get("action", "navigate_menu")):
+		"navigate_editor_preserve":
 			_show_editor_preserve_canvas()
-		STATE_SAVED_UNITS:
+		"navigate_saved_units":
 			_show_saved_units_library("", _navigation_return_target_for(STATE_SAVED_UNITS), false)
-		STATE_SETTINGS:
+		"navigate_settings":
 			_show_settings()
-		STATE_SCOUT:
+		"navigate_scout":
 			_show_scout(pending_battle_mode)
-		STATE_BATTLE:
+		"navigate_battle_preserve":
 			_show_battle_layer_without_reset(reason)
 		_:
 			_show_menu()
@@ -15140,7 +15192,7 @@ func _show_training_config(clear_imports: bool = false) -> void:
 		training_import_blueprint = {}
 		training_import_role_key = ""
 		training_import_units = []
-	if not _prepare_training_battle_loadouts():
+	if not _prepare_training_battle_loadouts(false):
 		var note := training_import_error_note if training_import_error_note != "" else "INVALID: training configuration failed."
 		if editor_summary_label != null and game_state == STATE_EDITOR:
 			editor_summary_label.text = "训练配置失败：%s" % _localized_system_text(note) if _ui_is_zh() else "Training config failed: %s" % note
@@ -15317,7 +15369,7 @@ func _game_subtitle() -> String:
 
 
 func _menu_item(index: int) -> String:
-	var items := menu_controller.main_menu_model(ui_language, ai_battle_seat, _match_format_short()).get("items", []) if menu_controller != null else []
+	var items: Array = menu_controller.main_menu_model(ui_language, ai_battle_seat, _match_format_short()).get("items", []) if menu_controller != null else []
 	if not items.is_empty():
 		var item: Dictionary = items[clampi(index, 0, items.size() - 1)]
 		return String(item.get("label", ""))
@@ -15326,7 +15378,7 @@ func _menu_item(index: int) -> String:
 
 
 func _menu_description(index: int) -> String:
-	var items := menu_controller.main_menu_model(ui_language, ai_battle_seat, _match_format_short()).get("items", []) if menu_controller != null else []
+	var items: Array = menu_controller.main_menu_model(ui_language, ai_battle_seat, _match_format_short()).get("items", []) if menu_controller != null else []
 	if not items.is_empty():
 		var item: Dictionary = items[clampi(index, 0, items.size() - 1)]
 		return String(item.get("description", ""))
@@ -15629,15 +15681,7 @@ func _compact_control_text(node: Node) -> void:
 
 func _apply_language_to_existing_ui() -> void:
 	if menu_layer != null:
-		_set_named_label(menu_layer, "GameTitle", _game_title())
-		_set_named_label(menu_layer, "Subtitle", _game_subtitle())
-		_set_named_label(menu_layer, "MenuCallsign", "拓扑机甲 / 资源召唤" if _ui_is_zh() else "topology mechs / resource summons")
-		_set_named_label(menu_layer, "MenuTelemetry", ("实验室就绪 / %s / 首发200" if _ui_is_zh() else "LAB READY / %s / START 200") % _match_format_short())
-		_set_named_label(menu_layer, "MenuHelp", "鼠标点击菜单；键盘/手柄仍可用。" if _ui_is_zh() else "Click menus; keyboard/controller optional.")
-		_set_named_label(menu_layer, "MenuAISeatLabel", "AI 对战席位" if _ui_is_zh() else "AI BATTLE SEAT")
-		var menu_seat_text := [["P1 左侧", "操控玩家 1"], ["P2 右侧", "操控玩家 2"], ["P3 观战", "自由镜头"]] if _ui_is_zh() else [["P1 LEFT", "Control player 1"], ["P2 RIGHT", "Control player 2"], ["P3 WATCH", "Spectator camera"]]
-		for i in range(mini(menu_ai_seat_buttons.size(), menu_seat_text.size())):
-			menu_ai_seat_buttons[i].text = "%s\n%s" % [String(menu_seat_text[i][0]), String(menu_seat_text[i][1])]
+		_update_menu_ui()
 	if format_select_layer != null:
 		_update_match_format_select_ui()
 	if editor_layer != null:
@@ -15674,13 +15718,13 @@ func _apply_language_to_existing_ui() -> void:
 	if hud_layer != null:
 		_set_named_label(hud_layer, "BattleMenuButton", "选项" if _ui_is_zh() else "OPTIONS")
 		_set_named_label(hud_layer, "BattleHelp", _battle_help_text())
+		_update_battle_runtime_menu_ui()
 		for player_id in [1, 2]:
 			for role_key in ROLE_ORDER:
 				_set_named_label(hud_layer, "P%d%sHPLabel" % [player_id, role_key], _role_name(role_key))
 			_set_named_label(hud_layer, "P%dheroHeatLabel" % player_id, "英雄热力" if _ui_is_zh() else "HERO HEAT")
 	if page_options_layer != null:
 		_update_page_options_ui()
-	_update_menu_ui()
 	_update_scout_ui()
 	_update_saved_units_ui()
 	_update_editor_ui()
@@ -15800,7 +15844,7 @@ func _start_editor_canvas_training_test() -> void:
 	_begin_battle(MODE_TRAINING, true)
 
 
-func _apply_training_import_loadout() -> bool:
+func _apply_training_import_loadout(require_dummy: bool = true) -> bool:
 	training_import_error_note = ""
 	var imports: Array = training_import_units.duplicate(true)
 	if imports.is_empty() and not training_import_blueprint.is_empty() and training_import_role_key != "":
@@ -15840,7 +15884,7 @@ func _apply_training_import_loadout() -> bool:
 	training_test_loadout_cache = next_loadout.duplicate(true)
 	training_test_initial_slot_cache = first_hero_slot if first_hero_slot >= 0 else 0
 	training_test_initial_role_cache = String(Dictionary(next_loadout[training_test_initial_slot_cache]).get("role", "hero"))
-	if not _configure_training_sides_for_seat():
+	if require_dummy and not _configure_training_sides_for_seat():
 		return false
 	training_import_units = []
 	return true
@@ -15866,8 +15910,8 @@ func _training_blueprint_illegal_note(player_id: int, role_key: String, unit_bp:
 	var topology_note := _topology_rule_note(candidate, role_key, stats)
 	if topology_note.begins_with("INVALID"):
 		return topology_note
-	for note_key in ["joint_momentum_note", "slot_payload_note", "engine_momentum_note", "stiffness_note"]:
-		if role_key == "barrier" and note_key in ["slot_payload_note", "engine_momentum_note"]:
+	for note_key in ["joint_momentum_note", "slot_payload_note", "drive_note", "stiffness_note"]:
+		if role_key == "barrier" and note_key in ["slot_payload_note", "drive_note"]:
 			continue
 		var note := String(stats.get(note_key, ""))
 		if note.begins_with("INVALID"):
@@ -15894,14 +15938,15 @@ func _first_training_hero_entry(player_id: int) -> Dictionary:
 	return {}
 
 
-func _prepare_training_battle_loadouts() -> bool:
+func _prepare_training_battle_loadouts(require_dummy: bool = true) -> bool:
 	var explicit_import_requested := (not training_import_units.is_empty()) or (not training_import_blueprint.is_empty() and training_import_role_key != "")
-	if _apply_training_import_loadout():
+	if _apply_training_import_loadout(require_dummy):
 		return true
 	if explicit_import_requested:
 		if training_import_error_note == "":
 			training_import_error_note = "INVALID: explicit training import could not be loaded."
 		return false
+	training_import_error_note = ""
 	var hero_entry := _first_training_hero_entry(1)
 	if hero_entry.is_empty():
 		var starter := _ai_starter_unit("P1 Training Starter")
@@ -15911,7 +15956,7 @@ func _prepare_training_battle_loadouts() -> bool:
 		training_test_loadout_cache = [{"role": "hero", "index": 0}]
 		training_test_initial_slot_cache = 0
 		training_test_initial_role_cache = "hero"
-		if not _configure_training_sides_for_seat():
+		if require_dummy and not _configure_training_sides_for_seat():
 			return false
 		hero_entry = {"role": "hero", "index": 0}
 	elif training_test_roster_cache.is_empty():
@@ -15919,8 +15964,10 @@ func _prepare_training_battle_loadouts() -> bool:
 		training_test_loadout_cache = [hero_entry]
 		training_test_initial_slot_cache = 0
 		training_test_initial_role_cache = "hero"
-		if not _configure_training_sides_for_seat():
+		if require_dummy and not _configure_training_sides_for_seat():
 			return false
+	elif require_dummy and not _configure_training_sides_for_seat():
+		return false
 	return true
 
 
@@ -16100,27 +16147,19 @@ func queue_loading_transition(target_state: String, reason: String, tasks: Array
 	loading_last_min_visible_sec = _loading_min_visible_for(target_state, reason)
 	loading_controller.begin(target_state, reason, loading_last_max_duration_sec, loading_last_min_visible_sec)
 	for raw_task in tasks:
-		if not (raw_task is Dictionary):
-			continue
-		var task: Dictionary = raw_task
-		register_loading_task(
-			String(task.get("id", "task_%d" % loading_controller.tasks.size())),
-			String(task.get("label", "Loading")),
-			float(task.get("weight", 1.0)),
-			task.get("callable", Callable()),
-			bool(task.get("essential", true)),
-			bool(task.get("first_interaction_critical", true)),
-			bool(task.get("idle_optional", false))
-		)
+		register_loading_task(raw_task)
 	_commit_page_state(STATE_LOADING, "loading:%s" % reason, {"target_state": target_state})
 	_set_visible_layer(loading_layer)
 	_update_loading_overlay()
 
 
-func register_loading_task(id: String, label: String, weight: float, task_callable: Callable, essential: bool = true, first_interaction_critical: bool = true, idle_optional: bool = false) -> void:
+func register_loading_task(raw_task: Variant, label: String = "", weight: float = 1.0, task_callable: Callable = Callable(), essential: bool = true, first_interaction_critical: bool = true, idle_optional: bool = false) -> void:
 	if loading_controller == null:
 		return
-	loading_controller.add_task(id, label, weight, task_callable, essential, first_interaction_critical, idle_optional)
+	if raw_task is LoadingTask or raw_task is Dictionary:
+		loading_controller.add_loading_task(raw_task)
+	else:
+		loading_controller.add_task(String(raw_task), label, weight, task_callable, essential, first_interaction_critical, idle_optional)
 
 
 func tick_loading_tasks(_delta: float, budget_usec: int = 6000) -> void:
@@ -16182,8 +16221,7 @@ func _loading_min_visible_for(target_state: String, _reason: String = "") -> flo
 
 func _queue_deferred_loading_idle_tasks(tasks: Array) -> void:
 	for raw_task in tasks:
-		if raw_task is Dictionary:
-			loading_idle_tasks.append(raw_task)
+		loading_idle_tasks.append(LoadingTask.from_legacy(raw_task))
 	if hot_path_profiler != null and not tasks.is_empty():
 		hot_path_profiler.record_value("loading.idle_deferred", loading_idle_tasks.size())
 
@@ -16196,8 +16234,8 @@ func _tick_post_loading_idle_tasks(_delta: float) -> void:
 	var started := Time.get_ticks_usec()
 	var processed := 0
 	while not loading_idle_tasks.is_empty():
-		var task: Dictionary = loading_idle_tasks[0]
-		var callable: Callable = task.get("callable", Callable())
+		var task: LoadingTask = LoadingTask.from_legacy(loading_idle_tasks[0])
+		var callable: Callable = task.callable
 		var done := true
 		if callable.is_valid():
 			var result = callable.call()
@@ -16298,40 +16336,32 @@ func _loading_target_label(target_state: String) -> String:
 	return ""
 
 
-func _loading_task(id: String, label_zh: String, label_en: String, weight: float, callable: Callable, essential: bool = true, first_interaction_critical: bool = true, idle_optional: bool = false) -> Dictionary:
-	return {
-		"id": id,
-		"label": label_zh if _ui_is_zh() else label_en,
-		"weight": weight,
-		"callable": callable,
-		"essential": essential,
-		"first_interaction_critical": first_interaction_critical,
-		"idle_optional": idle_optional,
-	}
+func _loading_task(id: String, label_zh: String, label_en: String, weight: float, callable: Callable, phase: String = LoadingTask.PHASE_PAGE, blocking: bool = true, idle_optional: bool = false):
+	return LoadingTask.create(id, label_zh if _ui_is_zh() else label_en, weight, callable, phase, blocking, idle_optional)
 
 
 func preload_menu_content() -> Array:
 	return [
-		_loading_task("startup_assets", "启动资源", "Startup assets", 1.0, Callable(self, "_preload_global_assets_task")),
-		_loading_task("startup_catalog_index", "零件索引", "Part catalog index", 1.1, Callable(self, "_preload_global_catalog_index_task")),
-		_loading_task("startup_preview_common", "常用缩略图", "Common previews", 1.0, Callable(self, "_preload_global_preview_task"), false, false, true),
-		_loading_task("startup_saved_summary", "保存摘要", "Saved summaries", 0.9, Callable(self, "_preload_saved_units_summary_task"), false, false, true),
-		_loading_task("menu_ui", "主菜单骨架", "Menu UI skeleton", 0.6, Callable(self, "_preload_menu_ui_task")),
+		_loading_task("startup_assets", "启动资源", "Startup assets", 1.0, Callable(self, "_preload_global_assets_task"), LoadingTask.PHASE_STARTUP),
+		_loading_task("startup_catalog_index", "零件索引", "Part catalog index", 1.1, Callable(self, "_preload_global_catalog_index_task"), LoadingTask.PHASE_STARTUP),
+		_loading_task("startup_preview_common", "常用缩略图", "Common previews", 1.0, Callable(self, "_preload_global_preview_task"), LoadingTask.PHASE_IDLE, false, true),
+		_loading_task("startup_saved_summary", "保存摘要", "Saved summaries", 0.9, Callable(self, "_preload_saved_units_summary_task"), LoadingTask.PHASE_IDLE, false, true),
+		_loading_task("menu_ui", "主菜单骨架", "Menu UI skeleton", 0.6, Callable(self, "_preload_menu_ui_task"), LoadingTask.PHASE_STARTUP),
 	]
 
 
 func preload_teamedit_content() -> Array:
 	return [
 		_loading_task("teamedit_catalog", "零件卡预热", "Part card preload", 1.2, Callable(self, "_preload_teamedit_catalog_task")),
-		_loading_task("teamedit_adjacent_cards", "相邻卡片", "Adjacent cards", 0.9, Callable(self, "_preload_teamedit_adjacent_cards_task"), false, true, false),
-		_loading_task("teamedit_drag_assets", "拖拽资源", "Drag resources", 0.7, Callable(self, "_preload_teamedit_drag_task"), false, true, false),
-		_loading_task("teamedit_drop_templates", "放置模板", "Drop templates", 0.8, Callable(self, "_preload_teamedit_drop_templates_task"), false, true, false),
+		_loading_task("teamedit_adjacent_cards", "相邻卡片", "Adjacent cards", 0.9, Callable(self, "_preload_teamedit_adjacent_cards_task"), LoadingTask.PHASE_FIRST_INTERACTION, false),
+		_loading_task("teamedit_drag_assets", "拖拽资源", "Drag resources", 0.7, Callable(self, "_preload_teamedit_drag_task"), LoadingTask.PHASE_FIRST_INTERACTION, false),
+		_loading_task("teamedit_drop_templates", "放置模板", "Drop templates", 0.8, Callable(self, "_preload_teamedit_drop_templates_task"), LoadingTask.PHASE_FIRST_INTERACTION, false),
 		_loading_task("teamedit_board", "画板模型", "Board base model", 1.0, Callable(self, "_preload_teamedit_board_task")),
-		_loading_task("teamedit_socket_index", "连接候选", "Socket candidates", 0.7, Callable(self, "_preload_teamedit_socket_task"), false, true, false),
+		_loading_task("teamedit_socket_index", "连接候选", "Socket candidates", 0.7, Callable(self, "_preload_teamedit_socket_task"), LoadingTask.PHASE_FIRST_INTERACTION, false),
 		_loading_task("teamedit_dashboard", "Dashboard 数值", "Dashboard stats", 0.8, Callable(self, "_preload_teamedit_dashboard_task")),
-		_loading_task("teamedit_torso_detail_templates", "躯干详情模板", "Torso detail templates", 0.6, Callable(self, "_preload_teamedit_torso_templates_task"), false, true, false),
-		_loading_task("teamedit_torso_detail", "躯干详情", "Torso detail", 0.8, Callable(self, "_preload_teamedit_torso_detail_task"), false, true, false),
-		_loading_task("teamedit_texture_queue", "贴图捕获", "Texture capture", 0.8, Callable(self, "_preload_teamedit_texture_queue_task"), false, false, true),
+		_loading_task("teamedit_torso_detail_templates", "躯干详情模板", "Torso detail templates", 0.6, Callable(self, "_preload_teamedit_torso_templates_task"), LoadingTask.PHASE_FIRST_INTERACTION, false),
+		_loading_task("teamedit_torso_detail", "躯干详情", "Torso detail", 0.8, Callable(self, "_preload_teamedit_torso_detail_task"), LoadingTask.PHASE_FIRST_INTERACTION, false),
+		_loading_task("teamedit_texture_queue", "贴图捕获", "Texture capture", 0.8, Callable(self, "_preload_teamedit_texture_queue_task"), LoadingTask.PHASE_IDLE, false, true),
 	]
 
 
@@ -16339,14 +16369,14 @@ func preload_saved_units_content() -> Array:
 	return [
 		_loading_task("saved_summary", "单位摘要", "Unit summaries", 1.4, Callable(self, "_preload_saved_units_summary_task")),
 		_loading_task("saved_page", "当前页缓存", "Current page cache", 0.8, Callable(self, "_preload_saved_units_page_task")),
-		_loading_task("saved_hover_detail", "首个详情", "First detail", 0.6, Callable(self, "_preload_saved_units_first_detail_task"), false, true, false),
+		_loading_task("saved_hover_detail", "首个详情", "First detail", 0.6, Callable(self, "_preload_saved_units_first_detail_task"), LoadingTask.PHASE_FIRST_INTERACTION, false),
 	]
 
 
 func preload_settings_content() -> Array:
 	return [
 		_loading_task("settings_config", "设置配置", "Settings config", 0.7, Callable(self, "_preload_settings_task")),
-		_loading_task("settings_pages", "设置页面", "Settings pages", 0.8, Callable(self, "_preload_settings_pages_task"), false, true, false),
+		_loading_task("settings_pages", "设置页面", "Settings pages", 0.8, Callable(self, "_preload_settings_pages_task"), LoadingTask.PHASE_FIRST_INTERACTION, false),
 	]
 
 
@@ -16362,7 +16392,7 @@ func preload_battle_content(mode: String) -> Array:
 		_loading_task("battle_gpu_capacity", "GPU Buffer", "GPU buffers", 1.2, Callable(self, "_preload_battle_gpu_capacity_task").bind(mode)),
 		_loading_task("battle_units", "单位几何", "Unit geometry", 1.2, Callable(self, "_preload_battle_units_task").bind(mode)),
 		_loading_task("battle_hud", "战斗 HUD", "Battle HUD", 0.6, Callable(self, "_preload_battle_hud_task")),
-		_loading_task("battle_vfx_pool", "VFX 池", "VFX pool", 0.7, Callable(self, "_preload_battle_vfx_task"), false, true, false),
+		_loading_task("battle_vfx_pool", "VFX 池", "VFX pool", 0.7, Callable(self, "_preload_battle_vfx_task"), LoadingTask.PHASE_FIRST_INTERACTION, false),
 	]
 
 
@@ -28168,7 +28198,9 @@ func _runtime_binding_profile(binding: Dictionary) -> String:
 
 
 func _gun_activation_profiles() -> Array:
-	return ["gun_activate", "rifle_burst_activate", "grenade_arc_activate", "laser_beam_activate", "missile_lock_activate", "web_tether_activate"]
+	if action_profile_registry != null:
+		return action_profile_registry.projectile_profiles()
+	return ActionProfileRegistry.PROJECTILE_PROFILES.duplicate()
 
 
 func _runtime_binding_is_gun_activation(binding: Dictionary) -> bool:
@@ -28176,20 +28208,9 @@ func _runtime_binding_is_gun_activation(binding: Dictionary) -> bool:
 
 
 func _gun_activation_profile_for_kind(gun_kind: String) -> String:
-	match gun_kind:
-		"sniper", "sprayer":
-			return "gun_activate"
-		"rifle":
-			return "rifle_burst_activate"
-		"grenade_launcher":
-			return "grenade_arc_activate"
-		"laser_gun":
-			return "laser_beam_activate"
-		"missile_launcher":
-			return "missile_lock_activate"
-		"web_gun":
-			return "web_tether_activate"
-	return ""
+	if action_profile_registry != null:
+		return action_profile_registry.profile_for_gun_kind(gun_kind)
+	return ActionProfileRegistry.new().profile_for_gun_kind(gun_kind)
 
 
 func _gun_activation_spec(gun_kind: String, profile: String = "") -> Dictionary:
@@ -28228,6 +28249,8 @@ func _gun_activation_spec(gun_kind: String, profile: String = "") -> Dictionary:
 
 
 func _gun_activation_profile_supports_kind(profile: String, gun_kind: String, ammo_kind: String = "") -> bool:
+	if action_profile_registry != null and not action_profile_registry.projectile_profile_supports_kind(profile, gun_kind, ammo_kind):
+		return false
 	var spec := _gun_activation_spec(gun_kind, profile)
 	if spec.is_empty():
 		return false
@@ -29541,7 +29564,7 @@ func _morph_shape_for(current_shape: String, mode: String) -> String:
 
 func _is_recoil_countered(player_id: int, prefix: String, attack_direction: Vector2) -> bool:
 	var hero = active_units[player_id]["hero"]
-	if not _is_live_unit(hero) or float(hero.stats.get("boost_total_momentum", 0.0)) <= 0.0:
+	if not _is_live_unit(hero) or float(hero.stats.get("boost_momentum", 0.0)) <= 0.0:
 		return false
 	var held := _input_vector_for(prefix)
 	if held.length() < 0.2:
@@ -30055,7 +30078,7 @@ func _apply_training_dummy_auto_brake(dummy, delta: float) -> void:
 		var duration := maxf(0.08, float(dummy.stats.get("boost_duration", 0.3)))
 		var brake_delta := maxf(0.0, float(dummy.stats.get("brake_power", 0.0)))
 		if brake_delta <= 0.0:
-			brake_delta = maxf(0.0, float(dummy.stats.get("move_momentum", 0.0))) * maxf(0.1, float(dummy.stats.get("brake_efficiency", 1.0))) / mass
+			brake_delta = maxf(0.0, float(dummy.stats.get("move_momentum", 0.0))) / mass
 		var brake_accel := brake_delta / duration
 		if brake_accel > 0.0001:
 			var next_speed := move_toward(speed, 0.0, brake_accel * delta)
@@ -33616,7 +33639,7 @@ func _unit_thruster_power(unit) -> float:
 	if unit == null or not is_instance_valid(unit):
 		return 0.0
 	var mass := maxf(1.0, float(unit.stats.get("mass", 1.0)))
-	return maxf(0.0, float(unit.stats.get("boost_total_momentum", 0.0))) / mass
+	return maxf(0.0, float(unit.stats.get("boost_momentum", 0.0))) / mass
 
 
 func _unit_knockback_resist(unit) -> float:
@@ -36269,24 +36292,21 @@ func _boost_duration_for_stats(stats: Dictionary) -> float:
 func _apply_thruster_momentum_stats(stats: Dictionary, role_key: String) -> void:
 	if role_key == "barrier":
 		stats["move_momentum"] = 0.0
-		stats["thruster_allocated_momentum"] = 0.0
 		stats["boost_momentum"] = 0.0
-		stats["boost_total_momentum"] = 0.0
 		stats["thruster_boost_extra_demand"] = 0.0
 		stats["thruster_boost_peak_demand"] = 0.0
 		stats["thruster_effective_drive_demand"] = 0.0
 		stats["thruster_effective_boost_peak_demand"] = 0.0
 		stats["engine_drive_chain_ratio"] = 0.0
 		stats["engine_boost_chain_ratio"] = 0.0
-		stats["body_move_speed"] = 0.0
 		stats["move_speed"] = 0.0
 		stats["move_acceleration"] = 0.0
 		stats["boost_speed"] = 0.0
-		stats["thruster_acceleration"] = 0.0
-		stats["thruster_duration"] = 0.0
 		stats["boost_duration"] = 0.0
 		stats["speedometer_max_speed"] = 0.0
 		stats["speed_limit"] = 0.0
+		if drive_system_service != null:
+			drive_system_service.apply_drive_contract(stats, role_key)
 		return
 	var mass := maxf(1.0, float(stats.get("mass", 1.0)))
 	var drive_demand := maxf(0.0, float(stats.get("thruster_drive_demand", 0.0)))
@@ -36319,18 +36339,14 @@ func _apply_thruster_momentum_stats(stats: Dictionary, role_key: String) -> void
 	var derived_speed_limit := maxf(1.0, maxf(body_move_speed * 3.0, boost_speed * 2.0) * 1.5 * torso_speed_mult)
 	var speedometer_max_speed := derived_speed_limit
 	stats["move_momentum"] = thruster_momentum
-	stats["boost_momentum"] = boost_momentum
-	stats["boost_total_momentum"] = boost_total_momentum
+	stats["boost_momentum"] = boost_total_momentum
 	stats["thruster_drive_demand"] = drive_demand
-	stats["thruster_allocated_momentum"] = drive_demand
 	stats["thruster_boost_extra_demand"] = boost_extra_demand
-	stats["thruster_boost_brake_allocated_momentum"] = boost_extra_demand
 	stats["thruster_boost_peak_demand"] = boost_peak_demand
 	stats["thruster_effective_drive_demand"] = allocated_momentum
 	stats["thruster_effective_boost_peak_demand"] = effective_boost_peak
 	stats["engine_drive_chain_ratio"] = drive_chain_ratio
 	stats["engine_boost_chain_ratio"] = boost_chain_ratio
-	stats["body_move_speed"] = body_move_speed
 	stats["move_speed"] = body_move_speed
 	stats["move_acceleration"] = thruster_acceleration
 	stats["boost_speed"] = boost_speed
@@ -36339,12 +36355,16 @@ func _apply_thruster_momentum_stats(stats: Dictionary, role_key: String) -> void
 	stats["turn_efficiency"] = turn_efficiency
 	stats["speedometer_max_speed"] = speedometer_max_speed
 	stats["speed_limit"] = speedometer_max_speed
-	stats["thruster_acceleration"] = thruster_acceleration
-	stats["thruster_duration"] = maxf(float(stats.get("thruster_duration", 0.0)), ECONOMY_THRUSTER_TARGET_DURATION if thruster_momentum > 0.0 else 0.0)
 	stats["boost_duration"] = boost_duration
-	stats["brake_power"] = maxf(0.0, effective_boost_peak * clampf(float(stats.get("brake_efficiency", 1.0)), 0.1, 3.0) / mass)
+	stats["brake_power"] = maxf(0.0, effective_boost_peak / mass)
 	if body_move_speed > 0.0:
 		stats["speed"] = body_move_speed / MOMENTUM_MOVE_SPEED_MULT
+	if drive_system_service != null:
+		drive_system_service.apply_drive_contract(stats, role_key)
+
+
+func _apply_drive_motion_stats(stats: Dictionary, role_key: String) -> void:
+	_apply_thruster_momentum_stats(stats, role_key)
 
 
 func _estimated_boost_attack_speed(stats: Dictionary) -> float:
@@ -38300,24 +38320,24 @@ func _scrub_legacy_power_stats(stats: Dictionary) -> Dictionary:
 	var cleaned := stats.duplicate(true)
 	if not cleaned.has("move_momentum") and cleaned.has("thruster_momentum"):
 		cleaned["move_momentum"] = maxf(0.0, float(cleaned.get("thruster_momentum", 0.0)))
+	for key in _legacy_power_field_keys():
+		cleaned.erase(key)
 	for key in [
-		"power",
-		"energy",
-		"power_load",
-		"engine_power",
-		"aux_power",
-		"required_power",
-		"power_margin",
-		"engine_torque",
-		"engine_motion_scale",
-		"normal_thrust",
-		"boost_power",
-		"thruster_momentum",
-		"load_capacity",
-		"momentum_capacity",
-		"damage_unit" + "_threshold",
-		"reference_" + "damage",
-		"torso_damage_unit" + "_threshold",
+		"engine_momentum_output",
+		"engine_momentum_budget",
+		"engine_joint_momentum_budget",
+		"engine_thruster_momentum_budget",
+		"engine_momentum_required",
+		"engine_momentum_margin",
+		"engine_momentum_ratio",
+		"engine_momentum_note",
+		"thruster_boost_brake_allocated_momentum",
+		"boost_total_momentum",
+		"thruster_duration",
+		"engine_drive_chain_ratio",
+		"engine_boost_chain_ratio",
+		"thruster_effective_drive_demand",
+		"thruster_effective_boost_peak_demand",
 	]:
 		cleaned.erase(key)
 	return cleaned
@@ -39428,6 +39448,143 @@ func _catalog_role_for_part(slot_key: String, part: Dictionary) -> String:
 	return slot_key
 
 
+func _backfill_spec_for_part(specs: Dictionary, part: Dictionary) -> Dictionary:
+	var upper_name := String(part.get("name", "")).to_upper()
+	for raw_key in specs.keys():
+		var key := String(raw_key).to_upper()
+		if upper_name == key or upper_name.ends_with(" / " + key) or upper_name.find(key) >= 0:
+			return Dictionary(specs[raw_key]).duplicate(true)
+	return {}
+
+
+func _clear_catalog_lifecycle_metadata(part: Dictionary) -> void:
+	part.erase("catalog_lifecycle")
+	part.erase("catalog_lifecycle_reason")
+	part.erase("freeze_reason")
+	part.erase("future_dev_tag")
+	part.erase("unlock_profile")
+
+
+func _module_profile_backfill(part: Dictionary) -> Dictionary:
+	var spec := _backfill_spec_for_part(LIVE_BACKFILLED_MODULE_NAMES, part)
+	if spec.is_empty():
+		return part
+	var adjusted := part.duplicate(true)
+	_clear_catalog_lifecycle_metadata(adjusted)
+	for key in spec.keys():
+		adjusted[key] = spec[key]
+	adjusted["catalog_backfilled_live"] = true
+	adjusted["backfilled_profile_note"] = "复用当前行动 profile：%s。" % String(adjusted.get("module_action_profile", ""))
+	if String(adjusted.get("summary", "")).find("复用当前行动 profile") < 0:
+		adjusted["summary"] = "%s %s" % [String(adjusted.get("summary", "")).strip_edges(), String(adjusted["backfilled_profile_note"])]
+	return adjusted
+
+
+func _projectile_terminal_backfill(part: Dictionary) -> Dictionary:
+	var spec := _backfill_spec_for_part(LIVE_BACKFILLED_PROJECTILE_NAMES, part)
+	if spec.is_empty():
+		return part
+	var adjusted := part.duplicate(true)
+	_clear_catalog_lifecycle_metadata(adjusted)
+	for key in spec.keys():
+		if key == "profile":
+			continue
+		adjusted[key] = spec[key]
+	adjusted["projectile"] = true
+	adjusted["projectile_only"] = bool(adjusted.get("projectile_only", true))
+	adjusted["compatible_gun_activation_profile"] = String(spec.get("profile", ""))
+	adjusted["catalog_backfilled_live"] = true
+	adjusted["backfilled_profile_note"] = "复用当前枪械启动 profile：%s。" % String(spec.get("profile", ""))
+	if not adjusted.has("projectile_consumes_on_fire"):
+		adjusted["projectile_consumes_on_fire"] = true
+	var profile := String(spec.get("profile", ""))
+	var gun_kind := String(adjusted.get("gun_kind", _gun_kind_for_data(adjusted))).to_lower()
+	var gun_spec := _gun_activation_spec(gun_kind, profile)
+	if not gun_spec.is_empty():
+		if not adjusted.has("projectile_width_m") and gun_spec.has("default_width"):
+			adjusted["projectile_width_m"] = float(gun_spec["default_width"])
+		if not adjusted.has("projectile_range") and gun_spec.has("default_range"):
+			adjusted["projectile_range"] = float(gun_spec["default_range"])
+		if not adjusted.has("range") and adjusted.has("projectile_range"):
+			adjusted["range"] = float(adjusted["projectile_range"])
+		if not adjusted.has("fire_interval") and gun_spec.has("default_fire_interval"):
+			adjusted["fire_interval"] = float(gun_spec["default_fire_interval"])
+			if float(adjusted["fire_interval"]) > 0.0 and float(adjusted["fire_interval"]) < 9000.0:
+				adjusted["fire_rate"] = 1.0 / float(adjusted["fire_interval"])
+	if not adjusted.has("projectile_range") and adjusted.has("range"):
+		adjusted["projectile_range"] = float(adjusted["range"])
+	if not adjusted.has("lane_range") and float(adjusted.get("projectile_width_m", 0.0)) > 0.0:
+		adjusted["lane_range"] = float(adjusted["projectile_width_m"]) * 0.5
+	if not adjusted.has("carried_ammo"):
+		adjusted["carried_ammo"] = _gun_default_carried_ammo(adjusted, _gun_default_profile_key(adjusted))
+	var ammo_type := _normalized_ammo_type(String(adjusted.get("ammo_kind", _ammo_kind_for_data(adjusted))))
+	if ammo_type != "" and not adjusted.has("ammo_capacity") and int(adjusted.get("carried_ammo", 0)) > 0:
+		adjusted["ammo_capacity"] = {ammo_type: int(adjusted["carried_ammo"])}
+	if not adjusted.has("projectile_speed_mult"):
+		match _gun_default_profile_key(adjusted):
+			"true_bullet", "laser":
+				adjusted["projectile_speed_mult"] = 2.4
+			"chemical":
+				adjusted["projectile_speed_mult"] = CHEMICAL_PROJECTILE_DEFAULT_SPEED_MULT
+			"web_tether":
+				adjusted["projectile_speed_mult"] = 0.9
+			"explosive", "missile":
+				adjusted["projectile_speed_mult"] = 1.35
+			_:
+				adjusted["projectile_speed_mult"] = BULLET_HELL_DEFAULT_SPEED_MULT
+	if not adjusted.has("projectile_collision_speed"):
+		adjusted["projectile_collision_speed"] = float(adjusted.get("projectile_speed_mult", BULLET_HELL_DEFAULT_SPEED_MULT)) * PROJECTILE_SPEED_UNIT
+	if not adjusted.has("projectile_mass"):
+		match _gun_default_profile_key(adjusted):
+			"true_bullet":
+				adjusted["projectile_mass"] = 1.25
+			"laser":
+				adjusted["projectile_mass"] = 0.12
+			"chemical":
+				adjusted["projectile_mass"] = 0.78
+			"web_tether":
+				adjusted["projectile_mass"] = 0.24
+			"explosive", "missile":
+				adjusted["projectile_mass"] = 2.4
+			_:
+				adjusted["projectile_mass"] = 0.72
+	if not adjusted.has("projectile_momentum") or float(adjusted.get("projectile_momentum", 0.0)) <= 0.0:
+		adjusted["projectile_momentum"] = maxf(1.0, float(adjusted.get("projectile_mass", 0.0)) * float(adjusted.get("projectile_collision_speed", 0.0)))
+	adjusted["gun_projectile_damage_mult"] = _gun_projectile_damage_mult_max_for_data(adjusted)
+	if String(adjusted.get("summary", "")).find("复用当前枪械启动 profile") < 0:
+		adjusted["summary"] = "%s %s" % [String(adjusted.get("summary", "")).strip_edges(), String(adjusted["backfilled_profile_note"])]
+	return adjusted
+
+
+func _catalog_backfilled_part(slot_key: String, part: Dictionary) -> Dictionary:
+	match slot_key:
+		"module":
+			return _module_profile_backfill(part)
+		"muscle":
+			return _projectile_terminal_backfill(part)
+	return part
+
+
+func _projectile_terminal_live_profile_key(part: Dictionary) -> String:
+	var backfilled := _projectile_terminal_backfill(part)
+	if not bool(backfilled.get("catalog_backfilled_live", false)):
+		return ""
+	var profile := String(backfilled.get("compatible_gun_activation_profile", ""))
+	var gun_kind := String(backfilled.get("gun_kind", _gun_kind_for_data(backfilled))).to_lower()
+	var ammo_kind := String(backfilled.get("ammo_kind", _ammo_kind_for_data(backfilled))).to_lower()
+	if profile != "" and _gun_activation_profile_supports_kind(profile, gun_kind, ammo_kind):
+		return profile
+	return ""
+
+
+func _part_has_frozen_special_projectile_marker(part: Dictionary) -> bool:
+	var upper_name := String(part.get("name", "")).to_upper()
+	for marker in FROZEN_SPECIAL_PROJECTILE_MARKERS:
+		if upper_name.find(String(marker)) >= 0:
+			return true
+	return bool(part.get("is_homing_launcher", false)) or bool(part.get("is_barrage_emitter", false)) or String(part.get("projectile_style", "")).to_lower() in ["blind", "starburst", "eclipse", "area"]
+
+
 func _catalog_part_category_for_part(slot_key: String, part: Dictionary) -> String:
 	var explicit := String(part.get("part_category", "")).to_lower()
 	if explicit != "":
@@ -39446,9 +39603,14 @@ func _catalog_part_category_for_part(slot_key: String, part: Dictionary) -> Stri
 
 
 func _catalog_part_with_metadata(slot_key: String, part: Dictionary) -> Dictionary:
-	var adjusted := part.duplicate(true)
+	var adjusted := _catalog_backfilled_part(slot_key, part.duplicate(true))
 	adjusted["catalog_role"] = _catalog_role_for_part(slot_key, adjusted)
 	adjusted["part_category"] = _catalog_part_category_for_part(slot_key, adjusted)
+	if slot_key == "limb_muscle":
+		adjusted["limb_visual_family"] = PartArt.limb_visual_family(adjusted)
+		adjusted["limb_material_visual"] = PartArt.limb_material_visual(adjusted)
+		adjusted["limb_role_tags"] = PartArt.limb_role_tags_for(adjusted)
+		adjusted["barrier_fit_tags"] = PartArt.limb_barrier_fit_tags_for(adjusted)
 	var lifecycle := _catalog_lifecycle_for_part(slot_key, adjusted)
 	adjusted["catalog_lifecycle"] = String(lifecycle.get("catalog_lifecycle", "live"))
 	adjusted["catalog_lifecycle_reason"] = String(lifecycle.get("reason", ""))
@@ -39515,12 +39677,13 @@ func _catalog_display_part(slot_key: String, part: Dictionary) -> Dictionary:
 
 
 func _catalog_lifecycle_for_part(slot_key: String, part: Dictionary) -> Dictionary:
-	var name := String(part.get("name", ""))
+	var checked_part := _catalog_backfilled_part(slot_key, part)
+	var name := String(checked_part.get("name", ""))
 	var upper_name := name.to_upper()
-	var motion := String(part.get("motion", "")).to_lower()
-	var module_effect := String(part.get("module_effect", "")).to_lower()
-	var profile := String(part.get("module_action_profile", "")).to_lower()
-	var explicit_lifecycle := String(part.get("catalog_lifecycle", "")).to_lower()
+	var motion := String(checked_part.get("motion", "")).to_lower()
+	var module_effect := String(checked_part.get("module_effect", "")).to_lower()
+	var profile := String(checked_part.get("module_action_profile", "")).to_lower()
+	var explicit_lifecycle := String(checked_part.get("catalog_lifecycle", "")).to_lower()
 	var result := {
 		"catalog_lifecycle": "live",
 		"reason": "",
@@ -39528,27 +39691,11 @@ func _catalog_lifecycle_for_part(slot_key: String, part: Dictionary) -> Dictiona
 	}
 	if explicit_lifecycle in ["live", "frozen"]:
 		result["catalog_lifecycle"] = explicit_lifecycle
-		result["reason"] = String(part.get("catalog_lifecycle_reason", part.get("freeze_reason", "")))
-		result["future_dev_tag"] = String(part.get("future_dev_tag", part.get("unlock_profile", "")))
+		result["reason"] = String(checked_part.get("catalog_lifecycle_reason", checked_part.get("freeze_reason", "")))
+		result["future_dev_tag"] = String(checked_part.get("future_dev_tag", checked_part.get("unlock_profile", "")))
 		return result
 	if slot_key == "module":
-		var live_profiles := [
-			"two_link_forward_snap",
-			"gun_activate",
-			"rifle_burst_activate",
-			"laser_beam_activate",
-			"missile_lock_activate",
-			"web_tether_activate",
-			"blunt_gauntlet_extend_swing",
-			"blunt_shield_guard_bash",
-			"blunt_hammer_windup_slam",
-			"swing_90",
-			"extend_1m",
-			"swing_180",
-			"extend_2m",
-			"swing_360",
-			"extend_3m",
-		]
+		var live_profiles := action_profile_registry.live_profiles() if action_profile_registry != null else ActionProfileRegistry.new().live_profiles()
 		var frozen_effects := [
 			"trap_control",
 			"boomerang_recall",
@@ -39606,8 +39753,8 @@ func _catalog_lifecycle_for_part(slot_key: String, part: Dictionary) -> Dictiona
 			result["future_dev_tag"] = "future_module_profile"
 			return result
 	if slot_key == "muscle":
-		var material_class := String(part.get("material_class", "")).to_lower()
-		var is_projectile_terminal := bool(part.get("projectile", false)) or material_class in ["gun", "missile_launcher", "web_gun"]
+		var material_class := String(checked_part.get("material_class", "")).to_lower()
+		var is_projectile_terminal := bool(checked_part.get("projectile", false)) or material_class in ["gun", "missile_launcher", "web_gun"]
 		if is_projectile_terminal:
 			var live_gun_names := [
 				STANDARD_SNIPER_NAME,
@@ -39620,20 +39767,27 @@ func _catalog_lifecycle_for_part(slot_key: String, part: Dictionary) -> Dictiona
 				"LONGSIGHT TRUE-ROUND RIFLE",
 				"LONGSIGHT NEEDLE RAIL RIFLE",
 			]
-			var gun_kind := String(part.get("gun_kind", _gun_kind_for_data(part))).to_lower()
-			var ammo_kind := String(part.get("ammo_kind", _ammo_kind_for_data(part))).to_lower()
+			var gun_kind := String(checked_part.get("gun_kind", _gun_kind_for_data(checked_part))).to_lower()
+			var ammo_kind := String(checked_part.get("ammo_kind", _ammo_kind_for_data(checked_part))).to_lower()
 			var explicit_live_gun := live_gun_names.has(name)
-			if not explicit_live_gun:
+			var live_backfilled_profile := _projectile_terminal_live_profile_key(checked_part)
+			if not explicit_live_gun and _part_has_frozen_special_projectile_marker(checked_part) and live_backfilled_profile == "":
 				result["catalog_lifecycle"] = "frozen"
-				result["reason"] = "非标准显式枪械或旧投射物入口"
+				result["reason"] = "特殊投射物弹道/场效果尚未进入当前发射 profile"
 				result["future_dev_tag"] = "future_projectile_family"
 				return result
+			if not explicit_live_gun:
+				if live_backfilled_profile == "":
+					result["catalog_lifecycle"] = "frozen"
+					result["reason"] = "非标准显式枪械或旧投射物入口"
+					result["future_dev_tag"] = "future_projectile_family"
+					return result
 			if gun_kind == "" or ammo_kind == "":
 				result["catalog_lifecycle"] = "frozen"
 				result["reason"] = "枪械缺少 gun_kind/ammo_kind"
 				result["future_dev_tag"] = "future_projectile_family"
 				return result
-	if upper_name.find("GUNNER WRIST") >= 0 or part.has("attack_groups") or part.has("action_groups"):
+	if upper_name.find("GUNNER WRIST") >= 0 or checked_part.has("attack_groups") or checked_part.has("action_groups"):
 		result["catalog_lifecycle"] = "frozen"
 		result["reason"] = "旧指针或旧行动组入口"
 		result["future_dev_tag"] = "legacy_pointer_cleanup"
@@ -43331,8 +43485,10 @@ func _apply_engine_momentum_budget(stats: Dictionary, role_key: String) -> void:
 	var thruster_allocation := maxf(0.0, float(stats.get("thruster_drive_demand", 0.0)))
 	var thruster_boost_brake_allocation := maxf(0.0, float(stats.get("thruster_boost_extra_demand", stats.get("thruster_boost_brake_allocated_momentum", 0.0))))
 	var limb_allocation := maxf(0.0, float(bound.get("allocation", bound.get("demand", 0.0))))
+	if limb_allocation <= 0.0:
+		limb_allocation = maxf(0.0, float(stats.get("joint_drive_allocation_total", 0.0)))
 	var required := thruster_allocation + thruster_boost_brake_allocation + limb_allocation
-	var engine_budget := maxf(0.0, float(stats.get("engine_momentum_output", stats.get("engine_momentum_budget", 0.0))))
+	var engine_budget := maxf(0.0, float(stats.get("drive_output_total", stats.get("engine_momentum_output", stats.get("engine_momentum_budget", 0.0)))))
 	var ratio := engine_budget / maxf(1.0, required)
 	var chain_ratio := clampf(ratio, 0.0, 1.0)
 	var boost_extra_demand := thruster_boost_brake_allocation
@@ -43363,6 +43519,9 @@ func _apply_engine_momentum_budget(stats: Dictionary, role_key: String) -> void:
 	stats["engine_momentum_margin"] = engine_budget - required
 	stats["engine_momentum_ratio"] = ratio
 	stats["bound_limb_idle_heat"] = limb_heat_load
+	stats["drive_output_total"] = engine_budget
+	stats["drive_demand_total"] = required
+	stats["joint_drive_allocation_total"] = limb_allocation
 	if role_key == "barrier":
 		stats["engine_momentum_note"] = "BARRIER STATIC: no drive budget required."
 	elif int(bound.get("invalid_count", 0)) > 0:
@@ -43375,6 +43534,12 @@ func _apply_engine_momentum_budget(stats: Dictionary, role_key: String) -> void:
 		stats["engine_momentum_note"] = "INVALID: engine output %.0f < thruster drive %.0f + boost/brake %.0f + bound limbs %.0f." % [engine_budget, thruster_allocation, boost_extra_demand, limb_allocation]
 	else:
 		stats["engine_momentum_note"] = "BUDGET OK: engine output %.0f covers thruster drive %.0f + boost/brake %.0f + bound limbs %.0f%s." % [engine_budget, thruster_allocation, boost_extra_demand, limb_allocation, " with reserve" if ratio >= 1.18 else ""]
+	if drive_system_service != null:
+		drive_system_service.apply_drive_contract(stats, role_key)
+
+
+func _apply_drive_budget(stats: Dictionary, role_key: String) -> void:
+	_apply_engine_momentum_budget(stats, role_key)
 
 
 func _topology_chain_rotation_radius_units(entries: Array) -> float:
@@ -43447,7 +43612,7 @@ func _team_summary(player_id: int) -> Dictionary:
 			var slot_payload_blocks: bool = role_key != "barrier" and String(stats.get("slot_payload_note", "")).begins_with("INVALID")
 			var momentum_blocks: bool = String(stats.get("joint_momentum_note", "")).begins_with("INVALID")
 			var sweep_blocks: bool = String(stats.get("joint_slot_note", "")).begins_with("INVALID") or String(stats.get("swept_collision_note", "")).begins_with("INVALID")
-			var power_blocks: bool = role_key != "barrier" and String(stats.get("engine_momentum_note", "")).begins_with("INVALID")
+			var power_blocks: bool = role_key != "barrier" and String(stats.get("drive_note", "")).begins_with("INVALID")
 			var thermal_blocks: bool = role_key != "barrier" and String(stats.get("thermal_note", "")).begins_with("INVALID")
 			if slot_payload_blocks or momentum_blocks or sweep_blocks or power_blocks or thermal_blocks or String(stats.get("stiffness_note", "")).begins_with("INVALID"):
 				invalid_length = true
@@ -43518,35 +43683,35 @@ func _format_unit_stats(stats: Dictionary) -> String:
 	momentum_line = "%s\n%s\n%s" % [momentum_line, String(stats.get("joint_slot_note", "")), String(stats.get("swept_collision_note", ""))]
 	var thruster_demand := float(stats.get("thruster_drive_demand", stats.get("thruster_allocated_momentum", 0.0)))
 	var thermal_pool := _thermal_load_pool_for_stats(stats)
-	var power_line := "ENGINE x%d  DRIVE %.0f  DEMAND %.0f  LEFT %.0f  %s\nTHERMAL pool %.1f idle %.1f margin %.1f cool %.1f  %s" % [
+	var power_line := "ENGINE x%d  DRIVE %.0f  DEMAND %.0f  LEFT %.0f  RATIO %.2f  %s\nTHERMAL pool %.1f idle %.1f margin %.1f cool %.1f  %s" % [
 		int(stats.get("engine_count", 0)),
-		float(stats.get("engine_momentum_output", stats.get("engine_momentum_budget", 0.0))),
-		float(stats.get("engine_momentum_required", 0.0)),
-		float(stats.get("engine_momentum_margin", 0.0)),
-		String(stats.get("engine_momentum_note", "")),
+		float(stats.get("drive_output_total", 0.0)),
+		float(stats.get("drive_demand_total", 0.0)),
+		float(stats.get("drive_margin", 0.0)),
+		float(stats.get("drive_ratio", 0.0)),
+		String(stats.get("drive_note", "")),
 		thermal_pool,
 		float(stats.get("idle_heat_load", 0.0)),
 		float(stats.get("thermal_margin", 0.0)),
 		float(stats.get("cooling", 0.0)),
 		String(stats.get("thermal_note", "")),
 	]
-	var movement_line := "MOMENTUM MOVE body %.2f  boost %.2f  accel %.2f  boost %.2fs  req %.0f/move %.0f/B+%.0f/Btot%.0f" % [
-		float(stats.get("body_move_speed", float(stats.get("speed", 0.0)) * MOMENTUM_MOVE_SPEED_MULT)),
+	var movement_line := "DRIVE MOVE speed %.2f  boost %.2f  accel %.2f  boost %.2fs  req %.0f/move %.0f/boost %.0f" % [
+		float(stats.get("move_speed", float(stats.get("speed", 0.0)) * MOMENTUM_MOVE_SPEED_MULT)),
 		float(stats.get("boost_speed", 0.0)),
-		float(stats.get("thruster_acceleration", 0.0)),
+		float(stats.get("move_acceleration", 0.0)),
 		float(stats.get("boost_duration", 0.0)),
 		thruster_demand,
 		float(stats.get("move_momentum", 0.0)),
 		float(stats.get("boost_momentum", 0.0)),
-		float(stats.get("boost_total_momentum", 0.0)),
 	]
 	var stiffness_line := String(stats.get("stiffness_note", ""))
-	return "HP %d  MASS %.0f  DRIVE %.0f  DEMAND %.0f  LEFT %.0f  LEN %.2f  RAD %.2f  SPD %.2f  TURN %.2f  SEC %.2f\n%s\n%s\n%s\n%s\n%s\n%s\nDMG %s normal/front/rear %d/%d/%d  RNG %.2f/%.2f/%.2f  MOVE %.0f / BOOST+ %.0f %s\nAI %s  FIELD %s  MAT %s  SIZE %s  PORT/BAY/SOFT %d/%d/%d\n%s  %s\n%s\n%s  %s\nMELEE TAKEN x B/P/T %.2f/%.2f/%.2f  CTR %d/%d/%d" % [
+	return "HP %d  MASS %.0f  DRIVE %.0f  DEMAND %.0f  LEFT %.0f  LEN %.2f  RAD %.2f  SPD %.2f  TURN %.2f  SEC %.2f\n%s\n%s\n%s\n%s\n%s\n%s\nDMG %s normal/front/rear %d/%d/%d  RNG %.2f/%.2f/%.2f  MOVE %.0f / BOOST %.0f %s\nAI %s  FIELD %s  MAT %s  SIZE %s  PORT/BAY/SOFT %d/%d/%d\n%s  %s\n%s\n%s  %s\nMELEE TAKEN x B/P/T %.2f/%.2f/%.2f  CTR %d/%d/%d" % [
 		int(stats["health"]),
 		float(stats["mass"]),
-		float(stats.get("engine_momentum_output", stats.get("engine_momentum_budget", 0.0))),
-		float(stats.get("engine_momentum_required", 0.0)),
-		float(stats.get("engine_momentum_margin", 0.0)),
+		float(stats.get("drive_output_total", 0.0)),
+		float(stats.get("drive_demand_total", 0.0)),
+		float(stats.get("drive_margin", 0.0)),
 		float(stats["length"]),
 		float(stats["radius"]),
 		float(stats["speed"]),
@@ -43600,27 +43765,27 @@ func _format_unit_stats_zh(stats: Dictionary) -> String:
 		heat_line = "%s\n%s" % [heat_line, electronic_armor_line]
 	var thruster_demand := float(stats.get("thruster_drive_demand", stats.get("thruster_allocated_momentum", 0.0)))
 	var thermal_pool := _thermal_load_pool_for_stats(stats)
-	var power_line := "引擎 x%d  动力预算 %.0f / 需求 %.0f / 余量 %.0f  %s\n热管理 热力池 %.1f / 常态热 %.1f / 余量 %.1f / 散热速度 %.1f  %s" % [
+	var power_line := "引擎 x%d  动力输出 %.0f / 需求 %.0f / 余量 %.0f / 比率 %.2f  %s\n热管理 热力池 %.1f / 常态热 %.1f / 余量 %.1f / 散热速度 %.1f  %s" % [
 		int(stats.get("engine_count", 0)),
-		float(stats.get("engine_momentum_output", stats.get("engine_momentum_budget", 0.0))),
-		float(stats.get("engine_momentum_required", 0.0)),
-		float(stats.get("engine_momentum_margin", 0.0)),
-		_localized_system_text(String(stats.get("engine_momentum_note", ""))),
+		float(stats.get("drive_output_total", 0.0)),
+		float(stats.get("drive_demand_total", 0.0)),
+		float(stats.get("drive_margin", 0.0)),
+		float(stats.get("drive_ratio", 0.0)),
+		_localized_system_text(String(stats.get("drive_note", ""))),
 		thermal_pool,
 		float(stats.get("idle_heat_load", 0.0)),
 		float(stats.get("thermal_margin", 0.0)),
 		float(stats.get("cooling", 0.0)),
 		_localized_system_text(String(stats.get("thermal_note", ""))),
 	]
-	var movement_line := "动力移动 机体速度 %.2f  Boost速度 %.2f  推进加速 %.2f  Boost持续 %.2fs  需求 %.0f/移动 %.0f/B+%.0f/B总%.0f" % [
-		float(stats.get("body_move_speed", float(stats.get("speed", 0.0)) * MOMENTUM_MOVE_SPEED_MULT)),
+	var movement_line := "动力移动 机体速度 %.2f  Boost速度 %.2f  推进加速 %.2f  Boost持续 %.2fs  需求 %.0f/移动 %.0f/Boost %.0f" % [
+		float(stats.get("move_speed", float(stats.get("speed", 0.0)) * MOMENTUM_MOVE_SPEED_MULT)),
 		float(stats.get("boost_speed", 0.0)),
-		float(stats.get("thruster_acceleration", 0.0)),
+		float(stats.get("move_acceleration", 0.0)),
 		float(stats.get("boost_duration", 0.0)),
 		thruster_demand,
 		float(stats.get("move_momentum", 0.0)),
 		float(stats.get("boost_momentum", 0.0)),
-		float(stats.get("boost_total_momentum", 0.0)),
 	]
 	var momentum_line := "接触动量 %.0f  路径刚度 %.0f  %s\n近战稳定 %.0f：动量差低于此值不会造成硬直；拳套/钻头/武士刀末端有额外动量系数" % [
 		float(stats.get("max_possible_momentum", 0.0)),
@@ -43630,12 +43795,12 @@ func _format_unit_stats_zh(stats: Dictionary) -> String:
 	]
 	momentum_line = "%s\n%s\n%s" % [momentum_line, _localized_system_text(String(stats.get("joint_slot_note", ""))), _localized_system_text(String(stats.get("swept_collision_note", "")))]
 	var stiffness_line := _localized_system_text(String(stats.get("stiffness_note", "")))
-	return "生命 %d  质量 %.0f  动力预算 %.0f  需求 %.0f  余量 %.0f  长 %.2f  半径 %.2f  速度 %.2f  转向 %.2f  信息安全 %.2f\n%s\n%s\n%s\n%s\n%s\n%s\n伤害 %s 普通/正面护甲/背面激活 %d/%d/%d  射程 %.2f/%.2f/%.2f  移动动量 %.0f / Boost额外 %.0f %s\n傀儡AI %s  结界逻辑 %s  材料 %s  尺寸 %s  接口/武器/软件槽 %d/%d/%d\n%s  %s\n%s\n%s  %s\n承受近战 钝/刺/斩 %.2f/%.2f/%.2f  克制 %d/%d/%d" % [
+	return "生命 %d  质量 %.0f  动力输出 %.0f  需求 %.0f  余量 %.0f  长 %.2f  半径 %.2f  速度 %.2f  转向 %.2f  信息安全 %.2f\n%s\n%s\n%s\n%s\n%s\n%s\n伤害 %s 普通/正面护甲/背面激活 %d/%d/%d  射程 %.2f/%.2f/%.2f  移动动量 %.0f / Boost动量 %.0f %s\n傀儡AI %s  结界逻辑 %s  材料 %s  尺寸 %s  接口/武器/软件槽 %d/%d/%d\n%s  %s\n%s\n%s  %s\n承受近战 钝/刺/斩 %.2f/%.2f/%.2f  克制 %d/%d/%d" % [
 		int(stats.get("health", 0)),
 		float(stats.get("mass", 0.0)),
-		float(stats.get("engine_momentum_output", stats.get("engine_momentum_budget", 0.0))),
-		float(stats.get("engine_momentum_required", 0.0)),
-		float(stats.get("engine_momentum_margin", 0.0)),
+		float(stats.get("drive_output_total", 0.0)),
+		float(stats.get("drive_demand_total", 0.0)),
+		float(stats.get("drive_margin", 0.0)),
 		float(stats.get("length", 0.0)),
 		float(stats.get("radius", 0.2)),
 		float(stats.get("speed", 0.0)),
@@ -44878,6 +45043,7 @@ func _build_menu_ui() -> void:
 	if menu_view == null:
 		menu_view = MenuView.new()
 		menu_view.bind(self)
+		_connect_menu_view_signals()
 	menu_layer = menu_view.build_main_menu(self, space_backdrop_texture, BackdropView)
 	menu_backdrop = menu_view.menu_backdrop
 	menu_description_label = menu_view.menu_description_label
@@ -44886,6 +45052,23 @@ func _build_menu_ui() -> void:
 	menu_ai_seat_label = menu_view.menu_ai_seat_label
 	menu_buttons = menu_view.menu_buttons
 	menu_ai_seat_buttons = menu_view.menu_ai_seat_buttons
+
+
+func _connect_menu_view_signals() -> void:
+	if menu_view == null:
+		return
+	if not menu_view.main_menu_hovered.is_connected(_hover_menu_item):
+		menu_view.main_menu_hovered.connect(_hover_menu_item)
+	if not menu_view.main_menu_pressed.is_connected(_activate_menu_item):
+		menu_view.main_menu_pressed.connect(_activate_menu_item)
+	if not menu_view.main_menu_gui_input.is_connected(_handle_menu_button_gui_input):
+		menu_view.main_menu_gui_input.connect(_handle_menu_button_gui_input)
+	if not menu_view.ai_seat_pressed.is_connected(_start_ai_battle_from_menu):
+		menu_view.ai_seat_pressed.connect(_start_ai_battle_from_menu)
+	if not menu_view.page_option_pressed.is_connected(_page_options_action):
+		menu_view.page_option_pressed.connect(_page_options_action)
+	if not menu_view.battle_runtime_pressed.is_connected(_battle_runtime_menu_action):
+		menu_view.battle_runtime_pressed.connect(_battle_runtime_menu_action)
 
 
 func _build_saved_units_ui() -> void:
@@ -45021,11 +45204,15 @@ func _build_format_select_ui() -> void:
 	var root := Control.new()
 	root.set_anchors_preset(Control.PRESET_FULL_RECT)
 	format_select_layer.add_child(root)
-	_add_ui_rect(root, "FormatDim", Vector2.ZERO, Vector2(1280.0, 720.0), Color(0.0, 0.0, 0.0, 0.48))
-	_add_ui_rect(root, "FormatPanel", Vector2(286.0, 156.0), Vector2(708.0, 360.0), Color(0.012, 0.022, 0.032, 0.94))
-	_add_ui_rect(root, "FormatAccent", Vector2(326.0, 220.0), Vector2(628.0, 3.0), Color(0.25, 0.92, 1.0, 0.95))
-	_make_label(root, "FormatTitle", "选择单位编辑规则", Vector2(326.0, 174.0), Vector2(628.0, 42.0), 30, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER)
-	_make_label(root, "FormatHint", "单位编辑只编辑单个单位；队伍编成在已保存单位页完成。", Vector2(326.0, 232.0), Vector2(628.0, 44.0), 17, Color(0.82, 0.9, 0.95, 1.0), HORIZONTAL_ALIGNMENT_CENTER)
+	_add_ui_rect(root, "FormatDim", Vector2.ZERO, UILayoutTokens.DESIGN_SIZE, Color(0.0, 0.0, 0.0, 0.48))
+	var format_panel_rect := UILayoutTokens.format_select_panel_rect()
+	_add_ui_rect(root, "FormatPanel", format_panel_rect.position, format_panel_rect.size, Color(0.012, 0.022, 0.032, 0.94))
+	var format_accent_rect := _offset_rect(UILayoutTokens.format_select_accent_rect(), format_panel_rect.position)
+	var format_title_rect := _offset_rect(UILayoutTokens.format_select_title_rect(), format_panel_rect.position)
+	var format_hint_rect := _offset_rect(UILayoutTokens.format_select_hint_rect(), format_panel_rect.position)
+	_add_ui_rect(root, "FormatAccent", format_accent_rect.position, format_accent_rect.size, Color(0.25, 0.92, 1.0, 0.95))
+	_make_label(root, "FormatTitle", "选择单位编辑规则", format_title_rect.position, format_title_rect.size, 30, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER)
+	_make_label(root, "FormatHint", "单位编辑只编辑单个单位；队伍编成在已保存单位页完成。", format_hint_rect.position, format_hint_rect.size, 17, Color(0.82, 0.9, 0.95, 1.0), HORIZONTAL_ALIGNMENT_CENTER)
 	var specs := [
 		["standard", "标准队伍 10选6", "构筑十个单位，赛前公开双方队伍后选择六个出战。"],
 		["light", "轻量队伍 5选3", "构筑五个单位，赛前选择三个出战；适合快速测试构筑。"],
@@ -45035,8 +45222,9 @@ func _build_format_select_ui() -> void:
 		var button := Button.new()
 		button.name = "FormatButton%d" % i
 		button.text = "%s\n%s" % [String(specs[i][1]), String(specs[i][2])]
-		button.position = Vector2(360.0, 294.0 + float(i) * 66.0)
-		button.size = Vector2(560.0, 54.0)
+		var button_rect := _offset_rect(UILayoutTokens.format_select_button_rect(i), format_panel_rect.position)
+		button.position = button_rect.position
+		button.size = button_rect.size
 		button.focus_mode = Control.FOCUS_NONE
 		button.mouse_filter = Control.MOUSE_FILTER_STOP
 		var key := String(specs[i][0])
@@ -45644,21 +45832,25 @@ func _build_loading_ui() -> void:
 	root.add_child(dim)
 	var panel := ColorRect.new()
 	panel.name = "LoadingPanel"
-	panel.position = Vector2(346.0, 264.0)
-	panel.size = Vector2(588.0, 172.0)
+	var loading_panel_rect := UILayoutTokens.loading_panel_rect()
+	_apply_layout_rect(panel, loading_panel_rect)
 	panel.color = Color(0.035, 0.048, 0.068, 0.94)
 	root.add_child(panel)
-	loading_title_label = _make_label(root, "LoadingTitle", "加载中", Vector2(380.0, 292.0), Vector2(520.0, 34.0), 24, Color(0.88, 0.96, 1.0, 1.0), HORIZONTAL_ALIGNMENT_CENTER)
-	loading_stage_label = _make_label(root, "LoadingStage", "准备页面", Vector2(392.0, 336.0), Vector2(496.0, 28.0), 16, Color(0.72, 0.84, 0.94, 1.0), HORIZONTAL_ALIGNMENT_CENTER)
+	var loading_title_rect := UILayoutTokens.to_screen_rect(_offset_rect(UILayoutTokens.loading_title_rect(), loading_panel_rect.position), _ui_viewport_size())
+	var loading_stage_rect := UILayoutTokens.to_screen_rect(_offset_rect(UILayoutTokens.loading_stage_rect(), loading_panel_rect.position), _ui_viewport_size())
+	var loading_progress_rect := UILayoutTokens.to_screen_rect(_offset_rect(UILayoutTokens.loading_progress_rect(), loading_panel_rect.position), _ui_viewport_size())
+	var loading_percent_rect := UILayoutTokens.to_screen_rect(_offset_rect(UILayoutTokens.loading_percent_rect(), loading_panel_rect.position), _ui_viewport_size())
+	loading_title_label = _make_label(root, "LoadingTitle", "加载中", loading_title_rect.position, loading_title_rect.size, 24, Color(0.88, 0.96, 1.0, 1.0), HORIZONTAL_ALIGNMENT_CENTER)
+	loading_stage_label = _make_label(root, "LoadingStage", "准备页面", loading_stage_rect.position, loading_stage_rect.size, 16, Color(0.72, 0.84, 0.94, 1.0), HORIZONTAL_ALIGNMENT_CENTER)
 	loading_progress_bar = ProgressBar.new()
 	loading_progress_bar.name = "LoadingProgress"
-	loading_progress_bar.position = Vector2(424.0, 380.0)
-	loading_progress_bar.size = Vector2(432.0, 18.0)
+	loading_progress_bar.position = loading_progress_rect.position
+	loading_progress_bar.size = loading_progress_rect.size
 	loading_progress_bar.min_value = 0.0
 	loading_progress_bar.max_value = 100.0
 	loading_progress_bar.value = 0.0
 	root.add_child(loading_progress_bar)
-	loading_percent_label = _make_label(root, "LoadingPercent", "0%", Vector2(424.0, 404.0), Vector2(432.0, 20.0), 13, Color(0.86, 0.92, 0.98, 0.96), HORIZONTAL_ALIGNMENT_CENTER)
+	loading_percent_label = _make_label(root, "LoadingPercent", "0%", loading_percent_rect.position, loading_percent_rect.size, 13, Color(0.86, 0.92, 0.98, 0.96), HORIZONTAL_ALIGNMENT_CENTER)
 	_update_loading_overlay()
 
 
@@ -46016,6 +46208,7 @@ func _build_battle_runtime_menu(root: Control) -> void:
 	if menu_view == null:
 		menu_view = MenuView.new()
 		menu_view.bind(self)
+		_connect_menu_view_signals()
 	battle_runtime_menu_panel = menu_view.build_battle_runtime_menu(root)
 	battle_runtime_menu_buttons = menu_view.battle_runtime_menu_buttons
 
@@ -46072,6 +46265,7 @@ func _build_page_options_ui() -> void:
 	if menu_view == null:
 		menu_view = MenuView.new()
 		menu_view.bind(self)
+		_connect_menu_view_signals()
 	page_options_layer = menu_view.build_page_options(self)
 	page_options_panel = menu_view.page_options_panel
 	page_options_buttons = menu_view.page_options_buttons
@@ -47756,6 +47950,64 @@ func _thruster_family_summary(family: String) -> String:
 			return "推进器族系：按推进、Boost、刹车和反作用力抵消区分。" if _ui_is_zh() else "Thruster family: distinguishes thrust, boost, braking, and recoil cancel."
 
 
+func _limb_visual_family_label(part: Dictionary) -> String:
+	match PartArt.limb_visual_family(part):
+		"forearm_myomer":
+			return "轻前臂" if _ui_is_zh() else "Light Forearm"
+		"thigh_myomer":
+			return "标准大肢体" if _ui_is_zh() else "Standard Limb"
+		"flex_tendon":
+			return "柔性腱" if _ui_is_zh() else "Flex Tendon"
+		"chain_muscle":
+			return "分节链肢" if _ui_is_zh() else "Chain Limb"
+		"tentacle":
+			return "软体肢" if _ui_is_zh() else "Soft Tentacle"
+		"steel_sinew_beam":
+			return "承重钢梁" if _ui_is_zh() else "Steel Beam"
+		"ceramic_linear_strut":
+			return "线性撑杆" if _ui_is_zh() else "Linear Strut"
+		"colossus_girder_muscle":
+			return "巨型梁肌" if _ui_is_zh() else "Giant Girder"
+		"barrier_strut":
+			return "结界支架" if _ui_is_zh() else "Barrier Strut"
+		"fur_sleeve":
+			return "缓冲套肢" if _ui_is_zh() else "Impact Sleeve"
+	return "双端肢体" if _ui_is_zh() else "Two-End Limb"
+
+
+func _limb_material_visual_label(part: Dictionary) -> String:
+	match PartArt.limb_material_visual(part):
+		"metal":
+			return "金属" if _ui_is_zh() else "Metal"
+		"chain":
+			return "链节" if _ui_is_zh() else "Chain"
+		"ceramic":
+			return "陶瓷" if _ui_is_zh() else "Ceramic"
+		"wood":
+			return "木/梁纹" if _ui_is_zh() else "Timber"
+		"flex":
+			return "纤维束" if _ui_is_zh() else "Fiber"
+		"hardlight":
+			return "硬光" if _ui_is_zh() else "Hardlight"
+		"fur":
+			return "缓冲绒面" if _ui_is_zh() else "Padded"
+	return "材质" if _ui_is_zh() else "Material"
+
+
+func _limb_visual_summary_line(part: Dictionary) -> String:
+	var role_tags := Array(PartArt.limb_role_tags_for(part))
+	var fit_tags := Array(PartArt.limb_barrier_fit_tags_for(part))
+	var role_text := ", ".join(role_tags.slice(0, mini(3, role_tags.size())))
+	var fit_text := ", ".join(fit_tags.slice(0, mini(2, fit_tags.size())))
+	if _ui_is_zh():
+		if fit_text != "":
+			return "%s / %s；结界适配：%s" % [_limb_visual_family_label(part), _limb_material_visual_label(part), fit_text]
+		return "%s / %s；%s" % [_limb_visual_family_label(part), _limb_material_visual_label(part), role_text]
+	if fit_text != "":
+		return "%s / %s; barrier fit: %s" % [_limb_visual_family_label(part), _limb_material_visual_label(part), fit_text]
+	return "%s / %s; %s" % [_limb_visual_family_label(part), _limb_material_visual_label(part), role_text]
+
+
 func _catalog_card_data_lines(slot_key: String, part: Dictionary) -> Array:
 	var cost := int(part.get("cost", 0))
 	var mass := float(part.get("mass", 0.0))
@@ -47781,7 +48033,7 @@ func _catalog_card_data_lines(slot_key: String, part: Dictionary) -> Array:
 			"joint":
 				return ["价%d 软件式 质%.0f" % [cost, mass], "输出动量%.0f 刚度%.0f" % [_joint_fixed_output_momentum(part), _part_stiffness(part, slot_key)]]
 			"limb_muscle":
-				return ["价%d 尺%s 质%.0f" % [cost, size_tier, mass], "长%.2f 刚度%.0f 双接口" % [length, _part_stiffness(part, slot_key)]]
+				return ["价%d %s 质%.0f" % [cost, _limb_visual_family_label(part), mass], "长%.2f 刚度%.0f %s" % [length, _part_stiffness(part, slot_key), _limb_material_visual_label(part)]]
 			"muscle":
 				if _part_is_ammo_payload(part):
 					var caps: Dictionary = part.get("ammo_capacity", {})
@@ -47810,7 +48062,7 @@ func _catalog_card_data_lines(slot_key: String, part: Dictionary) -> Array:
 		"joint":
 			return ["C%d SOFTWARE M%.0f" % [cost, mass], "OUT%.0f STIFF%.0f" % [_joint_fixed_output_momentum(part), _part_stiffness(part, slot_key)]]
 		"limb_muscle":
-			return ["C%d %s M%.0f" % [cost, size_tier, mass], "L%.2f STIFF%.0f TWO-END" % [length, _part_stiffness(part, slot_key)]]
+			return ["C%d %s M%.0f" % [cost, _limb_visual_family_label(part).to_upper(), mass], "L%.2f STIFF%.0f %s" % [length, _part_stiffness(part, slot_key), _limb_material_visual_label(part).to_upper()]]
 		"muscle":
 			if _part_is_ammo_payload(part):
 				var caps: Dictionary = part.get("ammo_capacity", {})
@@ -49067,7 +49319,9 @@ func _hover_card_player_detail_lines(slot_key: String, part: Dictionary) -> Arra
 			lines.append("只驱动远离躯干侧的肢体组。" if zh else "Drives only the limb group away from the torso.")
 		"limb_muscle":
 			var joint_kind := String(part.get("embedded_joint_kind", part.get("joint_drive_kind", _joint_drive_kind_for_part(part, slot_key))))
+			lines.append("#%s / %s" % [_limb_visual_family_label(part), _limb_material_visual_label(part)])
 			lines.append(("#内置关节 %s" if zh else "#Embedded %s") % joint_kind)
+			lines.append(_limb_visual_summary_line(part))
 			lines.append(("承载 %.0f-%.0f；适合按质量选择武器和行动模块。" if zh else "Drive %.0f-%.0f; match it to weapon mass and action modules.") % [_limb_momentum_min_for_part(part, slot_key), _limb_momentum_max_for_part(part, slot_key)])
 			lines.append(("刚度 %.0f / 伤害 %.2fx / 破防 %.2fx。" if zh else "Stiffness %.0f / damage %.2fx / break %.2fx.") % [_part_stiffness(part, slot_key), _part_damage_coeff(part, slot_key), _part_break_coeff(part, slot_key)])
 		"muscle":
@@ -49189,7 +49443,7 @@ func _editor_rule_flags(role_key: String, unit_bp: Dictionary, stats: Dictionary
 		"topology": topology_note.begins_with("INVALID"),
 		"action": action_note.begins_with("INVALID"),
 		"material": material_note.begins_with("INVALID"),
-		"power": String(stats.get("engine_momentum_note", "")).begins_with("INVALID"),
+		"power": String(stats.get("drive_note", "")).begins_with("INVALID"),
 		"thermal": String(stats.get("thermal_note", "")).begins_with("INVALID"),
 		"slot": String(stats.get("slot_payload_note", "")).begins_with("INVALID"),
 		"momentum": String(stats.get("joint_momentum_note", "")).begins_with("INVALID"),
@@ -49272,7 +49526,7 @@ func _editor_stats_entries(current_stats: Dictionary, preview_stats: Dictionary,
 	_append_editor_stat(entries, "质量" if _ui_is_zh() else "Mass", "mass", current_stats, preview_stats, 900.0, "", false)
 	_append_editor_stat_from_values(entries, "尺寸等级" if _ui_is_zh() else "Size Tier", _stats_size_rank_value(current_stats), _stats_size_rank_value(preview_stats), 5.0, "级" if _ui_is_zh() else "x", false)
 	_append_editor_section(entries, "动力" if _ui_is_zh() else "DRIVE", Color(1.0, 0.82, 0.28, 0.94))
-	_append_editor_balance_stat(entries, "动力预算" if _ui_is_zh() else "Drive Budget", current_stats, preview_stats, "engine_momentum_output", "engine_momentum_required", "总" if _ui_is_zh() else "T", "需求" if _ui_is_zh() else "REQ", bool(flags.get("power", false)))
+	_append_editor_balance_stat(entries, "动力预算" if _ui_is_zh() else "Drive Budget", current_stats, preview_stats, "drive_output_total", "drive_demand_total", "总" if _ui_is_zh() else "T", "需求" if _ui_is_zh() else "REQ", bool(flags.get("power", false)))
 	_append_editor_stat(entries, "推进器需求" if _ui_is_zh() else "Thr Demand", "thruster_drive_demand", current_stats, preview_stats, 520.0, "", bool(flags.get("power", false)))
 	_append_editor_stat(entries, "绑定肢体动力" if _ui_is_zh() else "Bound Limb Drive", "bound_limb_allocated_momentum", current_stats, preview_stats, 520.0, "", bool(flags.get("power", false)))
 	_append_editor_section(entries, "热" if _ui_is_zh() else "HEAT", Color(0.34, 1.0, 0.68, 0.9))
@@ -49282,14 +49536,12 @@ func _editor_stats_entries(current_stats: Dictionary, preview_stats: Dictionary,
 		_append_editor_stat(entries, "热槽" if _ui_is_zh() else "Heat", "heat_capacity", current_stats, preview_stats, 260.0, "", false)
 	_append_editor_stat(entries, "Boost热量" if _ui_is_zh() else "Boost Heat", "boost_heat", current_stats, preview_stats, 40.0, "", false)
 	_append_editor_section(entries, "机动" if _ui_is_zh() else "MOTION", Color(0.42, 0.92, 1.0, 0.92))
-	_append_editor_stat(entries, "机体速度" if _ui_is_zh() else "Body Speed", "body_move_speed", current_stats, preview_stats, 8.0, "m/s", false)
+	_append_editor_stat(entries, "机体速度" if _ui_is_zh() else "Body Speed", "move_speed", current_stats, preview_stats, 8.0, "m/s", false)
 	_append_editor_stat(entries, "Boost速度" if _ui_is_zh() else "Boost Speed", "boost_speed", current_stats, preview_stats, 9.0, "m/s", false)
 	_append_editor_stat(entries, "移动动量" if _ui_is_zh() else "Move Momentum", "move_momentum", current_stats, preview_stats, 520.0, "", false)
-	_append_editor_stat(entries, "Boost额外动量" if _ui_is_zh() else "Boost Extra", "boost_momentum", current_stats, preview_stats, 520.0, "", false)
-	_append_editor_stat(entries, "Boost总动量" if _ui_is_zh() else "Boost Total", "boost_total_momentum", current_stats, preview_stats, 860.0, "", false)
+	_append_editor_stat(entries, "Boost动量" if _ui_is_zh() else "Boost Momentum", "boost_momentum", current_stats, preview_stats, 860.0, "", false)
 	_append_editor_stat(entries, "Boost冷却" if _ui_is_zh() else "Boost CD", "boost_cooldown", current_stats, preview_stats, 2.0, "s", false)
-	_append_editor_stat(entries, "推进加速" if _ui_is_zh() else "Thr Accel", "thruster_acceleration", current_stats, preview_stats, 8.0, "m/s²" if _ui_is_zh() else "m/s2", false)
-	_append_editor_stat(entries, "推进持续" if _ui_is_zh() else "Thr Dur", "thruster_duration", current_stats, preview_stats, 1.0, "s", false)
+	_append_editor_stat(entries, "推进加速" if _ui_is_zh() else "Move Accel", "move_acceleration", current_stats, preview_stats, 8.0, "m/s²" if _ui_is_zh() else "m/s2", false)
 	_append_editor_stat(entries, "Boost持续" if _ui_is_zh() else "Boost Dur", "boost_duration", current_stats, preview_stats, 1.0, "s", false)
 	_append_editor_stat(entries, "转向角速" if _ui_is_zh() else "Turn Speed", "turn_speed", current_stats, preview_stats, 10.0, "rad/s", false)
 	_append_editor_stat(entries, "转向加速" if _ui_is_zh() else "Turn Accel", "turn_acceleration", current_stats, preview_stats, 40.8, "rad/s²" if _ui_is_zh() else "rad/s2", false)
@@ -50438,7 +50690,7 @@ func _update_battle_instrument_gauge() -> void:
 		return
 	var speed: float = unit.velocity.length()
 	var boost_speed := float(unit.stats.get("boost_speed", 0.0))
-	var body_speed := float(unit.stats.get("body_move_speed", 0.0))
+	var body_speed := float(unit.stats.get("move_speed", 0.0))
 	var configured_limit := maxf(0.0, float(unit.stats.get("speedometer_max_speed", 0.0)))
 	var fallback_limit := maxf(1.0, maxf(boost_speed * 2.0, body_speed * 3.0) * 1.5)
 	var speed_max: float = maxf(speed, configured_limit if configured_limit > 0.001 else fallback_limit)
@@ -51673,6 +51925,26 @@ func _add_ui_rect(parent: Control, rect_name: String, rect_position: Vector2, re
 	rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	parent.add_child(rect)
 	return rect
+
+
+func _offset_rect(rect: Rect2, offset: Vector2) -> Rect2:
+	return Rect2(rect.position + offset, rect.size)
+
+
+func _ui_viewport_size() -> Vector2:
+	var viewport := get_viewport()
+	if viewport == null:
+		return UILayoutTokens.DESIGN_SIZE
+	var rect := viewport.get_visible_rect()
+	if rect.size.x <= 0.0 or rect.size.y <= 0.0:
+		return UILayoutTokens.DESIGN_SIZE
+	return rect.size
+
+
+func _apply_layout_rect(control: Control, token_rect: Rect2) -> void:
+	var screen_rect := UILayoutTokens.to_screen_rect(token_rect, _ui_viewport_size())
+	control.position = screen_rect.position
+	control.size = screen_rect.size
 
 
 func _make_label(parent: Control, label_name: String, text: String, label_position: Vector2, label_size: Vector2, font_size: int, color: Color, alignment: HorizontalAlignment) -> Label:

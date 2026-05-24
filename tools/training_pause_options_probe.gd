@@ -12,6 +12,9 @@ func _init() -> void:
 	var main = MainScene.new()
 	root.add_child(main)
 	main._ready()
+	main.loading_auto_transitions_enabled = false
+	if main.game_state == MainScene.STATE_LOADING:
+		main._show_menu(true)
 	main._show_training_config(true)
 	main._select_ai_battle_seat(1)
 	main._try_begin_battle_from_scout()

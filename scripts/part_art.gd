@@ -110,11 +110,7 @@ static func shape_kind_for(slot_key: String, part: Dictionary) -> String:
 			return "telescopic_joint"
 		return "ball_joint"
 	if slot_key == "limb_muscle":
-		if key.contains("chain") or key.contains("whip") or key.contains("tentacle"):
-			return "chain_link"
-		if key.contains("stake") or key.contains("rod") or key.contains("girder"):
-			return "straight_beam"
-		return "two_end_muscle"
+		return limb_visual_family(part)
 	if slot_key == "torso":
 		return "saddle_torso"
 	if slot_key == "projectile":
@@ -140,8 +136,136 @@ static func shape_kind_for(slot_key: String, part: Dictionary) -> String:
 	return "component_node"
 
 
+static func limb_visual_family(part: Dictionary) -> String:
+	var explicit := String(part.get("limb_visual_family", "")).to_lower()
+	if explicit != "":
+		return explicit
+	var key := ("%s %s %s %s %s %s %s %s" % [
+		String(part.get("name", "")),
+		String(part.get("component_name", "")),
+		String(part.get("label", "")),
+		String(part.get("shape", "")),
+		String(part.get("source_shape", "")),
+		String(part.get("material_class", "")),
+		String(part.get("material_visual", "")),
+		String(part.get("limb_material_visual", "")),
+	]).to_lower()
+	if key.contains("maze_wall") or key.contains("bulkhead") or key.contains("barrier") or key.contains("cage") or key.contains("wall_joint"):
+		return "barrier_strut"
+	if key.contains("colossus") or key.contains("kaiju") or key.contains("monster") or key.contains("xl anchor") or key.contains("sinew girder") or key.contains("girder_muscle"):
+		return "colossus_girder_muscle"
+	if key.contains("ceramic_linear_strut") or key.contains("linear strut") or key.contains("shin strut") or key.contains("telescopic") or key.contains("strut") or key.contains("rail"):
+		return "ceramic_linear_strut"
+	if key.contains("steel_sinew_beam") or key.contains("steel") or key.contains("metal") or key.contains("beam") or key.contains("carapace forelimb"):
+		return "steel_sinew_beam"
+	if key.contains("tentacle") or key.contains("octopus"):
+		return "tentacle"
+	if key.contains("chain_muscle") or key.contains("chain") or key.contains("whip") or key.contains("strand"):
+		return "chain_muscle"
+	if key.contains("flex_tendon") or key.contains("flex") or key.contains("tendon") or key.contains("fiber") or key.contains("sinew"):
+		return "flex_tendon"
+	if key.contains("fur_sleeve") or key.contains("fur") or key.contains("padded"):
+		return "fur_sleeve"
+	if key.contains("strider") or key.contains("route-running") or key.contains("light route"):
+		return "forearm_myomer"
+	if key.contains("syntax standard") or key.contains("standard link") or key.contains("plain two-ended") or key.contains("balanced template"):
+		return "thigh_myomer"
+	if key.contains("forearm") or key.contains("duel") or key.contains("wrist"):
+		return "forearm_myomer"
+	if key.contains("thigh") or key.contains("upper arm") or key.contains("myomer") or key.contains("standard limb"):
+		return "thigh_myomer"
+	return "two_end_muscle"
+
+
+static func limb_material_visual(part: Dictionary) -> String:
+	var explicit := String(part.get("limb_material_visual", "")).to_lower()
+	if explicit != "":
+		return explicit
+	var key := ("%s %s %s %s %s %s" % [
+		String(part.get("name", "")),
+		String(part.get("shape", "")),
+		String(part.get("source_shape", "")),
+		String(part.get("material_class", "")),
+		String(part.get("material_visual", "")),
+		limb_visual_family(part),
+	]).to_lower()
+	if key.contains("hardlight") or key.contains("barrier") or key.contains("cage") or key.contains("field"):
+		return "hardlight"
+	if key.contains("ceramic") or key.contains("stone"):
+		return "ceramic"
+	if key.contains("wood") or key.contains("timber"):
+		return "wood"
+	if key.contains("fur") or key.contains("hide") or key.contains("padded"):
+		return "fur"
+	if key.contains("chain"):
+		return "chain"
+	if key.contains("flex") or key.contains("tendon") or key.contains("fiber") or key.contains("myomer") or key.contains("muscle") or key.contains("sinew") or key.contains("tentacle") or key.contains("whip"):
+		return "flex"
+	return "metal"
+
+
+static func limb_role_tags_for(part: Dictionary) -> PackedStringArray:
+	var explicit = part.get("limb_role_tags", [])
+	if explicit is PackedStringArray:
+		return explicit
+	if explicit is Array and not Array(explicit).is_empty():
+		var tags := PackedStringArray()
+		for raw_tag in Array(explicit):
+			tags.append(String(raw_tag))
+		return tags
+	match limb_visual_family(part):
+		"forearm_myomer":
+			return PackedStringArray(["light_forearm", "low_inertia", "small_weapon"])
+		"thigh_myomer":
+			return PackedStringArray(["standard_limb", "load_belly", "upper_leg"])
+		"flex_tendon":
+			return PackedStringArray(["flex_tendon", "wide_angle", "blade_chain"])
+		"chain_muscle":
+			return PackedStringArray(["linked_limb", "whip_chain", "return_motion"])
+		"tentacle":
+			return PackedStringArray(["soft_limb", "wide_angle", "strange_frame"])
+		"steel_sinew_beam":
+			return PackedStringArray(["load_beam", "shield_hammer", "heavy_weapon"])
+		"ceramic_linear_strut":
+			return PackedStringArray(["linear_strut", "thrust_brace", "rail_limb"])
+		"colossus_girder_muscle":
+			return PackedStringArray(["giant_girder", "anchor_limb", "monster_weapon"])
+		"barrier_strut":
+			return PackedStringArray(["barrier_support", "hard_wall", "maze_piece"])
+		"fur_sleeve":
+			return PackedStringArray(["impact_sleeve", "padded_limb", "shove_absorb"])
+	return PackedStringArray(["two_end_limb"])
+
+
+static func limb_barrier_fit_tags_for(part: Dictionary) -> PackedStringArray:
+	var explicit = part.get("barrier_fit_tags", [])
+	if explicit is PackedStringArray:
+		return explicit
+	if explicit is Array and not Array(explicit).is_empty():
+		var tags := PackedStringArray()
+		for raw_tag in Array(explicit):
+			tags.append(String(raw_tag))
+		return tags
+	match limb_visual_family(part):
+		"steel_sinew_beam":
+			return PackedStringArray(["support", "anchor", "shield_wall"])
+		"ceramic_linear_strut":
+			return PackedStringArray(["rail", "cage", "mechanism"])
+		"colossus_girder_muscle":
+			return PackedStringArray(["anchor", "huge_wall", "support"])
+		"barrier_strut":
+			return PackedStringArray(["maze_wall", "cage", "hard_cover"])
+		"chain_muscle", "tentacle":
+			return PackedStringArray(["tether", "moving_barrier"])
+		"flex_tendon":
+			return PackedStringArray(["tether", "soft_gate"])
+	return PackedStringArray()
+
+
 static func material_style_for(part: Dictionary) -> String:
-	var key := _part_key(part) + " " + String(part.get("material_visual", "")).to_lower()
+	var key := _part_key(part) + " " + String(part.get("material_visual", "")).to_lower() + " " + String(part.get("limb_material_visual", "")).to_lower()
+	if String(part.get("slot", "")).to_lower() == "limb_muscle" or bool(part.get("limb_segment", false)):
+		return limb_material_visual(part)
 	if key.contains("ceramic") or key.contains("stone"):
 		return "ceramic"
 	if key.contains("wood") or key.contains("timber"):
@@ -181,6 +305,12 @@ static func material_color_for(material_style: String, slot_key: String = "") ->
 			return Color(0.56, 0.39, 0.2, 1.0)
 		"fur":
 			return Color(0.58, 0.5, 0.38, 1.0)
+		"flex":
+			return Color(0.62, 0.76, 0.82, 1.0)
+		"chain":
+			return Color(0.64, 0.7, 0.76, 1.0)
+		"hardlight":
+			return Color(0.42, 0.88, 1.0, 1.0)
 		"software":
 			return Color(0.38, 0.86, 1.0, 1.0)
 	return Color(0.7, 0.78, 0.84, 1.0)

@@ -12,6 +12,105 @@ Primary implementation file: `scripts/main.gd`
 
 Godot version in workspace: `tools/godot-4.6.2/Godot_v4.6.2-stable_win64_console.exe`
 
+## 2026-05-25 Governance Implementation Pass
+
+Rules:
+- `DriveSystemService` no longer reads legacy drive fallback names. Callers must provide the normalized drive contract before invoking it.
+- `tools/probe_manifest.json` is the probe governance source. `current` probes must avoid old drive fixture fields; `legacy_rejection` probes are the only place where old field names are expected.
+- GitHub CI should run the same Godot wrapper and governance probes as the local E-drive workspace. The workflow downloads Godot 4.6.2 because `tools/godot-*` remains ignored.
+
+Implementation notes:
+- Added `drive_service_contract_probe` to enforce the service-only drive contract.
+- Added `tools/probe_manifest.json` and expanded `probe_manifest_no_legacy_fixture_probe` to scan current probes from the manifest.
+- Added `.github/workflows/godot-governance.yml` for check-only and governance probes on push/PR.
+- Added `_apply_drive_budget()` as the new-named budget entry while the older main-file helper is gradually retired.
+- Updated `README.md` with the current governance baseline so collaborators do not treat old README attack-group or power language as active rules.
+
+Verification notes:
+- This pass should be verified with `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120`, then the probes listed in `tools/probe_manifest.json`.
+- Browser opened the configured GitHub repository URL but received GitHub `Page not found`; treat remote visibility/authentication as unresolved until push/PR succeeds.
+
+## 2026-05-25 Code Health Governance Baseline
+
+Rules:
+- `E:\New project` remains the implementation source. Documents and OneDrive copies are mirrors only.
+- `ActionProfileRegistry` is the single acceptance source for live module profiles, projectile profiles, and `X / 4X / 6X / 236X / 214X` command-state mapping.
+- `DriveSystemService` is the public drive contract source for `drive_output_total`, `drive_demand_total`, `drive_margin`, `drive_ratio`, `move_speed`, `boost_speed`, `action_drive_scale`, and `stability_drive_scale`.
+- `UnitBlueprintValidator` is the shared legacy-drive/topology/action-pointer scanner. Legacy drive fields and old action/topology pointers remain hard rejection data, not migration data.
+- Fighter hot runtime movement, braking, boost, action speed, and reaction cancel must read new stats first; old `body_move_speed`, `thruster_acceleration`, `brake_efficiency`, `recoil_cancel`, and `joint_power` are not valid runtime fallbacks.
+
+Implementation notes:
+- Created a safety branch and snapshot before governance work: `safety/eidolon-health-audit-20260525-004915`, commit `0a3086e`.
+- Configured `origin` remote: `https://github.com/zhuyeyang979-glitch/Eidolon-Circuit.git`.
+- Added `scripts/services/action_profile_registry.gd`, `scripts/services/drive_system_service.gd`, and `scripts/services/unit_blueprint_validator.gd`.
+- Wired `main.gd` projectile whitelist, gun-kind profile lookup, module lifecycle checks, legacy scanner access, team legality, editor flags, and stats display to the new registry/drive/validator services.
+- Updated Fighter movement/brake/boost/action/reaction hot paths so the validated runtime blocks no longer read the old drive fallback names.
+- Fixed `scripts/ui_layout_tokens.gd` row/grid helper typing so the tokenized menu view compiles under Godot's strict type inference.
+- Added governance probes for registry completeness, validator single source, service extraction, no legacy runtime reads, probe fixture scope, drive budget, and drive runtime movement.
+
+Verification:
+- `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120` passed headed on RTX 4080 SUPER. The known ObjectDB leak warning still appears on exit but commands exit `0`.
+- New probes passed:
+  - `action_profile_registry_completeness_probe`
+  - `unit_validator_single_source_probe`
+  - `main_file_extraction_contract_probe`
+  - `runtime_no_legacy_drive_reads_probe`
+  - `probe_manifest_no_legacy_fixture_probe`
+  - `drive_budget_teamedit_probe`
+  - `drive_runtime_movement_probe`
+- Regressions passed:
+  - `action_module_execution_matrix_probe`
+  - `projectile_profile_whitelist_probe`
+  - `runtime_melee_never_projectile_gate_probe`
+  - `teamedit_probe`
+  - `teamedit_bound_module_tryout_probe`
+  - `mobius_bullet_readability_probe`
+  - `ui_layout_probe`
+  - `text_overflow_probe`
+
+Known follow-up:
+- `training_saved_unit_control_probe` could not run in this workspace because no local saved training unit named `4` exists in `user://saved_units`. Use a new drive fixture probe or restore the fixture before treating that probe as a gameplay regression.
+- Many historical probes still contain old field names as legacy-specific fixtures or pre-governance checks. They should be rewritten gradually under the new drive manifest instead of being deleted blindly.
+
+Sync:
+- Implemented in `E:\New project`; Documents and OneDrive mirrors must be refreshed from this source after this entry.
+
+## 2026-05-25 Headed Verification Gate
+
+Rules:
+- UI, navigation, Unit Edit, and loading first-interaction acceptance must cite `tools/run_headed_gate.ps1`; this is the canonical local gate.
+- The gate has three fixed headed groups: `navigation_menu`, `unit_edit`, and `loading_first_interaction`.
+- Headless runs remain allowed only as parser/resource-load assistance and must be labeled auxiliary. Do not present a headless run as proof that UI behavior is reasonable.
+- `tools/run_godot_checked.ps1` remains the low-level runner; gate scripts and reports should call it with `-Headed` for UI acceptance.
+
+Implementation notes:
+- Added `tools/run_headed_gate.ps1` with `-Group navigation_menu|unit_edit|loading_first_interaction|all`, a required headed check-only pass, per-item summaries, and fail-fast behavior.
+- Added `tools/headed_gate_contract_probe.gd` to verify the gate groups, required probe names, forced `-Headed` use, and absence of `-Headless`.
+- Training config navigation now prepares the player-side loadout without requiring the local Unit4 dummy; Unit4 legality is still enforced when starting training from Scout.
+- `startup_deep_preload_probe` and `teamedit_page_deep_preload_probe` now consume the real `_ready()` startup loading before asserting deep preload state.
+- Added the missing `AssemblyBoardRenderer.limb_polygon()` path so shared component overlay/collider geometry compiles cleanly under the headed gate.
+
+Verification:
+- Passed on headed Vulkan / RTX 4080 SUPER: `tools/run_headed_gate.ps1 -Group navigation_menu -TimeoutSec 120`, `-Group unit_edit`, `-Group loading_first_interaction`, and full `tools/run_headed_gate.ps1 -TimeoutSec 120` (`passed=29 failed=0`).
+- `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120` also passed headed. The existing ObjectDB leak warning still appears during teardown but the commands exit `0`.
+- Run `tools/run_headed_gate.ps1 -TimeoutSec 120` for the full local UI gate. For focused iteration, run `tools/run_headed_gate.ps1 -Group navigation_menu`, `-Group unit_edit`, or `-Group loading_first_interaction`.
+
+## 2026-05-25 Menu View / Controller Split
+
+Rules:
+- Main menu, Page Options, and Battle Runtime Options are table-driven through `MenuController` specs.
+- `MenuView` owns button construction and text refresh for those three menu surfaces; `main.gd` keeps compatibility wrappers and executes side effects.
+- Legacy public button collections remain readable: `menu_buttons`, `page_options_buttons`, `battle_runtime_menu_buttons`, and `menu_ai_seat_buttons`.
+
+Implementation notes:
+- Added `scripts/views/menu_view.gd` and moved menu button creation/refresh there.
+- Expanded `scripts/controllers/menu_controller.gd` with main menu, page option, battle runtime option, and AI seat specs plus action dictionaries.
+- Kept NavigationService as the page-return authority; menu controller only emits intent.
+
+Verification:
+- New headed probes passed: `menu_view_controller_contract_probe`, `main_menu_table_actions_probe`, `page_options_table_router_probe`, `battle_runtime_options_table_probe`, `menu_language_table_probe`.
+- Regressions passed: `main_menu_navigation_probe`, `options_menu_unification_probe`, `page_options_router_back_probe`, `training_pause_options_probe`, `ui_layout_probe`, `text_overflow_probe`, `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120`.
+
 ## 2026-05-25 Navigation Service Contract
 
 Rules:
@@ -3521,6 +3620,56 @@ Findings:
 Sync:
 - Implemented in `E:\New project`; mirror sync and local commit recorded by the surrounding Git history.
 
+## 2026-05-25 Live Limb Visual Families and Material Layers
+
+Rules:
+- All live `limb_muscle` parts must render through shared procedural `AssemblyBoardRenderer` limb geometry in catalog preview, TeamEdit board, and runtime overlays.
+- Runtime and board visual conversion must preserve `shape` / `source_shape` instead of collapsing every non-terminal limb into a generic capsule.
+- Limb visuals are player-facing recognition metadata only: no combat formula, save migration, projectile path, child visual, Line2D/Polygon2D helper, or gameplay API change.
+- Legacy drive/load field exposure remains forbidden. Old `load_capacity` expectations in probes should be expressed through current embedded joint profiles instead of restoring raw legacy keys.
+
+Implementation notes:
+- Added `PartArt.limb_visual_family()`, `limb_material_visual()`, role tags, and barrier-fit tags. Live limbs now resolve to readable families such as `forearm_myomer`, `thigh_myomer`, `flex_tendon`, `chain_muscle`, `steel_sinew_beam`, `ceramic_linear_strut`, `fur_sleeve`, and `colossus_girder_muscle`.
+- `AssemblyBoardRenderer` now uses a dedicated `limb_polygon()` for non-terminal limbs. Forearms, thighs, tendons, chains, steel beams, ceramic struts, padded sleeves, and giant girders have distinct top-down silhouettes and procedural detail lines.
+- Runtime `segment_to_component_node()` and catalog `part_to_component_node()` now carry limb family/material metadata so board and battle overlays remain visually identical.
+- Catalog small cards and hover detail lines now show useful limb labels such as light forearm, standard limb, flexible tendon, steel beam, linear strut, barrier fit, and material style instead of only generic two-end wording.
+- Updated old torso/limb and special-joint probes to check current embedded joint profile output/capacity instead of direct legacy `load_capacity`.
+
+Verification:
+- `tools/run_godot_checked.ps1 -Headless -CheckOnly -TimeoutSec 120` passed.
+- New probes passed:
+  - `limb_visual_family_probe`
+  - `limb_specific_polygon_probe`
+  - `limb_material_visual_layers_probe`
+  - `limb_runtime_board_identity_probe`
+  - `barrier_limb_fit_visual_probe`
+- Regressions passed:
+  - `limb_gradient_catalog_probe`
+  - `special_joint_limb_gradient_probe`
+  - `torso_limb_stat_shape_probe`
+  - `part_size_visual_probe`
+  - `part_library_ui_probe`
+  - `part_hover_detail_page_probe`
+  - `board_battle_art_identity_probe`
+  - `runtime_geometry_identity_probe`
+  - `training_topology_visual_consistency_probe`
+  - `combat_probe`
+  - `ui_layout_probe`
+  - `text_overflow_probe`
+  - `catalog_ui_terms_probe`
+  - `part_catalog_balance_probe`
+  - `part_catalog_no_legacy_fields_probe`
+  - `no_old_combat_terms_probe`
+  - `no_legacy_runtime_pointers_probe`
+
+Findings:
+- The main visual bug was the renderer conversion layer: catalog entries already had several meaningful limb shapes, but board/runtime conversion overwrote non-terminal limbs with `shape="limb"`, forcing capsule visuals.
+- Two live older limbs, `SYNTAX STANDARD LINK` and `COINRUN LIGHT STRIDER`, had no explicit shape. They now derive into `thigh_myomer` and `forearm_myomer` families by name/role, avoiding generic fallback without raw catalog churn.
+- An extra attempted `raw_catalog_no_legacy_power_fields_probe` still flags existing raw `energy` catalog fields. This round did not change that global raw-catalog cleanup scope; player-facing catalog and runtime legacy-field probes passed.
+
+Sync:
+- Implemented in `E:\New project`; Documents and OneDrive mirrors refreshed from this source after verification.
+
 ## 2026-05-25 Weapon Silhouette Pass: Remaining Melee and Ranged Shapes
 
 Rules:
@@ -5361,6 +5510,38 @@ Verification:
   - `combat_probe`
   - `ui_layout_probe`
   - `text_overflow_probe`
+
+## 2026-05-25 UI Layout Tokens
+
+Rules:
+- New screen-level UI layout must use `UILayoutTokens` for shared regions, panel rects, row/grid placement, and modal centering. Do not add naked absolute layout coordinates such as `Vector2(936, 354)` in new view code.
+- Local drawing geometry remains local to the drawing surface: icon strokes, preview polygons, card art internals, and renderer-local `Vector2` math do not need layout tokens.
+- First-pass migration covers menu surfaces and shared overlays only. Unit Edit, Scout, Settings, and Battle HUD should move to the same token contract incrementally, without destabilizing active UI workflows.
+- Headed probes remain the default acceptance path for UI layout changes.
+
+Implementation notes:
+- Added `scripts/ui_layout_tokens.gd` with the 1280x720 design size, common margins/gaps/button heights, shared left/right/main/top/bottom regions, modal centering, menu panel rects, and row/grid helpers.
+- Migrated `MenuView` main menu, Page Options, and Battle Runtime Options to token-driven rects while preserving legacy pixel layout and compatibility arrays.
+- Moved the format select modal and loading overlay panel geometry in `main.gd` to the same token helper contract.
+- Added focused probes for token contracts, MenuView/token alignment, naked menu layout coordinates, and menu layout regression.
+
+Verification:
+- Headed probes passed:
+  - `ui_layout_tokens_contract_probe`
+  - `menu_view_uses_layout_tokens_probe`
+  - `layout_tokens_no_naked_menu_coords_probe`
+  - `menu_layout_regression_probe`
+  - `menu_view_controller_contract_probe`
+  - `main_menu_table_actions_probe`
+  - `page_options_table_router_probe`
+  - `battle_runtime_options_table_probe`
+  - `menu_language_table_probe`
+  - `ui_layout_probe`
+  - `text_overflow_probe`
+- `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120` passed headed. Godot still reports the pre-existing ObjectDB leak warning on exit, but commands exit `0`.
+
+Sync:
+- Implemented in `E:\New project`; Documents and OneDrive mirrors should be refreshed from this source after commit.
 
 Findings:
 - The concrete remaining slow chain the player described was not the catalog page renderer anymore. It was existing-node release and unlink/pose commit still marking Dashboard/stat domains for immediate recomputation. Removing that immediate Dashboard dirty from the click frame reduced these probes from roughly 8-13ms to roughly 2ms.

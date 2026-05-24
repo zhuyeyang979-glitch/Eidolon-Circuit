@@ -21,7 +21,9 @@ func _init() -> void:
 	root.add_child(main)
 	main._ready()
 	main.loading_auto_transitions_enabled = true
-	main._show_menu()
+	if String(main.game_state) != MainScene.STATE_LOADING:
+		_fail("Startup deep probe expected _ready() to enter loading.")
+		return
 	_drain_loading(main)
 	if String(main.game_state) != MainScene.STATE_MENU:
 		_fail("Startup deep loading did not enter menu.")

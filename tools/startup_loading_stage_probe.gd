@@ -21,7 +21,6 @@ func _init() -> void:
 	root.add_child(main)
 	main._ready()
 	main.loading_auto_transitions_enabled = true
-	main._show_menu()
 	if String(main.game_state) != MainScene.STATE_LOADING:
 		_fail("Startup/menu transition did not enter Loading.")
 		return

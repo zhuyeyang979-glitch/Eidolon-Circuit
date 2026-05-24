@@ -15,10 +15,10 @@ func _base_stats() -> Dictionary:
 		"heat_capacity": 100.0,
 		"cooling": 12.0,
 		"teamedit_runtime_topology": true,
-		"bound_limb_allocated_momentum": 60.0,
+		"joint_drive_allocation_total": 60.0,
 		"runtime_topology_segments": [
-			{"node_index": 0, "part_kind": "limb_muscle", "name": "A", "a_local": Vector2.ZERO, "b_local": Vector2(0.55, 0.0), "axis_local": Vector2.RIGHT, "radius": 0.04, "mass": 4.0, "joint_drive_kind": "rotation", "joint_output_momentum_base": 60.0, "allocated_limb_momentum": 60.0, "damage_type": "blunt", "normal_damage": 5},
-			{"node_index": 1, "part_kind": "terminal", "name": "B", "a_local": Vector2(0.55, 0.0), "b_local": Vector2(1.05, 0.0), "axis_local": Vector2.RIGHT, "radius": 0.045, "mass": 5.0, "joint_drive_kind": "rotation", "joint_output_momentum_base": 60.0, "allocated_limb_momentum": 60.0, "terminal_weapon_kind": "melee", "damage_type": "pierce", "normal_damage": 7},
+			{"node_index": 0, "part_kind": "limb_muscle", "name": "A", "a_local": Vector2.ZERO, "b_local": Vector2(0.55, 0.0), "axis_local": Vector2.RIGHT, "radius": 0.04, "mass": 4.0, "joint_drive_kind": "rotation", "joint_output_momentum_base": 60.0, "joint_drive_allocation": 60.0, "damage_type": "blunt", "normal_damage": 5},
+			{"node_index": 1, "part_kind": "terminal", "name": "B", "a_local": Vector2(0.55, 0.0), "b_local": Vector2(1.05, 0.0), "axis_local": Vector2.RIGHT, "radius": 0.045, "mass": 5.0, "joint_drive_kind": "rotation", "joint_output_momentum_base": 60.0, "joint_drive_allocation": 60.0, "terminal_weapon_kind": "melee", "damage_type": "pierce", "normal_damage": 7},
 		],
 	}
 

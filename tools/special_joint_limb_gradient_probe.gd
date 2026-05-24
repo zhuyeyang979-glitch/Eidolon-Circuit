@@ -46,7 +46,9 @@ func _init() -> void:
 	var girder := _require_profile(main, "COLOSSUS SINEW GIRDER", "ball", 90, 0, 850, 1700)
 	if not (float(forearm.get("mass", 0.0)) < float(thigh.get("mass", 0.0)) and float(thigh.get("mass", 0.0)) < float(steel.get("mass", 0.0)) and float(steel.get("mass", 0.0)) < float(girder.get("mass", 0.0))):
 		_fail("Special-joint limb mass gradient is not monotonic.")
-	if float(tendon.get("load_capacity", 0.0)) >= float(steel.get("load_capacity", 0.0)):
+	var tendon_profile: Dictionary = main._embedded_joint_profile_for_part(tendon, "limb_muscle")
+	var steel_profile: Dictionary = main._embedded_joint_profile_for_part(steel, "limb_muscle")
+	if float(tendon_profile.get("momentum_capacity", 0.0)) >= float(steel_profile.get("momentum_capacity", 0.0)):
 		_fail("Flexible tendon must trade capacity for angle.")
 	if not String(strut.get("shape", "")).contains("linear"):
 		_fail("Ceramic shin strut should advertise linear geometry.")

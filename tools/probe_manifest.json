@@ -1,0 +1,40 @@
+{
+  "core": [
+    "run_godot_checked.ps1 -CheckOnly -TimeoutSec 120",
+    "action_profile_registry_completeness_probe",
+    "drive_service_contract_probe",
+    "unit_validator_single_source_probe",
+    "main_file_extraction_contract_probe",
+    "runtime_no_legacy_drive_reads_probe",
+    "probe_manifest_no_legacy_fixture_probe"
+  ],
+  "current": [
+    "drive_budget_teamedit_probe",
+    "drive_runtime_movement_probe",
+    "action_module_execution_matrix_probe",
+    "projectile_profile_whitelist_probe",
+    "module_binding_board_highlight_probe",
+    "teamedit_bound_module_tryout_probe",
+    "mobius_bullet_readability_probe",
+    "battle_controlled_unit_center_on_begin_probe",
+    "battle_vfx_budget_probe",
+    "ui_layout_probe",
+    "text_overflow_probe"
+  ],
+  "legacy_rejection": [
+    "unit_validator_single_source_probe",
+    "drive_legacy_runtime_rejection_probe",
+    "drive_legacy_rejection_probe",
+    "drive_legacy_saved_unit_rejection_probe",
+    "legacy_pointer_rejection_probe"
+  ],
+  "manual_visual": [
+    "weapon_art_reference_review",
+    "mobius_backdrop_readability_review"
+  ],
+  "obsolete_review": [
+    "engine_momentum_allocation_*",
+    "thruster_momentum_*",
+    "legacy_power_symbol_absence_probe"
+  ]
+}

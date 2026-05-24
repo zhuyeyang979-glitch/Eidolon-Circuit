@@ -122,7 +122,7 @@ func main_menu_model(language: String, ai_battle_seat: int, match_format_short: 
 		"telemetry": ("实验室就绪 / %s / 首发200" if zh else "LAB READY / %s / START 200") % match_format_short,
 		"help": "鼠标点击菜单；键盘/手柄仍可用。" if zh else "Click menus; keyboard/controller optional.",
 		"ai_seat_title": "AI 对战席位" if zh else "AI BATTLE SEAT",
-		"ai_seat_hint": "请用鼠标点击下方 P1、P2 或 P3 进入 AI 对战。" if zh else "Click P1, P2, or P3 below with the mouse to enter AI Battle.",
+		"ai_seat_hint": "点击下方 P1/P2/P3 进入 AI 对战。" if zh else "Click P1/P2/P3 below to enter.",
 	}
 
 

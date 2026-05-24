@@ -9,6 +9,19 @@ var _last_transition := {}
 var _history: Array = []
 
 
+func return_target_for(target_page: String, explicit_return_target: String = "") -> String:
+	if explicit_return_target != "":
+		return explicit_return_target
+	var current := current_page()
+	match target_page:
+		"settings":
+			if current != "" and current != "settings" and current != "loading":
+				return current
+		"saved_units":
+			return "editor" if current == "editor" else "menu"
+	return ""
+
+
 func begin_transition(to_page: String, reason: String, return_target: String = "", payload: Dictionary = {}) -> Dictionary:
 	var transition := {
 		"phase": "begin",
@@ -95,6 +108,21 @@ func resolve_option_action(action_key: String, current_subroute: String = "") ->
 				return {"action": "navigate_return_target", "to_page": _return_target, "reason": "page_options_back"}
 			return {"action": "navigate_menu", "to_page": "menu", "reason": "page_options_back_menu"}
 	return {"action": "close"}
+
+
+func resolve_target_navigation(target_page: String, reason: String = "navigation_return") -> Dictionary:
+	match target_page:
+		"editor":
+			return {"action": "navigate_editor_preserve", "to_page": "editor", "reason": reason}
+		"saved_units":
+			return {"action": "navigate_saved_units", "to_page": "saved_units", "reason": reason}
+		"settings":
+			return {"action": "navigate_settings", "to_page": "settings", "reason": reason}
+		"scout":
+			return {"action": "navigate_scout", "to_page": "scout", "reason": reason}
+		"battle":
+			return {"action": "navigate_battle_preserve", "to_page": "battle", "reason": reason}
+	return {"action": "navigate_menu", "to_page": "menu", "reason": reason}
 
 
 func snapshot() -> Dictionary:

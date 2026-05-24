@@ -1,6 +1,8 @@
 extends RefCounted
 class_name LoadingController
 
+const LoadingTask = preload("res://scripts/services/loading_task.gd")
+
 const DEFAULT_BUDGET_USEC := 6000
 const DEFAULT_MAX_DURATION_SEC := 10.0
 const DEFAULT_MIN_VISIBLE_SEC := 0.0
@@ -64,15 +66,23 @@ func begin(next_target_state: String, next_reason: String = "", next_max_duratio
 
 
 func add_task(id: String, label: String, weight: float, task_callable: Callable, essential: bool = true, first_interaction_critical: bool = true, idle_optional: bool = false) -> void:
-	var safe_weight := maxf(0.01, weight)
+	var phase := LoadingTask.PHASE_IDLE if idle_optional else (LoadingTask.PHASE_FIRST_INTERACTION if first_interaction_critical and not essential else LoadingTask.PHASE_PAGE)
+	add_loading_task(LoadingTask.create(id, label, weight, task_callable, phase, essential, idle_optional))
+
+
+func add_loading_task(raw_task: Variant) -> void:
+	var normalized = LoadingTask.from_legacy(raw_task)
+	var safe_weight := maxf(0.01, normalized.weight)
 	tasks.append({
-		"id": id,
-		"label": label,
+		"id": normalized.id,
+		"label": normalized.label,
 		"weight": safe_weight,
-		"callable": task_callable,
-		"essential": essential,
-		"first_interaction_critical": first_interaction_critical,
-		"idle_optional": idle_optional,
+		"callable": normalized.callable,
+		"essential": normalized.blocking,
+		"first_interaction_critical": normalized.first_interaction_critical(),
+		"idle_optional": normalized.idle_optional,
+		"phase": normalized.phase,
+		"blocking": normalized.blocking,
 	})
 	total_weight += safe_weight
 

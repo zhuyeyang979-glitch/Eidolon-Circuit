@@ -2,6 +2,18 @@
 
 Eidolon Circuit is a topology-construction fighting prototype with a single-player-first flow.
 
+## Current Governance Baseline
+
+The active development source is `E:\New project`. Documents and OneDrive copies are mirrors only.
+
+The current runtime contract is intentionally narrower than many older notes in this prototype:
+
+- Drive logic flows through `DriveSystemService` and the normalized stats keys `drive_output_total`, `drive_demand_total`, `drive_margin`, `drive_ratio`, `move_speed`, `boost_speed`, `action_drive_scale`, and `stability_drive_scale`.
+- Action modules are governed through `ActionProfileRegistry`; melee profiles must stay in contact-preview/runtime paths, while projectile profiles must pass the explicit gun activation whitelist.
+- Unit legality and old-data rejection are governed through `UnitBlueprintValidator`. Old drive fields, old topology pointers, and old attack/action group pointers are rejection data, not migration data.
+- Probe governance is tracked in `tools/probe_manifest.json`; current probes must not use old drive fixtures unless they are listed as legacy rejection checks.
+- The baseline verification command is `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120`, followed by the governance probes listed in the manifest.
+
 The game now opens to a main menu:
 
 - Team Edit

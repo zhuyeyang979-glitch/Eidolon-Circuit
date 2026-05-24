@@ -460,13 +460,12 @@ func _turn_brake_acceleration() -> float:
 	var brake_power: float = maxf(0.0, float(stats.get("brake_power", 0.0)))
 	var mass: float = maxf(1.0, float(stats.get("mass", 1.0)))
 	var duration: float = maxf(0.04, float(stats.get("boost_duration", 0.3)))
-	var brake_efficiency := maxf(0.1, float(stats.get("brake_efficiency", 1.0)))
 	var allocated_momentum := maxf(0.0, float(stats.get("move_momentum", 0.0)))
 	if allocated_momentum <= 0.0:
-		allocated_momentum = maxf(0.0, float(stats.get("boost_total_momentum", 0.0)))
+		allocated_momentum = maxf(0.0, float(stats.get("boost_momentum", 0.0)))
 	var momentum_brake := brake_power / duration
 	if momentum_brake <= 0.0:
-		momentum_brake = (allocated_momentum / mass) / duration * brake_efficiency
+		momentum_brake = (allocated_momentum / mass) / duration
 	var damping_fallback := maxf(0.0, float(stats.get("turn_damping", 0.0)))
 	return maxf(maxf(momentum_brake, damping_fallback), 0.1)
 
@@ -588,7 +587,7 @@ func _speedometer_max_speed() -> float:
 	var explicit_limit := maxf(0.0, float(stats.get("speedometer_max_speed", 0.0)))
 	if explicit_limit > 0.001:
 		return explicit_limit
-	var body_speed := maxf(0.0, float(stats.get("move_speed", stats.get("body_move_speed", 0.0))))
+	var body_speed := maxf(0.0, float(stats.get("move_speed", 0.0)))
 	var boost_speed := maxf(0.0, float(stats.get("boost_speed", 0.0)))
 	return maxf(1.0, maxf(body_speed * 3.0, boost_speed * 2.0) * 1.5)
 
@@ -606,10 +605,9 @@ func _brake_delta_velocity() -> float:
 		return brake_power
 	var allocated_momentum: float = maxf(0.0, float(stats.get("move_momentum", 0.0)))
 	if allocated_momentum <= 0.0:
-		allocated_momentum = maxf(0.0, float(stats.get("boost_total_momentum", 0.0)))
+		allocated_momentum = maxf(0.0, float(stats.get("boost_momentum", 0.0)))
 	var mass: float = maxf(1.0, float(stats.get("mass", 1.0)))
-	var brake_efficiency := maxf(0.1, float(stats.get("brake_efficiency", 1.0)))
-	return allocated_momentum / mass * brake_efficiency
+	return allocated_momentum / mass
 
 
 func _boost_brake_acceleration() -> float:
@@ -741,7 +739,7 @@ func move_by(input_vector: Vector2, delta: float, ring_length: float) -> void:
 	if cooling_lock_timer > 0.0:
 		return
 
-	var speed: float = float(stats.get("move_speed", stats.get("body_move_speed", 0.0)))
+	var speed: float = float(stats.get("move_speed", 0.0))
 	if overheated and role == "hero":
 		speed *= 0.58
 	if current_state == STATE_ARMOR:
@@ -771,7 +769,7 @@ func move_by(input_vector: Vector2, delta: float, ring_length: float) -> void:
 	thruster_output_direction = drive_dir
 	thruster_visual_timer = maxf(thruster_visual_timer, 0.16)
 
-	var acceleration: float = float(stats.get("move_acceleration", stats.get("thruster_acceleration", 0.0)))
+	var acceleration: float = float(stats.get("move_acceleration", 0.0))
 	if speed <= 0.0001 or acceleration <= 0.0001:
 		return
 	var cornering: float = maxf(0.35, float(stats.get("cornering", 1.0)))
@@ -903,11 +901,11 @@ func _runtime_sources_motion_stats(target_nodes: Array) -> Dictionary:
 		var b := _runtime_local_vector(source.get("b_local", a))
 		length += maxf(0.0, a.distance_to(b))
 		mass += maxf(0.0, float(source.get("mass", 0.0)))
-		output += maxf(0.0, float(source.get("allocated_limb_momentum", source.get("joint_output_momentum_base", 0.0))))
+		output += maxf(0.0, float(source.get("joint_output_momentum_base", 0.0)))
 	if mass <= 0.0:
 		mass = maxf(1.0, float(stats.get("mass", 1.0)) * 0.18)
 	if output <= 0.0:
-		output = maxf(0.0, float(stats.get("bound_limb_allocated_momentum", 0.0)))
+		output = maxf(0.0, float(stats.get("action_drive_scale", 1.0))) * maxf(1.0, mass)
 	return {"sources": sources, "mass": mass, "length": length, "output": output}
 
 
@@ -1848,7 +1846,7 @@ func _group_limb_end_mass(group: Dictionary) -> float:
 func _group_joint_motion_speed(group: Dictionary, state_scale: float = 1.0) -> float:
 	var output_momentum := maxf(0.0, float(group.get("fixed_output_momentum", 0.0)))
 	if output_momentum <= 0.0:
-		output_momentum = maxf(0.12, float(group.get("joint_power", 0.72))) * 145.0
+		output_momentum = maxf(0.0, float(group.get("joint_output_momentum", group.get("joint_output_momentum_base", 0.0))))
 	var end_mass := _group_limb_end_mass(group)
 	var motion := String(group.get("motion", "straight"))
 	var motion_mult := 1.0
@@ -3643,7 +3641,7 @@ func boost(direction: Vector2, ring_length: float) -> bool:
 		_apply_velocity_brake(0.0, "reverse_brake", true, direction)
 		return false
 	var boost_extra_demand: float = maxf(0.0, float(stats.get("thruster_boost_extra_demand", 0.0)))
-	var boost_total_momentum: float = maxf(0.0, float(stats.get("boost_total_momentum", 0.0)))
+	var boost_total_momentum: float = maxf(0.0, float(stats.get("boost_momentum", 0.0)))
 	var boost_speed: float = maxf(0.0, float(stats.get("boost_speed", 0.0)))
 	var boost_duration := maxf(0.0, float(stats.get("boost_duration", 0.0)))
 	if boost_extra_demand <= 0.0 or boost_duration <= 0.0 or (boost_total_momentum <= 0.0 and boost_speed <= 0.0):
@@ -3836,11 +3834,11 @@ func apply_physics_impulse(direction: Vector2, impulse: float, part_index: int =
 
 
 func _available_attack_reaction_cancel_momentum(countered: bool) -> float:
-	var boost_momentum := maxf(0.0, float(stats.get("boost_total_momentum", 0.0)))
-	var reaction_cancel := float(stats.get("reaction_cancel", stats.get("recoil_cancel", 0.0)))
+	var boost_momentum := maxf(0.0, float(stats.get("boost_momentum", 0.0)))
+	var reaction_cancel := float(stats.get("reaction_cancel", 0.0))
 	var cancel_mult := clampf(reaction_cancel * 0.52 + _attitude_stabilization() * 0.16, 0.0, 0.84)
 	if countered:
-		cancel_mult = maxf(cancel_mult, clampf(float(stats.get("reaction_cancel", stats.get("recoil_cancel", 0.45))), 0.0, 0.92))
+		cancel_mult = maxf(cancel_mult, clampf(float(stats.get("reaction_cancel", 0.0)), 0.0, 0.92))
 	return boost_momentum * cancel_mult
 
 
