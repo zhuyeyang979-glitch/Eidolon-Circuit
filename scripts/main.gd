@@ -39694,6 +39694,21 @@ func _catalog_lifecycle_for_part(slot_key: String, part: Dictionary) -> Dictiona
 		result["reason"] = String(checked_part.get("catalog_lifecycle_reason", checked_part.get("freeze_reason", "")))
 		result["future_dev_tag"] = String(checked_part.get("future_dev_tag", checked_part.get("unlock_profile", "")))
 		return result
+	if upper_name.find("GUNNER WRIST") >= 0 or upper_name.find("RECOIL LOCK") >= 0:
+		result["catalog_lifecycle"] = "frozen"
+		result["reason"] = "需要动态枪械 profile / 手动扫枪与后坐力锁定系统"
+		result["future_dev_tag"] = "future_dynamic_gun_profile"
+		return result
+	if upper_name.find("TETHER CAST") >= 0:
+		result["catalog_lifecycle"] = "frozen"
+		result["reason"] = "需要投掷/接收/弹射系统"
+		result["future_dev_tag"] = "future_throw_receiver_system"
+		return result
+	if upper_name.find("HIJACK ROUTER") >= 0:
+		result["catalog_lifecycle"] = "frozen"
+		result["reason"] = "需要捕获接管系统"
+		result["future_dev_tag"] = "future_takeover_system"
+		return result
 	if slot_key == "module":
 		var live_profiles := action_profile_registry.live_profiles() if action_profile_registry != null else ActionProfileRegistry.new().live_profiles()
 		var frozen_effects := [
@@ -39787,7 +39802,7 @@ func _catalog_lifecycle_for_part(slot_key: String, part: Dictionary) -> Dictiona
 				result["reason"] = "枪械缺少 gun_kind/ammo_kind"
 				result["future_dev_tag"] = "future_projectile_family"
 				return result
-	if upper_name.find("GUNNER WRIST") >= 0 or checked_part.has("attack_groups") or checked_part.has("action_groups"):
+	if checked_part.has("attack_groups") or checked_part.has("action_groups"):
 		result["catalog_lifecycle"] = "frozen"
 		result["reason"] = "旧指针或旧行动组入口"
 		result["future_dev_tag"] = "legacy_pointer_cleanup"
@@ -43047,11 +43062,16 @@ func _component_topology_attack_nodes(role_key: String, unit_bp: Dictionary, lim
 		if driven_modules.is_empty() and not driven_node.has("attack_key"):
 			continue
 		var has_two_link_module := false
+		var has_live_melee_module := false
 		for module_index in driven_modules:
 			var module_part := _selected_component(role_key, "module", int(module_index))
-			if String(module_part.get("module_action_profile", "")) == "two_link_forward_snap":
+			var module_profile := String(module_part.get("module_action_profile", ""))
+			if String(module_profile) == "two_link_forward_snap":
 				has_two_link_module = true
-				break
+			if action_profile_registry != null:
+				has_live_melee_module = has_live_melee_module or action_profile_registry.is_melee_profile(module_profile)
+			else:
+				has_live_melee_module = has_live_melee_module or ActionProfileRegistry.new().is_melee_profile(module_profile)
 		var attack_key := int(driven_node.get("attack_key", synthetic_nodes.size() + 1))
 		if limit_to_attack_keys and (attack_key < 1 or attack_key > ATTACK_GROUP_COUNT):
 			continue
@@ -43078,9 +43098,13 @@ func _component_topology_attack_nodes(role_key: String, unit_bp: Dictionary, lim
 			terminal_node_index = driven_node_index
 		if terminal_index < 0:
 			var limb_part := _selected_component(role_key, "limb_muscle", limb_index)
-			if not has_two_link_module and not _part_can_damage_as_limb(limb_part, "limb_muscle"):
+			if not has_two_link_module and not has_live_melee_module and not _part_can_damage_as_limb(limb_part, "limb_muscle"):
 				continue
-			terminal_index = 84 if COMMON_CATALOG["muscle"].size() > 84 else int(unit_bp.get("muscle", 0))
+			if has_live_melee_module:
+				terminal_index = _topology_node_part_index(driven_node, unit_bp)
+				terminal_node_index = driven_node_index
+			else:
+				terminal_index = 84 if COMMON_CATALOG["muscle"].size() > 84 else int(unit_bp.get("muscle", 0))
 		var modules: Array = []
 		for module_index in driven_modules:
 			if not modules.has(module_index):
@@ -45910,25 +45934,23 @@ func _build_scout_ui() -> void:
 	scout_backdrop.set_mode("settings")
 	scout_backdrop.set_background_texture(space_backdrop_texture)
 	root.add_child(scout_backdrop)
-	_make_label(root, "ScoutTitle", "赛前侦查", Vector2(54.0, 28.0), Vector2(480.0, 46.0), 34, Color.WHITE, HORIZONTAL_ALIGNMENT_LEFT)
-	scout_timer_label = _make_label(root, "ScoutTimer", "", Vector2(890.0, 22.0), Vector2(300.0, 28.0), 18, Color(1.0, 0.9, 0.36, 1.0), HORIZONTAL_ALIGNMENT_RIGHT)
+	_make_layout_label(root, "ScoutTitle", "赛前侦查", UILayoutTokens.scout_title_rect(), 34, Color.WHITE, HORIZONTAL_ALIGNMENT_LEFT)
+	scout_timer_label = _make_layout_label(root, "ScoutTimer", "", UILayoutTokens.scout_timer_rect(), 18, Color(1.0, 0.9, 0.36, 1.0), HORIZONTAL_ALIGNMENT_RIGHT)
 	var scout_start_button := Button.new()
 	scout_start_button.name = "ScoutStartButton"
 	scout_start_button.text = "立即开始"
-	scout_start_button.position = Vector2(874.0, 64.0)
-	scout_start_button.size = Vector2(142.0, 24.0)
+	_apply_layout_rect(scout_start_button, UILayoutTokens.scout_start_button_rect())
 	scout_start_button.focus_mode = Control.FOCUS_NONE
 	scout_start_button.pressed.connect(_try_begin_battle_from_scout)
 	root.add_child(scout_start_button)
 	var scout_menu_button := Button.new()
 	scout_menu_button.name = "ScoutMenuButton"
 	scout_menu_button.text = "选项"
-	scout_menu_button.position = Vector2(1030.0, 64.0)
-	scout_menu_button.size = Vector2(148.0, 24.0)
+	_apply_layout_rect(scout_menu_button, UILayoutTokens.scout_options_button_rect())
 	scout_menu_button.focus_mode = Control.FOCUS_NONE
 	scout_menu_button.pressed.connect(_show_page_options.bind("scout"))
 	root.add_child(scout_menu_button)
-	scout_hint_label = _make_label(root, "ScoutHint", "查看完整队伍；按规则选择出战，右键设首发。", Vector2(64.0, 78.0), Vector2(760.0, 22.0), 13, Color(0.82, 0.9, 0.96, 1.0), HORIZONTAL_ALIGNMENT_LEFT)
+	scout_hint_label = _make_layout_label(root, "ScoutHint", "查看完整队伍；按规则选择出战，右键设首发。", UILayoutTokens.scout_hint_rect(), 13, Color(0.82, 0.9, 0.96, 1.0), HORIZONTAL_ALIGNMENT_LEFT)
 	scout_hint_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	scout_color_label = _make_label(root, "ScoutColorLabel", "队伍颜色", Vector2(64.0, 112.0), Vector2(116.0, 18.0), 12, Color(1.0, 0.88, 0.32, 1.0), HORIZONTAL_ALIGNMENT_LEFT)
 	for i in range(TEAM_COLOR_PRESETS.size()):
@@ -46048,12 +46070,11 @@ func _build_settings_ui() -> void:
 	settings_backdrop.set_mode("settings")
 	settings_backdrop.set_background_texture(space_backdrop_texture)
 	root.add_child(settings_backdrop)
-	_make_label(root, "SettingsTitle", "设置", Vector2(72.0, 42.0), Vector2(480.0, 44.0), 34, Color.WHITE, HORIZONTAL_ALIGNMENT_LEFT)
+	_make_layout_label(root, "SettingsTitle", "设置", UILayoutTokens.settings_title_rect(), 34, Color.WHITE, HORIZONTAL_ALIGNMENT_LEFT)
 	var settings_back_button := Button.new()
 	settings_back_button.name = "SettingsBackButton"
 	settings_back_button.text = "选项"
-	settings_back_button.position = Vector2(1028.0, 54.0)
-	settings_back_button.size = Vector2(152.0, 36.0)
+	_apply_layout_rect(settings_back_button, UILayoutTokens.settings_options_button_rect())
 	settings_back_button.focus_mode = Control.FOCUS_NONE
 	settings_back_button.pressed.connect(_show_page_options.bind("settings"))
 	root.add_child(settings_back_button)
@@ -46063,8 +46084,7 @@ func _build_settings_ui() -> void:
 		var category_button := Button.new()
 		category_button.name = "SettingsCategory%s" % String(spec.get("key", ""))
 		category_button.text = String(spec.get("zh", "")) if _ui_is_zh() else String(spec.get("en", spec.get("zh", "")))
-		category_button.position = Vector2(72.0 + float(i) * 176.0, 100.0)
-		category_button.size = Vector2(164.0, 34.0)
+		_apply_layout_rect(category_button, UILayoutTokens.settings_category_button_rect(i))
 		category_button.focus_mode = Control.FOCUS_NONE
 		category_button.pressed.connect(_show_settings_category.bind(String(spec.get("key", "root"))))
 		root.add_child(category_button)
@@ -46072,24 +46092,22 @@ func _build_settings_ui() -> void:
 	battle_input_binding_specs = _battle_input_specs()
 	settings_scroll_container = ScrollContainer.new()
 	settings_scroll_container.name = "BattleInputSettingsScroll"
-	settings_scroll_container.position = Vector2(72.0, 148.0)
-	settings_scroll_container.size = Vector2(1088.0, 472.0)
+	_apply_layout_rect(settings_scroll_container, UILayoutTokens.settings_scroll_rect())
 	root.add_child(settings_scroll_container)
 	settings_list_container = VBoxContainer.new()
 	settings_list_container.name = "BattleInputSettingsList"
 	settings_list_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	settings_scroll_container.add_child(settings_list_container)
-	settings_rebind_status_label = _make_label(root, "ControllerInfo", "点击一项后按键盘键或手柄输入来重绑定。Boost 默认由方向键双击触发。", Vector2(92.0, 632.0), Vector2(820.0, 44.0), 16, Color(0.86, 0.92, 0.98, 1.0), HORIZONTAL_ALIGNMENT_LEFT)
+	settings_rebind_status_label = _make_layout_label(root, "ControllerInfo", "点击一项后按键盘键或手柄输入来重绑定。Boost 默认由方向键双击触发。", UILayoutTokens.settings_status_rect(), 16, Color(0.86, 0.92, 0.98, 1.0), HORIZONTAL_ALIGNMENT_LEFT)
 	settings_rebind_status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	settings_reset_button = Button.new()
 	settings_reset_button.name = "SettingsResetBattleInput"
 	settings_reset_button.text = "恢复战斗默认输入"
-	settings_reset_button.position = Vector2(932.0, 632.0)
-	settings_reset_button.size = Vector2(228.0, 38.0)
+	_apply_layout_rect(settings_reset_button, UILayoutTokens.settings_reset_button_rect())
 	settings_reset_button.focus_mode = Control.FOCUS_NONE
 	settings_reset_button.pressed.connect(_reset_current_settings_category)
 	root.add_child(settings_reset_button)
-	_make_label(root, "SettingsHelp", "Esc：返回/取消监听   Enter：确认当前项   鼠标滚轮：滚动设置", Vector2(92.0, 682.0), Vector2(940.0, 24.0), 15, Color(0.78, 0.84, 0.9, 1.0), HORIZONTAL_ALIGNMENT_LEFT)
+	_make_layout_label(root, "SettingsHelp", "Esc：返回/取消监听   Enter：确认当前项   鼠标滚轮：滚动设置", UILayoutTokens.settings_help_rect(), 15, Color(0.78, 0.84, 0.9, 1.0), HORIZONTAL_ALIGNMENT_LEFT)
 	_rebuild_settings_list()
 
 
@@ -46333,6 +46351,8 @@ func _execute_page_options_action(action: Dictionary, context: String) -> void:
 			_show_settings()
 		"navigate_return_target":
 			_navigate_to_page_target(String(action.get("to_page", "")), String(action.get("reason", "page_options_back")))
+		"navigate_editor_preserve", "navigate_saved_units", "navigate_scout", "navigate_battle_preserve":
+			_navigate_to_page_target(String(action.get("to_page", STATE_MENU)), String(action.get("reason", "page_options_back")))
 		_:
 			return
 
@@ -51945,6 +51965,11 @@ func _apply_layout_rect(control: Control, token_rect: Rect2) -> void:
 	var screen_rect := UILayoutTokens.to_screen_rect(token_rect, _ui_viewport_size())
 	control.position = screen_rect.position
 	control.size = screen_rect.size
+
+
+func _make_layout_label(parent: Control, label_name: String, text: String, token_rect: Rect2, font_size: int, color: Color, alignment: HorizontalAlignment) -> Label:
+	var screen_rect := UILayoutTokens.to_screen_rect(token_rect, _ui_viewport_size())
+	return _make_label(parent, label_name, text, screen_rect.position, screen_rect.size, font_size, color, alignment)
 
 
 func _make_label(parent: Control, label_name: String, text: String, label_position: Vector2, label_size: Vector2, font_size: int, color: Color, alignment: HorizontalAlignment) -> Label:

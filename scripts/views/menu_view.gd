@@ -84,12 +84,12 @@ func build_main_menu(parent: Node, background_texture: Texture2D, backdrop_scrip
 func update_main_menu(model: Dictionary) -> void:
 	var items: Array = model.get("items", [])
 	var selected := int(model.get("selected_index", 0))
-	main_ref._set_named_label(menu_layer, "GameTitle", String(model.get("title", "")))
-	main_ref._set_named_label(menu_layer, "Subtitle", String(model.get("subtitle", "")))
-	main_ref._set_named_label(menu_layer, "MenuCallsign", String(model.get("callsign", "")))
-	main_ref._set_named_label(menu_layer, "MenuTelemetry", String(model.get("telemetry", "")))
-	main_ref._set_named_label(menu_layer, "MenuHelp", String(model.get("help", "")))
-	main_ref._set_named_label(menu_layer, "MenuAISeatLabel", String(model.get("ai_seat_title", "")))
+	_set_named_label(menu_layer, "GameTitle", String(model.get("title", "")))
+	_set_named_label(menu_layer, "Subtitle", String(model.get("subtitle", "")))
+	_set_named_label(menu_layer, "MenuCallsign", String(model.get("callsign", "")))
+	_set_named_label(menu_layer, "MenuTelemetry", String(model.get("telemetry", "")))
+	_set_named_label(menu_layer, "MenuHelp", String(model.get("help", "")))
+	_set_named_label(menu_layer, "MenuAISeatLabel", String(model.get("ai_seat_title", "")))
 	for i in range(menu_buttons.size()):
 		var item: Dictionary = items[i] if i < items.size() and items[i] is Dictionary else {}
 		var button: Button = menu_buttons[i]
@@ -135,7 +135,7 @@ func build_page_options(parent: Node) -> CanvasLayer:
 	_apply_rect(page_options_panel, UILayoutTokens.page_options_rect())
 	page_options_panel.mouse_filter = Control.MOUSE_FILTER_STOP
 	root.add_child(page_options_panel)
-	_add_rect(page_options_panel, "PageOptionsBack", UILayoutTokens.local_rect(page_options_panel.size), Color(0.01, 0.018, 0.026, 0.94))
+	_add_rect(page_options_panel, "PageOptionsBack", UILayoutTokens.local_rect(UILayoutTokens.page_options_rect().size), Color(0.01, 0.018, 0.026, 0.94))
 	_add_rect(page_options_panel, "PageOptionsAccent", UILayoutTokens.page_options_accent_rect(), Color(0.24, 0.9, 1.0, 0.85))
 	_add_label(page_options_panel, "PageOptionsTitle", "", UILayoutTokens.page_options_title_rect(), 18, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER)
 	for i in range(MenuControllerModel.PAGE_OPTION_SPECS.size()):
@@ -143,7 +143,7 @@ func build_page_options(parent: Node) -> CanvasLayer:
 		var key := String(spec.get("key", ""))
 		var button := Button.new()
 		button.name = "PageOptions%s" % key
-		_apply_rect(button, UILayoutTokens.page_options_button_rect(i))
+		_apply_local_rect(button, UILayoutTokens.page_options_button_rect(i))
 		button.focus_mode = Control.FOCUS_NONE
 		button.pressed.connect(_emit_page_option_pressed.bind(key))
 		page_options_panel.add_child(button)
@@ -166,7 +166,7 @@ func hide_page_options() -> void:
 func update_page_options(model: Dictionary) -> void:
 	if page_options_layer == null or page_options_panel == null:
 		return
-	main_ref._set_named_label(page_options_panel, "PageOptionsTitle", String(model.get("title", "")))
+	_set_named_label(page_options_panel, "PageOptionsTitle", String(model.get("title", "")))
 	var items: Array = model.get("items", [])
 	for raw_item in items:
 		if not (raw_item is Dictionary):
@@ -186,14 +186,14 @@ func build_battle_runtime_menu(root: Control) -> Control:
 	_apply_rect(battle_runtime_menu_panel, UILayoutTokens.battle_runtime_options_rect())
 	battle_runtime_menu_panel.visible = false
 	root.add_child(battle_runtime_menu_panel)
-	_add_rect(battle_runtime_menu_panel, "BattleRuntimeOptionsBack", UILayoutTokens.local_rect(battle_runtime_menu_panel.size), Color(0.01, 0.018, 0.026, 0.9))
+	_add_rect(battle_runtime_menu_panel, "BattleRuntimeOptionsBack", UILayoutTokens.local_rect(UILayoutTokens.battle_runtime_options_rect().size), Color(0.01, 0.018, 0.026, 0.9))
 	_add_label(battle_runtime_menu_panel, "BattleRuntimeOptionsTitle", "", UILayoutTokens.battle_runtime_title_rect(), 20, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER)
 	for i in range(MenuControllerModel.BATTLE_RUNTIME_OPTION_SPECS.size()):
 		var spec: Dictionary = MenuControllerModel.BATTLE_RUNTIME_OPTION_SPECS[i]
 		var key := String(spec.get("key", ""))
 		var button := Button.new()
 		button.name = "BattleRuntimeOption%s" % key
-		_apply_rect(button, UILayoutTokens.battle_runtime_button_rect(i))
+		_apply_local_rect(button, UILayoutTokens.battle_runtime_button_rect(i))
 		button.focus_mode = Control.FOCUS_NONE
 		button.pressed.connect(_emit_battle_runtime_pressed.bind(key))
 		battle_runtime_menu_panel.add_child(button)
@@ -216,7 +216,7 @@ func hide_battle_runtime() -> void:
 func update_battle_runtime(model: Dictionary) -> void:
 	if battle_runtime_menu_panel == null:
 		return
-	main_ref._set_named_label(battle_runtime_menu_panel, "BattleRuntimeOptionsTitle", String(model.get("title", "")))
+	_set_named_label(battle_runtime_menu_panel, "BattleRuntimeOptionsTitle", String(model.get("title", "")))
 	var items: Array = model.get("items", [])
 	for raw_item in items:
 		if not (raw_item is Dictionary):
@@ -233,7 +233,7 @@ func update_battle_runtime(model: Dictionary) -> void:
 func _add_rect(parent: Node, node_name: String, rect: Rect2, color: Color) -> ColorRect:
 	var color_rect := ColorRect.new()
 	color_rect.name = node_name
-	_apply_rect(color_rect, rect)
+	_apply_parent_rect(color_rect, rect, parent)
 	color_rect.color = color
 	color_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	parent.add_child(color_rect)
@@ -244,7 +244,7 @@ func _add_label(parent: Node, node_name: String, text: String, rect: Rect2, font
 	var label := Label.new()
 	label.name = node_name
 	label.text = text
-	_apply_rect(label, rect)
+	_apply_parent_rect(label, rect, parent)
 	label.horizontal_alignment = align
 	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	label.add_theme_font_size_override("font_size", font_size)
@@ -260,6 +260,30 @@ func _apply_rect(control: Control, rect: Rect2) -> void:
 	var screen_rect := _screen_rect(rect)
 	control.position = screen_rect.position
 	control.size = screen_rect.size
+
+
+func _apply_local_rect(control: Control, rect: Rect2) -> void:
+	var viewport_size := UILayoutTokens.DESIGN_SIZE
+	if main_ref != null and main_ref.has_method("_ui_viewport_size"):
+		viewport_size = main_ref._ui_viewport_size()
+	var local_rect := UILayoutTokens.to_local_rect(rect, viewport_size)
+	control.position = local_rect.position
+	control.size = local_rect.size
+
+
+func _apply_parent_rect(control: Control, rect: Rect2, parent: Node) -> void:
+	if parent == page_options_panel or parent == battle_runtime_menu_panel:
+		_apply_local_rect(control, rect)
+	else:
+		_apply_rect(control, rect)
+
+
+func _set_named_label(root: Node, target_name: String, value: String) -> void:
+	if root == null:
+		return
+	var found := root.find_child(target_name, true, false)
+	if found is Label:
+		(found as Label).text = value
 
 
 func _screen_rect(rect: Rect2) -> Rect2:

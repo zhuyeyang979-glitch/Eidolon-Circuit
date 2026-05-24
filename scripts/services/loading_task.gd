@@ -39,7 +39,7 @@ static func from_legacy(value: Variant):
 	var phase := String(data.get("phase", ""))
 	if phase == "":
 		phase = PHASE_IDLE if bool(data.get("idle_optional", false)) else (PHASE_FIRST_INTERACTION if bool(data.get("first_interaction_critical", true)) and not bool(data.get("essential", true)) else PHASE_PAGE)
-	var blocking := bool(data.get("blocking", data.get("essential", true)))
+	var blocking := bool(data.get("blocking", data.get("essential", not bool(data.get("idle_optional", false)))))
 	return create(
 		String(data.get("id", "task")),
 		String(data.get("label", "Loading")),

@@ -41,9 +41,13 @@ func _init() -> void:
 		total += _check_group(main, String(group_key))
 	if total <= 0:
 		_fail("No live purchase entries were visible.")
-	var old_laser_index: int = main._component_index_by_exact_name("hero", "muscle", "LASER EMITTER GUN")
-	var old_laser: Dictionary = main._selected_component("hero", "muscle", old_laser_index)
-	if old_laser.is_empty() or not main._part_is_catalog_frozen("muscle", old_laser):
-		_fail("Frozen index-read compatibility failed for old laser.")
+	var frozen_index: int = main._component_index_by_exact_name("hero", "muscle", "REDLINE MIRV POD")
+	var frozen_part: Dictionary = main._selected_component("hero", "muscle", frozen_index)
+	if frozen_part.is_empty() or not main._part_is_catalog_frozen("muscle", frozen_part):
+		_fail("Frozen index-read compatibility failed for MIRV pod.")
+	var laser_index: int = main._component_index_by_exact_name("hero", "muscle", "LASER EMITTER GUN")
+	var laser: Dictionary = main._selected_component("hero", "muscle", laser_index)
+	if laser.is_empty() or main._part_is_catalog_frozen("muscle", laser):
+		_fail("Backfilled LASER EMITTER GUN should be purchasable.")
 	print("CATALOG_LIVE_PURCHASE_PROBE ok entries=%d" % total)
 	quit()

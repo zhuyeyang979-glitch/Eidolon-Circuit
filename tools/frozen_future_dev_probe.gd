@@ -13,7 +13,7 @@ func _init() -> void:
 	root.add_child(main)
 	main._ready()
 	var frozen_count := 0
-	var checked_old_laser := false
+	var checked_special_projectile := false
 	for slot_key in ["muscle", "module"]:
 		var catalog: Array = main._catalog_for("hero", slot_key)
 		for i in range(catalog.size()):
@@ -26,11 +26,17 @@ func _init() -> void:
 				_fail("Frozen part lacks reason/future tag: %s" % String(part.get("name", "")))
 			if part.has("attack_groups") or part.has("action_groups"):
 				_fail("Frozen part still exposes old action pointer fields: %s" % String(part.get("name", "")))
-			if String(part.get("name", "")) == "LASER EMITTER GUN":
-				checked_old_laser = true
+			if String(part.get("name", "")) in ["REDLINE MIRV POD", "LIGHT-SINK NEEDLE", "TRACKING MISSILE POD"]:
+				checked_special_projectile = true
 	if frozen_count < 8:
 		_fail("Expected a meaningful frozen backlog, got %d." % frozen_count)
-	if not checked_old_laser:
-		_fail("Old LASER EMITTER GUN was not found in frozen backlog.")
+	if not checked_special_projectile:
+		_fail("No special projectile was found in frozen backlog.")
+	var laser_index: int = main._component_index_by_exact_name("hero", "muscle", "LASER EMITTER GUN")
+	if laser_index < 0:
+		_fail("Backfilled LASER EMITTER GUN missing from catalog.")
+	var laser: Dictionary = main._selected_component("hero", "muscle", laser_index)
+	if main._part_is_catalog_frozen("muscle", laser):
+		_fail("Backfilled LASER EMITTER GUN should no longer be frozen.")
 	print("FROZEN_FUTURE_DEV_PROBE ok frozen=%d" % frozen_count)
 	quit()

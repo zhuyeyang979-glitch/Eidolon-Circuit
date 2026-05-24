@@ -12,6 +12,29 @@ Primary implementation file: `scripts/main.gd`
 
 Godot version in workspace: `tools/godot-4.6.2/Godot_v4.6.2-stable_win64_console.exe`
 
+## 2026-05-25 Menu/UI/Loading Contract Tightening Pass
+
+Rules:
+- `NavigationService` owns page return-target and target-navigation decisions; compatibility wrappers in `main.gd` may remain, but direct page-state writes outside `_commit_page_state()` are guarded.
+- `MenuView` emits intent signals and owns its menu controls/text refresh. It must not call main-menu/page-option/battle-runtime private action helpers directly.
+- New screen-level menu, settings/scout top-level, loading, and shared overlay geometry should route through `UILayoutTokens`; renderer-local art geometry remains exempt.
+- Loading preload entrypoints return typed `LoadingTask` instances with fixed `id/label/weight/phase/blocking/idle_optional/callable` fields. Dictionary tasks are legacy compatibility only.
+- UI/navigation/loading acceptance is `tools/run_headed_gate.ps1`; `tools/probe_manifest.json` now mirrors its `headed_gate` groups so the gate script and manifest cannot drift silently.
+
+Implementation notes:
+- Added typed loading task support through `scripts/services/loading_task.gd`, `LoadingController.add_loading_task()`, and typed `preload_*_content()` task factories.
+- Extended `NavigationService` with `return_target_for()` and `resolve_target_navigation()`, and added a static router probe to keep `main.gd` from regrowing direct page-state branches.
+- Converted `MenuView` button callbacks to signals and removed view-side calls to main's private menu action and UI construction helpers.
+- Added responsive token helpers (`to_screen_rect`, `to_local_rect`) and tokenized Settings/Scout top-level controls plus the loading overlay path.
+- Expanded the headed gate with router/menu-signal/layout/loading-task/manifest-alignment probes.
+
+Verification:
+- Passed headed `tools/run_headed_gate.ps1 -Group navigation_menu -TimeoutSec 120` (`passed=17 failed=0`).
+- Passed headed `tools/run_headed_gate.ps1 -Group unit_edit -TimeoutSec 120` (`passed=12 failed=0`).
+- Passed headed `tools/run_headed_gate.ps1 -Group loading_first_interaction -TimeoutSec 120` (`passed=10 failed=0`).
+- Passed full headed `tools/run_headed_gate.ps1 -TimeoutSec 120` (`passed=37 failed=0`).
+- `tools/probe_manifest.json` parsed successfully through PowerShell `ConvertFrom-Json`.
+
 ## 2026-05-25 Governance Implementation Pass
 
 Rules:
@@ -5510,6 +5533,55 @@ Verification:
   - `combat_probe`
   - `ui_layout_probe`
   - `text_overflow_probe`
+
+## 2026-05-25 Backfilled Legacy Weapons and Action Modules
+
+Rules:
+- Only unfreeze legacy catalog entries that can reuse the current `ActionProfileRegistry`, runtime module binding, and gun activation paths. New large systems remain frozen until their own mechanics exist.
+- Backfilled live entries must show as normal catalog parts, bind through current TeamEdit/runtime data, and avoid exposing `FROZEN` / `future_dev_tag` in player purchase entries.
+- Frozen legacy entries must keep a concrete reason and future tag so players do not mistake them for usable parts.
+
+Implementation notes:
+- Added catalog backfill helpers in `scripts/main.gd` for legacy module names and projectile terminal names before lifecycle metadata is assigned.
+- Live module backfills:
+  - `COMBO ROUTER: BALANCE STRING` -> `swing_180`
+  - `CLAMP ROUTER: VISE CLOSE` -> `inward_pincer_clamp`
+  - `ROUTE ROUTER: PICKUP DASH` -> `swing_180`
+  - `MONSTER ROUTER: CRUSH WINDUP` -> `swing_180` with slower timing
+  - `DUEL ROUTER: FEINT THRUST` -> `rapier_feint_thrust`
+  - `SALVO ROUTER: EXPLOSIVE ARC` -> `grenade_arc_activate`
+- Live projectile backfills cover bullet/rifle/sniper, chemical, laser, explosive/grenade, and web gun families where the gun kind + ammo kind already maps to a current gun activation profile.
+- Kept large-system entries frozen with clearer future tags:
+  - dynamic/braced gun sweep: `future_dynamic_gun_profile`
+  - throw/receiver/eject: `future_throw_receiver_system`
+  - hijack/takeover: `future_takeover_system`
+  - seeker/MIRV/light-sink/area special projectile families: `future_projectile_family`
+- Updated old lifecycle probes so `LASER EMITTER GUN` is now expected live; frozen projectile samples now use MIRV/light-sink/tracking items.
+
+Verification:
+- New headed probes passed:
+  - `catalog_backfilled_modules_live_probe`
+  - `backfilled_projectile_weapons_live_probe`
+  - `backfilled_module_binding_training_probe`
+  - `backfilled_ranged_weapon_fire_probe`
+- Regressions passed:
+  - `catalog_lifecycle_freeze_probe`
+  - `frozen_future_dev_probe`
+  - `catalog_live_purchase_probe`
+  - `catalog_role_unification_probe`
+  - `action_profile_registry_completeness_probe`
+  - `action_module_execution_matrix_probe`
+  - `gun_module_binding_matrix_probe`
+  - `machine_gun_bind_train_practice_probe`
+  - `projectile_profile_whitelist_probe`
+  - `part_library_ui_probe`
+  - `catalog_ui_terms_probe`
+  - `ui_layout_probe`
+  - `text_overflow_probe`
+- `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120` passed headed. Godot still reports the pre-existing ObjectDB leak warning on exit, but commands exit `0`.
+
+Sync:
+- Implemented in `E:\New project`; run `tools/sync_worklog.ps1` after this note to refresh the shared development log mirror.
 
 ## 2026-05-25 UI Layout Tokens
 

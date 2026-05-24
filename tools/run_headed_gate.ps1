@@ -15,16 +15,22 @@ if (-not (Test-Path -LiteralPath $Runner)) {
 
 $GateGroups = [ordered]@{
     navigation_menu = @(
+        "navigation_router_single_source_probe",
         "navigation_service_contract_probe",
         "main_menu_navigation_probe",
         "options_menu_unification_probe",
         "page_options_router_back_probe",
         "menu_view_controller_contract_probe",
+        "menu_view_signal_contract_probe",
         "main_menu_table_actions_probe",
         "page_options_table_router_probe",
         "battle_runtime_options_table_probe",
         "menu_language_table_probe",
-        "menu_layout_regression_probe"
+        "ui_layout_tokens_contract_probe",
+        "layout_tokens_responsive_contract_probe",
+        "menu_layout_regression_probe",
+        "settings_scout_tokenized_layout_probe",
+        "headed_gate_manifest_alignment_probe"
     )
     unit_edit = @(
         "teamedit_probe",
@@ -40,6 +46,8 @@ $GateGroups = [ordered]@{
         "unit_editor_training_illegal_feedback_probe"
     )
     loading_first_interaction = @(
+        "loading_task_contract_probe",
+        "preload_tasks_typed_probe",
         "startup_loading_stage_probe",
         "page_loading_transition_probe",
         "loading_navigation_contract_probe",

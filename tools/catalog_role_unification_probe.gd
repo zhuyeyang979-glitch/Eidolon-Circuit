@@ -37,10 +37,16 @@ func _init() -> void:
 		_fail("Standard laser should remain live after metadata normalization.")
 	var old_laser := _part(main, "muscle", "LASER EMITTER GUN")
 	_require_meta(old_laser, "gun", "gun:", "old laser")
-	if not main._part_is_catalog_frozen("muscle", old_laser):
-		_fail("Old laser should remain frozen.")
-	if String(old_laser.get("future_dev_tag", "")) == "":
-		_fail("Frozen old laser should expose future_dev_tag metadata.")
+	if main._part_is_catalog_frozen("muscle", old_laser):
+		_fail("Backfilled old laser should now be live.")
+	if String(old_laser.get("future_dev_tag", "")) != "":
+		_fail("Backfilled old laser should not expose future_dev_tag metadata.")
+	var mirv := _part(main, "muscle", "REDLINE MIRV POD")
+	_require_meta(mirv, "gun", "gun:", "special projectile backlog")
+	if not main._part_is_catalog_frozen("muscle", mirv):
+		_fail("MIRV pod should remain frozen.")
+	if String(mirv.get("future_dev_tag", "")) == "":
+		_fail("Frozen MIRV pod should expose future_dev_tag metadata.")
 	var engine := _part(main, "engine", "SPARK SWARM LITE ENGINE")
 	_require_meta(engine, "engine", "engine", "engine")
 	var display := main._catalog_display_part("cooling", _part(main, "cooling", "GLACIER COMBO VENT"))

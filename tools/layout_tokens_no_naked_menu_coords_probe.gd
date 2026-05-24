@@ -21,10 +21,11 @@ func _init() -> void:
 		"_add_ui_rect(",
 	]
 	var allowed_lines := {
-		"control.position = rect.position": true,
-		"control.size = rect.size": true,
-		"return main_ref._make_label(parent, node_name, text, rect.position, rect.size, font_size, color, align)": true,
-		"return main_ref._add_ui_rect(parent, node_name, rect.position, rect.size, color)": true,
+		"control.position = screen_rect.position": true,
+		"control.size = screen_rect.size": true,
+		"control.position = local_rect.position": true,
+		"control.size = local_rect.size": true,
+		"viewport_size = main_ref._ui_viewport_size()": true,
 	}
 	var lines := source.split("\n")
 	for i in range(lines.size()):
