@@ -29,6 +29,26 @@ func _average_band_gap(snapshot: Dictionary) -> float:
 	return total / float(maxi(1, count))
 
 
+func _assert_source_invariant(before: Dictionary, after: Dictionary) -> void:
+	var before_widths := PackedFloat32Array(before.get("source_widths", PackedFloat32Array()))
+	var after_widths := PackedFloat32Array(after.get("source_widths", PackedFloat32Array()))
+	var before_alphas := PackedFloat32Array(before.get("source_alphas", PackedFloat32Array()))
+	var after_alphas := PackedFloat32Array(after.get("source_alphas", PackedFloat32Array()))
+	if before_widths.is_empty() or before_widths.size() != after_widths.size():
+		_fail("Twist probe requires aligned source width samples.")
+		return
+	if before_alphas.is_empty() or before_alphas.size() != after_alphas.size():
+		_fail("Twist probe requires aligned source alpha samples.")
+		return
+	for i in range(before_widths.size()):
+		if absf(before_widths[i] - after_widths[i]) > 0.0001:
+			_fail("Möbius twist should not alter source stardust width.")
+			return
+		if absf(before_alphas[i] - after_alphas[i]) > 0.0001:
+			_fail("Möbius twist should not alter source stardust alpha.")
+			return
+
+
 func _init() -> void:
 	var main = MainScene.new()
 	root.add_child(main)
@@ -48,6 +68,7 @@ func _init() -> void:
 	if first_bands.size() != 2 or second_bands.size() != 2:
 		_fail("Twist probe requires two surface-attached bands.")
 		return
+	_assert_source_invariant(first, second)
 	var motion := 0.0
 	for band_index in range(2):
 		var first_points := PackedVector2Array(Dictionary(first_bands[band_index]).get("points", PackedVector2Array()))

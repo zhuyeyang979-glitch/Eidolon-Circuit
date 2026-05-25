@@ -23,13 +23,9 @@ void fragment() {
 		vec4 flipped_art = texture(surface_texture, vec2(tiled_uv.x, 1.0 - tiled_uv.y));
 		art = mix(normal_art, flipped_art, mirror_weight);
 	}
-	vec2 p = vec2(fract(UV.x), tiled_uv.y) * 2.0 - vec2(1.0);
-	float ribbon_wave = sin((p.x * 17.0 + p.y * 9.0) + TIME * 0.18 + twist_phase);
-	float dust = smoothstep(0.56, 1.0, ribbon_wave * 0.5 + 0.5);
-	float core = 1.0 - smoothstep(0.42, 1.25, length(p * vec2(0.82, 1.18)));
-	float glow = clamp(core * edge_fog + dust * 0.32, 0.0, 1.0);
-	vec3 nebula = vec3(0.18, 0.55, 0.88) * glow + vec3(1.0, 0.62, 0.22) * dust * 0.12;
-	vec3 textured = art.rgb * (0.68 + glow * 0.20);
-	COLOR.rgb = mix(COLOR.rgb * 0.45 + textured * 0.78, textured + nebula * depth_contrast, cosmic_mix);
-	COLOR.a *= art.a * clamp(0.72 + glow * 0.28, 0.0, 1.0);
+	float tint_mix = clamp(cosmic_mix, 0.0, 0.32);
+	float projection_gain = clamp(0.86 + depth_contrast * 0.10, 0.72, 1.08);
+	vec3 projection_tint = mix(vec3(0.78, 0.84, 0.94), COLOR.rgb * 3.0, tint_mix);
+	COLOR.rgb = art.rgb * projection_tint * projection_gain;
+	COLOR.a *= art.a;
 }

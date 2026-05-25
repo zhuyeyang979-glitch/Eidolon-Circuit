@@ -11,12 +11,13 @@ func _init() -> void:
 		"res://scripts/services/action_profile_registry.gd",
 		"res://scripts/services/drive_system_service.gd",
 		"res://scripts/services/unit_blueprint_validator.gd",
+		"res://scripts/services/data_rule_service.gd",
 	]
 	for path in required_files:
 		if not FileAccess.file_exists(path):
 			_fail("Missing extraction service %s." % path)
 	var source := FileAccess.get_file_as_string(ProjectSettings.globalize_path("res://scripts/main.gd"))
-	for symbol in ["ActionProfileRegistry", "DriveSystemService", "UnitBlueprintValidator", "action_profile_registry", "drive_system_service", "unit_blueprint_validator"]:
+	for symbol in ["ActionProfileRegistry", "DriveSystemService", "UnitBlueprintValidator", "DataRuleService", "action_profile_registry", "drive_system_service", "unit_blueprint_validator", "data_rule_service"]:
 		if source.find(symbol) < 0:
 			_fail("main.gd does not reference %s." % symbol)
 	print("MAIN_FILE_EXTRACTION_CONTRACT_PROBE ok services=%d" % required_files.size())

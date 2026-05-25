@@ -57,8 +57,9 @@ func _assert_card(main, slot_key: String, part: Dictionary, required_terms: Arra
 	var lines: Array = main._hover_card_player_detail_lines(slot_key, part)
 	var joined := _joined_lines(lines)
 	_assert_no_hidden_terms(joined, label)
+	var lowered_joined := joined.to_lower()
 	for term in required_terms:
-		if joined.find(String(term)) < 0:
+		if lowered_joined.find(String(term).to_lower()) < 0:
 			_fail("%s missing required player-facing term %s in %s" % [label, String(term), joined])
 
 
@@ -66,7 +67,7 @@ func _init() -> void:
 	var main = MainScene.new()
 	root.add_child(main)
 	main._ready()
-	main.ui_language = "zh"
+	main.ui_language = "en"
 	var torso := _part(main, "muscle", func(part: Dictionary) -> bool: return main._component_is_torso(part))
 	var limb := _part(main, "limb_muscle", func(_part: Dictionary) -> bool: return true)
 	var melee := _part(main, "muscle", func(part: Dictionary) -> bool: return bool(part.get("terminal_weapon", false)) and main._terminal_weapon_kind_for_part(part, "muscle") != "ranged")
@@ -76,14 +77,16 @@ func _init() -> void:
 	var cooling := _part(main, "cooling", func(_part: Dictionary) -> bool: return true)
 	var booster := _part(main, "booster", func(_part: Dictionary) -> bool: return true)
 	var special := _part(main, "special", func(_part: Dictionary) -> bool: return true)
-	_assert_card(main, "muscle", torso, ["接口", "软件槽"], "torso")
-	_assert_card(main, "limb_muscle", limb, ["承载", "刚度"], "limb")
-	_assert_card(main, "muscle", melee, ["实体近战"], "melee")
-	_assert_card(main, "muscle", gun, ["射程", "弹药"], "gun")
-	_assert_card(main, "module", module, ["行动模块", "绑定", "数据"], "module")
-	_assert_card(main, "engine", engine, ["动力", "常态热"], "engine")
-	_assert_card(main, "cooling", cooling, ["散热", "适配"], "cooling")
-	_assert_card(main, "booster", booster, ["推进", "Boost"], "booster")
-	_assert_card(main, "special", special, ["英魂"], "special")
+	var first_soul := _part(main, "special", func(part: Dictionary) -> bool: return String(part.get("name", "")) == "SOUL: FIRST EDGE ECHO")
+	_assert_card(main, "muscle", torso, ["ports", "software slots"], "torso")
+	_assert_card(main, "limb_muscle", limb, ["drive", "embedded"], "limb")
+	_assert_card(main, "muscle", melee, ["physical melee"], "melee")
+	_assert_card(main, "muscle", gun, ["range", "ammo"], "gun")
+	_assert_card(main, "module", module, ["bind", "data"], "module")
+	_assert_card(main, "engine", engine, ["power", "idle heat"], "engine")
+	_assert_card(main, "cooling", cooling, ["cooling speed", "fit"], "cooling")
+	_assert_card(main, "booster", booster, ["move", "boost"], "booster")
+	_assert_card(main, "special", special, ["soul"], "special")
+	_assert_card(main, "special", first_soul, ["hero torso software slot", "duelist oath", "different bound limbs", "heavy shield/hammer"], "first soul")
 	print("PART_HOVER_DETAIL_PAGE_PROBE ok")
 	quit()

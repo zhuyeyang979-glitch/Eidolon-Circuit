@@ -16,13 +16,26 @@ func _find_ammo_part() -> Dictionary:
 
 
 func _capacity_total(capacity: Dictionary) -> int:
-	return int(capacity.get("bullet", 0)) + int(capacity.get("chemical", 0)) + int(capacity.get("laser", 0))
+	var total := 0
+	for ammo_type in MainScene.AMMO_TYPES:
+		total += int(capacity.get(ammo_type, 0))
+	return total
 
 
 func _init() -> void:
 	var main = MainScene.new()
 	root.add_child(main)
 	main._ready()
+	main._show_editor()
+	main.editor_part_group_mode = "software_muscle"
+	main.editor_part_filter_mode = "ammo"
+	main._update_editor_ui()
+	if main.editor_ammo_size_slider == null or not is_instance_valid(main.editor_ammo_size_slider):
+		_fail("Ammo size slider control was not created.")
+	if not main.editor_ammo_size_slider.visible:
+		_fail("Ammo size slider should be visible when ammo filter is active.")
+	if int(main.editor_ammo_size_slider.min_value) != 1 or int(main.editor_ammo_size_slider.max_value) != 5 or not is_equal_approx(float(main.editor_ammo_size_slider.step), 1.0):
+		_fail("Ammo size slider must be a five-step XS..XL slider.")
 	var ammo := _find_ammo_part()
 	if ammo.is_empty():
 		_fail("No ammo payload part found.")
@@ -40,5 +53,12 @@ func _init() -> void:
 			_fail("Ammo capacity multiplier failed for rank %d." % rank)
 		if String(variant.get("ammo_size_tier", "")) != main._volume_rank_label(float(rank)):
 			_fail("Ammo size tier label failed for rank %d." % rank)
-	print("AMMO_SIZE_SLIDER_PROBE base=%d ranks=XS..XL ok" % base_total)
+	main.editor_ammo_size_slider.value = 5.0
+	main._set_editor_ammo_size_rank_from_slider(float(main.editor_ammo_size_slider.value))
+	if int(main.editor_ammo_size_rank) != 5:
+		_fail("Ammo size slider did not update editor rank.")
+	var display := main._catalog_display_part("muscle", ammo)
+	if String(display.get("ammo_size_tier", "")) != "XL":
+		_fail("Catalog display did not reflect ammo slider rank: %s." % String(display.get("ammo_size_tier", "")))
+	print("AMMO_SIZE_SLIDER_PROBE base=%d ranks=XS..XL ui=ok" % base_total)
 	quit()

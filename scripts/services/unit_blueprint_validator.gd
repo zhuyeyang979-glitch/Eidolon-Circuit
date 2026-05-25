@@ -1,6 +1,10 @@
 extends RefCounted
 class_name UnitBlueprintValidator
 
+const DataRuleService := preload("res://scripts/services/data_rule_service.gd")
+
+var data_rules := DataRuleService.new()
+
 const LEGACY_DRIVE_KEYS := [
 	"power",
 	"energy",
@@ -80,3 +84,7 @@ func first_legacy_drive_path(value: Variant, path: String = "$") -> String:
 			if found != "":
 				return found
 	return ""
+
+
+func first_nonphysical_combat_path(value: Variant, path: String = "$") -> String:
+	return data_rules.first_nonphysical_combat_path(value, path)

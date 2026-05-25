@@ -34,8 +34,13 @@ func _init() -> void:
 	for band in bands:
 		var points := PackedVector2Array(Dictionary(band).get("points", PackedVector2Array()))
 		var coords := PackedVector2Array(Dictionary(band).get("surface_coords", PackedVector2Array()))
+		var source_widths := PackedFloat32Array(Dictionary(band).get("source_widths", PackedFloat32Array()))
+		var display_widths := PackedFloat32Array(Dictionary(band).get("display_widths", PackedFloat32Array()))
 		if points.size() != coords.size() or points.size() < 48:
 			_fail("Stardust band should keep point and surface coord samples aligned.")
+			return
+		if source_widths.size() != coords.size() or display_widths.size() != coords.size():
+			_fail("Stardust source/display samples should stay aligned with surface coords.")
 			return
 		var step := maxi(1, points.size() / 12)
 		for i in range(0, points.size(), step):

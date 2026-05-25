@@ -16,6 +16,7 @@ const PowerAllocationService = preload("res://scripts/services/power_allocation_
 const ActionProfileRegistry = preload("res://scripts/services/action_profile_registry.gd")
 const DriveSystemService = preload("res://scripts/services/drive_system_service.gd")
 const UnitBlueprintValidator = preload("res://scripts/services/unit_blueprint_validator.gd")
+const DataRuleService = preload("res://scripts/services/data_rule_service.gd")
 const NavigationService = preload("res://scripts/services/navigation_service.gd")
 const TeamEditController = preload("res://scripts/controllers/team_edit_controller.gd")
 const BattleController = preload("res://scripts/controllers/battle_controller.gd")
@@ -271,6 +272,8 @@ class MobiusStripSurfaceView:
 			"particle_count": stardust_last_particle_count,
 			"max_alpha": stardust_last_max_alpha,
 			"lane_guides_enabled": surface_lane_guides_enabled,
+			"surface_texture_path": String(surface_texture.get_meta("runtime_source_path", "")) if surface_texture != null else "",
+			"local_rectangular_projection": bool(config.get("local_rectangular_projection", false)),
 			"z_index": z_index,
 		}
 
@@ -279,10 +282,20 @@ class MobiusStardustBandView:
 	extends MobiusStripSurfaceView
 
 	var stardust_last_bands: Array = []
+	var stardust_last_source_widths := PackedFloat32Array()
+	var stardust_last_source_alphas := PackedFloat32Array()
+	var stardust_last_display_widths := PackedFloat32Array()
+	var stardust_last_display_alphas := PackedFloat32Array()
+	var stardust_last_depths := PackedFloat32Array()
 
 	func _reset_stardust_band_cache() -> void:
 		super._reset_stardust_band_cache()
 		stardust_last_bands = []
+		stardust_last_source_widths = PackedFloat32Array()
+		stardust_last_source_alphas = PackedFloat32Array()
+		stardust_last_display_widths = PackedFloat32Array()
+		stardust_last_display_alphas = PackedFloat32Array()
+		stardust_last_depths = PackedFloat32Array()
 
 	func _update_stardust_band_cache() -> void:
 		_reset_stardust_band_cache()
@@ -292,24 +305,33 @@ class MobiusStardustBandView:
 		visual_config["twist_visual_enabled"] = true
 		visual_config["local_rectangular_projection"] = false
 		visual_config["depth_contrast"] = maxf(1.18, float(visual_config.get("depth_contrast", 1.0)))
-		var loop := maxf(0.001, float(visual_config.get("loop_length", 24.0)))
 		var half_width := MobiusWorld.strip_half_width(visual_config)
 		var surface_segments := clampi(int(visual_config.get("surface_segments", 96)), 48, 144)
 		var view_width := maxf(1.0, float(visual_config.get("view_width", 7.2)))
 		var span := view_width * 1.28
-		var twist_phase := float(rotation_state.get("twist_phase", rotation_state.get("angle", 0.0)))
+		var screen_scale := maxf(1.0, float(visual_config.get("screen_scale", 1.0)))
+		var source_width := maxf(0.1, float(config.get("stardust_source_width_px", 6.0)))
+		var source_alpha := clampf(float(config.get("stardust_source_alpha", 0.115)), 0.0, stardust_alpha_max)
+		var source_particle_radius := maxf(0.1, float(config.get("stardust_particle_source_radius_px", 1.15)))
+		var source_half_width_units := source_width / screen_scale * 0.5
 		var lane_specs := [
 			{"name": "upper", "ratio": -0.34},
 			{"name": "lower", "ratio": 0.34},
 		]
-		for lane_spec in lane_specs:
+		for band_index in range(lane_specs.size()):
+			var lane_spec: Dictionary = lane_specs[band_index]
 			var lane_ratio := float(lane_spec.get("ratio", 0.0))
 			var band_points := PackedVector2Array()
 			var band_widths := PackedFloat32Array()
 			var band_alphas := PackedFloat32Array()
 			var band_depths := PackedFloat32Array()
 			var band_radii := PackedFloat32Array()
+			var band_source_widths := PackedFloat32Array()
+			var band_source_alphas := PackedFloat32Array()
 			var band_coords := PackedVector2Array()
+			var particle_points := PackedVector2Array()
+			var particle_radii := PackedFloat32Array()
+			var particle_alphas := PackedFloat32Array()
 			for i in range(surface_segments + 1):
 				var t := float(i) / float(surface_segments)
 				var s := camera_coord.x + lerpf(-span, span, t)
@@ -317,25 +339,40 @@ class MobiusStardustBandView:
 				var projection := MobiusWorld.project_to_screen(coord, camera_coord, visual_config, rotation_state)
 				var pos: Vector2 = projection.get("position", Vector2.ZERO)
 				var depth01 := clampf(float(projection.get("depth01", 0.5)), 0.0, 1.0)
-				var frame_wave := float(projection.get("visual_twist_wave", 0.0))
-				var phase := TAU * s / loop
-				var surface_pulse := 0.5 + 0.5 * sin(phase * 1.31 + twist_phase + lane_ratio * PI)
-				var breath := 0.5 + 0.5 * sin(phase * 0.47 - twist_phase * 0.9 + lane_ratio)
-				var width_ratio := clampf(0.10 + depth01 * 0.72 + surface_pulse * 0.18, 0.0, 1.0)
-				var width := lerpf(stardust_width_min, stardust_width_max, width_ratio)
-				width *= clampf(0.86 + frame_wave * lane_ratio * 0.34 + breath * 0.12, 0.62, 1.28)
-				var alpha := stardust_alpha_max * clampf(0.25 + depth01 * 0.62 + surface_pulse * 0.18, 0.0, 1.0)
-				var radius := lerpf(0.45, 2.35, clampf(depth01 * 0.82 + breath * 0.18, 0.0, 1.0))
+				var visual_scale := maxf(0.01, float(projection.get("scale", 1.0)))
+				var width := source_width * visual_scale
+				var alpha := minf(stardust_alpha_max, source_alpha * lerpf(0.52, 1.0, depth01))
+				var radius := source_particle_radius * visual_scale
 				band_points.append(pos)
 				band_widths.append(width)
 				band_alphas.append(alpha)
 				band_depths.append(depth01)
 				band_radii.append(radius)
+				band_source_widths.append(source_width)
+				band_source_alphas.append(source_alpha)
 				band_coords.append(coord)
 				stardust_last_points.append(pos)
 				stardust_last_widths.append(width)
 				stardust_last_alphas.append(alpha)
+				stardust_last_source_widths.append(source_width)
+				stardust_last_source_alphas.append(source_alpha)
+				stardust_last_display_widths.append(width)
+				stardust_last_display_alphas.append(alpha)
+				stardust_last_depths.append(depth01)
 				stardust_last_max_alpha = maxf(stardust_last_max_alpha, alpha)
+			var particle_count := maxi(1, int(floor(float(stardust_particle_budget) / 2.0)))
+			for particle_index in range(particle_count):
+				var ratio := (float(particle_index) + 0.5) / float(particle_count)
+				var s := camera_coord.x + lerpf(-span, span, ratio)
+				var source_offset := sin(ratio * TAU * 23.0 + float(band_index) * 1.7) * 0.36
+				source_offset += sin(ratio * TAU * 7.0 + float(band_index) * 0.9) * 0.14
+				var particle_coord := Vector2(s, half_width * lane_ratio + source_offset * source_half_width_units)
+				var particle_projection := MobiusWorld.project_to_screen(particle_coord, camera_coord, visual_config, rotation_state)
+				var particle_depth := clampf(float(particle_projection.get("depth01", 0.5)), 0.0, 1.0)
+				var particle_scale := maxf(0.01, float(particle_projection.get("scale", 1.0)))
+				particle_points.append(particle_projection.get("position", Vector2.ZERO))
+				particle_radii.append(source_particle_radius * particle_scale)
+				particle_alphas.append(minf(0.16, source_alpha * lerpf(0.40, 0.86, particle_depth)))
 			stardust_last_bands.append({
 				"name": String(lane_spec.get("name", "band")),
 				"lane_ratio": lane_ratio,
@@ -344,32 +381,26 @@ class MobiusStardustBandView:
 				"alphas": band_alphas,
 				"depths": band_depths,
 				"radii": band_radii,
+				"source_widths": band_source_widths,
+				"source_alphas": band_source_alphas,
+				"display_widths": band_widths,
+				"display_alphas": band_alphas,
+				"particle_points": particle_points,
+				"particle_radii": particle_radii,
+				"particle_alphas": particle_alphas,
 				"surface_coords": band_coords,
 			})
 		stardust_last_visible = stardust_last_bands.size() == 2 and stardust_last_points.size() >= 4
 		stardust_last_particle_count = stardust_particle_budget if stardust_last_visible else 0
 
-	func _draw_band_particles(points: PackedVector2Array, widths: PackedFloat32Array, alphas: PackedFloat32Array, radii: PackedFloat32Array, band_index: int) -> void:
-		if points.size() < 2:
+	func _draw_band_particles(points: PackedVector2Array, alphas: PackedFloat32Array, radii: PackedFloat32Array) -> void:
+		if points.is_empty():
 			return
-		var count := maxi(1, int(floor(float(stardust_particle_budget) / 2.0)))
-		var twist_phase := float(rotation_state.get("twist_phase", rotation_state.get("angle", 0.0)))
+		var count := mini(points.size(), mini(alphas.size(), radii.size()))
 		for i in range(count):
-			var ratio := (float(i) + 0.5) / float(count)
-			var index := clampi(int(round(ratio * float(points.size() - 1))), 0, points.size() - 1)
-			var prev_index := maxi(0, index - 1)
-			var next_index := mini(points.size() - 1, index + 1)
-			var tangent := (points[next_index] - points[prev_index]).normalized()
-			if tangent.length() <= 0.001:
-				tangent = Vector2.RIGHT
-			var normal := Vector2(-tangent.y, tangent.x)
-			var width := widths[index]
-			var jitter := normal * sin(ratio * TAU * 23.0 + twist_phase * 1.6 + float(band_index) * 1.7) * width * 0.82
-			var along := tangent * sin(ratio * TAU * 13.0 - twist_phase + float(band_index)) * width * 0.38
-			var p := points[index] + jitter + along
-			var pulse := 0.5 + 0.5 * sin(ratio * TAU * 9.0 + twist_phase * 1.3 + float(band_index))
-			var radius := maxf(0.35, radii[index] * (0.65 + pulse * 0.62))
-			var alpha := minf(0.16, alphas[index] * (0.36 + pulse * 0.34))
+			var p := points[i]
+			var radius := maxf(0.35, radii[i])
+			var alpha := minf(0.16, alphas[i])
 			draw_circle(p, radius + 1.4, Color(0.38, 0.68, 1.0, alpha * 0.42))
 			draw_circle(p, radius, Color(0.88, 0.96, 1.0, alpha))
 
@@ -381,7 +412,6 @@ class MobiusStardustBandView:
 			var points := PackedVector2Array(band.get("points", PackedVector2Array()))
 			var widths := PackedFloat32Array(band.get("widths", PackedFloat32Array()))
 			var alphas := PackedFloat32Array(band.get("alphas", PackedFloat32Array()))
-			var radii := PackedFloat32Array(band.get("radii", PackedFloat32Array()))
 			if points.size() < 2:
 				continue
 			for i in range(points.size() - 1):
@@ -390,7 +420,11 @@ class MobiusStardustBandView:
 				draw_line(points[i], points[i + 1], Color(0.26, 0.58, 1.0, minf(0.32, alpha * 1.18)), width * 3.05, true)
 				draw_line(points[i], points[i + 1], Color(0.58, 0.82, 1.0, minf(0.25, alpha * 0.92)), width * 1.52, true)
 				draw_line(points[i], points[i + 1], Color(0.94, 0.98, 1.0, minf(0.18, alpha * 0.58)), maxf(1.0, width * 0.32), true)
-			_draw_band_particles(points, widths, alphas, radii, band_index)
+			_draw_band_particles(
+				PackedVector2Array(band.get("particle_points", PackedVector2Array())),
+				PackedFloat32Array(band.get("particle_alphas", PackedFloat32Array())),
+				PackedFloat32Array(band.get("particle_radii", PackedFloat32Array()))
+			)
 
 	func _draw() -> void:
 		if not bool(config.get("enabled", true)):
@@ -407,6 +441,11 @@ class MobiusStardustBandView:
 		snapshot["bands"] = stardust_last_bands.duplicate(true)
 		snapshot["band_count"] = stardust_last_bands.size()
 		snapshot["surface_attached"] = true
+		snapshot["source_widths"] = stardust_last_source_widths
+		snapshot["source_alphas"] = stardust_last_source_alphas
+		snapshot["display_widths"] = stardust_last_display_widths
+		snapshot["display_alphas"] = stardust_last_display_alphas
+		snapshot["depths"] = stardust_last_depths
 		return snapshot
 
 
@@ -1216,7 +1255,7 @@ class ScoutUnitDetailView:
 		var ammo = stats.get("ammo_capacity", {})
 		var ammo_total := 0.0
 		if ammo is Dictionary:
-			ammo_total = float(int(ammo.get("bullet", 0)) + int(ammo.get("chemical", 0)) + int(ammo.get("laser", 0)) + int(ammo.get("explosive", 0)))
+			ammo_total = float(int(ammo.get("bullet", 0)) + int(ammo.get("chemical", 0)) + int(ammo.get("laser", 0)) + int(ammo.get("explosive", 0)) + int(ammo.get("web", 0)))
 		var rows: Array = [
 			{"label": _label("生命", "HP"), "value": float(stats.get("health", 0.0)), "max": 900.0, "color": Color(0.16, 0.86, 0.62, 0.95)},
 			{"label": _label("护盾", "SHIELD"), "value": float(stats.get("electronic_armor_max", stats.get("shield_max", 0.0))), "max": 420.0, "color": Color(0.34, 0.88, 1.0, 0.95)},
@@ -3092,6 +3131,8 @@ class EditorStatsRailView:
 class EditorPartHoverPopupView:
 	extends Control
 
+	signal close_requested(suppress_token: String)
+
 	var slot_key := ""
 	var part := {}
 	var title := ""
@@ -3101,6 +3142,9 @@ class EditorPartHoverPopupView:
 	var ui_language := "zh"
 	var last_part_signature := ""
 	var preview_icon: PartPreviewIconView
+	var pinned := false
+	var suppress_token := ""
+	var detail_scroll_offset := 0.0
 
 	func _ready() -> void:
 		_ensure_preview_icon()
@@ -3108,10 +3152,11 @@ class EditorPartHoverPopupView:
 	func _notification(what: int) -> void:
 		if what == NOTIFICATION_RESIZED:
 			_sync_preview_icon()
+			detail_scroll_offset = clampf(detail_scroll_offset, 0.0, _max_detail_scroll())
 
-	func set_part(next_slot: String, next_part: Dictionary, next_title: String, next_subtitle: String, next_lines: Array, next_language: String, next_stat_entries: Array = []) -> void:
+	func set_part(next_slot: String, next_part: Dictionary, next_title: String, next_subtitle: String, next_lines: Array, next_language: String, next_stat_entries: Array = [], next_pinned: bool = false, next_suppress_token: String = "") -> void:
 		_ensure_preview_icon()
-		var signature := "%s|%s|%s|%s|%s|%d|%d|%s|%s|%s" % [
+		var signature := "%s|%s|%s|%s|%s|%d|%d|%s|%s|%s|%s|%s" % [
 			next_slot,
 			next_language,
 			next_title,
@@ -3122,6 +3167,8 @@ class EditorPartHoverPopupView:
 			String(next_part.get("size_tier", next_part.get("size_class", next_part.get("slot_volume_tier", "")))),
 			String(next_part.get("shape", "")),
 			String(next_part.get("damage_type", next_part.get("projectile_damage_type", ""))),
+			str(next_pinned),
+			next_suppress_token,
 		]
 		if visible and signature == last_part_signature:
 			return
@@ -3133,6 +3180,10 @@ class EditorPartHoverPopupView:
 		detail_lines = next_lines.duplicate(true)
 		stat_entries = next_stat_entries.duplicate(true)
 		ui_language = next_language
+		pinned = next_pinned
+		suppress_token = next_suppress_token
+		detail_scroll_offset = 0.0
+		mouse_filter = Control.MOUSE_FILTER_STOP if pinned else Control.MOUSE_FILTER_IGNORE
 		visible = true
 		_sync_preview_icon(true)
 		queue_redraw()
@@ -3142,10 +3193,35 @@ class EditorPartHoverPopupView:
 			return
 		last_part_signature = ""
 		visible = false
+		pinned = false
+		suppress_token = ""
+		detail_scroll_offset = 0.0
+		mouse_filter = Control.MOUSE_FILTER_IGNORE
 		if preview_icon != null:
 			preview_icon.visible = false
 			preview_icon.clear_preview()
 		queue_redraw()
+
+	func _gui_input(event: InputEvent) -> void:
+		if not pinned:
+			return
+		if event is InputEventMouseButton:
+			var mouse_event := event as InputEventMouseButton
+			if mouse_event.button_index == MOUSE_BUTTON_WHEEL_UP or mouse_event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+				if _detail_rect().has_point(mouse_event.position):
+					var direction := -1.0 if mouse_event.button_index == MOUSE_BUTTON_WHEEL_UP else 1.0
+					detail_scroll_offset = clampf(detail_scroll_offset + direction * 34.0, 0.0, _max_detail_scroll())
+					queue_redraw()
+					accept_event()
+				return
+			if mouse_event.pressed and mouse_event.button_index == MOUSE_BUTTON_RIGHT:
+				close_requested.emit(suppress_token)
+				accept_event()
+				return
+			if mouse_event.pressed and mouse_event.button_index == MOUSE_BUTTON_LEFT and _close_rect().has_point(mouse_event.position):
+				close_requested.emit(suppress_token)
+				accept_event()
+				return
 
 	func _ensure_preview_icon() -> void:
 		if preview_icon != null:
@@ -3157,6 +3233,17 @@ class EditorPartHoverPopupView:
 
 	func _hover_art_rect() -> Rect2:
 		return Rect2(Vector2(18.0, 62.0), Vector2(size.x - 36.0, 112.0))
+
+	func _close_rect() -> Rect2:
+		return Rect2(Vector2(size.x - 34.0, 10.0), Vector2(22.0, 22.0))
+
+	func _detail_rect() -> Rect2:
+		return Rect2(Vector2(18.0, 328.0), Vector2(size.x - 36.0, size.y - 346.0))
+
+	func _max_detail_scroll() -> float:
+		var line_height := 17.0
+		var content_h := float(detail_lines.size()) * line_height + 12.0
+		return maxf(0.0, content_h - maxf(12.0, _detail_rect().size.y - 18.0))
 
 	func _sync_preview_icon(force_redraw: bool = false) -> void:
 		if preview_icon == null:
@@ -3187,8 +3274,13 @@ class EditorPartHoverPopupView:
 		var rect := Rect2(Vector2.ZERO, size)
 		draw_rect(rect, Color(0.004, 0.01, 0.018, 0.96), true)
 		draw_rect(Rect2(Vector2.ONE, size - Vector2(2.0, 2.0)), _slot_color().lerp(Color.WHITE, 0.18), false, 2.0)
-		draw_string(font, Vector2(18.0, 27.0), _trim(title, 36), HORIZONTAL_ALIGNMENT_LEFT, size.x - 36.0, 17, Color(0.95, 0.98, 1.0, 1.0))
+		var title_width := size.x - 36.0 - (32.0 if pinned else 0.0)
+		draw_string(font, Vector2(18.0, 27.0), _trim(title, 36), HORIZONTAL_ALIGNMENT_LEFT, title_width, 17, Color(0.95, 0.98, 1.0, 1.0))
 		draw_string(font, Vector2(18.0, 48.0), _trim(subtitle, 54), HORIZONTAL_ALIGNMENT_LEFT, size.x - 36.0, 10, Color(1.0, 0.86, 0.26, 1.0))
+		if pinned:
+			draw_rect(_close_rect(), Color(0.22, 0.035, 0.04, 0.96), true)
+			draw_rect(_close_rect(), Color(1.0, 0.34, 0.24, 0.9), false, 1.0)
+			draw_string(font, _close_rect().position + Vector2(3.0, 16.0), "X", HORIZONTAL_ALIGNMENT_CENTER, _close_rect().size.x - 6.0, 11, Color(1.0, 0.86, 0.8, 1.0))
 		var art_rect := Rect2(Vector2(18.0, 62.0), Vector2(size.x - 36.0, 112.0))
 		draw_rect(art_rect, Color(0.008, 0.018, 0.03, 0.94), true)
 		draw_rect(art_rect, Color(0.24, 0.4, 0.52, 0.54), false, 1.0)
@@ -3196,11 +3288,20 @@ class EditorPartHoverPopupView:
 		draw_rect(stat_rect, Color(0.0, 0.0, 0.0, 0.26), true)
 		draw_rect(stat_rect, Color(0.34, 0.58, 0.72, 0.34), false, 1.0)
 		_draw_metric_tiles(font, stat_rect)
-		var data_rect := Rect2(Vector2(18.0, 328.0), Vector2(size.x - 36.0, size.y - 346.0))
+		var data_rect := _detail_rect()
 		draw_rect(data_rect, Color(0.0, 0.0, 0.0, 0.34), true)
 		draw_rect(data_rect, Color(0.34, 0.58, 0.72, 0.22), false, 1.0)
-		var y := data_rect.position.y + 17.0
+		if pinned and _max_detail_scroll() > 0.1:
+			var track := Rect2(Vector2(data_rect.end.x - 6.0, data_rect.position.y + 4.0), Vector2(3.0, data_rect.size.y - 8.0))
+			var thumb_h := clampf(track.size.y * (track.size.y / maxf(track.size.y, track.size.y + _max_detail_scroll())), 18.0, track.size.y)
+			var thumb_y := track.position.y + (track.size.y - thumb_h) * (detail_scroll_offset / maxf(0.001, _max_detail_scroll()))
+			draw_rect(track, Color(0.2, 0.28, 0.32, 0.45), true)
+			draw_rect(Rect2(Vector2(track.position.x, thumb_y), Vector2(track.size.x, thumb_h)), _slot_color().lerp(Color.WHITE, 0.18), true)
+		var y := data_rect.position.y + 17.0 - detail_scroll_offset
 		for line in detail_lines:
+			if y < data_rect.position.y + 8.0:
+				y += 17.0
+				continue
 			if y > data_rect.end.y - 6.0:
 				break
 			var line_text := String(line)
@@ -4849,6 +4950,8 @@ class EngineMomentumAllocationPanelView:
 	signal allocation_changed(entry_id: String, ratio: float)
 	signal allocation_value_submitted(entry_id: String, momentum: float)
 	signal allocation_drag_finished(entry_id: String)
+	signal entry_detail_requested(entry_id: String)
+	signal segment_detail_requested(node_index: int)
 
 	var ui_language := "zh"
 	var title := ""
@@ -4997,8 +5100,18 @@ class EngineMomentumAllocationPanelView:
 		if clicked_group_id != "":
 			selected_group_id = clicked_group_id
 			queue_redraw()
+			var group := _allocation_group_for_id(clicked_group_id)
+			var target_nodes: Array = Array(group.get("target_nodes", []))
+			if not target_nodes.is_empty():
+				segment_detail_requested.emit(int(target_nodes[0]))
 			accept_event()
 			return
+		if _silhouette_rect().has_point(mouse_event.position):
+			var segment_node := _segment_node_at(mouse_event.position)
+			if segment_node >= 0:
+				segment_detail_requested.emit(segment_node)
+				accept_event()
+				return
 		for i in range(entries.size()):
 			var entry: Dictionary = entries[i] if entries[i] is Dictionary else {}
 			var entry_id := String(entry.get("id", ""))
@@ -5010,6 +5123,15 @@ class EngineMomentumAllocationPanelView:
 				_release_focus_from_entry_edits()
 				dragging_entry_id = entry_id
 				_emit_slider_change(entry_id, mouse_event.position)
+				accept_event()
+				return
+		for i in range(entries.size()):
+			var entry: Dictionary = entries[i] if entries[i] is Dictionary else {}
+			var entry_id := String(entry.get("id", ""))
+			if entry_id == "":
+				continue
+			if _entry_row_rect(i).has_point(mouse_event.position) and _side_rect().has_point(mouse_event.position):
+				entry_detail_requested.emit(entry_id)
 				accept_event()
 				return
 
@@ -5441,6 +5563,52 @@ class EngineMomentumAllocationPanelView:
 			if _allocation_group_screen_rect(group).grow(16.0).has_point(pos):
 				return String(group.get("id", ""))
 		return ""
+
+	func _allocation_group_for_id(group_id: String) -> Dictionary:
+		for raw_group in allocation_groups:
+			if raw_group is Dictionary and String(Dictionary(raw_group).get("id", "")) == group_id:
+				return Dictionary(raw_group)
+		return {}
+
+	func _segment_node_at(pos: Vector2) -> int:
+		var best_node := -1
+		var best_distance := 999999.0
+		for raw_segment in segments:
+			if not (raw_segment is Dictionary):
+				continue
+			var segment: Dictionary = raw_segment
+			var node_index := int(segment.get("node_index", -1))
+			if node_index < 0:
+				continue
+			var bounds := _segment_screen_rect(segment).grow(10.0)
+			if not bounds.has_point(pos):
+				continue
+			var center := bounds.position + bounds.size * 0.5
+			var distance := center.distance_to(pos)
+			if distance < best_distance:
+				best_distance = distance
+				best_node = node_index
+		return best_node
+
+	func _segment_screen_rect(segment: Dictionary) -> Rect2:
+		var first := true
+		var min_point := Vector2.ZERO
+		var max_point := Vector2.ZERO
+		var radius := maxf(6.0, float(segment.get("radius", 0.025)) * _silhouette_scale() + 6.0)
+		for local_point in _segment_local_bound_points(segment):
+			var point := _map_local_point(local_point)
+			if first:
+				min_point = point - Vector2(radius, radius)
+				max_point = point + Vector2(radius, radius)
+				first = false
+			else:
+				min_point.x = minf(min_point.x, point.x - radius)
+				min_point.y = minf(min_point.y, point.y - radius)
+				max_point.x = maxf(max_point.x, point.x + radius)
+				max_point.y = maxf(max_point.y, point.y + radius)
+		if first:
+			return Rect2()
+		return Rect2(min_point, max_point - min_point)
 
 	func _allocation_group_screen_rect(group: Dictionary) -> Rect2:
 		var target_nodes: Array = Array(group.get("target_nodes", []))
@@ -8821,7 +8989,8 @@ const MINIMUM_RUNTIME_FPS_CAP = 72
 const BATTLE_SIMULATION_FPS = 72.0
 const BATTLE_FRAME_DELTA = 1.0 / BATTLE_SIMULATION_FPS
 const GENERATED_SPACE_BACKDROP_PATH = "res://assets/generated/space_battle_backdrop.png"
-const MOBIUS_SURFACE_TEXTURE_PATH = "res://assets/generated/mobius_strip_surface_space.png"
+const MOBIUS_SURFACE_MESH_TEXTURE_PATH = "res://assets/generated/mobius_surface_mesh_net.png"
+const MOBIUS_SURFACE_TEXTURE_PATH = MOBIUS_SURFACE_MESH_TEXTURE_PATH
 const BATTLE_MINIMAL_BACKGROUND = true
 const DISPLAY_MODE_DEFAULT = "windowed"
 const DISPLAY_MODE_ORDER = ["windowed", "borderless_fullscreen", "fullscreen"]
@@ -9310,11 +9479,11 @@ const SOURCE_MOVE_NAMES = {
 	"flank": "侧绕",
 }
 const ECONOMY_PRICE_MULTIPLIER = 0.5
-const ENGINE_MOMENTUM_OUTPUT_SCALE = 9.0
-const COOLING_OUTPUT_SCALE = 1.0
-const COOLING_POOL_SCALE = 2.0
-const THRUSTER_ALLOCATION_MAX_MULT = 3.0
-const LIMB_MOMENTUM_MAX_SCALE = 1.0
+const ENGINE_MOMENTUM_OUTPUT_SCALE = DataRuleService.ENGINE_MOMENTUM_OUTPUT_SCALE
+const COOLING_OUTPUT_SCALE = DataRuleService.COOLING_OUTPUT_SCALE
+const COOLING_POOL_SCALE = DataRuleService.COOLING_POOL_SCALE
+const THRUSTER_ALLOCATION_MAX_MULT = DataRuleService.THRUSTER_ALLOCATION_MAX_MULT
+const LIMB_MOMENTUM_MAX_SCALE = DataRuleService.LIMB_MOMENTUM_MAX_SCALE
 const PART_GRADIENT_RANK_LABELS = {1: "XS", 2: "S", 3: "M", 4: "L", 5: "XL"}
 const PART_GRADIENT_SPEC_FIELDS = ["rank", "rank_label", "family", "role", "role_label", "tradeoff_tags", "tradeoff_label"]
 const PART_GRADIENT_TAG_LABELS_ZH = {
@@ -9452,7 +9621,7 @@ const MENU_DESCRIPTIONS_EN = [
 const SPECIAL_CATALOG = {
 	"hero": [
 		{"name": "SOUL ANCHOR", "kind": "soul", "cost": 104, "soul_heat_capacity": 92.0, "soul_requirements": {"mass_min": 12.0, "mass_max": 230.0, "cooling_min": 12.0, "radius_max": 0.9, "module_group_min": 2}, "soul_bonus": {"boost_cooling_mult": 1.18}, "summary": "Software soul: 92 heat slot; rewards stable mid-size bodies with cooler boosts and broad control routing"},
-		{"name": "DUEL SOUL", "kind": "soul", "cost": 118, "soul_heat_capacity": 68.0, "soul_requirements": {"mass_max": 98.0, "radius_max": 0.52, "cooling_min": 10.0, "module_group_min": 3}, "soul_bonus": {"pierce_range_bonus": 0.18, "speed_bonus": 0.08}, "summary": "Software soul: compact 68 heat slot, but light technical frames gain spike reach and speed"},
+		{"name": "SOUL: FIRST EDGE ECHO", "zh_name": "始锋回响英魂", "maker": "HUMANOVA ATELIER", "kind": "soul", "cost": 118, "soul_archetype": "duelist_oath", "soul_heat_capacity": 68.0, "soul_requirements": {"mass_max": 128.0, "radius_max": 0.56, "module_group_min": 3, "duelist_real_contact_min": 1, "terminal_weapon_mass_max": 34.0}, "soul_echo_window": 1.15, "soul_echo_recovery_mult": 0.72, "soul_echo_heat_relief": 0.18, "soul_bonus": {"pierce_range_bonus": 0.1, "speed_bonus": 0.04}, "summary": "First standard soul: a hero-only duelist oath. It grants a heat slot by default, then rewards light contact builds that rotate different bound limbs."},
 		{"name": "TITAN PILGRIM SOUL", "kind": "soul", "cost": 164, "soul_heat_capacity": 128.0, "soul_requirements": {"cooling_min": 24.0, "mass_ranges": [[20.0, 80.0], [280.0, 900.0]], "module_group_min": 1}, "soul_bonus": {"tear_range_bonus": 0.22, "heat_capacity_bonus": 24.0}, "summary": "Software soul: huge 128 heat slot. Tiny hunter or colossal monster ideals gain tearing reach if cooling is serious"},
 		{"name": "XI CAPTAIN SOUL", "maker": "SYNTAX ELEVEN", "kind": "soul", "cost": 66, "soul_heat_capacity": 54.0, "soul_requirements": {"mass_min": 4.0, "mass_max": 180.0, "module_group_min": 1}, "soul_bonus": {"speed_bonus": 0.03, "boost_cooling_mult": 1.05}, "summary": "Cheap permissive 54 heat-slot soul for average-team rosters; it captains a formation rather than dominating alone"},
 	],
@@ -9609,7 +9778,7 @@ const STYLE_COMMON_CATALOG = {
 	"module": [
 		{"name": "COMBO ROUTER: BALANCE STRING", "maker": "SYNTAX ELEVEN", "cost": 72, "aim_mode": "fixed", "motion": "rod", "requires_bound_key": true, "module_target_kind": "ball_joint", "swing_arc_degrees": 120.0, "summary": "Balanced module that cancels cleanly into a second limb instead of repeating itself."},
 		{"name": "CLAMP ROUTER: VISE CLOSE", "maker": "CRUSTA DYNAMICS", "cost": 96, "aim_mode": "fixed", "motion": "pincer_clamp", "requires_bound_key": true, "module_target_kind": "dual_ball_joint", "requires_joint_pair": true, "paired_attack_key": true, "paired_joint_count": 2, "summary": "Two-joint clamp module for crab claws and pressure gates."},
-		{"name": "枪械启动 / GUN ACTIVATE", "maker": "LONGSIGHT AEGIS", "cost": 104, "aim_mode": "manual", "motion": "gun_activate", "requires_bound_key": true, "module_target_kind": "gun_terminal", "module_action_profile": "gun_activate", "gun_activation": "gun_activate", "hold_to_activate": true, "gun_rotate_speed": 0.0, "summary": "通用枪械启动：可绑定任意可用枪械，并按被绑定枪械自身的瞄准与发射方式执行。启动中按住局部4/6可持续旋转枪口。"},
+		{"name": "枪械启动 / GUN ACTIVATE", "maker": "LONGSIGHT AEGIS", "cost": 104, "aim_mode": "manual", "motion": "gun_activate", "requires_bound_key": true, "module_target_kind": "gun_terminal", "module_action_profile": "gun_activate", "gun_activation": "gun_activate", "hold_to_activate": true, "gun_rotate_speed": 0.0, "summary": "通用枪械启动：可绑定任意可用枪械，并按被绑定枪械自身的瞄准与发射方式执行。启动中按住左转/右转持续旋转枪口，移动键仍控制移动。"},
 		{"name": "棱镜照射启动 / PRISM BEAM ACTIVATE", "maker": "LONGSIGHT AEGIS", "cost": 92, "aim_mode": "manual", "motion": "gun_activate", "requires_bound_key": true, "module_target_kind": "gun_terminal", "module_action_profile": "laser_beam_activate", "gun_activation": "laser_beam_activate", "hold_to_activate": true, "gun_rotate_speed": 0.0, "laser_tick_interval": 1.0, "summary": "按住绑定键启动激光枪；只绑定激光枪末端，持续按射击间隔发射即时光束，松开停止，不进入狙击锁定。"},
 		{"name": "猎隼锁射启动 / KESTREL MISSILE LOCK", "maker": "REDLINE ARMS", "cost": 112, "aim_mode": "manual", "motion": "gun_activate", "requires_bound_key": true, "module_target_kind": "gun_terminal", "module_action_profile": "missile_lock_activate", "gun_activation": "missile_lock_activate", "hold_to_activate": true, "gun_rotate_speed": 0.0, "missile_lock_priority": "screen_hero_first", "missile_lock_cone_degrees": 52.0, "missile_occlusion_grace": 0.28, "summary": "按住绑定键锁定导弹目标，默认同屏英雄优先，其次傀儡与结界支援/攻击部位；松开发射可被遮蔽甩脱的制导导弹。"},
 		{"name": "ROUTE ROUTER: PICKUP DASH", "maker": "COINRUN DYNAMICS", "cost": 68, "aim_mode": "manual", "motion": "pendulum", "requires_bound_key": true, "module_target_kind": "ball_joint", "swing_arc_degrees": 180.0, "speed_lane_affinity": 0.06, "summary": "Coin-run swing module for hitting ball puppets while racing route fields."},
@@ -9804,9 +9973,11 @@ const COMMON_CATALOG = {
 		{"name": "TEAR-SCAR POD", "cost": 62, "hp": 13, "mass": 4, "length": 0.28, "normal_damage": 2, "damage_type": "tear", "material_class": "suicide_puppet", "connection_ends": 0, "shape": "suicide_pod", "radius": 0.06, "standalone_puppet_core": true, "suicide_on_hit": true, "vuln_kind": "tear", "vuln_mult": 2.15, "vuln_duration": 4.2, "blast_radius": 0.48, "speed_mult": 1.2, "counter_tiers": {"bullet": 0, "chemical": 0, "laser": 1, "blunt": 0, "pierce": 0, "tear": 2}, "resist": {"bullet": 1.1, "chemical": 1.08, "laser": 1.0, "blunt": 1.16, "pierce": 1.08, "tear": 0.96}, "summary": "Suicide pod that scars armor against tearing and blade follow-ups"},
 		{"name": "BLACKBOX ESCAPE POD", "maker": "PARACHUTE MUTUAL", "cost": 64, "hp": 18, "mass": 5, "length": 0.18, "normal_damage": 0, "damage_type": "blunt", "material_class": "escape_pod", "connection_ends": 0, "shape": "drone_core", "radius": 0.045, "torso_slot_payload": true, "has_escape_pod": true, "escape_speed": 0.86, "escape_module_slots": 2, "escape_target_ring_delta": 2.8, "escape_target_lane": 0.0, "counter_tiers": {"bullet": 0, "chemical": 0, "laser": 0, "blunt": 0, "pierce": 0, "tear": 0}, "resist": {"bullet": 1.12, "chemical": 1.12, "laser": 1.1, "blunt": 1.18, "pierce": 1.08, "tear": 1.08}, "summary": "Torso-slot escape pod. It carries a few action modules away when the unit dies; installed art is visible but does not enlarge body collision"},
 		{"name": "RAPID VAULT ESCAPE POD", "maker": "PARACHUTE MUTUAL", "cost": 124, "hp": 24, "mass": 8, "length": 0.22, "normal_damage": 0, "damage_type": "laser", "material_class": "escape_pod", "connection_ends": 0, "shape": "drone_core", "radius": 0.06, "torso_slot_payload": true, "has_escape_pod": true, "escape_speed": 1.42, "escape_module_slots": 3, "escape_target_ring_delta": 3.5, "escape_target_lane": 0.0, "counter_tiers": {"bullet": 1, "chemical": 0, "laser": 1, "blunt": 0, "pierce": 0, "tear": 0}, "resist": {"bullet": 1.04, "chemical": 1.14, "laser": 1.02, "blunt": 1.16, "pierce": 1.08, "tear": 1.08}, "summary": "Fast expensive escape pod. More likely to preserve shared modules, but losing it en route is a painful tempo swing"},
-		{"name": "BULLET DRUM AMMO BAY", "maker": "AUXILIA MESH", "cost": 24, "mass": 4, "length": 0.0, "damage_type": "bullet", "material_class": "ammo_payload", "connection_ends": 0, "shape": "ammo_mag", "radius": 0.0, "torso_slot_payload": true, "ammo_capacity": {"bullet": 18}, "ammo_slot_payload": true, "counter_tiers": {"bullet": 0, "chemical": 0, "laser": 0, "blunt": 0, "pierce": 0, "tear": 0}, "resist": {"bullet": 1.0, "chemical": 1.0, "laser": 1.0, "blunt": 1.0, "pierce": 1.0, "tear": 1.0}, "summary": "Internal torso-slot bullet ammunition. Adds cost and mass only; no heat, no HP, and no collision volume"},
-		{"name": "CAUSTIC AMMO TANK", "maker": "AUXILIA MESH", "cost": 28, "mass": 5, "length": 0.0, "damage_type": "chemical", "material_class": "ammo_payload", "connection_ends": 0, "shape": "ammo_mag", "radius": 0.0, "torso_slot_payload": true, "ammo_capacity": {"chemical": 14}, "ammo_slot_payload": true, "counter_tiers": {"bullet": 0, "chemical": 0, "laser": 0, "blunt": 0, "pierce": 0, "tear": 0}, "resist": {"bullet": 1.0, "chemical": 1.0, "laser": 1.0, "blunt": 1.0, "pierce": 1.0, "tear": 1.0}, "summary": "Internal corrosive-fluid ammunition tank. It is a mass-bearing slot resource, not a physical limb"},
-		{"name": "LASER CAPACITOR CELL", "maker": "AUXILIA MESH", "cost": 32, "mass": 3, "length": 0.0, "damage_type": "laser", "material_class": "ammo_payload", "connection_ends": 0, "shape": "ammo_mag", "radius": 0.0, "torso_slot_payload": true, "ammo_capacity": {"laser": 12}, "ammo_slot_payload": true, "counter_tiers": {"bullet": 0, "chemical": 0, "laser": 0, "blunt": 0, "pierce": 0, "tear": 0}, "resist": {"bullet": 1.0, "chemical": 1.0, "laser": 1.0, "blunt": 1.0, "pierce": 1.0, "tear": 1.0}, "summary": "Internal laser charge cell. Light and pricey, counts toward torso payload capacity but never enlarges collision"},
+		{"name": "BULLET DRUM AMMO BAY", "maker": "AUXILIA MESH", "cost": 24, "mass": 4, "length": 0.0, "damage_type": "bullet", "material_class": "ammo_payload", "connection_ends": 0, "shape": "ammo_mag", "radius": 0.0, "torso_slot_payload": true, "ammo_capacity": {"bullet": 18}, "ammo_slot_payload": true, "ammo_size_tier": "XS", "slot_volume_tier": "XS", "counter_tiers": {"bullet": 0, "chemical": 0, "laser": 0, "blunt": 0, "pierce": 0, "tear": 0}, "resist": {"bullet": 1.0, "chemical": 1.0, "laser": 1.0, "blunt": 1.0, "pierce": 1.0, "tear": 1.0}, "summary": "Internal torso-slot bullet ammunition. Pick XS to XL at install time; capacity, cost, mass, and slot size scale together."},
+		{"name": "CAUSTIC AMMO TANK", "maker": "AUXILIA MESH", "cost": 28, "mass": 5, "length": 0.0, "damage_type": "chemical", "material_class": "ammo_payload", "connection_ends": 0, "shape": "ammo_mag", "radius": 0.0, "torso_slot_payload": true, "ammo_capacity": {"chemical": 14}, "ammo_slot_payload": true, "ammo_size_tier": "XS", "slot_volume_tier": "XS", "counter_tiers": {"bullet": 0, "chemical": 0, "laser": 0, "blunt": 0, "pierce": 0, "tear": 0}, "resist": {"bullet": 1.0, "chemical": 1.0, "laser": 1.0, "blunt": 1.0, "pierce": 1.0, "tear": 1.0}, "summary": "Internal corrosive-fluid ammunition tank. Pick XS to XL at install time; capacity, cost, mass, and slot size scale together."},
+		{"name": "LASER CAPACITOR CELL", "maker": "AUXILIA MESH", "cost": 32, "mass": 3, "length": 0.0, "damage_type": "laser", "material_class": "ammo_payload", "connection_ends": 0, "shape": "ammo_mag", "radius": 0.0, "torso_slot_payload": true, "ammo_capacity": {"laser": 12}, "ammo_slot_payload": true, "ammo_size_tier": "XS", "slot_volume_tier": "XS", "counter_tiers": {"bullet": 0, "chemical": 0, "laser": 0, "blunt": 0, "pierce": 0, "tear": 0}, "resist": {"bullet": 1.0, "chemical": 1.0, "laser": 1.0, "blunt": 1.0, "pierce": 1.0, "tear": 1.0}, "summary": "Internal laser charge cell. Pick XS to XL at install time; capacity, cost, mass, and slot size scale together."},
+		{"name": "EXPLOSIVE POD AMMO BAY", "maker": "AUXILIA MESH", "cost": 40, "mass": 7, "length": 0.0, "damage_type": "explosive", "material_class": "ammo_payload", "connection_ends": 0, "shape": "ammo_mag", "radius": 0.0, "torso_slot_payload": true, "ammo_capacity": {"explosive": 6}, "ammo_slot_payload": true, "ammo_size_tier": "XS", "slot_volume_tier": "XS", "counter_tiers": {"bullet": 0, "chemical": 0, "laser": 0, "blunt": 0, "pierce": 0, "tear": 0}, "resist": {"bullet": 1.0, "chemical": 1.0, "laser": 1.0, "blunt": 1.0, "pierce": 1.0, "tear": 1.0}, "summary": "Internal explosive ammunition pod for grenades and missiles. Pick XS to XL at install time; capacity, cost, mass, and slot size scale together."},
+		{"name": "WEB SPOOL AMMO BAY", "maker": "AUXILIA MESH", "cost": 22, "mass": 2, "length": 0.0, "damage_type": "web", "material_class": "ammo_payload", "connection_ends": 0, "shape": "ammo_mag", "radius": 0.0, "torso_slot_payload": true, "ammo_capacity": {"web": 10}, "ammo_slot_payload": true, "ammo_size_tier": "XS", "slot_volume_tier": "XS", "counter_tiers": {"bullet": 0, "chemical": 0, "laser": 0, "blunt": 0, "pierce": 0, "tear": 0}, "resist": {"bullet": 1.0, "chemical": 1.0, "laser": 1.0, "blunt": 1.0, "pierce": 1.0, "tear": 1.0}, "summary": "Internal web-spool ammunition for tether guns. Pick XS to XL at install time; capacity, cost, mass, and slot size scale together."},
 		{"name": "COOLANT AURA FIN", "cost": 58, "hp": 40, "mass": 9, "length": 0.42, "normal_damage": 1, "damage_type": "chemical", "material_class": "coolant_field", "connection_ends": 3, "shape": "coolant_field", "radius": 0.16, "is_coolant_field": true, "coolant_radius": 0.7, "coolant_boost": 22.0, "coolant_affects": "ally", "cooling_profile": "team_aura_fin", "cooling_aura_bonus": 22.0, "counter_tiers": {"bullet": 0, "chemical": 2, "laser": 1, "blunt": 0, "pierce": 0, "tear": 0}, "resist": {"bullet": 1.12, "chemical": 0.94, "laser": 1.0, "blunt": 1.14, "pierce": 1.1, "tear": 1.1}, "summary": "Small ally coolant aura for mobile teams: stand nearby to bleed heat faster, but it is a battlefield support piece rather than an internal plugin."},
 		{"name": "CRYO STORM TOWER", "cost": 128, "hp": 90, "mass": 34, "length": 0.9, "normal_damage": 1, "damage_type": "chemical", "material_class": "coolant_field", "connection_ends": 5, "shape": "coolant_field", "radius": 0.34, "is_coolant_field": true, "coolant_radius": 1.12, "coolant_boost": 46.0, "coolant_affects": "ally", "cooling_profile": "team_cryo_tower", "cooling_aura_bonus": 46.0, "counter_tiers": {"bullet": 1, "chemical": 3, "laser": 1, "blunt": 1, "pierce": 0, "tear": 0}, "resist": {"bullet": 1.02, "chemical": 0.9, "laser": 1.02, "blunt": 1.04, "pierce": 1.1, "tear": 1.12}, "summary": "Large team coolant tower for high-heat combo rooms and missile screens; stronger area cooling in exchange for mass and obvious target value."},
 		{"name": "BULLET TANKER NODE", "maker": "AUXILIA MESH", "cost": 78, "hp": 48, "mass": 18, "length": 0.42, "normal_damage": 1, "damage_type": "bullet", "material_class": "support_node", "connection_ends": 4, "shape": "ammo_mag", "radius": 0.18, "is_support_node": true, "support_kind": "ammo", "support_ammo_type": "bullet", "support_amount": 4, "support_refill_seconds": 1.0, "support_radius": 0.64, "support_affects": "ally", "counter_tiers": {"bullet": 2, "chemical": 0, "laser": 0, "blunt": 1, "pierce": 0, "tear": 0}, "resist": {"bullet": 0.94, "chemical": 1.12, "laser": 1.08, "blunt": 1.04, "pierce": 1.08, "tear": 1.08}, "summary": "Paid bullet-only support component for barriers or tanker puppets. Allies that stay close for one second buy bullet ammo at the ammo bay unit price"},
@@ -9909,8 +10080,8 @@ const COMMON_CATALOG = {
 		{"name": "MAZE ONE-WAY FIRING SCREEN PANEL", "maker": "LONGSIGHT BALLISTICS", "cost": 86, "hp": 70, "mass": 30, "length": 0.82, "normal_damage": 0, "damage_type": "laser", "material_class": "one_way_shield", "connection_ends": 2, "shape": "one_way_shield", "radius": 0.16, "barrier_panel": true, "barrier_tile_component": true, "panel_family": "screen", "is_one_way_shield": true, "shield_radius": 0.72, "shield_lane_width": 0.26, "shield_pass_mode": "directional", "shield_pass_direction": "facing", "shield_block_damage_mult": 0.54, "shield_affects": "enemy", "summary": "Directional firing screen panel. Friendly shots from the planned side pass through while enemy fire is softened"},
 		{"name": "MAZE ENTRY BREACH CHARGE PANEL", "maker": "ORBITAL BRIDGE", "cost": 82, "hp": 28, "mass": 14, "length": 0.38, "normal_damage": 0, "damage_type": "laser", "material_class": "entry_breach", "connection_ends": 2, "shape": "repulsor_field", "radius": 0.12, "barrier_panel": true, "barrier_tile_component": true, "panel_family": "entry_breach", "entry_breach_damage": 92, "entry_breach_damage_type": "laser", "entry_breach_self_heat": 30.0, "summary": "Forced-entry maze panel. If the barrier entry overlaps an enemy barrier piece, this panel sacrifices itself to blast a legal opening"},
 		{"name": "MAZE HARDLIGHT CAGE WALL PANEL", "maker": "COLOSSUS KENNEL", "cost": 88, "hp": 132, "mass": 96, "length": 1.1, "normal_damage": 1, "damage_type": "laser", "material_class": "barrier_wall", "connection_ends": 2, "shape": "arc_wall", "radius": 0.24, "barrier_panel": true, "barrier_tile_component": true, "panel_family": "wall", "is_cage_wall": true, "cage_radius": 0.84, "cage_damage": 8, "cage_damage_type": "laser", "cage_repel": 0.42, "cage_hit_interval": 0.55, "cage_affects": "enemy", "cage_shape": "line", "summary": "Heavy cage wall panel for building maze corridors. Enemies touching its hardlight edge are repelled and chipped"},
-		{"name": "长视制式来复枪 / LONGSIGHT PATTERN RIFLE", "maker": "LONGSIGHT AEGIS", "cost": 82, "hp": 24, "mass": 9, "energy": 16, "length": 0.68, "normal_damage": 6, "projectile_damage": 6, "damage_type": "bullet", "projectile_damage_type": "bullet", "gun_kind": "rifle", "ammo_kind": "bullet", "carried_ammo": 30, "ammo_capacity": {"bullet": 30}, "fire_rate": 5.0, "fire_interval": 0.2, "projectile_range": 2.8, "range": 2.8, "projectile_speed_mult": 3.2, "projectile_momentum": 22.0, "projectile_width_m": 0.08, "projectile_damage_coeff": 12.0, "projectile_consumes_on_fire": true, "normal_heat": 5.5, "recoil": 0.09, "projectile": true, "projectile_only": true, "projectile_behavior": "bullet_hell", "projectile_style": "bullet_hell", "travel_path": "straight", "material_class": "gun", "connection_ends": 1, "shape": "rifle", "radius": 0.065, "size_class": "medium", "summary": "Longsight pattern rifle: visible short-burst bullets, no true-bullet lock, low single-shot damage, built for sustained suppression through an explicit rifle module."},
-		{"name": "红线跳爆榴弹枪 / REDLINE HOPPER GRENADE LAUNCHER", "maker": "REDLINE ARMS", "cost": 118, "hp": 26, "mass": 14, "energy": 26, "length": 0.74, "normal_damage": 8, "projectile_damage": 8, "damage_type": "bullet", "projectile_damage_type": "explosion", "gun_kind": "grenade_launcher", "ammo_kind": "explosive", "carried_ammo": 6, "ammo_capacity": {"explosive": 6}, "fire_rate": 0.9, "fire_interval": 1.111111, "projectile_range": 2.65, "range": 2.65, "projectile_speed_mult": 1.35, "projectile_momentum": 72.0, "projectile_width_m": 0.18, "projectile_damage_coeff": 18.0, "projectile_consumes_on_fire": true, "explosion_damage": 9, "explosion_radius": 0.56, "explosion_damage_type": "bullet", "explosion_style": "grenade", "normal_heat": 28.0, "recoil": 0.16, "projectile": true, "projectile_only": true, "projectile_behavior": "explosive", "projectile_style": "explosive", "travel_path": "arc_u", "material_class": "gun", "connection_ends": 1, "shape": "mortar", "radius": 0.11, "size_class": "medium", "summary": "Redline hopper grenade launcher: slow visible arcing explosive rounds, manual fire only, no lock-on or missile seeker behavior."},
+		{"name": "长视制式来复枪 / LONGSIGHT PATTERN RIFLE", "maker": "LONGSIGHT AEGIS", "cost": 82, "hp": 24, "mass": 9, "length": 0.68, "gun_projectile_damage_mult": 4.0, "damage_type": "bullet", "projectile_damage_type": "bullet", "gun_kind": "rifle", "ammo_kind": "bullet", "carried_ammo": 30, "ammo_capacity": {"bullet": 30}, "fire_rate": 5.0, "fire_interval": 0.2, "projectile_range": 2.8, "range": 2.8, "projectile_speed_mult": 3.2, "projectile_momentum": 22.0, "projectile_width_m": 0.08, "projectile_consumes_on_fire": true, "normal_heat": 5.5, "recoil": 0.09, "projectile": true, "projectile_only": true, "projectile_behavior": "bullet_hell", "projectile_style": "bullet_hell", "travel_path": "straight", "material_class": "gun", "connection_ends": 1, "shape": "rifle", "radius": 0.065, "size_class": "medium", "summary": "Longsight pattern rifle: visible short-burst bullets, no true-bullet lock, low single-shot damage, built for sustained suppression through an explicit rifle module."},
+		{"name": "红线跳爆榴弹枪 / REDLINE HOPPER GRENADE LAUNCHER", "maker": "REDLINE ARMS", "cost": 118, "hp": 26, "mass": 14, "length": 0.74, "gun_projectile_damage_mult": 4.0, "damage_type": "bullet", "projectile_damage_type": "explosion", "gun_kind": "grenade_launcher", "ammo_kind": "explosive", "carried_ammo": 6, "ammo_capacity": {"explosive": 6}, "fire_rate": 0.9, "fire_interval": 1.111111, "projectile_range": 2.65, "range": 2.65, "projectile_speed_mult": 1.35, "projectile_momentum": 72.0, "projectile_width_m": 0.18, "projectile_consumes_on_fire": true, "explosion_radius": 0.56, "explosion_style": "grenade", "normal_heat": 28.0, "recoil": 0.16, "projectile": true, "projectile_only": true, "projectile_behavior": "explosive", "projectile_style": "explosive", "travel_path": "arc_u", "material_class": "gun", "connection_ends": 1, "shape": "mortar", "radius": 0.11, "size_class": "medium", "summary": "Redline hopper grenade launcher: slow visible arcing explosive rounds, manual fire only, no lock-on or missile seeker behavior."},
 	],
 	"booster": [
 		{"name": "SPARK SWARM MICRO THRUSTER", "maker": "COMMON STARTER", "cost": 24, "mass": 1.2, "thruster_family": "swarm_micro", "thruster_duration": 0.24, "boost_momentum": 34.0, "boost_duration": 0.22, "slot_volume_tier": "XS", "brake_efficiency": 0.72, "recoil_cancel": 0.12, "flame_color": "blue", "speed_mult": 1.04, "cornering": 1.08, "torso_slot_payload": true, "attach_modes": ["torso_edge", "limb_tip"], "summary": "XS swarm thruster: cheap attitude and escape movement for tiny puppets; too small for heavy weapons."},
@@ -10032,7 +10203,7 @@ const COMMON_CATALOG = {
 		{"name": "UMBRA: THERMAL SHOCK SCRIPT", "maker": "UMBRA REARWORKS", "cost": 134, "mass": 0, "aim_mode": "auto", "motion": "thermal_shock", "command": "632146", "skill_state": "active", "back_hit_heat_bonus": 26.0, "back_hit_heat_mult": 1.34, "summary": "Premium rear-hit script. Sacrifices some direct damage to push back hits rapidly toward overheat shock"},
 		{"name": "ACTION 1: QUICK 90 BALL SWING", "cost": 42, "mass": 0, "aim_mode": "fixed", "motion": "rod", "requires_bound_key": true, "module_target_kind": "ball_joint", "required_joint_degrees": 90, "swing_arc_degrees": 90.0, "module_action_profile": "swing_90", "armor_heat": 24.0, "active_heat": 28.0, "summary": "Canonical Action 1: bind X to a selected 90-degree ball joint. X swings; 236X armor-state swing; 214X active-state swing. Actual speed follows the torque/engine/mass solver"},
 		{"name": "ACTION 2: QUICK 1M TELESCOPIC THRUST", "cost": 46, "mass": 0, "aim_mode": "fixed", "motion": "thrust", "requires_bound_key": true, "module_target_kind": "telescopic_joint", "required_extension_m": 1.0, "module_extension_m": 1.0, "module_action_profile": "extend_1m", "range": 0.18, "armor_heat": 25.0, "active_heat": 30.0, "summary": "Canonical Action 2: bind X to a selected telescopic joint rated for 1m extension. X extends; 236X armor-state extension; 214X active-state extension. Speed is solved from engine output, joint power, and mass"},
-		{"name": "枪械启动 / GUN ACTIVATE", "cost": 64, "mass": 0, "aim_mode": "manual", "motion": "gun_activate", "requires_bound_key": true, "module_target_kind": "gun_terminal", "module_action_profile": "gun_activate", "gun_activation": "gun_activate", "hold_to_activate": true, "gun_rotate_speed": 0.0, "summary": "通用枪械启动：可绑定任意可用枪械，并按所绑定枪械的原生瞄准与发射方式执行。启动中局部4/6持续旋转枪口。"},
+		{"name": "枪械启动 / GUN ACTIVATE", "cost": 64, "mass": 0, "aim_mode": "manual", "motion": "gun_activate", "requires_bound_key": true, "module_target_kind": "gun_terminal", "module_action_profile": "gun_activate", "gun_activation": "gun_activate", "hold_to_activate": true, "gun_rotate_speed": 0.0, "summary": "通用枪械启动：可绑定任意可用枪械，并按所绑定枪械的原生瞄准与发射方式执行。启动中左转/右转持续旋转枪口，移动键仍控制移动。"},
 		{"name": "ACTION 4: MEDIUM 180 BALL SWING", "cost": 56, "mass": 0, "aim_mode": "fixed", "motion": "pendulum", "requires_bound_key": true, "module_target_kind": "ball_joint", "required_joint_degrees": 180, "swing_arc_degrees": 180.0, "module_action_profile": "swing_180", "armor_heat": 30.0, "active_heat": 36.0, "summary": "Canonical Action 4: bind X to a selected 180-degree ball joint. X swings through a wide arc; 236X armor-state swing; 214X active-state swing. Speed follows torque, engine, and mass"},
 		{"name": "ACTION 5: MEDIUM 2M TELESCOPIC THRUST", "cost": 62, "mass": 0, "aim_mode": "fixed", "motion": "direct", "requires_bound_key": true, "module_target_kind": "telescopic_joint", "required_extension_m": 2.0, "module_extension_m": 2.0, "module_action_profile": "extend_2m", "range": 0.34, "armor_heat": 32.0, "active_heat": 40.0, "summary": "Canonical Action 5: bind X to a selected telescopic joint rated for 2m extension. X extends; 236X armor-state extension; 214X active-state extension. Speed follows torque, engine, and mass"},
 		{"name": "SPIN CROWN: 360 BALL DRIVER", "cost": 74, "mass": 0, "aim_mode": "fixed", "motion": "rod", "requires_bound_key": true, "module_target_kind": "ball_joint", "required_joint_degrees": 360, "swing_arc_degrees": 360.0, "module_action_profile": "swing_360", "armor_heat": 32.0, "active_heat": 38.0, "summary": "Bind X to a selected 360-degree ball joint. X swings through 360 degrees; 236X armor-state swing; 214X active-state swing. Speed is solved from joint torque, engine output, and mass"},
@@ -10377,6 +10548,9 @@ var editor_pose_drag_coalesced_count := 0
 var editor_dragging_node_index := -1
 var editor_dragging_selected_nodes := false
 var editor_dragging_whole_unit := false
+var editor_node_click_candidate_index := -1
+var editor_node_click_start_position := Vector2.ZERO
+var editor_node_click_moved := false
 var editor_drag_whole_start := Vector2.ZERO
 var editor_drag_whole_original_positions: Array = []
 var editor_group_drag_start := Vector2.ZERO
@@ -10510,6 +10684,7 @@ var power_allocation_service: PowerAllocationService
 var action_profile_registry: ActionProfileRegistry
 var drive_system_service: DriveSystemService
 var unit_blueprint_validator: UnitBlueprintValidator
+var data_rule_service: DataRuleService
 var navigation_service: NavigationService
 var team_edit_controller: TeamEditController
 var battle_controller: BattleController
@@ -10591,11 +10766,17 @@ var editor_visual_refresh_skip_count := 0
 var editor_board_shallow_node_snapshot_count := 0
 var editor_board_model_incremental_count := 0
 var editor_ammo_size_rank := 1
-var editor_ammo_size_buttons: Array = []
+var editor_ammo_size_slider: HSlider
+var editor_ammo_size_title_label: Label
+var editor_ammo_size_value_label: Label
+var editor_ammo_size_tick_labels: Array = []
 var editor_sort_menu_open := false
 var editor_match_format := "standard"
 var editor_hover_slot_key := ""
 var editor_hover_part_index := -1
+var editor_hover_pinned := false
+var editor_hover_suppress_token := ""
+var editor_hover_suppress_until_msec := 0
 var editor_hovered_torso_node_index := -1
 var editor_material_warning_nodes: Array = []
 var editor_open_torso_node_index := -1
@@ -10614,6 +10795,7 @@ var editor_undo_light_command_count := 0
 var editor_undo_full_snapshot_count := 0
 var editor_last_added_topology_node_index := -1
 var editor_last_added_topology_node_snapshot := {}
+var editor_pending_orientation_node_index := -1
 var editor_deferred_sfx_queue: Array = []
 var editor_engine_allocation_payload_index := -1
 var editor_engine_allocation_torso_node_index := -1
@@ -10753,6 +10935,7 @@ func _initialize_hot_path_state_layer() -> void:
 	action_profile_registry = ActionProfileRegistry.new()
 	drive_system_service = DriveSystemService.new()
 	unit_blueprint_validator = UnitBlueprintValidator.new()
+	data_rule_service = DataRuleService.new()
 	navigation_service = NavigationService.new()
 	navigation_service.commit_transition(game_state, "ready")
 	team_edit_controller = TeamEditController.new()
@@ -10790,7 +10973,6 @@ func _initialize_gpu_collision_pipeline() -> void:
 	if not gpu_collision_enabled:
 		push_warning("GPU collision unavailable: %s" % gpu_collision_status_note)
 
-var editor_pending_orientation_node_index := -1
 
 func _gpu_collision_available() -> bool:
 	if gpu_collision_pipeline == null:
@@ -10849,6 +11031,24 @@ func _handle_engine_momentum_allocation_panel_global_input(event: InputEvent) ->
 				return true
 		if mouse_event.pressed and mouse_event.button_index == MOUSE_BUTTON_RIGHT:
 			_close_engine_momentum_allocation_panel()
+			return true
+	return false
+
+
+func _handle_editor_hover_detail_global_input(event: InputEvent) -> bool:
+	if game_state != STATE_EDITOR or not editor_hover_pinned:
+		return false
+	if editor_hover_popup_view == null or not editor_hover_popup_view.visible:
+		return false
+	if event is InputEventKey:
+		var key_event := event as InputEventKey
+		if key_event.pressed and not key_event.echo and (key_event.keycode == KEY_ESCAPE or key_event.physical_keycode == KEY_ESCAPE):
+			_close_editor_hover_detail()
+			return true
+	if event is InputEventMouseButton:
+		var mouse_event := event as InputEventMouseButton
+		if mouse_event.pressed and mouse_event.button_index == MOUSE_BUTTON_RIGHT and editor_hover_popup_view.get_global_rect().has_point(mouse_event.position):
+			_close_editor_hover_detail()
 			return true
 	return false
 
@@ -10914,6 +11114,8 @@ func _route_unit_editor_priority_input(event: InputEvent) -> bool:
 	if game_state != STATE_EDITOR:
 		return false
 	if _handle_unit_editor_enter_key(event):
+		return true
+	if _handle_editor_hover_detail_global_input(event):
 		return true
 	if _handle_engine_momentum_allocation_panel_global_input(event):
 		return true
@@ -11604,104 +11806,28 @@ func _without_legacy_power_fields(part: Dictionary) -> Dictionary:
 		cleaned.erase(key)
 	return cleaned
 
-const ACTION_MODULE_COMBAT_FIELD_KEYS = [
-	"normal_damage",
-	"armor_damage",
-	"active_damage",
-	"damage",
-	"damage_type",
-	"damage_coeff",
-	"break_coeff",
-	"stiffness_momentum",
-	"path_stiffness_momentum",
-	"projectile_damage",
-	"projectile_damage_type",
-	"projectile_damage_coeff",
-	"projectile_break_coeff",
-	"explosion_damage",
-	"explosion_damage_type",
-	"trap_damage",
-	"trap_damage_type",
-	"barrage_damage",
-	"barrage_damage_type",
-	"homing_damage",
-	"homing_damage_type",
-	"cage_damage",
-	"cage_damage_type",
-	"ball_hit_damage",
-	"takeover_damage_rate",
-	"takeover_damage_type",
-	"module_damage_mult",
-]
+const ACTION_MODULE_COMBAT_FIELD_KEYS = DataRuleService.ACTION_MODULE_COMBAT_FIELD_KEYS
 
 func _part_is_action_module(slot_key: String, part: Dictionary) -> bool:
-	return slot_key == "module" or part.has("module_action_profile") or part.has("module_target_kind") or part.has("command_window_profile")
+	return data_rule_service.is_action_module(slot_key, part) if data_rule_service != null else DataRuleService.new().is_action_module(slot_key, part)
 
 func _part_is_nonphysical_equipment_or_software(slot_key: String, part: Dictionary) -> bool:
-	if slot_key in ["engine", "booster", "cooling", "ammo", "special", "module", "joint"]:
-		return true
-	if bool(part.get("software", false)):
-		return true
-	if bool(part.get("torso_slot_payload", false)) and not bool(part.get("is_torso", false)):
-		return true
-	if bool(part.get("ammo_slot_payload", false)) or bool(part.get("shield_payload", false)) or bool(part.get("electronic_armor", false)):
-		return true
-	var material_class := String(part.get("material_class", ""))
-	if material_class in ["ammo_payload", "shield_payload", "engine_payload", "booster_payload", "cooling_payload"]:
-		return true
-	return false
+	return data_rule_service.is_nonphysical_equipment_or_software(slot_key, part) if data_rule_service != null else DataRuleService.new().is_nonphysical_equipment_or_software(slot_key, part)
 
 func _scrub_nonphysical_catalog_part(part: Dictionary, slot_key: String) -> Dictionary:
-	var cleaned := part.duplicate(true)
-	if _part_is_nonphysical_equipment_or_software(slot_key, cleaned):
-		cleaned.erase("hp")
-		cleaned.erase("max_hp")
-		cleaned.erase("health")
-	if _part_is_action_module(slot_key, cleaned):
-		for key in ACTION_MODULE_COMBAT_FIELD_KEYS:
-			cleaned.erase(key)
-	return cleaned
+	return data_rule_service.canonical_catalog_part(part, slot_key) if data_rule_service != null else DataRuleService.new().canonical_catalog_part(part, slot_key)
 
 func _saved_dict_looks_like_nonphysical_payload(data: Dictionary) -> bool:
-	var kind := String(data.get("kind", data.get("slot_key", data.get("slot", ""))))
-	if kind in ["engine", "booster", "cooling", "ammo", "special", "module", "joint", "electronic_armor", "shield"]:
-		return true
-	if data.has("engine_family") or data.has("engine_momentum_output"):
-		return true
-	if data.has("thruster_family") or data.has("movement_profile"):
-		return true
-	if data.has("cooling_family") or data.has("cooling_rate") or data.has("heat_dissipation"):
-		return true
-	if bool(data.get("ammo_slot_payload", false)) or bool(data.get("shield_payload", false)) or bool(data.get("electronic_armor", false)):
-		return true
-	if bool(data.get("software", false)) or data.has("soul_heat_capacity") or data.has("source_rules") or data.has("ether_group_kind"):
-		return true
-	return false
+	return data_rule_service.saved_dict_looks_like_nonphysical_payload(data) if data_rule_service != null else DataRuleService.new().saved_dict_looks_like_nonphysical_payload(data)
 
 func _saved_payload_has_legacy_nonphysical_combat_fields(value) -> bool:
 	return _saved_payload_nonphysical_combat_path(value) != ""
 
 
 func _saved_payload_nonphysical_combat_path(value, path: String = "$") -> String:
-	if value is Dictionary:
-		var data: Dictionary = value
-		if _saved_dict_looks_like_nonphysical_payload(data) and data.has("hp"):
-			return "%s.hp" % path
-		if _part_is_action_module(String(data.get("slot_key", data.get("kind", ""))), data):
-			for key in ACTION_MODULE_COMBAT_FIELD_KEYS:
-				if data.has(key):
-					return "%s.%s" % [path, String(key)]
-		for child_key in data.keys():
-			var found := _saved_payload_nonphysical_combat_path(data[child_key], "%s.%s" % [path, str(child_key)])
-			if found != "":
-				return found
-	elif value is Array:
-		var arr := Array(value)
-		for i in range(arr.size()):
-			var found := _saved_payload_nonphysical_combat_path(arr[i], "%s[%d]" % [path, i])
-			if found != "":
-				return found
-	return ""
+	if unit_blueprint_validator != null:
+		return unit_blueprint_validator.first_nonphysical_combat_path(value, path)
+	return DataRuleService.new().first_nonphysical_combat_path(value, path)
 
 
 func _saved_blueprint_has_current_topology(unit_bp: Dictionary) -> bool:
@@ -11776,56 +11902,16 @@ func _purge_legacy_saved_units(force: bool = false) -> int:
 	if saved_unit_legacy_purge_done and not force:
 		return 0
 	saved_unit_legacy_purge_done = true
-	_ensure_saved_units_dir()
-	var dir := DirAccess.open(SAVED_UNITS_DIR)
-	if dir == null:
-		return 0
-	var paths: Array = []
-	dir.list_dir_begin()
-	while true:
-		var file_name := dir.get_next()
-		if file_name == "":
-			break
-		if not dir.current_is_dir() and file_name.to_lower().ends_with(".json"):
-			paths.append("%s/%s" % [SAVED_UNITS_DIR, file_name])
-	dir.list_dir_end()
-	var deleted := 0
-	for raw_path in paths:
-		var path := String(raw_path)
-		var parsed = JSON.parse_string(FileAccess.get_file_as_string(path)) if FileAccess.file_exists(path) else null
-		if not (parsed is Dictionary) or String(Dictionary(parsed).get("schema_version", "")) != SAVED_UNIT_SCHEMA_VERSION:
-			if _remove_user_json_file(path):
-				deleted += 1
-	if deleted > 0:
-		_invalidate_saved_unit_library_cache()
-	return deleted
+	# Strict canonical rules retain rejected files so players can see and remove them explicitly.
+	return 0
 
 
 func _purge_legacy_saved_teams(force: bool = false) -> int:
 	if saved_team_legacy_purge_done and not force:
 		return 0
 	saved_team_legacy_purge_done = true
-	_ensure_saved_teams_dir()
-	var dir := DirAccess.open(SAVED_TEAMS_DIR)
-	if dir == null:
-		return 0
-	var paths: Array = []
-	dir.list_dir_begin()
-	while true:
-		var file_name := dir.get_next()
-		if file_name == "":
-			break
-		if not dir.current_is_dir() and file_name.to_lower().ends_with(".json"):
-			paths.append("%s/%s" % [SAVED_TEAMS_DIR, file_name])
-	dir.list_dir_end()
-	var deleted := 0
-	for raw_path in paths:
-		var path := String(raw_path)
-		var parsed = JSON.parse_string(FileAccess.get_file_as_string(path)) if FileAccess.file_exists(path) else null
-		if not (parsed is Dictionary) or not _is_current_saved_team_payload(parsed):
-			if _remove_user_json_file(path):
-				deleted += 1
-	return deleted
+	# Strict canonical rules retain rejected files; team UI may report them without auto-deleting.
+	return 0
 
 
 func _safe_save_stem(value: String, fallback: String) -> String:
@@ -11936,10 +12022,12 @@ func _sanitize_saved_unit_value(value):
 
 
 func _sanitize_saved_unit_blueprint_for_library(unit_bp: Dictionary) -> Dictionary:
-	var sanitized = _sanitize_saved_unit_value(unit_bp.duplicate(true))
-	if sanitized is Dictionary:
-		return Dictionary(sanitized).duplicate(true)
-	return {}
+	# Deprecated compatibility wrapper: saves are validated, never silently repaired.
+	return unit_bp.duplicate(true)
+
+
+func _canonical_saved_unit_blueprint_for_library(unit_bp: Dictionary) -> Dictionary:
+	return unit_bp.duplicate(true)
 
 
 func _entry_pose_from_topology(unit_bp: Dictionary) -> Dictionary:
@@ -12061,7 +12149,7 @@ func _ordered_module_bindings_by_software_slot(unit_bp: Dictionary) -> Array:
 	return ordered
 
 
-func _apply_module_recovery_entry_pose_defaults(role_key: String, unit_bp: Dictionary) -> void:
+func _apply_module_recovery_entry_pose_defaults(role_key: String, unit_bp: Dictionary, normalize_gun_terminals: bool = false) -> void:
 	if not unit_bp.has("custom_topology"):
 		return
 	var topology: Dictionary = unit_bp.get("custom_topology", {})
@@ -12079,9 +12167,37 @@ func _apply_module_recovery_entry_pose_defaults(role_key: String, unit_bp: Dicti
 		if module_index < 0:
 			continue
 		var module_part := _selected_component(role_key, "module", module_index)
-		if String(module_part.get("module_action_profile", "")) != "two_link_forward_snap":
-			continue
+		var module_profile := String(module_part.get("module_action_profile", "")).to_lower()
 		var target_nodes: Array = Array(binding.get("target_nodes", []))
+		if module_profile != "two_link_forward_snap":
+			if not normalize_gun_terminals:
+				continue
+			var target_kind := String(module_part.get("module_target_kind", "")).to_lower()
+			if target_kind != "gun_terminal" and not ActionProfileRegistry.PROJECTILE_PROFILES.has(module_profile):
+				continue
+			if target_nodes.is_empty():
+				continue
+			var gun_index := int(target_nodes[target_nodes.size() - 1])
+			if gun_index < 0 or gun_index >= nodes.size() or assigned.has(gun_index):
+				continue
+			if not (nodes[gun_index] is Dictionary):
+				continue
+			var temp_bp_gun := unit_bp.duplicate(true)
+			var temp_topology_gun: Dictionary = topology.duplicate(true)
+			temp_topology_gun["nodes"] = nodes
+			temp_topology_gun["edges"] = edges
+			temp_bp_gun["custom_topology"] = temp_topology_gun
+			var parent_axis_gun := _topology_parent_axis_for_node(role_key, temp_bp_gun, nodes, edges, gun_index)
+			if parent_axis_gun.length() < 0.001:
+				parent_axis_gun = Vector2.RIGHT
+			var gun_node: Dictionary = Dictionary(nodes[gun_index]).duplicate(true)
+			gun_node["local_angle"] = wrapf(Vector2.RIGHT.angle() - parent_axis_gun.angle(), -PI, PI)
+			gun_node["local_extension"] = float(gun_node.get("local_extension", 0.0))
+			gun_node["entry_pose_source"] = "gun_activation_forward"
+			nodes[gun_index] = gun_node
+			assigned[gun_index] = true
+			changed = true
+			continue
 		if target_nodes.size() != 2:
 			continue
 		var first_index := int(target_nodes[0])
@@ -12122,7 +12238,7 @@ func _apply_module_recovery_entry_pose_defaults(role_key: String, unit_bp: Dicti
 
 
 func _unit_blueprint_for_library(role_key: String, unit_bp: Dictionary) -> Dictionary:
-	var saved := _sanitize_saved_unit_blueprint_for_library(unit_bp)
+	var saved := _canonical_saved_unit_blueprint_for_library(unit_bp)
 	saved["role"] = role_key
 	saved["schema_version"] = SAVED_UNIT_SCHEMA_VERSION
 	if not saved.has("unit_id") or String(saved.get("unit_id", "")) == "":
@@ -12256,7 +12372,7 @@ func _save_editor_current_unit_to_library_named(unit_name_override: String = "",
 	file.close()
 	_invalidate_saved_unit_library_cache()
 	var readback := _unit_library_entry_from_file(export_path)
-	if readback.is_empty():
+	if readback.is_empty() or bool(readback.get("canonical_rejected", false)):
 		var readback_reason := _saved_unit_rejection_reason_from_file(export_path)
 		_set_save_unit_failure_feedback(readback_reason if readback_reason != "" else "saved file cannot be read back by the unit library")
 		return ""
@@ -12478,8 +12594,9 @@ func _unit_library_entry_from_file(path: String) -> Dictionary:
 	if not (parsed is Dictionary):
 		return {}
 	var payload: Dictionary = parsed
-	if not _is_current_saved_unit_payload(payload):
-		return {}
+	var rejection_reason := _saved_unit_payload_rejection_reason(payload)
+	if rejection_reason != "":
+		return _rejected_unit_library_entry_from_payload(path, payload, rejection_reason)
 	if not (payload.get("blueprint", {}) is Dictionary):
 		return {}
 	var unit_bp: Dictionary = Dictionary(_json_restore_value(payload.get("blueprint", {}))).duplicate(true)
@@ -12498,6 +12615,26 @@ func _unit_library_entry_from_file(path: String) -> Dictionary:
 		"index": -1,
 		"blueprint": unit_bp,
 		"unit_name": String(unit_bp.get("unit_name", unit_bp.get("name", ""))),
+	}
+
+
+func _rejected_unit_library_entry_from_payload(path: String, payload: Dictionary, rejection_reason: String) -> Dictionary:
+	var unit_bp := {}
+	if payload.get("blueprint", {}) is Dictionary:
+		unit_bp = Dictionary(_json_restore_value(payload.get("blueprint", {}))).duplicate(true)
+	var role_key := String(payload.get("unit_role", unit_bp.get("role", "hero")))
+	if not ROLE_ORDER.has(role_key):
+		role_key = "hero"
+	var unit_name := String(payload.get("unit_name", unit_bp.get("unit_name", unit_bp.get("name", path.get_file()))))
+	return {
+		"unit_library": true,
+		"path": path,
+		"role": role_key,
+		"index": -1,
+		"blueprint": unit_bp,
+		"unit_name": unit_name,
+		"canonical_rejected": true,
+		"load_rejection_reason": "INVALID: stored data rejected: %s" % rejection_reason,
 	}
 
 
@@ -12915,6 +13052,8 @@ func _saved_unit_entry_path(entry: Dictionary) -> String:
 
 
 func _saved_unit_entry_stats(entry: Dictionary) -> Dictionary:
+	if bool(entry.get("canonical_rejected", false)):
+		return {"name": String(entry.get("unit_name", "")), "cost": 0, "health": 0, "mass": 0.0, "length": 0.0}
 	if not (entry.get("blueprint", {}) is Dictionary):
 		return {}
 	var path := _saved_unit_entry_path(entry)
@@ -12929,6 +13068,8 @@ func _saved_unit_entry_stats(entry: Dictionary) -> Dictionary:
 
 
 func _saved_unit_entry_illegal_note(entry: Dictionary) -> String:
+	if String(entry.get("load_rejection_reason", "")) != "":
+		return String(entry.get("load_rejection_reason", ""))
 	if not (entry.get("blueprint", {}) is Dictionary):
 		return "INVALID: missing blueprint."
 	var path := _saved_unit_entry_path(entry)
@@ -13127,6 +13268,11 @@ func _update_saved_units_hover(mouse_position: Vector2) -> void:
 
 
 func _toggle_saved_unit_selection(entry: Dictionary) -> void:
+	if bool(entry.get("canonical_rejected", false)):
+		if saved_unit_hint_label != null:
+			saved_unit_hint_label.text = _localized_system_text(_saved_unit_entry_illegal_note(entry)) if _ui_is_zh() else _saved_unit_entry_illegal_note(entry)
+		_play_sfx_wave("alarm", 170.0, 0.08, -16.0)
+		return
 	var path := _saved_unit_entry_path(entry)
 	if path == "":
 		return
@@ -13157,6 +13303,12 @@ func _load_saved_unit_into_unit_editor(path: String) -> bool:
 
 
 func _load_saved_unit_entry_into_unit_editor(entry: Dictionary) -> bool:
+	if bool(entry.get("canonical_rejected", false)):
+		if saved_unit_hint_label != null:
+			var note := _saved_unit_entry_illegal_note(entry)
+			saved_unit_hint_label.text = ("载入编辑失败：%s" % _localized_system_text(note)) if _ui_is_zh() else ("Edit load failed: %s" % note)
+		_play_sfx_wave("alarm", 170.0, 0.08, -16.0)
+		return false
 	if not (entry.get("blueprint", {}) is Dictionary):
 		if saved_unit_hint_label != null:
 			saved_unit_hint_label.text = "载入编辑失败：单位蓝图损坏。" if _ui_is_zh() else "Edit load failed: damaged unit blueprint."
@@ -13443,13 +13595,15 @@ func _update_saved_units_ui() -> void:
 				action_button.disabled = saved_unit_page >= max_page
 			"toggle":
 				action_button.text = "加入/移除" if _ui_is_zh() else "TOGGLE"
-				action_button.disabled = not has_selected
+				var toggle_entry := _saved_unit_entry_at_absolute_index(saved_unit_selected_index)
+				action_button.disabled = not has_selected or bool(toggle_entry.get("canonical_rejected", false))
 			"clear":
 				action_button.text = "清空选择" if _ui_is_zh() else "CLEAR"
 				action_button.disabled = not has_multi
 			"edit":
 				action_button.text = "载入编辑" if _ui_is_zh() else "EDIT"
-				action_button.disabled = not has_selected
+				var edit_entry := _saved_unit_entry_at_absolute_index(saved_unit_selected_index)
+				action_button.disabled = not has_selected or bool(edit_entry.get("canonical_rejected", false))
 			"train_one":
 				action_button.text = "单独训练" if _ui_is_zh() else "TRAIN ONE"
 				var selected_entry := _saved_unit_entry_at_absolute_index(saved_unit_selected_index)
@@ -13895,6 +14049,7 @@ func _topology_component_node(node_id: int, label: String, pos: Vector2, slot_ke
 		node["terminal_weapon"] = true
 		node["terminal_weapon_kind"] = _terminal_weapon_kind_for_part(part, "muscle")
 		node["projectile"] = _terminal_weapon_kind_for_part(part, "muscle") == "ranged" and bool(part.get("projectile", false))
+		_apply_visual_handedness_defaults_to_node(node, part, "muscle")
 	if module_index >= 0 or not modules.is_empty():
 		var module_list := modules.duplicate(true)
 		if module_list.is_empty():
@@ -14119,7 +14274,6 @@ func _pair_used_by_other(bindings: Array, pair: Array, slot_index: int) -> bool:
 
 
 func _binding_slot_for_current_unit() -> int:
-		_apply_visual_handedness_defaults_to_node(node, part, "muscle")
 	var player_id := _editor_player()
 	var role_key: String = ROLE_ORDER[editor_role_index]
 	var pos := _sortie_position(player_id, role_key, int(editor_unit_indices[role_key]))
@@ -16187,6 +16341,16 @@ func _set_control_size_if_changed(control: Control, value: Vector2) -> void:
 		editor_property_noop_count += 1
 		return
 	control.size = value
+	editor_property_write_count += 1
+
+
+func _set_range_value_if_changed(range_control: Range, value: float) -> void:
+	if range_control == null:
+		return
+	if is_equal_approx(float(range_control.value), value):
+		editor_property_noop_count += 1
+		return
+	range_control.set_value_no_signal(value)
 	editor_property_write_count += 1
 
 
@@ -18462,7 +18626,17 @@ func _payload_icon_style(payload_kind: String, part: Dictionary) -> Dictionary:
 			color = Color(1.0, 0.48, 0.18, 1.0)
 		"ammo":
 			var ammo_type := String(part.get("damage_type", part.get("projectile_damage_type", "bullet"))).to_lower()
-			color = Color(1.0, 0.18, 0.12, 1.0) if ammo_type == "bullet" else (Color(1.0, 0.88, 0.12, 1.0) if ammo_type == "chemical" else Color(0.22, 0.82, 1.0, 1.0))
+			match ammo_type:
+				"bullet":
+					color = Color(1.0, 0.18, 0.12, 1.0)
+				"chemical":
+					color = Color(1.0, 0.88, 0.12, 1.0)
+				"explosive":
+					color = Color(1.0, 0.44, 0.12, 1.0)
+				"web":
+					color = Color(0.72, 0.62, 1.0, 1.0)
+				_:
+					color = Color(0.22, 0.82, 1.0, 1.0)
 		"electronic_armor":
 			color = Color(0.36, 0.96, 1.0, 1.0)
 		"special":
@@ -19340,6 +19514,101 @@ func _engine_allocation_view_entry_for_id(entry_id: String) -> Dictionary:
 	return {}
 
 
+func _show_power_allocation_entry_detail(entry_id: String) -> void:
+	var entry := _engine_allocation_view_entry_for_id(entry_id)
+	if entry.is_empty():
+		return
+	var unit_bp := _editor_current_blueprint()
+	var role_key: String = ROLE_ORDER[editor_role_index]
+	var context := {
+		"source": "power_entry",
+		"entry_id": entry_id,
+		"position": Vector2(748.0, 84.0),
+		"allocated_momentum": float(entry.get("momentum", entry.get("allocated_momentum", -1.0))),
+		"min_momentum": float(entry.get("min_momentum", 0.0)),
+		"max_momentum": float(entry.get("max_momentum", 0.0)),
+		"duration_label": String(entry.get("duration_label", "")),
+	}
+	match String(entry.get("kind", "")):
+		"engine_heat":
+			_show_payload_detail_from_index(unit_bp, role_key, editor_engine_allocation_payload_index, true, context)
+		"booster_drive", "booster_boost_brake":
+			_show_payload_detail_from_index(unit_bp, role_key, int(entry.get("payload_index", -1)), true, context)
+		"limb":
+			var module_part: Dictionary = Dictionary(entry.get("duration_module_part", {})).duplicate(true)
+			var module_index := -1
+			var binding_index := int(entry.get("binding_index", -1))
+			var payloads: Array = Array(unit_bp.get("slot_payloads", []))
+			var bindings: Array = Array(unit_bp.get("module_bindings", []))
+			if binding_index >= 0 and binding_index < bindings.size() and bindings[binding_index] is Dictionary:
+				var binding: Dictionary = bindings[binding_index]
+				var software_slot := int(binding.get("software_slot_index", -1))
+				if software_slot >= 0 and software_slot < payloads.size() and payloads[software_slot] is Dictionary:
+					var payload: Dictionary = payloads[software_slot]
+					module_index = int(payload.get("module", -1))
+					if module_part.is_empty():
+						module_part = _payload_part_for_payload(role_key, payload)
+			if not module_part.is_empty():
+				_show_editor_part_hover("module", max(0, module_index), module_part, true, context)
+			else:
+				_show_power_allocation_segment_detail(int(entry.get("node_index", -1)))
+		_:
+			if entry.has("node_index"):
+				_show_power_allocation_segment_detail(int(entry.get("node_index", -1)))
+
+
+func _show_payload_detail_from_index(unit_bp: Dictionary, role_key: String, payload_index: int, pinned: bool = true, context: Dictionary = {}) -> void:
+	var payloads: Array = Array(unit_bp.get("slot_payloads", []))
+	if payload_index < 0 or payload_index >= payloads.size() or not (payloads[payload_index] is Dictionary):
+		return
+	var payload: Dictionary = payloads[payload_index]
+	var payload_kind := String(payload.get("kind", ""))
+	var slot_key := _payload_slot_key_for_kind(payload_kind)
+	var part := _payload_part_for_payload(role_key, payload)
+	if part.is_empty() or slot_key == "":
+		return
+	var part_index := int(payload.get(slot_key, payload.get("index", 0)))
+	if payload_kind == "special":
+		part_index = int(payload.get("special", part_index))
+	elif payload_kind == "module":
+		part_index = int(payload.get("module", part_index))
+	elif payload_kind in ["engine", "booster", "cooling"]:
+		part_index = int(payload.get(payload_kind, part_index))
+	elif payload_kind in ["ammo", "electronic_armor", "escape_pod", "spare_weapon"]:
+		part_index = int(payload.get("muscle", part_index))
+	_show_editor_part_hover(slot_key, part_index, part, pinned, context)
+
+
+func _show_power_allocation_segment_detail(node_index: int) -> void:
+	_show_editor_topology_node_detail(node_index, "power_segment", {"position": Vector2(748.0, 84.0)})
+
+
+func _show_editor_topology_node_detail(node_index: int, source: String = "board", extra_context: Dictionary = {}) -> void:
+	var unit_bp := _editor_current_blueprint()
+	var role_key: String = ROLE_ORDER[editor_role_index]
+	var topology: Dictionary = Dictionary(unit_bp.get("custom_topology", {}))
+	var nodes: Array = Array(topology.get("nodes", []))
+	if node_index < 0 or node_index >= nodes.size() or not (nodes[node_index] is Dictionary):
+		return
+	var node: Dictionary = nodes[node_index]
+	if not _topology_node_is_component(node):
+		return
+	var slot_key := _topology_node_slot(node)
+	var part_index := _topology_node_part_index(node, unit_bp)
+	var part := _topology_node_part(role_key, node, unit_bp)
+	var context := extra_context.duplicate(true)
+	context["source"] = source
+	context["node_index"] = node_index
+	var module_names: Array = []
+	for module_part in _module_parts_for_topology_node(role_key, node, unit_bp):
+		if module_part is Dictionary:
+			module_names.append(_short_part_name(_zh_part_name(String(Dictionary(module_part).get("name", ""))) if _ui_is_zh() else String(Dictionary(module_part).get("name", ""))))
+	if not module_names.is_empty():
+		var module_names_text := ", ".join(module_names)
+		context["bound_action_note"] = ("该节点携带行动模块：%s。" if _ui_is_zh() else "This node carries action module(s): %s.") % module_names_text
+	_show_editor_part_hover(slot_key, part_index, part, true, context)
+
+
 func _engine_allocation_clamped_ratio_from_entries(entries: Array, entry_id: String, requested_ratio: float, pool: float = 0.0) -> float:
 	var current := 0.0
 	var other := 0.0
@@ -19796,7 +20065,7 @@ func _editor_topology_light_signature(topology: Dictionary) -> String:
 			bits.append("%d:_" % i)
 			continue
 		var node: Dictionary = nodes[i]
-		bits.append("%d:%s:%s:%d:%s:%s:%s:%s:%s:%s" % [
+		bits.append("%d:%s:%s:%d:%s:%s:%s:%s:%s:%s:%s" % [
 			i,
 			String(node.get("slot", "")),
 			String(node.get("label", "")),
@@ -19806,6 +20075,7 @@ func _editor_topology_light_signature(topology: Dictionary) -> String:
 			str(snappedf(float(node.get("rotation", 0.0)), 0.0001)),
 			str(snappedf(float(node.get("local_angle", 0.0)), 0.0001)),
 			str(snappedf(float(node.get("local_extension", 0.0)), 0.0001)),
+			_topology_node_visual_handedness(node) if node.has("visual_mount_side") or node.has("visual_handedness") else "",
 			_editor_int_array_signature(Array(node.get("modules", []))),
 		])
 	for i in range(edges.size()):
@@ -19855,6 +20125,7 @@ func _editor_board_dynamic_revision_key() -> String:
 		_editor_int_array_signature(editor_material_warning_nodes),
 		str(editor_open_torso_node_index),
 		str(editor_dragging_node_index),
+		str(editor_pending_orientation_node_index),
 		str(snappedf(editor_snap_timer, 0.01)),
 		_editor_pending_binding_signature(),
 		_editor_bound_allocation_signature(),
@@ -20145,7 +20416,6 @@ func _apply_editor_board_pose_dynamic_fields(snapshot: Dictionary, role_key: Str
 			continue
 		var key := _topology_edge_key(a, b)
 		var edge_points := _topology_edge_socket_board_points(role_key, unit_bp, nodes, edges, a, b)
-			_topology_node_visual_handedness(node) if node.has("visual_mount_side") or node.has("visual_handedness") else "",
 		if edge_points.is_empty():
 			continue
 		var state: Dictionary = Dictionary(edge_states.get(key, {})).duplicate(false)
@@ -20171,8 +20441,15 @@ func _editor_fast_enriched_board_node(role_key: String, unit_bp: Dictionary, sou
 	var template := _placement_template_for_part(slot_key, part_index, false)
 	var effective_part := _part_with_effective_terminal_geometry(part, slot_key)
 	var component_node := Dictionary(template.get("component_node", {})) if not template.is_empty() else AssemblyBoardRenderer.part_to_component_node(slot_key, effective_part)
+	var saved_handedness := _topology_node_visual_handedness(node) if node.has("visual_mount_side") or node.has("visual_handedness") else ""
 	for key in component_node.keys():
 		node[key] = component_node[key]
+	if saved_handedness != "":
+		node["visual_mount_side"] = saved_handedness
+		node["visual_handedness"] = saved_handedness
+	_apply_visual_handedness_defaults_to_node(node, part, slot_key)
+	if _topology_node_supports_visual_handedness(role_key, unit_bp, node):
+		node["mount_parent_axis_local"] = _topology_mount_parent_axis_for_node(role_key, unit_bp, source_nodes, source_edges, index)
 	node["slot"] = slot_key
 	node["damage_type"] = String(part.get("projectile_damage_type", part.get("damage_type", "blunt")))
 	node["component_length"] = float(template.get("component_length", effective_part.get("length", 0.0)))
@@ -20195,7 +20472,6 @@ func _editor_fast_enriched_board_node(role_key: String, unit_bp: Dictionary, sou
 	if _component_is_torso(part):
 		node["torso_port_directions"] = _torso_port_directions(part)
 		node["occupied_ports"] = _torso_occupied_port_indices(role_key, unit_bp, source_nodes, source_edges, index)
-		str(editor_pending_orientation_node_index),
 		node["torso_detail_open"] = index == editor_open_torso_node_index
 		node["torso_hovered"] = false
 	node["edge_extent_units"] = _topology_node_edge_extent_units(role_key, node, unit_bp)
@@ -20511,15 +20787,8 @@ func _topology_node_limb_material_key(role_key: String, unit_bp: Dictionary, nod
 		return ""
 	var slot_key := _topology_node_slot(node)
 	if slot_key == "joint":
-	var saved_handedness := _topology_node_visual_handedness(node) if node.has("visual_mount_side") or node.has("visual_handedness") else ""
 		return ""
 	var part := _topology_node_part(role_key, node, unit_bp)
-	if saved_handedness != "":
-		node["visual_mount_side"] = saved_handedness
-		node["visual_handedness"] = saved_handedness
-	_apply_visual_handedness_defaults_to_node(node, part, slot_key)
-	if _topology_node_supports_visual_handedness(role_key, unit_bp, node):
-		node["mount_parent_axis_local"] = _topology_mount_parent_axis_for_node(role_key, unit_bp, source_nodes, source_edges, index)
 	if slot_key == "limb_muscle":
 		return _stiffness_segment_material_family_for_part(part, slot_key)
 	if slot_key == "muscle":
@@ -21531,6 +21800,8 @@ func _board_nodes_with_art_visual_positions(role_key: String, unit_bp: Dictionar
 		node["topology_pos"] = topology_pos
 		node["visual_pos"] = visual_pos
 		node["pos"] = visual_pos
+		if _topology_node_supports_visual_handedness(role_key, unit_bp, node):
+			node["mount_parent_axis_local"] = _topology_mount_parent_axis_for_node(role_key, unit_bp, source_nodes, edges, i)
 		visual_nodes[i] = node
 	return visual_nodes
 
@@ -21723,6 +21994,8 @@ func _build_placement_template(slot_key: String, part_index: int, part: Dictiona
 	node_base["shape"] = String(part.get("shape", component_node.get("shape", slot_key)))
 	node_base["projectile"] = bool(part.get("projectile", false))
 	node_base["is_torso"] = bool(part.get("is_torso", false)) or _component_is_torso(part)
+	_apply_visual_handedness_defaults_to_node(component_node, part, slot_key)
+	_apply_visual_handedness_defaults_to_node(node_base, part, slot_key)
 	if part.has("root_socket"):
 		node_base["root_socket"] = String(part.get("root_socket", ""))
 	if part.has("distal_socket"):
@@ -21840,6 +22113,135 @@ func _pending_canvas_part_name(role_key: String) -> String:
 	return "%s %s" % [_slot_name(editor_pending_place_slot), _short_part_name(String(part.get("name", "")))]
 
 
+func _orientation_choice_is_active(unit_bp: Dictionary) -> bool:
+	if editor_pending_orientation_node_index < 0 or not unit_bp.has("custom_topology"):
+		return false
+	var role_key: String = ROLE_ORDER[editor_role_index]
+	var topology: Dictionary = unit_bp.get("custom_topology", {})
+	var nodes: Array = Array(topology.get("nodes", []))
+	if editor_pending_orientation_node_index >= nodes.size() or not (nodes[editor_pending_orientation_node_index] is Dictionary):
+		editor_pending_orientation_node_index = -1
+		return false
+	return _topology_node_supports_visual_handedness(role_key, unit_bp, Dictionary(nodes[editor_pending_orientation_node_index]))
+
+
+func _selected_node_supports_visual_handedness(unit_bp: Dictionary) -> bool:
+	if not unit_bp.has("custom_topology"):
+		return false
+	var role_key: String = ROLE_ORDER[editor_role_index]
+	var topology: Dictionary = unit_bp.get("custom_topology", {})
+	var nodes: Array = Array(topology.get("nodes", []))
+	if editor_topology_node_index < 0 or editor_topology_node_index >= nodes.size() or not (nodes[editor_topology_node_index] is Dictionary):
+		return false
+	return _topology_node_supports_visual_handedness(role_key, unit_bp, Dictionary(nodes[editor_topology_node_index]))
+
+
+func _start_visual_handedness_choice_if_needed(unit_bp: Dictionary, node_index: int, node: Dictionary) -> bool:
+	var role_key: String = ROLE_ORDER[editor_role_index]
+	if not _topology_node_supports_visual_handedness(role_key, unit_bp, node):
+		if editor_pending_orientation_node_index == node_index:
+			editor_pending_orientation_node_index = -1
+		return false
+	editor_pending_orientation_node_index = node_index
+	editor_topology_node_index = node_index
+	if editor_board_hint_label != null:
+		_set_control_text_if_changed(editor_board_hint_label, "选择侧挂刃朝向：左侧挂刃 / 右侧挂刃。以上一段肢体为柄，只改变法线侧向，不改变接口。" if _ui_is_zh() else "Choose side-mounted blade: LEFT / RIGHT. The previous limb is the handle; only the normal-side mount changes.")
+	mark_editor_dirty(EDITOR_DIRTY_BOARD_UI | EDITOR_DIRTY_ACTION_BUTTONS, "node.visual_mount_side.choice")
+	_refresh_editor_orientation_buttons()
+	return true
+
+
+func _set_topology_node_visual_handedness(node_index: int, side: String, record_undo := true) -> bool:
+	var role_key: String = ROLE_ORDER[editor_role_index]
+	var unit_bp: Dictionary = _editor_current_blueprint()
+	if not unit_bp.has("custom_topology"):
+		return false
+	var topology: Dictionary = unit_bp.get("custom_topology", {})
+	var nodes: Array = Array(topology.get("nodes", [])).duplicate(true)
+	if node_index < 0 or node_index >= nodes.size() or not (nodes[node_index] is Dictionary):
+		return false
+	var node: Dictionary = Dictionary(nodes[node_index]).duplicate(true)
+	if not _topology_node_supports_visual_handedness(role_key, unit_bp, node):
+		if editor_board_hint_label != null:
+			_set_control_text_if_changed(editor_board_hint_label, "当前零件没有侧挂刃朝向。" if _ui_is_zh() else "Selected part has no side-mounted blade orientation.")
+		return false
+	var part := _topology_node_part(role_key, node, unit_bp)
+	var normalized := _normalize_mount_side(side)
+	if record_undo and _topology_node_visual_handedness(node) != normalized:
+		_record_editor_undo_state("调整侧挂刃朝向" if _ui_is_zh() else "change side-mounted blade")
+	_apply_visual_handedness_defaults_to_node(node, part, _topology_node_slot(node))
+	node["visual_mount_side"] = normalized
+	node["visual_handedness"] = normalized
+	node["asymmetric_terminal"] = true
+	node["orientation_category"] = String(node.get("orientation_category", "orthogonal_side_mount"))
+	node["orientation_basis"] = String(node.get("orientation_basis", "parent_normal"))
+	node["mount_side_choices"] = Array(node.get("mount_side_choices", node.get("orientation_choices", ["left", "right"])))
+	node["orientation_choices"] = Array(node.get("mount_side_choices", ["left", "right"]))
+	nodes[node_index] = node
+	topology["nodes"] = nodes
+	unit_bp["custom_topology"] = topology
+	if editor_last_added_topology_node_index == node_index:
+		editor_last_added_topology_node_snapshot = node.duplicate(false)
+	if editor_pending_orientation_node_index == node_index:
+		editor_pending_orientation_node_index = -1
+	editor_topology_node_index = node_index
+	var side_label := "左侧挂刃" if normalized == "left" else "右侧挂刃"
+	if editor_board_hint_label != null:
+		_set_control_text_if_changed(editor_board_hint_label, "已设置侧挂刃朝向：%s。" % side_label if _ui_is_zh() else "Side-mounted blade set: %s." % normalized.to_upper())
+	ai_team_manual_lock[_editor_player()] = true
+	_invalidate_editor_current_stats_cache()
+	_mark_editor_board_model_dirty("node.visual_mount_side", false)
+	mark_editor_dirty(EDITOR_DIRTY_ACTION_BUTTONS | EDITOR_DIRTY_BOARD_UI, "node.visual_mount_side")
+	_refresh_editor_orientation_buttons()
+	flush_editor_dirty(1400)
+	return true
+
+
+func _flip_selected_topology_node_visual_handedness() -> bool:
+	var unit_bp: Dictionary = _editor_current_blueprint()
+	if not _selected_node_supports_visual_handedness(unit_bp):
+		if editor_board_hint_label != null:
+			_set_control_text_if_changed(editor_board_hint_label, "请选择镰刀类正交侧挂武器节点。" if _ui_is_zh() else "Select an orthogonal side-mounted scythe-style weapon node.")
+		return false
+	var topology: Dictionary = unit_bp.get("custom_topology", {})
+	var nodes: Array = Array(topology.get("nodes", []))
+	var node: Dictionary = Dictionary(nodes[editor_topology_node_index])
+	var next_side := "right" if _topology_node_visual_handedness(node) == "left" else "left"
+	return _set_topology_node_visual_handedness(editor_topology_node_index, next_side, true)
+
+
+func _refresh_editor_orientation_buttons() -> void:
+	var unit_bp: Dictionary = _editor_current_blueprint()
+	var custom_board_enabled := _role_uses_body_board(ROLE_ORDER[editor_role_index]) and unit_bp.has("custom_topology")
+	var orientation_choice_active := custom_board_enabled and _orientation_choice_is_active(unit_bp)
+	var selected_handedness_active := custom_board_enabled and _selected_node_supports_visual_handedness(unit_bp)
+	for action_name in ["set_handedness_left", "set_handedness_right", "flip_handedness"]:
+		if not editor_action_buttons.has(action_name):
+			continue
+		var action_button: Button = editor_action_buttons[action_name]
+		var show_orientation_action := false
+		if action_name in ["set_handedness_left", "set_handedness_right"]:
+			show_orientation_action = orientation_choice_active
+		elif action_name == "flip_handedness":
+			show_orientation_action = selected_handedness_active and not orientation_choice_active
+		_set_canvas_item_visible_if_changed(action_button, show_orientation_action)
+		_set_button_disabled_if_changed(action_button, not show_orientation_action)
+		var x_pos := 776.0
+		if action_name == "set_handedness_right":
+			x_pos = 870.0
+		_set_control_position_if_changed(action_button, Vector2(x_pos, 688.0))
+		_set_control_size_if_changed(action_button, Vector2(90.0, 24.0))
+		if action_name == "set_handedness_left":
+			_set_control_text_if_changed(action_button, "左挂刃" if _ui_is_zh() else "LEFT")
+		elif action_name == "set_handedness_right":
+			_set_control_text_if_changed(action_button, "右挂刃" if _ui_is_zh() else "RIGHT")
+		else:
+			_set_control_text_if_changed(action_button, "翻侧刃" if _ui_is_zh() else "FLIP SIDE")
+		_set_canvas_item_modulate_if_changed(action_button, Color(0.42, 1.0, 0.82, 1.0) if show_orientation_action else Color(0.78, 0.9, 1.0, 0.72))
+		if show_orientation_action:
+			action_button.move_to_front()
+
+
 func _record_editor_undo_state(label: String = "") -> void:
 	editor_undo_full_snapshot_count += 1
 	var player_id := _editor_player()
@@ -21870,8 +22272,6 @@ func _record_editor_undo_state(label: String = "") -> void:
 		"label": label,
 	})
 	while editor_undo_stack.size() > 32:
-		if _topology_node_supports_visual_handedness(role_key, unit_bp, node):
-			node["mount_parent_axis_local"] = _topology_mount_parent_axis_for_node(role_key, unit_bp, source_nodes, edges, i)
 		editor_undo_stack.remove_at(0)
 
 
@@ -22064,8 +22464,6 @@ func _restore_editor_undo_state() -> void:
 	editor_dragging_whole_unit = false
 	editor_drag_whole_original_positions = []
 	editor_group_drag_original_positions = []
-	_apply_visual_handedness_defaults_to_node(component_node, part, slot_key)
-	_apply_visual_handedness_defaults_to_node(node_base, part, slot_key)
 	editor_selecting_topology_box = false
 	ai_team_manual_lock[player_id] = true
 	editor_board_hint_label.text = "已退回上一步：%s。" % String(state.get("label", "画布操作")) if _ui_is_zh() else "Undid previous step: %s." % String(state.get("label", "canvas edit"))
@@ -22183,135 +22581,6 @@ func _drop_catalog_part_on_board(slot_key: String, part_index: int, local_positi
 	if hot_path_profiler != null:
 		hot_path_profiler.scope_end("drop.install_part")
 
-func _orientation_choice_is_active(unit_bp: Dictionary) -> bool:
-	if editor_pending_orientation_node_index < 0 or not unit_bp.has("custom_topology"):
-		return false
-	var role_key: String = ROLE_ORDER[editor_role_index]
-	var topology: Dictionary = unit_bp.get("custom_topology", {})
-	var nodes: Array = Array(topology.get("nodes", []))
-	if editor_pending_orientation_node_index >= nodes.size() or not (nodes[editor_pending_orientation_node_index] is Dictionary):
-		editor_pending_orientation_node_index = -1
-		return false
-	return _topology_node_supports_visual_handedness(role_key, unit_bp, Dictionary(nodes[editor_pending_orientation_node_index]))
-
-
-func _selected_node_supports_visual_handedness(unit_bp: Dictionary) -> bool:
-	if not unit_bp.has("custom_topology"):
-		return false
-	var role_key: String = ROLE_ORDER[editor_role_index]
-	var topology: Dictionary = unit_bp.get("custom_topology", {})
-	var nodes: Array = Array(topology.get("nodes", []))
-	if editor_topology_node_index < 0 or editor_topology_node_index >= nodes.size() or not (nodes[editor_topology_node_index] is Dictionary):
-		return false
-	return _topology_node_supports_visual_handedness(role_key, unit_bp, Dictionary(nodes[editor_topology_node_index]))
-
-
-func _start_visual_handedness_choice_if_needed(unit_bp: Dictionary, node_index: int, node: Dictionary) -> bool:
-	var role_key: String = ROLE_ORDER[editor_role_index]
-	if not _topology_node_supports_visual_handedness(role_key, unit_bp, node):
-		if editor_pending_orientation_node_index == node_index:
-			editor_pending_orientation_node_index = -1
-		return false
-	editor_pending_orientation_node_index = node_index
-	editor_topology_node_index = node_index
-	if editor_board_hint_label != null:
-		_set_control_text_if_changed(editor_board_hint_label, "选择侧挂刃朝向：左侧挂刃 / 右侧挂刃。以上一段肢体为柄，只改变法线侧向，不改变接口。" if _ui_is_zh() else "Choose side-mounted blade: LEFT / RIGHT. The previous limb is the handle; only the normal-side mount changes.")
-	mark_editor_dirty(EDITOR_DIRTY_BOARD_UI | EDITOR_DIRTY_ACTION_BUTTONS, "node.visual_mount_side.choice")
-	_refresh_editor_orientation_buttons()
-	return true
-
-
-func _set_topology_node_visual_handedness(node_index: int, side: String, record_undo := true) -> bool:
-	var role_key: String = ROLE_ORDER[editor_role_index]
-	var unit_bp: Dictionary = _editor_current_blueprint()
-	if not unit_bp.has("custom_topology"):
-		return false
-	var topology: Dictionary = unit_bp.get("custom_topology", {})
-	var nodes: Array = Array(topology.get("nodes", [])).duplicate(true)
-	if node_index < 0 or node_index >= nodes.size() or not (nodes[node_index] is Dictionary):
-		return false
-	var node: Dictionary = Dictionary(nodes[node_index]).duplicate(true)
-	if not _topology_node_supports_visual_handedness(role_key, unit_bp, node):
-		if editor_board_hint_label != null:
-			_set_control_text_if_changed(editor_board_hint_label, "当前零件没有侧挂刃朝向。" if _ui_is_zh() else "Selected part has no side-mounted blade orientation.")
-		return false
-	var part := _topology_node_part(role_key, node, unit_bp)
-	var normalized := _normalize_mount_side(side)
-	if record_undo and _topology_node_visual_handedness(node) != normalized:
-		_record_editor_undo_state("调整侧挂刃朝向" if _ui_is_zh() else "change side-mounted blade")
-	_apply_visual_handedness_defaults_to_node(node, part, _topology_node_slot(node))
-	node["visual_mount_side"] = normalized
-	node["visual_handedness"] = normalized
-	node["asymmetric_terminal"] = true
-	node["orientation_category"] = String(node.get("orientation_category", "orthogonal_side_mount"))
-	node["orientation_basis"] = String(node.get("orientation_basis", "parent_normal"))
-	node["mount_side_choices"] = Array(node.get("mount_side_choices", node.get("orientation_choices", ["left", "right"])))
-	node["orientation_choices"] = Array(node.get("mount_side_choices", ["left", "right"]))
-	nodes[node_index] = node
-	topology["nodes"] = nodes
-	unit_bp["custom_topology"] = topology
-	if editor_last_added_topology_node_index == node_index:
-		editor_last_added_topology_node_snapshot = node.duplicate(false)
-	if editor_pending_orientation_node_index == node_index:
-		editor_pending_orientation_node_index = -1
-	editor_topology_node_index = node_index
-	var side_label := "左侧挂刃" if normalized == "left" else "右侧挂刃"
-	if editor_board_hint_label != null:
-		_set_control_text_if_changed(editor_board_hint_label, "已设置侧挂刃朝向：%s。" % side_label if _ui_is_zh() else "Side-mounted blade set: %s." % normalized.to_upper())
-	ai_team_manual_lock[_editor_player()] = true
-	_invalidate_editor_current_stats_cache()
-	_mark_editor_board_model_dirty("node.visual_mount_side", false)
-	mark_editor_dirty(EDITOR_DIRTY_ACTION_BUTTONS | EDITOR_DIRTY_BOARD_UI, "node.visual_mount_side")
-	_refresh_editor_orientation_buttons()
-	flush_editor_dirty(1400)
-	return true
-
-
-func _flip_selected_topology_node_visual_handedness() -> bool:
-	var unit_bp: Dictionary = _editor_current_blueprint()
-	if not _selected_node_supports_visual_handedness(unit_bp):
-		if editor_board_hint_label != null:
-			_set_control_text_if_changed(editor_board_hint_label, "请选择镰刀类正交侧挂武器节点。" if _ui_is_zh() else "Select an orthogonal side-mounted scythe-style weapon node.")
-		return false
-	var topology: Dictionary = unit_bp.get("custom_topology", {})
-	var nodes: Array = Array(topology.get("nodes", []))
-	var node: Dictionary = Dictionary(nodes[editor_topology_node_index])
-	var next_side := "right" if _topology_node_visual_handedness(node) == "left" else "left"
-	return _set_topology_node_visual_handedness(editor_topology_node_index, next_side, true)
-
-
-func _refresh_editor_orientation_buttons() -> void:
-	var unit_bp: Dictionary = _editor_current_blueprint()
-	var custom_board_enabled := _role_uses_body_board(ROLE_ORDER[editor_role_index]) and unit_bp.has("custom_topology")
-	var orientation_choice_active := custom_board_enabled and _orientation_choice_is_active(unit_bp)
-	var selected_handedness_active := custom_board_enabled and _selected_node_supports_visual_handedness(unit_bp)
-	for action_name in ["set_handedness_left", "set_handedness_right", "flip_handedness"]:
-		if not editor_action_buttons.has(action_name):
-			continue
-		var action_button: Button = editor_action_buttons[action_name]
-		var show_orientation_action := false
-		if action_name in ["set_handedness_left", "set_handedness_right"]:
-			show_orientation_action = orientation_choice_active
-		elif action_name == "flip_handedness":
-			show_orientation_action = selected_handedness_active and not orientation_choice_active
-		_set_canvas_item_visible_if_changed(action_button, show_orientation_action)
-		_set_button_disabled_if_changed(action_button, not show_orientation_action)
-		var x_pos := 776.0
-		if action_name == "set_handedness_right":
-			x_pos = 870.0
-		_set_control_position_if_changed(action_button, Vector2(x_pos, 688.0))
-		_set_control_size_if_changed(action_button, Vector2(90.0, 24.0))
-		if action_name == "set_handedness_left":
-			_set_control_text_if_changed(action_button, "左挂刃" if _ui_is_zh() else "LEFT")
-		elif action_name == "set_handedness_right":
-			_set_control_text_if_changed(action_button, "右挂刃" if _ui_is_zh() else "RIGHT")
-		else:
-			_set_control_text_if_changed(action_button, "翻侧刃" if _ui_is_zh() else "FLIP SIDE")
-		_set_canvas_item_modulate_if_changed(action_button, Color(0.42, 1.0, 0.82, 1.0) if show_orientation_action else Color(0.78, 0.9, 1.0, 0.72))
-		if show_orientation_action:
-			action_button.move_to_front()
-
-
 
 func _handle_editor_board_input(event: InputEvent) -> void:
 	var player_id := _editor_player()
@@ -22325,11 +22594,15 @@ func _handle_editor_board_input(event: InputEvent) -> void:
 			editor_selection_box_current = motion_event.position
 			_refresh_editor_visual_views_fast_drag()
 		elif editor_dragging_node_index >= 0 and _role_uses_body_board(role_key) and unit_bp.has("custom_topology"):
+			if motion_event.position.distance_to(editor_node_click_start_position) > 6.0:
+				editor_node_click_moved = true
 			if editor_dragging_selected_nodes:
 				_move_selected_topology_nodes_by_delta(unit_bp, motion_event.position - editor_group_drag_start)
 			else:
 				_move_custom_node_to(unit_bp, editor_dragging_node_index, motion_event.position)
 		elif editor_dragging_whole_unit and _role_uses_body_board(role_key) and unit_bp.has("custom_topology"):
+			if motion_event.position.distance_to(editor_node_click_start_position) > 6.0:
+				editor_node_click_moved = true
 			_move_custom_topology_by_delta(unit_bp, motion_event.position - editor_drag_whole_start)
 		else:
 			_update_editor_board_torso_hover(motion_event.position)
@@ -22351,10 +22624,13 @@ func _handle_editor_board_input(event: InputEvent) -> void:
 			var was_group_dragging := editor_dragging_selected_nodes
 			var released_node_index := editor_dragging_node_index
 			var released_group_nodes := editor_selected_topology_nodes.duplicate()
+			var show_detail_after_release := editor_node_click_candidate_index == released_node_index and not editor_node_click_moved and mouse_event.position.distance_to(editor_node_click_start_position) <= 6.0
 			if not was_group_dragging and _topology_node_edge_count(Array(Dictionary(unit_bp.get("custom_topology", {})).get("edges", [])), editor_dragging_node_index) <= 0:
 				_try_magnetic_link_for_node(unit_bp, editor_dragging_node_index)
 			editor_dragging_selected_nodes = false
 			editor_dragging_node_index = -1
+			editor_node_click_candidate_index = -1
+			editor_node_click_moved = false
 			editor_group_drag_original_positions = []
 			if was_group_dragging:
 				_finish_rigid_topology_drag(
@@ -22370,6 +22646,8 @@ func _handle_editor_board_input(event: InputEvent) -> void:
 				mark_editor_dirty(EDITOR_DIRTY_ACTION_BUTTONS, "drag.node_release")
 				flush_editor_dirty(600)
 			_clear_cached_board_socket_candidate()
+			if show_detail_after_release:
+				_show_editor_topology_node_detail(released_node_index, "board", {"position": _editor_board_popup_position(mouse_event.position)})
 		elif mouse_event.button_index == MOUSE_BUTTON_LEFT and editor_dragging_whole_unit:
 			var whole_changed_nodes: Array = []
 			var whole_topology: Dictionary = unit_bp.get("custom_topology", {})
@@ -22377,6 +22655,8 @@ func _handle_editor_board_input(event: InputEvent) -> void:
 			for i in range(whole_nodes.size()):
 				whole_changed_nodes.append(i)
 			editor_dragging_whole_unit = false
+			editor_node_click_candidate_index = -1
+			editor_node_click_moved = false
 			editor_drag_whole_original_positions = []
 			_finish_rigid_topology_drag(
 				unit_bp,
@@ -22414,6 +22694,12 @@ func _handle_editor_board_zoom_wheel(mouse_event: InputEventMouseButton) -> void
 	_close_engine_momentum_allocation_panel()
 	var factor := EDITOR_BOARD_ZOOM_STEP if mouse_event.button_index == MOUSE_BUTTON_WHEEL_UP else 1.0 / EDITOR_BOARD_ZOOM_STEP
 	_set_editor_board_zoom(editor_board_zoom * factor, mouse_event.position)
+
+
+func _editor_board_popup_position(local_position: Vector2) -> Vector2:
+	if assembly_board_view != null:
+		return assembly_board_view.get_global_rect().position + local_position + Vector2(14.0, 14.0)
+	return local_position + Vector2(14.0, 14.0)
 
 
 func _set_editor_board_zoom(next_zoom: float, anchor_position = null) -> void:
@@ -22559,6 +22845,10 @@ func _handle_custom_topology_click(mouse_event: InputEventMouseButton, unit_bp: 
 			hot_path_profiler.scope_end("board_click")
 		return
 	if nearest >= 0:
+		if mouse_event.button_index == MOUSE_BUTTON_LEFT:
+			editor_node_click_candidate_index = nearest
+			editor_node_click_start_position = mouse_event.position
+			editor_node_click_moved = false
 		if editor_board_tool == "pose" and mouse_event.button_index == MOUSE_BUTTON_LEFT:
 			var selection := editor_selected_topology_nodes.duplicate()
 			if not selection.has(nearest):
@@ -22609,6 +22899,7 @@ func _handle_custom_topology_click(mouse_event: InputEventMouseButton, unit_bp: 
 			if editor_board_hint_label != null:
 				editor_board_hint_label.text = "已连接肢体请用姿态模式旋转；布局模式只负责拼搭、解绑和移动整机。" if _ui_is_zh() else "Use POSE to rotate connected limbs; LAYOUT is for assembly, unlinking, and moving the whole mech."
 			_play_sfx_wave("alarm", 190.0, 0.06, -18.0)
+			_show_editor_topology_node_detail(nearest, "board", {"position": _editor_board_popup_position(mouse_event.position)})
 		else:
 			_record_editor_undo_state("拖动节点" if _ui_is_zh() else "move node")
 			editor_selected_topology_nodes = [nearest]
@@ -23529,6 +23820,15 @@ func _topology_parent_axis_for_node(role_key: String, unit_bp: Dictionary, nodes
 	return _topology_endpoint_axis_for_node(parent_index, nodes, edges).normalized()
 
 
+func _topology_mount_parent_axis_for_node(role_key: String, unit_bp: Dictionary, nodes: Array, edges: Array, node_index: int) -> Vector2:
+	var axis := _topology_parent_axis_for_node(role_key, unit_bp, nodes, edges, node_index)
+	if axis.length() < 0.0001:
+		axis = _topology_endpoint_axis_for_node(node_index, nodes, edges)
+	if axis.length() < 0.0001:
+		axis = Vector2.RIGHT
+	return axis.normalized()
+
+
 func _topology_update_local_pose_fields(role_key: String, unit_bp: Dictionary) -> void:
 	if not unit_bp.has("custom_topology"):
 		return
@@ -23890,15 +24190,6 @@ func _finish_editor_pose_drag(unit_bp: Dictionary) -> void:
 	if not editor_pose_dragging:
 		return
 	if hot_path_profiler != null:
-func _topology_mount_parent_axis_for_node(role_key: String, unit_bp: Dictionary, nodes: Array, edges: Array, node_index: int) -> Vector2:
-	var axis := _topology_parent_axis_for_node(role_key, unit_bp, nodes, edges, node_index)
-	if axis.length() < 0.0001:
-		axis = _topology_endpoint_axis_for_node(node_index, nodes, edges)
-	if axis.length() < 0.0001:
-		axis = Vector2.RIGHT
-	return axis.normalized()
-
-
 		hot_path_profiler.scope_begin("pose_commit")
 	_apply_editor_pose_drag_pending(unit_bp)
 	if hot_path_profiler != null:
@@ -24504,10 +24795,17 @@ func _toggle_editor_catalog_sort_direction() -> void:
 
 
 func _set_editor_ammo_size_rank(rank: int) -> void:
-	editor_ammo_size_rank = clampi(rank, 1, 5)
+	var next_rank := clampi(rank, 1, 5)
+	if editor_ammo_size_rank == next_rank:
+		return
+	editor_ammo_size_rank = next_rank
 	editor_catalog_page = 0
 	_invalidate_editor_catalog_cache()
 	_update_editor_ui()
+
+
+func _set_editor_ammo_size_rank_from_slider(value: float) -> void:
+	_set_editor_ammo_size_rank(int(roundf(value)))
 
 
 func _part_group_for_slot(slot_key: String) -> String:
@@ -26003,6 +26301,14 @@ func _editor_action(action_key: String) -> void:
 			_add_topology_node()
 		"link_node":
 			_link_topology_node()
+		"set_handedness_left":
+			if editor_pending_orientation_node_index >= 0:
+				_set_topology_node_visual_handedness(editor_pending_orientation_node_index, "left", false)
+		"set_handedness_right":
+			if editor_pending_orientation_node_index >= 0:
+				_set_topology_node_visual_handedness(editor_pending_orientation_node_index, "right", false)
+		"flip_handedness":
+			_flip_selected_topology_node_visual_handedness()
 		"board_zoom_out":
 			_set_editor_board_zoom(editor_board_zoom / EDITOR_BOARD_ZOOM_STEP)
 		"board_zoom_in":
@@ -26026,6 +26332,7 @@ func _start_blank_topology() -> void:
 	editor_topology_node_index = 0
 	editor_selected_barrier_cell = -1
 	editor_selected_topology_nodes = []
+	editor_pending_orientation_node_index = -1
 	editor_dragging_node_index = -1
 	editor_dragging_selected_nodes = false
 	editor_dragging_whole_unit = false
@@ -26057,6 +26364,7 @@ func _clear_editor_canvas() -> void:
 	editor_topology_node_index = 0
 	editor_selected_barrier_cell = -1
 	editor_selected_topology_nodes = []
+	editor_pending_orientation_node_index = -1
 	editor_dragging_node_index = -1
 	editor_dragging_selected_nodes = false
 	editor_dragging_whole_unit = false
@@ -26065,6 +26373,7 @@ func _clear_editor_canvas() -> void:
 	editor_selecting_topology_box = false
 	editor_pending_place_slot = ""
 	editor_pending_place_index = -1
+	editor_pending_orientation_node_index = -1
 	editor_board_hint_label.text = "画布已全部删除，当前单位造价为 0；未保存前不属于任何队伍。" if _ui_is_zh() else "Canvas cleared; current unit cost is 0. It belongs to no team until saved."
 	ai_team_manual_lock[player_id] = true
 	_update_editor_ui()
@@ -26171,6 +26480,7 @@ func _delete_selected_canvas_part() -> void:
 	editor_selecting_topology_box = false
 	editor_pending_place_slot = ""
 	editor_pending_place_index = -1
+	editor_pending_orientation_node_index = -1
 	if editor_board_hint_label != null:
 		editor_board_hint_label.text = "已删除：%s。" % removed_name if _ui_is_zh() else "Deleted: %s." % removed_name
 	_play_sfx_wave("clack", 520.0, 0.045, -18.0)
@@ -26270,6 +26580,7 @@ func _add_topology_node_at(local_position: Vector2) -> int:
 	editor_pending_place_slot = ""
 	editor_pending_place_index = -1
 	_trigger_editor_node_drop_snap(placed_name, true)
+	_start_visual_handedness_choice_if_needed(unit_bp, index, new_node)
 	if hot_path_profiler != null:
 		hot_path_profiler.scope_end("drop.snap_hint")
 	if hot_path_profiler != null:
@@ -26371,14 +26682,6 @@ func _ensure_custom_topology(unit_bp: Dictionary) -> void:
 	else:
 		unit_bp["custom_topology"] = {
 			"nodes": [],
-		"set_handedness_left":
-			if editor_pending_orientation_node_index >= 0:
-				_set_topology_node_visual_handedness(editor_pending_orientation_node_index, "left", false)
-		"set_handedness_right":
-			if editor_pending_orientation_node_index >= 0:
-				_set_topology_node_visual_handedness(editor_pending_orientation_node_index, "right", false)
-		"flip_handedness":
-			_flip_selected_topology_node_visual_handedness()
 			"edges": [],
 		}
 	unit_bp.erase("groups")
@@ -26402,7 +26705,6 @@ func _make_topology_node(unit_bp: Dictionary, index: int, pos: Vector2, slot_key
 		node["pos"] = pos
 		node["slot"] = resolved_slot
 		node["part_index"] = resolved_index
-	editor_pending_orientation_node_index = -1
 		if module_index >= 0 or not modules.is_empty():
 			var module_list := modules.duplicate(true)
 			if module_list.is_empty() and module_index >= 0:
@@ -26432,9 +26734,9 @@ func _make_topology_node(unit_bp: Dictionary, index: int, pos: Vector2, slot_key
 		node["terminal_weapon"] = true
 		node["terminal_weapon_kind"] = _terminal_weapon_kind_for_part(part, "muscle")
 		node["projectile"] = _terminal_weapon_kind_for_part(part, "muscle") == "ranged" and bool(part.get("projectile", false))
+		_apply_visual_handedness_defaults_to_node(node, part, "muscle")
 	if module_index >= 0 or not modules.is_empty():
 		var module_list := modules.duplicate(true)
-	editor_pending_orientation_node_index = -1
 		if module_list.is_empty() and module_index >= 0:
 			module_list.append(module_index)
 		if not module_list.is_empty():
@@ -26443,7 +26745,6 @@ func _make_topology_node(unit_bp: Dictionary, index: int, pos: Vector2, slot_key
 	if not template.is_empty():
 		var component_node := Dictionary(template.get("component_node", {}))
 		for key in component_node.keys():
-	editor_pending_orientation_node_index = -1
 			node[key] = component_node[key]
 		node["slot"] = resolved_slot
 		node["part_name"] = String(template.get("part_name", node.get("part_name", "")))
@@ -26464,6 +26765,7 @@ func _make_topology_node(unit_bp: Dictionary, index: int, pos: Vector2, slot_key
 		node["shape"] = String(template.get("shape", node.get("shape", resolved_slot)))
 		node["projectile"] = bool(template.get("projectile", node.get("projectile", false)))
 		node["is_torso"] = bool(template.get("is_torso", node.get("is_torso", false)))
+		_apply_visual_handedness_defaults_to_node(node, part, resolved_slot)
 		if String(template.get("root_socket", "")) != "":
 			node["root_socket"] = String(template.get("root_socket", ""))
 		if String(template.get("distal_socket", "")) != "":
@@ -26550,7 +26852,6 @@ func _template_topology_for_archetype(archetype_key: String, preset: Dictionary,
 			edges,
 			root_index,
 			String(spec.get("label", _body_part_label(source_key, unit_bp))),
-	editor_pending_orientation_node_index = -1
 			spec.get("pos", _node_position_for_index(i)),
 			int(spec.get("joint", group_bp.get("joint", unit_bp.get("joint", 0)))),
 			int(spec.get("limb_muscle", group_bp.get("limb_muscle", unit_bp.get("limb_muscle", 0)))),
@@ -26650,7 +26951,6 @@ func _trigger_editor_node_drop_snap(part_name: String, defer_sfx: bool = true) -
 	else:
 		_play_sfx_wave("clack", 760.0, 0.055, -17.0)
 	if editor_board_hint_label != null:
-	_start_visual_handedness_choice_if_needed(unit_bp, index, new_node)
 		editor_board_hint_label.text = "咔哒：%s 已放置。" % part_name if _ui_is_zh() else "CLACK: %s placed." % part_name
 
 
@@ -26804,7 +27104,6 @@ func _queue_editor_catalog_card_body_redraws() -> void:
 func _prewarm_adjacent_catalog_card_bodies() -> void:
 	if editor_panel_mode != "parts":
 		return
-		_apply_visual_handedness_defaults_to_node(node, part, "muscle")
 	if CatalogCardBodyTextureCache.active_request.size() > 0 or CatalogCardBodyTextureCache.pending_order.size() > 0:
 		return
 	if editor_catalog_buttons.is_empty():
@@ -26835,7 +27134,6 @@ func _prewarm_adjacent_catalog_card_bodies() -> void:
 			var art_size := Vector2(116.0, 44.0)
 			if not editor_catalog_buttons.is_empty() and editor_catalog_buttons[0] is PartCatalogCardButton:
 				var button: PartCatalogCardButton = editor_catalog_buttons[0]
-		_apply_visual_handedness_defaults_to_node(node, part, resolved_slot)
 				if button.retained_item != null:
 					art_size = button.retained_item._art_rect().size
 			var preview_pending_before := PartPreviewTextureCache.pending_order.size()
@@ -28604,8 +28902,8 @@ func _handle_player_battle_input(player_id: int, delta: float, prefix: String) -
 	var facing_unit = active_units[player_id]["hero"]
 	var face_left_held := Input.is_action_pressed("%s_face_left" % prefix)
 	var face_right_held := Input.is_action_pressed("%s_face_right" % prefix)
-	var turn_keys_reserved_for_limb := _held_aim_uses_turn_keys(player_id)
-	if _is_live_unit(facing_unit) and not turn_keys_reserved_for_limb:
+	var turn_keys_reserved_for_weapon_aim := _held_aim_uses_turn_keys(player_id, prefix)
+	if _is_live_unit(facing_unit) and not turn_keys_reserved_for_weapon_aim:
 		var turn_sign := (-1 if face_left_held else 0) + (1 if face_right_held else 0)
 		if facing_unit.has_method("set_turn_input_active"):
 			facing_unit.set_turn_input_active(turn_sign != 0)
@@ -28710,7 +29008,16 @@ func _handle_player_battle_input(player_id: int, delta: float, prefix: String) -
 			aim_locked_directions[player_id] = Vector2.ZERO
 
 
-func _held_aim_uses_turn_keys(player_id: int) -> bool:
+func _held_aim_uses_turn_keys(player_id: int, prefix: String = "") -> bool:
+	if _runtime_gun_activation_active(player_id):
+		return true
+	if prefix != "":
+		var runtime_hero = active_units[player_id]["hero"]
+		if _is_live_unit(runtime_hero) and _unit_uses_direct_runtime_topology(runtime_hero):
+			for attack_index in range(ATTACK_GROUP_COUNT):
+				var action_name := "%s_attack_%d" % [prefix, attack_index + 1]
+				if Input.is_action_just_pressed(action_name) and _runtime_binding_is_gun_activation(_runtime_binding_for_attack_index(runtime_hero, attack_index)):
+					return true
 	if not bool(aim_holding[player_id]):
 		return false
 	var hero = active_units[player_id]["hero"]
@@ -28890,6 +29197,13 @@ func _input_vector_for(prefix: String) -> Vector2:
 	if input_vector.length() <= 0.08:
 		return Vector2.ZERO
 	return input_vector.normalized() if input_vector.length() > 1.0 else input_vector
+
+
+func _gun_turn_input_vector_for(prefix: String) -> Vector2:
+	var x := Input.get_action_strength("%s_face_right" % prefix) - Input.get_action_strength("%s_face_left" % prefix)
+	if absf(x) <= 0.08:
+		return Vector2.ZERO
+	return Vector2(clampf(x, -1.0, 1.0), 0.0)
 
 
 func _refresh_boost_visibility_after_start(unit) -> void:
@@ -29599,12 +29913,13 @@ func _tick_runtime_gun_activation(player_id: int, prefix: String, delta: float) 
 	var current_direction := _runtime_gun_activation_direction(unit, binding)
 	if state.get("aim_direction", Vector2.ZERO) is Vector2:
 		current_direction = state.get("aim_direction", Vector2.ZERO)
-	var input_vector := _input_vector_for(prefix)
+	var turn_input_vector := _gun_turn_input_vector_for(prefix)
 	var rotate_speed := float(state.get("gun_rotate_speed", _unit2_turn_speed_reference()))
-	state["aim_direction"] = _gun_activation_rotated_direction(unit, current_direction, input_vector, rotate_speed, delta)
+	state["aim_direction"] = _gun_activation_rotated_direction(unit, current_direction, turn_input_vector, rotate_speed, delta)
 	var event := _runtime_gun_activation_event_for(player_id)
 	if event.is_empty():
 		_clear_salvo_landing_preview(player_id)
+		_clear_runtime_gun_pose_for_payload(unit, state)
 		gun_activation_state[player_id] = state
 		return
 	var semantic := String(state.get("activation_semantic", ""))
@@ -29618,6 +29933,7 @@ func _tick_runtime_gun_activation(player_id: int, prefix: String, delta: float) 
 		var fire_timer := float(state.get("fire_timer", 0.0)) - delta
 		if fire_timer <= 0.0:
 			if not _runtime_gun_activation_fire_once(unit, event):
+				_clear_runtime_gun_pose_for_payload(unit, event)
 				gun_activation_state[player_id] = {}
 				return
 			fire_timer = maxf(0.05, float(event.get("fire_interval", 0.24)))
@@ -29663,13 +29979,16 @@ func _release_runtime_gun_activation(player_id: int) -> void:
 	gun_activation_state[player_id] = {}
 	_clear_salvo_landing_preview(player_id)
 	if event.is_empty():
+		_clear_runtime_gun_pose_for_payload(unit, state)
 		return
 	if String(state.get("activation_semantic", "")) == "hold_grenade_arc" and String(event.get("module_variant_key", "")) == "explosive_arc_salvo":
 		event["salvo_release_fire"] = true
 		_runtime_gun_activation_fire_once(unit, event)
+		_clear_runtime_gun_pose_for_payload(unit, event)
 		return
 	if String(state.get("activation_semantic", "")) == "release_web":
 		_fire_runtime_web_tether(unit, event)
+		_clear_runtime_gun_pose_for_payload(unit, event)
 		return
 	if String(state.get("activation_semantic", "")) == "release_missile_lock":
 		var missile_target = state.get("locked_target", null)
@@ -29677,16 +29996,20 @@ func _release_runtime_gun_activation(player_id: int) -> void:
 			missile_target = _acquire_missile_lock_target(unit, event)
 		if not _is_live_unit(missile_target):
 			_show_battle_message("%s MISSILE: no lock" % String(unit.unit_name), 0.52)
+			_clear_runtime_gun_pose_for_payload(unit, event)
 			return
 		event["locked_target"] = missile_target
 		event["aim_locked"] = true
 		event["direction"] = _missile_direction_to_target(unit, missile_target, Vector2(event.get("direction", _unit_forward_vector(unit))))
 		_runtime_gun_activation_fire_once(unit, event)
+		_clear_runtime_gun_pose_for_payload(unit, event)
 		return
 	if String(state.get("activation_semantic", "")) != "release_lock":
+		_clear_runtime_gun_pose_for_payload(unit, event)
 		return
 	var target = state.get("locked_target", null)
 	if not _is_live_unit(target):
+		_clear_runtime_gun_pose_for_payload(unit, event)
 		return
 	event["locked_target"] = target
 	event["aim_locked"] = true
@@ -34393,10 +34716,8 @@ func _gun_projectile_damage_mult_for_event(event: Dictionary) -> float:
 		return maxf(0.0, float(event.get("gun_projectile_damage_mult_current", 0.0)))
 	var max_mult := _gun_projectile_damage_mult_max_for_data(event)
 	var max_drive := maxf(0.0, float(event.get("gun_drive_max", event.get("momentum_max", 0.0))))
-	if max_drive <= 0.001:
-		return max_mult
 	var allocated := clampf(float(event.get("gun_drive_allocated", max_drive)), 0.0, max_drive)
-	return maxf(0.0, max_mult * (allocated / max_drive))
+	return data_rule_service.gun_current_multiplier(max_mult, allocated, max_drive, false) if data_rule_service != null else DataRuleService.new().gun_current_multiplier(max_mult, allocated, max_drive, false)
 
 
 func _gun_damage_coeff_for_data(data: Dictionary) -> float:
@@ -35441,6 +35762,7 @@ func _update_laser_telegraphs(delta: float) -> void:
 				telegraph.queue_free()
 			pending_laser_shots.remove_at(index)
 			_resolve_attack(attacker, event)
+			_clear_runtime_gun_pose_for_payload(attacker, event)
 			continue
 		shot["timer"] = timer
 		shot["event"] = event
@@ -35504,6 +35826,24 @@ func _projectile_event_has_gun_source(event: Dictionary) -> bool:
 
 func _projectile_source_node_for_event(event: Dictionary, fallback: int = 0) -> int:
 	return int(event.get("source_gun_node", event.get("source_node_index", event.get("muscle_node", fallback))))
+
+
+func _clear_runtime_gun_pose_for_payload(unit, payload: Dictionary) -> void:
+	if not _is_live_unit(unit) or not unit.has_method("clear_aim_pose"):
+		return
+	var node_index := -1
+	if payload.has("source_gun_node") or payload.has("source_node_index") or payload.has("muscle_node"):
+		node_index = _projectile_source_node_for_event(payload, -1)
+	elif payload.has("binding") and payload.get("binding", {}) is Dictionary:
+		var binding: Dictionary = payload.get("binding", {})
+		var target_nodes: Array = Array(binding.get("target_nodes", []))
+		if not target_nodes.is_empty():
+			node_index = int(target_nodes[target_nodes.size() - 1])
+	elif payload.has("target_nodes"):
+		var direct_nodes: Array = Array(payload.get("target_nodes", []))
+		if not direct_nodes.is_empty():
+			node_index = int(direct_nodes[direct_nodes.size() - 1])
+	unit.clear_aim_pose(node_index, true)
 
 
 func _event_is_explicit_gun_activation(event: Dictionary) -> bool:
@@ -35882,6 +36222,7 @@ func _queue_true_bullet_lock(attacker, event: Dictionary) -> bool:
 	if not _is_live_unit(target):
 		_spawn_projectile_trace(attacker, shot_event)
 		_show_battle_message("%s TRUE BULLET: no lock" % String(attacker.unit_name), 0.52)
+		_clear_runtime_gun_pose_for_payload(attacker, shot_event)
 		return true
 	shot_event["locked_target"] = target
 	shot_event["aim_locked"] = true
@@ -35908,6 +36249,9 @@ func _update_true_bullet_locks(delta: float) -> void:
 		if not _is_live_unit(attacker) or not _is_live_unit(target):
 			if effect != null and is_instance_valid(effect):
 				effect.queue_free()
+			if _is_live_unit(attacker):
+				var failed_event: Dictionary = shot.get("event", {})
+				_clear_runtime_gun_pose_for_payload(attacker, failed_event)
 			pending_true_bullet_shots.remove_at(index)
 			continue
 		if effect != null and is_instance_valid(effect):
@@ -35936,6 +36280,7 @@ func _update_true_bullet_locks(delta: float) -> void:
 			event["projectile_style"] = "true_bullet"
 			event["travel_path"] = "instant_line"
 			_resolve_attack(attacker, event)
+			_clear_runtime_gun_pose_for_payload(attacker, event)
 			continue
 		shot["timer"] = timer
 		pending_true_bullet_shots[index] = shot
@@ -37558,7 +37903,7 @@ func _thruster_drive_allocation_min_for_part(part: Dictionary) -> float:
 
 func _thruster_drive_allocation_max_for_part(part: Dictionary) -> float:
 	var minimum := _thruster_drive_allocation_min_for_part(part)
-	return minimum * THRUSTER_ALLOCATION_MAX_MULT if minimum > 0.0 else 0.0
+	return data_rule_service.allocation_max(minimum) if data_rule_service != null else DataRuleService.new().allocation_max(minimum)
 
 
 func _thruster_boost_brake_allocation_min_for_part(part: Dictionary) -> float:
@@ -37567,7 +37912,7 @@ func _thruster_boost_brake_allocation_min_for_part(part: Dictionary) -> float:
 
 func _thruster_boost_brake_allocation_max_for_part(part: Dictionary) -> float:
 	var minimum := _thruster_boost_brake_allocation_min_for_part(part)
-	return minimum * THRUSTER_ALLOCATION_MAX_MULT if minimum > 0.0 else 0.0
+	return data_rule_service.allocation_max(minimum) if data_rule_service != null else DataRuleService.new().allocation_max(minimum)
 
 
 func _thruster_drive_allocated_for_payload(payload: Dictionary, part: Dictionary) -> float:
@@ -37578,7 +37923,7 @@ func _thruster_drive_allocated_for_payload(payload: Dictionary, part: Dictionary
 	var value := minimum
 	if payload.has("thruster_drive_allocated_momentum"):
 		value = float(payload.get("thruster_drive_allocated_momentum", minimum))
-	return clampf(value, minimum, maximum)
+	return data_rule_service.clamp_allocation(value, minimum, maximum) if data_rule_service != null else DataRuleService.new().clamp_allocation(value, minimum, maximum)
 
 
 func _thruster_boost_brake_allocated_for_payload(payload: Dictionary, part: Dictionary) -> float:
@@ -37589,7 +37934,7 @@ func _thruster_boost_brake_allocated_for_payload(payload: Dictionary, part: Dict
 	var value := minimum
 	if payload.has("thruster_boost_brake_allocated_momentum"):
 		value = float(payload.get("thruster_boost_brake_allocated_momentum", minimum))
-	return clampf(value, minimum, maximum)
+	return data_rule_service.clamp_allocation(value, minimum, maximum) if data_rule_service != null else DataRuleService.new().clamp_allocation(value, minimum, maximum)
 
 
 func _thruster_boost_total_momentum_for_part(part: Dictionary) -> float:
@@ -39379,7 +39724,8 @@ func _engine_momentum_output_raw_for_part(part: Dictionary, scale: float = 1.0) 
 
 
 func _engine_momentum_output_for_part(part: Dictionary, scale: float = 1.0) -> float:
-	return _engine_momentum_output_raw_for_part(part, scale) * ENGINE_MOMENTUM_OUTPUT_SCALE
+	var raw_output := _engine_momentum_output_raw_for_part(part)
+	return data_rule_service.engine_output(raw_output, scale) if data_rule_service != null else DataRuleService.new().engine_output(raw_output, scale)
 
 
 func _engine_momentum_budget_for_part(part: Dictionary, scale: float = 1.0) -> float:
@@ -39519,10 +39865,8 @@ func _cooling_with_v3_defaults(part: Dictionary) -> Dictionary:
 	adjusted["cooling_rate"] = raw_rate
 	adjusted["cooling"] = raw_cooling
 	adjusted["heat_dissipation"] = raw_dissipation
-	if pool_already_scaled:
-		adjusted["heat_capacity"] = raw_capacity
-	else:
-		adjusted["heat_capacity"] = raw_capacity * COOLING_POOL_SCALE
+	adjusted["heat_capacity"] = data_rule_service.cooling_pool_capacity(raw_capacity, pool_already_scaled) if data_rule_service != null else DataRuleService.new().cooling_pool_capacity(raw_capacity, pool_already_scaled)
+	if not pool_already_scaled:
 		adjusted["_cooling_pool_scaled"] = true
 	adjusted["cooling_output_scale"] = COOLING_OUTPUT_SCALE
 	adjusted["cooling_pool_scale"] = COOLING_POOL_SCALE
@@ -39907,6 +40251,12 @@ func _compute_unit_stats(player_id: int, role_key: String, unit_index: int = -1,
 		"soul_anchor_torso_unit_index": -1,
 		"soul_bonus_active": false,
 		"soul_note": "",
+		"soul_archetype": "",
+		"soul_oath_active": false,
+		"soul_oath_reason": "",
+		"soul_echo_window": 0.0,
+		"soul_echo_recovery_mult": 1.0,
+		"soul_echo_heat_relief": 0.0,
 		"orbit_radius": 0.45,
 		"hold_range": 0.82,
 		"flank_width": 0.55,
@@ -40434,7 +40784,7 @@ func _compute_unit_stats(player_id: int, role_key: String, unit_index: int = -1,
 	if unit_bp.has("custom_topology") and _topology_is_canonical_component_graph(Dictionary(unit_bp.get("custom_topology", {}))):
 		var runtime_bp: Dictionary = unit_bp.duplicate(true)
 		_apply_entry_pose_to_blueprint(runtime_bp)
-		_apply_module_recovery_entry_pose_defaults(role_key, runtime_bp)
+		_apply_module_recovery_entry_pose_defaults(role_key, runtime_bp, true)
 		stats["teamedit_runtime_topology"] = true
 		stats["runtime_topology_segments"] = _runtime_topology_segments_for_blueprint(role_key, runtime_bp)
 		stats["runtime_visual_scale"] = _battle_world_to_screen_scale()
@@ -40686,17 +41036,40 @@ func _part_is_ammo_payload(part: Dictionary) -> bool:
 	return bool(part.get("ammo_slot_payload", false)) or String(part.get("material_class", "")).to_lower() == "ammo_payload"
 
 
+func _ammo_capacity_total(capacity: Variant) -> int:
+	var total := 0
+	if capacity is Dictionary:
+		var capacity_dict: Dictionary = capacity
+		for ammo_type in AMMO_TYPES:
+			total += maxi(0, int(capacity_dict.get(ammo_type, 0)))
+	return total
+
+
+func _empty_ammo_capacity() -> Dictionary:
+	var result: Dictionary = {}
+	for ammo_type in AMMO_TYPES:
+		result[ammo_type] = 0
+	return result
+
+
 func _ammo_size_multiplier(size_value: Variant) -> int:
 	var rank := _volume_rank_from_value(size_value, 1)
 	return int(pow(2.0, float(rank - 1)))
 
 
 func _scaled_ammo_capacity(capacity: Variant, multiplier: int) -> Dictionary:
-	var result := {"bullet": 0, "chemical": 0, "laser": 0}
+	var result := _empty_ammo_capacity()
 	if capacity is Dictionary:
 		for ammo_type in AMMO_TYPES:
 			result[ammo_type] = maxi(0, int(Dictionary(capacity).get(ammo_type, 0))) * maxi(1, multiplier)
 	return result
+
+
+func _ammo_size_slider_text(rank: int) -> String:
+	var clamped_rank := clampi(rank, 1, 5)
+	var tier := _volume_rank_label(float(clamped_rank))
+	var mult := _ammo_size_multiplier(clamped_rank)
+	return ("%s x%d" % [tier, mult])
 
 
 func _ammo_payload_variant(part: Dictionary, size_value: Variant) -> Dictionary:
@@ -40918,6 +41291,7 @@ func _catalog_part_category_for_part(slot_key: String, part: Dictionary) -> Stri
 
 func _catalog_part_with_metadata(slot_key: String, part: Dictionary) -> Dictionary:
 	var adjusted := _catalog_backfilled_part(slot_key, part.duplicate(true))
+	adjusted = _part_with_mount_orientation_defaults(adjusted, slot_key)
 	adjusted["catalog_role"] = _catalog_role_for_part(slot_key, adjusted)
 	adjusted["part_category"] = _catalog_part_category_for_part(slot_key, adjusted)
 	if slot_key == "limb_muscle":
@@ -41348,7 +41722,6 @@ func _merge_engine_stats(stats: Dictionary, part: Dictionary, scale: float = 1.0
 	stats["engine_count"] = int(stats.get("engine_count", 0)) + int(ceilf(scale))
 	stats["engine_volume_rank"] = float(stats.get("engine_volume_rank", 0.0)) + _part_slot_volume_rank(part, "engine") * scale
 	stats["engine_momentum_budget"] = float(stats.get("engine_momentum_budget", 0.0)) + engine_output
-	adjusted = _part_with_mount_orientation_defaults(adjusted, slot_key)
 	stats["engine_joint_momentum_budget"] = float(stats.get("engine_joint_momentum_budget", 0.0)) + engine_output
 	stats["engine_thruster_momentum_budget"] = float(stats.get("engine_thruster_momentum_budget", 0.0)) + engine_output
 	var family_weight := maxf(1.0, engine_output)
@@ -42255,10 +42628,12 @@ func _apply_torso_slot_payload_stats(stats: Dictionary, role_key: String, unit_b
 		note = String(internal_slot_status.get("invalid", ""))
 	stats["slot_payload_note"] = note
 	var ammo_capacity: Dictionary = stats.get("ammo_capacity", {})
-	stats["ammo_note"] = "AMMO B/C/L %d/%d/%d  AMMO SLOTS %d MASS %.0f" % [
+	stats["ammo_note"] = "AMMO B/L/C/X/W %d/%d/%d/%d/%d  AMMO SLOTS %d MASS %.0f" % [
 		int(ammo_capacity.get("bullet", 0)),
-		int(ammo_capacity.get("chemical", 0)),
 		int(ammo_capacity.get("laser", 0)),
+		int(ammo_capacity.get("chemical", 0)),
+		int(ammo_capacity.get("explosive", 0)),
+		int(ammo_capacity.get("web", 0)),
 		ammo_count,
 		ammo_mass,
 	]
@@ -43055,7 +43430,8 @@ func _limb_momentum_raw_max_for_part(part: Dictionary, slot_key: String) -> floa
 
 
 func _limb_momentum_max_for_part(part: Dictionary, slot_key: String) -> float:
-	return _limb_momentum_raw_max_for_part(part, slot_key) * LIMB_MOMENTUM_MAX_SCALE
+	var raw_maximum := _limb_momentum_raw_max_for_part(part, slot_key)
+	return data_rule_service.limb_max(raw_maximum) if data_rule_service != null else DataRuleService.new().limb_max(raw_maximum)
 
 
 func _default_limb_allocated_momentum_for_part(part: Dictionary, slot_key: String, module_part: Dictionary = {}) -> float:
@@ -43096,7 +43472,7 @@ func _limb_drive_component_with_defaults(part: Dictionary, slot_key: String) -> 
 		adjusted["limb_idle_heat_coeff"] = _limb_drive_heat_coeff_for_part(adjusted, slot_key)
 	var resolved_min_momentum := _limb_momentum_min_for_part(adjusted, slot_key)
 	var resolved_raw_max_momentum := _limb_momentum_raw_max_for_part(adjusted, slot_key)
-	var resolved_max_momentum := resolved_raw_max_momentum * LIMB_MOMENTUM_MAX_SCALE
+	var resolved_max_momentum := data_rule_service.limb_max(resolved_raw_max_momentum) if data_rule_service != null else DataRuleService.new().limb_max(resolved_raw_max_momentum)
 	if not adjusted.has("momentum_min"):
 		adjusted["momentum_min"] = resolved_min_momentum
 	adjusted["momentum_max_raw"] = resolved_raw_max_momentum
@@ -43274,6 +43650,91 @@ func _part_with_effective_terminal_geometry(part: Dictionary, slot_kind: String 
 	adjusted["terminal_geometry_scaled"] = true
 	adjusted["terminal_weapon_kind"] = _terminal_weapon_kind_for_part(part, slot_kind)
 	return adjusted
+
+
+func _normalize_visual_handedness(value) -> String:
+	return "left" if String(value).to_lower() == "left" else "right"
+
+
+func _normalize_mount_side(value) -> String:
+	return _normalize_visual_handedness(value)
+
+
+func _part_is_orthogonal_side_mount_candidate(part: Dictionary, slot_kind: String = "muscle") -> bool:
+	if String(part.get("orientation_category", "")).to_lower() == "orthogonal_side_mount":
+		return true
+	if slot_kind != "muscle":
+		return false
+	if not _part_counts_as_terminal_weapon(part, slot_kind):
+		return false
+	if _terminal_weapon_kind_for_part(part, slot_kind) == "ranged":
+		return false
+	var name := String(part.get("name", part.get("component_name", ""))).to_upper()
+	var shape := String(part.get("shape", part.get("source_shape", ""))).to_upper()
+	var family := String(part.get("weapon_family", "")).to_lower()
+	return family == "scythe" or name.contains("SCYTHE") or name.contains("CRESCENT") or name.contains("HOOK") or shape.contains("SCYTHE") or shape.contains("CRESCENT") or shape.contains("HOOK")
+
+
+func _part_with_mount_orientation_defaults(part: Dictionary, slot_kind: String = "muscle") -> Dictionary:
+	if not _part_is_orthogonal_side_mount_candidate(part, slot_kind):
+		return part
+	var adjusted := part.duplicate(true)
+	adjusted["asymmetric_terminal"] = true
+	adjusted["orientation_category"] = String(adjusted.get("orientation_category", "orthogonal_side_mount"))
+	adjusted["orientation_basis"] = String(adjusted.get("orientation_basis", "parent_normal"))
+	adjusted["mount_side_choices"] = Array(adjusted.get("mount_side_choices", adjusted.get("orientation_choices", ["left", "right"]))).duplicate(true)
+	adjusted["orientation_choices"] = Array(adjusted.get("mount_side_choices", ["left", "right"])).duplicate(true)
+	adjusted["default_mount_side"] = _normalize_mount_side(adjusted.get("default_mount_side", adjusted.get("default_visual_handedness", adjusted.get("visual_handedness", "right"))))
+	adjusted["default_visual_handedness"] = String(adjusted.get("default_mount_side", "right"))
+	return adjusted
+
+
+func _part_supports_visual_handedness(part: Dictionary, slot_kind: String = "muscle") -> bool:
+	if _part_is_orthogonal_side_mount_candidate(part, slot_kind):
+		return true
+	if bool(part.get("asymmetric_terminal", false)):
+		return true
+	if not _part_counts_as_terminal_weapon(part, slot_kind):
+		return false
+	if _terminal_weapon_kind_for_part(part, slot_kind) == "ranged":
+		return false
+	var display_part := _part_with_effective_terminal_geometry(part, slot_kind)
+	var component_node := AssemblyBoardRenderer.part_to_component_node(slot_kind, display_part)
+	return AssemblyBoardRenderer.terminal_shape_family(component_node) == "scythe"
+
+
+func _default_visual_handedness_for_part(part: Dictionary) -> String:
+	return _normalize_mount_side(part.get("default_mount_side", part.get("default_visual_handedness", part.get("visual_mount_side", part.get("visual_handedness", "right")))))
+
+
+func _topology_node_visual_handedness(node: Dictionary) -> String:
+	var explicit_handedness := String(node.get("visual_handedness", "")).strip_edges()
+	if explicit_handedness != "":
+		return _normalize_mount_side(explicit_handedness)
+	return _normalize_mount_side(node.get("visual_mount_side", node.get("default_mount_side", node.get("default_visual_handedness", "right"))))
+
+
+func _apply_visual_handedness_defaults_to_node(target: Dictionary, part: Dictionary, slot_kind: String = "muscle") -> void:
+	if not _part_supports_visual_handedness(part, slot_kind):
+		return
+	target["asymmetric_terminal"] = true
+	target["orientation_category"] = String(part.get("orientation_category", "orthogonal_side_mount"))
+	target["orientation_basis"] = String(part.get("orientation_basis", "parent_normal"))
+	target["mount_side_choices"] = Array(part.get("mount_side_choices", part.get("orientation_choices", ["left", "right"]))).duplicate(true)
+	target["orientation_choices"] = Array(target.get("mount_side_choices", ["left", "right"])).duplicate(true)
+	target["default_mount_side"] = _default_visual_handedness_for_part(part)
+	target["default_visual_handedness"] = _default_visual_handedness_for_part(part)
+	if not target.has("visual_mount_side") or String(target.get("visual_mount_side", "")) == "":
+		target["visual_mount_side"] = String(target.get("visual_handedness", target.get("default_mount_side", "right")))
+	target["visual_mount_side"] = _topology_node_visual_handedness(target)
+	target["visual_handedness"] = String(target.get("visual_mount_side", "right"))
+
+
+func _topology_node_supports_visual_handedness(role_key: String, unit_bp: Dictionary, node: Dictionary) -> bool:
+	if not _topology_node_is_component(node):
+		return false
+	var slot_key := _topology_node_slot(node)
+	return _part_supports_visual_handedness(_topology_node_part(role_key, node, unit_bp), slot_key)
 
 
 func _component_is_blade_weapon(part: Dictionary) -> bool:
@@ -43708,88 +44169,6 @@ func _apply_custom_topology_stats(stats: Dictionary, role_key: String, unit_bp: 
 				stats["terminal_weapon_mass"] = maxf(float(stats.get("terminal_weapon_mass", 0.0)), float(part.get("terminal_weapon_mass", part.get("mass", 0.0))) * lerpf(0.5, 1.0, part_scale))
 				stats["requires_dual_mount"] = bool(stats.get("requires_dual_mount", false)) or bool(part.get("requires_dual_mount", false))
 				stats["dual_mount_points"] = maxi(int(stats.get("dual_mount_points", 1)), int(part.get("dual_mount_points", 1)))
-func _normalize_visual_handedness(value) -> String:
-	return "left" if String(value).to_lower() == "left" else "right"
-
-
-func _normalize_mount_side(value) -> String:
-	return _normalize_visual_handedness(value)
-
-
-func _part_is_orthogonal_side_mount_candidate(part: Dictionary, slot_kind: String = "muscle") -> bool:
-	if String(part.get("orientation_category", "")).to_lower() == "orthogonal_side_mount":
-		return true
-	if slot_kind != "muscle":
-		return false
-	if not _part_counts_as_terminal_weapon(part, slot_kind):
-		return false
-	if _terminal_weapon_kind_for_part(part, slot_kind) == "ranged":
-		return false
-	var name := String(part.get("name", part.get("component_name", ""))).to_upper()
-	var shape := String(part.get("shape", part.get("source_shape", ""))).to_upper()
-	var family := String(part.get("weapon_family", "")).to_lower()
-	return family == "scythe" or name.contains("SCYTHE") or name.contains("CRESCENT") or name.contains("HOOK") or shape.contains("SCYTHE") or shape.contains("CRESCENT") or shape.contains("HOOK")
-
-
-func _part_with_mount_orientation_defaults(part: Dictionary, slot_kind: String = "muscle") -> Dictionary:
-	if not _part_is_orthogonal_side_mount_candidate(part, slot_kind):
-		return part
-	var adjusted := part.duplicate(true)
-	adjusted["asymmetric_terminal"] = true
-	adjusted["orientation_category"] = String(adjusted.get("orientation_category", "orthogonal_side_mount"))
-	adjusted["orientation_basis"] = String(adjusted.get("orientation_basis", "parent_normal"))
-	adjusted["mount_side_choices"] = Array(adjusted.get("mount_side_choices", adjusted.get("orientation_choices", ["left", "right"]))).duplicate(true)
-	adjusted["orientation_choices"] = Array(adjusted.get("mount_side_choices", ["left", "right"])).duplicate(true)
-	adjusted["default_mount_side"] = _normalize_mount_side(adjusted.get("default_mount_side", adjusted.get("default_visual_handedness", adjusted.get("visual_handedness", "right"))))
-	adjusted["default_visual_handedness"] = String(adjusted.get("default_mount_side", "right"))
-	return adjusted
-
-
-func _part_supports_visual_handedness(part: Dictionary, slot_kind: String = "muscle") -> bool:
-	if _part_is_orthogonal_side_mount_candidate(part, slot_kind):
-		return true
-	if bool(part.get("asymmetric_terminal", false)):
-		return true
-	if not _part_counts_as_terminal_weapon(part, slot_kind):
-		return false
-	if _terminal_weapon_kind_for_part(part, slot_kind) == "ranged":
-		return false
-	var display_part := _part_with_effective_terminal_geometry(part, slot_kind)
-	var component_node := AssemblyBoardRenderer.part_to_component_node(slot_kind, display_part)
-	return AssemblyBoardRenderer.terminal_shape_family(component_node) == "scythe"
-
-
-func _default_visual_handedness_for_part(part: Dictionary) -> String:
-	return _normalize_mount_side(part.get("default_mount_side", part.get("default_visual_handedness", part.get("visual_mount_side", part.get("visual_handedness", "right")))))
-
-
-func _topology_node_visual_handedness(node: Dictionary) -> String:
-	return _normalize_mount_side(node.get("visual_mount_side", node.get("visual_handedness", node.get("default_mount_side", node.get("default_visual_handedness", "right")))))
-
-
-func _apply_visual_handedness_defaults_to_node(target: Dictionary, part: Dictionary, slot_kind: String = "muscle") -> void:
-	if not _part_supports_visual_handedness(part, slot_kind):
-		return
-	target["asymmetric_terminal"] = true
-	target["orientation_category"] = String(part.get("orientation_category", "orthogonal_side_mount"))
-	target["orientation_basis"] = String(part.get("orientation_basis", "parent_normal"))
-	target["mount_side_choices"] = Array(part.get("mount_side_choices", part.get("orientation_choices", ["left", "right"]))).duplicate(true)
-	target["orientation_choices"] = Array(target.get("mount_side_choices", ["left", "right"])).duplicate(true)
-	target["default_mount_side"] = _default_visual_handedness_for_part(part)
-	target["default_visual_handedness"] = _default_visual_handedness_for_part(part)
-	if not target.has("visual_mount_side") or String(target.get("visual_mount_side", "")) == "":
-		target["visual_mount_side"] = String(target.get("visual_handedness", target.get("default_mount_side", "right")))
-	target["visual_mount_side"] = _topology_node_visual_handedness(target)
-	target["visual_handedness"] = String(target.get("visual_mount_side", "right"))
-
-
-func _topology_node_supports_visual_handedness(role_key: String, unit_bp: Dictionary, node: Dictionary) -> bool:
-	if not _topology_node_is_component(node):
-		return false
-	var slot_key := _topology_node_slot(node)
-	return _part_supports_visual_handedness(_topology_node_part(role_key, node, unit_bp), slot_key)
-
-
 			if part.has("resist"):
 				var part_resist: Dictionary = part["resist"]
 				for damage_type in MELEE_DAMAGE_TYPES:
@@ -44211,6 +44590,9 @@ func _apply_soul_heat_capacity(stats: Dictionary, soul_part: Dictionary) -> void
 
 
 func _apply_soul_bonus(stats: Dictionary, unit_bp: Dictionary, soul_part: Dictionary) -> void:
+	if String(soul_part.get("soul_archetype", "")) == "duelist_oath":
+		_apply_duelist_oath_soul(stats, unit_bp, soul_part)
+		return
 	var requirements: Dictionary = soul_part.get("soul_requirements", {})
 	var ok := _soul_requirements_met(stats, unit_bp, requirements)
 	var soul_scale := clampf(float(soul_part.get("cost", 100)) / 100.0, 0.55, 1.85)
@@ -44239,6 +44621,214 @@ func _apply_soul_bonus(stats: Dictionary, unit_bp: Dictionary, soul_part: Dictio
 		stats["soul_heat_note"] = "%s + cooling-slot bonus %.0f" % [String(stats.get("soul_heat_note", "")), bonus_heat]
 	if bonus.has("speed_bonus"):
 		stats["speed"] = float(stats["speed"]) + float(bonus["speed_bonus"])
+
+
+func _apply_duelist_oath_soul(stats: Dictionary, unit_bp: Dictionary, soul_part: Dictionary) -> void:
+	var reason := _duelist_oath_fail_reason(stats, unit_bp, soul_part)
+	var active := reason == ""
+	stats["soul_archetype"] = "duelist_oath"
+	stats["soul_oath_active"] = active
+	stats["soul_oath_reason"] = "active" if active else reason
+	stats["soul_echo_window"] = maxf(0.05, float(soul_part.get("soul_echo_window", 1.15)))
+	stats["soul_echo_recovery_mult"] = clampf(float(soul_part.get("soul_echo_recovery_mult", 0.72)), 0.25, 1.0)
+	stats["soul_echo_heat_relief"] = clampf(float(soul_part.get("soul_echo_heat_relief", 0.18)), 0.0, 0.75)
+	stats["soul_bonus_active"] = active
+	stats["soul_note"] = "%s OATH ONLINE" % String(soul_part.get("name", "SOUL")) if active else "%s HEAT SLOT ONLY: %s" % [String(soul_part.get("name", "SOUL")), reason]
+	if not active:
+		return
+	var bonus: Dictionary = soul_part.get("soul_bonus", {})
+	if bonus.has("pierce_range_bonus"):
+		stats["pierce_range_bonus"] = float(stats.get("pierce_range_bonus", 0.0)) + float(bonus["pierce_range_bonus"])
+	if bonus.has("speed_bonus"):
+		stats["speed"] = float(stats.get("speed", 0.0)) + float(bonus["speed_bonus"])
+	stats["recovery_response"] = float(stats.get("recovery_response", 0.85)) + 0.08
+	stats["melee_stability_core"] = float(stats.get("melee_stability_core", 0.85)) + 0.04
+
+
+func _duelist_oath_fail_reason(stats: Dictionary, unit_bp: Dictionary, soul_part: Dictionary) -> String:
+	var requirements: Dictionary = soul_part.get("soul_requirements", {})
+	var mass := float(stats.get("mass", 0.0))
+	if requirements.has("mass_min") and mass < float(requirements["mass_min"]):
+		return "body_too_light"
+	if requirements.has("mass_max") and mass > float(requirements["mass_max"]):
+		return "body_too_heavy"
+	var radius := float(stats.get("radius", 0.0))
+	if requirements.has("radius_max") and radius > float(requirements["radius_max"]):
+		return "radius_too_large"
+	if requirements.has("radius_min") and radius < float(requirements["radius_min"]):
+		return "radius_too_small"
+	var module_min := int(requirements.get("module_group_min", 0))
+	if module_min > 0 and _soul_module_group_count(unit_bp) < module_min:
+		return "missing_bound_modules"
+	var contact_min := int(requirements.get("duelist_real_contact_min", 0))
+	if contact_min > 0 and _soul_duelist_real_contact_module_count(unit_bp) < contact_min:
+		return "missing_duelist_action"
+	if _soul_has_xl_limb(unit_bp):
+		return "xl_limb"
+	if _soul_has_disallowed_duelist_terminal(unit_bp):
+		return "ranged_or_heavy_weapon"
+	var weapon_mass_max := float(requirements.get("terminal_weapon_mass_max", 0.0))
+	if weapon_mass_max > 0.0 and _soul_terminal_weapon_mass(unit_bp, "hero") > weapon_mass_max:
+		return "weapon_load_too_heavy"
+	return ""
+
+
+func _soul_module_group_count(unit_bp: Dictionary) -> int:
+	var modules := {}
+	var topology_count := _module_control_group_count(unit_bp)
+	for raw_binding in Array(unit_bp.get("module_bindings", [])):
+		if not (raw_binding is Dictionary):
+			continue
+		var binding: Dictionary = raw_binding
+		var module_index := _soul_module_index_from_binding(unit_bp, binding)
+		if module_index >= 0:
+			modules[module_index] = true
+	return maxi(topology_count, modules.size())
+
+
+func _soul_module_index_from_binding(unit_bp: Dictionary, binding: Dictionary) -> int:
+	if binding.has("module_index"):
+		return int(binding.get("module_index", -1))
+	var payload_index := int(binding.get("software_slot_index", -1))
+	var payloads: Array = Array(unit_bp.get("slot_payloads", []))
+	if payload_index >= 0 and payload_index < payloads.size() and payloads[payload_index] is Dictionary:
+		return int(Dictionary(payloads[payload_index]).get("module", -1))
+	return int(binding.get("module", unit_bp.get("module", -1)))
+
+
+func _soul_duelist_real_contact_module_count(unit_bp: Dictionary) -> int:
+	var modules := {}
+	for raw_binding in Array(unit_bp.get("module_bindings", [])):
+		if not (raw_binding is Dictionary):
+			continue
+		var binding: Dictionary = raw_binding
+		var module_index := _soul_module_index_from_binding(unit_bp, binding)
+		if module_index < 0:
+			continue
+		var module_part := _selected_component("hero", "module", module_index)
+		if _soul_module_is_duelist_real_contact(module_part, binding):
+			modules[module_index] = true
+	if unit_bp.has("custom_topology"):
+		var topology: Dictionary = unit_bp.get("custom_topology", {})
+		for raw_node in Array(topology.get("nodes", [])):
+			if not (raw_node is Dictionary):
+				continue
+			for raw_module_index in _module_indices_for_topology_node(raw_node, unit_bp):
+				var module_index := int(raw_module_index)
+				if module_index < 0:
+					continue
+				var module_part := _selected_component("hero", "module", module_index)
+				if _soul_module_is_duelist_real_contact(module_part, {}):
+					modules[module_index] = true
+	return modules.size()
+
+
+func _soul_module_is_duelist_real_contact(module_part: Dictionary, binding: Dictionary = {}) -> bool:
+	var profile := String(module_part.get("module_action_profile", binding.get("module_action_profile", ""))).to_lower()
+	var target_kind := String(module_part.get("module_target_kind", binding.get("target_kind", ""))).to_lower()
+	if profile in ["gun_activate", "rifle_burst_activate", "laser_beam_activate", "missile_lock_activate", "web_tether_activate", "grenade_arc_activate"]:
+		return false
+	if profile in ["two_link_forward_snap", "pierce_rail_3m", "pierce_telescopic_lunge", "rapier_feint_thrust", "lance_couched_charge", "blade_arc_return", "katana_quickdraw", "scythe_hook_return", "greatsword_commit_cleave", "triple_limb_cross_cut", "extend_slash_driver"]:
+		return true
+	for token in ["duel", "feint", "thrust", "pierce", "blade", "slash", "katana", "scythe"]:
+		if profile.find(token) >= 0 or target_kind.find(token) >= 0:
+			return true
+	return false
+
+
+func _soul_terminal_weapon_mass(unit_bp: Dictionary, role_key: String = "hero") -> float:
+	var result := 0.0
+	if unit_bp.has("custom_topology"):
+		var topology: Dictionary = unit_bp.get("custom_topology", {})
+		for raw_node in Array(topology.get("nodes", [])):
+			if not (raw_node is Dictionary):
+				continue
+			var node: Dictionary = raw_node
+			if _topology_node_slot(node) != "muscle":
+				continue
+			var part := _topology_node_part(role_key, node, unit_bp)
+			if _component_is_torso(part):
+				continue
+			if _part_counts_as_terminal_weapon(part, "muscle") or bool(part.get("terminal_weapon", false)) or bool(part.get("projectile", false)):
+				result = maxf(result, float(part.get("mass", 0.0)))
+		return result
+	var part := _selected_component(role_key, "muscle", int(unit_bp.get("muscle", 0)))
+	if not _component_is_torso(part):
+		result = float(part.get("mass", 0.0))
+	return result
+
+
+func _soul_has_xl_limb(unit_bp: Dictionary) -> bool:
+	if not unit_bp.has("custom_topology"):
+		var limb := _selected_component("hero", "limb_muscle", int(unit_bp.get("limb_muscle", 0)))
+		var tier := String(limb.get("size_tier", PartArt.normalized_size_tier(limb))).to_upper()
+		return tier in ["XL", "MONSTER", "LEVIATHAN"]
+	var topology: Dictionary = unit_bp.get("custom_topology", {})
+	for raw_node in Array(topology.get("nodes", [])):
+		if not (raw_node is Dictionary):
+			continue
+		var node: Dictionary = raw_node
+		if _topology_node_slot(node) != "limb_muscle":
+			continue
+		var part := _topology_node_part("hero", node, unit_bp)
+		var tier := String(part.get("size_tier", PartArt.normalized_size_tier(part))).to_upper()
+		if tier in ["XL", "MONSTER", "LEVIATHAN"]:
+			return true
+	return false
+
+
+func _soul_has_disallowed_duelist_terminal(unit_bp: Dictionary) -> bool:
+	var parts: Array = []
+	if unit_bp.has("custom_topology"):
+		var topology: Dictionary = unit_bp.get("custom_topology", {})
+		for raw_node in Array(topology.get("nodes", [])):
+			if not (raw_node is Dictionary):
+				continue
+			var node: Dictionary = raw_node
+			if _topology_node_slot(node) != "muscle":
+				continue
+			var part := _topology_node_part("hero", node, unit_bp)
+			if not _component_is_torso(part):
+				parts.append(part)
+	else:
+		parts.append(_selected_component("hero", "muscle", int(unit_bp.get("muscle", 0))))
+	for raw_part in parts:
+		if not (raw_part is Dictionary):
+			continue
+		var part: Dictionary = raw_part
+		var gun_kind := String(part.get("gun_kind", "")).to_lower()
+		if gun_kind == "missile_launcher":
+			return true
+		var family := String(part.get("weapon_family", part.get("blade_family", ""))).to_lower()
+		if family in ["shield", "hammer", "maul"] and float(part.get("mass", 0.0)) >= 18.0:
+			return true
+	return false
+
+
+func _duelist_oath_reason_label(reason: String, zh: bool = true) -> String:
+	match reason:
+		"", "active":
+			return "誓约已激活" if zh else "Oath active"
+		"body_too_light":
+			return "机体过轻" if zh else "body too light"
+		"body_too_heavy":
+			return "机体过重" if zh else "body too heavy"
+		"radius_too_large":
+			return "半径过大" if zh else "radius too large"
+		"radius_too_small":
+			return "半径过小" if zh else "radius too small"
+		"missing_bound_modules":
+			return "缺少绑定模块" if zh else "missing bound modules"
+		"missing_duelist_action":
+			return "缺少决斗动作" if zh else "missing duelist action"
+		"xl_limb":
+			return "存在 XL 肢体" if zh else "XL limb installed"
+		"ranged_or_heavy_weapon":
+			return "远程或重型盾锤构筑" if zh else "ranged or heavy shield/hammer build"
+		"weapon_load_too_heavy":
+			return "武器负载过重" if zh else "weapon load too heavy"
+		_:
+			return reason
 
 
 func _soul_requirements_met(stats: Dictionary, unit_bp: Dictionary, requirements: Dictionary) -> bool:
@@ -44737,6 +45327,16 @@ func _runtime_topology_segments_for_blueprint(role_key: String, unit_bp: Diction
 			"shape": String(part.get("shape", "")),
 			"source_shape": String(part.get("shape", "")),
 			"weapon_family": String(part.get("weapon_family", "")),
+			"orientation_category": String(part.get("orientation_category", "orthogonal_side_mount")) if _part_supports_visual_handedness(part, slot_key) else "",
+			"orientation_basis": String(part.get("orientation_basis", "parent_normal")) if _part_supports_visual_handedness(part, slot_key) else "",
+			"visual_mount_side": _topology_node_visual_handedness(node) if _topology_node_supports_visual_handedness(role_key, unit_bp, node) else "",
+			"default_mount_side": _default_visual_handedness_for_part(part) if _part_supports_visual_handedness(part, slot_key) else "",
+			"mount_side_choices": Array(part.get("mount_side_choices", part.get("orientation_choices", ["left", "right"]))).duplicate(true) if _part_supports_visual_handedness(part, slot_key) else [],
+			"mount_parent_axis_local": _topology_mount_parent_axis_for_node(role_key, unit_bp, nodes, edges, i) if _topology_node_supports_visual_handedness(role_key, unit_bp, node) else Vector2.ZERO,
+			"visual_handedness": _topology_node_visual_handedness(node) if _topology_node_supports_visual_handedness(role_key, unit_bp, node) else "",
+			"default_visual_handedness": _default_visual_handedness_for_part(part) if _part_supports_visual_handedness(part, slot_key) else "",
+			"asymmetric_terminal": _part_supports_visual_handedness(part, slot_key),
+			"orientation_choices": Array(part.get("orientation_choices", ["left", "right"])).duplicate(true) if _part_supports_visual_handedness(part, slot_key) else [],
 			"blunt_shield": bool(part.get("blunt_shield", false)),
 			"blunt_gauntlet": bool(part.get("blunt_gauntlet", false)),
 			"blunt_hammer": bool(part.get("blunt_hammer", false)),
@@ -45380,16 +45980,6 @@ func _economy_rebalanced_plugin_component(part: Dictionary, slot_key: String) ->
 				adjusted["momentum_min"] = maxf(0.0, float(adjusted.get("allocated_momentum", normal_momentum)))
 			elif adjusted.has("drive_demand") and not adjusted.has("momentum_min"):
 				adjusted["momentum_min"] = maxf(0.0, float(adjusted.get("drive_demand", 0.0)))
-			"orientation_category": String(part.get("orientation_category", "orthogonal_side_mount")) if _part_supports_visual_handedness(part, slot_key) else "",
-			"orientation_basis": String(part.get("orientation_basis", "parent_normal")) if _part_supports_visual_handedness(part, slot_key) else "",
-			"visual_mount_side": _topology_node_visual_handedness(node) if _topology_node_supports_visual_handedness(role_key, unit_bp, node) else "",
-			"default_mount_side": _default_visual_handedness_for_part(part) if _part_supports_visual_handedness(part, slot_key) else "",
-			"mount_side_choices": Array(part.get("mount_side_choices", part.get("orientation_choices", ["left", "right"]))).duplicate(true) if _part_supports_visual_handedness(part, slot_key) else [],
-			"mount_parent_axis_local": _topology_mount_parent_axis_for_node(role_key, unit_bp, nodes, edges, i) if _topology_node_supports_visual_handedness(role_key, unit_bp, node) else Vector2.ZERO,
-			"visual_handedness": _topology_node_visual_handedness(node) if _topology_node_supports_visual_handedness(role_key, unit_bp, node) else "",
-			"default_visual_handedness": _default_visual_handedness_for_part(part) if _part_supports_visual_handedness(part, slot_key) else "",
-			"asymmetric_terminal": _part_supports_visual_handedness(part, slot_key),
-			"orientation_choices": Array(part.get("orientation_choices", ["left", "right"])).duplicate(true) if _part_supports_visual_handedness(part, slot_key) else [],
 			adjusted["drive_demand"] = maxf(0.0, float(adjusted.get("momentum_min", 0.0)))
 			if not adjusted.has("thruster_duration"):
 				adjusted["thruster_duration"] = ECONOMY_THRUSTER_TARGET_DURATION
@@ -46814,15 +47404,22 @@ func _build_editor_ui() -> void:
 		filter_button.pressed.connect(_select_editor_part_filter.bind(i))
 		root.add_child(filter_button)
 		editor_part_filter_buttons.append(filter_button)
+	editor_ammo_size_title_label = _make_label(root, "AmmoSizeTitle", "", Vector2(936.0, 258.0), Vector2(72.0, 18.0), 10, Color(1.0, 0.88, 0.32, 1.0), HORIZONTAL_ALIGNMENT_LEFT)
+	editor_ammo_size_slider = HSlider.new()
+	editor_ammo_size_slider.name = "AmmoSizeSlider"
+	editor_ammo_size_slider.min_value = 1.0
+	editor_ammo_size_slider.max_value = 5.0
+	editor_ammo_size_slider.step = 1.0
+	editor_ammo_size_slider.value = float(editor_ammo_size_rank)
+	editor_ammo_size_slider.focus_mode = Control.FOCUS_NONE
+	editor_ammo_size_slider.position = Vector2(1010.0, 257.0)
+	editor_ammo_size_slider.size = Vector2(176.0, 22.0)
+	editor_ammo_size_slider.value_changed.connect(_set_editor_ammo_size_rank_from_slider)
+	root.add_child(editor_ammo_size_slider)
+	editor_ammo_size_value_label = _make_label(root, "AmmoSizeValue", "", Vector2(1190.0, 258.0), Vector2(54.0, 18.0), 10, Color(0.78, 0.92, 1.0, 0.94), HORIZONTAL_ALIGNMENT_RIGHT)
 	for i in range(5):
-		var ammo_size_button := Button.new()
-		ammo_size_button.name = "AmmoSize%d" % i
-		ammo_size_button.position = Vector2(936.0 + float(i) * 54.0, 266.0)
-		ammo_size_button.size = Vector2(50.0, 22.0)
-		ammo_size_button.focus_mode = Control.FOCUS_NONE
-		ammo_size_button.pressed.connect(_set_editor_ammo_size_rank.bind(i + 1))
-		root.add_child(ammo_size_button)
-		editor_ammo_size_buttons.append(ammo_size_button)
+		var tick_label := _make_label(root, "AmmoSizeTick%d" % i, "", Vector2(1002.0 + float(i) * 44.0, 278.0), Vector2(34.0, 14.0), 8, Color(0.76, 0.9, 1.0, 0.82), HORIZONTAL_ALIGNMENT_CENTER)
+		editor_ammo_size_tick_labels.append(tick_label)
 	var actions := [
 		["edit_side", "编辑P1"],
 		["load_unit", "单位库"],
@@ -46918,6 +47515,7 @@ func _build_editor_ui() -> void:
 	editor_hover_popup_view.z_index = 260
 	editor_hover_popup_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	editor_hover_popup_view.visible = false
+	editor_hover_popup_view.close_requested.connect(_close_editor_hover_detail)
 	root.add_child(editor_hover_popup_view)
 	editor_unit_hover_view = ScoutUnitDetailView.new()
 	editor_unit_hover_view.name = "EditorUnitHoverPreview"
@@ -46957,6 +47555,8 @@ func _build_editor_ui() -> void:
 	engine_momentum_allocation_view.allocation_changed.connect(_set_engine_momentum_allocation_ratio)
 	engine_momentum_allocation_view.allocation_value_submitted.connect(_set_engine_momentum_allocation_value)
 	engine_momentum_allocation_view.allocation_drag_finished.connect(_finish_engine_momentum_allocation_drag)
+	engine_momentum_allocation_view.entry_detail_requested.connect(_show_power_allocation_entry_detail)
+	engine_momentum_allocation_view.segment_detail_requested.connect(_show_power_allocation_segment_detail)
 	root.add_child(engine_momentum_allocation_view)
 	editor_drag_ghost_view = PartDragGhostView.new()
 	editor_drag_ghost_view.name = "EditorPartDragGhost"
@@ -47103,6 +47703,9 @@ func _build_editor_ui() -> void:
 		["delete_selected_part", "删选中"],
 		["undo_canvas", "退一步"],
 		["clear_canvas", "全部删除"],
+	["set_handedness_left", "左挂刃"],
+	["set_handedness_right", "右挂刃"],
+	["flip_handedness", "翻侧刃"],
 	]
 	for i in range(canvas_tools.size()):
 		var canvas_button := Button.new()
@@ -47756,9 +48359,6 @@ func _battle_runtime_menu_action(action_key: String) -> void:
 			_hide_battle_runtime_menu()
 			_begin_battle(battle_mode, false, "battle_reset")
 		"cycle_dummy_state":
-	["set_handedness_left", "左挂刃"],
-	["set_handedness_right", "右挂刃"],
-	["flip_handedness", "翻侧刃"],
 			var order := ["idle_brake", "free_physics", "fixed"]
 			var index := order.find(training_dummy_state)
 			training_dummy_state = String(order[_wrapped_index(index + 1, order.size())])
@@ -48579,7 +49179,7 @@ func _update_editor_ui(force_now: bool = false) -> void:
 	if hot_path_profiler != null:
 		hot_path_profiler.scope_begin("teamedit.update_ui")
 	var current_frame := Engine.get_process_frames()
-	var ui_state_signature := "%s|%d|%d|%s|%s|%d|%d|%s|%s" % [
+	var ui_state_signature := "%s|%d|%d|%s|%s|%d|%d|%s|%d|%s" % [
 		editor_panel_mode,
 		editor_role_index,
 		editor_slot_index,
@@ -48588,6 +49188,7 @@ func _update_editor_ui(force_now: bool = false) -> void:
 		editor_catalog_page,
 		editor_topology_node_index,
 		editor_board_tool,
+		editor_pending_orientation_node_index,
 		ui_language,
 	]
 	if not force_now and editor_update_ui_last_frame == current_frame and ui_state_signature == editor_update_ui_last_state_signature:
@@ -48865,6 +49466,7 @@ func _update_editor_load_card_buttons(role_key: String) -> void:
 
 func _apply_editor_panel_visibility(role_key: String, unit_bp: Dictionary) -> void:
 	var body_board_enabled := _role_uses_body_board(role_key)
+	var custom_board_enabled := body_board_enabled and unit_bp.has("custom_topology")
 	if editor_load_mode == "team":
 		editor_load_mode = "unit"
 	var mode := String(editor_panel_mode)
@@ -48924,20 +49526,39 @@ func _apply_editor_panel_visibility(role_key: String, unit_bp: Dictionary) -> vo
 			_set_control_text_if_changed(filter_button, _part_filter_name(filter_option))
 			_set_canvas_item_modulate_if_changed(filter_button, Color(1.0, 0.86, 0.28, 1.0) if filter_key == editor_part_filter_mode else Color(0.84, 0.9, 0.94, 1.0))
 	var ammo_slider_visible := parts_visible and editor_part_filter_mode == "ammo"
-	for i in range(editor_ammo_size_buttons.size()):
-		var ammo_button: Button = editor_ammo_size_buttons[i]
+	if editor_ammo_size_title_label != null:
+		_set_canvas_item_visible_if_changed(editor_ammo_size_title_label, ammo_slider_visible)
+		_set_control_position_if_changed(editor_ammo_size_title_label, Vector2(936.0, 258.0))
+		_set_control_size_if_changed(editor_ammo_size_title_label, Vector2(72.0, 18.0))
+		_set_control_text_if_changed(editor_ammo_size_title_label, "弹药尺寸" if _ui_is_zh() else "AMMO SIZE")
+	if editor_ammo_size_slider != null:
+		_set_canvas_item_visible_if_changed(editor_ammo_size_slider, ammo_slider_visible)
+		editor_ammo_size_slider.editable = ammo_slider_visible
+		_set_control_position_if_changed(editor_ammo_size_slider, Vector2(1010.0, 257.0))
+		_set_control_size_if_changed(editor_ammo_size_slider, Vector2(176.0, 22.0))
+		_set_range_value_if_changed(editor_ammo_size_slider, float(editor_ammo_size_rank))
+		_set_control_tooltip_if_changed(editor_ammo_size_slider, "安装弹药时选择弹仓尺寸；弹数、价格、质量和槽位体积同步增加。" if _ui_is_zh() else "Choose ammo bay size at install time; ammo count, cost, mass, and slot volume scale together.")
+	if editor_ammo_size_value_label != null:
+		_set_canvas_item_visible_if_changed(editor_ammo_size_value_label, ammo_slider_visible)
+		_set_control_position_if_changed(editor_ammo_size_value_label, Vector2(1190.0, 258.0))
+		_set_control_size_if_changed(editor_ammo_size_value_label, Vector2(54.0, 18.0))
+		_set_control_text_if_changed(editor_ammo_size_value_label, _ammo_size_slider_text(editor_ammo_size_rank))
+	for i in range(editor_ammo_size_tick_labels.size()):
+		var tick_label: Label = editor_ammo_size_tick_labels[i]
 		var rank := i + 1
-		_set_canvas_item_visible_if_changed(ammo_button, ammo_slider_visible)
-		_set_button_disabled_if_changed(ammo_button, not ammo_slider_visible)
-		_set_control_position_if_changed(ammo_button, Vector2(936.0 + float(i) * 54.0, 266.0))
-		_set_control_size_if_changed(ammo_button, Vector2(50.0, 22.0))
-		_set_control_text_if_changed(ammo_button, _volume_rank_label(float(rank)))
-		_set_canvas_item_modulate_if_changed(ammo_button, Color(1.0, 0.86, 0.28, 1.0) if rank == editor_ammo_size_rank else Color(0.76, 0.9, 1.0, 0.82))
+		_set_canvas_item_visible_if_changed(tick_label, ammo_slider_visible)
+		_set_control_position_if_changed(tick_label, Vector2(1002.0 + float(i) * 44.0, 278.0))
+		_set_control_size_if_changed(tick_label, Vector2(34.0, 14.0))
+		_set_control_text_if_changed(tick_label, _volume_rank_label(float(rank)))
+		_set_canvas_item_modulate_if_changed(tick_label, Color(1.0, 0.86, 0.28, 1.0) if rank == editor_ammo_size_rank else Color(0.76, 0.9, 1.0, 0.72))
 	var unit_action_keys := ["load_unit"]
 	if editor_load_mode == "unit":
 		unit_action_keys.append_array(["duplicate", "delete"])
 	var board_primary_action_keys := ["save_canvas", "training_import", "open_saved_units"]
 	var canvas_action_keys := ["blank_canvas", "board_tool_layout", "board_tool_pose", "add_node", "link_node", "delete_selected_part", "undo_canvas", "clear_canvas", "board_zoom_out", "board_zoom_in", "board_zoom_reset"]
+	var orientation_action_keys := ["set_handedness_left", "set_handedness_right", "flip_handedness"]
+	var orientation_choice_active := custom_board_enabled and _orientation_choice_is_active(unit_bp)
+	var selected_handedness_active := custom_board_enabled and _selected_node_supports_visual_handedness(unit_bp)
 	var visible_unit_action_index := 0
 	for action_key in editor_action_buttons.keys():
 		var action_button: Button = editor_action_buttons[action_key]
@@ -48963,6 +49584,29 @@ func _apply_editor_panel_visibility(role_key: String, unit_bp: Dictionary) -> vo
 			elif String(action_key) == "board_tool_pose":
 				_set_control_text_if_changed(action_button, "姿态" if _ui_is_zh() else "POSE")
 				_set_canvas_item_modulate_if_changed(action_button, Color(1.0, 0.86, 0.28, 1.0) if editor_board_tool == "pose" else Color(0.78, 0.9, 1.0, 0.82))
+		elif orientation_action_keys.has(String(action_key)):
+			var action_name := String(action_key)
+			var show_orientation_action := false
+			if action_name in ["set_handedness_left", "set_handedness_right"]:
+				show_orientation_action = orientation_choice_active
+			elif action_name == "flip_handedness":
+				show_orientation_action = selected_handedness_active and not orientation_choice_active
+			_set_canvas_item_visible_if_changed(action_button, show_orientation_action)
+			_set_button_disabled_if_changed(action_button, not show_orientation_action)
+			var x_pos := 776.0
+			if action_name == "set_handedness_right":
+				x_pos = 870.0
+			elif action_name == "flip_handedness":
+				x_pos = 776.0
+			_set_control_position_if_changed(action_button, Vector2(x_pos, 688.0))
+			_set_control_size_if_changed(action_button, Vector2(90.0, 24.0))
+			if action_name == "set_handedness_left":
+				_set_control_text_if_changed(action_button, "左挂刃" if _ui_is_zh() else "LEFT")
+			elif action_name == "set_handedness_right":
+				_set_control_text_if_changed(action_button, "右挂刃" if _ui_is_zh() else "RIGHT")
+			else:
+				_set_control_text_if_changed(action_button, "翻侧刃" if _ui_is_zh() else "FLIP SIDE")
+			_set_canvas_item_modulate_if_changed(action_button, Color(0.42, 1.0, 0.82, 1.0) if show_orientation_action else Color(0.78, 0.9, 1.0, 0.72))
 		elif String(action_key) == "toggle_templates":
 			_set_canvas_item_visible_if_changed(action_button, false)
 		elif String(action_key) == "sort_prev":
@@ -49160,6 +49804,7 @@ func _update_editor_board_ui(role_key: String, unit_bp: Dictionary, precomputed_
 		hot_path_profiler.scope_begin("teamedit.board_ui")
 	var body_board_enabled := _role_uses_body_board(role_key)
 	var custom_board_enabled := body_board_enabled and unit_bp.has("custom_topology")
+	var selected_handedness_active := custom_board_enabled and _selected_node_supports_visual_handedness(unit_bp)
 	var custom_board_cache_key := _editor_board_snapshot_cache_key(role_key, unit_bp) if custom_board_enabled else ""
 	var board_selected_slot: String = BUILD_SLOTS[editor_slot_index]
 	var board_selected_part_index := _editor_selected_part_index_for_slot(unit_bp, role_key, board_selected_slot)
@@ -49214,6 +49859,11 @@ func _update_editor_board_ui(role_key: String, unit_bp: Dictionary, precomputed_
 		elif action_note.begins_with("INVALID"):
 			rule_short = "行动绑定非法" if _ui_is_zh() else "INVALID ACTION BIND"
 		var pending_note := "  待放置: %s" % _pending_canvas_part_name(role_key) if _has_pending_canvas_part() else ""
+		if _orientation_choice_is_active(unit_bp):
+			pending_note += "  选侧挂刃: 左/右" if _ui_is_zh() else "  choose side mount: LEFT/RIGHT"
+		elif selected_handedness_active and not nodes.is_empty():
+			var selected_side := _topology_node_visual_handedness(Dictionary(nodes[editor_topology_node_index]))
+			pending_note += "  刃向:%s" % ("左" if selected_side == "left" else "右") if _ui_is_zh() else "  side:%s" % selected_side.to_upper()
 		_set_control_text_if_changed(editor_board_hint_label, "%s  %s %d/%d  %sx%d%s" % [rule_short, _short_part_name(node_label), clampi(editor_topology_node_index + 1, 1, maxi(1, nodes.size())), nodes.size(), "模块" if _ui_is_zh() else "MOD", module_count, pending_note])
 	elif body_board_enabled:
 		_ensure_custom_topology(unit_bp)
@@ -49241,7 +49891,6 @@ func _update_editor_board_ui(role_key: String, unit_bp: Dictionary, precomputed_
 			selected_bp = nodes_for_shop[editor_topology_node_index]
 	for slot_key in BODY_GROUP_SLOTS:
 		var button: Button = editor_shop_buttons[slot_key]
-		editor_pending_orientation_node_index,
 		_set_button_disabled_if_changed(button, not body_board_enabled)
 		if not body_board_enabled:
 			_set_control_text_if_changed(button, "%s 零件库：仅机甲" % _slot_name(slot_key) if _ui_is_zh() else "%s PARTS: mech only" % _slot_name(slot_key))
@@ -49609,9 +50258,6 @@ func _part_gradient_card_line(slot_key: String, part: Dictionary) -> String:
 	if tradeoff == "":
 		tradeoff = _part_gradient_tag_label("balanced")
 	return "%s/%s/%s" % [String(spec.get("rank_label", "M")), role_label, tradeoff]
-	var orientation_action_keys := ["set_handedness_left", "set_handedness_right", "flip_handedness"]
-	var orientation_choice_active := custom_board_enabled and _orientation_choice_is_active(unit_bp)
-	var selected_handedness_active := custom_board_enabled and _selected_node_supports_visual_handedness(unit_bp)
 
 
 func _part_gradient_detail_line(slot_key: String, part: Dictionary) -> String:
@@ -49637,29 +50283,6 @@ func _limb_visual_family_label(part: Dictionary) -> String:
 			return "软体肢" if _ui_is_zh() else "Soft Tentacle"
 		"steel_sinew_beam":
 			return "承重钢梁" if _ui_is_zh() else "Steel Beam"
-		elif orientation_action_keys.has(String(action_key)):
-			var action_name := String(action_key)
-			var show_orientation_action := false
-			if action_name in ["set_handedness_left", "set_handedness_right"]:
-				show_orientation_action = orientation_choice_active
-			elif action_name == "flip_handedness":
-				show_orientation_action = selected_handedness_active and not orientation_choice_active
-			_set_canvas_item_visible_if_changed(action_button, show_orientation_action)
-			_set_button_disabled_if_changed(action_button, not show_orientation_action)
-			var x_pos := 776.0
-			if action_name == "set_handedness_right":
-				x_pos = 870.0
-			elif action_name == "flip_handedness":
-				x_pos = 776.0
-			_set_control_position_if_changed(action_button, Vector2(x_pos, 688.0))
-			_set_control_size_if_changed(action_button, Vector2(90.0, 24.0))
-			if action_name == "set_handedness_left":
-				_set_control_text_if_changed(action_button, "左挂刃" if _ui_is_zh() else "LEFT")
-			elif action_name == "set_handedness_right":
-				_set_control_text_if_changed(action_button, "右挂刃" if _ui_is_zh() else "RIGHT")
-			else:
-				_set_control_text_if_changed(action_button, "翻侧刃" if _ui_is_zh() else "FLIP SIDE")
-			_set_canvas_item_modulate_if_changed(action_button, Color(0.42, 1.0, 0.82, 1.0) if show_orientation_action else Color(0.78, 0.9, 1.0, 0.72))
 		"ceramic_linear_strut":
 			return "线性撑杆" if _ui_is_zh() else "Linear Strut"
 		"colossus_girder_muscle":
@@ -49734,7 +50357,7 @@ func _catalog_card_data_lines(slot_key: String, part: Dictionary) -> Array:
 			"muscle":
 				if _part_is_ammo_payload(part):
 					var caps: Dictionary = part.get("ammo_capacity", {})
-					var total_ammo := int(caps.get("bullet", 0)) + int(caps.get("chemical", 0)) + int(caps.get("laser", 0))
+					var total_ammo := _ammo_capacity_total(caps)
 					return ["价%d 尺%s 质%.0f" % [cost, String(part.get("ammo_size_tier", _volume_rank_label(_part_slot_volume_rank(part, "muscle")))), mass], "%s 弹数%d" % [gradient_line, total_ammo]]
 				if _component_is_torso(part):
 					return ["价%d 尺%s 质%.0f" % [cost, size_tier, mass], "%s 接口%d 插槽%d" % [gradient_line, int(part.get("joint_ports", part.get("connection_ends", 0))), _torso_plugin_capacity_for_part(part)]]
@@ -49763,7 +50386,7 @@ func _catalog_card_data_lines(slot_key: String, part: Dictionary) -> Array:
 		"muscle":
 			if _part_is_ammo_payload(part):
 				var caps: Dictionary = part.get("ammo_capacity", {})
-				var total_ammo := int(caps.get("bullet", 0)) + int(caps.get("chemical", 0)) + int(caps.get("laser", 0))
+				var total_ammo := _ammo_capacity_total(caps)
 				return ["C%d %s M%.0f" % [cost, String(part.get("ammo_size_tier", _volume_rank_label(_part_slot_volume_rank(part, "muscle")))), mass], "%s AMMO %d" % [gradient_line, total_ammo]]
 			if _component_is_torso(part):
 				return ["C%d %s M%.0f" % [cost, size_tier, mass], "%s P%d INT%d" % [gradient_line, int(part.get("joint_ports", part.get("connection_ends", 0))), _torso_plugin_capacity_for_part(part)]]
@@ -49857,7 +50480,6 @@ func _editor_available_sort_keys(role_key: String, slot_key: String) -> Array:
 	return keys
 
 
-	var selected_handedness_active := custom_board_enabled and _selected_node_supports_visual_handedness(unit_bp)
 func _editor_available_sort_keys_from_entries(entries: Array) -> Array:
 	var available: Array = []
 	for raw_key in EDITOR_SORT_KEY_ORDER:
@@ -49912,11 +50534,6 @@ func _editor_part_has_sort_property(slot_key: String, part: Dictionary, sort_key
 
 
 func _part_has_positive_numeric(part: Dictionary, property_names: Array) -> bool:
-		if _orientation_choice_is_active(unit_bp):
-			pending_note += "  选侧挂刃: 左/右" if _ui_is_zh() else "  choose side mount: LEFT/RIGHT"
-		elif selected_handedness_active and not nodes.is_empty():
-			var selected_side := _topology_node_visual_handedness(Dictionary(nodes[editor_topology_node_index]))
-			pending_note += "  刃向:%s" % ("左" if selected_side == "left" else "右") if _ui_is_zh() else "  side:%s" % selected_side.to_upper()
 	for property_name in property_names:
 		if float(part.get(String(property_name), 0.0)) > 0.0:
 			return true
@@ -50388,12 +51005,16 @@ func _hover_shop_component(slot_key: String) -> void:
 	_show_editor_part_hover(slot_key, part_index, part)
 
 
-func _clear_editor_hover_card() -> void:
-	if editor_hover_slot_key == "" and editor_hover_part_index < 0:
+func _clear_editor_hover_card(force: bool = false) -> void:
+	if editor_hover_pinned and not force:
+		return
+	if editor_hover_slot_key == "" and editor_hover_part_index < 0 and (editor_hover_popup_view == null or not editor_hover_popup_view.visible):
 		return
 	editor_hover_slot_key = ""
 	editor_hover_part_index = -1
+	editor_hover_pinned = false
 	if editor_hover_popup_view != null:
+		editor_hover_popup_view.z_index = 260
 		editor_hover_popup_view.clear_card()
 	if editor_stats_rail_view != null and editor_layer != null and editor_layer.visible:
 		var role_key: String = ROLE_ORDER[editor_role_index]
@@ -50401,31 +51022,77 @@ func _clear_editor_hover_card() -> void:
 		_refresh_editor_stats_rail(stats)
 
 
+func _editor_hover_detail_token(slot_key: String, part_index: int, context: Dictionary = {}) -> String:
+	var source := String(context.get("source", "hover"))
+	var node_index := int(context.get("node_index", -1))
+	var entry_id := String(context.get("entry_id", ""))
+	return "%s:%d:%s:%d:%s" % [slot_key, part_index, source, node_index, entry_id]
+
+
+func _hover_detail_suppressed(token: String) -> bool:
+	if token == "" or token != editor_hover_suppress_token:
+		return false
+	return Time.get_ticks_msec() < editor_hover_suppress_until_msec
+
+
+func _close_editor_hover_detail(suppress_token: String = "") -> void:
+	if suppress_token == "" and editor_hover_popup_view != null:
+		suppress_token = String(editor_hover_popup_view.suppress_token)
+	editor_hover_suppress_token = suppress_token
+	editor_hover_suppress_until_msec = Time.get_ticks_msec() + 650
+	_clear_editor_hover_card(true)
+
+
 func _editor_binding_ui_active() -> bool:
 	return game_state == STATE_EDITOR and editor_torso_detail_view != null and editor_torso_detail_view.visible and editor_torso_detail_view.binding_mode
 
 
-func _show_editor_part_hover(slot_key: String, part_index: int, part: Dictionary) -> void:
+func _show_editor_part_hover(slot_key: String, part_index: int, part: Dictionary, pinned: bool = false, context: Dictionary = {}) -> void:
 	if _editor_binding_ui_active():
-		_clear_editor_hover_card()
+		_clear_editor_hover_card(true)
 		return
-	if editor_hover_slot_key == slot_key and editor_hover_part_index == part_index and editor_hover_popup_view != null and editor_hover_popup_view.visible:
+	var hover_token := _editor_hover_detail_token(slot_key, part_index, context)
+	if not pinned and editor_hover_pinned:
+		return
+	if _hover_detail_suppressed(hover_token):
+		return
+	if editor_hover_slot_key == slot_key and editor_hover_part_index == part_index and editor_hover_popup_view != null and editor_hover_popup_view.visible and String(editor_hover_popup_view.suppress_token) == hover_token and editor_hover_pinned == pinned:
+		if pinned and not editor_hover_pinned:
+			editor_hover_pinned = true
+			editor_hover_popup_view.set_part(slot_key, part, editor_hover_popup_view.title, editor_hover_popup_view.subtitle, editor_hover_popup_view.detail_lines, ui_language, editor_hover_popup_view.stat_entries, true, hover_token)
 		return
 	editor_hover_preview_refresh_count += 1
 	editor_hover_slot_key = slot_key
 	editor_hover_part_index = part_index
+	editor_hover_pinned = pinned
 	var current_stats := _editor_current_stats()
 	var title := "%02d %s" % [part_index + 1, _zh_part_name(String(part.get("name", ""))) if _ui_is_zh() else String(part.get("name", ""))]
 	var subtitle := _hover_card_subtitle(slot_key, part)
-	var lines := _hover_card_player_detail_lines(slot_key, part)
+	var lines := _hover_card_player_detail_lines(slot_key, part, context)
 	var stat_entries := _hover_card_stat_entries(slot_key, part)
 	if editor_hover_popup_view != null:
-		editor_hover_popup_view.size = Vector2(466.0, 500.0)
-		editor_hover_popup_view.set_part(slot_key, part, title, subtitle, lines, ui_language, stat_entries)
+		editor_hover_popup_view.size = Vector2(506.0, 560.0) if pinned or slot_key == "module" else Vector2(466.0, 500.0)
+		editor_hover_popup_view.z_index = 340 if pinned else 260
+		editor_hover_popup_view.set_part(slot_key, part, title, subtitle, lines, ui_language, stat_entries, pinned, hover_token)
+		if pinned:
+			editor_hover_popup_view.position = _editor_hover_pinned_position(editor_hover_popup_view.size, context)
 		editor_hover_popup_view.move_to_front()
 	if editor_drag_ghost_view != null and editor_drag_ghost_view.visible:
 		editor_drag_ghost_view.move_to_front()
 	_refresh_editor_stats_rail(current_stats, {}, {}, {}, title)
+
+
+func _editor_hover_pinned_position(popup_size: Vector2, context: Dictionary = {}) -> Vector2:
+	var preferred = context.get("position", Vector2.INF)
+	var viewport_size := Vector2(1280.0, 720.0)
+	if get_viewport() != null:
+		viewport_size = get_viewport().get_visible_rect().size
+	var pos := Vector2(viewport_size.x - popup_size.x - 24.0, 96.0)
+	if preferred is Vector2 and preferred != Vector2.INF:
+		pos = preferred
+	pos.x = clampf(pos.x, 12.0, maxf(12.0, viewport_size.x - popup_size.x - 12.0))
+	pos.y = clampf(pos.y, 56.0, maxf(56.0, viewport_size.y - popup_size.y - 12.0))
+	return pos
 
 
 func _hover_torso_detail_payload(slot_kind: String, slot_index: int, payload_index: int) -> void:
@@ -50810,7 +51477,7 @@ func _module_input_rows_for_part(part: Dictionary, profile: String, command_prof
 			rows.append("松开X：按当前落点发射一枚；取消或无绑定不耗弹。" if zh else "Release X: fire one shell at the current mark; cancel/no binding spends no ammo.")
 	match profile:
 		"gun_activate":
-			rows.append("按住X：启动任意枪械，4/6微调枪口。" if zh else "Hold X: activate any firearm; 4/6 nudges muzzle.")
+			rows.append("按住X：启动任意枪械。" if zh else "Hold X: activate any firearm.")
 			rows.append("发射方式、弹药与热耗随绑定枪械本身决定。" if zh else "Fire mode, ammo, and heat follow the bound firearm.")
 		"rifle_burst_activate":
 			rows.append("按住X：中距离连发点射。" if zh else "Hold X: mid-range burst fire.")
@@ -50839,6 +51506,10 @@ func _module_input_rows_for_part(part: Dictionary, profile: String, command_prof
 			rows.append("X：短挥；4X/6X左右蓄挥。" if zh else "X: short swing; 4X/6X side windup.")
 			rows.append("236X必杀：护甲下砸。" if zh else "236X special: armored overhead slam.")
 			rows.append("214X必杀：激活横砸。" if zh else "214X special: active side slam.")
+	if _gun_activation_profiles().has(profile):
+		var steer_row := "按住左转/右转：持续旋转绑定枪械；移动键仍可移动。" if zh else "Hold Turn Left/Right: rotate the bound firearm; movement keys still move."
+		if not rows.has(steer_row):
+			rows.append(steer_row)
 	if rows.is_empty():
 		match command_profile:
 			"blade_simple_4_6":
@@ -50974,10 +51645,24 @@ func _hover_card_stat_entries(slot_key: String, part: Dictionary) -> Array:
 		_add_hover_stat(entries, "Boost额外" if _ui_is_zh() else "Boost Extra", _booster_boost_momentum_for_part(part), 720.0, "", Color(1.0, 0.86, 0.24, 1.0), "boost")
 		_add_hover_stat(entries, "Boost总" if _ui_is_zh() else "Boost Total", _thruster_boost_total_momentum_for_part(part), 980.0, "", Color(1.0, 0.72, 0.18, 1.0), "boost")
 		_add_hover_stat(entries, "常态热" if _ui_is_zh() else "Idle Heat", _booster_idle_heat_for_part(part), 36.0, "", Color(1.0, 0.18, 0.12, 1.0), "heat")
+	elif slot_key == "special":
+		var special_kind := String(part.get("kind", "special"))
+		if special_kind == "soul":
+			_add_hover_stat(entries, "热槽" if _ui_is_zh() else "Heat Slot", float(part.get("soul_heat_capacity", 0.0)), 160.0, "", Color(1.0, 0.32, 0.18, 1.0), "heat")
+			if String(part.get("soul_archetype", "")) == "duelist_oath":
+				_add_hover_stat(entries, "回响窗" if _ui_is_zh() else "Echo Window", float(part.get("soul_echo_window", 0.0)), 2.0, "s", Color(0.42, 0.98, 1.0, 1.0), "action")
+				_add_hover_stat(entries, "恢复" if _ui_is_zh() else "Recovery", float(part.get("soul_echo_recovery_mult", 1.0)), 1.0, "x", Color(0.72, 0.98, 0.82, 1.0), "cool")
+				_add_hover_stat_text(entries, "身份" if _ui_is_zh() else "Role", "英雄" if _ui_is_zh() else "Hero", Color(0.92, 0.72, 1.0, 1.0), "slot")
+		elif special_kind == "code":
+			_add_hover_stat(entries, "小队" if _ui_is_zh() else "Squad", float(part.get("group_count", 1)), 6.0, "", Color(0.42, 0.82, 1.0, 1.0), "slot")
+			_add_hover_stat(entries, "条件" if _ui_is_zh() else "Rules", float(part.get("condition_slots", 1)), 8.0, "", Color(0.72, 0.98, 0.82, 1.0), "action")
+		elif special_kind == "ether":
+			_add_hover_stat(entries, "材料槽" if _ui_is_zh() else "Materials", float(part.get("material_slots", 0)), 12.0, "", Color(0.72, 0.98, 0.82, 1.0), "slot")
+			_add_hover_stat(entries, "绑定" if _ui_is_zh() else "Bind", float(part.get("ether_bind_radius_m", part.get("aura_range", 0.0))), 6.0, "m", Color(0.42, 0.82, 1.0, 1.0), "range")
 	elif slot_key == "muscle":
 		if _part_is_ammo_payload(part):
 			var caps: Dictionary = part.get("ammo_capacity", {})
-			var total_ammo := int(caps.get("bullet", 0)) + int(caps.get("chemical", 0)) + int(caps.get("laser", 0)) + int(caps.get("explosive", 0))
+			var total_ammo := _ammo_capacity_total(caps)
 			_add_hover_stat(entries, "弹数" if _ui_is_zh() else "Ammo", float(total_ammo), 320.0, "", Color(1.0, 0.86, 0.24, 1.0), "ammo")
 			_add_hover_stat(entries, "槽尺寸" if _ui_is_zh() else "Slot Size", float(_volume_rank_from_value(part.get("ammo_size_tier", part.get("slot_volume_tier", "XS")), 1)), 5.0, "", Color(0.42, 0.98, 1.0, 1.0), "slot")
 		elif _component_is_torso(part):
@@ -51082,7 +51767,127 @@ func _hover_card_delta_line(slot_key: String, part: Dictionary) -> String:
 	return ("#对比当前：%s" if _ui_is_zh() else "#Vs Current: %s") % " / ".join(bits.slice(0, mini(3, bits.size())))
 
 
-func _hover_card_player_detail_lines(slot_key: String, part: Dictionary) -> Array:
+func _hover_card_soul_detail_lines(part: Dictionary, zh: bool) -> Array:
+	var lines: Array = []
+	if String(part.get("soul_archetype", "")) != "duelist_oath":
+		lines.append("英魂：定义英雄身份、热槽或机体倾向。" if zh else "Soul: defines hero identity, heat, or body preference.")
+		return lines
+	lines.append("#%s" % ("英雄 / 软件槽 / 轻中型 / 真实接触 / 换肢连段 / 热槽" if zh else "Hero / software slot / light-mid / real contact / limb-chain / heat slot"))
+	lines.append("装入英雄躯干的软件槽。" if zh else "Installs in a hero torso software slot.")
+	lines.append("满足决斗誓约后生效；不满足时只提供热槽。" if zh else "Works after the duelist oath is met; otherwise it only grants a heat slot.")
+	lines.append("适合轻/中型、小半径、三组以上行动模块的近战决斗机。" if zh else "Fits light/mid, small-radius melee duelists with three or more action modules.")
+	lines.append("连续换不同绑定肢体行动，可触发回响窗口，缩短下一次恢复或减轻热负担。" if zh else "Rotate actions across different bound limbs to trigger an echo window that shortens next recovery or eases heat burden.")
+	lines.append("重型盾锤、导弹/纯远程、XL 肢体不会触发誓约。" if zh else "Heavy shield/hammer, missile or pure-ranged builds, and XL limbs do not trigger the oath.")
+	var status_line := _hover_card_duelist_oath_status_line(part, zh)
+	if status_line != "":
+		lines.append(status_line)
+	return lines
+
+
+func _hover_card_duelist_oath_status_line(part: Dictionary, zh: bool) -> String:
+	if String(part.get("soul_archetype", "")) != "duelist_oath":
+		return ""
+	if game_state != STATE_EDITOR and not is_inside_tree():
+		return ""
+	var role_key: String = ROLE_ORDER[editor_role_index]
+	if role_key != "hero":
+		return "当前状态：未激活：只限英雄。" if zh else "Current: inactive: hero only."
+	var unit_bp := _editor_current_blueprint().duplicate(true)
+	if unit_bp.is_empty():
+		return ""
+	var stats := _compute_unit_stats(_editor_player(), role_key, -1, unit_bp)
+	var reason := _duelist_oath_fail_reason(stats, unit_bp, part)
+	if reason == "":
+		return "当前状态：誓约已激活。" if zh else "Current: oath active."
+	return ("当前状态：未激活：%s。" if zh else "Current: inactive: %s.") % _duelist_oath_reason_label(reason, zh)
+
+
+func _module_action_timing_detail_line(part: Dictionary, profile: String, command_profile: String, zh: bool) -> String:
+	var startup := clampf(float(part.get("startup_ratio", 0.0)), 0.0, 1.0)
+	var recovery := clampf(float(part.get("recovery_ratio", 0.0)), 0.0, 1.0)
+	if _gun_activation_profiles().has(profile) or bool(part.get("hold_to_activate", false)):
+		if profile == "gun_activate":
+			return "时间分配：持有瞄准/持续发射；发射间隔、松开结束和锁定时间由绑定枪械决定。" if zh else "Timing: hold to aim/fire; interval, release end, and lock timing come from the bound firearm."
+		return "时间分配：持有进入瞄准/发射状态，发射间隔按武器；松开、失败或取消后结束。" if zh else "Timing: hold enters aim/fire state; weapon controls intervals; release, fail, or cancel ends it."
+	if startup > 0.0 or recovery > 0.0:
+		var active := maxf(0.0, 1.0 - startup - recovery)
+		if absf(startup - (1.0 / 3.0)) < 0.04 and absf(recovery - (2.0 / 3.0)) < 0.05:
+			return "时间分配：启动 1/3，恢复 2/3；动作总时长由绑定肢体动力与质量解算。" if zh else "Timing: startup 1/3, recovery 2/3; total duration resolves from bound-limb drive and mass."
+		if active > 0.01:
+			return ("时间分配：启动 %.0f%% / 命中 %.0f%% / 恢复 %.0f%%；总时长由动力与质量解算。" if zh else "Timing: startup %.0f%% / active %.0f%% / recovery %.0f%%; total duration resolves from drive and mass.") % [startup * 100.0, active * 100.0, recovery * 100.0]
+		return ("时间分配：启动 %.0f%% / 恢复 %.0f%%；总时长由动力与质量解算。" if zh else "Timing: startup %.0f%% / recovery %.0f%%; total duration resolves from drive and mass.") % [startup * 100.0, recovery * 100.0]
+	return "时间分配：无固定比例；动作速度由绑定肢体动力、移动质量和姿态距离解算。" if zh else "Timing: no fixed ratio; speed resolves from bound-limb drive, moved mass, and pose distance."
+
+
+func _module_action_detail_model(part: Dictionary, context: Dictionary = {}) -> Dictionary:
+	var zh := _ui_is_zh()
+	var model := _module_action_card_model(part)
+	var profile := String(model.get("profile", ""))
+	var command_profile := String(model.get("command_profile", ""))
+	var target_kind := String(model.get("target_kind", ""))
+	var lines: Array = []
+	lines.append("#%s" % ("适用范围" if zh else "Use Scope"))
+	lines.append("行动模块：负责绑定输入、驱动姿态或启动武器；不自带固定伤害。" if zh else "Action module: binds input, drives pose, or activates weapons; it carries no fixed damage.")
+	var requirement_bits: Array = [String(model.get("target_label", "")), String(model.get("joint_label", "")), String(model.get("weapon_label", ""))]
+	if bool(part.get("requires_connected_gun", false)) or target_kind.find("gun") >= 0 or _gun_activation_profiles().has(profile):
+		requirement_bits.append("枪械末端/弹药按绑定武器" if zh else "firearm terminal / ammo follows weapon")
+	if int(part.get("required_bound_node_count", part.get("min_bound_nodes", 0))) > 0:
+		requirement_bits.append(("%d 个绑定节点" if zh else "%d bound nodes") % int(part.get("required_bound_node_count", part.get("min_bound_nodes", 0))))
+	if float(part.get("required_joint_degrees", 0.0)) > 0.0:
+		requirement_bits.append(("关节 %.0f°" if zh else "%.0f deg joint") % float(part.get("required_joint_degrees", 0.0)))
+	if float(part.get("required_extension_m", 0.0)) > 0.0:
+		requirement_bits.append(("伸缩 %.1fm" if zh else "%.1fm extension") % float(part.get("required_extension_m", 0.0)))
+	var requirement_text := " / ".join(requirement_bits)
+	lines.append(("可绑定：%s。" if zh else "Can bind: %s.") % requirement_text)
+	lines.append("#%s" % ("动作说明" if zh else "Action"))
+	var input_rows: Array = Array(model.get("input_rows", []))
+	for row in input_rows:
+		lines.append(String(row))
+	var variant_summary := String(model.get("variant_summary", "")).strip_edges()
+	if variant_summary != "":
+		lines.append(("%s：%s" if zh else "%s: %s") % [String(model.get("variant_label", "特色" if zh else "Variant")), variant_summary])
+	lines.append("#%s" % ("时间分配" if zh else "Timing"))
+	lines.append(_module_action_timing_detail_line(part, profile, command_profile, zh))
+	var data_line := String(model.get("data_line", "")).strip_edges()
+	if data_line != "":
+		lines.append(data_line)
+	lines.append("#%s" % ("结算来源" if zh else "Resolve Source"))
+	if _gun_activation_profiles().has(profile) or target_kind.find("gun") >= 0:
+		if profile == "web_tether_activate":
+			lines.append("蛛丝牵引不直接造成 HP 伤害；效果来自命中几何、牵引强度和目标状态。" if zh else "Web tether does not directly deal HP damage; effect comes from hit geometry, tether strength, and target state.")
+		elif profile == "laser_beam_activate":
+			lines.append("显式光束结算：投射物动量 + 当前枪械倍率 + 激光 tick + 命中几何；行动模块只负责启动和姿态。" if zh else "Explicit beam resolve: projectile momentum + current gun multiplier + laser ticks + hit geometry; the module only starts the weapon and pose.")
+		elif profile == "missile_lock_activate":
+			lines.append("显式导弹结算：投射物动量 + 当前枪械倍率 + 导弹锁定/遮蔽 + 命中几何；行动模块只负责锁定和发射。" if zh else "Explicit missile resolve: projectile momentum + current gun multiplier + missile lock/cover + hit geometry; the module only locks and fires.")
+		else:
+			lines.append("枪械结算：投射物动量 + 当前枪械倍率 + 弹药/特效 + 命中几何；行动模块只负责启动和姿态。" if zh else "Gun resolve: projectile momentum + current gun multiplier + ammo/effect + hit geometry; the module only starts the weapon and pose.")
+	else:
+		lines.append("近战结算：真实接触 + 当前姿态 + 分配动力/动量 + 武器/肢体系数；模块本身不携带固定伤害。" if zh else "Melee resolve: real contact + active pose + allocated drive/momentum + weapon/limb coefficients; the module carries no fixed damage.")
+	lines.append("#%s" % ("动力与热" if zh else "Drive & Heat"))
+	var heat_bits: Array = []
+	if float(part.get("special_heat_fraction", 0.0)) > 0.0:
+		heat_bits.append(("必杀热 %.0f%%" if zh else "special heat %.0f%%") % (float(part.get("special_heat_fraction", 0.0)) * 100.0))
+	if float(part.get("armor_heat", 0.0)) > 0.0 or float(part.get("active_heat", 0.0)) > 0.0:
+		heat_bits.append(("护甲/激活热 %.0f/%.0f" if zh else "armor/active heat %.0f/%.0f") % [float(part.get("armor_heat", 0.0)), float(part.get("active_heat", 0.0))])
+	if heat_bits.is_empty():
+		heat_bits.append("热量由绑定武器或动作状态产生" if zh else "heat comes from the bound weapon or action state")
+	var heat_text := " / ".join(heat_bits)
+	lines.append(("动作速度读取绑定肢体动力分配；%s。" if zh else "Action speed reads bound-limb drive allocation; %s.") % heat_text)
+	if context.has("allocated_momentum") or context.has("duration_label"):
+		var allocated := float(context.get("allocated_momentum", -1.0))
+		var range_text := ""
+		if context.has("min_momentum") and context.has("max_momentum"):
+			range_text = (" / 范围 %.0f-%.0f" if zh else " / range %.0f-%.0f") % [float(context.get("min_momentum", 0.0)), float(context.get("max_momentum", 0.0))]
+		var duration_label := String(context.get("duration_label", ""))
+		if allocated >= 0.0:
+			lines.append(("当前分配 %.0f%s；%s" if zh else "Current allocation %.0f%s; %s") % [allocated, range_text, duration_label if duration_label != "" else ("预估会随动力刷新。" if zh else "estimate updates with drive.")])
+	return {
+		"model": model,
+		"lines": lines,
+	}
+
+
+func _hover_card_player_detail_lines(slot_key: String, part: Dictionary, context: Dictionary = {}) -> Array:
 	var lines: Array = []
 	var zh := _ui_is_zh()
 	var size_label := _part_size_tier_label(part, slot_key)
@@ -51175,28 +51980,27 @@ func _hover_card_player_detail_lines(slot_key: String, part: Dictionary) -> Arra
 			lines.append(("移动方式 %s；刹车 %.2f，转向 %.2f。" if zh else "Movement %s; brake %.2f, turn %.2f.") % [String(thruster.get("movement_profile", "omni")), float(thruster.get("brake_efficiency", 1.0)), float(thruster.get("turn_efficiency", 1.0))])
 			lines.append(_thruster_family_summary(thruster_family))
 		"module":
-			var model := _module_action_card_model(part)
-			lines.append(("%s / %s / %s" if zh else "%s / %s / %s") % [String(model.get("category_path", "")), String(model.get("joint_label", "")), String(model.get("weapon_label", ""))])
-			lines.append(("绑定：%s；结算来源：%s。" if zh else "Bind: %s; resolve: %s.") % [String(model.get("target_label", "")), String(model.get("damage_source", ""))])
-			var variant_summary := String(model.get("variant_summary", "")).strip_edges()
-			if variant_summary != "":
-				lines.append(("%s：%s" if zh else "%s: %s") % [String(model.get("variant_label", "特色")), variant_summary])
-			var input_rows: Array = Array(model.get("input_rows", []))
-			for i in range(mini(3, input_rows.size())):
-				lines.append(String(input_rows[i]))
-			lines.append(String(model.get("data_line", "")))
+			lines.append_array(Array(_module_action_detail_model(part, context).get("lines", [])))
 		"special":
 			var kind := String(part.get("kind", "special"))
 			lines.append(("#%s" if zh else "#%s") % (_zh_part_name(kind.to_upper()) if zh else kind.capitalize()))
 			match kind:
 				"soul":
-					lines.append("英魂：定义英雄身份、热槽或机体倾向。" if zh else "Soul: defines hero identity, heat, or body preference.")
+					lines.append_array(_hover_card_soul_detail_lines(part, zh))
 				"code":
 					lines.append(("源代码：%d 机小队 AI，策略 %s。" if zh else "Code: %d-unit squad AI, policy %s.") % [int(part.get("group_count", 1)), String(part.get("source_target_policy", part.get("ai", "")))])
 				"ether":
 					lines.append("以太：给结界材料提供空间许可或场域规则。" if zh else "Ether: grants barrier space permission or field rules.")
 				_:
 					lines.append("软件核心：改变身份、队伍或结界规则；不占战斗体积。" if zh else "Software core: changes identity, team, or barrier rules; no battle volume.")
+	var bound_action_note := String(context.get("bound_action_note", "")).strip_edges()
+	if bound_action_note != "":
+		lines.append("#%s" % ("已绑定行动" if zh else "Bound Action"))
+		lines.append(bound_action_note)
+	if slot_key == "special" and String(part.get("kind", "")) == "soul" and String(part.get("soul_archetype", "")) == "duelist_oath":
+		return lines.slice(0, 12)
+	if slot_key == "module":
+		return lines.slice(0, 24)
 	return lines.slice(0, 7)
 
 
@@ -51714,6 +52518,7 @@ func _refresh_editor_visual_views(precomputed_stats: Dictionary = {}, update_sid
 				node["shape"] = String(part.get("shape", slot_key))
 				node["source_shape"] = String(part.get("shape", ""))
 				node["weapon_family"] = String(part.get("weapon_family", ""))
+				_apply_visual_handedness_defaults_to_node(node, part, slot_key)
 				node["blunt_shield"] = bool(part.get("blunt_shield", false))
 				node["blunt_gauntlet"] = bool(part.get("blunt_gauntlet", false))
 				node["blunt_hammer"] = bool(part.get("blunt_hammer", false))
@@ -51766,6 +52571,7 @@ func _refresh_editor_visual_views(precomputed_stats: Dictionary = {}, update_sid
 			node["shape"] = String(muscle_part.get("shape", "part"))
 			node["source_shape"] = String(muscle_part.get("shape", ""))
 			node["weapon_family"] = String(muscle_part.get("weapon_family", ""))
+			_apply_visual_handedness_defaults_to_node(node, muscle_part, _topology_node_slot(node))
 			node["blunt_shield"] = bool(muscle_part.get("blunt_shield", false))
 			node["blunt_gauntlet"] = bool(muscle_part.get("blunt_gauntlet", false))
 			node["blunt_hammer"] = bool(muscle_part.get("blunt_hammer", false))
@@ -51893,6 +52699,7 @@ func _zh_part_name(part_name: String) -> String:
 		"FLOATING BIT CORE": "浮游炮躯干",
 		"RIFLE BIT CORE": "步枪浮游躯干",
 		"SOUL ANCHOR": "英魂锚",
+		"SOUL: FIRST EDGE ECHO": "始锋回响英魂",
 		"CODE: LINE": "源代码：直线队列",
 		"ETHER: ORIGIN PIN": "以太：始点星钉",
 	}
@@ -52567,7 +53374,6 @@ func _update_sortie_thumbnails() -> void:
 			var view: SortieThumbView = views[i]
 			if i >= order.size():
 				view.visible = false
-				_apply_visual_handedness_defaults_to_node(node, part, slot_key)
 				continue
 			var entry: Dictionary = order[i]
 			var role_key := String(entry.get("role", "hero"))
@@ -52620,7 +53426,6 @@ func _update_battle_minimap() -> void:
 		if not _is_live_unit(unit):
 			continue
 		if _barrier_has_map_tiles(unit):
-			_apply_visual_handedness_defaults_to_node(node, muscle_part, _topology_node_slot(node))
 			for raw_tile in Array(unit.stats.get("barrier_map_tiles", [])):
 				if not (raw_tile is Dictionary):
 					continue
@@ -52710,6 +53515,9 @@ func _mobius_config() -> Dictionary:
 	config["stardust_alpha_max"] = 0.28
 	config["stardust_width_min"] = 2.4
 	config["stardust_width_max"] = 13.5
+	config["stardust_source_width_px"] = 6.0
+	config["stardust_source_alpha"] = 0.115
+	config["stardust_particle_source_radius_px"] = 1.15
 	config["stardust_particle_budget"] = 192
 	config["screen_scale"] = _battle_world_to_screen_scale()
 	config["local_rectangular_projection"] = true
@@ -52850,9 +53658,11 @@ func _refresh_mobius_surface_view() -> void:
 	var surface_config := _mobius_config()
 	surface_config["stardust_band_enabled"] = false
 	surface_config["surface_lane_guides_enabled"] = false
-	surface_config["near_alpha"] = 0.08
-	surface_config["far_alpha"] = 0.025
-	surface_config["depth_contrast"] = 0.82
+	surface_config["local_rectangular_projection"] = false
+	surface_config["near_alpha"] = 0.82
+	surface_config["far_alpha"] = 0.42
+	surface_config["depth_contrast"] = 1.08
+	surface_config["surface_detail_density"] = maxf(1.15, float(surface_config.get("surface_detail_density", 1.0)))
 	mobius_strip_surface_view.set_surface_texture(mobius_surface_texture)
 	mobius_strip_surface_view.set_world(surface_config, mobius_rotation_state, _mobius_camera_coord())
 	if mobius_stardust_band_view != null:
@@ -52861,6 +53671,10 @@ func _refresh_mobius_surface_view() -> void:
 		stardust_config["stardust_band_enabled"] = true
 		stardust_config["twist_wave_amplitude"] = MOBIUS_TWIST_WAVE_AMPLITUDE * 1.85
 		stardust_config["depth_strength"] = MOBIUS_DEPTH_STRENGTH * 1.18
+		stardust_config["stardust_alpha_max"] = 0.08
+		stardust_config["stardust_source_alpha"] = 0.030
+		stardust_config["stardust_source_width_px"] = 3.0
+		stardust_config["stardust_particle_budget"] = 96
 		mobius_stardust_band_view.set_world(stardust_config, mobius_rotation_state, _mobius_camera_coord())
 
 

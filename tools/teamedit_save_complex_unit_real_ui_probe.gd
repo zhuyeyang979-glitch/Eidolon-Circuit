@@ -8,13 +8,6 @@ func _fail(message: String) -> void:
 	quit(1)
 
 
-func _entry_exists(main: Node, path: String) -> bool:
-	for raw_entry in main._unit_library_entries():
-		if raw_entry is Dictionary and String(Dictionary(raw_entry).get("path", "")) == path:
-			return true
-	return false
-
-
 func _init() -> void:
 	var main = MainScene.new()
 	root.add_child(main)
@@ -63,40 +56,18 @@ func _init() -> void:
 	var save_button: Button = raw_save_button
 	save_button.pressed.emit()
 	var saved_path := String(main.editor_source_saved_unit_path)
-	if saved_path == "" or not FileAccess.file_exists(saved_path):
-		_fail("Complex save did not create a visible saved path.")
+	if saved_path != "":
+		_fail("Blueprint containing legacy fields should not be saved.")
 		return
-	var parsed = JSON.parse_string(FileAccess.get_file_as_string(saved_path))
-	if not (parsed is Dictionary):
-		_fail("Complex save did not write a dictionary payload.")
+	if main.editor_save_unit_feedback_label == null or not main.editor_save_unit_feedback_label.visible:
+		_fail("Rejected legacy save did not show visible feedback.")
 		return
-	var payload: Dictionary = parsed
-	var legacy_path := main._saved_payload_legacy_path(payload)
-	if legacy_path != "":
-		_fail("Saved payload still has legacy drive/pointer data at %s." % legacy_path)
+	var feedback := String(main.editor_save_unit_feedback_label.text)
+	if feedback.find("legacy drive/pointer field") < 0 or feedback.find("power") < 0:
+		_fail("Rejected legacy save did not report its first legacy field: %s" % feedback)
 		return
-	var combat_path := main._saved_payload_nonphysical_combat_path(payload)
-	if combat_path != "":
-		_fail("Saved payload still has nonphysical combat data at %s." % combat_path)
+	if not main.editor_save_feedback_is_error:
+		_fail("Rejected legacy save should be marked as an error.")
 		return
-	var open_button: Button = main.editor_action_buttons["open_saved_units"]
-	open_button.pressed.emit()
-	if main.game_state != MainScene.STATE_SAVED_UNITS:
-		_fail("Saved Units button did not open the library.")
-		return
-	if not _entry_exists(main, saved_path):
-		_fail("Complex saved unit was not visible in Saved Units.")
-		return
-	if main.saved_unit_selected_index < 0:
-		_fail("Complex saved unit was not focused.")
-		return
-	if not main._load_saved_unit_into_unit_editor(saved_path):
-		_fail("Complex saved unit could not load back into Unit Edit.")
-		return
-	if String(main._editor_current_blueprint().get("unit_name", "")) != unit_name:
-		_fail("Complex loaded unit name mismatch.")
-		return
-	if FileAccess.file_exists(saved_path):
-		DirAccess.remove_absolute(ProjectSettings.globalize_path(saved_path))
-	print("TEAMEDIT_SAVE_COMPLEX_UNIT_REAL_UI_PROBE ok path=%s" % saved_path)
+	print("TEAMEDIT_SAVE_COMPLEX_UNIT_REAL_UI_PROBE ok rejected=%s" % feedback)
 	quit(0)

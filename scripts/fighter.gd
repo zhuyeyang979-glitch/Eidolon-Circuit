@@ -133,6 +133,7 @@ var limb_drive_amplitudes: Array = []
 var limb_drive_directions: Array = []
 var limb_drive_states: Array = []
 var runtime_module_actions: Array = []
+var runtime_module_entry_pose_segments := {}
 var runtime_geometry_cache_segments_by_key := {}
 var runtime_geometry_cache_colliders_key := ""
 var runtime_geometry_cache_colliders: Array = []
@@ -182,6 +183,7 @@ func setup_unit(config: Dictionary) -> void:
 	group_name = String(config.get("group_name", group_name))
 	stats = config.get("stats", {}).duplicate(true)
 	_invalidate_runtime_geometry_cache()
+	_capture_runtime_module_entry_pose_segments()
 	max_health = int(stats.get("health", max_health))
 	health = max_health
 
@@ -269,10 +271,10 @@ func deploy(spawn_ring_pos: float, spawn_lane: float) -> void:
 	set_meta("last_melee_module_heat_key", "")
 	set_meta("melee_module_heat_ledger", {})
 	runtime_module_actions.clear()
+	restore_runtime_module_entry_pose_for_nodes(_runtime_module_entry_pose_node_list())
 	_invalidate_runtime_geometry_cache()
-	aim_pose_part_index = -1
+	clear_aim_pose(-1, false)
 	aim_pose_direction = last_action_direction
-	aim_pose_timer = 0.0
 	_reset_limb_dynamics()
 	_reset_part_damage_state()
 	_reset_electronic_armor(true)
@@ -336,8 +338,7 @@ func tick(delta: float, ring_length: float) -> void:
 	aim_pose_timer = maxf(0.0, aim_pose_timer - delta)
 	if aim_pose_timer <= 0.0:
 		if aim_pose_part_index != -1:
-			aim_pose_part_index = -1
-			_invalidate_runtime_geometry_cache()
+			clear_aim_pose(aim_pose_part_index, true)
 	_tick_turn_dynamics(delta)
 	_tick_body_inertia(delta)
 	_tick_limb_dynamics(delta)
@@ -1129,6 +1130,9 @@ func begin_runtime_module_action(action_kind: String, binding: Dictionary, input
 	var cooldown := maxf(0.12, float(module_part.get("cooldown", binding.get("cooldown", duration * 0.72))))
 	var startup_ratio := clampf(float(module_part.get("startup_ratio", module_part.get("two_link_straight_phase", TWO_LINK_DEFAULT_STARTUP_RATIO))), 0.05, 0.95)
 	var joint_actuation_speed := maxf(0.0, float(motion_budget.get("contact_speed", 0.0)))
+	var soul_echo := _runtime_apply_soul_echo_to_cooldown(attack_key, cooldown)
+	cooldown = float(soul_echo.get("cooldown", cooldown))
+	var soul_echo_refund_applied := bool(soul_echo.get("applied", false))
 	_apply_whole_body_action_state(state_key, duration)
 	action_cooldown = cooldown
 	active_part_index = attack_key - 1
@@ -1154,6 +1158,7 @@ func begin_runtime_module_action(action_kind: String, binding: Dictionary, input
 		"joint_actuation_speed": joint_actuation_speed,
 		"runtime_contact_speed": joint_actuation_speed,
 		"driven_mass": float(motion_budget.get("driven_mass", 0.0)),
+		"soul_echo_refund_applied": soul_echo_refund_applied,
 	}
 	runtime_module_actions.append(action)
 	_refresh_visuals()
@@ -1180,6 +1185,7 @@ func begin_runtime_module_action(action_kind: String, binding: Dictionary, input
 		"runtime_action_base_duration": fallback_duration,
 		"startup_ratio": startup_ratio,
 		"recovery_ratio": maxf(0.0, 1.0 - startup_ratio),
+		"soul_echo_refund_applied": soul_echo_refund_applied,
 	}
 
 
@@ -1251,6 +1257,42 @@ func _commit_combo_balance_window(action: Dictionary) -> void:
 	set_meta("combo_balance_cooldown_mult", clampf(float(action.get("combo_balance_cooldown_mult", 0.62)), 0.25, 1.0))
 
 
+func _soul_echo_active() -> bool:
+	return String(stats.get("soul_archetype", "")) == "duelist_oath" and bool(stats.get("soul_oath_active", false))
+
+
+func _runtime_apply_soul_echo_to_cooldown(attack_key: int, cooldown: float) -> Dictionary:
+	var result := {"cooldown": maxf(0.0, cooldown), "applied": false}
+	if not _soul_echo_active():
+		return result
+	var now := Time.get_ticks_msec() * 0.001
+	if now > float(get_meta("soul_echo_ready_until", 0.0)):
+		return result
+	if int(get_meta("soul_echo_source_attack_key", -999)) == attack_key:
+		return result
+	var mult := clampf(float(stats.get("soul_echo_recovery_mult", 0.72)), 0.25, 1.0)
+	result["cooldown"] = maxf(0.08, cooldown * mult)
+	result["applied"] = true
+	set_meta("soul_echo_ready_until", 0.0)
+	set_meta("soul_echo_source_attack_key", -999)
+	set_meta("last_soul_echo_refund_applied", true)
+	set_meta("last_soul_echo_recovery_mult", mult)
+	set_meta("last_soul_echo_attack_key", attack_key)
+	return result
+
+
+func _commit_soul_echo_window(action: Dictionary) -> void:
+	if not _soul_echo_active():
+		return
+	var attack_key := int(action.get("attack_key", -1))
+	if attack_key < 0:
+		return
+	var now := Time.get_ticks_msec() * 0.001
+	set_meta("soul_echo_ready_until", now + maxf(0.05, float(stats.get("soul_echo_window", 1.15))))
+	set_meta("soul_echo_source_attack_key", attack_key)
+	set_meta("last_soul_echo_window_committed", true)
+
+
 func _begin_runtime_generic_melee_action(action_kind: String, binding: Dictionary, input_direction: Vector2 = Vector2.ZERO) -> Dictionary:
 	var module_part: Dictionary = binding.get("module_part", {}) if binding.get("module_part", {}) is Dictionary else {}
 	var profile := String(binding.get("module_action_profile", module_part.get("module_action_profile", "")))
@@ -1280,6 +1322,9 @@ func _begin_runtime_generic_melee_action(action_kind: String, binding: Dictionar
 		combo_refund_applied = true
 		set_meta("combo_balance_ready_until", 0.0)
 		set_meta("combo_balance_source_attack_key", -999)
+	var soul_echo := _runtime_apply_soul_echo_to_cooldown(attack_key, cooldown)
+	cooldown = float(soul_echo.get("cooldown", cooldown))
+	var soul_echo_refund_applied := bool(soul_echo.get("applied", false))
 	_apply_whole_body_action_state(state_key, duration)
 	var active_direction := input_direction.normalized() if input_direction.length() > 0.01 else _forward_vector()
 	if module_variant_key == "pickup_dash" and bool(module_part.get("pickup_dash_on_start", true)):
@@ -1316,6 +1361,7 @@ func _begin_runtime_generic_melee_action(action_kind: String, binding: Dictionar
 		"module_extension_m": extension_m,
 		"swing_arc_degrees": swing_arc,
 		"combo_balance_refund_applied": combo_refund_applied,
+		"soul_echo_refund_applied": soul_echo_refund_applied,
 		"module_base_cooldown": cooldown,
 		"module_variant_hit_confirmed": false,
 	}
@@ -1349,6 +1395,7 @@ func _begin_runtime_generic_melee_action(action_kind: String, binding: Dictionar
 		"startup_ratio": startup_ratio,
 		"recovery_ratio": maxf(0.0, 1.0 - startup_ratio),
 		"combo_balance_refund_applied": combo_refund_applied,
+		"soul_echo_refund_applied": soul_echo_refund_applied,
 	}
 	_apply_module_variant_fields(event, module_part, module_variant_key)
 	if module_variant_key == "vise_close":
@@ -1379,6 +1426,9 @@ func _begin_runtime_blunt_terminal_action(action_kind: String, binding: Dictiona
 	var motion_budget := _runtime_action_motion_budget(target_nodes, module_part, rad_to_deg(swing_arc), 0.0, fallback_duration, state_key, binding)
 	var duration := maxf(0.12, float(motion_budget.get("duration", fallback_duration)))
 	var cooldown := maxf(0.12, float(module_part.get("cooldown", binding.get("cooldown", duration * 0.68))))
+	var soul_echo := _runtime_apply_soul_echo_to_cooldown(attack_key, cooldown)
+	cooldown = float(soul_echo.get("cooldown", cooldown))
+	var soul_echo_refund_applied := bool(soul_echo.get("applied", false))
 	var momentum_mult := maxf(0.1, float(module_part.get("blunt_momentum_mult", 1.2 if profile == "blunt_shield_guard_bash" else 1.45)))
 	var command_variant := String(binding.get("runtime_command_variant", ""))
 	if command_variant == "":
@@ -1427,6 +1477,7 @@ func _begin_runtime_blunt_terminal_action(action_kind: String, binding: Dictiona
 		"runtime_contact_speed": contact_speed,
 		"terminal_momentum_mult": momentum_mult,
 		"driven_mass": float(motion_budget.get("driven_mass", 0.0)),
+		"soul_echo_refund_applied": soul_echo_refund_applied,
 	}
 	runtime_module_actions.append(action)
 	_refresh_visuals()
@@ -1454,6 +1505,7 @@ func _begin_runtime_blunt_terminal_action(action_kind: String, binding: Dictiona
 		"runtime_action_base_duration": fallback_duration,
 		"startup_ratio": startup_ratio,
 		"recovery_ratio": maxf(0.0, 1.0 - startup_ratio),
+		"soul_echo_refund_applied": soul_echo_refund_applied,
 	}
 
 
@@ -1503,6 +1555,9 @@ func _begin_runtime_blade_action(action_kind: String, binding: Dictionary, input
 	var motion_budget := _runtime_action_motion_budget(target_nodes, module_part, rad_to_deg(swing_arc), extension_m, fallback_duration, state_key, binding)
 	var duration := maxf(0.12, float(motion_budget.get("duration", fallback_duration)))
 	var cooldown := maxf(0.10, float(module_part.get("cooldown", binding.get("cooldown", duration * 0.72))))
+	var soul_echo := _runtime_apply_soul_echo_to_cooldown(attack_key, cooldown)
+	cooldown = float(soul_echo.get("cooldown", cooldown))
+	var soul_echo_refund_applied := bool(soul_echo.get("applied", false))
 	var contact_speed := maxf(float(motion_budget.get("contact_speed", 0.0)), (chain_length * maxf(0.1, swing_arc) + extension_m) / maxf(0.001, duration))
 	if state_key == STATE_ARMOR:
 		contact_speed *= 1.12
@@ -1546,6 +1601,7 @@ func _begin_runtime_blade_action(action_kind: String, binding: Dictionary, input
 		"runtime_contact_speed": contact_speed,
 		"extension_m": extension_m,
 		"driven_mass": float(motion_budget.get("driven_mass", 0.0)),
+		"soul_echo_refund_applied": soul_echo_refund_applied,
 	}
 	runtime_module_actions.append(action)
 	_refresh_visuals()
@@ -1572,6 +1628,7 @@ func _begin_runtime_blade_action(action_kind: String, binding: Dictionary, input
 		"runtime_action_base_duration": fallback_duration,
 		"startup_ratio": startup_ratio,
 		"recovery_ratio": maxf(0.0, 1.0 - startup_ratio),
+		"soul_echo_refund_applied": soul_echo_refund_applied,
 	}
 
 
@@ -1597,6 +1654,9 @@ func _begin_runtime_gauntlet_extend_swing_action(action_kind: String, binding: D
 	var motion_budget := _runtime_action_motion_budget(target_nodes, module_part, swing_degrees, extension_m, fallback_duration, state_key, binding)
 	var duration := maxf(0.12, float(motion_budget.get("duration", fallback_duration)))
 	var cooldown := maxf(0.12, float(module_part.get("cooldown", binding.get("cooldown", duration * 0.62))))
+	var soul_echo := _runtime_apply_soul_echo_to_cooldown(attack_key, cooldown)
+	cooldown = float(soul_echo.get("cooldown", cooldown))
+	var soul_echo_refund_applied := bool(soul_echo.get("applied", false))
 	var contact_speed := maxf(float(motion_budget.get("contact_speed", 0.0)), (extension_m + deg_to_rad(maxf(0.0, swing_degrees)) * base_length) / maxf(0.001, duration))
 	contact_speed *= maxf(0.1, float(module_part.get("blunt_momentum_mult", 1.5)))
 	if state_key in [STATE_ARMOR, STATE_ACTIVE]:
@@ -1637,6 +1697,7 @@ func _begin_runtime_gauntlet_extend_swing_action(action_kind: String, binding: D
 		"runtime_contact_speed": contact_speed,
 		"extension_m": extension_m,
 		"driven_mass": float(motion_budget.get("driven_mass", 0.0)),
+		"soul_echo_refund_applied": soul_echo_refund_applied,
 	}
 	runtime_module_actions.append(action)
 	_refresh_visuals()
@@ -1664,6 +1725,7 @@ func _begin_runtime_gauntlet_extend_swing_action(action_kind: String, binding: D
 		"runtime_action_base_duration": fallback_duration,
 		"startup_ratio": startup_ratio,
 		"recovery_ratio": maxf(0.0, 1.0 - startup_ratio),
+		"soul_echo_refund_applied": soul_echo_refund_applied,
 	}
 
 
@@ -1748,15 +1810,9 @@ func _tick_runtime_module_actions(delta: float) -> void:
 		action["timer"] = maxf(0.0, float(action.get("timer", 0.0)) - delta)
 		action = _tick_module_variant_action(action, delta)
 		if float(action["timer"]) <= 0.0:
-			if String(action.get("profile", "")) == "two_link_forward_snap":
-				_commit_runtime_two_link_forward_snap_pose(action)
-			elif String(action.get("profile", "")) == "blunt_gauntlet_extend_swing":
-				_commit_runtime_gauntlet_extend_swing_pose(action)
-			elif String(action.get("profile", "")) in ["blunt_shield_guard_bash", "blunt_hammer_windup_slam"]:
-				_commit_runtime_blunt_terminal_pose(action)
-			elif _is_runtime_blade_profile(String(action.get("profile", ""))):
-				_commit_runtime_blade_pose(action)
+			restore_runtime_module_entry_pose_for_nodes(Array(action.get("target_nodes", [])))
 			_commit_combo_balance_window(action)
+			_commit_soul_echo_window(action)
 			_complete_module_variant_action(action)
 			runtime_module_actions.remove_at(i)
 			_refresh_visuals()
@@ -3103,6 +3159,118 @@ func _runtime_collider_with_bounds(collider: Dictionary) -> Dictionary:
 	result["aabb_min"] = min_point
 	result["aabb_max"] = max_point
 	return result
+
+
+func _runtime_entry_pose_from_segment(segment: Dictionary) -> Dictionary:
+	var result := {
+		"node_index": int(segment.get("node_index", -1)),
+		"part_kind": String(segment.get("part_kind", "")),
+	}
+	for key in ["a_local", "b_local", "axis_local"]:
+		if segment.has(key):
+			result[key] = segment[key]
+	if segment.has("polygon_local"):
+		result["polygon_local"] = Array(segment.get("polygon_local", [])).duplicate(true)
+	return result
+
+
+func _capture_runtime_module_entry_pose_segments() -> void:
+	runtime_module_entry_pose_segments.clear()
+	for raw_segment in Array(stats.get("runtime_topology_segments", [])):
+		if not (raw_segment is Dictionary):
+			continue
+		var segment: Dictionary = raw_segment
+		runtime_module_entry_pose_segments[_runtime_segment_key(segment)] = _runtime_entry_pose_from_segment(segment)
+
+
+func _runtime_module_entry_pose_node_list() -> Array:
+	var nodes := []
+	var seen := {}
+	for raw_key in runtime_module_entry_pose_segments.keys():
+		var entry: Dictionary = runtime_module_entry_pose_segments[raw_key]
+		var node_index := int(entry.get("node_index", -1))
+		if node_index < 0 or seen.has(node_index):
+			continue
+		nodes.append(node_index)
+		seen[node_index] = true
+	return nodes
+
+
+func _clear_limb_drive_for_node(node_index: int) -> void:
+	if node_index < 0:
+		return
+	_ensure_limb_index(node_index)
+	limb_drive_timers[node_index] = 0.0
+	limb_drive_durations[node_index] = 0.0
+	limb_drive_amplitudes[node_index] = 0.0
+	limb_drive_directions[node_index] = Vector2.ZERO
+	limb_drive_states[node_index] = STATE_NORMAL
+
+
+func _apply_runtime_entry_pose_to_segment(segment: Dictionary, entry: Dictionary) -> Dictionary:
+	var updated := segment.duplicate(true)
+	for key in ["a_local", "b_local", "axis_local"]:
+		if entry.has(key):
+			updated[key] = entry[key]
+	if entry.has("polygon_local"):
+		updated["polygon_local"] = Array(entry.get("polygon_local", [])).duplicate(true)
+	return updated
+
+
+func restore_runtime_module_entry_pose_for_nodes(target_nodes: Array) -> void:
+	if runtime_module_entry_pose_segments.is_empty():
+		_capture_runtime_module_entry_pose_segments()
+	if target_nodes.is_empty() or runtime_module_entry_pose_segments.is_empty():
+		return
+	var node_set := {}
+	for raw_node in target_nodes:
+		var node_index := int(raw_node)
+		if node_index >= 0:
+			node_set[node_index] = true
+	if node_set.is_empty():
+		return
+	var segments := Array(stats.get("runtime_topology_segments", [])).duplicate(true)
+	var changed := false
+	for i in range(segments.size()):
+		if not (segments[i] is Dictionary):
+			continue
+		var segment: Dictionary = segments[i]
+		var node_index := int(segment.get("node_index", -1))
+		if not node_set.has(node_index):
+			continue
+		var key := _runtime_segment_key(segment)
+		if not runtime_module_entry_pose_segments.has(key):
+			continue
+		segments[i] = _apply_runtime_entry_pose_to_segment(segment, Dictionary(runtime_module_entry_pose_segments[key]))
+		_clear_limb_drive_for_node(node_index)
+		if aim_pose_part_index == node_index:
+			aim_pose_part_index = -1
+			aim_pose_timer = 0.0
+		changed = true
+	if not changed:
+		return
+	stats["runtime_topology_segments"] = segments
+	_invalidate_runtime_geometry_cache()
+	_refresh_visuals()
+
+
+func clear_aim_pose(part_index: int = -1, restore_entry_pose := true) -> void:
+	var restore_nodes := []
+	if part_index >= 0:
+		restore_nodes.append(part_index)
+	elif aim_pose_part_index >= 0:
+		restore_nodes.append(aim_pose_part_index)
+	var clear_all := part_index < 0
+	if clear_all or aim_pose_part_index == part_index:
+		aim_pose_part_index = -1
+		aim_pose_timer = 0.0
+	if part_index >= 0:
+		_clear_limb_drive_for_node(part_index)
+	if restore_entry_pose and not restore_nodes.is_empty():
+		restore_runtime_module_entry_pose_for_nodes(restore_nodes)
+	else:
+		_invalidate_runtime_geometry_cache()
+		_refresh_visuals()
 
 
 func _runtime_local_vector(raw_value) -> Vector2:

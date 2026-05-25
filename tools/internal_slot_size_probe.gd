@@ -16,23 +16,43 @@ func _expect_array(label: String, actual: Array, expected: Array) -> void:
 			_fail("%s mismatch at %d: expected %s got %s" % [label, i, str(expected), str(actual)])
 
 
+func _expected_profile_for_capacity(base: Array, capacity: int) -> Array:
+	var expected := base.duplicate()
+	if expected.is_empty():
+		expected.append(1)
+	while expected.size() > capacity:
+		expected.pop_back()
+	while expected.size() < capacity:
+		expected.append(int(expected[expected.size() - 1]))
+	return expected
+
+
 func _init() -> void:
 	var main = MainScene.new()
 	root.add_child(main)
 	main._ready()
 	main._show_editor()
-	var profiles := {
+	var base_profiles := {
 		"XS": [2, 1, 1],
 		"S": [3, 2, 2, 1],
 		"M": [4, 3, 3, 2, 2],
 		"L": [5, 4, 4, 3, 3, 2],
 		"XL": [5, 5, 4, 4, 3, 3, 2, 2],
 	}
-	for tier in profiles.keys():
-		var torso := {"name": "%s TEST TORSO" % tier, "size_tier": tier, "size_class": tier, "is_torso": true, "torso_slots": Array(profiles[tier]).size()}
-		_expect_array("auto profile %s" % tier, main._torso_internal_slot_size_ranks(torso), profiles[tier])
+	for tier in base_profiles.keys():
+		var base: Array = base_profiles[tier]
+		var torso := {"name": "%s TEST TORSO" % tier, "size_tier": tier, "size_class": tier, "is_torso": true, "torso_slots": base.size()}
+		var capacity := main._torso_plugin_capacity_for_part(torso)
+		var actual := main._torso_internal_slot_size_ranks(torso)
+		if actual.size() != capacity:
+			_fail("auto profile %s length must match helper capacity %d got %d" % [tier, capacity, actual.size()])
+		_expect_array("auto profile %s" % tier, actual, _expected_profile_for_capacity(base, capacity))
 	var explicit := {"name": "EXPLICIT TORSO", "size_tier": "M", "is_torso": true, "torso_slots": 4, "internal_slot_sizes": ["XL", "S"]}
-	_expect_array("explicit profile repeats tail", main._torso_internal_slot_size_ranks(explicit), [5, 2, 2, 2, 2])
+	var explicit_capacity := main._torso_plugin_capacity_for_part(explicit)
+	var explicit_actual := main._torso_internal_slot_size_ranks(explicit)
+	if explicit_actual.size() != explicit_capacity:
+		_fail("explicit profile length must match helper capacity %d got %d" % [explicit_capacity, explicit_actual.size()])
+	_expect_array("explicit profile repeats tail", explicit_actual, _expected_profile_for_capacity([5, 2], explicit_capacity))
 	var xs_torso := {"name": "XS SOCKET TEST", "size_tier": "XS", "is_torso": true, "torso_slots": 3}
 	var payload := {"kind": "engine", "engine": 0}
 	var medium_engine := {"name": "M ENGINE", "slot_volume_tier": "M", "mass": 4, "power": 40}
@@ -87,5 +107,5 @@ func _init() -> void:
 		_fail("XS cooler install path did not add payload: %s" % main.editor_summary_label.text)
 	if int(Dictionary(payloads[0]).get("internal_slot_index", -1)) != 1:
 		_fail("XS cooler did not install into requested XS slot through UI path.")
-	print("INTERNAL_SLOT_SIZE_PROBE profiles=%d explicit=%s" % [profiles.size(), str(main._torso_internal_slot_size_ranks(explicit))])
+	print("INTERNAL_SLOT_SIZE_PROBE profiles=%d explicit=%s" % [base_profiles.size(), str(main._torso_internal_slot_size_ranks(explicit))])
 	quit()

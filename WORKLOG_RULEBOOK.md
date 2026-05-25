@@ -12,6 +12,23 @@ Primary implementation file: `scripts/main.gd`
 
 Godot version in workspace: `tools/godot-4.6.2/Godot_v4.6.2-stable_win64_console.exe`
 
+## 2026-05-25 Full Worktree Stabilization and Governance Push
+
+Rules:
+- `visual_handedness` remains a compatibility and save-data authority for side-mounted asymmetric terminals. If it conflicts with a default `visual_mount_side`, preserve the explicit handedness value and then mirror it into board/runtime renderer fields.
+- Current saved data is validated strictly through the canonical data-rule boundary; invalid legacy fields must surface as rejection reasons, not be silently deleted.
+- Mobius star-dust art is surface-attached navigational texture/projection data, not an independent wallpaper layer.
+
+Implementation notes:
+- Consolidated today's editor/data-rule/ammo/hover/pose/soul/Mobius probe work into the active `safety/eidolon-health-audit-20260525-004915` branch.
+- Fixed the side-mounted scythe handoff so board-enriched nodes, runtime topology segments, and renderer component nodes retain left/right handedness.
+- Retained the GitHub Governance fixes: headless workflow execution, `actions/checkout@v5`, and direct Godot console executable validation after archive extraction.
+
+Verification:
+- `tools/run_godot_checked.ps1 -Headless -CheckOnly -TimeoutSec 120` passed.
+- Key probes passed: data rules, canonical catalog rejection, strict saved-unit rejection, ammo capacity/size UI, hover/detail close actions, pose persistence, gun activation pose restore, side-mounted scythe handedness, soul modules, torso capacity, and Mobius stardust source/projection/twist probes.
+- The full 16-probe `Godot Governance` headless mirror passed locally.
+
 ## 2026-05-25 Boost Seam Runtime Visual Origin Fix
 
 Rules:
@@ -27,6 +44,77 @@ Implementation notes:
 Verification:
 - New probes passed: `runtime_topology_visual_origin_mobius_seam_probe`, `controlled_unit_boost_seam_render_visibility_probe`, and `runtime_status_overlay_mobius_seam_probe`.
 - Updated Boost probe passed: `controlled_unit_fast_boost_never_hidden_mobius_probe`.
+
+## 2026-05-25 Canonical Data Rule Boundary
+
+Rules:
+- `scripts/services/data_rule_service.gd` is the authoritative source for active engine/cooling/thruster/limb scale constants, allocation clamping, gun allocation multiplier resolution, and canonical nonphysical/module/gun field ownership.
+- Saved blueprints are validated as written. Legacy drive/pointer data and nonphysical combat data are rejected with the first field path; saving no longer silently deletes fields to make an invalid blueprint appear current.
+- Rejected saved-unit files remain visible in the library as invalid entries with their rejection reason. They cannot be selected into a team, loaded into Unit Edit, or used for training until rebuilt or explicitly deleted.
+- Catalog ingestion produces canonical runtime/display parts through `DataRuleService`; probes must diagnose forbidden raw ownership fields instead of allowing new ad hoc cleanup paths.
+
+Implementation notes:
+- Core `main.gd` wrappers for engine output, thruster dual ranges/writeback clamp, cooling pool scaling, limb maximum, gun allocation multiplier, and nonphysical catalog normalization now delegate to `DataRuleService`.
+- `UnitBlueprintValidator` now delegates nonphysical combat path reporting to the same rule service.
+- Converted the current live rifle/grenade raw entries away from legacy `energy` and fixed projectile-damage fields to `gun_projectile_damage_mult`.
+
+Verification:
+- Headed checks passed: `data_rules_single_source_probe`, `catalog_canonical_rejection_probe`, `saved_unit_strict_rejection_probe`, `teamedit_save_unit_real_ui_probe`, `teamedit_save_complex_unit_real_ui_probe`, `saved_unit_no_silent_delete_current_schema_probe`, `raw_catalog_no_legacy_power_fields_probe`, `engine_output_effective_scale_probe`, `thruster_dual_allocation_range_probe`, `equipment_no_hp_catalog_probe`, `software_no_hp_catalog_probe`, and `gun_damage_multiplier_from_allocation_probe`.
+
+## 2026-05-25 Gun Activation Turn-Key Contract
+
+Rules:
+- Runtime gun activation uses the battle turn actions (`p*_face_left` / `p*_face_right`) to steer the bound gun muzzle while movement actions remain reserved for movement.
+- Active gun activation reserves turn keys from torso turning. Pressing left/right turn during a held shooting module must rotate the bound firearm segment, not the whole torso.
+- Shooting module text should describe left/right turn controls for muzzle steering; movement-direction 4/6 commands are reserved for melee command windows and movement.
+
+Verification:
+- New headed probe: `gun_activation_turn_keys_steer_muzzle_probe`.
+
+## 2026-05-25 GitHub Actions Headless Governance
+
+Rules:
+- GitHub Actions run `26400117799` / job `77710142396` failed before Godot checks started: the official Godot zip already extracts `Godot_v4.6.2-stable_win64_console.exe`, and the workflow tried to `Copy-Item` that file onto itself.
+- GitHub Actions must run Godot governance through `tools/run_godot_checked.ps1 -Headless`. This remains CI policy, but it was a preventive runner-compatibility fix rather than the root cause of run #8.
+- Local visual/headed gates remain valid for desktop QA, but the default GitHub `Godot Governance` workflow is a headless CI contract.
+- The Godot 4.6.2 release asset URL is valid. After `Expand-Archive`, the workflow should verify the expected console executable path directly instead of wildcard-copying an executable into that same path.
+- `actions/checkout` should use `@v5` so the workflow does not keep GitHub's Node 20 deprecation warning alive while the runner fleet moves to Node 24.
+
+Implementation notes:
+- Updated `.github/workflows/godot-governance.yml` so both `Godot check-only` and every governance probe pass `-Headless`.
+- Updated the Godot install step to remove the self-copy path and throw only when `tools/godot-4.6.2/Godot_v4.6.2-stable_win64_console.exe` is missing after extraction.
+- Updated checkout from `actions/checkout@v4` to `actions/checkout@v5`.
+- No gameplay code, probe manifest, or catalog data changed for this CI fix.
+
+Verification:
+- After the self-copy fix, local headless workflow mirror passed: `tools/run_godot_checked.ps1 -Headless -CheckOnly -TimeoutSec 120` plus the 16 probes listed in `Godot Governance`.
+- Local headed governance mirror had already passed, confirming this is an environment compatibility fix rather than a code regression fix.
+
+## 2026-05-25 Internal Slot Capacity Contract Closeout
+
+Rules:
+- Raw torso fields `torso_slots` and `module_slots` are design bases. Player-facing capacity is canonical only through `_torso_plugin_capacity_for_part()` and `_torso_software_capacity_for_part()`.
+- Helper capacity is `max(raw base, size baseline) + 1`, clamped by the helper. This preserves the current player-visible capacity and avoids treating the extra slot as an ammo-system regression.
+- `_torso_internal_slot_size_ranks()` must always return exactly the helper plugin capacity. If it needs to extend a profile, it repeats the last existing size and never invents a larger tail slot.
+
+Implementation notes:
+- Updated `internal_slot_size_probe` to expect profile length equal to helper capacity, including the repeated tail slot for automatic and explicit `internal_slot_sizes` profiles.
+- Added `torso_slot_capacity_contract_probe` to lock raw-vs-helper semantics, verify stats/board display use helper capacity exactly once, and prevent double `+1` through enriched topology nodes.
+- No catalog values or gameplay code were changed.
+
+Verification:
+- `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120` passed.
+- Slot probes passed:
+  - `internal_slot_size_probe`
+  - `torso_slot_capacity_contract_probe`
+- Related regressions passed:
+  - `ammo_size_slider_probe`
+  - `ammo_install_size_payload_probe`
+  - `part_library_ui_probe`
+  - `ui_layout_probe`
+  - `text_overflow_probe`
+  - `combat_probe`
+
 ## 2026-05-25 Boost Mobius Projection Guard
 
 Rules:
@@ -42,6 +130,54 @@ Implementation notes:
 Verification:
 - New/updated Boost probes passed: `controlled_unit_fast_boost_never_hidden_mobius_probe` and `controlled_unit_boost_sway_clamp_probe`.
 - Regression passed: `controlled_unit_never_hidden_mobius_probe`, `mobius_projection_guard_duration_probe`, `unit_visibility_no_flicker_probe`, `battle_camera_follow_mobius_unwrapped_probe`, `battle_real_training_movement_screen_direction_probe`, `mobius_bullet_readability_probe`, `projectile_path_not_bent_by_mobius_probe`, `combat_probe`, `ui_layout_probe`, `text_overflow_probe`, and `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120`.
+
+## 2026-05-25 Mobius Stardust Surface-Source Invariant Pass
+
+Rules:
+- Stardust is painted on the Mobius surface as two equal-width, equal-brightness source-space ribbons. Screen-space width, brightness, bend, and apparent motion must come from Mobius visual projection only.
+- Stardust remains visual-only. It must not affect gameplay coordinates, movement, aiming rays, projectiles, collision, or hit ordering.
+- The surface shader may sample and half-twist the Mobius texture, but it must not add an independent dust/nebula layer that reads as a separate space behind or above the strip.
+
+Implementation notes:
+- `MobiusStardustBandView` now caches source width/alpha separately from projected display width/alpha/depth. Source width is fixed at `6.0px` and source alpha at `0.115`.
+- Stardust band points and particles are generated from stable surface coordinates and then projected through `MobiusWorld.project_to_screen()` with visual twist enabled; no screen-space lift, pulse, or brightness wave drives the band.
+- `mobius_strip_surface.gdshader` was simplified to texture sampling, continuous half-twist UV, and projection tint/alpha. Procedural dust/nebula glow was removed from the shader path.
+
+Verification:
+- New probes passed: `mobius_stardust_source_invariant_probe` and `mobius_stardust_projection_only_variation_probe`.
+- Updated probes passed: `mobius_stardust_surface_attachment_probe` and `mobius_stardust_twist_inversion_probe`.
+- Regression passed: `mobius_stardust_band_runtime_probe`, `mobius_stardust_two_surface_bands_probe`, `mobius_stardust_named_node_probe`, `mobius_surface_half_twist_uv_probe`, `mobius_local_rectangular_projection_probe`, `gameplay_visual_transform_separation_probe`, `battle_xy_background_probe`, `battle_minimal_background_probe`, `ui_layout_probe`, `text_overflow_probe`, and `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120`.
+
+## 2026-05-25 Orthogonal Scythe Side Mount
+
+Rules:
+- Scythes are no longer defined as self-mirrored blades. They are `orientation_category="orthogonal_side_mount"` weapons: the previous limb is the handle and the blade sits 90 degrees off that parent axis.
+- Player-facing `左侧挂刃 / 右侧挂刃` chooses `visual_mount_side = "left" | "right"` around the parent limb normal. It does not change sockets, damage, drive, collision centerline, or module legality.
+- `visual_handedness` remains a legacy alias only; new UI, runtime segment data, and renderer contracts should prefer `visual_mount_side`, `orientation_basis="parent_normal"`, and `mount_parent_axis_local`.
+
+Implementation notes:
+- Scythe-like terminal weapons are inferred as orthogonal side mounts from `weapon_family="scythe"` or SCYTHE/CRESCENT/HOOK names/shapes, and the selected catalog entries expose the reusable category fields for future hook/crescent weapons.
+- `AssemblyBoardRenderer` draws scythes using `mount_parent_axis_local` as the handle direction, then mirrors the blade across that parent-axis normal. Dragging or rotating the terminal node itself must not redefine the blade side.
+- Board-enriched nodes, runtime topology segments, saved-unit blueprints, and legacy `visual_handedness` payloads all normalize to `visual_mount_side`.
+
+Verification:
+- Added/current probes: `orthogonal_side_mount_category_probe`, `scythe_parent_normal_mount_polygon_probe`, `scythe_dragged_terminal_uses_parent_axis_probe`, `scythe_mount_side_board_runtime_probe`, `scythe_mount_side_save_load_probe`, and `scythe_module_binding_mount_side_probe`.
+- Regression baseline remains melee art identity, runtime contact visual identity, no-projectile melee gate, TeamEdit, UI layout, text overflow, and Godot check-only.
+
+## 2026-05-25 Asymmetric Scythe Handedness
+
+Rules:
+- Scythe-style asymmetric terminal weapons now carry node-level `visual_handedness = "left" | "right"` on the TeamEdit topology node.
+- Handedness is visual/topology identity only. It must not change sockets, mass, drive budget, module legality, damage, projectile gates, or catalog indices.
+- Installing a scythe prompts the player to choose `左刃 / 右刃`; selecting an already installed scythe exposes `翻朝向 / FLIP SIDE`.
+
+Implementation notes:
+- `AssemblyBoardRenderer` mirrors only the local right vector for scythe polygons and inner detail lines, so the handle/forward axis and interface anchors stay stable.
+- Placement templates, enriched board snapshots, runtime topology segments, and saved-unit blueprints all preserve `visual_handedness`.
+- Runtime module binding remains unchanged: `scythe_hook_return` binds and executes for both handedness values and remains melee-only/no projectile.
+
+Verification:
+- Added probes for asymmetric detection, install UI choice, polygon mirroring, board/runtime propagation, save/load persistence, and scythe module execution across both sides.
 
 ## 2026-05-25 Mobius Stardust Render Visibility And Projection Guard
 
@@ -60,22 +196,6 @@ Implementation notes:
 Verification:
 - New headed probes cover node contract, render visibility, straight-guide absence, controlled unit persistence, projection guard, and non-focus flicker grace.
 - Existing Mobius movement, bullet readability, projectile-path, combat, UI layout, and text overflow probes remain the regression baseline.
-
-## 2026-05-25 Orthogonal Scythe Side Mount
-
-Rules:
-- Scythes are no longer defined as self-mirrored blades. They are `orientation_category="orthogonal_side_mount"` weapons: the previous limb is the handle and the blade sits 90 degrees off that parent axis.
-- Player-facing `左侧挂刃 / 右侧挂刃` chooses `visual_mount_side = "left" | "right"` around the parent limb normal. It does not change sockets, damage, drive, collision centerline, or module legality.
-- `visual_handedness` remains a legacy alias only; new UI, runtime segment data, and renderer contracts should prefer `visual_mount_side`, `orientation_basis="parent_normal"`, and `mount_parent_axis_local`.
-
-Implementation notes:
-- Scythe-like terminal weapons are inferred as orthogonal side mounts from `weapon_family="scythe"` or SCYTHE/CRESCENT/HOOK names/shapes, and the selected catalog entries expose the reusable category fields for future hook/crescent weapons.
-- `AssemblyBoardRenderer` draws scythes using `mount_parent_axis_local` as the handle direction, then mirrors the blade across that parent-axis normal. Dragging or rotating the terminal node itself must not redefine the blade side.
-- Board-enriched nodes, runtime topology segments, saved-unit blueprints, and legacy `visual_handedness` payloads all normalize to `visual_mount_side`.
-
-Verification:
-- Added/current probes: `orthogonal_side_mount_category_probe`, `scythe_parent_normal_mount_polygon_probe`, `scythe_dragged_terminal_uses_parent_axis_probe`, `scythe_mount_side_board_runtime_probe`, `scythe_mount_side_save_load_probe`, and `scythe_module_binding_mount_side_probe`.
-- Regression baseline remains melee art identity, runtime contact visual identity, no-projectile melee gate, TeamEdit, UI layout, text overflow, and Godot check-only.
 
 ## 2026-05-25 Subtle Curved Mobius Stardust Band
 
@@ -3903,6 +4023,84 @@ Findings:
 
 Sync:
 - Implemented in `E:\New project`; mirror sync and local commit recorded by the surrounding Git history.
+
+## 2026-05-25 Ammo Size Slider and Scaled Ammo Economy
+
+Rules:
+- Ammo payload catalog entries are XS templates. When the player installs ammo, the selected size tier generates the purchased payload variant.
+- Ammo size uses the shared internal-slot scale: XS/S/M/L/XL = x1/x2/x4/x8/x16. Ammo count, cost, mass, and slot volume all scale together; weapon damage and firing behavior do not change.
+- Saved payloads store `ammo_size_tier`; old payloads without the field read as XS.
+- Ammo totals must iterate `AMMO_TYPES` so bullet, laser, chemical, explosive, and web ammo stay consistent.
+
+Implementation notes:
+- Replaced the old five ammo size buttons with a stepped `HSlider` shown in the ammo install filter. The value label shows the selected tier and multiplier, and catalog cards update in real time.
+- Added shared helpers for total ammo capacity, empty ammo capacity maps, and size slider labels.
+- Marked ammo payload catalog entries as XS templates and added explosive/web ammo bays so missile, grenade, and web weapons can use the same sized-ammo purchase path.
+- Updated catalog cards, hover stats, payload detail lines, dashboard ammo notes, and ammo payload icon colors to include all ammo types.
+
+Verification:
+- `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120` passed.
+- New/updated ammo probes passed:
+  - `ammo_size_slider_probe`
+  - `ammo_install_size_payload_probe`
+  - `ammo_capacity_all_types_probe`
+  - `ammo_size_ui_probe`
+- Regressions passed:
+  - `part_library_ui_probe`
+  - `part_hover_detail_page_probe`
+  - `gun_kind_ammo_kind_probe`
+  - `missile_ammo_heat_probe`
+  - `laser_ammo_heat_probe`
+  - `ui_layout_probe`
+  - `text_overflow_probe`
+  - `combat_probe`
+
+Findings:
+- The later internal-slot closeout resolved the apparent residual: helper capacity is `max(raw base, size baseline) + 1`, and the probe now expects the repeated tail slot.
+
+Sync:
+- Implemented in `E:\New project`; Documents and OneDrive mirrors refreshed from this source after this entry.
+
+## 2026-05-25 First Standard Soul: First Edge Echo
+
+Rules:
+- A soul is a hero-only construction oath, not a universal stat plug-in. The first standard soul must grant a baseline heat slot even when its oath is inactive.
+- `SOUL: FIRST EDGE ECHO / 始锋回响英魂` activates only for light/mid, small-radius melee duelists with at least three bound action modules and at least one blade/pierce/duelist real-contact action.
+- Heavy shield/hammer loads, missile or pure-ranged builds, and XL limbs keep the heat slot but do not receive oath benefits.
+- Soul echo uses existing runtime action cooldown metadata. It must not create a projectile, attack group, child visual, old soul-cast route, or new external gameplay API.
+
+Implementation notes:
+- Replaced the old `DUEL SOUL` catalog entry with `SOUL: FIRST EDGE ECHO`, adding `soul_archetype="duelist_oath"` and echo fields for window, recovery multiplier, and heat-relief metadata.
+- Split first-soul handling out of `_apply_soul_bonus()`: inactive oath now avoids the old unconditional HP/damage/speed/cooling stat soup, while active oath adds only small duelist reach/speed/recovery posture benefits.
+- Added oath checks for mass, radius, module count, duelist real-contact module presence, weapon load, XL limbs, missile launchers, and heavy shield/hammer terminals.
+- Added hover usage copy for the soul in the part library and torso payload hover path, including install slot, activation method, ideal build, echo usage, and mismatch warnings.
+- Added runtime soul echo helpers to `fighter.gd`: completing one action primes a short window; the next different bound key consumes it and shortens recovery.
+- Fixed a pre-existing editor UI parse issue where `custom_board_enabled` / selected handedness state were referenced before local declaration, which blocked script probes from loading `main.gd`.
+- Stabilized module/part hover probes by using ASCII English assertions for runner-facing text checks while the dedicated soul hover probe continues to verify the required Chinese player copy.
+
+Verification:
+- `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120` passed.
+- New soul probes passed:
+  - `first_soul_duelist_oath_probe`
+  - `soul_oath_activation_probe`
+  - `soul_oath_mismatch_probe`
+  - `soul_echo_runtime_probe`
+  - `soul_hover_usage_probe`
+- UI/runtime regressions passed:
+  - `part_hover_detail_page_probe`
+  - `catalog_ui_terms_probe`
+  - `module_detail_action_page_probe`
+  - `limb_runtime_allocation_source_probe`
+  - `module_duration_from_allocation_probe`
+  - `combat_probe`
+  - `runtime_geometry_identity_probe`
+  - `ui_layout_probe`
+  - `text_overflow_probe`
+  - `no_old_combat_terms_probe`
+  - `no_legacy_runtime_pointers_probe`
+
+Sync:
+- Implemented in `E:\New project`; Documents and OneDrive mirrors are refreshed from this source after this log entry.
 
 ## 2026-05-25 Mobius Stardust Surface Bands and Projection Guard
 

@@ -52,6 +52,10 @@ func _init() -> void:
 	fighter._ready()
 	fighter.setup_unit({"unit_name": "Recovery", "owner_id": 1, "role": "hero", "stats": stats})
 	fighter.deploy(0.0, 0.0)
+	var before_first := fighter._runtime_segment_source_by_node(int(nodes[0]))
+	var before_second := fighter._runtime_segment_source_by_node(int(nodes[1]))
+	var before_first_dir := (fighter._runtime_local_vector(before_first.get("b_local", Vector2.ZERO)) - fighter._runtime_local_vector(before_first.get("a_local", Vector2.ZERO))).normalized()
+	var before_second_dir := (fighter._runtime_local_vector(before_second.get("b_local", Vector2.ZERO)) - fighter._runtime_local_vector(before_second.get("a_local", Vector2.ZERO))).normalized()
 	var event := fighter.begin_runtime_module_action("normal", binding, Vector2.RIGHT)
 	if event.is_empty():
 		_fail("Two-Link action failed to start.")
@@ -61,11 +65,11 @@ func _init() -> void:
 	var second := fighter._runtime_segment_source_by_node(int(nodes[1]))
 	var first_dir := (fighter._runtime_local_vector(first.get("b_local", Vector2.ZERO)) - fighter._runtime_local_vector(first.get("a_local", Vector2.ZERO))).normalized()
 	var second_dir := (fighter._runtime_local_vector(second.get("b_local", Vector2.ZERO)) - fighter._runtime_local_vector(second.get("a_local", Vector2.ZERO))).normalized()
-	if first_dir.dot(Vector2.LEFT) < 0.92:
-		_fail("Recovery first limb should point backward parallel to torso axis.")
+	if first_dir.distance_to(before_first_dir) > 0.01:
+		_fail("Recovery first limb should restore the entry default pose.")
 		return
-	if second_dir.dot(Vector2.RIGHT) < 0.92:
-		_fail("Recovery second limb should fold forward parallel to torso axis.")
+	if second_dir.distance_to(before_second_dir) > 0.01:
+		_fail("Recovery second limb should restore the entry default pose.")
 		return
 	print("TWO_LINK_RECOVERY_POSE_PROBE first=%s second=%s" % [first_dir, second_dir])
 	quit()

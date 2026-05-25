@@ -44,14 +44,16 @@ func _assert_module_card(main, profile: String, required_terms: Array) -> void:
 		if String(entry.get("label", "")) == "" or String(entry.get("icon", "")) == "":
 			_fail("%s stat entry lacks label/icon: %s" % [profile, str(entry)])
 		stat_text += " %s %s %s" % [String(entry.get("label", "")), String(entry.get("value_text", "")), String(entry.get("icon", ""))]
-	for stat_term in ["输入", "关节", "武器", "伤害"]:
-		if stat_text.find(stat_term) < 0:
+	var lowered_stat_text := stat_text.to_lower()
+	for stat_term in ["input", "joint", "weapon", "damage"]:
+		if lowered_stat_text.find(stat_term) < 0:
 			_fail("%s stats missing %s in %s" % [profile, stat_term, stat_text])
 	var lines: Array = main._hover_card_player_detail_lines("module", part)
 	var joined := _joined(lines)
+	var lowered_joined := joined.to_lower()
 	_assert_no_hidden_terms(joined, profile)
 	for term in required_terms:
-		if joined.find(String(term)) < 0:
+		if lowered_joined.find(String(term).to_lower()) < 0:
 			_fail("%s missing %s in detail lines: %s" % [profile, String(term), joined])
 
 
@@ -59,11 +61,11 @@ func _init() -> void:
 	var main = MainScene.new()
 	root.add_child(main)
 	main._ready()
-	main.ui_language = "zh"
-	_assert_module_card(main, "two_link_forward_snap", ["行动模块", "绑定", "X：", "6X", "数据："])
-	_assert_module_card(main, "blade_arc_return", ["刃系", "X：普通斩击", "6X", "4X", "真实接触"])
-	_assert_module_card(main, "blunt_gauntlet_extend_swing", ["拳套", "236X必杀", "214X必杀", "必杀热"])
-	_assert_module_card(main, "laser_beam_activate", ["激光枪", "按住X", "松开X", "显式光束"])
-	_assert_module_card(main, "missile_lock_activate", ["导弹架", "按住X", "松开X", "显式导弹"])
+	main.ui_language = "en"
+	_assert_module_card(main, "two_link_forward_snap", ["action module", "bind", "X:", "6X", "data:"])
+	_assert_module_card(main, "blade_arc_return", ["blade", "X: normal cut", "6X", "4X", "real contact"])
+	_assert_module_card(main, "blunt_gauntlet_extend_swing", ["gauntlet", "236X special", "214X special", "real contact"])
+	_assert_module_card(main, "laser_beam_activate", ["laser gun", "hold X", "release X", "explicit beam"])
+	_assert_module_card(main, "missile_lock_activate", ["missile pod", "hold X", "release X", "explicit missile"])
 	print("MODULE_DETAIL_ACTION_PAGE_PROBE ok")
 	quit()

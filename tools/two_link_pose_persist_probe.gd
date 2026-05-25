@@ -76,9 +76,8 @@ func _init() -> void:
 		return
 	var after := fighter._runtime_segment_source_by_node(first_node)
 	var after_b := fighter._runtime_local_vector(after.get("b_local", Vector2.ZERO))
-	var after_dir := (after_b - fighter._runtime_local_vector(after.get("a_local", Vector2.ZERO))).normalized()
-	if absf(after_dir.dot(Vector2.LEFT)) < 0.85:
-		_fail("Finished Two-Link first segment did not stay in the backward recovery pose.")
+	if after_b.distance_to(before_b) > 0.01:
+		_fail("Finished Two-Link first segment should restore the entry default pose.")
 		return
 	print("TWO_LINK_POSE_PERSIST_PROBE before=%s after=%s" % [before_b, after_b])
 	quit()

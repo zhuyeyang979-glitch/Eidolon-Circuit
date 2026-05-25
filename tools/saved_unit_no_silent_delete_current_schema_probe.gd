@@ -8,11 +8,11 @@ func _fail(message: String) -> void:
 	quit(1)
 
 
-func _entry_exists(main: Node, path: String) -> bool:
+func _entry_for(main: Node, path: String) -> Dictionary:
 	for raw_entry in main._unit_library_entries():
 		if raw_entry is Dictionary and String(Dictionary(raw_entry).get("path", "")) == path:
-			return true
-	return false
+			return Dictionary(raw_entry)
+	return {}
 
 
 func _init() -> void:
@@ -46,9 +46,14 @@ func _init() -> void:
 	if not FileAccess.file_exists(path):
 		_fail("Current-schema invalid saved unit should not be silently deleted during normal list scan.")
 		return
-	if _entry_exists(main, path):
-		_fail("Current-schema invalid saved unit should not appear as a valid library entry.")
+	var rejected_entry := _entry_for(main, path)
+	if rejected_entry.is_empty() or not bool(rejected_entry.get("canonical_rejected", false)):
+		_fail("Current-schema invalid saved unit should remain visible as a rejected entry.")
+		return
+	var note := main._saved_unit_entry_illegal_note(rejected_entry)
+	if note.find("topology has no nodes") < 0:
+		_fail("Rejected saved unit should expose its first blocking reason: %s" % note)
 		return
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
-	print("SAVED_UNIT_NO_SILENT_DELETE_CURRENT_SCHEMA_PROBE ok path=%s" % path)
+	print("SAVED_UNIT_NO_SILENT_DELETE_CURRENT_SCHEMA_PROBE ok rejected=%s" % note)
 	quit(0)
