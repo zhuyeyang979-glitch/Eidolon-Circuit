@@ -4211,7 +4211,7 @@ func boost(direction: Vector2, ring_length: float) -> bool:
 		_apply_velocity_brake(0.0, "reverse_brake", true, direction)
 		return false
 	var boost_extra_demand: float = maxf(0.0, float(stats.get("thruster_boost_extra_demand", 0.0)))
-	var boost_total_momentum: float = maxf(0.0, float(stats.get("boost_momentum", 0.0)))
+	var boost_total_momentum: float = maxf(0.0, float(stats.get("boost_total_momentum", stats.get("boost_momentum", 0.0))))
 	var boost_speed: float = maxf(0.0, float(stats.get("boost_speed", 0.0)))
 	var boost_duration := maxf(0.0, float(stats.get("boost_duration", 0.0)))
 	if boost_extra_demand <= 0.0 or boost_duration <= 0.0 or (boost_total_momentum <= 0.0 and boost_speed <= 0.0):

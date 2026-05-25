@@ -12,6 +12,22 @@ Primary implementation file: `scripts/main.gd`
 
 Godot version in workspace: `tools/godot-4.6.2/Godot_v4.6.2-stable_win64_console.exe`
 
+## 2026-05-26 Boost Heat Cost Contract
+
+Rules:
+- Boost has two separate costs. `thruster_boost_extra_demand` / Boost momentum consume drive budget and determine peak movement, while `boost_heat` is a fixed per-success Boost heat-slot cost.
+- `boost_heat` is summed from installed boosters into runtime stats, does not scale with Boost/brake allocation sliders, and does not enter `drive_demand_total` or idle thermal legality.
+- Only a successful `Fighter.boost()` adds `boost_heat` with the `heat:boost` reason. Failed Boost attempts, cooldown blocks, unusable directions, and brake substitutions do not add heat.
+- `boost_heat_relief` applies through the canonical boost heat tag and can reduce the actual heat entering the slot; overheat shutdown continues to use the existing heat-slot rules.
+
+Implementation notes:
+- Booster card, hover, stats rail, and torso detail allocation text now distinguish Boost momentum/peak drive from single-use Boost heat cost.
+- `_apply_thruster_momentum_stats()` keeps `boost_momentum` as Boost extra allocation, writes `boost_total_momentum` for total impulse, and `Fighter.boost()` uses total impulse with legacy `boost_momentum` fallback.
+
+Verification:
+- New probes: `boost_heat_runtime_consumption_probe`, `boost_heat_independent_from_drive_allocation_probe`, `boost_heat_relief_probe`, `boost_heat_not_drive_or_idle_legality_probe`, and `boost_heat_ui_terms_probe`.
+- Regressions: Boost cooldown/heat, thermal idle-vs-Boost, thruster gradient, drive budget/runtime movement, eight-direction Boost, UI layout, text overflow, and check-only.
+
 ## 2026-05-26 Mobius Square-Grid Field Projection
 
 Rules:

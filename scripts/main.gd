@@ -19421,6 +19421,7 @@ func _engine_momentum_allocation_data(unit_bp: Dictionary, torso_node_index: int
 		var boost_peak := drive_momentum + boost_momentum
 		var boost_peak_ratio := boost_peak / maxf(1.0, pool) if pool > 0.0 else 0.0
 		var booster_heat_coeff := _thruster_idle_heat_coeff_for_part(booster_part)
+		var boost_heat_cost := maxf(0.0, float(_thruster_with_drive_defaults(booster_part).get("boost_heat", 0.0)))
 		var booster_label := _short_part_name(_zh_part_name(String(booster_part.get("name", "推进"))) if _ui_is_zh() else String(booster_part.get("name", "BOOSTER")))
 		entries.append({
 			"id": "booster_drive:%d" % i,
@@ -19451,7 +19452,7 @@ func _engine_momentum_allocation_data(unit_bp: Dictionary, torso_node_index: int
 			"kind": "booster_boost_brake",
 			"payload_index": i,
 			"label": ("%s / Boost刹车" if _ui_is_zh() else "%s / BOOST-BRAKE") % booster_label,
-			"line": ("Boost/刹车增幅 %.0f-%.0f" if _ui_is_zh() else "Boost/brake %.0f-%.0f") % [boost_min, boost_max],
+			"line": ("Boost/刹车峰值动力 %.0f-%.0f；单次热耗 %.1f" if _ui_is_zh() else "Boost/brake peak drive %.0f-%.0f; heat cost %.1f") % [boost_min, boost_max, boost_heat_cost],
 			"ratio": boost_ratio,
 			"momentum": boost_momentum,
 			"allocated_momentum": boost_momentum,
@@ -19462,7 +19463,7 @@ func _engine_momentum_allocation_data(unit_bp: Dictionary, torso_node_index: int
 			"boost_peak_ratio": boost_peak_ratio,
 			"heat_coeff": 0.0,
 			"heat_exempt": true,
-			"heat_label": "峰值提示 / 不占常热" if _ui_is_zh() else "Peak hint / no idle heat",
+			"heat_label": ("单次Boost热耗 %.1f / 不占常热" if _ui_is_zh() else "Boost heat cost %.1f / no idle heat") % boost_heat_cost,
 			"heat_color": Color(1.0, 0.62, 0.18, 1.0),
 			"readonly": boost_max <= boost_min,
 			"disabled": pool <= 0.0 or boost_max <= 0.0,
@@ -38453,6 +38454,7 @@ func _apply_thruster_momentum_stats(stats: Dictionary, role_key: String) -> void
 	if role_key == "barrier":
 		stats["move_momentum"] = 0.0
 		stats["boost_momentum"] = 0.0
+		stats["boost_total_momentum"] = 0.0
 		stats["thruster_boost_extra_demand"] = 0.0
 		stats["thruster_boost_peak_demand"] = 0.0
 		stats["thruster_effective_drive_demand"] = 0.0
@@ -38499,7 +38501,8 @@ func _apply_thruster_momentum_stats(stats: Dictionary, role_key: String) -> void
 	var derived_speed_limit := maxf(1.0, maxf(body_move_speed * 3.0, boost_speed * 2.0) * 1.5 * torso_speed_mult)
 	var speedometer_max_speed := derived_speed_limit
 	stats["move_momentum"] = thruster_momentum
-	stats["boost_momentum"] = boost_total_momentum
+	stats["boost_momentum"] = boost_extra_demand
+	stats["boost_total_momentum"] = boost_total_momentum
 	stats["thruster_drive_demand"] = drive_demand
 	stats["thruster_boost_extra_demand"] = boost_extra_demand
 	stats["thruster_boost_peak_demand"] = boost_peak_demand
@@ -50847,7 +50850,7 @@ func _catalog_card_data_lines(slot_key: String, part: Dictionary) -> Array:
 				return ["价%d 散%.1f 池%.0f" % [cost, _cooling_rate_for_part(part), _cooling_heat_capacity_for_part(part)], "%s 质%.0f" % [gradient_line, mass]]
 			"booster":
 				var thruster := _thruster_with_drive_defaults(part)
-				return ["价%d %s 需%.0f" % [cost, _thruster_family_label(String(thruster.get("thruster_family", ""))), _thruster_drive_demand_for_part(thruster)], "%s 移%.0f/B+%.0f" % [gradient_line, _booster_normal_momentum_for_part(thruster), _booster_boost_momentum_for_part(thruster)]]
+				return ["价%d %s 需%.0f" % [cost, _thruster_family_label(String(thruster.get("thruster_family", ""))), _thruster_drive_demand_for_part(thruster)], "%s 移%.0f/B+%.0f/热%.1f" % [gradient_line, _booster_normal_momentum_for_part(thruster), _booster_boost_momentum_for_part(thruster), float(thruster.get("boost_heat", 0.0))]]
 			"special":
 				return ["价%d 无动力消耗" % cost, "%s %s" % [gradient_line, _zh_part_name(String(part.get("kind", "特殊")).to_upper())]]
 			"module":
@@ -50876,7 +50879,7 @@ func _catalog_card_data_lines(slot_key: String, part: Dictionary) -> Array:
 			return ["C%d COOL %.1f POOL%.0f" % [cost, _cooling_rate_for_part(part), _cooling_heat_capacity_for_part(part)], "%s M%.0f" % [gradient_line, mass]]
 		"booster":
 			var thruster_en := _thruster_with_drive_defaults(part)
-			return ["C%d %s REQ%.0f" % [cost, _thruster_family_label(String(thruster_en.get("thruster_family", ""))).to_upper(), _thruster_drive_demand_for_part(thruster_en)], "%s MV%.0f/B+%.0f" % [gradient_line, _booster_normal_momentum_for_part(thruster_en), _booster_boost_momentum_for_part(thruster_en)]]
+			return ["C%d %s REQ%.0f" % [cost, _thruster_family_label(String(thruster_en.get("thruster_family", ""))).to_upper(), _thruster_drive_demand_for_part(thruster_en)], "%s MV%.0f/B+%.0f/H%.1f" % [gradient_line, _booster_normal_momentum_for_part(thruster_en), _booster_boost_momentum_for_part(thruster_en), float(thruster_en.get("boost_heat", 0.0))]]
 		"special":
 			return ["C%d NO POWER" % cost, "%s %s" % [gradient_line, String(part.get("kind", "SPECIAL")).to_upper()]]
 		"module":
@@ -52147,6 +52150,7 @@ func _hover_card_stat_entries(slot_key: String, part: Dictionary) -> Array:
 		_add_hover_stat(entries, "推进" if _ui_is_zh() else "Move", _booster_normal_momentum_for_part(part), 520.0, "", Color(1.0, 0.64, 0.24, 1.0), "boost")
 		_add_hover_stat(entries, "Boost额外" if _ui_is_zh() else "Boost Extra", _booster_boost_momentum_for_part(part), 720.0, "", Color(1.0, 0.86, 0.24, 1.0), "boost")
 		_add_hover_stat(entries, "Boost总" if _ui_is_zh() else "Boost Total", _thruster_boost_total_momentum_for_part(part), 980.0, "", Color(1.0, 0.72, 0.18, 1.0), "boost")
+		_add_hover_stat(entries, "单次Boost热耗" if _ui_is_zh() else "Boost Heat Cost", float(_thruster_with_drive_defaults(part).get("boost_heat", 0.0)), 40.0, "", Color(1.0, 0.28, 0.16, 1.0), "heat")
 		_add_hover_stat(entries, "常态热" if _ui_is_zh() else "Idle Heat", _booster_idle_heat_for_part(part), 36.0, "", Color(1.0, 0.18, 0.12, 1.0), "heat")
 	elif slot_key == "special":
 		var special_kind := String(part.get("kind", "special"))
@@ -52479,7 +52483,7 @@ func _hover_card_player_detail_lines(slot_key: String, part: Dictionary, context
 			var thruster := _thruster_with_drive_defaults(part)
 			var thruster_family := String(thruster.get("thruster_family", ""))
 			lines.append("#%s" % _thruster_family_label(thruster_family))
-			lines.append(("需求下限 %.0f，推进 %.0f，Boost峰值额外 %.0f，总Boost %.0f；角度 %.0f°，间隔 %.2fs，Boost热 %.1f。" if zh else "Fixed demand %.0f, move %.0f, boost peak extra %.0f, total boost %.0f; angle %.0f deg, cooldown %.2fs, boost heat %.1f.") % [_thruster_drive_demand_for_part(thruster), _booster_normal_momentum_for_part(thruster), _booster_boost_momentum_for_part(thruster), _thruster_boost_total_momentum_for_part(thruster), float(thruster.get("boost_angle_degrees", 360.0)), float(thruster.get("boost_cooldown", 0.0)), float(thruster.get("boost_heat", 0.0))])
+			lines.append(("需求下限 %.0f，推进 %.0f，Boost峰值额外 %.0f，总Boost %.0f；角度 %.0f°，间隔 %.2fs，单次Boost热耗 %.1f。" if zh else "Fixed demand %.0f, move %.0f, boost peak extra %.0f, total boost %.0f; angle %.0f deg, cooldown %.2fs, boost heat cost %.1f.") % [_thruster_drive_demand_for_part(thruster), _booster_normal_momentum_for_part(thruster), _booster_boost_momentum_for_part(thruster), _thruster_boost_total_momentum_for_part(thruster), float(thruster.get("boost_angle_degrees", 360.0)), float(thruster.get("boost_cooldown", 0.0)), float(thruster.get("boost_heat", 0.0))])
 			lines.append(("移动方式 %s；刹车 %.2f，转向 %.2f。" if zh else "Movement %s; brake %.2f, turn %.2f.") % [String(thruster.get("movement_profile", "omni")), float(thruster.get("brake_efficiency", 1.0)), float(thruster.get("turn_efficiency", 1.0))])
 			lines.append(_thruster_family_summary(thruster_family))
 		"module":
@@ -52634,12 +52638,12 @@ func _editor_stats_entries(current_stats: Dictionary, preview_stats: Dictionary,
 	_append_editor_stat(entries, "散热速度" if _ui_is_zh() else "Cooling Rate", "cooling", current_stats, preview_stats, 180.0, "", false)
 	if String(current_stats.get("role", "")) == "hero":
 		_append_editor_stat(entries, "热槽" if _ui_is_zh() else "Heat", "heat_capacity", current_stats, preview_stats, 260.0, "", false)
-	_append_editor_stat(entries, "Boost热量" if _ui_is_zh() else "Boost Heat", "boost_heat", current_stats, preview_stats, 40.0, "", false)
+		_append_editor_stat(entries, "单次Boost热耗" if _ui_is_zh() else "Boost Heat Cost", "boost_heat", current_stats, preview_stats, 40.0, "", false)
 	_append_editor_section(entries, "机动" if _ui_is_zh() else "MOTION", Color(0.42, 0.92, 1.0, 0.92))
 	_append_editor_stat(entries, "机体速度" if _ui_is_zh() else "Body Speed", "move_speed", current_stats, preview_stats, 8.0, "m/s", false)
 	_append_editor_stat(entries, "Boost速度" if _ui_is_zh() else "Boost Speed", "boost_speed", current_stats, preview_stats, 9.0, "m/s", false)
 	_append_editor_stat(entries, "移动动量" if _ui_is_zh() else "Move Momentum", "move_momentum", current_stats, preview_stats, 520.0, "", false)
-	_append_editor_stat(entries, "Boost动量" if _ui_is_zh() else "Boost Momentum", "boost_momentum", current_stats, preview_stats, 860.0, "", false)
+	_append_editor_stat(entries, "Boost总动量" if _ui_is_zh() else "Total Boost Momentum", "boost_total_momentum", current_stats, preview_stats, 860.0, "", false)
 	_append_editor_stat(entries, "Boost冷却" if _ui_is_zh() else "Boost CD", "boost_cooldown", current_stats, preview_stats, 2.0, "s", false)
 	_append_editor_stat(entries, "推进加速" if _ui_is_zh() else "Move Accel", "move_acceleration", current_stats, preview_stats, 8.0, "m/s²" if _ui_is_zh() else "m/s2", false)
 	_append_editor_stat(entries, "Boost持续" if _ui_is_zh() else "Boost Dur", "boost_duration", current_stats, preview_stats, 1.0, "s", false)
