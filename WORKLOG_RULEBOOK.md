@@ -3857,6 +3857,41 @@ Findings:
 Sync:
 - Implemented in `E:\New project`; mirror sync and local commit recorded by the surrounding Git history.
 
+## 2026-05-25 Mobius Stardust Surface Bands and Projection Guard
+
+Rules:
+- Player-controlled or camera-critical units must not disappear because a single Mobius projection frame reports `visible=false`. Critical units keep the last finite screen position, resync the Mobius camera to their combat coordinate, and record projection guard diagnostics before any fallback is used.
+- Non-critical units may still be culled, but only after a short hysteresis window. This prevents boundary and seam flicker without turning off visibility culling for background units.
+- The minimal Mobius battle background allows exactly one decorative layer: `MobiusStardustBandView`. It is visual-only and must not change movement, collision, aiming, projectile paths, or the local rectangular gameplay projection.
+- The stardust band is two surface-attached lanes, not a centerline overlay. It samples upper/lower Mobius surface lanes, uses visual-only twist projection, and varies width/alpha/particle radius by `depth01` so the player sees near-large/far-small soft arcs.
+
+Implementation notes:
+- `MobiusStardustBandView` now builds two named bands from `v = +/-0.34 * strip_half_width` and stores surface coords, depths, widths, alphas, and radii for probes. The view draws wide low-alpha haze plus sparse particles above the Mobius surface and below units/effects.
+- Internal straight lane guides remain disabled; `MobiusStripSurfaceView` no longer carries an active stardust cache during battle.
+- `_project_unit_for_screen()` now marks critical units, resyncs stale camera projections, uses last finite screen fallback, and extends non-critical hidden hysteresis to four frames. `Fighter.set_mobius_screen_projection()` honors `critical/guarded` projection fields and stores finite-position metadata.
+- Visual references for the soft particle-arc read include NASA's "Translucent Arcs" imagery: `https://science.nasa.gov/resource/translucent-arcs/`.
+
+Verification:
+- `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120` passed.
+- New/updated Mobius probes passed:
+  - `mobius_stardust_two_surface_bands_probe`
+  - `mobius_stardust_surface_attachment_probe`
+  - `mobius_stardust_near_far_wave_probe`
+  - `mobius_stardust_twist_inversion_probe`
+  - `mobius_stardust_render_visibility_probe`
+  - `mobius_no_straight_lane_guide_render_probe`
+  - `controlled_unit_fast_boost_never_hidden_mobius_probe`
+  - `controlled_unit_role_switch_visibility_probe`
+  - `mobius_projection_guard_duration_probe`
+  - `unit_visibility_no_flicker_probe`
+
+Findings:
+- Previous "stardust" verification only proved cached curve data existed. It did not prove the layer was visible in a real training/battle frame, and the old cache was still centerline based.
+- The disappearance risk came from routing projection visibility directly into Fighter visibility for units that were not recognized as the single camera focus, plus a one-frame grace window that was too short for camera/projection seams.
+
+Sync:
+- Implemented in `E:\New project`; Documents and OneDrive mirrors should be refreshed from this source after commit.
+
 ## 2026-05-25 Limb Drive Cap and Runtime Motion Budget Closure
 
 Rules:

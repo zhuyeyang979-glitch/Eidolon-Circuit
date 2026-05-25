@@ -28,11 +28,13 @@ func _init() -> void:
 		_fail("Mobius stardust band should be enabled.")
 	if not bool(snapshot.get("visible", false)):
 		_fail("Mobius stardust band should have visible cached samples.")
+	if int(snapshot.get("band_count", 0)) != 2:
+		_fail("Mobius stardust should render as two surface-attached bands.")
 	if bool(snapshot.get("lane_guides_enabled", true)):
 		_fail("Straight surface lane guides must stay disabled.")
 	if int(snapshot.get("particle_count", 0)) <= 0:
 		_fail("Mobius stardust band should budget subtle particles.")
-	if float(snapshot.get("max_alpha", 1.0)) > 0.145:
+	if float(snapshot.get("max_alpha", 1.0)) > 0.305:
 		_fail("Mobius stardust band alpha should remain subtle, got %.3f." % float(snapshot.get("max_alpha", 1.0)))
 	if int(snapshot.get("z_index", 0)) >= 0:
 		_fail("Mobius stardust band should remain behind units and combat VFX.")

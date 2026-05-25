@@ -95,6 +95,8 @@ func _run() -> void:
 		_fail("Training battle loadouts should be available for render verification.")
 		return
 	main._begin_battle(MainScene.MODE_TRAINING, true, "mobius_stardust_render_probe")
+	if main.loading_controller != null:
+		main.loading_controller.active = false
 	_hide_overlay_layers(main)
 	main.camera_mobius_s = 3.0
 	main.camera_center = 3.0
@@ -132,7 +134,7 @@ func _run() -> void:
 		min_point.y = minf(min_point.y, point.y)
 		max_point.x = maxf(max_point.x, point.x)
 		max_point.y = maxf(max_point.y, point.y)
-	if changed < 700 or average < 0.006 or maximum < 0.03:
+	if changed < 4500 or average < 0.004 or maximum < 0.02:
 		_fail("Rendered stardust band is not visibly different enough; changed=%d average=%.5f max=%.5f image=%dx%d draw_count=%d bounds=%s..%s %s." % [
 			changed,
 			average,

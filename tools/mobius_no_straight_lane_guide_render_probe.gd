@@ -62,6 +62,8 @@ func _run() -> void:
 		_fail("Training battle loadouts should be available for render verification.")
 		return
 	main._begin_battle(MainScene.MODE_TRAINING, true, "mobius_no_lane_probe")
+	if main.loading_controller != null:
+		main.loading_controller.active = false
 	_hide_overlay_layers(main)
 	main.camera_mobius_s = 1.0
 	main.camera_center = 1.0

@@ -4433,13 +4433,19 @@ func set_screen_position(screen_position: Vector2, is_visible_in_view: bool) -> 
 	set_meta("last_projection_visible", is_visible_in_view)
 	set_meta("projection_guarded", false)
 	set_meta("last_screen_position", screen_position)
+	if is_finite(screen_position.x) and is_finite(screen_position.y):
+		set_meta("last_finite_screen_position", screen_position)
 	visible = active and is_visible_in_view
 
 
 func set_mobius_screen_projection(projection: Dictionary, is_visible_in_view: bool) -> void:
 	var screen_position: Vector2 = projection.get("position", position)
+	if not (is_finite(screen_position.x) and is_finite(screen_position.y)):
+		var last_finite = get_meta("last_finite_screen_position", null)
+		screen_position = last_finite if last_finite is Vector2 else position
 	var projection_visible := bool(projection.get("visible", is_visible_in_view))
 	var projection_guarded := bool(projection.get("guarded", false))
+	var projection_critical := bool(projection.get("critical", false))
 	mobius_depth01 = clampf(float(projection.get("depth01", mobius_depth01)), 0.0, 1.0)
 	var target_scale := maxf(MOBIUS_VISUAL_SCALE_MIN, float(projection.get("scale", 1.0)))
 	mobius_visual_scale_target = target_scale
@@ -4461,10 +4467,13 @@ func set_mobius_screen_projection(projection: Dictionary, is_visible_in_view: bo
 	set_meta("mobius_visual_scale_applied", mobius_visual_scale)
 	set_meta("last_projection_visible", projection_visible)
 	set_meta("projection_guarded", projection_guarded)
+	set_meta("projection_critical", projection_critical)
 	set_meta("projection_source", String(projection.get("projection_source", "mobius")))
 	set_meta("last_screen_position", screen_position)
+	if is_finite(screen_position.x) and is_finite(screen_position.y):
+		set_meta("last_finite_screen_position", screen_position)
 	z_index = int(projection.get("z_index", 0))
-	visible = active and (is_visible_in_view or projection_guarded)
+	visible = active and (is_visible_in_view or projection_visible or projection_guarded or projection_critical)
 
 
 func _is_teamedit_runtime_unit() -> bool:

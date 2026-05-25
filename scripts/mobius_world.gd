@@ -261,6 +261,8 @@ static func project_to_screen(coord: Vector2, camera_coord: Vector2, config: Dic
 		"width_screen": frame.get("width_screen", Vector2.DOWN),
 		"screen_basis": frame.get("screen_basis", {}),
 		"pivot": frame.get("pivot", Vector2.ZERO),
+		"visual_twist_wave": frame.get("visual_twist_wave", 0.0),
+		"world_s": frame.get("world_s", coord.x),
 	}
 
 

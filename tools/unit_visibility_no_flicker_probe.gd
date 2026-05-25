@@ -47,18 +47,19 @@ func _init() -> void:
 		"visible": false,
 		"projection_source": "forced_test",
 	}
-	var grace_projection: Dictionary = main._apply_projection_hysteresis(unit, hidden_projection)
-	unit.set_mobius_screen_projection(grace_projection, bool(grace_projection.get("visible", false)))
-	if not unit.visible:
-		_fail("Non-controlled unit should keep one-frame visibility grace instead of flickering.")
-		return
-	if unit.position.distance_to(first_position) > 0.01:
-		_fail("Visibility grace should reuse the last valid screen position.")
-		return
+	for frame in range(MainScene.MOBIUS_PROJECTION_HIDDEN_GRACE_FRAMES):
+		var grace_projection: Dictionary = main._apply_projection_hysteresis(unit, hidden_projection)
+		unit.set_mobius_screen_projection(grace_projection, bool(grace_projection.get("visible", false)))
+		if not unit.visible:
+			_fail("Non-controlled unit should keep short visibility grace instead of flickering on frame %d." % frame)
+			return
+		if unit.position.distance_to(first_position) > 0.01:
+			_fail("Visibility grace should reuse the last valid screen position.")
+			return
 	var expired_projection: Dictionary = main._apply_projection_hysteresis(unit, hidden_projection)
 	unit.set_mobius_screen_projection(expired_projection, bool(expired_projection.get("visible", false)))
 	if unit.visible:
-		_fail("Non-controlled unit should hide after the one-frame visibility grace expires.")
+		_fail("Non-controlled unit should hide after the short visibility grace expires.")
 		return
 	print("UNIT_VISIBILITY_NO_FLICKER_PROBE ok grace_position=%s source=%s" % [
 		str(first_position),

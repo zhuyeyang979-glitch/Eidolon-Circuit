@@ -95,7 +95,7 @@ class MobiusStripSurfaceView:
 	var surface_texture: Texture2D
 	var surface_lane_guides_enabled := false
 	var stardust_band_enabled := false
-	var stardust_alpha_max := 0.14
+	var stardust_alpha_max := 0.28
 	var stardust_width_min := 2.0
 	var stardust_width_max := 11.0
 	var stardust_particle_budget := 96
@@ -119,10 +119,10 @@ class MobiusStripSurfaceView:
 		config["twist_visual_enabled"] = true
 		surface_lane_guides_enabled = bool(config.get("surface_lane_guides_enabled", surface_lane_guides_enabled))
 		stardust_band_enabled = bool(config.get("stardust_band_enabled", stardust_band_enabled))
-		stardust_alpha_max = clampf(float(config.get("stardust_alpha_max", stardust_alpha_max)), 0.0, 0.16)
+		stardust_alpha_max = clampf(float(config.get("stardust_alpha_max", stardust_alpha_max)), 0.0, 0.32)
 		stardust_width_min = maxf(0.1, float(config.get("stardust_width_min", stardust_width_min)))
 		stardust_width_max = maxf(stardust_width_min, float(config.get("stardust_width_max", stardust_width_max)))
-		stardust_particle_budget = clampi(int(config.get("stardust_particle_budget", stardust_particle_budget)), 0, 128)
+		stardust_particle_budget = clampi(int(config.get("stardust_particle_budget", stardust_particle_budget)), 0, 240)
 		rotation_state = next_rotation_state.duplicate(true)
 		camera_coord = next_camera_coord
 		if material is ShaderMaterial:
@@ -278,6 +278,120 @@ class MobiusStripSurfaceView:
 class MobiusStardustBandView:
 	extends MobiusStripSurfaceView
 
+	var stardust_last_bands: Array = []
+
+	func _reset_stardust_band_cache() -> void:
+		super._reset_stardust_band_cache()
+		stardust_last_bands = []
+
+	func _update_stardust_band_cache() -> void:
+		_reset_stardust_band_cache()
+		if not stardust_band_enabled or not bool(config.get("enabled", true)):
+			return
+		var visual_config := config.duplicate(true)
+		visual_config["twist_visual_enabled"] = true
+		visual_config["local_rectangular_projection"] = false
+		visual_config["depth_contrast"] = maxf(1.18, float(visual_config.get("depth_contrast", 1.0)))
+		var loop := maxf(0.001, float(visual_config.get("loop_length", 24.0)))
+		var half_width := MobiusWorld.strip_half_width(visual_config)
+		var surface_segments := clampi(int(visual_config.get("surface_segments", 96)), 48, 144)
+		var view_width := maxf(1.0, float(visual_config.get("view_width", 7.2)))
+		var span := view_width * 1.28
+		var twist_phase := float(rotation_state.get("twist_phase", rotation_state.get("angle", 0.0)))
+		var lane_specs := [
+			{"name": "upper", "ratio": -0.34},
+			{"name": "lower", "ratio": 0.34},
+		]
+		for lane_spec in lane_specs:
+			var lane_ratio := float(lane_spec.get("ratio", 0.0))
+			var band_points := PackedVector2Array()
+			var band_widths := PackedFloat32Array()
+			var band_alphas := PackedFloat32Array()
+			var band_depths := PackedFloat32Array()
+			var band_radii := PackedFloat32Array()
+			var band_coords := PackedVector2Array()
+			for i in range(surface_segments + 1):
+				var t := float(i) / float(surface_segments)
+				var s := camera_coord.x + lerpf(-span, span, t)
+				var coord := Vector2(s, half_width * lane_ratio)
+				var projection := MobiusWorld.project_to_screen(coord, camera_coord, visual_config, rotation_state)
+				var pos: Vector2 = projection.get("position", Vector2.ZERO)
+				var depth01 := clampf(float(projection.get("depth01", 0.5)), 0.0, 1.0)
+				var frame_wave := float(projection.get("visual_twist_wave", 0.0))
+				var phase := TAU * s / loop
+				var surface_pulse := 0.5 + 0.5 * sin(phase * 1.31 + twist_phase + lane_ratio * PI)
+				var breath := 0.5 + 0.5 * sin(phase * 0.47 - twist_phase * 0.9 + lane_ratio)
+				var width_ratio := clampf(0.10 + depth01 * 0.72 + surface_pulse * 0.18, 0.0, 1.0)
+				var width := lerpf(stardust_width_min, stardust_width_max, width_ratio)
+				width *= clampf(0.86 + frame_wave * lane_ratio * 0.34 + breath * 0.12, 0.62, 1.28)
+				var alpha := stardust_alpha_max * clampf(0.25 + depth01 * 0.62 + surface_pulse * 0.18, 0.0, 1.0)
+				var radius := lerpf(0.45, 2.35, clampf(depth01 * 0.82 + breath * 0.18, 0.0, 1.0))
+				band_points.append(pos)
+				band_widths.append(width)
+				band_alphas.append(alpha)
+				band_depths.append(depth01)
+				band_radii.append(radius)
+				band_coords.append(coord)
+				stardust_last_points.append(pos)
+				stardust_last_widths.append(width)
+				stardust_last_alphas.append(alpha)
+				stardust_last_max_alpha = maxf(stardust_last_max_alpha, alpha)
+			stardust_last_bands.append({
+				"name": String(lane_spec.get("name", "band")),
+				"lane_ratio": lane_ratio,
+				"points": band_points,
+				"widths": band_widths,
+				"alphas": band_alphas,
+				"depths": band_depths,
+				"radii": band_radii,
+				"surface_coords": band_coords,
+			})
+		stardust_last_visible = stardust_last_bands.size() == 2 and stardust_last_points.size() >= 4
+		stardust_last_particle_count = stardust_particle_budget if stardust_last_visible else 0
+
+	func _draw_band_particles(points: PackedVector2Array, widths: PackedFloat32Array, alphas: PackedFloat32Array, radii: PackedFloat32Array, band_index: int) -> void:
+		if points.size() < 2:
+			return
+		var count := maxi(1, int(floor(float(stardust_particle_budget) / 2.0)))
+		var twist_phase := float(rotation_state.get("twist_phase", rotation_state.get("angle", 0.0)))
+		for i in range(count):
+			var ratio := (float(i) + 0.5) / float(count)
+			var index := clampi(int(round(ratio * float(points.size() - 1))), 0, points.size() - 1)
+			var prev_index := maxi(0, index - 1)
+			var next_index := mini(points.size() - 1, index + 1)
+			var tangent := (points[next_index] - points[prev_index]).normalized()
+			if tangent.length() <= 0.001:
+				tangent = Vector2.RIGHT
+			var normal := Vector2(-tangent.y, tangent.x)
+			var width := widths[index]
+			var jitter := normal * sin(ratio * TAU * 23.0 + twist_phase * 1.6 + float(band_index) * 1.7) * width * 0.82
+			var along := tangent * sin(ratio * TAU * 13.0 - twist_phase + float(band_index)) * width * 0.38
+			var p := points[index] + jitter + along
+			var pulse := 0.5 + 0.5 * sin(ratio * TAU * 9.0 + twist_phase * 1.3 + float(band_index))
+			var radius := maxf(0.35, radii[index] * (0.65 + pulse * 0.62))
+			var alpha := minf(0.16, alphas[index] * (0.36 + pulse * 0.34))
+			draw_circle(p, radius + 1.4, Color(0.38, 0.68, 1.0, alpha * 0.42))
+			draw_circle(p, radius, Color(0.88, 0.96, 1.0, alpha))
+
+	func _draw_stardust_surface_bands() -> void:
+		if not stardust_last_visible:
+			return
+		for band_index in range(stardust_last_bands.size()):
+			var band: Dictionary = stardust_last_bands[band_index]
+			var points := PackedVector2Array(band.get("points", PackedVector2Array()))
+			var widths := PackedFloat32Array(band.get("widths", PackedFloat32Array()))
+			var alphas := PackedFloat32Array(band.get("alphas", PackedFloat32Array()))
+			var radii := PackedFloat32Array(band.get("radii", PackedFloat32Array()))
+			if points.size() < 2:
+				continue
+			for i in range(points.size() - 1):
+				var width := (widths[i] + widths[i + 1]) * 0.5
+				var alpha := minf(stardust_alpha_max, (alphas[i] + alphas[i + 1]) * 0.5)
+				draw_line(points[i], points[i + 1], Color(0.26, 0.58, 1.0, minf(0.32, alpha * 1.18)), width * 3.05, true)
+				draw_line(points[i], points[i + 1], Color(0.58, 0.82, 1.0, minf(0.25, alpha * 0.92)), width * 1.52, true)
+				draw_line(points[i], points[i + 1], Color(0.94, 0.98, 1.0, minf(0.18, alpha * 0.58)), maxf(1.0, width * 0.32), true)
+			_draw_band_particles(points, widths, alphas, radii, band_index)
+
 	func _draw() -> void:
 		if not bool(config.get("enabled", true)):
 			_reset_stardust_band_cache()
@@ -286,7 +400,14 @@ class MobiusStardustBandView:
 			_reset_stardust_band_cache()
 			return
 		set_meta("draw_count", int(get_meta("draw_count", 0)) + 1)
-		_draw_stardust_band()
+		_draw_stardust_surface_bands()
+
+	func stardust_band_snapshot() -> Dictionary:
+		var snapshot := super.stardust_band_snapshot()
+		snapshot["bands"] = stardust_last_bands.duplicate(true)
+		snapshot["band_count"] = stardust_last_bands.size()
+		snapshot["surface_attached"] = true
+		return snapshot
 
 
 class CockpitHudView:
@@ -8968,6 +9089,8 @@ const MOBIUS_SURFACE_DETAIL_DENSITY = 1.0
 const MOBIUS_NEAR_ALPHA = 0.26
 const MOBIUS_FAR_ALPHA = 0.10
 const MOBIUS_DEPTH_CONTRAST = 1.12
+const MOBIUS_PROJECTION_HIDDEN_GRACE_FRAMES = 4
+const MOBIUS_PROJECTION_CRITICAL_GRACE_FRAMES = 12
 const VISUAL_HITBOX_SCALE_STRENGTH = 1.0
 const VISUAL_HITBOX_SCALE_MIN = 0.70
 const VISUAL_HITBOX_SCALE_MAX = 1.30
@@ -34649,10 +34772,36 @@ func _unit_is_camera_focus(unit) -> bool:
 	return unit == _first_live_unit_any_role(owner)
 
 
+func _unit_is_player_controlled_or_camera_critical(unit) -> bool:
+	if not _is_live_unit(unit):
+		return false
+	if bool(unit.get_meta("player_controlled", false)) or bool(unit.get_meta("camera_focus", false)):
+		return true
+	if _unit_is_camera_focus(unit):
+		return true
+	var owner := clampi(int(unit.owner_id), 1, 2)
+	if battle_mode == MODE_PVP:
+		return owner in [1, 2]
+	if battle_mode in [MODE_TRAINING, MODE_AI] and ai_battle_seat in [1, 2] and owner == ai_battle_seat:
+		return true
+	if battle_mode in [MODE_TRAINING, MODE_AI, MODE_PVP] and ai_battle_seat == 3:
+		match spectator_view_mode:
+			SPECTATOR_VIEW_P1:
+				return owner == 1 and unit == _first_live_unit_any_role(1)
+			SPECTATOR_VIEW_P2:
+				return owner == 2 and unit == _first_live_unit_any_role(2)
+			_:
+				return unit == _first_live_unit_any_role(1) or unit == _first_live_unit_any_role(2)
+	return false
+
+
 func _guard_camera_to_unit_projection(unit, coord: Vector2) -> void:
 	var owner := clampi(int(unit.owner_id), 1, 2)
 	player_camera_centers[owner] = coord.x if mobius_enabled else wrapf(coord.x, 0.0, RING_LENGTH)
 	player_camera_lanes[owner] = _clamp_camera_lane_center(coord.y)
+	if ai_battle_seat == 3:
+		spectator_camera_center = coord.x if mobius_enabled else wrapf(coord.x, 0.0, RING_LENGTH)
+		spectator_camera_lane = _clamp_camera_lane_center(coord.y)
 	camera_lane_center = _clamp_camera_lane_center(coord.y)
 	if mobius_enabled:
 		camera_mobius_s = coord.x
@@ -34662,23 +34811,48 @@ func _guard_camera_to_unit_projection(unit, coord: Vector2) -> void:
 		_sync_camera_mobius_from_compat()
 
 
-func _apply_projection_hysteresis(unit, projection: Dictionary) -> Dictionary:
+func _projection_last_finite_position(unit) -> Vector2:
+	var last_finite = unit.get_meta("last_finite_screen_position", null)
+	if last_finite is Vector2 and _screen_position_is_finite(last_finite):
+		return last_finite
+	var last_position = unit.get_meta("last_screen_position", null)
+	if last_position is Vector2 and _screen_position_is_finite(last_position):
+		return last_position
+	return _battle_screen_center()
+
+
+func _apply_projection_hysteresis(unit, projection: Dictionary, grace_budget: int = MOBIUS_PROJECTION_HIDDEN_GRACE_FRAMES) -> Dictionary:
 	var result := projection.duplicate(true)
 	var visible_now := bool(result.get("visible", true)) and _projection_position_is_valid(result)
 	if visible_now:
-		unit.set_meta("projection_hidden_grace_frames", 1)
+		unit.set_meta("projection_hidden_grace_frames", maxi(0, grace_budget))
+		unit.set_meta("last_finite_screen_position", _projection_screen_position(result))
 		return result
 	var grace_frames := int(unit.get_meta("projection_hidden_grace_frames", 0))
 	if grace_frames <= 0:
 		return result
-	var last_position = unit.get_meta("last_screen_position", null)
-	if not (last_position is Vector2) or not _screen_position_is_finite(last_position):
-		return result
+	var last_position := _projection_last_finite_position(unit)
 	result["position"] = last_position
 	result["visible"] = true
 	result["guarded"] = true
+	result["critical"] = bool(result.get("critical", false))
 	result["projection_source"] = "%s_hysteresis" % String(result.get("projection_source", "projection"))
 	unit.set_meta("projection_hidden_grace_frames", grace_frames - 1)
+	return result
+
+
+func _critical_projection_fallback(unit, projection: Dictionary, projection_source: String) -> Dictionary:
+	var result := projection.duplicate(true)
+	result["position"] = _projection_last_finite_position(unit)
+	if not _projection_position_is_valid(result):
+		result["position"] = _battle_screen_center()
+	result["visible"] = true
+	result["guarded"] = true
+	result["critical"] = true
+	result["scale"] = maxf(1.0, float(result.get("scale", 1.0)))
+	result["z_index"] = maxi(int(result.get("z_index", 0)), 8)
+	result["projection_source"] = "%s_guard_fallback" % projection_source
+	unit.set_meta("projection_hidden_grace_frames", MOBIUS_PROJECTION_CRITICAL_GRACE_FRAMES)
 	return result
 
 
@@ -34696,21 +34870,23 @@ func _project_unit_for_screen(unit) -> Dictionary:
 		visible_in_view = _barrier_has_visible_tile(unit)
 	projection["visible"] = visible_in_view
 	projection["guarded"] = bool(projection.get("guarded", false))
-	if _unit_is_camera_focus(unit) and (not visible_in_view or not _projection_position_is_valid(projection)):
+	var critical := _unit_is_player_controlled_or_camera_critical(unit)
+	projection["critical"] = critical
+	if critical and visible_in_view and _projection_position_is_valid(projection):
+		return _apply_projection_hysteresis(unit, projection, MOBIUS_PROJECTION_CRITICAL_GRACE_FRAMES)
+	if critical and (not visible_in_view or not _projection_position_is_valid(projection)):
 		var coord := _unit_combat_coord(unit)
 		_guard_camera_to_unit_projection(unit, coord)
 		projection = _mobius_project_coord(coord) if mobius_enabled else _screen_from_ring(unit.ring_pos, unit.lane)
 		visible_in_view = bool(projection.get("visible", true)) and _projection_position_is_valid(projection)
 		projection["projection_source"] = "%s_guard_resync" % projection_source
 		projection["guarded"] = true
+		projection["critical"] = true
 		if not visible_in_view:
-			projection["position"] = _battle_screen_center()
-			projection["visible"] = true
-			projection["scale"] = maxf(1.0, float(projection.get("scale", 1.0)))
-			projection["z_index"] = maxi(int(projection.get("z_index", 0)), 8)
-			projection["projection_source"] = "%s_guard_center" % projection_source
+			projection = _critical_projection_fallback(unit, projection, projection_source)
 		else:
 			projection["visible"] = true
+			unit.set_meta("projection_hidden_grace_frames", MOBIUS_PROJECTION_CRITICAL_GRACE_FRAMES)
 		return projection
 	return _apply_projection_hysteresis(unit, projection)
 
@@ -52186,10 +52362,10 @@ func _mobius_config() -> Dictionary:
 	config["depth_contrast"] = MOBIUS_DEPTH_CONTRAST
 	config["surface_lane_guides_enabled"] = false
 	config["stardust_band_enabled"] = true
-	config["stardust_alpha_max"] = 0.14
-	config["stardust_width_min"] = 2.0
-	config["stardust_width_max"] = 11.0
-	config["stardust_particle_budget"] = 96
+	config["stardust_alpha_max"] = 0.28
+	config["stardust_width_min"] = 2.4
+	config["stardust_width_max"] = 13.5
+	config["stardust_particle_budget"] = 192
 	config["screen_scale"] = _battle_world_to_screen_scale()
 	config["local_rectangular_projection"] = true
 	config["show_surface_boundary_guides"] = false
@@ -52338,6 +52514,8 @@ func _refresh_mobius_surface_view() -> void:
 		var stardust_config := _mobius_config()
 		stardust_config["surface_lane_guides_enabled"] = false
 		stardust_config["stardust_band_enabled"] = true
+		stardust_config["twist_wave_amplitude"] = MOBIUS_TWIST_WAVE_AMPLITUDE * 1.85
+		stardust_config["depth_strength"] = MOBIUS_DEPTH_STRENGTH * 1.18
 		mobius_stardust_band_view.set_world(stardust_config, mobius_rotation_state, _mobius_camera_coord())
 
 
