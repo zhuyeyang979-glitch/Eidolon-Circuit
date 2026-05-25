@@ -4026,6 +4026,48 @@ Findings:
 Sync:
 - Implemented in `E:\New project`; mirror sync and local commit recorded by the surrounding Git history.
 
+## 2026-05-25 Mobius Surface Mesh Stardust Backdrop
+
+Rules:
+- The battle background Mobius stardust is now a UV-attached surface mesh texture, not a screen-space straight lane or standalone backdrop image.
+- Visual Mobius surface rendering may use true Mobius projection to show twist, depth, and near/far scale; gameplay projection for units, projectiles, collision, and input remains unchanged.
+- Minimal battle background allows only the Mobius surface mesh and very low-alpha stardust accents. Old horizontal lane guides, parallax dust, nebula currents, and large backdrop art must stay disabled in Mobius battle.
+- Surface art must remain behind units/projectiles and must be alpha-capped so it cannot overpower combat readability.
+
+Implementation notes:
+- Added `assets/generated/mobius_surface_mesh_net.png`, a deterministic 4096x512 transparent blue-white net texture with paired upper/lower dust lanes, cross ribs, diagonal half-twist cues, and seam-compatible U wrapping.
+- Added `tools/generate_mobius_surface_mesh_net.gd` so the checked-in texture can be regenerated without Python.
+- `MobiusStripSurfaceView` now loads the mesh texture as the primary surface art and receives a visual-only `local_rectangular_projection=false` config in battle.
+- `MobiusStardustBandView` remains a low-alpha accent layer; it is no longer the primary visual explanation of the Mobius twist.
+- The Mobius surface shader now has bounded display controls for mesh alpha and color gain, preserving a faint source texture while making the in-battle projection readable.
+
+Verification:
+- New probes passed:
+  - `mobius_surface_mesh_texture_asset_probe`
+  - `mobius_surface_mesh_uv_attachment_probe`
+  - `mobius_surface_mesh_twist_readability_probe`
+  - `mobius_surface_mesh_not_occluding_units_probe`
+- Regressions passed:
+  - `mobius_surface_texture_asset_probe`
+  - `mobius_surface_half_twist_uv_probe`
+  - `mobius_stardust_surface_attachment_probe`
+  - `mobius_stardust_twist_inversion_probe`
+  - `mobius_stardust_render_visibility_probe`
+  - `mobius_no_straight_lane_guide_render_probe`
+  - `mobius_bullet_readability_probe`
+  - `projectile_path_not_bent_by_mobius_probe`
+  - `controlled_unit_boost_seam_render_visibility_probe`
+  - `combat_probe`
+  - `ui_layout_probe`
+  - `text_overflow_probe`
+
+Findings:
+- The previous two-line stardust layer was mathematically surface-attached in probe data, but it was still perceived as a screen overlay and did not give players enough surface texture to read the half-twist.
+- The new texture makes the Mobius rectangular projection legible by letting the actual surface quads carry a faint net. The shader alpha cap keeps the net visible without covering controlled units or projectile readability.
+
+Sync:
+- Implemented in `E:\New project`; Documents and OneDrive mirrors should be refreshed from this source after commit.
+
 ## 2026-05-25 Ammo Size Slider and Scaled Ammo Economy
 
 Rules:
