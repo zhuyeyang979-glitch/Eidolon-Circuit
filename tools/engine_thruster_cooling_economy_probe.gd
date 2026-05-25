@@ -35,11 +35,20 @@ func _check_slot(main, slot_key: String) -> void:
 			if float(part.get("engine_heat_coeff", 0.0)) <= 0.0:
 				_fail("Engine lacks explicit heat coefficient: %s" % String(part.get("name", "")))
 		elif slot_key == "booster":
+			part = main._thruster_with_drive_defaults(part)
 			var expected_move_momentum := median * 2.0
 			var expected_boost_momentum := median * 4.0
-			for field in ["thruster_family", "drive_demand", "momentum_min", "momentum_max", "move_efficiency", "boost_efficiency", "turn_efficiency", "movement_profile", "boost_angle_degrees", "boost_cooldown", "boost_heat", "thruster_duration", "boost_duration", "thruster_idle_heat_coeff", "brake_efficiency", "flame_color", "summary"]:
+			for field in ["thruster_family", "drive_demand", "momentum_min", "momentum_max", "move_efficiency", "boost_efficiency", "turn_efficiency", "movement_profile", "boost_angle_degrees", "boost_cooldown", "boost_heat", "thruster_duration", "boost_duration", "thruster_idle_heat_coeff", "flame_color", "summary"]:
 				if not part.has(field):
 					_fail("Booster missing %s: %s" % [field, String(part.get("name", ""))])
+			var drive_min: float = main._thruster_drive_allocation_min_for_part(part)
+			var drive_max: float = main._thruster_drive_allocation_max_for_part(part)
+			var boost_min: float = main._thruster_boost_brake_allocation_min_for_part(part)
+			var boost_max: float = main._thruster_boost_brake_allocation_max_for_part(part)
+			if drive_min <= 0.0 or drive_max + 0.01 < drive_min * MainScene.THRUSTER_ALLOCATION_MAX_MULT:
+				_fail("Booster drive allocation range invalid: %s" % String(part.get("name", "")))
+			if boost_min > 0.0 and boost_max + 0.01 < boost_min * MainScene.THRUSTER_ALLOCATION_MAX_MULT:
+				_fail("Booster boost/brake allocation range invalid: %s" % String(part.get("name", "")))
 			if absf(main._thruster_drive_demand_for_part(part) - float(part.get("momentum_min", 0.0))) > 0.001:
 				_fail("Booster fixed demand should equal momentum_min: %s" % String(part.get("name", "")))
 			if main._booster_normal_momentum_for_part(part) <= 0.0:
@@ -55,7 +64,7 @@ func _check_slot(main, slot_key: String) -> void:
 			var stats := {"role": "hero", "mass": median, "thruster_drive_demand": demand, "thruster_allocated_momentum": 9999.0, "thruster_boost_extra_demand": boost_extra, "thruster_boost_peak_demand": demand + boost_extra, "engine_momentum_output": demand + boost_extra + 1.0, "boost_momentum": float(part.get("boost_momentum", 0.0)), "move_efficiency": float(part.get("move_efficiency", 1.0)), "boost_efficiency": float(part.get("boost_efficiency", MainScene.ECONOMY_BOOST_MOMENTUM_MULT)), "turn_efficiency": float(part.get("turn_efficiency", 1.0)), "boost_duration": float(part.get("boost_duration", 0.3)), "speed_mult": 1.0}
 			main._apply_engine_momentum_budget(stats, "hero")
 			main._apply_thruster_momentum_stats(stats, "hero")
-			if float(stats.get("body_move_speed", 0.0)) <= 0.0 or float(stats.get("boost_speed", 0.0)) <= 0.0:
+			if float(stats.get("move_speed", stats.get("body_move_speed", 0.0))) <= 0.0 or float(stats.get("boost_speed", 0.0)) <= 0.0:
 				_fail("Booster does not produce movement speeds: %s" % String(part.get("name", "")))
 		elif slot_key == "cooling":
 			if float(part.get("cooling", 0.0)) + 0.01 < main._economy_cooling_target(rank):

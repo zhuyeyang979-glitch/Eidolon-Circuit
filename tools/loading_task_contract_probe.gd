@@ -45,8 +45,8 @@ func _init() -> void:
 	controller.add_loading_task(task)
 	if controller.tasks.is_empty():
 		_fail("LoadingController did not accept LoadingTask.")
-	var stored: Dictionary = controller.tasks[0]
-	if String(stored.get("phase", "")) != LoadingTask.PHASE_FIRST_INTERACTION:
+	var stored: LoadingTask = controller.tasks[0]
+	if stored.phase != LoadingTask.PHASE_FIRST_INTERACTION:
 		_fail("LoadingController did not preserve task phase.")
 	controller.tick(6000, 0.016)
 	if not bool(called["ok"]):

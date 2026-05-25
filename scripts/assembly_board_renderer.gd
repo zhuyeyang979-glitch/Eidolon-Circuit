@@ -1684,12 +1684,92 @@ static func _draw_plugin_preview(canvas: CanvasItem, rect: Rect2, slot_key: Stri
 	elif key.contains("ether"):
 		canvas.draw_arc(center, radius * 0.52, -PI * 0.25, PI * 1.22, 34, light, maxf(1.0, radius * 0.07))
 		canvas.draw_line(center, center + Vector2(radius * 0.48, radius * 0.42), light, maxf(1.0, radius * 0.05))
+	elif String(part.get("module_visual_family", "")).to_lower() != "":
+		if _draw_module_visual_family_preview(canvas, center, radius, String(part.get("module_visual_family", "")).to_lower(), base, light, dark):
+			return
 	elif key.contains("module") or key.contains("action"):
 		canvas.draw_arc(center, radius * 0.56, -PI * 0.82, PI * 0.72, 28, light, maxf(1.0, radius * 0.08))
 		canvas.draw_line(center + Vector2(radius * 0.48, radius * 0.38), center + Vector2(radius * 0.78, radius * 0.08), light, maxf(1.0, radius * 0.08))
 	else:
 		canvas.draw_circle(center, radius * 0.42, light)
 		canvas.draw_rect(Rect2(center - Vector2(radius * 0.16, radius * 0.16), Vector2(radius * 0.32, radius * 0.32)), dark, true)
+
+
+static func _draw_module_visual_family_preview(canvas: CanvasItem, center: Vector2, radius: float, family: String, base: Color, light: Color, dark: Color) -> bool:
+	var accent := base.lerp(Color.WHITE, 0.58)
+	match family:
+		"balance_string":
+			canvas.draw_arc(center + Vector2(-radius * 0.12, 0.0), radius * 0.54, -PI * 0.86, PI * 0.26, 28, accent, maxf(1.0, radius * 0.07))
+			canvas.draw_arc(center + Vector2(radius * 0.12, 0.0), radius * 0.54, PI * 0.14, PI * 1.26, 28, accent, maxf(1.0, radius * 0.07))
+			canvas.draw_line(center + Vector2(-radius * 0.46, -radius * 0.32), center + Vector2(radius * 0.46, radius * 0.32), light, maxf(1.0, radius * 0.045))
+			canvas.draw_line(center + Vector2(-radius * 0.46, radius * 0.32), center + Vector2(radius * 0.46, -radius * 0.32), light, maxf(1.0, radius * 0.045))
+			canvas.draw_circle(center + Vector2(-radius * 0.52, 0.0), radius * 0.13, light)
+			canvas.draw_circle(center + Vector2(radius * 0.52, 0.0), radius * 0.13, light)
+			return true
+		"vise_close":
+			var left_jaw := PackedVector2Array([
+				center + Vector2(-radius * 0.72, -radius * 0.48),
+				center + Vector2(-radius * 0.18, -radius * 0.48),
+				center + Vector2(-radius * 0.18, -radius * 0.18),
+				center + Vector2(-radius * 0.46, -radius * 0.08),
+				center + Vector2(-radius * 0.18, radius * 0.02),
+				center + Vector2(-radius * 0.18, radius * 0.48),
+				center + Vector2(-radius * 0.72, radius * 0.48),
+			])
+			var right_jaw := PackedVector2Array()
+			for p in left_jaw:
+				right_jaw.append(Vector2(center.x * 2.0 - p.x, p.y))
+			canvas.draw_colored_polygon(left_jaw, light.darkened(0.08))
+			canvas.draw_colored_polygon(right_jaw, light.darkened(0.08))
+			_draw_outline(canvas, left_jaw, dark.lerp(Color.WHITE, 0.28), maxf(1.0, radius * 0.04))
+			_draw_outline(canvas, right_jaw, dark.lerp(Color.WHITE, 0.28), maxf(1.0, radius * 0.04))
+			canvas.draw_line(center + Vector2(-radius * 0.64, 0.0), center + Vector2(radius * 0.64, 0.0), accent, maxf(1.0, radius * 0.08))
+			for i in range(4):
+				var x := lerpf(-radius * 0.28, radius * 0.28, float(i) / 3.0)
+				canvas.draw_line(center + Vector2(x, -radius * 0.16), center + Vector2(x, radius * 0.16), dark, maxf(1.0, radius * 0.035))
+			return true
+		"pickup_dash":
+			canvas.draw_line(center + Vector2(-radius * 0.72, -radius * 0.26), center + Vector2(radius * 0.54, -radius * 0.26), dark.lerp(Color.WHITE, 0.28), maxf(1.0, radius * 0.045))
+			canvas.draw_line(center + Vector2(-radius * 0.72, radius * 0.26), center + Vector2(radius * 0.54, radius * 0.26), dark.lerp(Color.WHITE, 0.28), maxf(1.0, radius * 0.045))
+			canvas.draw_line(center + Vector2(-radius * 0.62, 0.0), center + Vector2(radius * 0.48, 0.0), light, maxf(1.0, radius * 0.09))
+			_draw_triangle(canvas, center + Vector2(radius * 0.62, 0.0), radius * 0.24, PI * 0.5, light)
+			canvas.draw_arc(center + Vector2(radius * 0.12, radius * 0.06), radius * 0.36, -PI * 0.15, PI * 0.92, 20, accent, maxf(1.0, radius * 0.055))
+			return true
+		"crush_windup":
+			var wedge := PackedVector2Array([
+				center + Vector2(-radius * 0.56, -radius * 0.38),
+				center + Vector2(radius * 0.18, -radius * 0.56),
+				center + Vector2(radius * 0.66, -radius * 0.18),
+				center + Vector2(radius * 0.66, radius * 0.18),
+				center + Vector2(radius * 0.18, radius * 0.56),
+				center + Vector2(-radius * 0.56, radius * 0.38),
+			])
+			canvas.draw_colored_polygon(wedge, light.darkened(0.2))
+			_draw_outline(canvas, wedge, Color(1.0, 0.26, 0.16, 0.92), maxf(1.0, radius * 0.05))
+			canvas.draw_line(center + Vector2(-radius * 0.76, -radius * 0.42), center + Vector2(radius * 0.38, radius * 0.42), dark.lerp(Color.WHITE, 0.35), maxf(1.0, radius * 0.05))
+			canvas.draw_line(center + Vector2(-radius * 0.76, radius * 0.42), center + Vector2(radius * 0.38, -radius * 0.42), dark.lerp(Color.WHITE, 0.35), maxf(1.0, radius * 0.05))
+			canvas.draw_arc(center, radius * 0.76, -PI * 0.95, PI * 0.15, 24, Color(1.0, 0.24, 0.12, 0.78), maxf(1.0, radius * 0.045))
+			return true
+		"feint_thrust":
+			canvas.draw_line(center + Vector2(-radius * 0.62, 0.0), center + Vector2(radius * 0.70, 0.0), light, maxf(1.0, radius * 0.055))
+			canvas.draw_line(center + Vector2(-radius * 0.34, radius * 0.24), center + Vector2(radius * 0.46, radius * 0.12), Color(light.r, light.g, light.b, 0.38), maxf(1.0, radius * 0.035))
+			_draw_triangle(canvas, center + Vector2(radius * 0.78, 0.0), radius * 0.16, PI * 0.5, light)
+			canvas.draw_arc(center + Vector2(radius * 0.34, 0.0), radius * 0.26, 0.0, TAU, 28, accent, maxf(1.0, radius * 0.035))
+			canvas.draw_line(center + Vector2(radius * 0.08, -radius * 0.2), center + Vector2(radius * 0.08, radius * 0.2), accent, maxf(1.0, radius * 0.035))
+			return true
+		"explosive_arc":
+			var last := center + Vector2(-radius * 0.66, radius * 0.28)
+			for i in range(1, 8):
+				var t := float(i) / 7.0
+				var p := center + Vector2(lerpf(-radius * 0.66, radius * 0.66, t), radius * 0.28 - sin(t * PI) * radius * 0.72)
+				if i % 2 == 1:
+					canvas.draw_line(last, p, Color(1.0, 0.72, 0.24, 0.82), maxf(1.0, radius * 0.035))
+				canvas.draw_circle(p, maxf(1.2, radius * 0.035), light)
+				last = p
+			canvas.draw_rect(Rect2(center + Vector2(radius * 0.42, radius * 0.22), Vector2(radius * 0.34, radius * 0.16)), Color(1.0, 0.42, 0.12, 0.72), false, maxf(1.0, radius * 0.035))
+			canvas.draw_line(center + Vector2(-radius * 0.58, radius * 0.38), center + Vector2(-radius * 0.26, radius * 0.12), dark.lerp(Color.WHITE, 0.35), maxf(1.0, radius * 0.07))
+			return true
+	return false
 
 
 static func _draw_terminal_root_handle(canvas: CanvasItem, center: Vector2, forward: Vector2, color: Color, radius: float, pulse: float, visual_length_px: float) -> void:
@@ -1750,6 +1830,19 @@ static func _draw_material_marks(canvas: CanvasItem, center: Vector2, axis: Vect
 
 static func _plugin_preview_color(slot_key: String, part: Dictionary, fallback: Color) -> Color:
 	var key := "%s %s %s" % [slot_key.to_lower(), String(part.get("ammo_kind", "")).to_lower(), String(part.get("name", "")).to_lower()]
+	match String(part.get("module_visual_family", "")).to_lower():
+		"balance_string":
+			return Color(0.44, 0.92, 1.0, 1.0)
+		"vise_close":
+			return Color(1.0, 0.66, 0.24, 1.0)
+		"pickup_dash":
+			return Color(0.62, 1.0, 0.36, 1.0)
+		"crush_windup":
+			return Color(1.0, 0.28, 0.18, 1.0)
+		"feint_thrust":
+			return Color(0.72, 0.82, 1.0, 1.0)
+		"explosive_arc":
+			return Color(1.0, 0.48, 0.18, 1.0)
 	if key.contains("engine"):
 		return Color(0.58, 0.42, 1.0, 1.0)
 	if key.contains("cool"):

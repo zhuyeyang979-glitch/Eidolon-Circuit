@@ -33,11 +33,17 @@ func _init() -> void:
 		_fail("Mobius strip surface should remain visible as the core battle background.")
 	if main.mobius_strip_surface_view.surface_texture == null:
 		_fail("Mobius strip surface should use the generated surface texture.")
+	var stardust: Dictionary = main.mobius_stardust_band_view.stardust_band_snapshot()
+	if not bool(stardust.get("visible", false)):
+		_fail("Minimal battle background should allow the dedicated Mobius stardust band.")
+	if bool(stardust.get("lane_guides_enabled", true)):
+		_fail("Minimal battle background should not show straight Mobius lane guides.")
 	if main.arena_top_boundary_line == null or main.arena_bottom_boundary_line == null:
 		_fail("Arena boundary line nodes should exist.")
 	if main.arena_top_boundary_line.visible or main.arena_bottom_boundary_line.visible:
 		_fail("Arena top/bottom boundary borders should stay hidden.")
-	print("BATTLE_MINIMAL_BACKGROUND_PROBE ok surface=%s borders_hidden=true" % [
+	print("BATTLE_MINIMAL_BACKGROUND_PROBE ok surface=%s stardust_points=%d borders_hidden=true" % [
 		str(main.mobius_strip_surface_view.surface_texture.get_size()),
+		PackedVector2Array(stardust.get("points", PackedVector2Array())).size(),
 	])
 	quit()

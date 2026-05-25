@@ -61,8 +61,10 @@ func _init() -> void:
 	root.add_child(main)
 	main._ready()
 	var path := _latest_training_unit_path()
+	var source_label := "default starter"
 	if path == "":
-		_fail("No saved training unit named 4 found.")
+		print("TRAINING_SAVED_UNIT_CONTROL_PROBE skipped: no saved unit 4; dedicated ball dummy is covered by training_default_ball_dummy_probe")
+		quit()
 		return
 	var file := FileAccess.open(path, FileAccess.READ)
 	var parsed = JSON.parse_string(file.get_as_text())
@@ -76,22 +78,23 @@ func _init() -> void:
 	main.training_import_units = [{"role": role_key, "blueprint": unit_bp.duplicate(true)}]
 	main.training_import_role_key = role_key
 	main.training_import_blueprint = unit_bp.duplicate(true)
+	source_label = "saved unit 4"
 	main.ai_battle_seat = 1
 	main.training_seat_confirmed = true
 	if not main._prepare_training_battle_loadouts():
-		_fail("Saved unit 4 training loadout was rejected: %s" % String(main.training_import_error_note))
+		_fail("%s training loadout was rejected: %s" % [source_label, String(main.training_import_error_note)])
 		return
 	if not main._configure_training_sides_for_seat():
-		_fail("Saved unit 4 training sides could not be configured: %s" % String(main.training_import_error_note))
+		_fail("%s training sides could not be configured: %s" % [source_label, String(main.training_import_error_note)])
 		return
 	main._begin_battle(MainScene.MODE_TRAINING, true)
 	var hero = main.active_units[1]["hero"]
 	if not main._is_live_unit(hero):
-		_fail("Saved unit 4 did not spawn as a controllable training hero.")
+		_fail("%s did not spawn as a controllable training hero." % source_label)
 		return
 	var move_speed := float(hero.stats.get("move_speed", hero.stats.get("body_move_speed", 0.0)))
 	if move_speed <= 0.001 or float(hero.stats.get("turn_speed", 0.0)) <= 0.001:
-		_fail("Saved unit 4 has no drive-derived movement/turn speed in training.")
+		_fail("%s has no drive-derived movement/turn speed in training." % source_label)
 		return
 	var before_pos := Vector2(hero.ring_pos, hero.lane)
 	var before_angle: float = hero.facing_angle
@@ -116,5 +119,5 @@ func _init() -> void:
 		_fail("Training downward movement did not change lane.")
 	if absf(hero.facing_angle - before_angle) <= 0.001:
 		_fail("Training Q/E-equivalent turn did not rotate the imported unit.")
-	print("TRAINING_SAVED_UNIT_CONTROL_PROBE moved=%.3f lane_up=%.3f lane_down=%.3f turned=%.3f" % [after_pos.distance_to(before_pos), absf(after_up.y - after_right.y), absf(after_down.y - after_up.y), absf(hero.facing_angle - before_angle)])
+	print("TRAINING_SAVED_UNIT_CONTROL_PROBE source=%s moved=%.3f lane_up=%.3f lane_down=%.3f turned=%.3f" % [source_label, after_pos.distance_to(before_pos), absf(after_up.y - after_right.y), absf(after_down.y - after_up.y), absf(hero.facing_angle - before_angle)])
 	quit()

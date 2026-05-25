@@ -12,6 +12,7 @@ func _init() -> void:
 	var main = MainScene.new()
 	root.add_child(main)
 	main._ready()
+	main.loading_auto_transitions_enabled = false
 	main._show_editor()
 	if not main.editor_action_buttons.has("save_canvas"):
 		_fail("TeamEdit should have a fixed Save Unit action.")

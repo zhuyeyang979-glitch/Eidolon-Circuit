@@ -116,7 +116,7 @@ func main_menu_model(language: String, ai_battle_seat: int, match_format_short: 
 		"ai_battle_seat": ai_battle_seat,
 		"match_format_short": match_format_short,
 		"team_status": team_status,
-		"title": "EIDOLON CIRCUIT" if not zh else "机甲幻灵环",
+		"title": "EIDOLON CIRCUIT" if not zh else "星魂回环",
 		"subtitle": "Mobius Arsenal" if not zh else "莫比乌斯兵装",
 		"callsign": "拓扑机甲 / 资源召唤" if zh else "topology mechs / resource summons",
 		"telemetry": ("实验室就绪 / %s / 首发200" if zh else "LAB READY / %s / START 200") % match_format_short,

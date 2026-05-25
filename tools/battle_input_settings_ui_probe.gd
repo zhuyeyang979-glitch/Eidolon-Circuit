@@ -21,7 +21,12 @@ func _init() -> void:
 	var main = MainScene.new()
 	root.add_child(main)
 	main._ready()
-	main._show_settings()
+	main.loading_auto_transitions_enabled = false
+	main._show_settings(true)
+	if not main.settings_category_buttons.has("input"):
+		_fail("Settings has no input category button.")
+	else:
+		(main.settings_category_buttons["input"] as Button).pressed.emit()
 	if main.settings_scroll_container == null:
 		_fail("Settings page has no scroll container.")
 	var required_actions := [

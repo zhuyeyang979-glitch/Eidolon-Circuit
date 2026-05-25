@@ -18,7 +18,7 @@ static func _script():
 	return load("res://scripts/services/loading_task.gd")
 
 
-static func create(task_id: String, task_label: String, task_weight: float, task_callable: Callable, task_phase: String = PHASE_PAGE, task_blocking: bool = true, task_idle_optional: bool = false):
+static func create(task_id: String, task_label: String, task_weight: float, task_callable: Callable, task_phase: String = PHASE_PAGE, task_blocking: bool = true, task_idle_optional: bool = false) -> LoadingTask:
 	var task = _script().new()
 	task.id = task_id
 	task.label = task_label
@@ -30,7 +30,7 @@ static func create(task_id: String, task_label: String, task_weight: float, task
 	return task
 
 
-static func from_legacy(value: Variant):
+static func from_legacy(value: Variant) -> LoadingTask:
 	if value is RefCounted and value.get_script() == _script():
 		return value
 	if not (value is Dictionary):
@@ -59,7 +59,15 @@ static func normalized_phase(raw_phase: String) -> String:
 
 
 func first_interaction_critical() -> bool:
-	return blocking or phase == PHASE_FIRST_INTERACTION
+	return blocks_page() or blocks_first_interaction()
+
+
+func blocks_page() -> bool:
+	return blocking
+
+
+func blocks_first_interaction() -> bool:
+	return phase == PHASE_FIRST_INTERACTION
 
 
 func to_dictionary() -> Dictionary:

@@ -12,6 +12,7 @@ func _init() -> void:
 	var main = MainScene.new()
 	root.add_child(main)
 	main._ready()
+	main.loading_auto_transitions_enabled = false
 	main._show_editor(true)
 	var bp: Dictionary = main._blueprint_for(1, "hero", 0).duplicate(true)
 	bp["unit_name"] = "Probe Load To Unit Edit"

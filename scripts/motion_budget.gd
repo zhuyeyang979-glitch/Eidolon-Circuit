@@ -14,7 +14,11 @@ static func estimate_motion_budget(motion_stats: Dictionary, module_part: Dictio
 		state_mult = clampf(float(module_part.get("armor_joint_mult", module_part.get("armor_speed_mult", 1.08))), 0.35, 2.4)
 	elif state_key == "active":
 		state_mult = clampf(float(module_part.get("active_joint_mult", module_part.get("active_speed_mult", 1.14))), 0.35, 2.6)
-	var joint_speed := maxf(0.02, output * module_mult * state_mult / driven_mass)
+	var raw_joint_speed := maxf(0.02, output * module_mult * state_mult / driven_mass)
+	var joint_speed_cap := maxf(0.0, float(motion_stats.get("joint_speed_cap", module_part.get("joint_speed_cap", 0.0))))
+	var joint_speed := raw_joint_speed
+	if joint_speed_cap > 0.0:
+		joint_speed = minf(joint_speed, joint_speed_cap)
 	var angular_distance := chain_length * deg_to_rad(maxf(0.0, angle_degrees))
 	var extension_distance := maxf(0.0, extension_m)
 	var angular_time := angular_distance / joint_speed if angular_distance > 0.001 else 0.0
@@ -28,6 +32,8 @@ static func estimate_motion_budget(motion_stats: Dictionary, module_part: Dictio
 	return {
 		"duration": duration,
 		"joint_speed": joint_speed,
+		"raw_joint_speed": raw_joint_speed,
+		"joint_speed_cap": joint_speed_cap,
 		"contact_speed": contact_speed,
 		"driven_mass": driven_mass,
 		"chain_length": chain_length,

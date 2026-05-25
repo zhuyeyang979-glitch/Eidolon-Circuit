@@ -20,7 +20,17 @@ func _fighter_with(allocation: float, mass: float):
 			"teamedit_runtime_topology": true,
 			"mass": 40.0,
 			"runtime_topology_segments": [
-				{"node_index": 1, "part_kind": "limb_muscle", "a_local": Vector2.ZERO, "b_local": Vector2(1.0, 0.0), "mass": mass, "allocated_limb_momentum": allocation, "joint_output_momentum_base": allocation},
+				{
+					"node_index": 1,
+					"part_kind": "limb_muscle",
+					"a_local": Vector2.ZERO,
+					"b_local": Vector2(1.0, 0.0),
+					"mass": mass,
+					"allocated_limb_momentum": allocation,
+					"joint_output_momentum_base": 240.0,
+					"momentum_min": 0.0,
+					"momentum_max": 260.0,
+				},
 			],
 		},
 	})

@@ -33,6 +33,11 @@ func _init() -> void:
 		_fail("Mobius surface decoration should be visible as the battle surface background.")
 	if main.mobius_strip_surface_view.surface_texture == null:
 		_fail("Mobius surface decoration should use the generated surface texture.")
+	var stardust: Dictionary = main.mobius_stardust_band_view.stardust_band_snapshot()
+	if not bool(stardust.get("visible", false)):
+		_fail("Mobius surface decoration should include the subtle stardust band.")
+	if bool(stardust.get("lane_guides_enabled", true)):
+		_fail("Mobius surface decoration should not draw straight lane guides.")
 	if not main.parallax_nodes.is_empty() or not main.world_background_art_nodes.is_empty() or not main.world_near_dust_nodes.is_empty():
 		_fail("Minimal battle background should not keep parallax/world/dust decoration layers.")
 	var config := main._mobius_config()
@@ -44,8 +49,9 @@ func _init() -> void:
 		_fail("Mobius seam projection should still wrap/invert continuously; distance %.3f" % seam_distance)
 	if main.arena_top_boundary_line.visible or main.arena_bottom_boundary_line.visible:
 		_fail("Minimal battle background should hide top/bottom map boundary borders.")
-	print("MOBIUS_BACKGROUND_CONTINUITY_PROBE textured seam=%.3f surface=%s" % [
+	print("MOBIUS_BACKGROUND_CONTINUITY_PROBE textured seam=%.3f surface=%s stardust_points=%d" % [
 		seam_distance,
 		str(main.mobius_strip_surface_view.surface_texture.get_size()),
+		PackedVector2Array(stardust.get("points", PackedVector2Array())).size(),
 	])
 	quit()

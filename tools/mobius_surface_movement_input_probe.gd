@@ -43,8 +43,8 @@ func _init() -> void:
 	var surface := main._mobius_surface_input_for_unit(unit, screen_right)
 	if surface.length() <= 0.01:
 		_fail("Surface input should preserve movement magnitude.")
-	if surface.distance_to(raw) > 0.001:
-		_fail("Movement input should stay in stable screen gameplay space, got %s from %s." % [str(surface), str(raw)])
+	if surface.distance_to(raw) <= 0.02:
+		_fail("Movement input should be projected onto the local Mobius surface frame, got unchanged %s." % str(surface))
 	main.mobius_rotation_state = {"angle": 1.43, "pivot": Vector2(8.1, -1.9)}
 	var surface_next := main._mobius_surface_input_for_unit(unit, screen_right)
 	if surface_next.distance_to(surface) > 0.001:

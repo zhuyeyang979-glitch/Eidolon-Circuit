@@ -1,6 +1,25 @@
 extends RefCounted
 class_name NavigationService
 
+const PAGE_MENU := "menu"
+const PAGE_EDITOR := "editor"
+const PAGE_SAVED_UNITS := "saved_units"
+const PAGE_SCOUT := "scout"
+const PAGE_SETTINGS := "settings"
+const PAGE_BATTLE := "battle"
+const PAGE_LOADING := "loading"
+
+const ACTION_CLOSE := "close"
+const ACTION_SHOW_HELP := "show_help"
+const ACTION_SETTINGS_ROOT := "settings_root"
+const ACTION_NAVIGATE_MENU := "navigate_menu"
+const ACTION_NAVIGATE_SETTINGS := "navigate_settings"
+const ACTION_NAVIGATE_RETURN_TARGET := "navigate_return_target"
+const ACTION_NAVIGATE_EDITOR_PRESERVE := "navigate_editor_preserve"
+const ACTION_NAVIGATE_SAVED_UNITS := "navigate_saved_units"
+const ACTION_NAVIGATE_SCOUT := "navigate_scout"
+const ACTION_NAVIGATE_BATTLE_PRESERVE := "navigate_battle_preserve"
+
 var _current_page := ""
 var _previous_page := ""
 var _return_target := ""
@@ -14,11 +33,11 @@ func return_target_for(target_page: String, explicit_return_target: String = "")
 		return explicit_return_target
 	var current := current_page()
 	match target_page:
-		"settings":
-			if current != "" and current != "settings" and current != "loading":
+		PAGE_SETTINGS:
+			if current != "" and current != PAGE_SETTINGS and current != PAGE_LOADING:
 				return current
-		"saved_units":
-			return "editor" if current == "editor" else "menu"
+		PAGE_SAVED_UNITS:
+			return PAGE_EDITOR if current == PAGE_EDITOR else PAGE_MENU
 	return ""
 
 
@@ -54,7 +73,7 @@ func commit_transition(to_page: String, reason: String = "", payload: Dictionary
 			pending_payload[key] = transition_payload[key]
 		transition_payload = pending_payload
 		consumes_pending = true
-	elif to_page != "loading":
+	elif to_page != PAGE_LOADING:
 		_pending_transition = {}
 	if transition_reason == "":
 		transition_reason = "navigation:%s" % to_page
@@ -62,7 +81,7 @@ func commit_transition(to_page: String, reason: String = "", payload: Dictionary
 	_current_page = to_page
 	if transition_return_target != "":
 		_return_target = transition_return_target
-	elif ["menu", "editor", "scout", "battle"].has(to_page):
+	elif [PAGE_MENU, PAGE_EDITOR, PAGE_SCOUT, PAGE_BATTLE].has(to_page):
 		_return_target = ""
 	var transition := {
 		"phase": "commit",
@@ -94,35 +113,47 @@ func return_target() -> String:
 func resolve_option_action(action_key: String, current_subroute: String = "") -> Dictionary:
 	match action_key:
 		"close":
-			return {"action": "close"}
+			return route_action(ACTION_CLOSE)
 		"help":
-			return {"action": "show_help", "context": _current_page}
+			return route_action(ACTION_SHOW_HELP, "", "", _current_page)
 		"main_menu":
-			return {"action": "navigate_menu", "to_page": "menu", "reason": "page_options_main_menu"}
+			return route_action(ACTION_NAVIGATE_MENU, PAGE_MENU, "page_options_main_menu")
 		"settings":
-			return {"action": "navigate_settings", "to_page": "settings", "reason": "page_options_settings", "return_target": _current_page}
+			return route_action(ACTION_NAVIGATE_SETTINGS, PAGE_SETTINGS, "page_options_settings", "", _current_page)
 		"back":
-			if _current_page == "settings" and current_subroute != "" and current_subroute != "root":
-				return {"action": "settings_root", "reason": "page_options_back_settings_root"}
+			if _current_page == PAGE_SETTINGS and current_subroute != "" and current_subroute != "root":
+				return route_action(ACTION_SETTINGS_ROOT, "", "page_options_back_settings_root")
 			if _return_target != "":
-				return {"action": "navigate_return_target", "to_page": _return_target, "reason": "page_options_back"}
-			return {"action": "navigate_menu", "to_page": "menu", "reason": "page_options_back_menu"}
-	return {"action": "close"}
+				return route_action(ACTION_NAVIGATE_RETURN_TARGET, _return_target, "page_options_back")
+			return route_action(ACTION_NAVIGATE_MENU, PAGE_MENU, "page_options_back_menu")
+	return route_action(ACTION_CLOSE)
 
 
 func resolve_target_navigation(target_page: String, reason: String = "navigation_return") -> Dictionary:
 	match target_page:
-		"editor":
-			return {"action": "navigate_editor_preserve", "to_page": "editor", "reason": reason}
-		"saved_units":
-			return {"action": "navigate_saved_units", "to_page": "saved_units", "reason": reason}
-		"settings":
-			return {"action": "navigate_settings", "to_page": "settings", "reason": reason}
-		"scout":
-			return {"action": "navigate_scout", "to_page": "scout", "reason": reason}
-		"battle":
-			return {"action": "navigate_battle_preserve", "to_page": "battle", "reason": reason}
-	return {"action": "navigate_menu", "to_page": "menu", "reason": reason}
+		PAGE_EDITOR:
+			return route_action(ACTION_NAVIGATE_EDITOR_PRESERVE, PAGE_EDITOR, reason)
+		PAGE_SAVED_UNITS:
+			return route_action(ACTION_NAVIGATE_SAVED_UNITS, PAGE_SAVED_UNITS, reason)
+		PAGE_SETTINGS:
+			return route_action(ACTION_NAVIGATE_SETTINGS, PAGE_SETTINGS, reason)
+		PAGE_SCOUT:
+			return route_action(ACTION_NAVIGATE_SCOUT, PAGE_SCOUT, reason)
+		PAGE_BATTLE:
+			return route_action(ACTION_NAVIGATE_BATTLE_PRESERVE, PAGE_BATTLE, reason)
+	return route_action(ACTION_NAVIGATE_MENU, PAGE_MENU, reason)
+
+
+static func route_action(action: String, to_page: String = "", reason: String = "", context: String = "", return_target_value: String = "", payload: Dictionary = {}) -> Dictionary:
+	var result := {
+		"action": action,
+		"to_page": to_page,
+		"reason": reason,
+		"context": context,
+		"return_target": return_target_value,
+		"payload": payload.duplicate(true),
+	}
+	return result
 
 
 func snapshot() -> Dictionary:

@@ -105,7 +105,8 @@ func _init() -> void:
 	if not found:
 		_fail("Limb allocation map did not contain expected clamped momentum %.3f: %s" % [expected_momentum, str(by_node)])
 	var stats: Dictionary = main._editor_current_stats()
-	if float(stats.get("engine_momentum_required", 0.0)) <= 0.0:
+	var required := float(stats.get("drive_demand_total", stats.get("engine_momentum_required", 0.0)))
+	if required <= 0.0:
 		_fail("Allocation did not affect engine demand.")
-	print("ENGINE_POWER_ALLOCATION_SLIDER_PROBE ok pool=%.1f required=%.1f" % [pool, float(stats.get("engine_momentum_required", 0.0))])
+	print("ENGINE_POWER_ALLOCATION_SLIDER_PROBE ok pool=%.1f required=%.1f" % [pool, required])
 	quit()

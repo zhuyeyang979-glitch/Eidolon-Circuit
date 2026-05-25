@@ -12,14 +12,14 @@ func _init() -> void:
 	var main = MainScene.new()
 	root.add_child(main)
 	main._ready()
-	var entry := main._training_dummy_unit4_entry()
+	var entry := main._training_dummy_unit2_entry()
 	if entry.is_empty():
-		_fail("Training dummy Unit4 entry is empty: %s" % main.training_import_error_note)
+		_fail("Training ball dummy entry is empty: %s" % main.training_import_error_note)
 	var bp: Dictionary = Dictionary(entry.get("blueprint", {}))
-	if String(bp.get("unit_name", "")) != "4":
-		_fail("Default training dummy should be saved unit 4, got %s" % String(bp.get("unit_name", "")))
+	if not bool(bp.get("training_ball_dummy", false)):
+		_fail("Default training dummy should be the dedicated ball dummy.")
 	var path := main._latest_training_dummy_unit_path()
-	if path == "":
-		_fail("Latest training dummy path should point to Unit4.")
-	print("TRAINING_DEFAULT_DUMMY_UNIT4_PROBE ok path=%s" % path)
+	if path != "":
+		_fail("Default training dummy should not require a saved Unit4 path, got %s" % path)
+	print("TRAINING_DEFAULT_DUMMY_UNIT4_PROBE ok ball_radius=%.2f" % float(bp.get("training_dummy_radius_m", 0.0)))
 	quit()

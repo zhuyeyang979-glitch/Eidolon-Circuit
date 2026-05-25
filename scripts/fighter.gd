@@ -119,6 +119,8 @@ var body_sway_velocity := Vector2.ZERO
 var recovery_boost_timer := 0.0
 var collision_auto_brake_timer := 0.0
 var melee_stagger_timer := 0.0
+var module_clamp_pin_timer := 0.0
+var module_clamp_velocity_mult := 1.0
 var limb_swing_angles: Array = []
 var limb_swing_velocities: Array = []
 var limb_linear_offsets: Array = []
@@ -160,6 +162,10 @@ func _ready() -> void:
 
 func _draw() -> void:
 	runtime_status_curve_overlay_last_count = 0
+	if _is_training_ball_dummy():
+		_draw_training_ball_dummy()
+		_draw_runtime_status_curve_overlay()
+		return
 	if _is_teamedit_runtime_unit() and _has_runtime_topology():
 		_draw_runtime_assembly_board_unit()
 		_draw_runtime_status_curve_overlay()
@@ -225,7 +231,11 @@ func deploy(spawn_ring_pos: float, spawn_lane: float) -> void:
 	brake_reverse_requires_repress = false
 	recovery_boost_timer = 0.0
 	melee_stagger_timer = 0.0
+	module_clamp_pin_timer = 0.0
+	module_clamp_velocity_mult = 1.0
 	set_meta("melee_stagger_timer", 0.0)
+	set_meta("clamp_pin_timer", 0.0)
+	set_meta("clamp_velocity_mult", 1.0)
 	set_meta("stagger_combo_active", false)
 	set_meta("stagger_combo_id", 0)
 	set_meta("stagger_combo_base_duration", 0.0)
@@ -304,6 +314,14 @@ func tick(delta: float, ring_length: float) -> void:
 	_tick_collision_auto_brake(delta)
 	melee_stagger_timer = maxf(0.0, melee_stagger_timer - delta)
 	set_meta("melee_stagger_timer", melee_stagger_timer)
+	module_clamp_pin_timer = maxf(0.0, module_clamp_pin_timer - delta)
+	if module_clamp_pin_timer > 0.0:
+		var clamp_mult := clampf(module_clamp_velocity_mult, 0.05, 1.0)
+		velocity *= clampf(lerpf(1.0, clamp_mult, minf(1.0, delta * 9.0)), 0.05, 1.0)
+	else:
+		module_clamp_velocity_mult = 1.0
+	set_meta("clamp_pin_timer", module_clamp_pin_timer)
+	set_meta("clamp_velocity_mult", module_clamp_velocity_mult)
 	active_part_timer = maxf(0.0, active_part_timer - delta)
 	if active_part_timer <= 0.0:
 		active_part_index = -1
@@ -732,6 +750,11 @@ func _drive_direction_for_command(input_vector: Vector2, command_mode: String) -
 
 
 func move_by(input_vector: Vector2, delta: float, ring_length: float) -> void:
+	var gameplay_vector := GameplayTransform.screen_input_to_gameplay_motion(input_vector)
+	move_by_gameplay(gameplay_vector, delta, ring_length)
+
+
+func move_by_gameplay(input_vector: Vector2, delta: float, ring_length: float) -> void:
 	if not active or role == "barrier":
 		return
 	if melee_stagger_timer > 0.0:
@@ -747,12 +770,14 @@ func move_by(input_vector: Vector2, delta: float, ring_length: float) -> void:
 	elif current_state == STATE_ACTIVE:
 		speed *= 0.72
 
-	var desired := GameplayTransform.screen_input_to_gameplay_motion(input_vector)
+	var desired := input_vector
 	if desired.length() <= 0.04:
 		set_meta("last_move_command_mode", "none")
 		return
 	if desired.length() > 1.0:
 		desired = desired.normalized()
+	if module_clamp_pin_timer > 0.0:
+		desired *= clampf(module_clamp_velocity_mult, 0.05, 1.0)
 
 	var command_mode := _movement_command_mode(desired)
 	if command_mode == MOVE_COMMAND_NONE:
@@ -784,6 +809,24 @@ func move_by(input_vector: Vector2, delta: float, ring_length: float) -> void:
 	velocity += needed_delta.limit_length(acceleration * cornering * delta)
 	if not _reverse_drive_allowed(desired):
 		_clear_brake_reverse_ready()
+
+
+func apply_clamp_pin(seconds: float, velocity_mult: float) -> void:
+	var duration := maxf(0.0, seconds)
+	if duration <= 0.0:
+		return
+	module_clamp_pin_timer = maxf(module_clamp_pin_timer, duration)
+	module_clamp_velocity_mult = minf(module_clamp_velocity_mult, clampf(velocity_mult, 0.05, 1.0))
+	velocity *= module_clamp_velocity_mult
+	action_cooldown = maxf(action_cooldown, duration * 0.35)
+	set_meta("clamp_pin_timer", module_clamp_pin_timer)
+	set_meta("clamp_velocity_mult", module_clamp_velocity_mult)
+
+
+func module_clamp_pin_ratio() -> float:
+	if module_clamp_pin_timer <= 0.0:
+		return 0.0
+	return clampf(1.0 - module_clamp_velocity_mult, 0.0, 1.0)
 
 
 func begin_action(action_kind: String) -> Dictionary:
@@ -888,29 +931,150 @@ func _runtime_sources_for_nodes(target_nodes: Array) -> Array:
 	return sources
 
 
-func _runtime_sources_motion_stats(target_nodes: Array) -> Dictionary:
-	var sources := _runtime_sources_for_nodes(target_nodes)
+func _runtime_motion_positive_min(current: float, candidate: float) -> float:
+	var value := maxf(0.0, candidate)
+	if value <= 0.0:
+		return current
+	if current <= 0.0:
+		return value
+	return minf(current, value)
+
+
+func _runtime_binding_allocation_for_node(binding: Dictionary, node_index: int) -> float:
+	if binding.is_empty():
+		return -1.0
+	var by_node = binding.get("allocated_limb_momentum_by_node", binding.get("joint_drive_allocation_by_node", {}))
+	if by_node is Dictionary:
+		var allocations: Dictionary = by_node
+		var string_key := str(node_index)
+		if allocations.has(string_key):
+			return maxf(0.0, float(allocations.get(string_key, 0.0)))
+		if allocations.has(node_index):
+			return maxf(0.0, float(allocations.get(node_index, 0.0)))
+	var target_count := maxi(1, _runtime_node_array(Array(binding.get("target_nodes", []))).size())
+	for key in ["allocated_limb_momentum", "joint_drive_allocation_total", "joint_drive_demand", "allocated_momentum"]:
+		if binding.has(key):
+			return maxf(0.0, float(binding.get(key, 0.0))) / float(target_count)
+	return -1.0
+
+
+func _runtime_source_allocated_momentum(source: Dictionary, binding: Dictionary = {}) -> float:
+	var node_index := int(source.get("node_index", -1))
+	var momentum := _runtime_binding_allocation_for_node(binding, node_index)
+	if momentum < 0.0:
+		momentum = float(source.get("allocated_limb_momentum", source.get("allocated_momentum", -1.0)))
+	if momentum < 0.0:
+		momentum = maxf(0.0, float(source.get("joint_output_momentum_base", 0.0)))
+	else:
+		momentum = maxf(0.0, momentum)
+	var min_momentum := maxf(0.0, float(source.get("momentum_min", 0.0)))
+	var max_momentum := maxf(0.0, float(source.get("momentum_max", 0.0)))
+	if max_momentum > 0.0:
+		momentum = minf(momentum, max_momentum)
+	if min_momentum > 0.0:
+		momentum = maxf(momentum, min_momentum)
+	return momentum
+
+
+func _runtime_edge_node(edge: Dictionary, key: String) -> int:
+	return int(edge.get(key, -9999))
+
+
+func _runtime_edge_socket_for_node(edge: Dictionary, node_index: int) -> String:
+	if _runtime_edge_node(edge, "a_node") == node_index:
+		return String(edge.get("a_socket", ""))
+	if _runtime_edge_node(edge, "b_node") == node_index:
+		return String(edge.get("b_socket", ""))
+	return ""
+
+
+func _runtime_socket_is_parent_side(socket_id: String) -> bool:
+	return socket_id == "distal" or socket_id.begins_with("torso_port:")
+
+
+func _runtime_socket_is_child_root(socket_id: String) -> bool:
+	return socket_id == "root_joint"
+
+
+func _runtime_child_nodes_for(parent_node: int) -> Array:
+	var result: Array = []
+	for raw_edge in Array(stats.get("runtime_topology_edges", [])):
+		if not (raw_edge is Dictionary):
+			continue
+		var edge: Dictionary = raw_edge
+		var a := _runtime_edge_node(edge, "a_node")
+		var b := _runtime_edge_node(edge, "b_node")
+		if a == parent_node:
+			var parent_socket := _runtime_edge_socket_for_node(edge, a)
+			var child_socket := _runtime_edge_socket_for_node(edge, b)
+			if _runtime_socket_is_parent_side(parent_socket) and _runtime_socket_is_child_root(child_socket):
+				result.append(b)
+		elif b == parent_node:
+			var parent_socket_b := _runtime_edge_socket_for_node(edge, b)
+			var child_socket_a := _runtime_edge_socket_for_node(edge, a)
+			if _runtime_socket_is_parent_side(parent_socket_b) and _runtime_socket_is_child_root(child_socket_a):
+				result.append(a)
+	return result
+
+
+func _runtime_downstream_motion_for_node(node_index: int, included_nodes: Dictionary) -> Dictionary:
+	var mass := 0.0
+	var length := 0.0
+	var speed_cap := 0.0
+	for raw_child in _runtime_child_nodes_for(node_index):
+		var child := int(raw_child)
+		if included_nodes.has(child):
+			continue
+		included_nodes[child] = true
+		var source := _runtime_segment_source_by_node(child)
+		if not source.is_empty():
+			var a := _runtime_local_vector(source.get("a_local", Vector2.ZERO))
+			var b := _runtime_local_vector(source.get("b_local", a))
+			length += maxf(0.0, a.distance_to(b))
+			mass += maxf(0.0, float(source.get("mass", 0.0)))
+			speed_cap = _runtime_motion_positive_min(speed_cap, float(source.get("joint_speed_cap", 0.0)))
+		var nested := _runtime_downstream_motion_for_node(child, included_nodes)
+		mass += maxf(0.0, float(nested.get("mass", 0.0)))
+		length += maxf(0.0, float(nested.get("length", 0.0)))
+		speed_cap = _runtime_motion_positive_min(speed_cap, float(nested.get("joint_speed_cap", 0.0)))
+	return {"mass": mass, "length": length, "joint_speed_cap": speed_cap}
+
+
+func _runtime_sources_motion_stats(target_nodes: Array, binding: Dictionary = {}) -> Dictionary:
 	var mass := 0.0
 	var length := 0.0
 	var output := 0.0
-	for raw_source in sources:
-		if not (raw_source is Dictionary):
+	var speed_cap := 0.0
+	var sources: Array = []
+	var included_nodes := {}
+	for raw_node in target_nodes:
+		var node_index := int(raw_node)
+		if included_nodes.has(node_index):
 			continue
-		var source: Dictionary = raw_source
+		var source := _runtime_segment_source_by_node(node_index)
+		if source.is_empty():
+			continue
+		included_nodes[node_index] = true
+		sources.append(source)
 		var a := _runtime_local_vector(source.get("a_local", Vector2.ZERO))
 		var b := _runtime_local_vector(source.get("b_local", a))
 		length += maxf(0.0, a.distance_to(b))
 		mass += maxf(0.0, float(source.get("mass", 0.0)))
-		output += maxf(0.0, float(source.get("joint_output_momentum_base", 0.0)))
+		output += _runtime_source_allocated_momentum(source, binding)
+		speed_cap = _runtime_motion_positive_min(speed_cap, float(source.get("joint_speed_cap", 0.0)))
+		var downstream := _runtime_downstream_motion_for_node(node_index, included_nodes)
+		mass += maxf(0.0, float(downstream.get("mass", 0.0)))
+		length += maxf(0.0, float(downstream.get("length", 0.0)))
+		speed_cap = _runtime_motion_positive_min(speed_cap, float(downstream.get("joint_speed_cap", 0.0)))
 	if mass <= 0.0:
 		mass = maxf(1.0, float(stats.get("mass", 1.0)) * 0.18)
 	if output <= 0.0:
 		output = maxf(0.0, float(stats.get("action_drive_scale", 1.0))) * maxf(1.0, mass)
-	return {"sources": sources, "mass": mass, "length": length, "output": output}
+	return {"sources": sources, "mass": mass, "length": length, "output": output, "joint_speed_cap": speed_cap}
 
 
-func _runtime_action_motion_budget(target_nodes: Array, module_part: Dictionary, angle_degrees: float, extension_m: float, fallback_duration: float, state_key: String = STATE_NORMAL) -> Dictionary:
-	var motion := _runtime_sources_motion_stats(target_nodes)
+func _runtime_action_motion_budget(target_nodes: Array, module_part: Dictionary, angle_degrees: float, extension_m: float, fallback_duration: float, state_key: String = STATE_NORMAL, binding: Dictionary = {}) -> Dictionary:
+	var motion := _runtime_sources_motion_stats(target_nodes, binding)
 	return MotionBudget.estimate_motion_budget(motion, module_part, angle_degrees, extension_m, fallback_duration, state_key)
 
 
@@ -952,7 +1116,7 @@ func begin_runtime_module_action(action_kind: String, binding: Dictionary, input
 	var attack_key := clampi(int(binding.get("attack_key", 1)), 1, 6)
 	var state_key := action_kind if action_kind in [STATE_NORMAL, STATE_ARMOR, STATE_ACTIVE] else STATE_NORMAL
 	var fallback_duration := 0.62
-	var motion_budget := _runtime_action_motion_budget(target_nodes, module_part, float(module_part.get("swing_arc_degrees", 180.0)), 0.0, fallback_duration, state_key)
+	var motion_budget := _runtime_action_motion_budget(target_nodes, module_part, float(module_part.get("swing_arc_degrees", 180.0)), 0.0, fallback_duration, state_key, binding)
 	var duration := maxf(0.12, float(motion_budget.get("duration", fallback_duration)))
 	var cooldown := maxf(0.12, float(module_part.get("cooldown", binding.get("cooldown", duration * 0.72))))
 	var startup_ratio := clampf(float(module_part.get("startup_ratio", module_part.get("two_link_straight_phase", TWO_LINK_DEFAULT_STARTUP_RATIO))), 0.05, 0.95)
@@ -1031,9 +1195,58 @@ func _is_runtime_generic_melee_profile(profile: String) -> bool:
 	]
 
 
+func _runtime_module_variant_key(module_part: Dictionary, binding: Dictionary) -> String:
+	return String(module_part.get("module_variant_key", binding.get("module_variant_key", ""))).to_lower()
+
+
+func _apply_module_variant_fields(payload: Dictionary, module_part: Dictionary, variant_key: String) -> void:
+	if variant_key == "":
+		return
+	payload["module_variant_key"] = variant_key
+	payload["module_visual_family"] = String(module_part.get("module_visual_family", variant_key))
+	payload["module_variant_label"] = String(module_part.get("module_variant_label", ""))
+	match variant_key:
+		"balance_string":
+			payload["combo_balance_window"] = float(module_part.get("combo_balance_window", 1.2))
+			payload["combo_balance_cooldown_mult"] = float(module_part.get("combo_balance_cooldown_mult", 0.62))
+			payload["combo_balance_requires_different_key"] = bool(module_part.get("combo_balance_requires_different_key", true))
+		"vise_close":
+			payload["clamp_pin_seconds"] = float(module_part.get("clamp_pin_seconds", 0.38))
+			payload["clamp_velocity_mult"] = float(module_part.get("clamp_velocity_mult", 0.35))
+			payload["clamp_knock_mult"] = float(module_part.get("clamp_knock_mult", 0.38))
+		"pickup_dash":
+			payload["pickup_dash_impulse"] = float(module_part.get("pickup_dash_impulse", 0.65))
+			payload["pickup_dash_on_hit_impulse"] = float(module_part.get("pickup_dash_on_hit_impulse", 0.35))
+			payload["route_lane_pull"] = float(module_part.get("route_lane_pull", 0.1))
+		"crush_windup":
+			payload["contact_momentum_mult"] = float(module_part.get("crush_contact_momentum_mult", 1.45))
+			payload["crush_stagger_mult"] = float(module_part.get("crush_stagger_mult", 1.35))
+			payload["whiff_recovery_mult"] = float(module_part.get("whiff_recovery_mult", 1.25))
+			payload["runtime_contact_damage_mult"] = float(module_part.get("runtime_contact_damage_mult", 1.24))
+		"feint_thrust":
+			payload["feint_retarget_degrees"] = float(module_part.get("feint_retarget_degrees", 18.0))
+			payload["feint_ghost_phase"] = float(module_part.get("feint_ghost_phase", 0.42))
+			payload["feint_final_width_mult"] = float(module_part.get("feint_final_width_mult", 0.65))
+		"explosive_arc_salvo":
+			payload["salvo_arc_min_range"] = float(module_part.get("salvo_arc_min_range", 1.35))
+			payload["salvo_arc_max_range"] = float(module_part.get("salvo_arc_max_range", 3.8))
+			payload["salvo_hold_range_seconds"] = float(module_part.get("salvo_hold_range_seconds", 0.75))
+			payload["salvo_landing_marker"] = bool(module_part.get("salvo_landing_marker", true))
+
+
+func _commit_combo_balance_window(action: Dictionary) -> void:
+	if String(action.get("module_variant_key", "")) != "balance_string":
+		return
+	var now := Time.get_ticks_msec() * 0.001
+	set_meta("combo_balance_ready_until", now + maxf(0.05, float(action.get("combo_balance_window", 1.2))))
+	set_meta("combo_balance_source_attack_key", int(action.get("attack_key", -1)))
+	set_meta("combo_balance_cooldown_mult", clampf(float(action.get("combo_balance_cooldown_mult", 0.62)), 0.25, 1.0))
+
+
 func _begin_runtime_generic_melee_action(action_kind: String, binding: Dictionary, input_direction: Vector2 = Vector2.ZERO) -> Dictionary:
 	var module_part: Dictionary = binding.get("module_part", {}) if binding.get("module_part", {}) is Dictionary else {}
 	var profile := String(binding.get("module_action_profile", module_part.get("module_action_profile", "")))
+	var module_variant_key := _runtime_module_variant_key(module_part, binding)
 	var target_nodes: Array = _runtime_node_array(Array(binding.get("target_nodes", [])))
 	if target_nodes.is_empty():
 		set_meta("last_module_gate_reason", "runtime binding needs target nodes")
@@ -1045,16 +1258,32 @@ func _begin_runtime_generic_melee_action(action_kind: String, binding: Dictionar
 		extension_m = maxf(extension_m, float(module_part.get("max_extension_m", 0.0)))
 	var swing_arc := maxf(0.0, float(module_part.get("swing_arc_degrees", 120.0 if extension_m <= 0.0 else 0.0)))
 	var fallback_duration := maxf(0.18, float(module_part.get("duration", 0.62)))
-	var motion_budget := _runtime_action_motion_budget(target_nodes, module_part, swing_arc, extension_m, fallback_duration, state_key)
+	var motion_budget := _runtime_action_motion_budget(target_nodes, module_part, swing_arc, extension_m, fallback_duration, state_key, binding)
 	var duration := maxf(0.12, float(motion_budget.get("duration", fallback_duration)))
 	var cooldown := maxf(0.12, float(module_part.get("cooldown", binding.get("cooldown", duration * 0.72))))
 	var startup_ratio := clampf(float(module_part.get("startup_ratio", 0.333333)), 0.05, 0.95)
 	var contact_speed := maxf(0.0, float(motion_budget.get("contact_speed", 0.0)))
+	if module_variant_key == "crush_windup":
+		contact_speed *= maxf(0.1, float(module_part.get("crush_contact_momentum_mult", 1.45)))
+	var combo_refund_applied := false
+	var now := Time.get_ticks_msec() * 0.001
+	if now <= float(get_meta("combo_balance_ready_until", 0.0)) and int(get_meta("combo_balance_source_attack_key", -999)) != attack_key:
+		cooldown *= clampf(float(get_meta("combo_balance_cooldown_mult", 1.0)), 0.25, 1.0)
+		combo_refund_applied = true
+		set_meta("combo_balance_ready_until", 0.0)
+		set_meta("combo_balance_source_attack_key", -999)
 	_apply_whole_body_action_state(state_key, duration)
+	var active_direction := input_direction.normalized() if input_direction.length() > 0.01 else _forward_vector()
+	if module_variant_key == "pickup_dash" and bool(module_part.get("pickup_dash_on_start", true)):
+		var dash_impulse := maxf(0.0, float(module_part.get("pickup_dash_impulse", 0.65)))
+		if dash_impulse > 0.0:
+			velocity += active_direction * dash_impulse
+			_clamp_velocity_to_speedometer()
+			set_meta("last_pickup_dash_impulse", dash_impulse)
 	action_cooldown = cooldown
 	active_part_index = attack_key - 1
 	active_part_state = state_key
-	active_part_direction = input_direction.normalized() if input_direction.length() > 0.01 else _forward_vector()
+	active_part_direction = active_direction
 	active_part_duration = duration
 	active_part_timer = duration
 	active_module_key = "runtime:%d:%s" % [attack_key, profile]
@@ -1078,11 +1307,18 @@ func _begin_runtime_generic_melee_action(action_kind: String, binding: Dictionar
 		"generic_melee_pose": true,
 		"module_extension_m": extension_m,
 		"swing_arc_degrees": swing_arc,
+		"combo_balance_refund_applied": combo_refund_applied,
+		"module_base_cooldown": cooldown,
+		"module_variant_hit_confirmed": false,
 	}
+	if module_variant_key == "feint_thrust":
+		action["feint_base_direction"] = active_direction
+		action["feint_retarget_direction"] = active_direction
+	_apply_module_variant_fields(action, module_part, module_variant_key)
 	runtime_module_actions.append(action)
 	_refresh_visuals()
 	var base_damage := float(module_part.get("%s_damage" % state_key, module_part.get("normal_damage", module_part.get("damage", 8.0))))
-	return {
+	var event := {
 		"owner_id": owner_id,
 		"state": state_key,
 		"damage": int(roundf(base_damage)),
@@ -1104,7 +1340,12 @@ func _begin_runtime_generic_melee_action(action_kind: String, binding: Dictionar
 		"runtime_action_base_duration": fallback_duration,
 		"startup_ratio": startup_ratio,
 		"recovery_ratio": maxf(0.0, 1.0 - startup_ratio),
+		"combo_balance_refund_applied": combo_refund_applied,
 	}
+	_apply_module_variant_fields(event, module_part, module_variant_key)
+	if module_variant_key == "vise_close":
+		event["knock"] = float(event.get("knock", 0.12)) * clampf(float(module_part.get("clamp_knock_mult", 0.38)), 0.05, 1.0)
+	return event
 
 
 func _begin_runtime_blunt_terminal_action(action_kind: String, binding: Dictionary, input_direction: Vector2 = Vector2.ZERO) -> Dictionary:
@@ -1127,7 +1368,7 @@ func _begin_runtime_blunt_terminal_action(action_kind: String, binding: Dictiona
 	var tip_local := _runtime_local_vector(target_source.get("b_local", root_local + Vector2.RIGHT * 0.5))
 	var base_length := maxf(0.001, root_local.distance_to(tip_local))
 	var swing_arc := deg_to_rad(maxf(0.0, float(module_part.get("swing_arc_degrees", 82.0 if profile == "blunt_shield_guard_bash" else 150.0))))
-	var motion_budget := _runtime_action_motion_budget(target_nodes, module_part, rad_to_deg(swing_arc), 0.0, fallback_duration, state_key)
+	var motion_budget := _runtime_action_motion_budget(target_nodes, module_part, rad_to_deg(swing_arc), 0.0, fallback_duration, state_key, binding)
 	var duration := maxf(0.12, float(motion_budget.get("duration", fallback_duration)))
 	var cooldown := maxf(0.12, float(module_part.get("cooldown", binding.get("cooldown", duration * 0.68))))
 	var momentum_mult := maxf(0.1, float(module_part.get("blunt_momentum_mult", 1.2 if profile == "blunt_shield_guard_bash" else 1.45)))
@@ -1251,7 +1492,7 @@ func _begin_runtime_blade_action(action_kind: String, binding: Dictionary, input
 		var b := _runtime_local_vector(Dictionary(source).get("b_local", a))
 		chain_length += maxf(0.0, a.distance_to(b))
 	var extension_m := maxf(0.0, float(module_part.get("module_extension_m", 0.0))) if profile == "extend_slash_driver" else 0.0
-	var motion_budget := _runtime_action_motion_budget(target_nodes, module_part, rad_to_deg(swing_arc), extension_m, fallback_duration, state_key)
+	var motion_budget := _runtime_action_motion_budget(target_nodes, module_part, rad_to_deg(swing_arc), extension_m, fallback_duration, state_key, binding)
 	var duration := maxf(0.12, float(motion_budget.get("duration", fallback_duration)))
 	var cooldown := maxf(0.10, float(module_part.get("cooldown", binding.get("cooldown", duration * 0.72))))
 	var contact_speed := maxf(float(motion_budget.get("contact_speed", 0.0)), (chain_length * maxf(0.1, swing_arc) + extension_m) / maxf(0.001, duration))
@@ -1345,7 +1586,7 @@ func _begin_runtime_gauntlet_extend_swing_action(action_kind: String, binding: D
 	var root_local := _runtime_local_vector(target_source.get("a_local", Vector2.ZERO))
 	var tip_local := _runtime_local_vector(target_source.get("b_local", root_local + Vector2.RIGHT * 0.5))
 	var base_length := maxf(0.001, root_local.distance_to(tip_local))
-	var motion_budget := _runtime_action_motion_budget(target_nodes, module_part, swing_degrees, extension_m, fallback_duration, state_key)
+	var motion_budget := _runtime_action_motion_budget(target_nodes, module_part, swing_degrees, extension_m, fallback_duration, state_key, binding)
 	var duration := maxf(0.12, float(motion_budget.get("duration", fallback_duration)))
 	var cooldown := maxf(0.12, float(module_part.get("cooldown", binding.get("cooldown", duration * 0.62))))
 	var contact_speed := maxf(float(motion_budget.get("contact_speed", 0.0)), (extension_m + deg_to_rad(maxf(0.0, swing_degrees)) * base_length) / maxf(0.001, duration))
@@ -1418,6 +1659,76 @@ func _begin_runtime_gauntlet_extend_swing_action(action_kind: String, binding: D
 	}
 
 
+func _module_variant_input_direction() -> Vector2:
+	var raw: Variant = get_meta("gameplay_move_input_vector", Vector2.ZERO)
+	if raw is Vector2 and raw.length() > 0.18:
+		return raw.normalized()
+	raw = get_meta("move_input_vector", Vector2.ZERO)
+	if raw is Vector2 and raw.length() > 0.18:
+		return raw.normalized()
+	return Vector2.ZERO
+
+
+func _module_variant_clamped_retarget(base_direction: Vector2, desired_direction: Vector2, max_degrees: float) -> Vector2:
+	var base_dir := base_direction.normalized() if base_direction.length() > 0.01 else _forward_vector()
+	var desired_dir := desired_direction.normalized() if desired_direction.length() > 0.01 else base_dir
+	var max_angle := deg_to_rad(maxf(0.0, max_degrees))
+	var signed_delta := clampf(base_dir.angle_to(desired_dir), -max_angle, max_angle)
+	return base_dir.rotated(signed_delta).normalized()
+
+
+func _tick_module_variant_action(action: Dictionary, _delta: float) -> Dictionary:
+	if String(action.get("module_variant_key", "")) != "feint_thrust":
+		return action
+	var phase := _runtime_action_phase(action)
+	var startup_ratio := _runtime_action_startup_ratio(action)
+	if phase > startup_ratio:
+		return action
+	var desired := _module_variant_input_direction()
+	if desired.length() <= 0.01:
+		return action
+	var base_dir: Vector2 = action.get("feint_base_direction", active_part_direction)
+	var retarget := _module_variant_clamped_retarget(base_dir, desired, float(action.get("feint_retarget_degrees", 18.0)))
+	action["feint_retarget_direction"] = retarget
+	set_meta("last_feint_retarget_direction", retarget)
+	_invalidate_runtime_geometry_cache()
+	_refresh_visuals()
+	return action
+
+
+func _complete_module_variant_action(action: Dictionary) -> void:
+	if String(action.get("module_variant_key", "")) != "crush_windup":
+		return
+	if bool(action.get("module_variant_hit_confirmed", false)):
+		set_meta("last_crush_windup_result", "hit")
+		return
+	var whiff_mult := maxf(1.0, float(action.get("whiff_recovery_mult", 1.0)))
+	var base_cooldown := maxf(0.0, float(action.get("module_base_cooldown", action.get("duration", 0.0))))
+	var extra_recovery := base_cooldown * (whiff_mult - 1.0)
+	if extra_recovery > 0.0:
+		action_cooldown = maxf(action_cooldown, extra_recovery)
+	set_meta("last_crush_windup_result", "whiff")
+	set_meta("last_crush_whiff_recovery", extra_recovery)
+
+
+func mark_runtime_module_variant_hit(attack_key: int, variant_key: String = "") -> void:
+	if runtime_module_actions.is_empty():
+		return
+	var normalized_variant := variant_key.to_lower()
+	for i in range(runtime_module_actions.size()):
+		if not (runtime_module_actions[i] is Dictionary):
+			continue
+		var action: Dictionary = runtime_module_actions[i]
+		if int(action.get("attack_key", -999)) != attack_key:
+			continue
+		if normalized_variant != "" and String(action.get("module_variant_key", "")).to_lower() != normalized_variant:
+			continue
+		action["module_variant_hit_confirmed"] = true
+		runtime_module_actions[i] = action
+		set_meta("last_module_variant_hit_key", String(action.get("module_variant_key", "")))
+		return
+
+
 func _tick_runtime_module_actions(delta: float) -> void:
 	if runtime_module_actions.is_empty():
 		return
@@ -1427,6 +1738,7 @@ func _tick_runtime_module_actions(delta: float) -> void:
 			continue
 		var action: Dictionary = runtime_module_actions[i]
 		action["timer"] = maxf(0.0, float(action.get("timer", 0.0)) - delta)
+		action = _tick_module_variant_action(action, delta)
 		if float(action["timer"]) <= 0.0:
 			if String(action.get("profile", "")) == "two_link_forward_snap":
 				_commit_runtime_two_link_forward_snap_pose(action)
@@ -1436,6 +1748,8 @@ func _tick_runtime_module_actions(delta: float) -> void:
 				_commit_runtime_blunt_terminal_pose(action)
 			elif _is_runtime_blade_profile(String(action.get("profile", ""))):
 				_commit_runtime_blade_pose(action)
+			_commit_combo_balance_window(action)
+			_complete_module_variant_action(action)
 			runtime_module_actions.remove_at(i)
 			_refresh_visuals()
 		else:
@@ -1939,7 +2253,8 @@ func _barrier_tile_axis(tile: Dictionary) -> Vector2:
 
 
 func _barrier_tile_center(tile: Dictionary) -> Vector2:
-	return Vector2(ring_pos + float(tile.get("local_ring", 0.0)), clampf(lane + float(tile.get("local_lane", 0.0)), -BATTLE_HALF_HEIGHT, BATTLE_HALF_HEIGHT))
+	var origin := _runtime_combat_origin()
+	return Vector2(origin.x + float(tile.get("local_ring", 0.0)), clampf(origin.y + float(tile.get("local_lane", 0.0)), -BATTLE_HALF_HEIGHT, BATTLE_HALF_HEIGHT))
 
 
 func _barrier_tile_collider(tile: Dictionary) -> Dictionary:
@@ -2062,6 +2377,8 @@ func part_colliders() -> Array:
 	var colliders: Array = []
 	if not active:
 		return colliders
+	if _is_training_ball_dummy():
+		return [_training_ball_dummy_collider()]
 	if _has_barrier_tiles():
 		return _barrier_tile_colliders()
 	if _is_teamedit_runtime_unit():
@@ -2280,14 +2597,38 @@ func attack_collider_for_event(event: Dictionary) -> Dictionary:
 		if not bool(event.get("projectile", false)):
 			return {}
 		var target_nodes: Array = _runtime_node_array(Array(event.get("runtime_target_nodes", [])))
+		var source_node := int(event.get("source_gun_node", event.get("source_node_index", event.get("muscle_node", -9999))))
+		if target_nodes.is_empty() and source_node >= 0:
+			target_nodes.append(source_node)
 		var matched: Array = []
 		for raw_segment in _runtime_topology_world_segments(false, true):
 			if not (raw_segment is Dictionary):
 				continue
 			var segment: Dictionary = raw_segment
-			if target_nodes.is_empty() or _runtime_node_array_has(target_nodes, int(segment.get("node_index", -9999))):
+			if not target_nodes.is_empty() and _runtime_node_array_has(target_nodes, int(segment.get("node_index", -9999))):
 				matched.append(segment)
 		if matched.is_empty():
+			if event.has("muzzle_combat_position") and event["muzzle_combat_position"] is Vector2:
+				var muzzle_start: Vector2 = event["muzzle_combat_position"]
+				var muzzle_direction := _forward_vector()
+				if event.has("direction") and event["direction"] is Vector2:
+					muzzle_direction = Vector2(event["direction"])
+				if muzzle_direction.length() <= 0.01:
+					muzzle_direction = _forward_vector()
+				muzzle_direction = muzzle_direction.normalized()
+				return {
+					"shape": "capsule",
+					"part_kind": "runtime_attack",
+					"a": muzzle_start,
+					"b": muzzle_start + muzzle_direction * maxf(0.12, float(event.get("range", 1.0))),
+					"radius": maxf(0.012, float(event.get("lane_range", 0.12)) * 0.22),
+					"part_index": source_node,
+					"node_index": source_node,
+					"source_gun_node": source_node,
+					"runtime_topology": true,
+					"runtime_attack": true,
+				}
+			set_meta("last_projectile_source_error", "runtime projectile missing target/source gun node")
 			return {}
 		var first_segment: Dictionary = matched[0]
 		var last_segment: Dictionary = matched[matched.size() - 1]
@@ -2296,6 +2637,7 @@ func attack_collider_for_event(event: Dictionary) -> Dictionary:
 		var radius := maxf(0.012, float(last_segment.get("radius", first_segment.get("radius", 0.04))) * ATTACK_COLLIDER_EXPAND)
 		if bool(event.get("projectile", false)):
 			if not _runtime_segment_is_ranged_weapon(last_segment):
+				set_meta("last_projectile_source_error", "runtime projectile source node is not ranged")
 				return {}
 			var direction := _forward_vector()
 			if event.has("direction") and event["direction"] is Vector2:
@@ -2304,6 +2646,8 @@ func attack_collider_for_event(event: Dictionary) -> Dictionary:
 				direction = _forward_vector()
 			direction = direction.normalized()
 			start = end
+			if event.has("muzzle_combat_position") and event["muzzle_combat_position"] is Vector2:
+				start = event["muzzle_combat_position"]
 			end = start + direction * maxf(0.12, float(event.get("range", 1.0)))
 			radius = maxf(radius * 0.42, float(event.get("lane_range", 0.12)) * 0.22)
 			return {
@@ -2313,6 +2657,9 @@ func attack_collider_for_event(event: Dictionary) -> Dictionary:
 				"b": end,
 				"radius": radius,
 				"part_index": int(event.get("muscle_node", -1)),
+				"node_index": int(last_segment.get("node_index", source_node)),
+				"source_gun_node": int(event.get("source_gun_node", source_node)),
+				"muzzle_combat_position": start,
 				"runtime_topology": true,
 				"runtime_attack": true,
 		}
@@ -2761,8 +3108,12 @@ func _runtime_local_vector(raw_value) -> Vector2:
 	return Vector2.ZERO
 
 
+func _runtime_combat_origin() -> Vector2:
+	return Vector2(mobius_s, mobius_v)
+
+
 func _runtime_local_to_world(local_point: Vector2) -> Vector2:
-	return Vector2(ring_pos, lane) + _forward_vector() * local_point.x + _side_vector() * local_point.y
+	return _runtime_combat_origin() + _forward_vector() * local_point.x + _side_vector() * local_point.y
 
 
 func _runtime_segment_key(segment: Dictionary) -> String:
@@ -3531,6 +3882,8 @@ func _runtime_generic_melee_overrides(action: Dictionary) -> Dictionary:
 	var extension_m := maxf(0.0, float(action.get("module_extension_m", 0.0)))
 	var swing_arc := deg_to_rad(maxf(0.0, float(action.get("swing_arc_degrees", 0.0))))
 	var side_sign := -1.0 if String(action.get("state", STATE_NORMAL)) == STATE_ACTIVE else 1.0
+	var variant_key := String(action.get("module_variant_key", ""))
+	var target_index := 0
 	for raw_node in Array(action.get("target_nodes", [])):
 		var node_index := int(raw_node)
 		var source := _runtime_segment_source_by_node(node_index)
@@ -3542,19 +3895,48 @@ func _runtime_generic_melee_overrides(action: Dictionary) -> Dictionary:
 		var base_length := maxf(0.001, base_vector.length())
 		var base_dir := base_vector.normalized()
 		var dir := base_dir
+		var pose_scale := pose_t
+		if variant_key == "crush_windup":
+			pose_scale = pow(pose_t, 1.35)
+		elif variant_key == "feint_thrust":
+			var ghost_phase := clampf(float(action.get("feint_ghost_phase", 0.42)), 0.12, 0.84)
+			pose_scale = pose_t * 0.42 if phase <= startup_ratio * ghost_phase else pose_t
+			var retarget: Vector2 = action.get("feint_retarget_direction", base_dir)
+			if retarget.length() > 0.01:
+				dir = retarget.normalized()
+				base_dir = dir
+		var local_side_sign := side_sign
+		if variant_key == "vise_close" or String(action.get("profile", "")) == "inward_pincer_clamp":
+			local_side_sign = -1.0 if target_index % 2 == 0 else 1.0
 		if swing_arc > 0.001:
-			dir = base_dir.rotated((swing_arc * 0.5 * side_sign) * pose_t).normalized()
+			dir = base_dir.rotated((swing_arc * 0.5 * local_side_sign) * pose_scale).normalized()
 		var override := source.duplicate(true)
 		override["a_local"] = root_local
-		override["b_local"] = root_local + dir * (base_length + extension_m * pose_t)
+		override["b_local"] = root_local + dir * (base_length + extension_m * pose_scale)
 		override["axis_local"] = dir
 		var world := _runtime_segment_to_world(override)
 		world["runtime_action"] = true
 		world["runtime_action_state"] = String(action.get("state", STATE_NORMAL))
 		world["runtime_action_phase"] = "startup" if phase <= startup_ratio else "recovery"
 		world["runtime_action_progress"] = phase
+		world["module_variant_key"] = variant_key
+		world["module_visual_family"] = String(action.get("module_visual_family", variant_key))
+		if variant_key == "crush_windup":
+			var damage_mult := maxf(0.1, float(action.get("runtime_contact_damage_mult", 1.24)))
+			if world.has("damage_coeff"):
+				world["damage_coeff"] = float(world.get("damage_coeff", 0.0)) * damage_mult
+			world["contact_damage_mult"] = float(world.get("contact_damage_mult", 1.0)) * damage_mult
+			world["runtime_contact_damage_mult"] = damage_mult
+		elif variant_key == "vise_close":
+			world["clamp_pin_seconds"] = float(action.get("clamp_pin_seconds", 0.38))
+			world["clamp_velocity_mult"] = float(action.get("clamp_velocity_mult", 0.35))
+		elif variant_key == "feint_thrust":
+			world["feint_ghost_visible"] = phase <= startup_ratio * clampf(float(action.get("feint_ghost_phase", 0.42)), 0.12, 0.84)
+			world["feint_retarget_direction"] = action.get("feint_retarget_direction", dir)
+			world["contact_damage_mult"] = float(world.get("contact_damage_mult", 1.0)) * clampf(float(action.get("feint_final_width_mult", 0.65)), 0.35, 1.0)
 		world["pivot"] = _runtime_local_to_world(root_local)
 		overrides[_runtime_segment_key(source)] = world
+		target_index += 1
 	return overrides
 
 
@@ -4007,6 +4389,33 @@ func _uses_heat_resource() -> bool:
 	return role == "hero"
 
 
+func _is_training_ball_dummy() -> bool:
+	return bool(stats.get("training_ball_dummy", false)) or bool(get_meta("training_ball_dummy", false))
+
+
+func _training_ball_dummy_collider() -> Dictionary:
+	var radius := clampf(float(stats.get("radius", 0.6)), 0.04, 3.2)
+	var mass := maxf(0.1, float(stats.get("mass", 1.0)))
+	return {
+		"shape": "circle",
+		"part_kind": "torso",
+		"part_index": -1,
+		"node_index": 0,
+		"name": String(stats.get("name", "TRAINING BALL")),
+		"center": _runtime_combat_origin(),
+		"radius": radius,
+		"mass": mass,
+		"material_class": "training_dummy",
+		"damage_type": "blunt",
+		"contact_damage": 0.0,
+		"contact_damage_mult": 0.0,
+		"damage_coeff": 0.0,
+		"break_coeff": 0.0,
+		"stiffness_momentum": maxf(1.0, float(stats.get("stiffness_momentum", mass * 18.0))),
+		"path_stiffness_momentum": maxf(1.0, float(stats.get("path_stiffness_momentum", mass * 18.0))),
+	}
+
+
 func heat_ratio() -> float:
 	if not _uses_heat_resource():
 		return 0.0
@@ -4021,11 +4430,16 @@ func set_screen_position(screen_position: Vector2, is_visible_in_view: bool) -> 
 	mobius_visual_scale_initialized = false
 	scale = Vector2.ONE
 	position = screen_position if _is_teamedit_runtime_unit() else screen_position + body_sway_offset
+	set_meta("last_projection_visible", is_visible_in_view)
+	set_meta("projection_guarded", false)
+	set_meta("last_screen_position", screen_position)
 	visible = active and is_visible_in_view
 
 
 func set_mobius_screen_projection(projection: Dictionary, is_visible_in_view: bool) -> void:
 	var screen_position: Vector2 = projection.get("position", position)
+	var projection_visible := bool(projection.get("visible", is_visible_in_view))
+	var projection_guarded := bool(projection.get("guarded", false))
 	mobius_depth01 = clampf(float(projection.get("depth01", mobius_depth01)), 0.0, 1.0)
 	var target_scale := maxf(MOBIUS_VISUAL_SCALE_MIN, float(projection.get("scale", 1.0)))
 	mobius_visual_scale_target = target_scale
@@ -4045,8 +4459,12 @@ func set_mobius_screen_projection(projection: Dictionary, is_visible_in_view: bo
 	scale = Vector2.ONE * mobius_visual_scale
 	set_meta("mobius_visual_scale_target", mobius_visual_scale_target)
 	set_meta("mobius_visual_scale_applied", mobius_visual_scale)
+	set_meta("last_projection_visible", projection_visible)
+	set_meta("projection_guarded", projection_guarded)
+	set_meta("projection_source", String(projection.get("projection_source", "mobius")))
+	set_meta("last_screen_position", screen_position)
 	z_index = int(projection.get("z_index", 0))
-	visible = active and is_visible_in_view
+	visible = active and (is_visible_in_view or projection_guarded)
 
 
 func _is_teamedit_runtime_unit() -> bool:
@@ -4069,6 +4487,21 @@ func _runtime_state_flash_polygon() -> PackedVector2Array:
 		Vector2(-len * 0.55, rad),
 		Vector2(-len * 0.72, 0.0),
 	])
+
+
+func _draw_training_ball_dummy() -> void:
+	var radius := clampf(float(stats.get("radius", 0.6)), 0.04, 3.2)
+	var visual_radius := clampf(radius * PART_VISUAL_SCALE, 12.0, 190.0)
+	var base := primary_color.lerp(Color(0.42, 0.62, 0.78, 1.0), 0.28)
+	var edge := accent_color.lerp(Color.WHITE, 0.18)
+	var pulse := 0.5 + sin(Time.get_ticks_msec() * 0.0018) * 0.5
+	draw_circle(Vector2.ZERO, visual_radius, Color(base.r, base.g, base.b, 0.72))
+	draw_circle(Vector2(-visual_radius * 0.24, -visual_radius * 0.28), visual_radius * 0.36, Color(1.0, 1.0, 1.0, 0.10 + pulse * 0.04))
+	draw_arc(Vector2.ZERO, visual_radius, 0.0, TAU, 64, Color(edge.r, edge.g, edge.b, 0.92), 2.4)
+	draw_arc(Vector2.ZERO, visual_radius * 0.68, -PI * 0.88, PI * 0.88, 48, Color(edge.r, edge.g, edge.b, 0.36), 1.5)
+	draw_arc(Vector2.ZERO, visual_radius * 0.38, -PI * 0.92, PI * 0.92, 36, Color(edge.r, edge.g, edge.b, 0.22), 1.1)
+	draw_line(Vector2(-visual_radius * 0.94, 0.0), Vector2(visual_radius * 0.94, 0.0), Color(1.0, 1.0, 1.0, 0.12), 1.0)
+	draw_line(Vector2(0.0, -visual_radius * 0.88), Vector2(0.0, visual_radius * 0.88), Color(1.0, 1.0, 1.0, 0.08), 1.0)
 
 
 func _build_visuals() -> void:
@@ -4188,6 +4621,11 @@ func _thruster_flame_color(alpha: float, heat_ratio_hint: float = 1.0) -> Color:
 
 
 func _refresh_part_visuals(material_color: Color) -> void:
+	if _is_training_ball_dummy():
+		for line in barrier_tile_lines:
+			line.visible = false
+		queue_redraw()
+		return
 	if _has_barrier_tiles():
 		_refresh_barrier_tile_visuals(material_color)
 		return

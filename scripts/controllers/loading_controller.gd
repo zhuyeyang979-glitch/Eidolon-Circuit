@@ -13,7 +13,7 @@ var profiler
 var target_state := ""
 var reason := ""
 var active := false
-var tasks: Array = []
+var tasks: Array[LoadingTask] = []
 var completed_weight := 0.0
 var total_weight := 0.0
 var current_label := ""
@@ -26,7 +26,7 @@ var task_time_usec := {}
 var max_duration_sec := DEFAULT_MAX_DURATION_SEC
 var min_visible_sec := DEFAULT_MIN_VISIBLE_SEC
 var elapsed_sec := 0.0
-var deferred_tasks: Array = []
+var deferred_tasks: Array[LoadingTask] = []
 var forced_finish_count := 0
 var first_interaction_critical_pending_count := 0
 
@@ -71,19 +71,10 @@ func add_task(id: String, label: String, weight: float, task_callable: Callable,
 
 
 func add_loading_task(raw_task: Variant) -> void:
-	var normalized = LoadingTask.from_legacy(raw_task)
+	var normalized: LoadingTask = LoadingTask.from_legacy(raw_task)
 	var safe_weight := maxf(0.01, normalized.weight)
-	tasks.append({
-		"id": normalized.id,
-		"label": normalized.label,
-		"weight": safe_weight,
-		"callable": normalized.callable,
-		"essential": normalized.blocking,
-		"first_interaction_critical": normalized.first_interaction_critical(),
-		"idle_optional": normalized.idle_optional,
-		"phase": normalized.phase,
-		"blocking": normalized.blocking,
-	})
+	normalized.weight = safe_weight
+	tasks.append(normalized)
 	total_weight += safe_weight
 
 
@@ -100,24 +91,24 @@ func tick(budget_usec: int = DEFAULT_BUDGET_USEC, delta: float = 0.0) -> bool:
 		if _budget_expired() and not _blocking_tasks_pending():
 			_defer_remaining_tasks()
 			break
-		var task: Dictionary = tasks[0]
-		current_label = String(task.get("label", "Loading"))
+		var task: LoadingTask = tasks[0]
+		current_label = task.label
 		var task_started := Time.get_ticks_usec()
 		var done := true
-		var task_callable: Callable = task.get("callable", Callable())
+		var task_callable: Callable = task.callable
 		if task_callable.is_valid():
 			var result = task_callable.call()
 			if result is bool:
 				done = bool(result)
 		var elapsed := Time.get_ticks_usec() - task_started
-		var task_id := String(task.get("id", current_label))
+		var task_id := task.id if task.id != "" else current_label
 		task_time_usec[task_id] = int(task_time_usec.get(task_id, 0)) + elapsed
 		if profiler != null:
 			profiler.count("loading.task")
 			profiler.record_value("loading.last_task_usec", elapsed)
 		if not done:
 			break
-		completed_weight += float(task.get("weight", 1.0))
+		completed_weight += task.weight
 		tasks.pop_front()
 		completed_task_count += 1
 		processed += 1
@@ -142,7 +133,7 @@ func pending_count() -> int:
 
 
 func take_deferred_tasks() -> Array:
-	var out := deferred_tasks.duplicate(true)
+	var out := deferred_tasks.duplicate()
 	deferred_tasks.clear()
 	return out
 
@@ -166,27 +157,23 @@ func _min_visible_satisfied() -> bool:
 
 
 func _blocking_tasks_pending() -> bool:
-	for raw_task in tasks:
-		if not (raw_task is Dictionary):
-			continue
-		var task: Dictionary = raw_task
-		if bool(task.get("essential", true)) or bool(task.get("first_interaction_critical", true)):
+	for task in tasks:
+		if task.blocks_page() or task.blocks_first_interaction():
 			return true
 	return false
 
 
 func _critical_tasks_pending_count() -> int:
 	var count := 0
-	for raw_task in tasks:
-		if raw_task is Dictionary and bool(Dictionary(raw_task).get("first_interaction_critical", true)):
+	for task in tasks:
+		if task.first_interaction_critical():
 			count += 1
 	return count
 
 
 func _defer_remaining_tasks() -> void:
-	for raw_task in tasks:
-		if raw_task is Dictionary:
-			deferred_tasks.append(raw_task)
+	for task in tasks:
+		deferred_tasks.append(task)
 	tasks.clear()
 	forced_finish_count += 1
 	if profiler != null:

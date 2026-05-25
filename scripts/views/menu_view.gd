@@ -11,7 +11,7 @@ signal battle_runtime_pressed(action_key: String)
 const MenuControllerModel = preload("res://scripts/controllers/menu_controller.gd")
 const UILayoutTokens = preload("res://scripts/ui_layout_tokens.gd")
 
-var main_ref: Object
+var viewport_size := UILayoutTokens.DESIGN_SIZE
 var menu_layer: CanvasLayer
 var menu_backdrop: Control
 var menu_description_label: Label
@@ -28,11 +28,13 @@ var battle_runtime_menu_panel: Control
 var battle_runtime_menu_buttons := {}
 
 
-func bind(main: Object) -> void:
-	main_ref = main
+func set_viewport_size(next_viewport_size: Vector2) -> void:
+	if next_viewport_size.x > 0.0 and next_viewport_size.y > 0.0:
+		viewport_size = next_viewport_size
 
 
-func build_main_menu(parent: Node, background_texture: Texture2D, backdrop_script) -> CanvasLayer:
+func build_main_menu(parent: Node, background_texture: Texture2D, backdrop_script, next_viewport_size: Vector2 = UILayoutTokens.DESIGN_SIZE) -> CanvasLayer:
+	set_viewport_size(next_viewport_size)
 	menu_layer = CanvasLayer.new()
 	parent.add_child(menu_layer)
 	var root := Control.new()
@@ -120,7 +122,8 @@ func update_main_menu(model: Dictionary) -> void:
 		seat_button.modulate = Color(0.35, 0.95, 1.0, 1.0) if ai_visible and active_seat == seat_index else Color(0.86, 0.9, 0.94, 1.0)
 
 
-func build_page_options(parent: Node) -> CanvasLayer:
+func build_page_options(parent: Node, next_viewport_size: Vector2 = UILayoutTokens.DESIGN_SIZE) -> CanvasLayer:
+	set_viewport_size(next_viewport_size)
 	page_options_layer = CanvasLayer.new()
 	page_options_layer.name = "PageOptionsLayer"
 	page_options_layer.layer = 90
@@ -180,7 +183,8 @@ func update_page_options(model: Dictionary) -> void:
 		button.disabled = bool(item.get("disabled", false))
 
 
-func build_battle_runtime_menu(root: Control) -> Control:
+func build_battle_runtime_menu(root: Control, next_viewport_size: Vector2 = UILayoutTokens.DESIGN_SIZE) -> Control:
+	set_viewport_size(next_viewport_size)
 	battle_runtime_menu_panel = Control.new()
 	battle_runtime_menu_panel.name = "BattleRuntimeOptions"
 	_apply_rect(battle_runtime_menu_panel, UILayoutTokens.battle_runtime_options_rect())
@@ -263,9 +267,6 @@ func _apply_rect(control: Control, rect: Rect2) -> void:
 
 
 func _apply_local_rect(control: Control, rect: Rect2) -> void:
-	var viewport_size := UILayoutTokens.DESIGN_SIZE
-	if main_ref != null and main_ref.has_method("_ui_viewport_size"):
-		viewport_size = main_ref._ui_viewport_size()
 	var local_rect := UILayoutTokens.to_local_rect(rect, viewport_size)
 	control.position = local_rect.position
 	control.size = local_rect.size
@@ -287,9 +288,6 @@ func _set_named_label(root: Node, target_name: String, value: String) -> void:
 
 
 func _screen_rect(rect: Rect2) -> Rect2:
-	var viewport_size := UILayoutTokens.DESIGN_SIZE
-	if main_ref != null and main_ref.has_method("_ui_viewport_size"):
-		viewport_size = main_ref._ui_viewport_size()
 	return UILayoutTokens.to_screen_rect(rect, viewport_size)
 
 

@@ -15,22 +15,21 @@ func _has_entry_path(main: Node, path: String) -> bool:
 	return false
 
 
-func _write_probe_unit(path: String, unit_name: String) -> void:
+func _write_probe_unit(main: Node, path: String, unit_name: String) -> void:
+	var blueprint: Dictionary = main._ai_starter_unit(unit_name)
+	blueprint["schema_version"] = MainScene.SAVED_UNIT_SCHEMA_VERSION
+	blueprint["unit_name"] = unit_name
+	blueprint["name"] = unit_name
 	var payload := {
-		"schema_version": "embedded_joint_unit_v2",
+		"schema_version": MainScene.SAVED_UNIT_SCHEMA_VERSION,
 		"unit_id": "cache-probe",
 		"unit_name": unit_name,
 		"unit_role": "hero",
-		"team_color": "#53d6ff",
-		"blueprint": {
-			"schema_version": "embedded_joint_unit_v2",
-			"unit_name": unit_name,
-			"name": unit_name,
-			"role": "hero",
-			"custom_topology": {"nodes": [], "edges": []},
-			"module_bindings": [],
-		},
+		"team_color": blueprint.get("team_color", {}),
+		"blueprint": main._json_safe_value(blueprint),
 	}
+	if FileAccess.file_exists(path):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
 	var file := FileAccess.open(path, FileAccess.WRITE)
 	if file == null:
 		_fail("Could not create temporary saved unit file.")
@@ -42,12 +41,16 @@ func _init() -> void:
 	var main := MainScene.new()
 	root.add_child(main)
 	main._ready()
+	main.loading_auto_transitions_enabled = false
 	main._ensure_saved_units_dir()
 	var temp_path := "%s/cache_probe_%d.json" % [MainScene.SAVED_UNITS_DIR, int(Time.get_unix_time_from_system())]
-	_write_probe_unit(temp_path, "Cache Probe Unit")
+	_write_probe_unit(main, temp_path, "Cache Probe Unit")
 	main._show_saved_units_library()
 	if not _has_entry_path(main, temp_path):
 		_fail("Saved unit cache should pick up newly created files when entering the page.")
+	main._show_saved_units_library(temp_path)
+	if main.saved_unit_selected_index < 0:
+		_fail("Focused saved-unit library open should select the newly saved unit.")
 	var remove_error := DirAccess.remove_absolute(ProjectSettings.globalize_path(temp_path))
 	if remove_error != OK:
 		_fail("Could not remove temporary saved unit file: %d" % remove_error)

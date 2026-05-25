@@ -1,4 +1,4 @@
-# Eidolon Circuit
+# 星魂回环 / Eidolon Circuit
 
 Eidolon Circuit is a topology-construction fighting prototype with a single-player-first flow.
 

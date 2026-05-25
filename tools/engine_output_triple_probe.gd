@@ -29,5 +29,5 @@ func _init() -> void:
 	main._merge_engine_stats(stats, sample)
 	if absf(float(stats.get("engine_momentum_output", 0.0)) - scaled) > 0.01:
 		_fail("Stats merge did not use scaled engine output.")
-	print("ENGINE_OUTPUT_TRIPLE_PROBE ok current raw=%.2f scaled=%.2f" % [raw, scaled])
+	print("ENGINE_OUTPUT_EFFECTIVE_SCALE_PROBE ok current_multiplier=9x raw=%.2f scaled=%.2f" % [raw, scaled])
 	quit()

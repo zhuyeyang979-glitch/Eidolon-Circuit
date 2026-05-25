@@ -13,49 +13,23 @@ if (-not (Test-Path -LiteralPath $Runner)) {
     throw "Missing low-level Godot runner: $Runner"
 }
 
-$GateGroups = [ordered]@{
-    navigation_menu = @(
-        "navigation_router_single_source_probe",
-        "navigation_service_contract_probe",
-        "main_menu_navigation_probe",
-        "options_menu_unification_probe",
-        "page_options_router_back_probe",
-        "menu_view_controller_contract_probe",
-        "menu_view_signal_contract_probe",
-        "main_menu_table_actions_probe",
-        "page_options_table_router_probe",
-        "battle_runtime_options_table_probe",
-        "menu_language_table_probe",
-        "ui_layout_tokens_contract_probe",
-        "layout_tokens_responsive_contract_probe",
-        "menu_layout_regression_probe",
-        "settings_scout_tokenized_layout_probe",
-        "headed_gate_manifest_alignment_probe"
-    )
-    unit_edit = @(
-        "teamedit_probe",
-        "ui_layout_probe",
-        "text_overflow_probe",
-        "unit_editor_fullscreen_layout_probe",
-        "unit_editor_no_power_topbar_probe",
-        "unit_editor_power_dock_moved_up_probe",
-        "unit_editor_torso_detail_button_probe",
-        "power_allocation_detail_open_close_probe",
-        "power_allocation_panel_close_probe",
-        "power_allocation_enter_confirms_value_probe",
-        "unit_editor_training_illegal_feedback_probe"
-    )
-    loading_first_interaction = @(
-        "loading_task_contract_probe",
-        "preload_tasks_typed_probe",
-        "startup_loading_stage_probe",
-        "page_loading_transition_probe",
-        "loading_navigation_contract_probe",
-        "startup_deep_preload_probe",
-        "teamedit_page_deep_preload_probe",
-        "post_loading_first_interaction_miss_probe",
-        "post_loading_real_interaction_miss_probe"
-    )
+$ManifestPath = Join-Path $PSScriptRoot "probe_manifest.json"
+if (-not (Test-Path -LiteralPath $ManifestPath)) {
+    throw "Missing probe manifest: $ManifestPath"
+}
+
+$Manifest = Get-Content -LiteralPath $ManifestPath -Raw | ConvertFrom-Json
+if ($null -eq $Manifest.headed_gate) {
+    throw "Probe manifest is missing headed_gate groups."
+}
+
+$GateGroups = [ordered]@{}
+foreach ($groupName in @("navigation_menu", "unit_edit", "loading_first_interaction")) {
+    $items = $Manifest.headed_gate.$groupName
+    if ($null -eq $items -or $items.Count -eq 0) {
+        throw "Probe manifest headed_gate.$groupName is empty or missing."
+    }
+    $GateGroups[$groupName] = @($items | ForEach-Object { [string]$_ })
 }
 
 function New-RunnerArgs {

@@ -2,6 +2,16 @@ extends SceneTree
 
 const MainScene := preload("res://scripts/main.gd")
 
+const GENERIC_GUN_CASES := {
+	"sniper": ["bullet", "gun_activate"],
+	"sprayer": ["chemical", "gun_activate"],
+	"rifle": ["bullet", "rifle_burst_activate"],
+	"laser_gun": ["laser", "laser_beam_activate"],
+	"grenade_launcher": ["explosive", "grenade_arc_activate"],
+	"missile_launcher": ["explosive", "missile_lock_activate"],
+	"web_gun": ["web", "web_tether_activate"],
+}
+
 
 func _fail(message: String) -> void:
 	push_error(message)
@@ -40,6 +50,14 @@ func _init() -> void:
 	var gun_index := _sniper_terminal(main)
 	if module_index < 0 or gun_index < 0:
 		_fail("Gun Activate module or legal gun terminal missing.")
+	for gun_kind in GENERIC_GUN_CASES.keys():
+		var expected: Array = GENERIC_GUN_CASES[gun_kind]
+		var ammo_kind := String(expected[0])
+		var effective_profile := String(expected[1])
+		if not main._gun_activation_profile_supports_kind("gun_activate", String(gun_kind), ammo_kind):
+			_fail("Generic Gun Activate UI contract rejected %s/%s." % [String(gun_kind), ammo_kind])
+		if main._effective_gun_activation_profile("gun_activate", String(gun_kind), ammo_kind) != effective_profile:
+			_fail("Generic Gun Activate UI contract resolved %s incorrectly." % String(gun_kind))
 	var unit_bp: Dictionary = main._make_editor_blank_blueprint("hero")
 	var nodes: Array = []
 	var edges: Array = []

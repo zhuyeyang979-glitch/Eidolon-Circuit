@@ -42,10 +42,10 @@ func _init() -> void:
 	main.active_units[1]["hero"] = unit
 	var up := main._mobius_surface_input_for_unit(unit, Vector2.UP)
 	var down := main._mobius_surface_input_for_unit(unit, Vector2.DOWN)
-	if up.distance_to(Vector2.UP) > 0.001:
-		_fail("Screen-up input should stay screen-up for battle movement, got %s." % str(up))
-	if down.distance_to(Vector2.DOWN) > 0.001:
-		_fail("Screen-down input should stay screen-down for battle movement, got %s." % str(down))
+	if up.y >= -0.94 or absf(up.x) > 0.16:
+		_fail("Screen-up input should remain dominantly upward on the local Mobius surface, got %s." % str(up))
+	if down.y <= 0.94 or absf(down.x) > 0.16:
+		_fail("Screen-down input should remain dominantly downward on the local Mobius surface, got %s." % str(down))
 	unit.move_by(down, 0.2, MainScene.RING_LENGTH)
 	unit.tick(0.2, MainScene.RING_LENGTH)
 	main._update_camera_center()

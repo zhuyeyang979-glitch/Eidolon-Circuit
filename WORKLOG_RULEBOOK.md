@@ -12,6 +12,220 @@ Primary implementation file: `scripts/main.gd`
 
 Godot version in workspace: `tools/godot-4.6.2/Godot_v4.6.2-stable_win64_console.exe`
 
+## 2026-05-25 Mobius Stardust Render Visibility And Projection Guard
+
+Rules:
+- The minimal battle background owns one named `MobiusStardustBandView` node. It renders above `MobiusStripSurface` and below units/effects; the surface node no longer draws internal lane guides or hidden stardust.
+- The stardust band is visual-only: it may use Mobius twist/depth for curved position, width, and alpha variation, but it must not change movement, shooting, collision, hit tests, or projectile paths.
+- The controlled/camera-focus unit has projection priority. A stale Mobius camera/projection frame may not hide it; the camera is resynced to the unit, then the unit is forced to a readable center fallback if projection still fails.
+- Non-focus units keep a one-frame visibility grace at the last valid screen position to prevent seam/camera-edge flicker.
+
+Implementation notes:
+- Added `MobiusStardustBandView` as a separate runtime node with `z_index=-41`; `MobiusStripSurfaceView` keeps only the textured low-contrast surface and disabled guide contract.
+- Raised the stardust visibility envelope to a still-subtle alpha cap near `0.14`, wider variable band width, and a 96-particle budget so headed pixel probes can detect it without overwhelming units or projectiles.
+- Added `_project_unit_for_screen()` as the single screen projection feed for units, including focus-unit camera resync, finite-position checks, guarded fallback, and non-focus hysteresis metadata.
+- `Fighter.set_mobius_screen_projection()` now records `last_projection_visible`, `projection_guarded`, `projection_source`, and `last_screen_position`, and no longer hides a controlled guarded unit on a single bad projection frame.
+
+Verification:
+- New headed probes cover node contract, render visibility, straight-guide absence, controlled unit persistence, projection guard, and non-focus flicker grace.
+- Existing Mobius movement, bullet readability, projectile-path, combat, UI layout, and text overflow probes remain the regression baseline.
+
+## 2026-05-25 Subtle Curved Mobius Stardust Band
+
+Rules:
+- The battle background may include exactly one subtle Mobius stardust band as part of the minimal background contract.
+- Old internal Mobius lane guide lines are disabled by default; the stardust band must be curved, low-alpha, and tied to Mobius twist/depth without changing gameplay projection, movement, shooting, collision, or projectile paths.
+- Minimal battle background still forbids old parallax starfields, near dust/current lines, world debris, coordinate clutter, and top/bottom border lines.
+
+Implementation notes:
+- `MobiusStripSurfaceView` now caches and draws a dedicated stardust band with visual-only Mobius wave offsets, variable width, and a fixed subtle particle budget.
+- `_mobius_config()` enables the stardust band and keeps `local_rectangular_projection=true`; the curve is added only in the background drawing path.
+- The generated fallback backdrop remains hidden while the textured Mobius surface is active, so this change does not rely on `space_battle_backdrop.png`.
+
+Verification:
+- Passed headed `mobius_stardust_band_runtime_probe`, `mobius_stardust_band_not_straight_probe`, and `mobius_stardust_band_twist_probe`.
+- Passed headed background/combat regressions: `battle_minimal_background_probe`, `battle_xy_background_probe`, `mobius_background_continuity_probe`, `mobius_bullet_readability_probe`, `projectile_path_not_bent_by_mobius_probe`, `combat_probe`, `ui_layout_probe`, and `text_overflow_probe`.
+- Godot continues to print the known ObjectDB exit warning while returning exit code `0`.
+
+## 2026-05-25 Part Gradient Contract Pass
+
+Rules:
+- Part gradient review means balance/growth readability, not color gradients. New parts should expose a clear `rank / family / role / tradeoff_tags` story through the catalog helpers.
+- Thrusters are validated as dual allocation chains: drive and boost/brake each have current-min to 3x-max ranges. Do not restore old single-field `allocated_momentum` or `brake_efficiency` probe assumptions.
+- Action modules are non-damage software. Raw catalog/backfill data must not carry `normal_damage`, `active_damage`, `damage_type`, or other module damage fields; runtime damage comes from the bound weapon/contact/projectile context.
+- Engine output is currently checked by effective scale, not historical wording. `ENGINE_MOMENTUM_OUTPUT_SCALE = 9.0` is the present expected multiplier; do not accidentally stack another "triple" pass on top.
+- Starter XS/S builds must remain constructible with engine, thruster, cooling, limbs, and at least one action module, with positive drive and thermal margins.
+
+Implementation notes:
+- Added `PART_GRADIENT_*` constants and `_part_gradient_spec()` helpers in `scripts/main.gd`, then surfaced compact gradient text on catalog cards and full gradient/delta lines in hover details.
+- Updated thruster and economy probes to use the current dual allocation helpers for drive and boost/brake ranges.
+- Scrubbed live backfilled module raw data so legacy module variants keep action/heat/variant metadata without carrying module damage fields.
+- Added gradient guard probes: `part_gradient_curve_probe`, `part_gradient_outlier_probe`, `thruster_dual_gradient_probe`, `module_no_raw_damage_fields_probe`, `starter_build_gradient_probe`, `part_gradient_ui_labels_probe`, and `engine_output_effective_scale_probe`.
+- Added the gradient guard probes to the `unit_edit` headed gate group in `tools/probe_manifest.json`.
+
+Verification:
+- Passed full headed `tools/run_headed_gate.ps1 -TimeoutSec 120` (`passed=64 failed=0`).
+- Passed headed gradient probes through the gate: `part_gradient_curve_probe`, `part_gradient_outlier_probe`, `thruster_dual_gradient_probe`, `module_no_raw_damage_fields_probe`, `starter_build_gradient_probe`, `part_gradient_ui_labels_probe`, and `engine_output_effective_scale_probe`.
+- Passed headed legacy/economy checks touched by this lane: `thruster_gradient_catalog_probe`, `engine_thruster_cooling_economy_probe`, `action_module_no_damage_fields_probe`, `thruster_dual_allocation_range_probe`, `catalog_gradient_anchor_probe`, `cooling_gradient_v3_probe`, and `engine_output_triple_probe`.
+- Godot still prints the known ObjectDB exit warning on some probes while returning exit code `0`.
+
+## 2026-05-25 Saved Unit Postwrite Visibility Repair
+
+Rules:
+- A unit save is successful only when the JSON is written and the Saved Units library can read the same file back as a current `momentum_chain_v3` entry.
+- Unit library scans must not silently delete current-schema files that fail validation. They may skip them in the list, but the diagnostic path must remain available.
+- Save export sanitizes editor blueprints before writing: legacy drive/pointer fields and old action group pointers are stripped recursively while current topology, payload indices, module bindings, and entry pose are preserved.
+
+Implementation notes:
+- Added saved-unit rejection diagnostics for topology, legacy drive/pointer fields, and nonphysical combat fields.
+- `_save_editor_current_unit_to_library_named()` now preflights the sanitized payload, writes it, immediately reads it through `_unit_library_entry_from_file()`, and shows failure feedback instead of false success if readback fails.
+- `_unit_library_entry_from_file()` no longer deletes current-schema invalid files during normal listing; legacy purge only removes corrupt JSON and explicit old schema files.
+- Opening Saved Units with a focus path now reports when the focused saved file did not pass library validation.
+
+Verification:
+- Passed headed `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120`.
+- Passed headed save visibility checks: `teamedit_save_unit_real_ui_probe`, `teamedit_save_complex_unit_real_ui_probe`, `saved_unit_postwrite_validation_probe`, `saved_unit_no_silent_delete_current_schema_probe`, `teamedit_save_unit_button_probe`, `unit_library_save_load_probe`, `saved_unit_overwrite_save_as_probe`, `saved_units_file_invalidation_probe`, `saved_unit_load_to_unit_editor_probe`, and `saved_unit_delete_probe`.
+- Passed headed `tools/run_headed_gate.ps1 -Group unit_edit -TimeoutSec 120` (`passed=18 failed=0`).
+- Documents and OneDrive mirrors both passed `teamedit_save_complex_unit_real_ui_probe` after sync.
+- Godot continues to print the known ObjectDB exit warning while returning exit code `0`.
+
+## 2026-05-25 Training Ball Dummy Default
+
+Rules:
+- Training mode's default dummy is a dedicated spherical target, not a saved Unit4 blueprint. Do not reintroduce Unit4 as a required default training dependency.
+- The dummy has physical volume, one circular collider, no attacks, and no active input. `idle_brake` applies normal training dummy auto-brake after impacts; `free_physics` does not brake; `fixed` pins it in place.
+- The training config/Scout page owns dummy size adjustment. Radius is clamped to `0.20m..2.00m`, default `0.60m`, step `0.05m`; UI shows radius, diameter, sphere volume, and derived mass.
+
+Implementation notes:
+- Added `training_dummy_radius_m`, `_training_ball_dummy_stats()`, `_training_ball_dummy_entry()`, and `_spawn_training_ball_dummy()` as the synthetic dummy data chain.
+- `_training_dummy_unit2_entry()` now returns the dedicated ball dummy entry; `_latest_training_dummy_unit_path()` returns an empty string for the default dummy path.
+- `Fighter` now exposes `_is_training_ball_dummy()` and `_training_ball_dummy_collider()`, and draws a simple top-view sphere with outline/highlight/latitude guides.
+
+Verification:
+- Passed headed `tools/run_headed_gate.ps1 -TimeoutSec 120` (`passed=56 failed=0`).
+- Passed headed dummy checks: `training_default_ball_dummy_probe`, `training_ball_dummy_radius_ui_probe`, `training_ball_dummy_collision_radius_probe`, `training_ball_dummy_auto_brake_probe`, `training_ball_dummy_state_modes_probe`, updated `training_default_dummy_unit4_probe`, and updated `training_start_missing_dummy_feedback_probe`.
+- Passed headed regressions: `training_config_start_probe`, `training_pause_options_probe`, `training_saved_unit_control_probe` (skips when no saved Unit4 fixture exists), `combat_probe`, and `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120`.
+
+## 2026-05-25 Saved Unit Save Loop Repair
+
+Rules:
+- Unit saving must stay on Unit Edit after confirmation, write only current `momentum_chain_v3` payloads, and show the saved unit immediately when the player opens Saved Units.
+- Opening Saved Units with a focus path is a foreground action and must scan the current saved-unit directory immediately instead of waiting for deferred cache refresh.
+- Non-legacy saved-unit probes must build current-schema legal topology fixtures; old `embedded_joint_unit_v2` payloads belong only in purge/rejection tests.
+
+Implementation notes:
+- Adjusted Saved Units cache refresh so focused library opens force a disk signature scan and can select the newly saved unit in the same interaction.
+- Updated `saved_units_file_invalidation_probe` to write a legal current-schema unit through the current blueprint helpers.
+- Added `teamedit_save_unit_real_ui_probe`, covering the real Save Unit button, name dialog confirmation, file write, Saved Units focus, and load-back-to-editor path.
+- Changed generated PNG texture loading to use the source-image loader so mirrors without `.godot` import caches do not emit resource-load errors before falling back.
+
+Verification:
+- Passed headed `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120`.
+- Passed headed save-loop checks: `teamedit_save_unit_real_ui_probe`, `teamedit_save_unit_button_probe`, `unit_library_save_load_probe`, `saved_unit_overwrite_save_as_probe`, `saved_units_file_invalidation_probe`, `saved_unit_load_to_unit_editor_probe`, `saved_unit_delete_probe`, and `ui_visible_button_wiring_probe`.
+- Passed headed regressions: `teamedit_probe`, `ui_layout_probe`, `text_overflow_probe`, and `tools/run_headed_gate.ps1 -Group unit_edit -TimeoutSec 120` (`passed=17 failed=0`).
+- Documents and OneDrive mirrors both passed `teamedit_save_unit_real_ui_probe` after sync.
+- Godot continues to print the known ObjectDB exit warning while returning exit code `0`.
+
+## 2026-05-25 Generic Gun Activate All-Firearms Pass
+
+Rules:
+- `枪械启动 / GUN ACTIVATE` is the generic firearm activation module. It may bind any current live projectile firearm terminal: sniper, sprayer, rifle, laser gun, grenade launcher, missile launcher, or web gun.
+- Binding compatibility and runtime firing semantics are separate. Generic activation preserves `module_action_profile="gun_activate"` on the binding/event, then resolves an `effective_gun_activation_profile` from the bound gun's `gun_kind/ammo_kind`.
+- Specialist firearm modules remain stricter choices. Rifle burst, prism beam, grenade arc/salvo, missile lock, and web tether profiles continue to accept only their intended firearm families and keep their unique module behavior.
+
+Implementation notes:
+- Added `module_supports_gun()` and `effective_profile_for_activation()` to `ActionProfileRegistry`.
+- Updated the main gun activation helpers so generic `gun_activate` accepts all live firearm families but dispatches to the bound weapon's native semantic: release-lock sniper, hold-stream sprayer, hold-burst rifle, hold-beam laser, hold-grenade-arc explosive launcher, release-missile-lock missile, and release-web tether.
+- Updated generic gun module catalog/card copy and added runtime event field `effective_gun_activation_profile` while keeping saved bindings schema-compatible.
+- Added headed probes `gun_activate_all_live_firearms_binding_probe` and `gun_activate_native_semantic_dispatch_probe`; updated `gun_module_binding_matrix_probe` and `gun_activate_binding_real_ui_probe`; added the new gun probes to the `unit_edit` headed gate group.
+
+Verification:
+- Passed headed `gun_module_binding_matrix_probe` (`generic=7 specialist=5`), `gun_activate_all_live_firearms_binding_probe`, `gun_activate_native_semantic_dispatch_probe`, `gun_activate_binding_real_ui_probe`, `machine_gun_bind_train_practice_probe`, `laser_beam_activate_binding_probe`, `missile_lock_activate_binding_probe`, `salvo_arc_unique_fire_probe`, `gun_aim_normal_alignment_probe`, `gun_recoil_momentum_probe`, `teamedit_probe`, and `combat_probe`.
+- Passed headed catalog/profile regressions: `gun_activate_sprayer_binding_probe`, `projectile_profile_whitelist_probe`, `backfilled_projectile_weapons_live_probe`, and `action_profile_registry_completeness_probe`.
+- Passed headed `tools/run_headed_gate.ps1 -Group unit_edit -TimeoutSec 120` (`passed=16 failed=0`) and full headed `tools/run_headed_gate.ps1 -TimeoutSec 120` (`passed=50 failed=0`).
+- Known residual outside this lane: direct `web_tether_no_projectile_damage_probe` currently fails to create a tether state/apply traction, but this bypasses the edited compatibility/effective-profile path. Do not count it as generic gun activation acceptance.
+
+## 2026-05-25 Headed Button Interaction Audit
+
+Rules:
+- Button usability checks run in headed mode. Static wiring is useful only alongside real action-route probes for navigation, allocation, binding, deletion, and settings interactions.
+- Battle Runtime `INPUTS` must preserve the requested settings subroute across asynchronous loading; it may not land on Settings root after the click.
+- Training start remains data-gated by the required saved Unit4 dummy. A missing Unit4 must produce visible feedback instead of silently ignoring the start button.
+
+Implementation notes:
+- Fixed `_show_settings(preloaded, category_key)` so a requested category survives queued loading, and routed Battle Runtime `INPUTS` through `_show_settings(false, "input")`.
+- Added `battle_runtime_input_button_route_probe` for the real paused-battle button path and `ui_visible_button_wiring_probe` to scan enabled visible buttons across menu, saved units, Unit Edit, Settings, Scout, and battle runtime views.
+- Updated stale functional probes to follow current loading, explicit power-panel entry, input-category selection, and current saved-unit schema contracts.
+- Added `training_start_missing_dummy_feedback_probe` to distinguish a responsive but blocked Training start button from a dead click when Unit4 is missing locally.
+
+Verification:
+- Passed full headed `tools/run_headed_gate.ps1 -TimeoutSec 120` (`passed=46 failed=0`).
+- Passed headed functional checks: `saved_unit_delete_probe`, `saved_unit_load_to_unit_editor_probe`, `teamedit_save_unit_button_probe`, `battle_input_settings_ui_probe`, `power_allocation_panel_numeric_input_probe`, `power_allocation_equalize_button_real_ui_probe`, `module_binding_key_grid_real_ui_probe`, `module_binding_hover_does_not_cover_keys_probe`, `engine_slot_allocation_click_probe`, `module_payload_delete_real_ui_probe`, `unit_editor_power_slider_writeback_probe`, `saved_units_team_builder_probe`, `saved_units_saved_team_view_probe`, and `saved_units_team_legality_probe`.
+- Current local data has no saved Unit4; headed `training_start_missing_dummy_feedback_probe` confirms Start visibly reports that saved unit 4 is required as the training dummy. Training execution cannot pass until a current-schema Unit4 exists.
+- `two_link_key_button_probe` targets the removed global binding-key button path and is superseded by the passing torso-detail side-panel key-grid probes.
+
+## 2026-05-25 星魂回环 Title Restore and Main Menu Click Repair
+
+Rules:
+- The Chinese displayed project title is `星魂回环`; the English repository and remote identity remain `Eidolon Circuit`.
+- `MenuView` stays a signal-emitting view; navigation side effects belong to the main scene.
+- Menu view setup must always run its idempotent signal connector, including when state initialization already created the view.
+
+Implementation notes:
+- Updated title surfaces and the Godot application display name while preserving the English repository name.
+- Added `_ensure_menu_view()` so the main menu, page options, and battle runtime menu attach intent signals before their buttons are used.
+- Added `main_menu_button_click_route_probe` to press the actual menu `Button` and verify the Training route, rather than bypassing UI signals.
+
+Verification:
+- Passed headed `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120`.
+- Passed headed `main_menu_button_click_route_probe`, `main_menu_navigation_probe`, `menu_view_signal_contract_probe`, `menu_view_no_main_ref_probe`, `navigation_route_action_contract_probe`, and `options_menu_unification_probe`.
+- Passed headed `tools/run_headed_gate.ps1 -Group navigation_menu -TimeoutSec 120` (`passed=22 failed=0`).
+- Passed full headed `tools/run_headed_gate.ps1 -TimeoutSec 120` (`passed=44 failed=0`).
+- Godot continues to print the known ObjectDB exit warning while returning exit code `0`.
+
+## 2026-05-25 Menu/UI/Loading Second Contract Pass
+
+Rules:
+- `NavigationService` route constants and `route_action()` are the page/action vocabulary. Page option actions and return-target navigation should resolve to a route action before `main.gd` performs page side effects.
+- `MenuView` is a detached view: it stores viewport size, builds controls from models/tokens, and emits intent signals. It must not retain `main_ref` or call page/battle/settings private helpers.
+- Screen-level Saved Units panels, Unit Edit top shell regions, Battle HUD menu/help, Settings/Scout top-level controls, menu, and loading overlays should use `UILayoutTokens`. Renderer polygons and local icon geometry remain exempt.
+- `LoadingController` stores `LoadingTask` instances internally. Legacy Dictionaries are accepted only at the normalization boundary and must not re-enter controller storage.
+- `tools/run_headed_gate.ps1` reads `tools/probe_manifest.json` `headed_gate` groups as its single probe source. UI acceptance must cite the headed gate; headless check-only remains parser/resource auxiliary only.
+
+Implementation notes:
+- Added route constants/action constants to `scripts/services/navigation_service.gd` and a unified `_navigate_page(route_action)` execution path in `scripts/main.gd`.
+- Removed `MenuView.bind(main)`/`main_ref`; menu, page options, and battle runtime menu now use injected viewport size plus emitted signals.
+- Expanded `UILayoutTokens.screen_region()` and token helpers for Saved Units, Unit Edit shell, and Battle HUD entry/help; added `main.gd` helpers `_apply_token_rect()`, `_make_token_label()`, and `_add_token_ui_rect()`.
+- Tightened `LoadingTask` phase semantics (`blocking`, `first_interaction`, `idle_optional`) and changed `LoadingController.tasks/deferred_tasks` to typed `LoadingTask` arrays.
+- Moved headed gate probe lists out of `tools/run_headed_gate.ps1` into `tools/probe_manifest.json`, with `ui_auxiliary` and `parser_auxiliary` groups documenting non-gate checks.
+- Added probes: `navigation_route_action_contract_probe`, `menu_view_no_main_ref_probe`, `screen_layout_token_coverage_probe`, `loading_task_phase_semantics_probe`, `loading_controller_typed_storage_probe`, and `headed_gate_manifest_source_probe`.
+
+Verification:
+- Passed headed `tools/run_headed_gate.ps1 -Group navigation_menu -TimeoutSec 120` (`passed=21 failed=0`).
+- Passed headed `tools/run_headed_gate.ps1 -Group unit_edit -TimeoutSec 120` (`passed=12 failed=0`).
+- Passed headed `tools/run_headed_gate.ps1 -Group loading_first_interaction -TimeoutSec 120` (`passed=12 failed=0`).
+- Passed full headed `tools/run_headed_gate.ps1 -TimeoutSec 120` (`passed=43 failed=0`).
+- Passed headed `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120`.
+- Auxiliary parser/resource check passed: `tools/run_godot_checked.ps1 -Headless -CheckOnly -TimeoutSec 120`. Do not treat this as UI acceptance.
+
+## 2026-05-25 Legacy Module Variant Deepening Pass
+
+Rules:
+- The six thawed legacy action modules remain thin runtime variants over existing live profiles. Do not re-enable throw/receiver/hijack/morph/combine takeover systems as part of this lane.
+- `module_variant_key` and `module_visual_family` are the canonical identifiers for unique behavior and code-native preview art.
+- Runtime variant effects must stay small, readable, and probe-covered: combo refund, vise clamp slow, pickup dash impulse, crush windup stagger/momentum, feint ghost/retarget, and salvo arc hold range.
+
+Implementation notes:
+- Expanded backfill data for `COMBO ROUTER: BALANCE STRING`, `CLAMP ROUTER: VISE CLOSE`, `ROUTE ROUTER: PICKUP DASH`, `MONSTER ROUTER: CRUSH WINDUP`, `DUEL ROUTER: FEINT THRUST`, and `SALVO ROUTER: EXPLOSIVE ARC` with variant keys, visual families, tuning fields, and hover/card gameplay summaries.
+- Added lightweight Fighter/runtime event handling for the six variants without adding new action profiles or restoring frozen large systems.
+- Added code-native vector preview families in `AssemblyBoardRenderer`: balance counter-arcs, vise jaws, pickup route rails, crush hydraulic wedge, feint needle/ghost line, and explosive arc landing marker.
+- Salvo remains restricted to `grenade_launcher + explosive`; hold time changes landing distance within the safe configured range.
+
+Verification:
+- New probes passed: `legacy_module_unique_gameplay_probe`, `legacy_module_visual_family_probe`, `legacy_module_runtime_variant_probe`, and `salvo_arc_unique_fire_probe`.
+- Regression probes passed: `catalog_backfilled_modules_live_probe`, `backfilled_module_binding_training_probe`, `action_module_execution_matrix_probe`, `gun_module_binding_matrix_probe`, `backfilled_ranged_weapon_fire_probe`, `projectile_profile_whitelist_probe`, `part_library_ui_probe`, `catalog_ui_terms_probe`, `ui_layout_probe`, and `text_overflow_probe`.
+- `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120` passed. Known ObjectDB leak warnings may still appear on process exit, but the checked command exits `0`.
+
 ## 2026-05-25 Menu/UI/Loading Contract Tightening Pass
 
 Rules:
@@ -3642,6 +3856,147 @@ Findings:
 
 Sync:
 - Implemented in `E:\New project`; mirror sync and local commit recorded by the surrounding Git history.
+
+## 2026-05-25 Limb Drive Cap and Runtime Motion Budget Closure
+
+Rules:
+- Runtime action speed must use the player's allocated limb momentum first. `joint_output_momentum_base` is only a fallback and must never secretly make a low allocation animate at maximum speed.
+- Live limb momentum ranges are derived from readable motion bands: light forearms stay quick, standard limbs stay mid-speed, flexible chains retain delay, and heavy/XL girders keep visible startup weight.
+- A driven limb's motion budget includes downstream attached weapon/terminal mass and length. A hammer, shield, scythe, or heavy gun should not swing like an empty forearm.
+- The UI still presents a normalized 0.00-1.00 engine pool, but runtime clamps to each segment's `momentum_min/momentum_max` and `joint_speed_cap` without migrating saved units.
+
+Implementation notes:
+- Reduced `LIMB_MOMENTUM_MAX_SCALE` from `3.0` to `1.0` and added duration-band helpers for limb min/default/max momentum.
+- `joint_output_momentum_base` is clamped to the visible limb max; hidden base output can no longer exceed the player-facing cap.
+- `MotionBudget.estimate_motion_budget()` now accepts `joint_speed_cap` and reports both raw and capped joint speed.
+- Fighter runtime module actions now call a single allocation source helper. It reads per-node binding allocation, binding totals, segment allocation, and only then base output.
+- Runtime motion stats now traverse canonical topology edges to add downstream segment mass/length once, so terminal weapons affect action duration.
+- Restored old thruster budget fallback from `thruster_allocated_momentum` into the current drive budget path for saved/test data, while keeping canonical `drive_demand_total` as the public stats readback.
+- Engine allocation writeback invalidates the editor stats cache and no longer rewrites the old booster `allocated_momentum` alias when updating drive allocation.
+
+Verification:
+- `tools/run_godot_checked.ps1 -Headless -CheckOnly -TimeoutSec 120` passed.
+- New/updated probes passed:
+  - `limb_runtime_allocation_source_probe`: allocation duration `1.257s`, matching direct MotionBudget expectation.
+  - `limb_motion_speed_band_probe`: checked 15 live driven limbs; no max allocation collapsed to instant motion.
+  - `limb_momentum_cap_formula_probe`: checked 15 live driven limbs; min/default/max and base<=max invariants held.
+  - `downstream_weapon_mass_motion_probe`: light terminal `0.539s`, heavy terminal `4.308s`.
+  - `module_duration_from_allocation_probe`: high hidden base output no longer overrides lower allocation.
+- Regressions passed:
+  - `limb_momentum_range_probe`
+  - `momentum_budget_allocation_probe`
+  - `joint_engine_budget_probe`
+  - `engine_momentum_allocation_slider_probe`
+  - `engine_momentum_allocation_normalization_probe`
+  - `two_link_forward_snap_module_probe`
+  - `gauntlet_motion_pose_probe`
+  - `shield_guard_bash_runtime_pose_probe`
+  - `hammer_windup_slam_runtime_pose_probe`
+  - `engine_thruster_cooling_economy_probe`
+  - `thermal_allocation_probe`
+  - `combat_probe`
+  - `runtime_geometry_identity_probe`
+  - `ui_layout_probe`
+  - `text_overflow_probe`
+
+Notes:
+- Several headless UI/catalog probes still print Godot ObjectDB cleanup warnings on exit. They did not indicate assertion failures in this pass.
+
+Sync:
+- Implemented in `E:\New project`; Documents and OneDrive mirrors refreshed after this section.
+
+## 2026-05-25 Mobius Battle Movement and Projectile Visual Alignment
+
+Rules:
+- Mobius changes unit position and movement; shooting, hit tests, occlusion and damage continue to resolve in Euclidean combat coordinates.
+- Player movement must use the local Mobius surface input frame. Aim, lock and projectile direction keep the stable Euclidean gameplay vector.
+- Projectile and aim visuals must be drawn from projected combat endpoints. Do not extrapolate ordinary battle traces as raw screen-space rays when a combat start/end point exists.
+
+Implementation notes:
+- `_mobius_surface_input_for_unit()` now calls `MobiusWorld.screen_input_to_surface_motion()` with the unit coordinate, camera coordinate, Mobius config and visual state, with non-Mobius fallback to `GameplayTransform.screen_input_to_gameplay_motion()`.
+- `_handle_player_battle_input()` now records raw, gameplay, surface and actual movement vectors, then uses the actual Mobius surface vector for `move_by()` and `try_cancel()`.
+- Added shared projected screen segment helpers for combat points and projectile events. Runtime gun aim lines, held aim lines and projectile trace VFX now project Euclidean combat endpoints through `_screen_from_ring()`.
+- Updated vertical-input probes to allow a small Mobius surface tangent component while still requiring clear screen-up/screen-down intent.
+
+Verification:
+- `tools/run_godot_checked.ps1 -Headless -CheckOnly -TimeoutSec 120` passed.
+- New probes passed:
+  - `battle_player_input_uses_mobius_surface_probe`
+  - `mobius_projectile_trace_projection_probe`
+  - `projectile_muzzle_screen_alignment_probe`
+- Updated/related probes passed:
+  - `mobius_surface_movement_input_probe`
+  - `battle_screen_input_vertical_probe`
+  - `battle_vertical_real_input_path_probe`
+  - `battle_vertical_input_during_activation_probe`
+  - `battle_mobius_vertical_movement_probe`
+  - `battle_vertical_movement_all_profiles_probe`
+  - `mobius_input_constraint_frame_probe`
+  - `projectile_muzzle_consistency_probe`
+  - `projectile_path_not_bent_by_mobius_probe`
+  - `mobius_bullet_readability_probe`
+  - `map_occlusion_projectile_integration_probe`
+  - `combat_probe`
+  - `runtime_geometry_identity_probe`
+  - `board_battle_art_identity_probe`
+  - `ui_layout_probe`
+  - `text_overflow_probe`
+- Godot still reports the known ObjectDB cleanup warning on several headless probe exits; all listed probes exited successfully.
+
+Sync:
+- Implemented in `E:\New project`; Documents and OneDrive mirrors were refreshed from this source after verification.
+
+## 2026-05-25 Action Module Runtime Variant Closure
+
+Rules:
+- Action module hover/card promises must correspond to runtime behavior. Variant fields are not enough; the contact, aiming, release, or recovery effect must be observable in combat/runtime probes.
+- Module variants use canonical `module_variant` runtime naming. Old helper/pin names are not allowed in runtime code paths; the saved catalog field remains `module_variant_key`.
+- `VISE CLOSE` is fair short control: it slows and briefly locks action recovery, but it is not a hard root. `FEINT THRUST` retargets only during startup and only inside its declared angle. `EXPLOSIVE ARC SALVO` previews while held and fires one shell on release. `CRUSH WINDUP` applies whiff recovery only when no hit was confirmed.
+
+Implementation notes:
+- Added canonical module variant field copying and hit-confirm helpers in combat runtime.
+- `CLAMP ROUTER: VISE CLOSE` now applies a 0.38s clamp timer, sustained velocity multiplier, and short action cooldown through `Fighter.apply_clamp_pin()`.
+- `DUEL ROUTER: FEINT THRUST` now reads startup movement input, clamps retargeting to the declared degrees, invalidates runtime geometry, and uses the retarget direction for the active segment.
+- `SALVO ROUTER: EXPLOSIVE ARC` now holds a high-contrast landing preview and suppresses repeat fire while held; release fires exactly one explosive arc shell and clears the preview.
+- `MONSTER ROUTER: CRUSH WINDUP` records hit confirmation from combat contact; whiffs apply the declared extra recovery, while confirmed hits avoid the whiff penalty.
+- Runtime gun group normalization now forces valid gun source material for explicit gun activation events, preventing legitimate grenade/arc sources from being rejected by projectile gate.
+
+Verification:
+- `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120` passed.
+- `tools/run_godot_checked.ps1 -Headless -CheckOnly -TimeoutSec 120` passed.
+- New/updated behavior probes passed:
+  - `module_variant_behavior_contract_probe`
+  - `vise_close_duration_control_probe`
+  - `feint_thrust_retarget_runtime_probe`
+  - `salvo_arc_preview_release_fire_probe`
+  - `crush_windup_whiff_recovery_probe`
+  - `legacy_module_runtime_variant_probe`
+- The same six behavior probes also passed with `-Headless`.
+- Regression probes passed:
+  - `legacy_module_unique_gameplay_probe`
+  - `legacy_module_visual_family_probe`
+  - `salvo_arc_unique_fire_probe`
+  - `catalog_backfilled_modules_live_probe`
+  - `backfilled_module_binding_training_probe`
+  - `action_module_execution_matrix_probe`
+  - `gun_module_binding_matrix_probe`
+  - `projectile_profile_whitelist_probe`
+  - `runtime_melee_never_projectile_gate_probe`
+  - `combat_probe`
+  - `ui_layout_probe`
+  - `text_overflow_probe`
+  - `module_detail_action_page_probe`
+  - `module_detail_special_moves_probe`
+  - `no_old_combat_terms_probe`
+  - `no_legacy_runtime_pointers_probe`
+- Headed gate `tools/run_headed_gate.ps1 -Group unit_edit -TimeoutSec 120` passed 12/12.
+
+Findings:
+- The behavior gap was concentrated in release/confirmation timing: the catalog already described unique actions, but runtime still treated several variants as field annotations. This pass makes the variants produce measurable movement, aiming, ammo, preview, or recovery consequences.
+- ObjectDB cleanup warnings still appear on many Godot exits and are recorded as existing runner cleanup noise; all functional assertions passed.
+
+Sync:
+- Implemented in `E:\New project`; sync to Documents and OneDrive mirrors follows this log entry.
 
 ## 2026-05-25 Live Limb Visual Families and Material Layers
 

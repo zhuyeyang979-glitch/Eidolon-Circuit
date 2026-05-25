@@ -182,6 +182,7 @@ func _init() -> void:
 	var attack_center: Vector2 = main._collider_center(attack_collider)
 	target.ring_pos = attack_center.x
 	target.lane = attack_center.y
+	target.sync_mobius_from_compat(MainScene.RING_LENGTH, true)
 	target.velocity = Vector2.ZERO
 	var min_gap := _min_gap_to_target(main, attack_collider, target)
 	if min_gap > 0.0:

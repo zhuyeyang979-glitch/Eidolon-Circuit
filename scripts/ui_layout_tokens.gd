@@ -82,6 +82,30 @@ const SCOUT_TIMER_RECT := Rect2(Vector2(890.0, 22.0), Vector2(300.0, 28.0))
 const SCOUT_START_BUTTON_RECT := Rect2(Vector2(874.0, 64.0), Vector2(142.0, 24.0))
 const SCOUT_OPTIONS_BUTTON_RECT := Rect2(Vector2(1030.0, 64.0), Vector2(148.0, 24.0))
 const SCOUT_HINT_RECT := Rect2(Vector2(64.0, 78.0), Vector2(760.0, 22.0))
+const SCOUT_DUMMY_PANEL_RECT := Rect2(Vector2(426.0, 592.0), Vector2(428.0, 78.0))
+const SCOUT_DUMMY_TITLE_RECT := Rect2(Vector2(438.0, 600.0), Vector2(98.0, 22.0))
+const SCOUT_DUMMY_MINUS_RECT := Rect2(Vector2(542.0, 598.0), Vector2(32.0, 24.0))
+const SCOUT_DUMMY_SLIDER_RECT := Rect2(Vector2(582.0, 598.0), Vector2(158.0, 24.0))
+const SCOUT_DUMMY_PLUS_RECT := Rect2(Vector2(748.0, 598.0), Vector2(32.0, 24.0))
+const SCOUT_DUMMY_RESET_RECT := Rect2(Vector2(788.0, 598.0), Vector2(54.0, 24.0))
+const SCOUT_DUMMY_VALUE_RECT := Rect2(Vector2(438.0, 628.0), Vector2(400.0, 30.0))
+
+const SAVED_UNITS_CANVAS_PANEL_RECT := Rect2(Vector2(34.0, 76.0), Vector2(760.0, 590.0))
+const SAVED_UNITS_DETAIL_PANEL_RECT := Rect2(Vector2(822.0, 76.0), Vector2(398.0, 590.0))
+const SAVED_UNITS_TITLE_RECT := Rect2(Vector2(54.0, 24.0), Vector2(440.0, 42.0))
+const SAVED_UNITS_HINT_RECT := Rect2(Vector2(520.0, 32.0), Vector2(450.0, 30.0))
+const SAVED_UNITS_OPTIONS_BUTTON_RECT := Rect2(Vector2(1040.0, 24.0), Vector2(168.0, 36.0))
+const SAVED_UNITS_FILTER_ORIGIN := Vector2(54.0, 88.0)
+const SAVED_UNITS_FILTER_SIZE := Vector2(98.0, 28.0)
+const SAVED_UNITS_FILTER_GAP := Vector2(12.0, 0.0)
+
+const EDITOR_CANVAS_PANEL_RECT := Rect2(Vector2(8.0, 70.0), Vector2(908.0, 614.0))
+const EDITOR_DRAWER_PANEL_RECT := Rect2(Vector2(924.0, 76.0), Vector2(294.0, 608.0))
+const EDITOR_OPTIONS_BUTTON_RECT := Rect2(Vector2(1040.0, 24.0), Vector2(168.0, 36.0))
+const EDITOR_BOARD_RECT := Rect2(Vector2(8.0, 94.0), Vector2(908.0, 548.0))
+
+const BATTLE_MENU_BUTTON_RECT := Rect2(Vector2(1092.0, 650.0), Vector2(128.0, 34.0))
+const BATTLE_HELP_RECT := Rect2(Vector2(82.0, 684.0), Vector2(1000.0, 24.0))
 
 
 static func left_sidebar_rect() -> Rect2:
@@ -132,6 +156,45 @@ static func to_screen_rect(rect: Rect2, viewport_size: Vector2 = DESIGN_SIZE) ->
 static func to_local_rect(rect: Rect2, viewport_size: Vector2 = DESIGN_SIZE) -> Rect2:
 	var scale := design_scale(viewport_size)
 	return Rect2(rect.position * scale, rect.size * scale)
+
+
+static func screen_region(region_name: String) -> Rect2:
+	match region_name:
+		"left_sidebar":
+			return left_sidebar_rect()
+		"right_sidebar":
+			return right_sidebar_rect()
+		"main_board":
+			return main_board_rect()
+		"top_dock":
+			return top_dock_rect()
+		"bottom_bar":
+			return bottom_bar_rect()
+		"saved_units_canvas_panel":
+			return SAVED_UNITS_CANVAS_PANEL_RECT
+		"saved_units_detail_panel":
+			return SAVED_UNITS_DETAIL_PANEL_RECT
+		"saved_units_title":
+			return SAVED_UNITS_TITLE_RECT
+		"saved_units_hint":
+			return SAVED_UNITS_HINT_RECT
+		"saved_units_options_button":
+			return SAVED_UNITS_OPTIONS_BUTTON_RECT
+		"editor_canvas_panel":
+			return EDITOR_CANVAS_PANEL_RECT
+		"editor_drawer_panel":
+			return EDITOR_DRAWER_PANEL_RECT
+		"editor_options_button":
+			return EDITOR_OPTIONS_BUTTON_RECT
+		"editor_board":
+			return EDITOR_BOARD_RECT
+		"battle_menu_button":
+			return BATTLE_MENU_BUTTON_RECT
+		"battle_help":
+			return BATTLE_HELP_RECT
+		"scout_dummy_panel":
+			return SCOUT_DUMMY_PANEL_RECT
+	return Rect2()
 
 
 static func page_options_rect() -> Rect2:
@@ -321,3 +384,7 @@ static func scout_options_button_rect() -> Rect2:
 
 static func scout_hint_rect() -> Rect2:
 	return SCOUT_HINT_RECT
+
+
+static func saved_units_filter_button_rect(index: int) -> Rect2:
+	return grid_rect(SAVED_UNITS_FILTER_ORIGIN, SAVED_UNITS_FILTER_SIZE, index, 5, SAVED_UNITS_FILTER_GAP.x, SAVED_UNITS_FILTER_GAP.y)

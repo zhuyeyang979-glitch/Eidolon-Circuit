@@ -71,8 +71,7 @@ func _init() -> void:
 	var unit: Dictionary = main._editor_current_blueprint()
 	var torso := int(Dictionary(unit.get("slot_payloads", [])[0]).get("torso_node", 0))
 	main.editor_open_torso_node_index = torso
-	main._activate_engine_allocation_target_for_torso(unit, torso)
-	main._refresh_engine_momentum_allocation_view()
+	main._open_engine_momentum_allocation_for_payload(0)
 	var view = main.engine_momentum_allocation_view
 	if view == null or not view.visible:
 		_fail("Power allocation panel did not open.")

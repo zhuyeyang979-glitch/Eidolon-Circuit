@@ -103,8 +103,29 @@ func profile_for_gun_kind(gun_kind: String) -> String:
 
 
 func projectile_profile_supports_kind(profile: String, gun_kind: String, ammo_kind: String = "") -> bool:
+	return module_supports_gun(profile, gun_kind, ammo_kind)
+
+
+func module_supports_gun(profile: String, gun_kind: String, ammo_kind: String = "") -> bool:
 	var profile_key := profile.to_lower()
 	var gun_key := gun_kind.to_lower()
+	if profile_key == "gun_activate":
+		var native_profile := profile_for_gun_kind(gun_key)
+		return native_profile != "" and _native_profile_supports_kind(native_profile, gun_key, ammo_kind)
+	return _native_profile_supports_kind(profile_key, gun_key, ammo_kind)
+
+
+func effective_profile_for_activation(module_profile: String, gun_kind: String, ammo_kind: String = "") -> String:
+	var profile_key := module_profile.to_lower()
+	var gun_key := gun_kind.to_lower()
+	if not module_supports_gun(profile_key, gun_key, ammo_kind):
+		return ""
+	if profile_key == "gun_activate":
+		return profile_for_gun_kind(gun_key)
+	return profile_key
+
+
+func _native_profile_supports_kind(profile_key: String, gun_key: String, ammo_kind: String = "") -> bool:
 	if profile_for_gun_kind(gun_key) != profile_key:
 		return false
 	if not AMMO_FOR_PROJECTILE_PROFILE.has(profile_key):
