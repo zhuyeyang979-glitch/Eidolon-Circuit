@@ -138,9 +138,29 @@ func _add_corner_compatible_seam(image: Image) -> void:
 		image.set_pixel(WIDTH - 1, HEIGHT - 1 - y, merged)
 
 
+func _add_lane_haze(image: Image) -> void:
+	for y in range(HEIGHT):
+		var v := (float(y) + 0.5) / float(HEIGHT)
+		var upper_core := exp(-pow((v - 0.26) / 0.105, 2.0))
+		var lower_core := exp(-pow((v - 0.74) / 0.105, 2.0))
+		var upper_edge := exp(-pow((v - 0.36) / 0.06, 2.0))
+		var lower_edge := exp(-pow((v - 0.64) / 0.06, 2.0))
+		var center_clear := 1.0 - 0.72 * exp(-pow((v - 0.5) / 0.16, 2.0))
+		var row_alpha := (upper_core + lower_core) * 0.030
+		row_alpha += (upper_edge + lower_edge) * 0.010
+		row_alpha *= clampf(center_clear, 0.22, 1.0)
+		if row_alpha <= 0.0005:
+			continue
+		for x in range(WIDTH):
+			var u := (float(x) + 0.5) / float(WIDTH)
+			var grain := 0.72 + 0.28 * sin(u * TAU * 18.0 + v * TAU * 5.0)
+			_blend_pixel(image, x, y, Color(0.18, 0.38, 0.56, row_alpha * grain))
+
+
 func _generate_image() -> Image:
 	var image := Image.create(WIDTH, HEIGHT, false, Image.FORMAT_RGBA8)
 	image.fill(Color(0.0, 0.0, 0.0, 0.0))
+	_add_lane_haze(image)
 	var faint := Color(0.28, 0.52, 0.74, 0.010)
 	for lane in [0.21, 0.32, 0.68, 0.79]:
 		_draw_wave_strand(image, float(lane), 0.0, 0.018, 1.0, 18.0, faint)

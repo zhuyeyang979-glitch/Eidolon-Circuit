@@ -132,6 +132,9 @@ class MobiusStripSurfaceView:
 			shader_material.set_shader_parameter("depth_contrast", float(config.get("depth_contrast", 1.0)))
 			shader_material.set_shader_parameter("edge_fog", float(config.get("edge_fog_width", config.get("boundary_fog_width", 0.75))))
 			shader_material.set_shader_parameter("cosmic_mix", 0.09)
+			shader_material.set_shader_parameter("surface_alpha_gain", float(config.get("surface_alpha_gain", 1.0)))
+			shader_material.set_shader_parameter("surface_alpha_max", float(config.get("surface_alpha_max", 0.18)))
+			shader_material.set_shader_parameter("surface_color_gain", float(config.get("surface_color_gain", 1.0)))
 			shader_material.set_shader_parameter("surface_texture", surface_texture)
 			shader_material.set_shader_parameter("surface_texture_enabled", surface_texture != null)
 		_update_stardust_band_cache()
@@ -43711,6 +43714,9 @@ func _topology_node_visual_handedness(node: Dictionary) -> String:
 	var explicit_handedness := String(node.get("visual_handedness", "")).strip_edges()
 	if explicit_handedness != "":
 		return _normalize_mount_side(explicit_handedness)
+	var explicit_mount_side := String(node.get("visual_mount_side", "")).strip_edges()
+	if explicit_mount_side != "":
+		return _normalize_mount_side(explicit_mount_side)
 	return _normalize_mount_side(node.get("visual_mount_side", node.get("default_mount_side", node.get("default_visual_handedness", "right"))))
 
 
@@ -53659,10 +53665,13 @@ func _refresh_mobius_surface_view() -> void:
 	surface_config["stardust_band_enabled"] = false
 	surface_config["surface_lane_guides_enabled"] = false
 	surface_config["local_rectangular_projection"] = false
-	surface_config["near_alpha"] = 0.82
-	surface_config["far_alpha"] = 0.42
+	surface_config["near_alpha"] = 1.0
+	surface_config["far_alpha"] = 0.72
 	surface_config["depth_contrast"] = 1.08
 	surface_config["surface_detail_density"] = maxf(1.15, float(surface_config.get("surface_detail_density", 1.0)))
+	surface_config["surface_alpha_gain"] = 18.0
+	surface_config["surface_alpha_max"] = 0.16
+	surface_config["surface_color_gain"] = 3.6
 	mobius_strip_surface_view.set_surface_texture(mobius_surface_texture)
 	mobius_strip_surface_view.set_world(surface_config, mobius_rotation_state, _mobius_camera_coord())
 	if mobius_stardust_band_view != null:

@@ -22,11 +22,13 @@ Rules:
 Implementation notes:
 - Consolidated today's editor/data-rule/ammo/hover/pose/soul/Mobius probe work into the active `safety/eidolon-health-audit-20260525-004915` branch.
 - Fixed the side-mounted scythe handoff so board-enriched nodes, runtime topology segments, and renderer component nodes retain left/right handedness.
+- Added the Mobius surface mesh-net texture pass and probes for texture asset quality, lifted UV attachment, twist readability, and unit non-occlusion. Headless probes use projection/alpha/z-index fallback when viewport readback is unavailable.
 - Retained the GitHub Governance fixes: headless workflow execution, `actions/checkout@v5`, and direct Godot console executable validation after archive extraction.
 
 Verification:
 - `tools/run_godot_checked.ps1 -Headless -CheckOnly -TimeoutSec 120` passed.
 - Key probes passed: data rules, canonical catalog rejection, strict saved-unit rejection, ammo capacity/size UI, hover/detail close actions, pose persistence, gun activation pose restore, side-mounted scythe handedness, soul modules, torso capacity, and Mobius stardust source/projection/twist probes.
+- Mobius surface mesh probes passed: `mobius_surface_mesh_texture_asset_probe`, `mobius_surface_mesh_uv_attachment_probe`, `mobius_surface_mesh_twist_readability_probe`, and `mobius_surface_mesh_not_occluding_units_probe`.
 - The full 16-probe `Godot Governance` headless mirror passed locally.
 
 ## 2026-05-25 Boost Seam Runtime Visual Origin Fix
