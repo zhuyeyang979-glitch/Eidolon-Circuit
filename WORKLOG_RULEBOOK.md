@@ -12,6 +12,21 @@ Primary implementation file: `scripts/main.gd`
 
 Godot version in workspace: `tools/godot-4.6.2/Godot_v4.6.2-stable_win64_console.exe`
 
+## 2026-05-25 Boost Seam Runtime Visual Origin Fix
+
+Rules:
+- Runtime topology combat geometry remains in unwrapped Mobius coordinates. Drawing must use the same unwrapped origin; never subtract wrapped `ring_pos/lane` from unwrapped segment points.
+- Boost visibility checks must validate the unit's rendered topology attachment, not only the root `visible` flag and screen position.
+- This fix is visual-only: it does not change movement, camera follow, hit tests, collisions, projectile paths, Mobius stardust, or gameplay projection.
+
+Implementation notes:
+- `Fighter._runtime_visual_origin()` now centralizes the visual center for runtime topology drawing and records `runtime_visual_origin_delta` for seam diagnostics.
+- Runtime segment polygons, status overlays, and runtime board-art drawing all use this visual origin, so crossing the 24m Mobius seam cannot push parts a full loop away from the fighter root.
+- Added headed seam probes that reproduce `mobius_s=25/ring_pos=1`, Boost across the seam, and status-overlay drawing at the seam.
+
+Verification:
+- New probes passed: `runtime_topology_visual_origin_mobius_seam_probe`, `controlled_unit_boost_seam_render_visibility_probe`, and `runtime_status_overlay_mobius_seam_probe`.
+- Updated Boost probe passed: `controlled_unit_fast_boost_never_hidden_mobius_probe`.
 ## 2026-05-25 Boost Mobius Projection Guard
 
 Rules:

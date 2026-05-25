@@ -38,6 +38,34 @@ func _readable(position: Vector2) -> bool:
 	return position.x >= MainScene.ARENA_LEFT - 128.0 and position.x <= MainScene.ARENA_RIGHT + 128.0 and position.y >= MainScene.ARENA_TOP - 128.0 and position.y <= MainScene.ARENA_BOTTOM + 128.0
 
 
+func _bounds(points: PackedVector2Array) -> Rect2:
+	if points.is_empty():
+		return Rect2()
+	var bounds := Rect2(points[0], Vector2.ZERO)
+	for point in points:
+		bounds = bounds.expand(point)
+	return bounds
+
+
+func _max_abs_extent(bounds: Rect2) -> float:
+	var end := bounds.position + bounds.size
+	return maxf(absf(bounds.position.x), maxf(absf(bounds.position.y), maxf(absf(end.x), absf(end.y))))
+
+
+func _runtime_art_attached(unit) -> Dictionary:
+	var max_extent := 0.0
+	var polygons := 0
+	for raw_segment in unit._runtime_topology_world_segments(true, false):
+		if not (raw_segment is Dictionary):
+			continue
+		var polygon: PackedVector2Array = unit._runtime_segment_polygon_local(Dictionary(raw_segment))
+		if polygon.size() < 3:
+			continue
+		polygons += 1
+		max_extent = maxf(max_extent, _max_abs_extent(_bounds(polygon)))
+	return {"ok": polygons > 0 and max_extent <= 220.0, "polygons": polygons, "max_extent": max_extent}
+
+
 func _init() -> void:
 	call_deferred("_run")
 
@@ -79,6 +107,10 @@ func _run() -> void:
 			return
 		if not _readable(unit.position):
 			_fail("Controlled fast Mobius unit left readable screen on frame %d: %s." % [frame, str(unit.position)])
+			return
+		var art: Dictionary = _runtime_art_attached(unit)
+		if not bool(art.get("ok", false)):
+			_fail("Controlled fast Mobius unit root is visible but runtime art detached on frame %d; mobius_s=%.3f ring_pos=%.3f art=%s." % [frame, unit.mobius_s, unit.ring_pos, str(art)])
 			return
 	if boost_starts < 2:
 		_fail("Probe did not start enough real boosts; boost_starts=%d." % boost_starts)
