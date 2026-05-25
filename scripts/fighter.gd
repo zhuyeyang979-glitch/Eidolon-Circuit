@@ -3120,6 +3120,12 @@ func _runtime_combat_origin() -> Vector2:
 	return Vector2(mobius_s, mobius_v)
 
 
+func _runtime_visual_origin() -> Vector2:
+	var origin := _runtime_combat_origin()
+	set_meta("runtime_visual_origin_delta", origin - Vector2(ring_pos, lane))
+	return origin
+
+
 func _runtime_local_to_world(local_point: Vector2) -> Vector2:
 	return _runtime_combat_origin() + _forward_vector() * local_point.x + _side_vector() * local_point.y
 
@@ -3222,11 +3228,16 @@ func _runtime_segment_polygon_world(segment: Dictionary) -> Array:
 
 func _runtime_segment_polygon_local(segment: Dictionary) -> PackedVector2Array:
 	var local_points := PackedVector2Array()
-	var center := Vector2(ring_pos, lane)
+	var center := _runtime_visual_origin()
 	var visual_scale := _runtime_visual_scale()
 	for raw_point in _runtime_segment_polygon_world(segment):
 		if raw_point is Vector2:
 			local_points.append((Vector2(raw_point) - center).rotated(-rotation) * visual_scale)
+	if local_points.size() > 0:
+		var bounds := Rect2(local_points[0], Vector2.ZERO)
+		for point in local_points:
+			bounds = bounds.expand(point)
+		set_meta("runtime_last_segment_local_bounds", bounds)
 	return local_points
 
 
@@ -3269,19 +3280,20 @@ func _draw_runtime_status_curve_overlay() -> void:
 	var segments := _runtime_topology_world_segments(true, true)
 	if segments.is_empty():
 		return
+	var visual_origin := _runtime_visual_origin()
 	for raw_segment in segments:
 		if not (raw_segment is Dictionary):
 			continue
 		if String(Dictionary(raw_segment).get("part_kind", "")) != "torso":
 			continue
-		if AssemblyBoardRenderer.draw_runtime_segment_status_overlay(self, Dictionary(raw_segment), Vector2(ring_pos, lane), rotation, _runtime_visual_scale(), overlay_color, 3.3):
+		if AssemblyBoardRenderer.draw_runtime_segment_status_overlay(self, Dictionary(raw_segment), visual_origin, rotation, _runtime_visual_scale(), overlay_color, 3.3):
 			runtime_status_curve_overlay_last_count += 1
 	for raw_segment in segments:
 		if not (raw_segment is Dictionary):
 			continue
 		if String(Dictionary(raw_segment).get("part_kind", "")) == "torso":
 			continue
-		if AssemblyBoardRenderer.draw_runtime_segment_status_overlay(self, Dictionary(raw_segment), Vector2(ring_pos, lane), rotation, _runtime_visual_scale(), overlay_color, 2.7):
+		if AssemblyBoardRenderer.draw_runtime_segment_status_overlay(self, Dictionary(raw_segment), visual_origin, rotation, _runtime_visual_scale(), overlay_color, 2.7):
 			runtime_status_curve_overlay_last_count += 1
 
 
@@ -3310,7 +3322,7 @@ func _draw_runtime_assembly_segment(segment: Dictionary, material_color: Color) 
 	draw_segment["blunt_shield"] = bool(visual_group.get("blunt_shield", segment.get("blunt_shield", false)))
 	draw_segment["blunt_gauntlet"] = bool(visual_group.get("blunt_gauntlet", segment.get("blunt_gauntlet", false)))
 	draw_segment["blunt_hammer"] = bool(visual_group.get("blunt_hammer", segment.get("blunt_hammer", false)))
-	AssemblyBoardRenderer.draw_runtime_segment(self, draw_segment, Vector2(ring_pos, lane), rotation, _runtime_visual_scale(), material_color, primary_color)
+	AssemblyBoardRenderer.draw_runtime_segment(self, draw_segment, _runtime_visual_origin(), rotation, _runtime_visual_scale(), material_color, primary_color)
 
 
 func _runtime_group_for_segment(segment: Dictionary) -> Dictionary:
