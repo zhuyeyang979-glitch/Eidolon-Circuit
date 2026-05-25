@@ -13,7 +13,7 @@ jobs:
     runs-on: windows-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install Godot 4.6.2
         shell: pwsh
@@ -27,11 +27,9 @@ jobs:
           $zip = Join-Path $env:RUNNER_TEMP "godot-4.6.2.zip"
           Invoke-WebRequest -Uri "https://github.com/godotengine/godot/releases/download/4.6.2-stable/Godot_v4.6.2-stable_win64.exe.zip" -OutFile $zip
           Expand-Archive -LiteralPath $zip -DestinationPath $godotDir -Force
-          $exe = Get-ChildItem -Path $godotDir -Filter "Godot_v4.6.2-stable_win64*.exe" | Select-Object -First 1
-          if ($null -eq $exe) {
-            throw "Godot executable was not found after download."
+          if (-not (Test-Path -LiteralPath $godotExe)) {
+            throw "Godot console executable was not found after download: $godotExe"
           }
-          Copy-Item -LiteralPath $exe.FullName -Destination $godotExe -Force
 
       - name: Godot check-only
         shell: pwsh
