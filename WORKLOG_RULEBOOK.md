@@ -12,6 +12,24 @@ Primary implementation file: `scripts/main.gd`
 
 Godot version in workspace: `tools/godot-4.6.2/Godot_v4.6.2-stable_win64_console.exe`
 
+## 2026-05-25 Scythe Orthogonal Side-Mount Closure
+
+Rules:
+- Scythes and scythe-like hooks are normal connected terminal weapons first: their node, socket, edge, collision centerline, and module legality remain attached to the previous limb endpoint.
+- The 90 degree scythe rule is visual side-mount only. `orientation_category="orthogonal_side_mount"` uses the previous limb axis as the handle and places the blade on that axis normal via `visual_mount_side`.
+- Player-facing orientation uses `左挂刃 / 右挂刃` on install and `翻侧刃` when an installed side-mounted weapon is selected. `visual_mount_side` is the canonical field; `visual_handedness` is only a compatibility alias.
+- Visible blade polygons participate in board picking. A 90 degree scythe blade can be clicked and dragged visually without relying on the old center-radius picker.
+
+Implementation notes:
+- Placement no longer immediately magnetic-links and clears drag state for a newly dropped scythe; players can place, adjust, and then choose side mount.
+- Connected scythe drags preserve topology instead of pulling the node into a disconnected/hanging state.
+- Board visible-hit logic now uses the rendered terminal polygon for scythe/shield/drill/gauntlet style terminals, so the visual blade remains selectable.
+- Existing board/runtime handoff keeps `mount_parent_axis_local`, `visual_mount_side`, `orientation_basis`, and the legacy alias in sync.
+
+Verification:
+- Scythe probes passed: `scythe_install_orientation_ui_probe`, `scythe_parent_normal_mount_polygon_probe`, `scythe_dragged_terminal_uses_parent_axis_probe`, `scythe_visible_polygon_drag_probe`, `scythe_drop_then_drag_adjust_probe`, `scythe_drag_preserves_orientation_choice_probe`, `scythe_connected_drag_preserves_topology_probe`, `scythe_mount_side_board_runtime_probe`, `scythe_mount_side_save_load_probe`, and `scythe_module_binding_mount_side_probe`.
+- Regressions passed: `melee_weapon_specific_polygon_probe`, `melee_weapon_visual_layers_probe`, `board_battle_art_identity_probe`, `runtime_contact_visual_identity_probe`, `runtime_melee_never_projectile_gate_probe`, `teamedit_probe`, `ui_layout_probe`, `text_overflow_probe`, `probe_manifest_no_legacy_fixture_probe`, and `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120`.
+
 ## 2026-05-25 Full Worktree Stabilization and Governance Push
 
 Rules:

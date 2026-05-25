@@ -22839,10 +22839,12 @@ func _handle_custom_topology_click(mouse_event: InputEventMouseButton, unit_bp: 
 	if _has_pending_canvas_part():
 		editor_dragging_node_index = _add_topology_node_at(mouse_event.position)
 		editor_dragging_selected_nodes = false
+		editor_dragging_whole_unit = false
 		editor_selected_topology_nodes = [editor_dragging_node_index] if editor_dragging_node_index >= 0 else []
 		if editor_dragging_node_index >= 0:
-			_try_magnetic_link_for_node(unit_bp, editor_dragging_node_index, false)
-			editor_dragging_node_index = -1
+			editor_node_click_candidate_index = -1
+			editor_node_click_start_position = mouse_event.position
+			editor_node_click_moved = false
 		_mark_editor_board_model_dirty("board.pending_place")
 		if hot_path_profiler != null:
 			hot_path_profiler.scope_end("board_click")
@@ -23017,6 +23019,10 @@ func _open_editor_torso_detail(node_index: int) -> void:
 
 
 func _nearest_custom_node_index(role_key: String, unit_bp: Dictionary, nodes: Array, local_pos: Vector2) -> int:
+	var topology: Dictionary = unit_bp.get("custom_topology", {})
+	var visual_hit := _nearest_custom_node_index_by_visible_polygon(role_key, unit_bp, nodes, Array(topology.get("edges", [])), local_pos)
+	if visual_hit >= 0:
+		return visual_hit
 	var best := -1
 	var best_distance := 99999.0
 	var best_radius := 0.0
@@ -23029,6 +23035,183 @@ func _nearest_custom_node_index(role_key: String, unit_bp: Dictionary, nodes: Ar
 			best = i
 			best_radius = _topology_node_pick_radius(role_key, unit_bp, node)
 	return best if best >= 0 and best_distance <= best_radius else -1
+
+
+func _nearest_custom_node_index_by_visible_polygon(role_key: String, unit_bp: Dictionary, nodes: Array, edges: Array, local_pos: Vector2) -> int:
+	var best := -1
+	var best_score := INF
+	var visual_nodes := _topology_visual_hit_nodes(role_key, unit_bp, nodes, edges)
+	for i in range(nodes.size()):
+		if not (nodes[i] is Dictionary):
+			continue
+		var score := _topology_node_visible_hit_score(role_key, unit_bp, nodes, edges, visual_nodes, i, local_pos)
+		if score < best_score:
+			best_score = score
+			best = i
+	return best
+
+
+func _topology_visual_hit_nodes(role_key: String, unit_bp: Dictionary, source_nodes: Array, source_edges: Array) -> Array:
+	var enriched_nodes: Array = []
+	enriched_nodes.resize(source_nodes.size())
+	for i in range(source_nodes.size()):
+		if source_nodes[i] is Dictionary:
+			enriched_nodes[i] = _editor_fast_enriched_board_node(role_key, unit_bp, source_nodes, source_edges, i)
+		else:
+			enriched_nodes[i] = source_nodes[i]
+	return _board_nodes_with_art_visual_positions(role_key, unit_bp, enriched_nodes, source_edges)
+
+
+func _topology_node_visible_hit_polygon(role_key: String, unit_bp: Dictionary, source_nodes: Array, source_edges: Array, node_index: int) -> PackedVector2Array:
+	var visual_nodes := _topology_visual_hit_nodes(role_key, unit_bp, source_nodes, source_edges)
+	return _topology_node_visible_hit_polygon_from_visual_nodes(visual_nodes, source_edges, node_index)
+
+
+func _topology_node_visible_hit_polygon_from_visual_nodes(visual_nodes: Array, source_edges: Array, node_index: int) -> PackedVector2Array:
+	if node_index < 0 or node_index >= visual_nodes.size() or not (visual_nodes[node_index] is Dictionary):
+		return PackedVector2Array()
+	var node: Dictionary = visual_nodes[node_index]
+	if not _topology_node_is_component(node):
+		return PackedVector2Array()
+	var center := _topology_position_to_board_local(_topology_node_position(node))
+	var axis := _topology_visual_hit_node_axis(node_index, visual_nodes, source_edges)
+	var radius := _topology_visual_hit_node_radius(node)
+	var visual_length := _topology_visual_hit_node_length_px(node, radius)
+	return AssemblyBoardRenderer.component_polygon(center, node, axis, radius, visual_length, true)
+
+
+func _topology_visual_hit_node_axis(node_index: int, nodes: Array, edges: Array) -> Vector2:
+	if node_index < 0 or node_index >= nodes.size() or not (nodes[node_index] is Dictionary):
+		return Vector2.RIGHT
+	var node: Dictionary = nodes[node_index]
+	if node.has("axis"):
+		var stored_axis = node.get("axis")
+		if stored_axis is Vector2 and Vector2(stored_axis).length() > 0.01:
+			return Vector2(stored_axis).normalized()
+	var slot_key := _topology_node_slot(node)
+	var material_class := String(node.get("material_class", "")).to_lower()
+	if slot_key == "muscle" and (bool(node.get("is_torso", false)) or material_class == "torso"):
+		return Vector2.RIGHT
+	var center := _topology_node_position(node)
+	var neighbors := _topology_visual_hit_neighbors(node_index, nodes, edges)
+	if neighbors.size() >= 2:
+		var first := _topology_node_position(nodes[int(neighbors[0])])
+		var second := _topology_node_position(nodes[int(neighbors[1])])
+		var paired_axis := second - first
+		if paired_axis.length() > 0.01:
+			return paired_axis.normalized()
+	if neighbors.size() == 1:
+		var neighbor_pos := _topology_node_position(nodes[int(neighbors[0])])
+		var outward := center - neighbor_pos
+		if outward.length() > 0.01:
+			return outward.normalized()
+	var terminal_like := slot_key == "muscle" and (bool(node.get("terminal_weapon", false)) or material_class in ["weapon", "gun", "missile_launcher", "web_gun", "racket"] or int(node.get("connection_ends", 2)) <= 1)
+	if slot_key == "limb_muscle" or terminal_like:
+		return Vector2.RIGHT
+	return (center - Vector2(0.5, 0.5)).normalized() if center.distance_to(Vector2(0.5, 0.5)) > 0.01 else Vector2.RIGHT
+
+
+func _topology_visual_hit_neighbors(node_index: int, nodes: Array, edges: Array) -> Array:
+	var neighbors: Array = []
+	for edge in edges:
+		var a := _topology_edge_node_a(edge)
+		var b := _topology_edge_node_b(edge)
+		if a == node_index and b >= 0 and b < nodes.size():
+			neighbors.append(b)
+		elif b == node_index and a >= 0 and a < nodes.size():
+			neighbors.append(a)
+	return neighbors
+
+
+func _topology_visual_hit_node_physical_length(node: Dictionary) -> float:
+	if node.has("component_length"):
+		return maxf(0.04, float(node.get("component_length", 0.04)))
+	return maxf(
+		0.04,
+		float(node.get("joint_length", 0.08))
+		+ float(node.get("muscle_length", 0.24))
+		+ float(node.get("terminal_length", 0.0))
+	)
+
+
+func _topology_visual_hit_node_radius(node: Dictionary) -> float:
+	var length := _topology_visual_hit_node_physical_length(node)
+	var radius := maxf(0.0, float(node.get("component_radius", 0.04)))
+	var mass := maxf(0.0, float(node.get("component_mass", 0.0)))
+	var size_class := String(node.get("size_class", "")).to_lower()
+	var class_bonus := 0.0
+	match size_class:
+		"nano":
+			class_bonus = -7.0
+		"micro", "xs":
+			class_bonus = -4.0
+		"small", "s":
+			class_bonus = 1.0
+		"heavy", "large", "l":
+			class_bonus = 16.0
+		"monster", "xl":
+			class_bonus = 30.0
+		"kaiju", "colossus", "leviathan":
+			class_bonus = 44.0
+	var visual_radius := clampf(7.0 + length * 46.0 + radius * 58.0 + sqrt(mass) * 2.4 + class_bonus, 8.0, 112.0)
+	var base_radius := visual_radius
+	if String(node.get("slot", "")) == "joint":
+		base_radius = clampf(visual_radius * 0.22, 3.0, 14.0)
+	elif String(node.get("slot", "")) == "limb_muscle":
+		base_radius = clampf(visual_radius * 0.42, 4.0, 44.0)
+	return clampf(base_radius * clampf(editor_board_zoom, EDITOR_BOARD_ZOOM_MIN, EDITOR_BOARD_ZOOM_MAX), 2.6, 320.0)
+
+
+func _topology_visual_hit_node_length_px(node: Dictionary, fallback_radius: float) -> float:
+	var units := _topology_visual_hit_node_physical_length(node)
+	var length_px := units / maxf(0.001, TOPOLOGY_BOARD_PHYSICAL_UNITS) * _topology_board_uniform_scale()
+	var zoom := clampf(editor_board_zoom, EDITOR_BOARD_ZOOM_MIN, EDITOR_BOARD_ZOOM_MAX)
+	if String(node.get("slot", "")) == "limb_muscle":
+		return clampf(maxf(18.0 * zoom, length_px), 7.0, 260.0 * zoom)
+	var size_class := String(node.get("size_class", "")).to_lower()
+	var class_mult := 1.0
+	match size_class:
+		"nano", "micro", "xs":
+			class_mult = 0.74
+		"small", "s":
+			class_mult = 0.88
+		"large", "heavy", "l":
+			class_mult = 1.18
+		"monster", "xl", "kaiju", "colossus", "leviathan":
+			class_mult = 1.42
+	return clampf(maxf(fallback_radius * 1.45, length_px * class_mult), 7.0, 260.0 * zoom)
+
+
+func _topology_node_visible_hit_score(role_key: String, unit_bp: Dictionary, nodes: Array, edges: Array, visual_nodes: Array, node_index: int, local_pos: Vector2) -> float:
+	var polygon := _topology_node_visible_hit_polygon_from_visual_nodes(visual_nodes, edges, node_index)
+	if polygon.size() < 3:
+		return INF
+	var node: Dictionary = visual_nodes[node_index] if node_index >= 0 and node_index < visual_nodes.size() and visual_nodes[node_index] is Dictionary else nodes[node_index]
+	var point := _topology_position_to_board_local(_topology_node_position(node))
+	var center_distance := local_pos.distance_to(point)
+	if Geometry2D.is_point_in_polygon(local_pos, polygon):
+		return center_distance
+	var edge_distance := _point_distance_to_polygon_edges(local_pos, polygon)
+	var edge_padding := maxf(6.0, 8.0 * clampf(editor_board_zoom, EDITOR_BOARD_ZOOM_MIN, EDITOR_BOARD_ZOOM_MAX))
+	if edge_distance <= edge_padding:
+		return center_distance + edge_distance * 0.05
+	var family := ""
+	if _topology_node_is_component(node):
+		family = AssemblyBoardRenderer.terminal_shape_family(node)
+	if family in ["scythe", "shield", "drill", "gauntlet"]:
+		var hull := Geometry2D.convex_hull(polygon)
+		if hull.size() >= 3 and Geometry2D.is_point_in_polygon(local_pos, hull):
+			return center_distance + edge_padding
+	return INF
+
+
+func _point_distance_to_polygon_edges(point: Vector2, polygon: PackedVector2Array) -> float:
+	var best := INF
+	for i in range(polygon.size()):
+		var a := Vector2(polygon[i])
+		var b := Vector2(polygon[(i + 1) % polygon.size()])
+		best = minf(best, _point_segment_distance(point, a, b))
+	return best
 
 
 func _topology_node_pick_radius(role_key: String, unit_bp: Dictionary, node: Dictionary) -> float:
@@ -43711,12 +43894,12 @@ func _default_visual_handedness_for_part(part: Dictionary) -> String:
 
 
 func _topology_node_visual_handedness(node: Dictionary) -> String:
-	var explicit_handedness := String(node.get("visual_handedness", "")).strip_edges()
-	if explicit_handedness != "":
-		return _normalize_mount_side(explicit_handedness)
 	var explicit_mount_side := String(node.get("visual_mount_side", "")).strip_edges()
 	if explicit_mount_side != "":
 		return _normalize_mount_side(explicit_mount_side)
+	var explicit_handedness := String(node.get("visual_handedness", "")).strip_edges()
+	if explicit_handedness != "":
+		return _normalize_mount_side(explicit_handedness)
 	return _normalize_mount_side(node.get("visual_mount_side", node.get("default_mount_side", node.get("default_visual_handedness", "right"))))
 
 
