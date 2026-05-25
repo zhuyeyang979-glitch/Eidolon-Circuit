@@ -49,6 +49,7 @@
     "mobius_no_straight_lane_guide_render_probe",
     "controlled_unit_never_hidden_mobius_probe",
     "controlled_unit_fast_boost_never_hidden_mobius_probe",
+    "controlled_unit_boost_sway_clamp_probe",
     "controlled_unit_role_switch_visibility_probe",
     "mobius_projection_guard_probe",
     "mobius_projection_guard_duration_probe",

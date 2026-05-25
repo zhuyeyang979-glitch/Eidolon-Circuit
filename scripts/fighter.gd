@@ -94,6 +94,8 @@ var boost_drive_timer := 0.0
 var boost_drive_duration := 0.0
 var boost_drive_velocity_remaining := Vector2.ZERO
 var boost_drive_direction := Vector2.RIGHT
+var boost_projection_guard_timer := 0.0
+var boost_projection_guard_direction := Vector2.RIGHT
 var boost_cooldown_timer := 0.0
 var brake_reverse_ready_dir := Vector2.ZERO
 var brake_reverse_ready_timer := 0.0
@@ -225,6 +227,10 @@ func deploy(spawn_ring_pos: float, spawn_lane: float) -> void:
 	boost_drive_duration = 0.0
 	boost_drive_velocity_remaining = Vector2.ZERO
 	boost_drive_direction = Vector2.RIGHT
+	boost_projection_guard_timer = 0.0
+	boost_projection_guard_direction = Vector2.RIGHT
+	set_meta("boost_projection_guard_timer", 0.0)
+	set_meta("boost_projection_guard_direction", boost_projection_guard_direction)
 	boost_cooldown_timer = 0.0
 	brake_reverse_ready_dir = Vector2.ZERO
 	brake_reverse_ready_timer = 0.0
@@ -305,6 +311,8 @@ func tick(delta: float, ring_length: float) -> void:
 	smoke_timer = maxf(0.0, smoke_timer - delta)
 	boost_flash_timer = maxf(0.0, boost_flash_timer - delta)
 	thruster_visual_timer = maxf(0.0, thruster_visual_timer - delta)
+	boost_projection_guard_timer = maxf(0.0, boost_projection_guard_timer - delta)
+	set_meta("boost_projection_guard_timer", boost_projection_guard_timer)
 	boost_cooldown_timer = maxf(0.0, boost_cooldown_timer - delta)
 	brake_reverse_ready_timer = maxf(0.0, brake_reverse_ready_timer - delta)
 	if brake_reverse_ready_timer <= 0.0:
@@ -4053,6 +4061,11 @@ func boost(direction: Vector2, ring_length: float) -> bool:
 	boost_drive_duration = boost_duration
 	boost_drive_timer = boost_duration
 	boost_drive_velocity_remaining = boost_dir * max_delta_v
+	boost_projection_guard_timer = maxf(boost_projection_guard_timer, boost_duration + 0.18)
+	boost_projection_guard_direction = boost_dir
+	set_meta("boost_projection_guard_timer", boost_projection_guard_timer)
+	set_meta("boost_projection_guard_direction", boost_projection_guard_direction)
+	set_meta("boost_projection_guard_started_msec", Time.get_ticks_msec())
 	var flash_duration := 0.34 if recovery_return else 0.18
 	if thruster_family == "overburn_red":
 		flash_duration += 0.12
@@ -4462,6 +4475,14 @@ func set_mobius_screen_projection(projection: Dictionary, is_visible_in_view: bo
 	visual_hitbox_scale = GameplayTransform.hitbox_scale_for_visual_scale(mobius_visual_scale)
 	mobius_twist_angle = float(projection.get("twist_angle", mobius_twist_angle))
 	position = screen_position if _is_teamedit_runtime_unit() else screen_position + body_sway_offset * mobius_visual_scale
+	if bool(projection.get("clamp_final_position", false)):
+		var readable_min = projection.get("readable_min", Vector2.ZERO)
+		var readable_max = projection.get("readable_max", Vector2.ZERO)
+		if readable_min is Vector2 and readable_max is Vector2:
+			position = Vector2(
+				clampf(position.x, (readable_min as Vector2).x, (readable_max as Vector2).x),
+				clampf(position.y, (readable_min as Vector2).y, (readable_max as Vector2).y)
+			)
 	scale = Vector2.ONE * mobius_visual_scale
 	set_meta("mobius_visual_scale_target", mobius_visual_scale_target)
 	set_meta("mobius_visual_scale_applied", mobius_visual_scale)

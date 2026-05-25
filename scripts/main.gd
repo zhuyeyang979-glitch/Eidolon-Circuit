@@ -28723,6 +28723,13 @@ func _input_vector_for(prefix: String) -> Vector2:
 	return input_vector.normalized() if input_vector.length() > 1.0 else input_vector
 
 
+func _refresh_boost_visibility_after_start(unit) -> void:
+	if not _is_live_unit(unit):
+		return
+	_guard_camera_to_unit_projection(unit, _unit_combat_coord(unit))
+	_refresh_unit_screen_positions()
+
+
 func _handle_direction_taps(player_id: int, prefix: String) -> void:
 	var tap_window := 0.28
 	var now := Time.get_ticks_msec() * 0.001
@@ -28750,6 +28757,7 @@ func _handle_direction_taps(player_id: int, prefix: String) -> void:
 				var boost_vectors := _battle_movement_vector_for_unit(hero, boost_dir)
 				boost_dir = boost_vectors.get("actual", Vector2.ZERO)
 				if _is_live_unit(hero) and hero.boost(boost_dir, RING_LENGTH):
+					_refresh_boost_visibility_after_start(hero)
 					_show_battle_message("P%d BOOST %s" % [player_id, String(name).to_upper()], 0.35)
 			last_direction_taps[player_id][name] = now
 
@@ -28774,6 +28782,7 @@ func _handle_face_chord_boost(player_id: int, prefix: String, input_vector: Vect
 		var boost_vectors := _battle_movement_vector_for_unit(hero, boost_dir)
 		boost_dir = boost_vectors.get("actual", Vector2.ZERO)
 	if hero.boost(boost_dir, RING_LENGTH):
+		_refresh_boost_visibility_after_start(hero)
 		_show_battle_message("P%d BOOST CHORD" % player_id, 0.35)
 
 
@@ -34757,6 +34766,14 @@ func _projection_position_is_valid(projection: Dictionary) -> bool:
 	return _screen_position_is_finite(_projection_screen_position(projection))
 
 
+func _projection_with_readable_clamp(projection: Dictionary) -> Dictionary:
+	var result := projection.duplicate(true)
+	result["clamp_final_position"] = true
+	result["readable_min"] = Vector2(ARENA_LEFT - 96.0, ARENA_TOP - 96.0)
+	result["readable_max"] = Vector2(ARENA_RIGHT + 96.0, ARENA_BOTTOM + 96.0)
+	return result
+
+
 func _unit_is_camera_focus(unit) -> bool:
 	if not _is_live_unit(unit):
 		return false
@@ -34772,9 +34789,34 @@ func _unit_is_camera_focus(unit) -> bool:
 	return unit == _first_live_unit_any_role(owner)
 
 
+func _unit_has_boost_projection_guard(unit) -> bool:
+	if not _is_live_unit(unit):
+		return false
+	return float(unit.get_meta("boost_projection_guard_timer", 0.0)) > 0.0
+
+
+func _unit_boost_guard_counts_as_critical(unit) -> bool:
+	if not _unit_has_boost_projection_guard(unit):
+		return false
+	if bool(unit.get_meta("player_controlled", false)) or bool(unit.get_meta("camera_focus", false)):
+		return true
+	if _unit_is_camera_focus(unit):
+		return true
+	var owner := clampi(int(unit.owner_id), 1, 2)
+	if battle_mode == MODE_PVP:
+		return owner in [1, 2]
+	if battle_mode in [MODE_TRAINING, MODE_AI] and ai_battle_seat in [1, 2]:
+		return owner == ai_battle_seat
+	if battle_mode in [MODE_TRAINING, MODE_AI, MODE_PVP] and ai_battle_seat == 3:
+		return _unit_is_camera_focus(unit)
+	return false
+
+
 func _unit_is_player_controlled_or_camera_critical(unit) -> bool:
 	if not _is_live_unit(unit):
 		return false
+	if _unit_boost_guard_counts_as_critical(unit):
+		return true
 	if bool(unit.get_meta("player_controlled", false)) or bool(unit.get_meta("camera_focus", false)):
 		return true
 	if _unit_is_camera_focus(unit):
@@ -34872,6 +34914,8 @@ func _project_unit_for_screen(unit) -> Dictionary:
 	projection["guarded"] = bool(projection.get("guarded", false))
 	var critical := _unit_is_player_controlled_or_camera_critical(unit)
 	projection["critical"] = critical
+	if critical:
+		projection = _projection_with_readable_clamp(projection)
 	if critical and visible_in_view and _projection_position_is_valid(projection):
 		return _apply_projection_hysteresis(unit, projection, MOBIUS_PROJECTION_CRITICAL_GRACE_FRAMES)
 	if critical and (not visible_in_view or not _projection_position_is_valid(projection)):
@@ -34882,6 +34926,7 @@ func _project_unit_for_screen(unit) -> Dictionary:
 		projection["projection_source"] = "%s_guard_resync" % projection_source
 		projection["guarded"] = true
 		projection["critical"] = true
+		projection = _projection_with_readable_clamp(projection)
 		if not visible_in_view:
 			projection = _critical_projection_fallback(unit, projection, projection_source)
 		else:

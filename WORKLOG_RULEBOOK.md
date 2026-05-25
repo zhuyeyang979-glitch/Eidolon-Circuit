@@ -12,6 +12,22 @@ Primary implementation file: `scripts/main.gd`
 
 Godot version in workspace: `tools/godot-4.6.2/Godot_v4.6.2-stable_win64_console.exe`
 
+## 2026-05-25 Boost Mobius Projection Guard
+
+Rules:
+- A player-controlled or camera-focus unit that successfully starts Boost is projection-critical for the Boost duration plus a short grace window. It must not disappear because one Mobius projection frame reports out-of-view.
+- The guard is visual/readability only. It does not alter `mobius_s`, `mobius_v`, movement velocity, collision, aiming, projectile paths, heat, cooldown, or damage.
+- Critical/guarded units may clamp their final rendered position after body sway so a Boost impulse cannot push the visible sprite outside the readable screen.
+
+Implementation notes:
+- `Fighter.boost()` now starts `boost_projection_guard_timer`, records direction/start diagnostics, and ticks that guard down with the unit.
+- Main projection treats an active Boost guard as critical for the controlled/camera-owned side, resyncs the camera before fallback, and passes readable clamp bounds to the Fighter projection consumer.
+- The former fast-boost probe now calls real `unit.boost()` instead of only assigning velocity, closing the blind spot that let Boost-specific disappearance slip through.
+
+Verification:
+- New/updated Boost probes passed: `controlled_unit_fast_boost_never_hidden_mobius_probe` and `controlled_unit_boost_sway_clamp_probe`.
+- Regression passed: `controlled_unit_never_hidden_mobius_probe`, `mobius_projection_guard_duration_probe`, `unit_visibility_no_flicker_probe`, `battle_camera_follow_mobius_unwrapped_probe`, `battle_real_training_movement_screen_direction_probe`, `mobius_bullet_readability_probe`, `projectile_path_not_bent_by_mobius_probe`, `combat_probe`, `ui_layout_probe`, `text_overflow_probe`, and `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120`.
+
 ## 2026-05-25 Mobius Stardust Render Visibility And Projection Guard
 
 Rules:
