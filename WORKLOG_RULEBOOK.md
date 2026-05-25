@@ -46,6 +46,22 @@ Verification:
 - New headed probes cover node contract, render visibility, straight-guide absence, controlled unit persistence, projection guard, and non-focus flicker grace.
 - Existing Mobius movement, bullet readability, projectile-path, combat, UI layout, and text overflow probes remain the regression baseline.
 
+## 2026-05-25 Orthogonal Scythe Side Mount
+
+Rules:
+- Scythes are no longer defined as self-mirrored blades. They are `orientation_category="orthogonal_side_mount"` weapons: the previous limb is the handle and the blade sits 90 degrees off that parent axis.
+- Player-facing `左侧挂刃 / 右侧挂刃` chooses `visual_mount_side = "left" | "right"` around the parent limb normal. It does not change sockets, damage, drive, collision centerline, or module legality.
+- `visual_handedness` remains a legacy alias only; new UI, runtime segment data, and renderer contracts should prefer `visual_mount_side`, `orientation_basis="parent_normal"`, and `mount_parent_axis_local`.
+
+Implementation notes:
+- Scythe-like terminal weapons are inferred as orthogonal side mounts from `weapon_family="scythe"` or SCYTHE/CRESCENT/HOOK names/shapes, and the selected catalog entries expose the reusable category fields for future hook/crescent weapons.
+- `AssemblyBoardRenderer` draws scythes using `mount_parent_axis_local` as the handle direction, then mirrors the blade across that parent-axis normal. Dragging or rotating the terminal node itself must not redefine the blade side.
+- Board-enriched nodes, runtime topology segments, saved-unit blueprints, and legacy `visual_handedness` payloads all normalize to `visual_mount_side`.
+
+Verification:
+- Added/current probes: `orthogonal_side_mount_category_probe`, `scythe_parent_normal_mount_polygon_probe`, `scythe_dragged_terminal_uses_parent_axis_probe`, `scythe_mount_side_board_runtime_probe`, `scythe_mount_side_save_load_probe`, and `scythe_module_binding_mount_side_probe`.
+- Regression baseline remains melee art identity, runtime contact visual identity, no-projectile melee gate, TeamEdit, UI layout, text overflow, and Godot check-only.
+
 ## 2026-05-25 Subtle Curved Mobius Stardust Band
 
 Rules:

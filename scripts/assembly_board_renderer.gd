@@ -150,6 +150,16 @@ static func part_to_component_node(slot_key: String, part: Dictionary) -> Dictio
 		node["terminal_weapon"] = true
 		node["connection_ends"] = 1
 		node["shape"] = _terminal_shape_name(node)
+		if _terminal_supports_mount_side(node):
+			node["asymmetric_terminal"] = true
+			node["orientation_category"] = String(part.get("orientation_category", "orthogonal_side_mount"))
+			node["orientation_basis"] = String(part.get("orientation_basis", "parent_normal"))
+			node["mount_side_choices"] = Array(part.get("mount_side_choices", part.get("orientation_choices", ["left", "right"]))).duplicate(true)
+			node["orientation_choices"] = Array(node.get("mount_side_choices", ["left", "right"])).duplicate(true)
+			node["default_mount_side"] = normalized_mount_side(part)
+			node["default_visual_handedness"] = String(node.get("default_mount_side", "right"))
+			node["visual_mount_side"] = normalized_mount_side(node)
+			node["visual_handedness"] = String(node.get("visual_mount_side", "right"))
 		return node
 	node["slot"] = "limb_muscle"
 	node["connection_ends"] = 2
@@ -185,6 +195,16 @@ static func segment_to_component_node(segment: Dictionary) -> Dictionary:
 		"source_shape": String(segment.get("source_shape", segment.get("shape", ""))),
 		"shape": String(segment.get("shape", "")),
 		"weapon_family": String(segment.get("weapon_family", "")),
+		"orientation_category": String(segment.get("orientation_category", "")),
+		"orientation_basis": String(segment.get("orientation_basis", "")),
+		"visual_mount_side": String(segment.get("visual_mount_side", "")),
+		"default_mount_side": String(segment.get("default_mount_side", "")),
+		"mount_side_choices": Array(segment.get("mount_side_choices", [])),
+		"mount_parent_axis_local": segment.get("mount_parent_axis_local", Vector2.ZERO),
+		"visual_handedness": String(segment.get("visual_handedness", "")),
+		"default_visual_handedness": String(segment.get("default_visual_handedness", "")),
+		"asymmetric_terminal": bool(segment.get("asymmetric_terminal", false)),
+		"orientation_choices": Array(segment.get("orientation_choices", [])),
 		"blunt_shield": bool(segment.get("blunt_shield", false)),
 		"blunt_gauntlet": bool(segment.get("blunt_gauntlet", false)),
 		"blunt_hammer": bool(segment.get("blunt_hammer", false)),
@@ -202,6 +222,22 @@ static func segment_to_component_node(segment: Dictionary) -> Dictionary:
 			node["connection_ends"] = 1
 			node["terminal_weapon_kind"] = String(segment.get("terminal_weapon_kind", ""))
 			node["shape"] = _terminal_shape_name(node)
+			if _terminal_supports_mount_side(node):
+				node["asymmetric_terminal"] = true
+				if String(node.get("orientation_category", "")) == "":
+					node["orientation_category"] = "orthogonal_side_mount"
+				if String(node.get("orientation_basis", "")) == "":
+					node["orientation_basis"] = "parent_normal"
+				if Array(node.get("mount_side_choices", [])).is_empty():
+					node["mount_side_choices"] = Array(node.get("orientation_choices", ["left", "right"]))
+				if Array(node.get("orientation_choices", [])).is_empty():
+					node["orientation_choices"] = ["left", "right"]
+				if String(node.get("default_mount_side", "")) == "":
+					node["default_mount_side"] = String(node.get("default_visual_handedness", "right"))
+				if String(node.get("default_visual_handedness", "")) == "":
+					node["default_visual_handedness"] = String(node.get("default_mount_side", "right"))
+				node["visual_mount_side"] = normalized_mount_side(node)
+				node["visual_handedness"] = String(node.get("visual_mount_side", "right"))
 		"barrier_tile":
 			node["slot"] = "barrier_tile"
 			node["is_barrier_tile"] = true
@@ -673,7 +709,9 @@ static func terminal_polygon(center: Vector2, node: Dictionary, axis: Vector2, p
 	if family == "gun":
 		return smooth_taper_polygon(root, tip, forward, right, radius * 0.82, radius * 0.36, 16)
 	if family == "scythe":
-		return _terminal_scythe_polygon(center, forward, right, length, radius)
+		var mount_forward := terminal_visual_forward(node, forward)
+		var mount_right := Vector2(-mount_forward.y, mount_forward.x) * terminal_mount_side_sign(node)
+		return _terminal_scythe_polygon(center, mount_forward, mount_right, length, radius)
 	if family == "saber":
 		return _terminal_saber_polygon(center, forward, right, length, radius)
 	if family == "shield":
@@ -704,6 +742,48 @@ static func terminal_polygon(center: Vector2, node: Dictionary, axis: Vector2, p
 	if family == "generic_pierce" or damage_type == "pierce":
 		return smooth_taper_polygon(root, tip, forward, right, radius * 0.55, radius * 0.08, 16, 0.9)
 	return capsule_polygon(center, forward, length, radius * 1.7, 6)
+
+
+static func normalized_visual_handedness(node: Dictionary) -> String:
+	var value := String(node.get("visual_handedness", node.get("default_visual_handedness", node.get("visual_mount_side", node.get("default_mount_side", "right"))))).to_lower()
+	return "left" if value == "left" else "right"
+
+
+static func normalized_mount_side(node: Dictionary) -> String:
+	var value := String(node.get("visual_mount_side", node.get("default_mount_side", node.get("visual_handedness", node.get("default_visual_handedness", "right"))))).to_lower()
+	return "left" if value == "left" else "right"
+
+
+static func terminal_handedness_sign(node: Dictionary) -> float:
+	return -1.0 if normalized_visual_handedness(node) == "left" else 1.0
+
+
+static func terminal_mount_side_sign(node: Dictionary) -> float:
+	return -1.0 if normalized_mount_side(node) == "left" else 1.0
+
+
+static func terminal_visual_forward(node: Dictionary, fallback_axis: Vector2) -> Vector2:
+	var fallback := _safe_axis(fallback_axis)
+	if not _terminal_uses_orthogonal_side_mount(node):
+		return fallback
+	var raw_axis = node.get("mount_parent_axis_local", Vector2.ZERO)
+	if raw_axis is Vector2 and Vector2(raw_axis).length() > 0.0001:
+		return Vector2(raw_axis).normalized()
+	return fallback
+
+
+static func _terminal_supports_mount_side(node: Dictionary) -> bool:
+	if String(node.get("orientation_category", "")).to_lower() == "orthogonal_side_mount":
+		return true
+	return terminal_shape_family(node) == "scythe"
+
+
+static func _terminal_supports_visual_handedness(node: Dictionary) -> bool:
+	return _terminal_supports_mount_side(node)
+
+
+static func _terminal_uses_orthogonal_side_mount(node: Dictionary) -> bool:
+	return _terminal_supports_mount_side(node) and String(node.get("orientation_basis", "parent_normal")).to_lower() == "parent_normal"
 
 
 static func terminal_shape_family(node: Dictionary) -> String:
@@ -1402,12 +1482,13 @@ static func _draw_limb_family_details(canvas: CanvasItem, center: Vector2, forwa
 
 static func _draw_terminal(canvas: CanvasItem, center: Vector2, axis: Vector2, color: Color, radius: float, pulse: float, visual_length_px: float, node: Dictionary) -> void:
 	var forward := _safe_axis(axis)
+	var visual_forward := terminal_visual_forward(node, forward)
 	var polygon := terminal_polygon(center, node, forward, radius, visual_length_px)
 	canvas.draw_colored_polygon(_drawable_polygon(polygon), color.darkened(0.16))
 	_draw_outline(canvas, polygon, color.lerp(Color.WHITE, 0.34), 1.6)
 	var length := visual_length_px if visual_length_px > 0.0 else radius * 2.0
-	_draw_terminal_family_details(canvas, center, forward, color, radius, length, node)
-	_draw_terminal_root_handle(canvas, center, forward, color, radius, pulse, length)
+	_draw_terminal_family_details(canvas, center, visual_forward, color, radius, length, node)
+	_draw_terminal_root_handle(canvas, center, visual_forward, color, radius, pulse, length)
 	if bool(node.get("projectile", false)) or String(node.get("material_class", "")).to_lower() in ["gun", "missile_launcher", "web_gun"]:
 		var muzzle := center + forward * length * 0.5
 		canvas.draw_circle(muzzle, maxf(2.6, radius * 0.18), Color.WHITE.lerp(color, 0.35))
@@ -1430,17 +1511,19 @@ static func _draw_terminal_family_details(canvas: CanvasItem, center: Vector2, f
 	var dark := color.darkened(0.48)
 	match terminal_shape_family(node):
 		"scythe":
-			_draw_local_polyline(canvas, center, forward, right, [
+			var scythe_forward := terminal_visual_forward(node, forward)
+			var scythe_right := Vector2(-scythe_forward.y, scythe_forward.x) * terminal_mount_side_sign(node)
+			_draw_local_polyline(canvas, center, scythe_forward, scythe_right, [
 				Vector2(-length * 0.46, 0.0),
 				Vector2(length * 0.16, 0.0),
 			], dark, maxf(1.2, radius * 0.10), false)
-			_draw_local_polyline(canvas, center, forward, right, [
+			_draw_local_polyline(canvas, center, scythe_forward, scythe_right, [
 				Vector2(length * 0.16, radius * 0.12),
 				Vector2(length * 0.19, radius * 0.66),
 				Vector2(length * 0.28, radius * 1.04),
 				Vector2(length * 0.39, radius * 1.04),
 			], bright, maxf(1.2, radius * 0.10), false)
-			_draw_local_polyline(canvas, center, forward, right, [
+			_draw_local_polyline(canvas, center, scythe_forward, scythe_right, [
 				Vector2(length * 0.22, radius * 0.24),
 				Vector2(length * 0.28, radius * 0.62),
 				Vector2(length * 0.35, radius * 0.78),

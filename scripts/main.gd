@@ -10790,6 +10790,7 @@ func _initialize_gpu_collision_pipeline() -> void:
 	if not gpu_collision_enabled:
 		push_warning("GPU collision unavailable: %s" % gpu_collision_status_note)
 
+var editor_pending_orientation_node_index := -1
 
 func _gpu_collision_available() -> bool:
 	if gpu_collision_pipeline == null:
@@ -14118,6 +14119,7 @@ func _pair_used_by_other(bindings: Array, pair: Array, slot_index: int) -> bool:
 
 
 func _binding_slot_for_current_unit() -> int:
+		_apply_visual_handedness_defaults_to_node(node, part, "muscle")
 	var player_id := _editor_player()
 	var role_key: String = ROLE_ORDER[editor_role_index]
 	var pos := _sortie_position(player_id, role_key, int(editor_unit_indices[role_key]))
@@ -20143,6 +20145,7 @@ func _apply_editor_board_pose_dynamic_fields(snapshot: Dictionary, role_key: Str
 			continue
 		var key := _topology_edge_key(a, b)
 		var edge_points := _topology_edge_socket_board_points(role_key, unit_bp, nodes, edges, a, b)
+			_topology_node_visual_handedness(node) if node.has("visual_mount_side") or node.has("visual_handedness") else "",
 		if edge_points.is_empty():
 			continue
 		var state: Dictionary = Dictionary(edge_states.get(key, {})).duplicate(false)
@@ -20192,6 +20195,7 @@ func _editor_fast_enriched_board_node(role_key: String, unit_bp: Dictionary, sou
 	if _component_is_torso(part):
 		node["torso_port_directions"] = _torso_port_directions(part)
 		node["occupied_ports"] = _torso_occupied_port_indices(role_key, unit_bp, source_nodes, source_edges, index)
+		str(editor_pending_orientation_node_index),
 		node["torso_detail_open"] = index == editor_open_torso_node_index
 		node["torso_hovered"] = false
 	node["edge_extent_units"] = _topology_node_edge_extent_units(role_key, node, unit_bp)
@@ -20507,8 +20511,15 @@ func _topology_node_limb_material_key(role_key: String, unit_bp: Dictionary, nod
 		return ""
 	var slot_key := _topology_node_slot(node)
 	if slot_key == "joint":
+	var saved_handedness := _topology_node_visual_handedness(node) if node.has("visual_mount_side") or node.has("visual_handedness") else ""
 		return ""
 	var part := _topology_node_part(role_key, node, unit_bp)
+	if saved_handedness != "":
+		node["visual_mount_side"] = saved_handedness
+		node["visual_handedness"] = saved_handedness
+	_apply_visual_handedness_defaults_to_node(node, part, slot_key)
+	if _topology_node_supports_visual_handedness(role_key, unit_bp, node):
+		node["mount_parent_axis_local"] = _topology_mount_parent_axis_for_node(role_key, unit_bp, source_nodes, source_edges, index)
 	if slot_key == "limb_muscle":
 		return _stiffness_segment_material_family_for_part(part, slot_key)
 	if slot_key == "muscle":
@@ -21394,7 +21405,8 @@ func _topology_display_component_node(role_key: String, node: Dictionary, unit_b
 	var part := _topology_node_part(role_key, node, unit_bp)
 	var effective_part := _part_with_effective_terminal_geometry(part, slot_key)
 	var component_node := AssemblyBoardRenderer.part_to_component_node(slot_key, effective_part)
-	for key in ["joint_ports", "connection_ends", "is_torso", "terminal_weapon", "material_class", "shape", "size_class"]:
+	_apply_visual_handedness_defaults_to_node(component_node, part, slot_key)
+	for key in ["joint_ports", "connection_ends", "is_torso", "terminal_weapon", "material_class", "shape", "size_class", "orientation_category", "orientation_basis", "visual_mount_side", "default_mount_side", "mount_side_choices", "mount_parent_axis_local", "visual_handedness", "default_visual_handedness", "asymmetric_terminal", "orientation_choices"]:
 		if node.has(key):
 			component_node[key] = node[key]
 	return component_node
@@ -21858,6 +21870,8 @@ func _record_editor_undo_state(label: String = "") -> void:
 		"label": label,
 	})
 	while editor_undo_stack.size() > 32:
+		if _topology_node_supports_visual_handedness(role_key, unit_bp, node):
+			node["mount_parent_axis_local"] = _topology_mount_parent_axis_for_node(role_key, unit_bp, source_nodes, edges, i)
 		editor_undo_stack.remove_at(0)
 
 
@@ -22050,6 +22064,8 @@ func _restore_editor_undo_state() -> void:
 	editor_dragging_whole_unit = false
 	editor_drag_whole_original_positions = []
 	editor_group_drag_original_positions = []
+	_apply_visual_handedness_defaults_to_node(component_node, part, slot_key)
+	_apply_visual_handedness_defaults_to_node(node_base, part, slot_key)
 	editor_selecting_topology_box = false
 	ai_team_manual_lock[player_id] = true
 	editor_board_hint_label.text = "已退回上一步：%s。" % String(state.get("label", "画布操作")) if _ui_is_zh() else "Undid previous step: %s." % String(state.get("label", "canvas edit"))
@@ -22166,6 +22182,135 @@ func _drop_catalog_part_on_board(slot_key: String, part_index: int, local_positi
 	_mark_editor_board_model_dirty("drop.generic_part")
 	if hot_path_profiler != null:
 		hot_path_profiler.scope_end("drop.install_part")
+
+func _orientation_choice_is_active(unit_bp: Dictionary) -> bool:
+	if editor_pending_orientation_node_index < 0 or not unit_bp.has("custom_topology"):
+		return false
+	var role_key: String = ROLE_ORDER[editor_role_index]
+	var topology: Dictionary = unit_bp.get("custom_topology", {})
+	var nodes: Array = Array(topology.get("nodes", []))
+	if editor_pending_orientation_node_index >= nodes.size() or not (nodes[editor_pending_orientation_node_index] is Dictionary):
+		editor_pending_orientation_node_index = -1
+		return false
+	return _topology_node_supports_visual_handedness(role_key, unit_bp, Dictionary(nodes[editor_pending_orientation_node_index]))
+
+
+func _selected_node_supports_visual_handedness(unit_bp: Dictionary) -> bool:
+	if not unit_bp.has("custom_topology"):
+		return false
+	var role_key: String = ROLE_ORDER[editor_role_index]
+	var topology: Dictionary = unit_bp.get("custom_topology", {})
+	var nodes: Array = Array(topology.get("nodes", []))
+	if editor_topology_node_index < 0 or editor_topology_node_index >= nodes.size() or not (nodes[editor_topology_node_index] is Dictionary):
+		return false
+	return _topology_node_supports_visual_handedness(role_key, unit_bp, Dictionary(nodes[editor_topology_node_index]))
+
+
+func _start_visual_handedness_choice_if_needed(unit_bp: Dictionary, node_index: int, node: Dictionary) -> bool:
+	var role_key: String = ROLE_ORDER[editor_role_index]
+	if not _topology_node_supports_visual_handedness(role_key, unit_bp, node):
+		if editor_pending_orientation_node_index == node_index:
+			editor_pending_orientation_node_index = -1
+		return false
+	editor_pending_orientation_node_index = node_index
+	editor_topology_node_index = node_index
+	if editor_board_hint_label != null:
+		_set_control_text_if_changed(editor_board_hint_label, "选择侧挂刃朝向：左侧挂刃 / 右侧挂刃。以上一段肢体为柄，只改变法线侧向，不改变接口。" if _ui_is_zh() else "Choose side-mounted blade: LEFT / RIGHT. The previous limb is the handle; only the normal-side mount changes.")
+	mark_editor_dirty(EDITOR_DIRTY_BOARD_UI | EDITOR_DIRTY_ACTION_BUTTONS, "node.visual_mount_side.choice")
+	_refresh_editor_orientation_buttons()
+	return true
+
+
+func _set_topology_node_visual_handedness(node_index: int, side: String, record_undo := true) -> bool:
+	var role_key: String = ROLE_ORDER[editor_role_index]
+	var unit_bp: Dictionary = _editor_current_blueprint()
+	if not unit_bp.has("custom_topology"):
+		return false
+	var topology: Dictionary = unit_bp.get("custom_topology", {})
+	var nodes: Array = Array(topology.get("nodes", [])).duplicate(true)
+	if node_index < 0 or node_index >= nodes.size() or not (nodes[node_index] is Dictionary):
+		return false
+	var node: Dictionary = Dictionary(nodes[node_index]).duplicate(true)
+	if not _topology_node_supports_visual_handedness(role_key, unit_bp, node):
+		if editor_board_hint_label != null:
+			_set_control_text_if_changed(editor_board_hint_label, "当前零件没有侧挂刃朝向。" if _ui_is_zh() else "Selected part has no side-mounted blade orientation.")
+		return false
+	var part := _topology_node_part(role_key, node, unit_bp)
+	var normalized := _normalize_mount_side(side)
+	if record_undo and _topology_node_visual_handedness(node) != normalized:
+		_record_editor_undo_state("调整侧挂刃朝向" if _ui_is_zh() else "change side-mounted blade")
+	_apply_visual_handedness_defaults_to_node(node, part, _topology_node_slot(node))
+	node["visual_mount_side"] = normalized
+	node["visual_handedness"] = normalized
+	node["asymmetric_terminal"] = true
+	node["orientation_category"] = String(node.get("orientation_category", "orthogonal_side_mount"))
+	node["orientation_basis"] = String(node.get("orientation_basis", "parent_normal"))
+	node["mount_side_choices"] = Array(node.get("mount_side_choices", node.get("orientation_choices", ["left", "right"])))
+	node["orientation_choices"] = Array(node.get("mount_side_choices", ["left", "right"]))
+	nodes[node_index] = node
+	topology["nodes"] = nodes
+	unit_bp["custom_topology"] = topology
+	if editor_last_added_topology_node_index == node_index:
+		editor_last_added_topology_node_snapshot = node.duplicate(false)
+	if editor_pending_orientation_node_index == node_index:
+		editor_pending_orientation_node_index = -1
+	editor_topology_node_index = node_index
+	var side_label := "左侧挂刃" if normalized == "left" else "右侧挂刃"
+	if editor_board_hint_label != null:
+		_set_control_text_if_changed(editor_board_hint_label, "已设置侧挂刃朝向：%s。" % side_label if _ui_is_zh() else "Side-mounted blade set: %s." % normalized.to_upper())
+	ai_team_manual_lock[_editor_player()] = true
+	_invalidate_editor_current_stats_cache()
+	_mark_editor_board_model_dirty("node.visual_mount_side", false)
+	mark_editor_dirty(EDITOR_DIRTY_ACTION_BUTTONS | EDITOR_DIRTY_BOARD_UI, "node.visual_mount_side")
+	_refresh_editor_orientation_buttons()
+	flush_editor_dirty(1400)
+	return true
+
+
+func _flip_selected_topology_node_visual_handedness() -> bool:
+	var unit_bp: Dictionary = _editor_current_blueprint()
+	if not _selected_node_supports_visual_handedness(unit_bp):
+		if editor_board_hint_label != null:
+			_set_control_text_if_changed(editor_board_hint_label, "请选择镰刀类正交侧挂武器节点。" if _ui_is_zh() else "Select an orthogonal side-mounted scythe-style weapon node.")
+		return false
+	var topology: Dictionary = unit_bp.get("custom_topology", {})
+	var nodes: Array = Array(topology.get("nodes", []))
+	var node: Dictionary = Dictionary(nodes[editor_topology_node_index])
+	var next_side := "right" if _topology_node_visual_handedness(node) == "left" else "left"
+	return _set_topology_node_visual_handedness(editor_topology_node_index, next_side, true)
+
+
+func _refresh_editor_orientation_buttons() -> void:
+	var unit_bp: Dictionary = _editor_current_blueprint()
+	var custom_board_enabled := _role_uses_body_board(ROLE_ORDER[editor_role_index]) and unit_bp.has("custom_topology")
+	var orientation_choice_active := custom_board_enabled and _orientation_choice_is_active(unit_bp)
+	var selected_handedness_active := custom_board_enabled and _selected_node_supports_visual_handedness(unit_bp)
+	for action_name in ["set_handedness_left", "set_handedness_right", "flip_handedness"]:
+		if not editor_action_buttons.has(action_name):
+			continue
+		var action_button: Button = editor_action_buttons[action_name]
+		var show_orientation_action := false
+		if action_name in ["set_handedness_left", "set_handedness_right"]:
+			show_orientation_action = orientation_choice_active
+		elif action_name == "flip_handedness":
+			show_orientation_action = selected_handedness_active and not orientation_choice_active
+		_set_canvas_item_visible_if_changed(action_button, show_orientation_action)
+		_set_button_disabled_if_changed(action_button, not show_orientation_action)
+		var x_pos := 776.0
+		if action_name == "set_handedness_right":
+			x_pos = 870.0
+		_set_control_position_if_changed(action_button, Vector2(x_pos, 688.0))
+		_set_control_size_if_changed(action_button, Vector2(90.0, 24.0))
+		if action_name == "set_handedness_left":
+			_set_control_text_if_changed(action_button, "左挂刃" if _ui_is_zh() else "LEFT")
+		elif action_name == "set_handedness_right":
+			_set_control_text_if_changed(action_button, "右挂刃" if _ui_is_zh() else "RIGHT")
+		else:
+			_set_control_text_if_changed(action_button, "翻侧刃" if _ui_is_zh() else "FLIP SIDE")
+		_set_canvas_item_modulate_if_changed(action_button, Color(0.42, 1.0, 0.82, 1.0) if show_orientation_action else Color(0.78, 0.9, 1.0, 0.72))
+		if show_orientation_action:
+			action_button.move_to_front()
+
 
 
 func _handle_editor_board_input(event: InputEvent) -> void:
@@ -23745,6 +23890,15 @@ func _finish_editor_pose_drag(unit_bp: Dictionary) -> void:
 	if not editor_pose_dragging:
 		return
 	if hot_path_profiler != null:
+func _topology_mount_parent_axis_for_node(role_key: String, unit_bp: Dictionary, nodes: Array, edges: Array, node_index: int) -> Vector2:
+	var axis := _topology_parent_axis_for_node(role_key, unit_bp, nodes, edges, node_index)
+	if axis.length() < 0.0001:
+		axis = _topology_endpoint_axis_for_node(node_index, nodes, edges)
+	if axis.length() < 0.0001:
+		axis = Vector2.RIGHT
+	return axis.normalized()
+
+
 		hot_path_profiler.scope_begin("pose_commit")
 	_apply_editor_pose_drag_pending(unit_bp)
 	if hot_path_profiler != null:
@@ -26217,6 +26371,14 @@ func _ensure_custom_topology(unit_bp: Dictionary) -> void:
 	else:
 		unit_bp["custom_topology"] = {
 			"nodes": [],
+		"set_handedness_left":
+			if editor_pending_orientation_node_index >= 0:
+				_set_topology_node_visual_handedness(editor_pending_orientation_node_index, "left", false)
+		"set_handedness_right":
+			if editor_pending_orientation_node_index >= 0:
+				_set_topology_node_visual_handedness(editor_pending_orientation_node_index, "right", false)
+		"flip_handedness":
+			_flip_selected_topology_node_visual_handedness()
 			"edges": [],
 		}
 	unit_bp.erase("groups")
@@ -26240,6 +26402,7 @@ func _make_topology_node(unit_bp: Dictionary, index: int, pos: Vector2, slot_key
 		node["pos"] = pos
 		node["slot"] = resolved_slot
 		node["part_index"] = resolved_index
+	editor_pending_orientation_node_index = -1
 		if module_index >= 0 or not modules.is_empty():
 			var module_list := modules.duplicate(true)
 			if module_list.is_empty() and module_index >= 0:
@@ -26271,6 +26434,7 @@ func _make_topology_node(unit_bp: Dictionary, index: int, pos: Vector2, slot_key
 		node["projectile"] = _terminal_weapon_kind_for_part(part, "muscle") == "ranged" and bool(part.get("projectile", false))
 	if module_index >= 0 or not modules.is_empty():
 		var module_list := modules.duplicate(true)
+	editor_pending_orientation_node_index = -1
 		if module_list.is_empty() and module_index >= 0:
 			module_list.append(module_index)
 		if not module_list.is_empty():
@@ -26279,6 +26443,7 @@ func _make_topology_node(unit_bp: Dictionary, index: int, pos: Vector2, slot_key
 	if not template.is_empty():
 		var component_node := Dictionary(template.get("component_node", {}))
 		for key in component_node.keys():
+	editor_pending_orientation_node_index = -1
 			node[key] = component_node[key]
 		node["slot"] = resolved_slot
 		node["part_name"] = String(template.get("part_name", node.get("part_name", "")))
@@ -26385,6 +26550,7 @@ func _template_topology_for_archetype(archetype_key: String, preset: Dictionary,
 			edges,
 			root_index,
 			String(spec.get("label", _body_part_label(source_key, unit_bp))),
+	editor_pending_orientation_node_index = -1
 			spec.get("pos", _node_position_for_index(i)),
 			int(spec.get("joint", group_bp.get("joint", unit_bp.get("joint", 0)))),
 			int(spec.get("limb_muscle", group_bp.get("limb_muscle", unit_bp.get("limb_muscle", 0)))),
@@ -26484,6 +26650,7 @@ func _trigger_editor_node_drop_snap(part_name: String, defer_sfx: bool = true) -
 	else:
 		_play_sfx_wave("clack", 760.0, 0.055, -17.0)
 	if editor_board_hint_label != null:
+	_start_visual_handedness_choice_if_needed(unit_bp, index, new_node)
 		editor_board_hint_label.text = "咔哒：%s 已放置。" % part_name if _ui_is_zh() else "CLACK: %s placed." % part_name
 
 
@@ -26637,6 +26804,7 @@ func _queue_editor_catalog_card_body_redraws() -> void:
 func _prewarm_adjacent_catalog_card_bodies() -> void:
 	if editor_panel_mode != "parts":
 		return
+		_apply_visual_handedness_defaults_to_node(node, part, "muscle")
 	if CatalogCardBodyTextureCache.active_request.size() > 0 or CatalogCardBodyTextureCache.pending_order.size() > 0:
 		return
 	if editor_catalog_buttons.is_empty():
@@ -26667,6 +26835,7 @@ func _prewarm_adjacent_catalog_card_bodies() -> void:
 			var art_size := Vector2(116.0, 44.0)
 			if not editor_catalog_buttons.is_empty() and editor_catalog_buttons[0] is PartCatalogCardButton:
 				var button: PartCatalogCardButton = editor_catalog_buttons[0]
+		_apply_visual_handedness_defaults_to_node(node, part, resolved_slot)
 				if button.retained_item != null:
 					art_size = button.retained_item._art_rect().size
 			var preview_pending_before := PartPreviewTextureCache.pending_order.size()
@@ -41179,6 +41348,7 @@ func _merge_engine_stats(stats: Dictionary, part: Dictionary, scale: float = 1.0
 	stats["engine_count"] = int(stats.get("engine_count", 0)) + int(ceilf(scale))
 	stats["engine_volume_rank"] = float(stats.get("engine_volume_rank", 0.0)) + _part_slot_volume_rank(part, "engine") * scale
 	stats["engine_momentum_budget"] = float(stats.get("engine_momentum_budget", 0.0)) + engine_output
+	adjusted = _part_with_mount_orientation_defaults(adjusted, slot_key)
 	stats["engine_joint_momentum_budget"] = float(stats.get("engine_joint_momentum_budget", 0.0)) + engine_output
 	stats["engine_thruster_momentum_budget"] = float(stats.get("engine_thruster_momentum_budget", 0.0)) + engine_output
 	var family_weight := maxf(1.0, engine_output)
@@ -43538,6 +43708,88 @@ func _apply_custom_topology_stats(stats: Dictionary, role_key: String, unit_bp: 
 				stats["terminal_weapon_mass"] = maxf(float(stats.get("terminal_weapon_mass", 0.0)), float(part.get("terminal_weapon_mass", part.get("mass", 0.0))) * lerpf(0.5, 1.0, part_scale))
 				stats["requires_dual_mount"] = bool(stats.get("requires_dual_mount", false)) or bool(part.get("requires_dual_mount", false))
 				stats["dual_mount_points"] = maxi(int(stats.get("dual_mount_points", 1)), int(part.get("dual_mount_points", 1)))
+func _normalize_visual_handedness(value) -> String:
+	return "left" if String(value).to_lower() == "left" else "right"
+
+
+func _normalize_mount_side(value) -> String:
+	return _normalize_visual_handedness(value)
+
+
+func _part_is_orthogonal_side_mount_candidate(part: Dictionary, slot_kind: String = "muscle") -> bool:
+	if String(part.get("orientation_category", "")).to_lower() == "orthogonal_side_mount":
+		return true
+	if slot_kind != "muscle":
+		return false
+	if not _part_counts_as_terminal_weapon(part, slot_kind):
+		return false
+	if _terminal_weapon_kind_for_part(part, slot_kind) == "ranged":
+		return false
+	var name := String(part.get("name", part.get("component_name", ""))).to_upper()
+	var shape := String(part.get("shape", part.get("source_shape", ""))).to_upper()
+	var family := String(part.get("weapon_family", "")).to_lower()
+	return family == "scythe" or name.contains("SCYTHE") or name.contains("CRESCENT") or name.contains("HOOK") or shape.contains("SCYTHE") or shape.contains("CRESCENT") or shape.contains("HOOK")
+
+
+func _part_with_mount_orientation_defaults(part: Dictionary, slot_kind: String = "muscle") -> Dictionary:
+	if not _part_is_orthogonal_side_mount_candidate(part, slot_kind):
+		return part
+	var adjusted := part.duplicate(true)
+	adjusted["asymmetric_terminal"] = true
+	adjusted["orientation_category"] = String(adjusted.get("orientation_category", "orthogonal_side_mount"))
+	adjusted["orientation_basis"] = String(adjusted.get("orientation_basis", "parent_normal"))
+	adjusted["mount_side_choices"] = Array(adjusted.get("mount_side_choices", adjusted.get("orientation_choices", ["left", "right"]))).duplicate(true)
+	adjusted["orientation_choices"] = Array(adjusted.get("mount_side_choices", ["left", "right"])).duplicate(true)
+	adjusted["default_mount_side"] = _normalize_mount_side(adjusted.get("default_mount_side", adjusted.get("default_visual_handedness", adjusted.get("visual_handedness", "right"))))
+	adjusted["default_visual_handedness"] = String(adjusted.get("default_mount_side", "right"))
+	return adjusted
+
+
+func _part_supports_visual_handedness(part: Dictionary, slot_kind: String = "muscle") -> bool:
+	if _part_is_orthogonal_side_mount_candidate(part, slot_kind):
+		return true
+	if bool(part.get("asymmetric_terminal", false)):
+		return true
+	if not _part_counts_as_terminal_weapon(part, slot_kind):
+		return false
+	if _terminal_weapon_kind_for_part(part, slot_kind) == "ranged":
+		return false
+	var display_part := _part_with_effective_terminal_geometry(part, slot_kind)
+	var component_node := AssemblyBoardRenderer.part_to_component_node(slot_kind, display_part)
+	return AssemblyBoardRenderer.terminal_shape_family(component_node) == "scythe"
+
+
+func _default_visual_handedness_for_part(part: Dictionary) -> String:
+	return _normalize_mount_side(part.get("default_mount_side", part.get("default_visual_handedness", part.get("visual_mount_side", part.get("visual_handedness", "right")))))
+
+
+func _topology_node_visual_handedness(node: Dictionary) -> String:
+	return _normalize_mount_side(node.get("visual_mount_side", node.get("visual_handedness", node.get("default_mount_side", node.get("default_visual_handedness", "right")))))
+
+
+func _apply_visual_handedness_defaults_to_node(target: Dictionary, part: Dictionary, slot_kind: String = "muscle") -> void:
+	if not _part_supports_visual_handedness(part, slot_kind):
+		return
+	target["asymmetric_terminal"] = true
+	target["orientation_category"] = String(part.get("orientation_category", "orthogonal_side_mount"))
+	target["orientation_basis"] = String(part.get("orientation_basis", "parent_normal"))
+	target["mount_side_choices"] = Array(part.get("mount_side_choices", part.get("orientation_choices", ["left", "right"]))).duplicate(true)
+	target["orientation_choices"] = Array(target.get("mount_side_choices", ["left", "right"])).duplicate(true)
+	target["default_mount_side"] = _default_visual_handedness_for_part(part)
+	target["default_visual_handedness"] = _default_visual_handedness_for_part(part)
+	if not target.has("visual_mount_side") or String(target.get("visual_mount_side", "")) == "":
+		target["visual_mount_side"] = String(target.get("visual_handedness", target.get("default_mount_side", "right")))
+	target["visual_mount_side"] = _topology_node_visual_handedness(target)
+	target["visual_handedness"] = String(target.get("visual_mount_side", "right"))
+
+
+func _topology_node_supports_visual_handedness(role_key: String, unit_bp: Dictionary, node: Dictionary) -> bool:
+	if not _topology_node_is_component(node):
+		return false
+	var slot_key := _topology_node_slot(node)
+	return _part_supports_visual_handedness(_topology_node_part(role_key, node, unit_bp), slot_key)
+
+
 			if part.has("resist"):
 				var part_resist: Dictionary = part["resist"]
 				for damage_type in MELEE_DAMAGE_TYPES:
@@ -45128,6 +45380,16 @@ func _economy_rebalanced_plugin_component(part: Dictionary, slot_key: String) ->
 				adjusted["momentum_min"] = maxf(0.0, float(adjusted.get("allocated_momentum", normal_momentum)))
 			elif adjusted.has("drive_demand") and not adjusted.has("momentum_min"):
 				adjusted["momentum_min"] = maxf(0.0, float(adjusted.get("drive_demand", 0.0)))
+			"orientation_category": String(part.get("orientation_category", "orthogonal_side_mount")) if _part_supports_visual_handedness(part, slot_key) else "",
+			"orientation_basis": String(part.get("orientation_basis", "parent_normal")) if _part_supports_visual_handedness(part, slot_key) else "",
+			"visual_mount_side": _topology_node_visual_handedness(node) if _topology_node_supports_visual_handedness(role_key, unit_bp, node) else "",
+			"default_mount_side": _default_visual_handedness_for_part(part) if _part_supports_visual_handedness(part, slot_key) else "",
+			"mount_side_choices": Array(part.get("mount_side_choices", part.get("orientation_choices", ["left", "right"]))).duplicate(true) if _part_supports_visual_handedness(part, slot_key) else [],
+			"mount_parent_axis_local": _topology_mount_parent_axis_for_node(role_key, unit_bp, nodes, edges, i) if _topology_node_supports_visual_handedness(role_key, unit_bp, node) else Vector2.ZERO,
+			"visual_handedness": _topology_node_visual_handedness(node) if _topology_node_supports_visual_handedness(role_key, unit_bp, node) else "",
+			"default_visual_handedness": _default_visual_handedness_for_part(part) if _part_supports_visual_handedness(part, slot_key) else "",
+			"asymmetric_terminal": _part_supports_visual_handedness(part, slot_key),
+			"orientation_choices": Array(part.get("orientation_choices", ["left", "right"])).duplicate(true) if _part_supports_visual_handedness(part, slot_key) else [],
 			adjusted["drive_demand"] = maxf(0.0, float(adjusted.get("momentum_min", 0.0)))
 			if not adjusted.has("thruster_duration"):
 				adjusted["thruster_duration"] = ECONOMY_THRUSTER_TARGET_DURATION
@@ -47494,6 +47756,9 @@ func _battle_runtime_menu_action(action_key: String) -> void:
 			_hide_battle_runtime_menu()
 			_begin_battle(battle_mode, false, "battle_reset")
 		"cycle_dummy_state":
+	["set_handedness_left", "左挂刃"],
+	["set_handedness_right", "右挂刃"],
+	["flip_handedness", "翻侧刃"],
 			var order := ["idle_brake", "free_physics", "fixed"]
 			var index := order.find(training_dummy_state)
 			training_dummy_state = String(order[_wrapped_index(index + 1, order.size())])
@@ -48976,6 +49241,7 @@ func _update_editor_board_ui(role_key: String, unit_bp: Dictionary, precomputed_
 			selected_bp = nodes_for_shop[editor_topology_node_index]
 	for slot_key in BODY_GROUP_SLOTS:
 		var button: Button = editor_shop_buttons[slot_key]
+		editor_pending_orientation_node_index,
 		_set_button_disabled_if_changed(button, not body_board_enabled)
 		if not body_board_enabled:
 			_set_control_text_if_changed(button, "%s 零件库：仅机甲" % _slot_name(slot_key) if _ui_is_zh() else "%s PARTS: mech only" % _slot_name(slot_key))
@@ -49343,6 +49609,9 @@ func _part_gradient_card_line(slot_key: String, part: Dictionary) -> String:
 	if tradeoff == "":
 		tradeoff = _part_gradient_tag_label("balanced")
 	return "%s/%s/%s" % [String(spec.get("rank_label", "M")), role_label, tradeoff]
+	var orientation_action_keys := ["set_handedness_left", "set_handedness_right", "flip_handedness"]
+	var orientation_choice_active := custom_board_enabled and _orientation_choice_is_active(unit_bp)
+	var selected_handedness_active := custom_board_enabled and _selected_node_supports_visual_handedness(unit_bp)
 
 
 func _part_gradient_detail_line(slot_key: String, part: Dictionary) -> String:
@@ -49368,6 +49637,29 @@ func _limb_visual_family_label(part: Dictionary) -> String:
 			return "软体肢" if _ui_is_zh() else "Soft Tentacle"
 		"steel_sinew_beam":
 			return "承重钢梁" if _ui_is_zh() else "Steel Beam"
+		elif orientation_action_keys.has(String(action_key)):
+			var action_name := String(action_key)
+			var show_orientation_action := false
+			if action_name in ["set_handedness_left", "set_handedness_right"]:
+				show_orientation_action = orientation_choice_active
+			elif action_name == "flip_handedness":
+				show_orientation_action = selected_handedness_active and not orientation_choice_active
+			_set_canvas_item_visible_if_changed(action_button, show_orientation_action)
+			_set_button_disabled_if_changed(action_button, not show_orientation_action)
+			var x_pos := 776.0
+			if action_name == "set_handedness_right":
+				x_pos = 870.0
+			elif action_name == "flip_handedness":
+				x_pos = 776.0
+			_set_control_position_if_changed(action_button, Vector2(x_pos, 688.0))
+			_set_control_size_if_changed(action_button, Vector2(90.0, 24.0))
+			if action_name == "set_handedness_left":
+				_set_control_text_if_changed(action_button, "左挂刃" if _ui_is_zh() else "LEFT")
+			elif action_name == "set_handedness_right":
+				_set_control_text_if_changed(action_button, "右挂刃" if _ui_is_zh() else "RIGHT")
+			else:
+				_set_control_text_if_changed(action_button, "翻侧刃" if _ui_is_zh() else "FLIP SIDE")
+			_set_canvas_item_modulate_if_changed(action_button, Color(0.42, 1.0, 0.82, 1.0) if show_orientation_action else Color(0.78, 0.9, 1.0, 0.72))
 		"ceramic_linear_strut":
 			return "线性撑杆" if _ui_is_zh() else "Linear Strut"
 		"colossus_girder_muscle":
@@ -49565,6 +49857,7 @@ func _editor_available_sort_keys(role_key: String, slot_key: String) -> Array:
 	return keys
 
 
+	var selected_handedness_active := custom_board_enabled and _selected_node_supports_visual_handedness(unit_bp)
 func _editor_available_sort_keys_from_entries(entries: Array) -> Array:
 	var available: Array = []
 	for raw_key in EDITOR_SORT_KEY_ORDER:
@@ -49619,6 +49912,11 @@ func _editor_part_has_sort_property(slot_key: String, part: Dictionary, sort_key
 
 
 func _part_has_positive_numeric(part: Dictionary, property_names: Array) -> bool:
+		if _orientation_choice_is_active(unit_bp):
+			pending_note += "  选侧挂刃: 左/右" if _ui_is_zh() else "  choose side mount: LEFT/RIGHT"
+		elif selected_handedness_active and not nodes.is_empty():
+			var selected_side := _topology_node_visual_handedness(Dictionary(nodes[editor_topology_node_index]))
+			pending_note += "  刃向:%s" % ("左" if selected_side == "left" else "右") if _ui_is_zh() else "  side:%s" % selected_side.to_upper()
 	for property_name in property_names:
 		if float(part.get(String(property_name), 0.0)) > 0.0:
 			return true
@@ -52269,6 +52567,7 @@ func _update_sortie_thumbnails() -> void:
 			var view: SortieThumbView = views[i]
 			if i >= order.size():
 				view.visible = false
+				_apply_visual_handedness_defaults_to_node(node, part, slot_key)
 				continue
 			var entry: Dictionary = order[i]
 			var role_key := String(entry.get("role", "hero"))
@@ -52321,6 +52620,7 @@ func _update_battle_minimap() -> void:
 		if not _is_live_unit(unit):
 			continue
 		if _barrier_has_map_tiles(unit):
+			_apply_visual_handedness_defaults_to_node(node, muscle_part, _topology_node_slot(node))
 			for raw_tile in Array(unit.stats.get("barrier_map_tiles", [])):
 				if not (raw_tile is Dictionary):
 					continue
