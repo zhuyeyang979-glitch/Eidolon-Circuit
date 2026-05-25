@@ -24,9 +24,12 @@ func _init() -> void:
 		return
 	var texture_path := String(main.mobius_surface_texture.get_meta("runtime_source_path", ""))
 	if texture_path != MainScene.MOBIUS_SURFACE_MESH_TEXTURE_PATH:
-		_fail("Mobius surface should load the mesh-net texture, got %s." % texture_path)
+		_fail("Mobius surface should load the square-grid field texture, got %s." % texture_path)
 		return
 	var surface_snapshot: Dictionary = main.mobius_strip_surface_view.stardust_band_snapshot()
+	if String(surface_snapshot.get("surface_field_kind", "")) != "square_grid_field":
+		_fail("Mobius surface should expose the square-grid field semantics.")
+		return
 	if bool(surface_snapshot.get("lane_guides_enabled", true)):
 		_fail("Mobius surface must not render internal straight lane guides.")
 		return
@@ -64,5 +67,5 @@ func _init() -> void:
 	if max_y - min_y < 120.0:
 		_fail("Mobius visual surface projection should visibly curve across the viewport; y_range=%.2f." % (max_y - min_y))
 		return
-	print("MOBIUS_SURFACE_MESH_UV_ATTACHMENT_PROBE ok y_range=%.2f texture=%s" % [max_y - min_y, texture_path])
+	print("MOBIUS_SURFACE_MESH_UV_ATTACHMENT_PROBE ok square_grid y_range=%.2f texture=%s" % [max_y - min_y, texture_path])
 	quit()

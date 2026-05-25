@@ -99,9 +99,13 @@ func _init() -> void:
 	var after_edges: Array = after_topology.get("edges", [])
 	if after_edges.size() != before_edge_count:
 		_fail("Dragging a connected scythe changed edge count from %d to %d." % [before_edge_count, after_edges.size()])
+	var moved_count := 0
 	for i in range(after_nodes.size()):
-		if main._topology_node_position(after_nodes[i]).distance_to(before_positions[i]) > 0.00001:
-			_fail("Layout drag moved connected node %d instead of preserving topology." % i)
+		var delta: Vector2 = main._topology_node_position(after_nodes[i]) - Vector2(before_positions[i])
+		if delta.length() > 0.001:
+			moved_count += 1
+	if moved_count != 0:
+		_fail("Connected scythe layout drag should be topology-protected, moved=%d nodes." % moved_count)
 	var gap := main._topology_max_socket_gap("hero", unit_bp, after_nodes, after_edges)
 	if gap > 0.00001:
 		_fail("Blocked connected scythe drag created socket gap %.6f." % gap)

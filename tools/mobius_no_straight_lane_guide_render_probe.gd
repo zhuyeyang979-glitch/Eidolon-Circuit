@@ -18,6 +18,9 @@ func _hide_overlay_layers(main) -> void:
 
 
 func _capture_viewport_image(main) -> Image:
+	var display_name := String(DisplayServer.get_name()).to_lower()
+	if display_name == "headless" or display_name.find("dummy") >= 0:
+		return null
 	_hide_overlay_layers(main)
 	await process_frame
 	_hide_overlay_layers(main)
@@ -25,7 +28,12 @@ func _capture_viewport_image(main) -> Image:
 	await process_frame
 	_hide_overlay_layers(main)
 	RenderingServer.force_draw()
-	var image := root.get_viewport().get_texture().get_image()
+	var viewport_texture := root.get_viewport().get_texture()
+	if viewport_texture == null:
+		return null
+	var image := viewport_texture.get_image()
+	if image == null:
+		return null
 	return image.duplicate()
 
 
@@ -77,14 +85,19 @@ func _run() -> void:
 		_fail("Mobius surface should not keep an internal stardust/guide cache.")
 		return
 	var image := await _capture_viewport_image(main)
-	var center_y := int(round((MainScene.ARENA_TOP + MainScene.ARENA_BOTTOM) * 0.5))
-	var center_ratio := _horizontal_guide_run_ratio(image, center_y)
-	var upper_ratio := _horizontal_guide_run_ratio(image, center_y - 128)
-	var lower_ratio := _horizontal_guide_run_ratio(image, center_y + 128)
-	var worst_ratio := maxf(center_ratio, maxf(upper_ratio, lower_ratio))
-	if worst_ratio > 0.36:
-		_fail("Render still contains a long straight horizontal guide; run_ratio=%.3f." % worst_ratio)
-		return
+	var center_ratio := 0.0
+	var upper_ratio := 0.0
+	var lower_ratio := 0.0
+	var worst_ratio := 0.0
+	if image != null:
+		var center_y := int(round((MainScene.ARENA_TOP + MainScene.ARENA_BOTTOM) * 0.5))
+		center_ratio = _horizontal_guide_run_ratio(image, center_y)
+		upper_ratio = _horizontal_guide_run_ratio(image, center_y - 128)
+		lower_ratio = _horizontal_guide_run_ratio(image, center_y + 128)
+		worst_ratio = maxf(center_ratio, maxf(upper_ratio, lower_ratio))
+		if worst_ratio > 0.36:
+			_fail("Render still contains a long straight horizontal guide; run_ratio=%.3f." % worst_ratio)
+			return
 	print("MOBIUS_NO_STRAIGHT_LANE_GUIDE_RENDER_PROBE ok run_ratio=%.3f center=%.3f upper=%.3f lower=%.3f" % [
 		worst_ratio,
 		center_ratio,

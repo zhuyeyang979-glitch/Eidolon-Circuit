@@ -2,6 +2,8 @@ extends SceneTree
 
 const MainScene := preload("res://scripts/main.gd")
 
+const CELL_PX := 32
+
 
 func _fail(message: String) -> void:
 	push_error(message)
@@ -10,12 +12,12 @@ func _fail(message: String) -> void:
 
 func _load_png(path: String) -> Image:
 	if not FileAccess.file_exists(path):
-		_fail("Missing Mobius surface mesh texture: %s" % path)
+		_fail("Missing Mobius square grid texture: %s" % path)
 		return null
 	var bytes := FileAccess.get_file_as_bytes(path)
 	var image := Image.new()
 	if image.load_png_from_buffer(bytes) != OK:
-		_fail("Mobius surface mesh texture is not a readable PNG: %s" % path)
+		_fail("Mobius square grid texture is not a readable PNG: %s" % path)
 		return null
 	return image
 
@@ -36,7 +38,10 @@ func _init() -> void:
 	var width := image.get_width()
 	var height := image.get_height()
 	if width != 4096 or height != 512:
-		_fail("Mobius surface mesh texture should be 4096x512, got %dx%d." % [width, height])
+		_fail("Mobius square grid texture should be 4096x512, got %dx%d." % [width, height])
+		return
+	if width % CELL_PX != 0 or height % CELL_PX != 0:
+		_fail("Mobius square grid texture should divide evenly into square cells.")
 		return
 	var max_alpha := 0.0
 	var total_alpha := 0.0
@@ -57,23 +62,23 @@ func _init() -> void:
 			if alpha > 0.008:
 				visible_samples += 1
 	var average_alpha := total_alpha / float(maxi(1, samples))
-	if max_alpha < 0.08 or max_alpha > 0.175:
-		_fail("Mobius mesh texture max alpha should stay visible but restrained, got %.4f." % max_alpha)
+	if max_alpha < 0.11 or max_alpha > 0.160:
+		_fail("Mobius square grid texture max alpha should be uniform but restrained, got %.4f." % max_alpha)
 		return
-	if average_alpha < 0.003 or average_alpha > 0.040:
-		_fail("Mobius mesh texture average alpha should stay low, got %.4f." % average_alpha)
+	if average_alpha < 0.006 or average_alpha > 0.055:
+		_fail("Mobius square grid texture average alpha should stay low, got %.4f." % average_alpha)
 		return
-	if visible_samples < 2800:
-		_fail("Mobius mesh texture should contain enough visible net/star samples, got %d." % visible_samples)
+	if visible_samples < 4000:
+		_fail("Mobius square grid texture should contain enough visible grid samples, got %d." % visible_samples)
 		return
-	if seam_delta > 0.035:
-		_fail("Mobius mesh texture U seam should be compatible with direct and flipped V sampling; delta=%.4f." % seam_delta)
+	if seam_delta > 0.006:
+		_fail("Mobius square grid U seam should be compatible with direct and flipped V sampling; delta=%.4f." % seam_delta)
 		return
-	var upper_alpha := _average_row_alpha(image, int(round(float(height) * 0.24)))
-	var lower_alpha := _average_row_alpha(image, int(round(float(height) * 0.76)))
-	var center_alpha := _average_row_alpha(image, int(round(float(height) * 0.50)))
-	if minf(upper_alpha, lower_alpha) <= center_alpha * 1.20:
-		_fail("Mobius mesh texture should keep stronger upper/lower surface lanes than the center; upper=%.4f lower=%.4f center=%.4f." % [upper_alpha, lower_alpha, center_alpha])
+	var upper_alpha := _average_row_alpha(image, CELL_PX / 2)
+	var lower_alpha := _average_row_alpha(image, height - CELL_PX / 2)
+	var center_alpha := _average_row_alpha(image, height / 2 + CELL_PX / 2)
+	if maxf(absf(upper_alpha - lower_alpha), absf(upper_alpha - center_alpha)) > 0.006:
+		_fail("Mobius square grid source brightness should be row-uniform; upper=%.4f lower=%.4f center=%.4f." % [upper_alpha, lower_alpha, center_alpha])
 		return
-	print("MOBIUS_SURFACE_MESH_TEXTURE_ASSET_PROBE ok size=%dx%d avg=%.4f max=%.4f seam=%.4f" % [width, height, average_alpha, max_alpha, seam_delta])
+	print("MOBIUS_SURFACE_MESH_TEXTURE_ASSET_PROBE ok square_grid size=%dx%d avg=%.4f max=%.4f seam=%.4f" % [width, height, average_alpha, max_alpha, seam_delta])
 	quit()

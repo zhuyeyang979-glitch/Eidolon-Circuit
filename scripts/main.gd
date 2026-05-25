@@ -94,6 +94,8 @@ class MobiusStripSurfaceView:
 	var rotation_state := {}
 	var camera_coord := Vector2.ZERO
 	var surface_texture: Texture2D
+	var surface_field_kind := "square_grid_field"
+	var surface_grid_cell_px := 32.0
 	var surface_lane_guides_enabled := false
 	var stardust_band_enabled := false
 	var stardust_alpha_max := 0.28
@@ -118,6 +120,8 @@ class MobiusStripSurfaceView:
 	func set_world(next_config: Dictionary, next_rotation_state: Dictionary, next_camera_coord: Vector2) -> void:
 		config = next_config.duplicate(true)
 		config["twist_visual_enabled"] = true
+		surface_field_kind = String(config.get("surface_field_kind", surface_field_kind))
+		surface_grid_cell_px = maxf(1.0, float(config.get("surface_grid_cell_px", surface_grid_cell_px)))
 		surface_lane_guides_enabled = bool(config.get("surface_lane_guides_enabled", surface_lane_guides_enabled))
 		stardust_band_enabled = bool(config.get("stardust_band_enabled", stardust_band_enabled))
 		stardust_alpha_max = clampf(float(config.get("stardust_alpha_max", stardust_alpha_max)), 0.0, 0.32)
@@ -159,7 +163,6 @@ class MobiusStripSurfaceView:
 			var sample: Dictionary = raw_sample
 			var avg_depth := float(sample.get("avg_depth", 0.5))
 			var edge_softness := float(sample.get("edge_softness", 1.0))
-			var stripe := float(sample.get("stripe", 0.5))
 			var poly: PackedVector2Array = sample.get("poly", PackedVector2Array())
 			if poly.size() < 4:
 				continue
@@ -167,7 +170,6 @@ class MobiusStripSurfaceView:
 			base.a = far_alpha
 			var near := Color(0.22, 0.62, 0.92, near_alpha)
 			var color := base.lerp(near, avg_depth)
-			color = color.lerp(Color(1.0, 0.72, 0.24, color.a), stripe * 0.11)
 			color.a *= clampf(0.18 + edge_softness * 0.82, 0.0, 1.0)
 			var uvs: PackedVector2Array = sample.get("uvs", PackedVector2Array())
 			if surface_texture != null and uvs.size() == poly.size():
@@ -275,6 +277,8 @@ class MobiusStripSurfaceView:
 			"particle_count": stardust_last_particle_count,
 			"max_alpha": stardust_last_max_alpha,
 			"lane_guides_enabled": surface_lane_guides_enabled,
+			"surface_field_kind": surface_field_kind,
+			"surface_grid_cell_px": surface_grid_cell_px,
 			"surface_texture_path": String(surface_texture.get_meta("runtime_source_path", "")) if surface_texture != null else "",
 			"local_rectangular_projection": bool(config.get("local_rectangular_projection", false)),
 			"z_index": z_index,
@@ -1189,11 +1193,15 @@ class TrainingEntryIntroView:
 class ScoutUnitDetailView:
 	extends Control
 
+	signal close_requested(suppress_token: String)
+
 	var player_id := 1
 	var entry := {}
 	var stats := {}
 	var detail_text := ""
 	var language := "zh"
+	var close_button_enabled := false
+	var suppress_token := ""
 
 	func set_unit(next_player: int, next_entry: Dictionary, next_stats: Dictionary, next_detail_text: String, next_language: String) -> void:
 		player_id = next_player
@@ -1209,10 +1217,40 @@ class ScoutUnitDetailView:
 		detail_text = message
 		queue_redraw()
 
+	func set_close_button_enabled(enabled: bool, next_suppress_token: String = "") -> void:
+		close_button_enabled = enabled
+		suppress_token = next_suppress_token
+		mouse_filter = Control.MOUSE_FILTER_STOP if close_button_enabled else Control.MOUSE_FILTER_IGNORE
+		queue_redraw()
+
+	func _close_rect() -> Rect2:
+		return Rect2(Vector2(maxf(8.0, size.x - 38.0), 8.0), Vector2(28.0, 22.0))
+
+	func _gui_input(event: InputEvent) -> void:
+		if not close_button_enabled:
+			return
+		if event is InputEventMouseButton:
+			var mouse_event := event as InputEventMouseButton
+			if not mouse_event.pressed:
+				return
+			if mouse_event.button_index == MOUSE_BUTTON_RIGHT:
+				close_requested.emit(suppress_token)
+				accept_event()
+				return
+			if mouse_event.button_index == MOUSE_BUTTON_LEFT and _close_rect().grow(5.0).has_point(mouse_event.position):
+				close_requested.emit(suppress_token)
+				accept_event()
+				return
+
 	func _draw() -> void:
 		draw_rect(Rect2(Vector2.ZERO, size), Color(0.006, 0.012, 0.018, 0.96), true)
 		draw_rect(Rect2(Vector2.ZERO, size), Color(0.28, 0.88, 1.0, 0.18), false, 1.2)
 		var font := ThemeDB.get_fallback_font()
+		if close_button_enabled:
+			var close_rect := _close_rect()
+			draw_rect(close_rect, Color(0.09, 0.12, 0.15, 0.94), true)
+			draw_rect(close_rect, Color(0.65, 0.92, 1.0, 0.42), false, 1.0)
+			draw_string(font, close_rect.position + Vector2(0.0, 16.0), "X", HORIZONTAL_ALIGNMENT_CENTER, close_rect.size.x, 13, Color(0.94, 0.98, 1.0, 0.96))
 		if entry.is_empty():
 			draw_string(font, Vector2(14.0, 28.0), detail_text, HORIZONTAL_ALIGNMENT_LEFT, size.x - 28.0, 15, Color(0.86, 0.92, 0.98, 0.9))
 			return
@@ -10548,6 +10586,12 @@ var editor_pose_pending_update := false
 var editor_pose_last_applied_angle := INF
 var editor_pose_drag_apply_count := 0
 var editor_pose_drag_coalesced_count := 0
+var last_pose_drag_reject_reason := ""
+var last_pose_drag_root_index := -1
+var last_pose_drag_downstream_count := 0
+var last_layout_drag_reject_reason := ""
+var last_layout_drag_node_index := -1
+var last_layout_drag_hit_reason := ""
 var editor_dragging_node_index := -1
 var editor_dragging_selected_nodes := false
 var editor_dragging_whole_unit := false
@@ -10780,6 +10824,10 @@ var editor_hover_part_index := -1
 var editor_hover_pinned := false
 var editor_hover_suppress_token := ""
 var editor_hover_suppress_until_msec := 0
+var editor_unit_detail_pinned := false
+var editor_unit_detail_token := ""
+var editor_unit_detail_suppress_token := ""
+var editor_unit_detail_suppress_until_msec := 0
 var editor_hovered_torso_node_index := -1
 var editor_material_warning_nodes: Array = []
 var editor_open_torso_node_index := -1
@@ -11056,6 +11104,24 @@ func _handle_editor_hover_detail_global_input(event: InputEvent) -> bool:
 	return false
 
 
+func _handle_editor_unit_detail_global_input(event: InputEvent) -> bool:
+	if game_state != STATE_EDITOR or not editor_unit_detail_pinned:
+		return false
+	if editor_unit_hover_view == null or not editor_unit_hover_view.visible:
+		return false
+	if event is InputEventKey:
+		var key_event := event as InputEventKey
+		if key_event.pressed and not key_event.echo and (key_event.keycode == KEY_ESCAPE or key_event.physical_keycode == KEY_ESCAPE):
+			_close_editor_unit_detail()
+			return true
+	if event is InputEventMouseButton:
+		var mouse_event := event as InputEventMouseButton
+		if mouse_event.pressed and mouse_event.button_index == MOUSE_BUTTON_RIGHT and editor_unit_hover_view.get_global_rect().has_point(mouse_event.position):
+			_close_editor_unit_detail()
+			return true
+	return false
+
+
 func _route_editor_torso_detail_binding_global_input(event: InputEvent) -> bool:
 	if game_state != STATE_EDITOR:
 		return false
@@ -11117,6 +11183,8 @@ func _route_unit_editor_priority_input(event: InputEvent) -> bool:
 	if game_state != STATE_EDITOR:
 		return false
 	if _handle_unit_editor_enter_key(event):
+		return true
+	if _handle_editor_unit_detail_global_input(event):
 		return true
 	if _handle_editor_hover_detail_global_input(event):
 		return true
@@ -13032,8 +13100,45 @@ func _load_unit_library_entry_to_canvas(entry: Dictionary) -> void:
 	_update_editor_ui()
 
 
-func _show_editor_library_unit_hover(entry: Dictionary) -> void:
+func _editor_unit_detail_token_for_entry(entry: Dictionary) -> String:
+	if bool(entry.get("empty", false)):
+		return "empty:%d" % int(entry.get("slot", entry.get("index", -1)))
+	if bool(entry.get("unit_library", false)):
+		return "library:%s" % _saved_unit_entry_path(entry)
+	return "team:%s:%d" % [String(entry.get("role", "hero")), int(entry.get("index", -1))]
+
+
+func _editor_unit_detail_suppressed(token: String) -> bool:
+	if token == "" or token != editor_unit_detail_suppress_token:
+		return false
+	return Time.get_ticks_msec() < editor_unit_detail_suppress_until_msec
+
+
+func _prepare_editor_unit_detail(entry: Dictionary, pinned: bool) -> bool:
+	var detail_token := _editor_unit_detail_token_for_entry(entry)
+	if not pinned and editor_unit_detail_pinned:
+		return false
+	if not pinned and _editor_unit_detail_suppressed(detail_token):
+		return false
+	editor_unit_detail_pinned = pinned
+	editor_unit_detail_token = detail_token
+	if editor_unit_hover_view != null:
+		editor_unit_hover_view.set_close_button_enabled(pinned, detail_token)
+	return true
+
+
+func _close_editor_unit_detail(suppress_token: String = "") -> void:
+	if suppress_token == "":
+		suppress_token = editor_unit_detail_token
+	editor_unit_detail_suppress_token = suppress_token
+	editor_unit_detail_suppress_until_msec = Time.get_ticks_msec() + 650
+	_clear_editor_unit_hover_card(true)
+
+
+func _show_editor_library_unit_hover(entry: Dictionary, pinned: bool = false) -> void:
 	if editor_unit_hover_view == null or not (entry.get("blueprint", {}) is Dictionary):
+		return
+	if not _prepare_editor_unit_detail(entry, pinned):
 		return
 	var role_key := String(entry.get("role", "hero"))
 	var unit_bp: Dictionary = Dictionary(entry.get("blueprint", {}))
@@ -13047,6 +13152,7 @@ func _show_editor_library_unit_hover(entry: Dictionary) -> void:
 	editor_unit_hover_view.size = Vector2(466.0, 500.0)
 	editor_unit_hover_view.visible = true
 	editor_unit_hover_view.move_to_front()
+	editor_unit_hover_view.set_close_button_enabled(pinned, editor_unit_detail_token)
 	editor_unit_hover_view.set_unit(_editor_player(), entry, stats, "\n".join(detail_lines), ui_language)
 
 
@@ -15398,13 +15504,16 @@ func _select_editor_load_card(card_index: int) -> void:
 	var entry: Dictionary = entries[actual_index]
 	if bool(entry.get("unit_library", false)):
 		_load_unit_library_entry_to_canvas(entry)
+		_show_editor_library_unit_hover(entry, true)
 		return
 	if bool(entry.get("empty", false)):
 		_reset_editor_working_canvas(String(entry.get("role", ROLE_ORDER[editor_role_index])))
 		editor_summary_label.text = "已打开空队伍槽 %02d，可在空白画布组装后存入队伍。" % [actual_index + 1] if _ui_is_zh() else "Opened empty roster slot %02d. Build on the blank canvas, then save it into the roster." % [actual_index + 1]
 		_update_editor_ui()
+		_show_editor_empty_slot_hover(actual_index, true)
 		return
 	_select_editor_entry(entry)
+	_show_editor_unit_hover(entry, true)
 
 
 func _hover_editor_load_card(card_index: int) -> void:
@@ -15447,8 +15556,10 @@ func _select_editor_roster_overview_slot(local_slot: int) -> void:
 		_reset_editor_working_canvas(String(entry.get("role", ROLE_ORDER[editor_role_index])))
 		editor_summary_label.text = "已选择空队伍槽 %02d。当前画布仍为 0 造价，保存后才写入%s队伍。" % [int(entry.get("slot", 0)) + 1, _match_format_name()] if _ui_is_zh() else "Selected empty roster slot %02d. The canvas stays zero-cost until you save it into the %s roster." % [int(entry.get("slot", 0)) + 1, _match_format_name()]
 		_update_editor_ui()
+		_show_editor_empty_slot_hover(int(entry.get("slot", local_slot)), true)
 		return
 	_enter_editor_roster_entry(entry)
+	_show_editor_unit_hover(entry, true)
 
 
 func _hover_editor_roster_overview_slot(local_slot: int) -> void:
@@ -15521,29 +15632,40 @@ func _update_editor_roster_overview() -> void:
 			thumb.set_entry(player_id, actual_index, entry, stats, "pending" if selected else ("reserve" if blank else "live"), ui_language)
 
 
-func _show_editor_empty_slot_hover(slot_index: int) -> void:
+func _show_editor_empty_slot_hover(slot_index: int, pinned: bool = false) -> void:
 	if editor_unit_hover_view == null:
+		return
+	var entry := {"empty": true, "slot": slot_index, "index": slot_index}
+	if not _prepare_editor_unit_detail(entry, pinned):
 		return
 	editor_unit_hover_view.position = Vector2(410.0, 118.0)
 	editor_unit_hover_view.size = Vector2(466.0, 500.0)
 	editor_unit_hover_view.visible = true
 	editor_unit_hover_view.move_to_front()
+	editor_unit_hover_view.set_close_button_enabled(pinned, editor_unit_detail_token)
 	editor_unit_hover_view.clear("空队伍槽 %02d\n当前没有放入单位。\n请先在单位库保存或载入单个单位，再在队伍编成界面填入槽位。" % [slot_index + 1] if _ui_is_zh() else "Empty roster slot %02d\nNo unit assigned.\nSave or load a single unit in the unit library first, then fill this slot in Team Compose." % [slot_index + 1])
 
 
-func _clear_editor_unit_hover_card() -> void:
+func _clear_editor_unit_hover_card(force: bool = false) -> void:
+	if editor_unit_detail_pinned and not force:
+		return
+	editor_unit_detail_pinned = false
+	editor_unit_detail_token = ""
 	if editor_unit_hover_view != null:
+		editor_unit_hover_view.set_close_button_enabled(false, "")
 		editor_unit_hover_view.visible = false
 
 
-func _show_editor_unit_hover(entry: Dictionary) -> void:
+func _show_editor_unit_hover(entry: Dictionary, pinned: bool = false) -> void:
 	if editor_unit_hover_view == null:
 		return
 	if bool(entry.get("empty", false)):
-		_show_editor_empty_slot_hover(int(entry.get("slot", 0)))
+		_show_editor_empty_slot_hover(int(entry.get("slot", 0)), pinned)
 		return
 	var player_id := _editor_player()
 	if not _valid_roster_entry(player_id, entry):
+		return
+	if not _prepare_editor_unit_detail(entry, pinned):
 		return
 	var role_key := String(entry.get("role", "hero"))
 	var unit_index := int(entry.get("index", 0))
@@ -15553,6 +15675,7 @@ func _show_editor_unit_hover(entry: Dictionary) -> void:
 	editor_unit_hover_view.size = Vector2(466.0, 500.0)
 	editor_unit_hover_view.visible = true
 	editor_unit_hover_view.move_to_front()
+	editor_unit_hover_view.set_close_button_enabled(pinned, editor_unit_detail_token)
 	editor_unit_hover_view.set_unit(player_id, entry, stats, detail, ui_language)
 
 
@@ -22854,18 +22977,29 @@ func _handle_custom_topology_click(mouse_event: InputEventMouseButton, unit_bp: 
 			editor_node_click_candidate_index = nearest
 			editor_node_click_start_position = mouse_event.position
 			editor_node_click_moved = false
-		if editor_board_tool == "pose" and mouse_event.button_index == MOUSE_BUTTON_LEFT:
-			var selection := editor_selected_topology_nodes.duplicate()
-			if not selection.has(nearest):
-				selection = [_pose_root_for_click(role_key, unit_bp, nodes, topology.get("edges", []), nearest)]
-			var root_index := _pose_root_for_selection(role_key, unit_bp, nodes, topology.get("edges", []), selection)
-			if root_index < 0:
-				root_index = _pose_root_for_click(role_key, unit_bp, nodes, topology.get("edges", []), nearest)
-			if _start_editor_pose_drag(unit_bp, root_index, mouse_event.position, selection):
+		var dragging_selection := editor_selected_topology_nodes.has(nearest) and editor_selected_topology_nodes.size() > 1
+		if mouse_event.button_index == MOUSE_BUTTON_LEFT and (editor_board_tool == "pose" or not dragging_selection) and _topology_node_is_unconnected_draggable_component(role_key, unit_bp, nodes, topology.get("edges", []), nearest):
+			if _start_unconnected_topology_node_drag(unit_bp, nearest, mouse_event.position, "pose" if editor_board_tool == "pose" else "layout"):
 				if hot_path_profiler != null:
 					hot_path_profiler.scope_end("board_click")
 				return
-		var dragging_selection := editor_selected_topology_nodes.has(nearest) and editor_selected_topology_nodes.size() > 1
+		if editor_board_tool == "pose" and mouse_event.button_index == MOUSE_BUTTON_LEFT:
+			var pose_candidate := _pose_drag_candidate_for_point(role_key, unit_bp, nodes, topology.get("edges", []), mouse_event.position)
+			if pose_candidate.is_empty() or not bool(pose_candidate.get("valid", false)):
+				_set_pose_drag_reject(String(pose_candidate.get("reason", "姿态编辑需要点击已连接肢体。" if _ui_is_zh() else "Pose edit needs a connected limb.")), int(pose_candidate.get("root_index", -1)), int(pose_candidate.get("downstream_count", 0)), true)
+				_play_sfx_wave("alarm", 170.0, 0.08, -16.0)
+				if hot_path_profiler != null:
+					hot_path_profiler.scope_end("board_click")
+				return
+			var root_index := int(pose_candidate.get("root_index", -1))
+			if _start_editor_pose_drag(unit_bp, root_index, mouse_event.position):
+				if hot_path_profiler != null:
+					hot_path_profiler.scope_end("board_click")
+				return
+			_play_sfx_wave("alarm", 170.0, 0.08, -16.0)
+			if hot_path_profiler != null:
+				hot_path_profiler.scope_end("board_click")
+			return
 		editor_topology_node_index = nearest
 		var nearest_is_torso := _topology_node_is_torso(role_key, nodes[nearest], unit_bp)
 		if mouse_event.double_click and nearest_is_torso:
@@ -22885,13 +23019,14 @@ func _handle_custom_topology_click(mouse_event: InputEventMouseButton, unit_bp: 
 			if _topology_selection_contains_torso(role_key, unit_bp, nodes, editor_selected_topology_nodes):
 				_start_topology_group_drag(unit_bp, mouse_event.position, editor_selected_topology_nodes, true)
 			elif _topology_selection_has_connected_node(topology.get("edges", []), editor_selected_topology_nodes):
-				editor_selected_topology_nodes = editor_selected_topology_nodes.duplicate()
+				_set_layout_drag_reject("connected_selection", nearest, "visible")
 				editor_dragging_node_index = -1
 				editor_dragging_selected_nodes = false
 				editor_dragging_whole_unit = false
+				editor_selecting_topology_box = false
 				if editor_board_hint_label != null:
-					editor_board_hint_label.text = "布局模式不会拖断已连接肢体；切到姿态模式拖动近端肢体来测试旋转。" if _ui_is_zh() else "Layout will not tear connected limbs; switch to POSE and drag a proximal limb to test rotation."
-				_play_sfx_wave("alarm", 190.0, 0.06, -18.0)
+					editor_board_hint_label.text = "布局模式不会拖断已连接肢体；切到姿态模式拖动近端肢体来旋转。" if _ui_is_zh() else "Layout mode will not tear linked limbs loose; switch to POSE and drag the proximal limb to rotate."
+				_play_sfx_wave("alarm", 170.0, 0.08, -16.0)
 			else:
 				_start_topology_group_drag(unit_bp, mouse_event.position, editor_selected_topology_nodes, false)
 		elif nearest_is_torso:
@@ -22901,16 +23036,14 @@ func _handle_custom_topology_click(mouse_event: InputEventMouseButton, unit_bp: 
 			editor_dragging_node_index = -1
 			editor_dragging_selected_nodes = false
 			editor_dragging_whole_unit = false
+			editor_selecting_topology_box = false
+			_set_layout_drag_reject("connected_part", nearest, "visible")
 			if editor_board_hint_label != null:
-				editor_board_hint_label.text = "已连接肢体请用姿态模式旋转；布局模式只负责拼搭、解绑和移动整机。" if _ui_is_zh() else "Use POSE to rotate connected limbs; LAYOUT is for assembly, unlinking, and moving the whole mech."
-			_play_sfx_wave("alarm", 190.0, 0.06, -18.0)
+				editor_board_hint_label.text = "已连接肢体请用姿态模式旋转；布局模式只负责拼搭、解绑和移动未连接零件。" if _ui_is_zh() else "Use POSE to rotate linked limbs; layout mode builds, unlinks, and moves loose parts only."
+			_play_sfx_wave("alarm", 170.0, 0.08, -16.0)
 			_show_editor_topology_node_detail(nearest, "board", {"position": _editor_board_popup_position(mouse_event.position)})
 		else:
-			_record_editor_undo_state("拖动节点" if _ui_is_zh() else "move node")
-			editor_selected_topology_nodes = [nearest]
-			editor_dragging_node_index = nearest
-			editor_dragging_selected_nodes = false
-			editor_dragging_whole_unit = false
+			_start_unconnected_topology_node_drag(unit_bp, nearest, mouse_event.position, "layout")
 		editor_selected_body_part = BODY_PART_ORDER[nearest % BODY_PART_ORDER.size()]
 		_trigger_editor_snap("node", "topology node %d" % (nearest + 1))
 	else:
@@ -23192,9 +23325,24 @@ func _topology_node_visible_hit_score(role_key: String, unit_bp: Dictionary, nod
 	if Geometry2D.is_point_in_polygon(local_pos, polygon):
 		return center_distance
 	var edge_distance := _point_distance_to_polygon_edges(local_pos, polygon)
-	var edge_padding := maxf(6.0, 8.0 * clampf(editor_board_zoom, EDITOR_BOARD_ZOOM_MIN, EDITOR_BOARD_ZOOM_MAX))
+	var zoom := clampf(editor_board_zoom, EDITOR_BOARD_ZOOM_MIN, EDITOR_BOARD_ZOOM_MAX)
+	var edge_padding := maxf(6.0, 8.0 * zoom)
+	if _topology_node_edge_count(edges, node_index) <= 0 and _topology_node_slot(node) in ["limb_muscle", "muscle"]:
+		edge_padding = maxf(edge_padding, 12.0 * zoom)
 	if edge_distance <= edge_padding:
 		return center_distance + edge_distance * 0.05
+	if _topology_node_slot(node) in ["limb_muscle", "muscle"]:
+		var axis := _topology_visual_hit_node_axis(node_index, visual_nodes, edges)
+		if axis.length() <= 0.01:
+			axis = Vector2.RIGHT
+		axis = axis.normalized()
+		var radius := _topology_visual_hit_node_radius(node)
+		var visual_length := _topology_visual_hit_node_length_px(node, radius)
+		var socket_radius := maxf(8.0 * zoom, radius * 0.55 + 4.0 * zoom)
+		for endpoint in [point - axis * visual_length * 0.5, point + axis * visual_length * 0.5]:
+			var socket_distance := local_pos.distance_to(endpoint)
+			if socket_distance <= socket_radius + edge_padding:
+				return center_distance + socket_distance * 0.03
 	var family := ""
 	if _topology_node_is_component(node):
 		family = AssemblyBoardRenderer.terminal_shape_family(node)
@@ -23849,6 +23997,60 @@ func _topology_selection_has_connected_node(edges: Array, node_indices: Array) -
 	return false
 
 
+func _topology_node_is_unconnected_draggable_component(role_key: String, unit_bp: Dictionary, nodes: Array, edges: Array, node_index: int) -> bool:
+	if node_index < 0 or node_index >= nodes.size() or not (nodes[node_index] is Dictionary):
+		return false
+	var node: Dictionary = nodes[node_index]
+	if not _topology_node_is_component(node):
+		return false
+	var slot_key := _topology_node_slot(node)
+	if not (slot_key in ["limb_muscle", "muscle"]):
+		return false
+	if _topology_node_is_torso(role_key, node, unit_bp):
+		return false
+	return _topology_node_edge_count(edges, node_index) <= 0
+
+
+func _set_layout_drag_reject(reason: String, node_index: int = -1, hit_reason: String = "") -> void:
+	last_layout_drag_reject_reason = reason
+	last_layout_drag_node_index = node_index
+	last_layout_drag_hit_reason = hit_reason
+
+
+func _start_unconnected_topology_node_drag(unit_bp: Dictionary, node_index: int, local_position: Vector2, source_mode: String = "layout") -> bool:
+	if not unit_bp.has("custom_topology"):
+		_set_layout_drag_reject("missing_topology", node_index)
+		return false
+	var role_key: String = ROLE_ORDER[editor_role_index]
+	var topology: Dictionary = unit_bp.get("custom_topology", {})
+	var nodes: Array = topology.get("nodes", [])
+	var edges: Array = topology.get("edges", [])
+	if not _topology_node_is_unconnected_draggable_component(role_key, unit_bp, nodes, edges, node_index):
+		_set_layout_drag_reject("not_unconnected_draggable", node_index)
+		return false
+	_record_editor_undo_state("拖动未连接零件" if _ui_is_zh() else "move loose part")
+	editor_selected_topology_nodes = [node_index]
+	editor_topology_node_index = node_index
+	editor_dragging_node_index = node_index
+	editor_dragging_selected_nodes = false
+	editor_dragging_whole_unit = false
+	editor_selecting_topology_box = false
+	editor_group_drag_original_positions = []
+	editor_node_click_candidate_index = node_index
+	editor_node_click_start_position = local_position
+	editor_node_click_moved = false
+	editor_selected_body_part = BODY_PART_ORDER[node_index % BODY_PART_ORDER.size()]
+	_set_layout_drag_reject("", node_index, "unconnected_%s" % source_mode)
+	_trigger_editor_snap("node", "topology node %d" % (node_index + 1))
+	if editor_board_hint_label != null:
+		if source_mode == "pose":
+			editor_board_hint_label.text = "未连接零件没有姿态根部，已临时按平移处理；连接后可姿态旋转。" if _ui_is_zh() else "Loose parts have no pose root, so this drag moves it for now; rotate it in POSE after linking."
+		else:
+			editor_board_hint_label.text = "拖动未连接零件；松手后会尝试磁吸连接。" if _ui_is_zh() else "Dragging a loose part; release to try magnetic linking."
+	ai_team_manual_lock[_editor_player()] = true
+	return true
+
+
 func _start_topology_group_drag(unit_bp: Dictionary, local_position: Vector2, node_indices: Array, expand_connected_island: bool = false) -> void:
 	if not unit_bp.has("custom_topology"):
 		return
@@ -24154,9 +24356,113 @@ func _pose_root_for_click(role_key: String, unit_bp: Dictionary, nodes: Array, e
 	if clicked_index < 0 or clicked_index >= nodes.size() or not (nodes[clicked_index] is Dictionary):
 		return -1
 	var clicked_node: Dictionary = nodes[clicked_index]
-	if _topology_node_is_torso(role_key, clicked_node, unit_bp):
+	if _pose_drag_node_reject_reason(role_key, unit_bp, nodes, edges, clicked_index) != "":
 		return -1
 	return clicked_index
+
+
+func _pose_drag_candidate_for_point(role_key: String, unit_bp: Dictionary, nodes: Array, edges: Array, local_position: Vector2) -> Dictionary:
+	var visual_nodes := _topology_visual_hit_nodes(role_key, unit_bp, nodes, edges)
+	var nearest_index := -1
+	var nearest_score := INF
+	var best_candidate := {}
+	var best_score := INF
+	var best_depth := -1
+	for i in range(nodes.size()):
+		if not (nodes[i] is Dictionary):
+			continue
+		var score := _topology_node_visible_hit_score(role_key, unit_bp, nodes, edges, visual_nodes, i, local_position)
+		if score >= INF * 0.5:
+			continue
+		if score < nearest_score:
+			nearest_score = score
+			nearest_index = i
+		var reason := _pose_drag_node_reject_reason(role_key, unit_bp, nodes, edges, i)
+		if reason != "":
+			continue
+		var downstream := _topology_downstream_node_indices(role_key, unit_bp, nodes, edges, i)
+		if downstream.is_empty():
+			continue
+		var depth := _topology_pose_node_depth(role_key, unit_bp, nodes, edges, i)
+		if best_candidate.is_empty() or score < best_score - 4.0 or (absf(score - best_score) <= 12.0 and depth > best_depth):
+			best_score = score
+			best_depth = depth
+			best_candidate = {
+				"valid": true,
+				"node_index": i,
+				"root_index": i,
+				"downstream": downstream,
+				"downstream_count": downstream.size(),
+				"reason": "",
+			}
+	if not best_candidate.is_empty():
+		return best_candidate
+	if nearest_index < 0:
+		return {
+			"valid": false,
+			"node_index": -1,
+			"root_index": -1,
+			"downstream_count": 0,
+			"reason": "姿态模式：请点击已连接肢体或末端武器的可见本体。" if _ui_is_zh() else "POSE: click the visible body of a connected limb or terminal weapon.",
+		}
+	var reason := _pose_drag_node_reject_reason(role_key, unit_bp, nodes, edges, nearest_index)
+	if reason != "":
+		return {
+			"valid": false,
+			"node_index": nearest_index,
+			"root_index": nearest_index,
+			"downstream_count": 0,
+			"reason": reason,
+		}
+	return {
+		"valid": false,
+		"node_index": nearest_index,
+		"root_index": nearest_index,
+		"downstream_count": 0,
+		"reason": "姿态编辑没有找到该节点的下游姿态链；请检查 root_joint/distal 接口。" if _ui_is_zh() else "Pose edit found no downstream chain for this node; check root_joint/distal sockets.",
+	}
+
+
+func _topology_pose_node_depth(role_key: String, unit_bp: Dictionary, nodes: Array, edges: Array, node_index: int) -> int:
+	var depth := 0
+	var current := node_index
+	var guard := 0
+	while current >= 0 and current < nodes.size() and guard < nodes.size() + 4:
+		guard += 1
+		var parent_info := _topology_parent_edge_info(role_key, unit_bp, nodes, edges, current)
+		if parent_info.is_empty():
+			break
+		var parent_index := int(parent_info.get("parent", -1))
+		if parent_index < 0 or parent_index >= nodes.size():
+			break
+		depth += 1
+		if _topology_node_is_torso(role_key, nodes[parent_index], unit_bp):
+			break
+		current = parent_index
+	return depth
+
+
+func _pose_drag_node_reject_reason(role_key: String, unit_bp: Dictionary, nodes: Array, edges: Array, node_index: int) -> String:
+	if node_index < 0 or node_index >= nodes.size() or not (nodes[node_index] is Dictionary):
+		return "姿态模式：没有命中可编辑节点。" if _ui_is_zh() else "POSE: no editable node was hit."
+	var node: Dictionary = nodes[node_index]
+	if not _topology_node_is_component(node):
+		return "姿态模式只能编辑有体积的构件节点。" if _ui_is_zh() else "POSE edits only volumetric component nodes."
+	if _topology_node_is_torso(role_key, node, unit_bp):
+		return "躯干不进入姿态拖拽；双击躯干打开详情页。" if _ui_is_zh() else "Torso does not pose-drag; double-click it for details."
+	if not _topology_socket_ids_for_node(role_key, node, unit_bp).has("root_joint"):
+		return "这个零件没有 root_joint，不能作为姿态根部。" if _ui_is_zh() else "This part has no root_joint, so it cannot be a pose root."
+	if _topology_node_edge_count(edges, node_index) <= 0 or _topology_parent_edge_info(role_key, unit_bp, nodes, edges, node_index).is_empty():
+		return "未连接零件没有上游根部关节；请切回布局模式移动或先连接到躯干/肢体。" if _ui_is_zh() else "Unconnected parts have no upstream root joint; switch to LAYOUT to move them or connect them first."
+	return ""
+
+
+func _set_pose_drag_reject(reason: String, root_index: int = -1, downstream_count: int = 0, show_hint: bool = false) -> void:
+	last_pose_drag_reject_reason = reason
+	last_pose_drag_root_index = root_index
+	last_pose_drag_downstream_count = downstream_count
+	if show_hint and editor_board_hint_label != null and reason != "":
+		editor_board_hint_label.text = reason
 
 
 func _topology_parent_index_for_node(role_key: String, unit_bp: Dictionary, nodes: Array, edges: Array, node_index: int) -> int:
@@ -24223,25 +24529,27 @@ func _topology_update_local_pose_fields_for_nodes(role_key: String, unit_bp: Dic
 
 func _start_editor_pose_drag(unit_bp: Dictionary, root_index: int, local_position: Vector2, selected_hint: Array = []) -> bool:
 	if not unit_bp.has("custom_topology"):
+		_set_pose_drag_reject("姿态编辑需要自由拓扑画板。" if _ui_is_zh() else "Pose edit needs a free-topology board.", root_index, 0, true)
 		return false
 	var role_key: String = ROLE_ORDER[editor_role_index]
 	var topology: Dictionary = unit_bp.get("custom_topology", {})
 	var nodes: Array = topology.get("nodes", [])
 	var edges: Array = topology.get("edges", [])
 	if root_index < 0 or root_index >= nodes.size():
+		_set_pose_drag_reject("姿态编辑没有命中有效节点。" if _ui_is_zh() else "Pose edit did not hit a valid node.", root_index, 0, true)
+		return false
+	var reject_reason := _pose_drag_node_reject_reason(role_key, unit_bp, nodes, edges, root_index)
+	if reject_reason != "":
+		_set_pose_drag_reject(reject_reason, root_index, 0, true)
 		return false
 	var downstream := _topology_downstream_node_indices(role_key, unit_bp, nodes, edges, root_index)
 	if downstream.is_empty():
-		if editor_board_hint_label != null:
-			editor_board_hint_label.text = "姿态编辑需要点击带根部关节的肢体或末端武器。" if _ui_is_zh() else "Pose editing needs a limb or terminal weapon with a root joint."
-		_play_sfx_wave("alarm", 170.0, 0.08, -16.0)
+		_set_pose_drag_reject("姿态编辑没有找到该节点的下游姿态链；请检查 root_joint/distal 接口。" if _ui_is_zh() else "Pose edit found no downstream chain for this node; check root_joint/distal sockets.", root_index, 0, true)
 		return false
 	if not downstream.has(root_index):
 		downstream.push_front(root_index)
 	if not selected_hint.is_empty() and not _pose_selection_is_single_downstream_chain(role_key, unit_bp, nodes, edges, root_index, selected_hint):
-		if editor_board_hint_label != null:
-			editor_board_hint_label.text = "框选内容不在同一条下游肢体链中，不能作为一个姿态整体旋转。" if _ui_is_zh() else "The selection is not one downstream limb chain, so it cannot rotate as one pose subtree."
-		_play_sfx_wave("alarm", 170.0, 0.08, -16.0)
+		_set_pose_drag_reject("框选内容不在同一条下游肢体链中，不能作为一个姿态整体旋转。" if _ui_is_zh() else "The selection is not one downstream limb chain, so it cannot rotate as one pose subtree.", root_index, downstream.size(), true)
 		return false
 	var pivot := _topology_socket_position_by_id(role_key, unit_bp, nodes, edges, root_index, "root_joint")
 	var mouse_topology := _board_position_to_topology(local_position)
@@ -24283,6 +24591,7 @@ func _start_editor_pose_drag(unit_bp: Dictionary, root_index: int, local_positio
 	editor_pose_dragging = true
 	editor_pose_root_node = root_index
 	editor_pose_downstream_nodes = downstream
+	_set_pose_drag_reject("", root_index, downstream.size(), false)
 	editor_pose_original_entry_pose = Dictionary(unit_bp.get("entry_pose", {})).duplicate(true)
 	editor_pose_pivot = pivot
 	editor_pose_drag_start_angle = start_vec.angle()
@@ -43895,9 +44204,13 @@ func _default_visual_handedness_for_part(part: Dictionary) -> String:
 
 func _topology_node_visual_handedness(node: Dictionary) -> String:
 	var explicit_mount_side := String(node.get("visual_mount_side", "")).strip_edges()
+	var explicit_handedness := String(node.get("visual_handedness", "")).strip_edges()
+	if explicit_handedness != "":
+		var default_side := _normalize_mount_side(node.get("default_mount_side", node.get("default_visual_handedness", "right")))
+		if explicit_mount_side == "" or _normalize_mount_side(explicit_mount_side) == default_side:
+			return _normalize_mount_side(explicit_handedness)
 	if explicit_mount_side != "":
 		return _normalize_mount_side(explicit_mount_side)
-	var explicit_handedness := String(node.get("visual_handedness", "")).strip_edges()
 	if explicit_handedness != "":
 		return _normalize_mount_side(explicit_handedness)
 	return _normalize_mount_side(node.get("visual_mount_side", node.get("default_mount_side", node.get("default_visual_handedness", "right"))))
@@ -47713,6 +48026,7 @@ func _build_editor_ui() -> void:
 	editor_unit_hover_view.z_index = 255
 	editor_unit_hover_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	editor_unit_hover_view.visible = false
+	editor_unit_hover_view.close_requested.connect(_close_editor_unit_detail)
 	root.add_child(editor_unit_hover_view)
 	editor_torso_detail_view = TorsoDetailPanelView.new()
 	editor_torso_detail_view.name = "EditorTorsoDetail"
@@ -49965,7 +50279,7 @@ func _apply_editor_panel_visibility(role_key: String, unit_bp: Dictionary) -> vo
 	if editor_hover_popup_view != null and not (parts_visible or shop_visible):
 		editor_hover_popup_view.clear_card()
 	if editor_unit_hover_view != null and not load_visible:
-		editor_unit_hover_view.visible = false
+		_clear_editor_unit_hover_card(true)
 	for label_key in editor_section_labels.keys():
 		var label: Label = editor_section_labels[label_key]
 		match String(label_key):
@@ -53699,8 +54013,10 @@ func _mobius_config() -> Dictionary:
 	config["near_alpha"] = MOBIUS_NEAR_ALPHA
 	config["far_alpha"] = MOBIUS_FAR_ALPHA
 	config["depth_contrast"] = MOBIUS_DEPTH_CONTRAST
+	config["surface_field_kind"] = "square_grid_field"
+	config["surface_grid_cell_px"] = 32.0
 	config["surface_lane_guides_enabled"] = false
-	config["stardust_band_enabled"] = true
+	config["stardust_band_enabled"] = false
 	config["stardust_alpha_max"] = 0.28
 	config["stardust_width_min"] = 2.4
 	config["stardust_width_max"] = 13.5
@@ -53838,7 +54154,7 @@ func _refresh_mobius_surface_view() -> void:
 	var mobius_battle_visible := mobius_enabled and game_state == STATE_BATTLE
 	mobius_strip_surface_view.visible = mobius_battle_visible
 	if mobius_stardust_band_view != null:
-		mobius_stardust_band_view.visible = mobius_battle_visible
+		mobius_stardust_band_view.visible = false
 	var battle_backdrop := find_child("GeneratedSpaceBackdrop", true, false) as CanvasItem
 	if battle_backdrop != null:
 		battle_backdrop.visible = game_state == STATE_BATTLE and not mobius_battle_visible
@@ -53846,28 +54162,22 @@ func _refresh_mobius_surface_view() -> void:
 		return
 	var surface_config := _mobius_config()
 	surface_config["stardust_band_enabled"] = false
+	surface_config["surface_field_kind"] = "square_grid_field"
+	surface_config["surface_grid_cell_px"] = 32.0
 	surface_config["surface_lane_guides_enabled"] = false
 	surface_config["local_rectangular_projection"] = false
 	surface_config["near_alpha"] = 1.0
 	surface_config["far_alpha"] = 0.72
 	surface_config["depth_contrast"] = 1.08
 	surface_config["surface_detail_density"] = maxf(1.15, float(surface_config.get("surface_detail_density", 1.0)))
-	surface_config["surface_alpha_gain"] = 18.0
-	surface_config["surface_alpha_max"] = 0.16
-	surface_config["surface_color_gain"] = 3.6
+	surface_config["surface_alpha_gain"] = 1.35
+	surface_config["surface_alpha_max"] = 0.20
+	surface_config["surface_color_gain"] = 1.85
 	mobius_strip_surface_view.set_surface_texture(mobius_surface_texture)
 	mobius_strip_surface_view.set_world(surface_config, mobius_rotation_state, _mobius_camera_coord())
 	if mobius_stardust_band_view != null:
-		var stardust_config := _mobius_config()
-		stardust_config["surface_lane_guides_enabled"] = false
-		stardust_config["stardust_band_enabled"] = true
-		stardust_config["twist_wave_amplitude"] = MOBIUS_TWIST_WAVE_AMPLITUDE * 1.85
-		stardust_config["depth_strength"] = MOBIUS_DEPTH_STRENGTH * 1.18
-		stardust_config["stardust_alpha_max"] = 0.08
-		stardust_config["stardust_source_alpha"] = 0.030
-		stardust_config["stardust_source_width_px"] = 3.0
-		stardust_config["stardust_particle_budget"] = 96
-		mobius_stardust_band_view.set_world(stardust_config, mobius_rotation_state, _mobius_camera_coord())
+		mobius_stardust_band_view.visible = false
+		mobius_stardust_band_view.set_world({"enabled": false, "stardust_band_enabled": false}, mobius_rotation_state, _mobius_camera_coord())
 
 
 func _battle_mode_title() -> String:

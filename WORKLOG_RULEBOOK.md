@@ -1,6 +1,6 @@
 # Eidolon Circuit Worklog Rulebook
 
-Last updated: 2026-05-25
+Last updated: 2026-05-26
 
 This document is a handoff log written like a tabletop rulebook. Use it to brief another AI agent or human collaborator before changing the Godot project.
 
@@ -11,6 +11,28 @@ Mirror note: `C:\Users\Administrator\Documents\New project` is a mirror/secondar
 Primary implementation file: `scripts/main.gd`
 
 Godot version in workspace: `tools/godot-4.6.2/Godot_v4.6.2-stable_win64_console.exe`
+
+## 2026-05-26 Mobius Square-Grid Field Projection
+
+Rules:
+- The Mobius strip is the battle field itself, not a background prop. Field art must be sampled as surface texture data on the strip.
+- The source field texture is a uniform square grid in UV space: equal spacing, equal line width, and equal brightness. Any visible diagonal twist, scale change, near/far brightness, or shear must come from the Mobius visual projection and shader sampling.
+- Gameplay remains readable and Euclidean. Units, projectiles, aim lines, and collisions keep the rectangular gameplay projection; only the field surface underneath uses the visual Mobius projection.
+- The independent stardust band is no longer a live battle layer. Keep the node only as compatibility/rollback scaffolding; current battle reading comes from `MobiusStripSurfaceView`.
+
+Implementation notes:
+- Regenerated `assets/generated/mobius_surface_mesh_net.png` as a 4096x512, 32px-cell square grid with transparent cell interiors and uniform line alpha.
+- `MobiusWorld.frame_at()` now uses random twist pivot, diagonal phase, direction, speed, and amplitude to drive the visual saddle projection. Rotation state changes are smoothed, and the camera/control frame is not rotated.
+- `MobiusWorld.surface_sample_grid()` continues to emit lifted U coordinates for half-twist sampling, but its quads are explicitly a `square_grid_field` using visual Mobius projection.
+- `mobius_strip_surface.gdshader` keeps the continuous half-twist mirror and subtle UV shear/warp, while projection alpha now multiplies the texture alpha so near/far brightness is produced by projection depth.
+- Battle hides `GeneratedSpaceBackdrop` and the old `MobiusStardustBandView` whenever Mobius field rendering is active.
+- The commit also carries the already-present editor unit detail and pose/board drag probe work after validating those probes headlessly; the failing experimental `board_connected_volumetric_island_drag_matrix_probe` remains local and is not part of this rulebook entry.
+
+Verification:
+- `tools/run_godot_checked.ps1 -Headless -CheckOnly -TimeoutSec 120` passed.
+- New Mobius field probes passed: `mobius_square_grid_source_uniform_probe`, `mobius_square_grid_projection_distortion_probe`, `mobius_surface_motion_randomized_probe`, and `mobius_surface_not_background_probe`.
+- Updated surface probes passed: `mobius_surface_mesh_texture_asset_probe`, `mobius_surface_mesh_uv_attachment_probe`, `mobius_surface_mesh_twist_readability_probe`, `mobius_surface_mesh_not_occluding_units_probe`, and `mobius_no_straight_lane_guide_render_probe`.
+- Already-present editor/pose probes in the dirty tree also passed before commit: editor unit detail close/ESC/right-click/no-reopen, unconnected board release/pose/endpoint, connected layout protection, pose-mode visible polygon/limb/terminal/downstream/hint, and `scythe_connected_drag_preserves_topology_probe`.
 
 ## 2026-05-25 Scythe Orthogonal Side-Mount Closure
 

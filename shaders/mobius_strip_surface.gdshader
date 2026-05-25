@@ -29,10 +29,6 @@ void fragment() {
 	float tint_mix = clamp(cosmic_mix, 0.0, 0.32);
 	float projection_gain = clamp(0.86 + depth_contrast * 0.10, 0.72, 1.08);
 	vec3 projection_tint = mix(vec3(0.78, 0.84, 0.94), COLOR.rgb * 3.0, tint_mix);
-	float vertex_alpha = COLOR.a;
-	if (surface_texture_enabled && art.a > 0.0001) {
-		vertex_alpha = clamp(COLOR.a / art.a, 0.0, 1.0);
-	}
 	COLOR.rgb = min(art.rgb * projection_tint * projection_gain * max(surface_color_gain, 0.0), vec3(1.0));
-	COLOR.a = min(vertex_alpha * art.a * max(surface_alpha_gain, 0.0), max(surface_alpha_max, 0.0));
+	COLOR.a = min(clamp(COLOR.a, 0.0, 1.0) * art.a * max(surface_alpha_gain, 0.0), max(surface_alpha_max, 0.0));
 }

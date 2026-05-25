@@ -87,6 +87,9 @@ static func default_config(loop_length: float, strip_width: float, view_width: f
 		"twist_wave_amplitude": 0.18,
 		"twist_wave_speed": 0.10,
 		"twist_wave_scale": 1.35,
+		"twist_pivot_influence": 0.34,
+		"surface_projection_mode": "mobius_visual",
+		"surface_grid_cell_px": 32.0,
 	}
 
 
@@ -102,6 +105,9 @@ static func default_rotation_state(loop_length: float = DEFAULT_LOOP_LENGTH) -> 
 		"target_twist_amplitude": 0.18,
 		"pivot": Vector2(loop_length * 0.5, 0.0),
 		"target_pivot": Vector2(loop_length * 0.5, 0.0),
+		"diagonal_phase": 0.0,
+		"target_diagonal_phase": 0.0,
+		"twist_direction": 1.0,
 		"change_timer": 30.0,
 	}
 
@@ -111,6 +117,8 @@ static func advance_twist_state(state: Dictionary, delta: float, config: Diction
 	var blend_seconds := maxf(0.001, float(config.get("rotation_blend_seconds", 4.0)))
 	var interval_min := maxf(0.1, float(config.get("rotation_interval_min", 30.0)))
 	var interval_max := maxf(interval_min, float(config.get("rotation_interval_max", 60.0)))
+	var loop := maxf(0.001, float(config.get("loop_length", DEFAULT_LOOP_LENGTH)))
+	var half_width := strip_half_width(config)
 	var base_speed := maxf(0.0, float(config.get("twist_wave_speed", 0.10)))
 	var speed_min := base_speed * 0.62
 	var speed_max := base_speed * 1.38
@@ -121,13 +129,26 @@ static func advance_twist_state(state: Dictionary, delta: float, config: Diction
 	next["target_angular_velocity"] = 0.0
 	next["twist_speed"] = lerpf(float(next.get("twist_speed", base_speed)), float(next.get("target_twist_speed", base_speed)), t)
 	next["twist_amplitude"] = lerpf(float(next.get("twist_amplitude", amp_base)), float(next.get("target_twist_amplitude", amp_base)), t)
-	next["pivot"] = Vector2(next.get("pivot", Vector2.ZERO)).lerp(Vector2(next.get("target_pivot", Vector2.ZERO)), t)
+	next["pivot"] = Vector2(next.get("pivot", Vector2(loop * 0.5, 0.0))).lerp(Vector2(next.get("target_pivot", Vector2(loop * 0.5, 0.0))), t)
+	next["diagonal_phase"] = lerp_angle(float(next.get("diagonal_phase", 0.0)), float(next.get("target_diagonal_phase", 0.0)), t)
 	next["twist_phase"] = wrapf(float(next.get("twist_phase", 0.0)) + float(next.get("twist_speed", base_speed)) * delta, -TAU, TAU)
 	next["change_timer"] = float(next.get("change_timer", interval_min)) - delta
 	if float(next["change_timer"]) <= 0.0:
-		next["target_twist_speed"] = randf_range(speed_min, speed_max)
-		next["target_twist_amplitude"] = randf_range(amp_base * 0.72, amp_base * 1.22)
-		next["target_pivot"] = Vector2(float(config.get("loop_length", DEFAULT_LOOP_LENGTH)) * 0.5, 0.0)
+		var direction := -1.0 if randf() < 0.5 else 1.0
+		next["twist_direction"] = direction
+		var target_speed := randf_range(speed_min, speed_max) * direction
+		if absf(target_speed - float(next.get("target_twist_speed", base_speed))) < speed_min * 0.18:
+			target_speed = -target_speed
+			next["twist_direction"] = signf(target_speed)
+		next["target_twist_speed"] = target_speed
+		next["target_twist_amplitude"] = randf_range(amp_base * 0.72, amp_base * 1.35)
+		var previous_target := Vector2(next.get("target_pivot", Vector2(loop * 0.5, 0.0)))
+		var target_pivot := Vector2(randf_range(0.0, loop), randf_range(-half_width * 0.55, half_width * 0.55))
+		if target_pivot.distance_to(previous_target) < maxf(0.25, loop * 0.06):
+			target_pivot.x = fposmod(target_pivot.x + loop * 0.37, loop)
+			target_pivot.y = clampf(-target_pivot.y + half_width * 0.18, -half_width * 0.55, half_width * 0.55)
+		next["target_pivot"] = target_pivot
+		next["target_diagonal_phase"] = randf_range(-PI, PI)
 		next["change_timer"] = randf_range(interval_min, interval_max)
 	return next
 
@@ -163,6 +184,10 @@ static func frame_at(coord: Vector2, camera_coord: Vector2, config: Dictionary, 
 	var camera_wave_arg := TAU * camera_coord.x / loop * twist_scale + twist_phase
 	var visual_twist_wave := (sin(wave_arg) + sin(wave_arg * 0.43 - twist_phase * 0.7) * 0.42) * twist_amp
 	var camera_twist_wave := (sin(camera_wave_arg) + sin(camera_wave_arg * 0.43 - twist_phase * 0.7) * 0.42) * twist_amp
+	var pivot := Vector2(rotation_state.get("pivot", Vector2(loop * 0.5, 0.0)))
+	pivot.x = nearest_lifted_s(camera_coord.x, pivot.x, loop)
+	var pivot_delta := delta_vec(camera_coord, pivot, loop)
+	var pivot_influence := clampf(float(config.get("twist_pivot_influence", 0.34)), 0.0, 0.85)
 	var phase := TAU * world_s / loop + visual_twist_wave
 	var camera_phase := TAU * camera_coord.x / loop + camera_twist_wave
 	var loop_depth := clampf(0.5 + cos(phase) * 0.5, 0.0, 1.0)
@@ -170,7 +195,16 @@ static func frame_at(coord: Vector2, camera_coord: Vector2, config: Dictionary, 
 		clampf(delta.x / half_width_units, -1.35, 1.35),
 		clampf(delta.y / half_height_units, -1.35, 1.35)
 	)
-	var diagonal_saddle := clampf(plane01.x * plane01.y + visual_twist_wave * 0.16, -1.0, 1.0)
+	var pivot_bias := Vector2(
+		clampf(-pivot_delta.x / half_width_units, -1.0, 1.0),
+		clampf(-pivot_delta.y / half_height_units, -1.0, 1.0)
+	) * pivot_influence
+	var diagonal_phase := float(rotation_state.get("diagonal_phase", 0.0))
+	var diagonal_angle := diagonal_phase + pivot.x / loop * TAU + twist_phase * 0.31
+	var saddle_plane := (plane01 + pivot_bias).rotated(diagonal_angle)
+	var saddle_center := pivot_bias.rotated(diagonal_angle)
+	var centered_saddle := saddle_plane.x * saddle_plane.y - saddle_center.x * saddle_center.y
+	var diagonal_saddle := clampf(centered_saddle * 1.35 + visual_twist_wave * 0.16, -1.0, 1.0)
 	var diagonal_depth := clampf(0.5 + diagonal_saddle * 0.5, 0.0, 1.0)
 	var depth_strength := float(config.get("depth_strength", 0.42))
 	var diagonal_weight := clampf(0.28 + plane01.length() / sqrt(2.0) * 0.58, 0.28, 0.86)
@@ -214,8 +248,10 @@ static func frame_at(coord: Vector2, camera_coord: Vector2, config: Dictionary, 
 		"camera_phase": camera_phase,
 		"visual_axis_angle": visual_axis_angle,
 		"fairness_blend": fairness_blend,
-		"pivot": Vector2(loop * 0.5, 0.0),
-		"pivot_delta": Vector2.ZERO,
+		"pivot": pivot,
+		"pivot_delta": pivot_delta,
+		"diagonal_phase": diagonal_phase,
+		"diagonal_angle": diagonal_angle,
 		"twist_phase": twist_phase,
 		"visual_twist_wave": visual_twist_wave,
 	}
@@ -240,9 +276,11 @@ static func project_to_screen(coord: Vector2, camera_coord: Vector2, config: Dic
 	else:
 		var perspective_x := delta.x * screen_scale * (0.78 + visual_scale * 0.22)
 		var twist_x := sin(twist) * delta.y * screen_scale * 0.22
+		twist_x += diagonal_saddle * delta.y * screen_scale * 0.070
 		var curve_y := (sin(phase) - sin(camera_phase)) * screen_rect.size.y * 0.14 * depth_strength
 		curve_y += diagonal_saddle * screen_rect.size.y * 0.045 * depth_strength
-		var perspective_y := delta.y * screen_scale * visual_scale * (0.82 + depth01 * 0.18)
+		var diagonal_y := diagonal_saddle * delta.x * screen_scale * 0.052 * depth_strength
+		var perspective_y := delta.y * screen_scale * visual_scale * (0.82 + depth01 * 0.18) + diagonal_y
 		pos = center + Vector2(perspective_x + twist_x, perspective_y + curve_y)
 	var margin := maxf(96.0, screen_scale * 0.8)
 	var visible := pos.x >= screen_rect.position.x - margin and pos.x <= screen_rect.end.x + margin and pos.y >= screen_rect.position.y - margin and pos.y <= screen_rect.end.y + margin
@@ -312,9 +350,7 @@ static func surface_sample_grid(camera_coord: Vector2, config: Dictionary, rotat
 			var p01 := project_to_screen(Vector2(s0, v1), camera_coord, config, rotation_state)
 			var avg_depth := (float(p00.get("depth01", 0.5)) + float(p10.get("depth01", 0.5)) + float(p11.get("depth01", 0.5)) + float(p01.get("depth01", 0.5))) * 0.25
 			var center_v := (v0 + v1) * 0.5
-			var edge_softness := boundary_softness(center_v, config)
-			var stripe_phase := float(rotation_state.get("twist_phase", 0.0))
-			var stripe := 0.5 + 0.5 * sin((s0 / loop) * TAU * 16.0 + float(j) * 0.7 + stripe_phase * 0.55)
+			var edge_softness := minf(boundary_softness(v0, config), boundary_softness(v1, config))
 			var u0 := s0 / loop
 			var u1 := s1 / loop
 			samples.append({
@@ -332,7 +368,9 @@ static func surface_sample_grid(camera_coord: Vector2, config: Dictionary, rotat
 				]),
 				"avg_depth": avg_depth,
 				"edge_softness": edge_softness,
-				"stripe": stripe,
+				"stripe": 0.0,
+				"surface_kind": "square_grid_field",
+				"projection_mode": "mobius_visual",
 				"center": Vector2((s0 + s1) * 0.5, center_v),
 				"z_index": int(round(lerpf(-18.0, 42.0, avg_depth))),
 			})
