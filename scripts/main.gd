@@ -4336,6 +4336,7 @@ class TorsoDetailPanelView:
 	signal remove_payload(payload_index: int)
 	signal rebind_payload(payload_index: int)
 	signal binding_candidate_selected(candidate_index: int)
+	signal binding_action_side_selected(side: String)
 	signal binding_key_selected(key_value: int)
 	signal binding_cancel_requested()
 	signal close_requested()
@@ -4362,6 +4363,8 @@ class TorsoDetailPanelView:
 	var binding_candidates: Array = []
 	var binding_selected_index := -1
 	var binding_key_ready := false
+	var binding_action_side_required := false
+	var binding_action_side := ""
 	var binding_scroll := 0.0
 	var last_detail_signature := ""
 	var last_binding_signature := ""
@@ -4394,10 +4397,10 @@ class TorsoDetailPanelView:
 		_clamp_scroll_offsets()
 		queue_redraw()
 
-	func set_binding_state(active: bool, next_title: String = "", next_subtitle: String = "", next_candidates: Array = [], next_selected_index: int = -1, next_key_ready: bool = false) -> void:
+	func set_binding_state(active: bool, next_title: String = "", next_subtitle: String = "", next_candidates: Array = [], next_selected_index: int = -1, next_key_ready: bool = false, next_action_side_required: bool = false, next_action_side: String = "") -> void:
 		var next_candidates_signature := _candidates_signature(next_candidates)
 		var reset_scroll := active != binding_mode or next_title != binding_title or next_candidates_signature != _candidates_signature(binding_candidates)
-		var signature := "%s|%s|%s|%d|%s|%s" % [str(active), next_title, next_subtitle, next_selected_index, str(next_key_ready), next_candidates_signature]
+		var signature := "%s|%s|%s|%d|%s|%s|%s|%s" % [str(active), next_title, next_subtitle, next_selected_index, str(next_key_ready), str(next_action_side_required), next_action_side, next_candidates_signature]
 		if signature == last_binding_signature:
 			return
 		last_binding_signature = signature
@@ -4407,6 +4410,8 @@ class TorsoDetailPanelView:
 		binding_candidates = next_candidates.duplicate(true)
 		binding_selected_index = next_selected_index
 		binding_key_ready = next_key_ready
+		binding_action_side_required = next_action_side_required
+		binding_action_side = next_action_side
 		binding_scroll = 0.0 if reset_scroll else clampf(binding_scroll, 0.0, _binding_max_scroll())
 		queue_redraw()
 
@@ -4532,6 +4537,12 @@ class TorsoDetailPanelView:
 					binding_cancel_requested.emit()
 					accept_event()
 					return
+				if binding_action_side_required:
+					for side in ["left", "right"]:
+						if _binding_action_side_rect(side).has_point(mouse_event.position):
+							binding_action_side_selected.emit(side)
+							accept_event()
+							return
 				for key_value in range(1, 7):
 					if binding_key_ready and _binding_key_rect(key_value).has_point(mouse_event.position):
 						binding_key_selected.emit(key_value)
@@ -4902,6 +4913,16 @@ class TorsoDetailPanelView:
 		var y := rect.end.y - 70.0 + float(row) * 32.0
 		return Rect2(Vector2(x, y), Vector2(width, 26.0))
 
+	func _binding_action_side_rect(side: String) -> Rect2:
+		var rect := _binding_panel_rect()
+		var width := 132.0
+		var gap := 12.0
+		var total := width * 2.0 + gap
+		var index := 0 if side == "left" else 1
+		var x := rect.get_center().x - total * 0.5 + float(index) * (width + gap)
+		var y := rect.end.y - 70.0
+		return Rect2(Vector2(x, y), Vector2(width, 28.0))
+
 	func _binding_candidate_rect(index: int) -> Rect2:
 		var list_rect := _binding_list_rect()
 		var y := list_rect.position.y + float(index) * 32.0 - binding_scroll
@@ -4966,7 +4987,20 @@ class TorsoDetailPanelView:
 			draw_rect(track, Color(0.42, 0.9, 1.0, 0.16), true)
 			draw_rect(thumb, Color(0.42, 0.9, 1.0, 0.76), true)
 		var key_hint := _label("选择攻击键", "PICK ATTACK KEY") if binding_key_ready else _label("先点合法部位", "PICK TARGET FIRST")
+		if binding_action_side_required:
+			key_hint = _label("先选择动作侧", "PICK ACTION SIDE") if binding_action_side == "" else _label("动作侧已选，选择攻击键", "ACTION SIDE SET, PICK KEY")
 		draw_string(font, Vector2(rect.position.x + 14.0, rect.end.y - 77.0), key_hint, HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 28.0, 9, Color(0.72, 0.92, 1.0, 0.86) if binding_key_ready else Color(0.8, 0.72, 0.62, 0.72))
+		if binding_action_side_required:
+			for side in ["left", "right"]:
+				var side_rect := _binding_action_side_rect(side)
+				var selected_side: bool = binding_action_side == side
+				var side_color: Color = Color(0.45, 1.0, 0.78, 0.96) if selected_side else Color(0.34, 0.66, 0.92, 0.9)
+				draw_rect(side_rect, Color(side_color.r * 0.14, side_color.g * 0.14, side_color.b * 0.16, 0.94), true)
+				draw_rect(side_rect, side_color, false, 1.0 if not selected_side else 2.0)
+				var side_label: String = _label("左侧动作", "LEFT ACTION") if side == "left" else _label("右侧动作", "RIGHT ACTION")
+				draw_string(font, side_rect.position + Vector2(4.0, 18.0), side_label, HORIZONTAL_ALIGNMENT_CENTER, side_rect.size.x - 8.0, 10, Color(0.9, 1.0, 0.96, 1.0))
+			if binding_action_side == "":
+				return
 		for key_value in range(1, 7):
 			var key_rect := _binding_key_rect(key_value)
 			var key_color := Color(0.36, 0.92, 1.0, 0.95) if binding_key_ready else Color(0.28, 0.32, 0.36, 0.78)
@@ -10787,6 +10821,8 @@ const EDITOR_DIRTY_STATS := 128
 const EDITOR_DIRTY_LEGALITY := 256
 const EDITOR_DIRTY_BOARD_UI := 512
 const EDITOR_DIRTY_ALL_STRUCTURAL := 1023
+const MODULE_BINDING_TRYOUT_Z_INDEX := 240
+const MODULE_BINDING_OVERLAY_Z_INDEX := 380
 var editor_dirty_flags := 0
 var editor_dirty_scheduler_flush_count := 0
 var editor_dirty_scheduler_last_usec := 0
@@ -12245,6 +12281,20 @@ func _apply_module_recovery_entry_pose_defaults(role_key: String, unit_bp: Dicti
 		var module_part := _selected_component(role_key, "module", module_index)
 		var module_profile := String(module_part.get("module_action_profile", "")).to_lower()
 		var target_nodes: Array = Array(binding.get("target_nodes", []))
+		var root_index := int(binding.get("root_index", -1))
+		var side_mount_node := _module_binding_side_mount_node_index(role_key, unit_bp, nodes, root_index, target_nodes)
+		if side_mount_node >= 0 and side_mount_node < nodes.size() and not assigned.has(side_mount_node) and nodes[side_mount_node] is Dictionary:
+			var side := _normalize_side_mount_action_side(binding.get("side_mount_action_side", _module_binding_default_side_mount_action_side(role_key, unit_bp, nodes, root_index, target_nodes)))
+			var side_node: Dictionary = Dictionary(nodes[side_mount_node]).duplicate(true)
+			side_node["local_angle"] = _side_mount_action_angle_offset(side)
+			side_node["local_extension"] = float(side_node.get("local_extension", 0.0))
+			side_node["entry_pose_source"] = "side_mount_action_%s" % side
+			side_node["side_mount_action_side"] = side
+			side_node["side_mount_action_angle_offset"] = _side_mount_action_angle_offset(side)
+			nodes[side_mount_node] = side_node
+			assigned[side_mount_node] = true
+			changed = true
+			continue
 		if module_profile != "two_link_forward_snap":
 			if not normalize_gun_terminals:
 				continue
@@ -25818,7 +25868,11 @@ func _start_editor_module_binding_flow(payload_index: int, module_part: Dictiona
 	}
 	var payloads: Array = Array(unit_bp.get("slot_payloads", []))
 	if payload_index >= 0 and payload_index < payloads.size() and payloads[payload_index] is Dictionary:
-		editor_pending_module_binding["module_index"] = int(Dictionary(payloads[payload_index]).get("module", editor_pending_module_binding.get("module_index", 0)))
+		var payload: Dictionary = Dictionary(payloads[payload_index])
+		editor_pending_module_binding["module_index"] = int(payload.get("module", editor_pending_module_binding.get("module_index", 0)))
+		var payload_torso := _payload_torso_node_index(payload, unit_bp)
+		if payload_torso >= 0:
+			editor_open_torso_node_index = payload_torso
 	editor_selected_topology_nodes = []
 	editor_board_tool = "layout"
 	if editor_summary_label != null:
@@ -25853,7 +25907,61 @@ func _pending_module_binding_hint() -> String:
 	var key_text := "未选择" if _ui_is_zh() else "none"
 	if key > 0:
 		key_text = "%d %s" % [key, _attack_key_label(key)]
+	if bool(editor_pending_module_binding.get("side_mount_action_required", false)) and String(editor_pending_module_binding.get("side_mount_action_side", "")) == "":
+		var default_side := _normalize_side_mount_action_side(editor_pending_module_binding.get("side_mount_action_default_side", "right"))
+		var default_label := ("左" if default_side == "left" else "右") if _ui_is_zh() else default_side.to_upper()
+		return ("绑定 %s：目标 %s；请选择动作侧（默认 %s）。" if _ui_is_zh() else "Bind %s: target %s; choose action side (default %s).") % [module_name, target_label, default_label]
 	return ("绑定 %s：目标 %s；请选择攻击键（当前 %s）。" if _ui_is_zh() else "Bind %s: target %s; choose an attack key (current %s).") % [module_name, target_label, key_text]
+
+
+func _normalize_side_mount_action_side(side) -> String:
+	var value := String(side).strip_edges().to_lower()
+	return "left" if value == "left" else "right"
+
+
+func _side_mount_action_side_label(side: String) -> String:
+	var normalized := _normalize_side_mount_action_side(side)
+	return "左侧动作" if _ui_is_zh() and normalized == "left" else ("右侧动作" if _ui_is_zh() else ("%s ACTION" % normalized.to_upper()))
+
+
+func _side_mount_action_angle_offset(side: String) -> float:
+	return -PI * 0.5 if _normalize_side_mount_action_side(side) == "left" else PI * 0.5
+
+
+func _module_binding_side_mount_node_index(role_key: String, unit_bp: Dictionary, nodes: Array, root_index: int, target_nodes: Array) -> int:
+	var candidates: Array = []
+	if root_index >= 0:
+		candidates.append(root_index)
+	for raw_node in target_nodes:
+		var node_index := int(raw_node)
+		if not candidates.has(node_index):
+			candidates.append(node_index)
+	for raw_index in candidates:
+		var index := int(raw_index)
+		if index < 0 or index >= nodes.size() or not (nodes[index] is Dictionary):
+			continue
+		var node: Dictionary = nodes[index]
+		if _topology_node_is_orthogonal_side_mount_terminal(role_key, unit_bp, node):
+			return index
+	for raw_index in candidates:
+		var index := int(raw_index)
+		if index < 0 or index >= nodes.size() or not (nodes[index] is Dictionary):
+			continue
+		var node: Dictionary = nodes[index]
+		if _topology_node_supports_visual_handedness(role_key, unit_bp, node):
+			return index
+	return -1
+
+
+func _module_binding_side_mount_action_required(role_key: String, unit_bp: Dictionary, nodes: Array, root_index: int, target_nodes: Array) -> bool:
+	return _module_binding_side_mount_node_index(role_key, unit_bp, nodes, root_index, target_nodes) >= 0
+
+
+func _module_binding_default_side_mount_action_side(role_key: String, unit_bp: Dictionary, nodes: Array, root_index: int, target_nodes: Array) -> String:
+	var side_node := _module_binding_side_mount_node_index(role_key, unit_bp, nodes, root_index, target_nodes)
+	if side_node >= 0 and side_node < nodes.size() and nodes[side_node] is Dictionary:
+		return _normalize_side_mount_action_side(_topology_node_visual_handedness(Dictionary(nodes[side_node])))
+	return "right"
 
 
 func _pending_module_binding_candidate_for_node(unit_bp: Dictionary, node_index: int) -> Dictionary:
@@ -25937,6 +26045,12 @@ func _set_pending_module_attack_key(key_value: int) -> void:
 		if editor_board_hint_label != null:
 			editor_board_hint_label.text = "请先在画板上选择行动模块要控制的部位。" if _ui_is_zh() else "Select the module target on the board first."
 		_play_sfx_wave("alarm", 170.0, 0.08, -16.0)
+		return
+	if bool(editor_pending_module_binding.get("side_mount_action_required", false)) and String(editor_pending_module_binding.get("side_mount_action_side", "")) == "":
+		if editor_board_hint_label != null:
+			editor_board_hint_label.text = "请先选择镰刀行动模块的左/右动作侧。" if _ui_is_zh() else "Choose the scythe action side before picking the attack key."
+		_play_sfx_wave("alarm", 170.0, 0.08, -16.0)
+		_refresh_torso_detail_view()
 		return
 	editor_pending_module_binding["attack_key"] = clampi(key_value, 1, ATTACK_GROUP_COUNT)
 	_finalize_pending_module_binding_after_key(_editor_current_blueprint())
@@ -26192,6 +26306,8 @@ func _complete_pending_module_binding_with_selection(unit_bp: Dictionary, select
 	var drive_by_node := _module_binding_drive_allocation_for_nodes(role_key, unit_bp, nodes, target_nodes, module_part)
 	var joint_drive_total := _module_binding_drive_total(drive_by_node)
 	var joint_output_total := _module_binding_joint_output_for_nodes(role_key, unit_bp, nodes, target_nodes, module_part)
+	var side_mount_required := _module_binding_side_mount_action_required(role_key, unit_bp, nodes, root_index, target_nodes)
+	var side_mount_default := _module_binding_default_side_mount_action_side(role_key, unit_bp, nodes, root_index, target_nodes) if side_mount_required else ""
 	var min_bound_nodes := int(module_part.get("min_bound_nodes", 0))
 	if min_bound_nodes > 0 and target_nodes.size() < min_bound_nodes:
 		editor_summary_label.text = "警报：该行动模块至少需要绑定 %d 段肢体。" % min_bound_nodes if _ui_is_zh() else "ALARM: this action module needs at least %d limb segments." % min_bound_nodes
@@ -26246,9 +26362,21 @@ func _complete_pending_module_binding_with_selection(unit_bp: Dictionary, select
 	editor_pending_module_binding["joint_drive_demand"] = joint_drive_total
 	editor_pending_module_binding["joint_output_momentum"] = joint_output_total
 	editor_pending_module_binding["attack_key"] = 0
+	editor_pending_module_binding["side_mount_action_required"] = side_mount_required
+	if side_mount_required:
+		editor_pending_module_binding["side_mount_action_default_side"] = side_mount_default
+		editor_pending_module_binding["side_mount_action_side"] = ""
+		editor_pending_module_binding["side_mount_action_node"] = _module_binding_side_mount_node_index(role_key, unit_bp, nodes, root_index, target_nodes)
+	else:
+		editor_pending_module_binding.erase("side_mount_action_default_side")
+		editor_pending_module_binding.erase("side_mount_action_side")
+		editor_pending_module_binding.erase("side_mount_action_node")
 	editor_selected_topology_nodes = target_nodes
 	editor_topology_node_index = root_index
-	editor_summary_label.text = "目标已选择：%s。现在请选择攻击键：1U / 2I / 3O / 4J / 5K / 6L。" % target_label if _ui_is_zh() else "Target selected: %s. Now choose attack key: 1U / 2I / 3O / 4J / 5K / 6L." % target_label
+	if side_mount_required:
+		editor_summary_label.text = "目标已选择：%s。请选择镰刀动作侧：左侧动作 / 右侧动作。" % target_label if _ui_is_zh() else "Target selected: %s. Choose scythe action side: LEFT ACTION / RIGHT ACTION." % target_label
+	else:
+		editor_summary_label.text = "目标已选择：%s。现在请选择攻击键：1U / 2I / 3O / 4J / 5K / 6L。" % target_label if _ui_is_zh() else "Target selected: %s. Now choose attack key: 1U / 2I / 3O / 4J / 5K / 6L." % target_label
 	_trigger_editor_snap("module_target", target_label)
 	_refresh_editor_visual_views()
 	_update_editor_ui()
@@ -26453,6 +26581,24 @@ func _select_torso_detail_binding_candidate(candidate_index: int) -> void:
 	_refresh_torso_detail_view()
 
 
+func _select_torso_detail_binding_action_side(side: String) -> void:
+	if editor_pending_module_binding.is_empty():
+		return
+	if not bool(editor_pending_module_binding.get("target_selected", false)):
+		return
+	if not bool(editor_pending_module_binding.get("side_mount_action_required", false)):
+		return
+	var normalized := _normalize_side_mount_action_side(side)
+	editor_pending_module_binding["side_mount_action_side"] = normalized
+	editor_pending_module_binding["side_mount_action_angle_offset"] = _side_mount_action_angle_offset(normalized)
+	if editor_summary_label != null:
+		editor_summary_label.text = ("动作侧已选择：%s。现在请选择攻击键。" if _ui_is_zh() else "Action side selected: %s. Now choose an attack key.") % _side_mount_action_side_label(normalized)
+	if editor_board_hint_label != null:
+		editor_board_hint_label.text = _pending_module_binding_hint()
+	_refresh_editor_module_binding_buttons()
+	_refresh_torso_detail_view()
+
+
 func _select_torso_detail_binding_key(key_value: int) -> void:
 	_clear_editor_hover_card()
 	_set_pending_module_attack_key(key_value)
@@ -26498,6 +26644,12 @@ func _finalize_pending_module_binding_after_key(unit_bp: Dictionary) -> bool:
 		drive_by_node = _module_binding_drive_allocation_for_nodes(role_key, unit_bp, nodes, target_nodes, module_part)
 	var joint_drive_total := _module_binding_drive_total(drive_by_node)
 	var joint_output_total := _module_binding_joint_output_for_nodes(role_key, unit_bp, nodes, target_nodes, module_part)
+	var side_mount_required := bool(editor_pending_module_binding.get("side_mount_action_required", false)) or _module_binding_side_mount_action_required(role_key, unit_bp, nodes, root_index, target_nodes)
+	var side_mount_side := ""
+	if side_mount_required:
+		side_mount_side = _normalize_side_mount_action_side(editor_pending_module_binding.get("side_mount_action_side", editor_pending_module_binding.get("side_mount_action_default_side", _module_binding_default_side_mount_action_side(role_key, unit_bp, nodes, root_index, target_nodes))))
+		if side_mount_side == "":
+			side_mount_side = _module_binding_default_side_mount_action_side(role_key, unit_bp, nodes, root_index, target_nodes)
 	if root_index < 0 or root_index >= nodes.size() or target_nodes.is_empty():
 		editor_summary_label.text = "警报：行动模块目标已失效，请重新选择绑定部位。" if _ui_is_zh() else "ALARM: module target is stale; select the target part again."
 		editor_pending_module_binding["target_selected"] = false
@@ -26522,7 +26674,7 @@ func _finalize_pending_module_binding_after_key(unit_bp: Dictionary) -> bool:
 		if raw_binding is Dictionary and int(Dictionary(raw_binding).get("software_slot_index", -1)) == payload_index:
 			continue
 		kept.append(raw_binding)
-	kept.append({
+	var next_binding := {
 		"software_slot_index": payload_index,
 		"module_index": module_index,
 		"attack_key": attack_key,
@@ -26538,20 +26690,29 @@ func _finalize_pending_module_binding_after_key(unit_bp: Dictionary) -> bool:
 		"joint_output_momentum": joint_output_total,
 		"command_window_profile": String(module_part.get("command_window_profile", "")),
 		"binding_valid_note": "OK",
-	})
+	}
+	if side_mount_required:
+		next_binding["side_mount_action_side"] = side_mount_side
+		next_binding["side_mount_action_angle_offset"] = _side_mount_action_angle_offset(side_mount_side)
+		next_binding["side_mount_action_node"] = _module_binding_side_mount_node_index(role_key, unit_bp, nodes, root_index, target_nodes)
+	kept.append(next_binding)
 	unit_bp["module_bindings"] = kept
 	editor_pending_module_binding = {}
 	editor_bound_module_tryout = {}
 	editor_selected_topology_nodes = []
 	editor_topology_node_index = root_index
 	_set_engine_allocation_context_for_torso(unit_bp, torso_index, false)
-	editor_summary_label.text = "行动模块绑定完成：%d%s -> %s。" % [attack_key, _attack_key_label(attack_key), _short_part_name(String(module_part.get("name", "MODULE")))] if _ui_is_zh() else "Action module bound: %d%s -> %s." % [attack_key, _attack_key_label(attack_key), _short_part_name(String(module_part.get("name", "MODULE")))]
+	if side_mount_required:
+		editor_summary_label.text = "行动模块绑定完成：%d%s -> %s；动作侧 %s。" % [attack_key, _attack_key_label(attack_key), _short_part_name(String(module_part.get("name", "MODULE"))), _side_mount_action_side_label(side_mount_side)] if _ui_is_zh() else "Action module bound: %d%s -> %s; %s." % [attack_key, _attack_key_label(attack_key), _short_part_name(String(module_part.get("name", "MODULE"))), _side_mount_action_side_label(side_mount_side)]
+	else:
+		editor_summary_label.text = "行动模块绑定完成：%d%s -> %s。" % [attack_key, _attack_key_label(attack_key), _short_part_name(String(module_part.get("name", "MODULE")))] if _ui_is_zh() else "Action module bound: %d%s -> %s." % [attack_key, _attack_key_label(attack_key), _short_part_name(String(module_part.get("name", "MODULE")))]
 	_trigger_editor_snap("module", String(module_part.get("name", "MODULE")))
 	_update_editor_ui()
 	_refresh_editor_visual_views()
 	_refresh_unit_editor_power_allocation_dock()
 	if engine_momentum_allocation_view != null and engine_momentum_allocation_view.visible:
 		_refresh_engine_momentum_allocation_view()
+	_refresh_editor_module_binding_buttons()
 	return true
 
 
@@ -26611,6 +26772,9 @@ func _tryout_editor_bound_module(attack_key: int) -> bool:
 		"timer": 0.72,
 		"joint_drive_allocation_total": float(matched.get("joint_drive_allocation_total", matched.get("joint_drive_demand", 0.0))),
 	}
+	if matched.has("side_mount_action_side"):
+		editor_bound_module_tryout["side_mount_action_side"] = String(matched.get("side_mount_action_side", "right"))
+		editor_bound_module_tryout["side_mount_action_angle_offset"] = float(matched.get("side_mount_action_angle_offset", _side_mount_action_angle_offset(String(matched.get("side_mount_action_side", "right")))))
 	var stats := _compute_unit_stats(_editor_player(), role_key, -1, unit_bp)
 	var drive_scale := float(stats.get("action_drive_scale", 1.0))
 	var drive_note := String(stats.get("drive_note", stats.get("engine_momentum_note", "")))
@@ -26816,6 +26980,11 @@ func _editor_action(action_key: String) -> void:
 			_tryout_editor_bound_module(key_value)
 		else:
 			_set_pending_module_attack_key(key_value)
+		if hot_path_profiler != null:
+			hot_path_profiler.scope_end("editor_action")
+		return
+	if action_key == "bind_side_left" or action_key == "bind_side_right":
+		_select_torso_detail_binding_action_side("left" if action_key == "bind_side_left" else "right")
 		if hot_path_profiler != null:
 			hot_path_profiler.scope_end("editor_action")
 		return
@@ -46152,6 +46321,8 @@ func _runtime_topology_segments_for_blueprint(role_key: String, unit_bp: Diction
 func _runtime_module_bindings_for_blueprint(role_key: String, unit_bp: Dictionary) -> Array:
 	var result: Array = []
 	var payloads: Array = Array(unit_bp.get("slot_payloads", []))
+	var topology: Dictionary = unit_bp.get("custom_topology", {})
+	var nodes: Array = Array(topology.get("nodes", []))
 	for raw_binding in Array(unit_bp.get("module_bindings", [])):
 		if not (raw_binding is Dictionary):
 			continue
@@ -46179,6 +46350,13 @@ func _runtime_module_bindings_for_blueprint(role_key: String, unit_bp: Dictionar
 		binding["module_action_profile"] = String(module_part.get("module_action_profile", ""))
 		binding["command_window_profile"] = String(module_part.get("command_window_profile", binding.get("command_window_profile", "")))
 		binding["attack_key"] = clampi(int(binding.get("attack_key", 1)), 1, ATTACK_GROUP_COUNT)
+		var root_index := int(binding.get("root_index", -1))
+		var target_nodes: Array = Array(binding.get("target_nodes", []))
+		if _module_binding_side_mount_action_required(role_key, unit_bp, nodes, root_index, target_nodes):
+			var side := _normalize_side_mount_action_side(binding.get("side_mount_action_side", _module_binding_default_side_mount_action_side(role_key, unit_bp, nodes, root_index, target_nodes)))
+			binding["side_mount_action_side"] = side
+			binding["side_mount_action_angle_offset"] = _side_mount_action_angle_offset(side)
+			binding["side_mount_action_node"] = _module_binding_side_mount_node_index(role_key, unit_bp, nodes, root_index, target_nodes)
 		result.append(binding)
 	return result
 
@@ -48259,6 +48437,7 @@ func _build_editor_ui() -> void:
 	editor_torso_detail_view.remove_payload.connect(_remove_torso_payload_at)
 	editor_torso_detail_view.rebind_payload.connect(_rebind_torso_payload_at)
 	editor_torso_detail_view.binding_candidate_selected.connect(_select_torso_detail_binding_candidate)
+	editor_torso_detail_view.binding_action_side_selected.connect(_select_torso_detail_binding_action_side)
 	editor_torso_detail_view.binding_key_selected.connect(_select_torso_detail_binding_key)
 	editor_torso_detail_view.binding_cancel_requested.connect(_cancel_torso_detail_binding)
 	editor_torso_detail_view.close_requested.connect(_close_editor_torso_detail)
@@ -48498,11 +48677,24 @@ func _build_editor_ui() -> void:
 		bind_button.size = Vector2(50.0, 24.0)
 		bind_button.focus_mode = Control.FOCUS_NONE
 		bind_button.mouse_filter = Control.MOUSE_FILTER_STOP
-		bind_button.z_index = 240
+		bind_button.z_index = MODULE_BINDING_TRYOUT_Z_INDEX
 		bind_button.visible = false
 		bind_button.pressed.connect(_editor_action.bind("bind_key_%d" % key_index))
 		root.add_child(bind_button)
 		editor_action_buttons["bind_key_%d" % key_index] = bind_button
+	for side_key in ["left", "right"]:
+		var side_button := Button.new()
+		side_button.name = "ModuleBindSide%s" % side_key.capitalize()
+		side_button.text = _side_mount_action_side_label(side_key)
+		side_button.position = Vector2(936.0, 618.0)
+		side_button.size = Vector2(132.0, 28.0)
+		side_button.focus_mode = Control.FOCUS_NONE
+		side_button.mouse_filter = Control.MOUSE_FILTER_STOP
+		side_button.z_index = MODULE_BINDING_OVERLAY_Z_INDEX
+		side_button.visible = false
+		side_button.pressed.connect(_editor_action.bind("bind_side_%s" % side_key))
+		root.add_child(side_button)
+		editor_action_buttons["bind_side_%s" % side_key] = side_button
 	var board_zoom_title := _make_label(root, "BoardZoomTitle", "", Vector2.ZERO, Vector2.ZERO, 1, Color.TRANSPARENT, HORIZONTAL_ALIGNMENT_LEFT)
 	board_zoom_title.visible = false
 	var zoom_button_specs := [
@@ -50064,10 +50256,88 @@ func _update_editor_ui(force_now: bool = false) -> void:
 		hot_path_profiler.scope_end("teamedit.update_ui")
 
 
+func _module_binding_overlay_active() -> bool:
+	return (
+		editor_layer != null
+		and editor_layer.visible
+		and editor_torso_detail_view != null
+		and editor_torso_detail_view.visible
+		and editor_torso_detail_view.binding_mode
+		and not editor_pending_module_binding.is_empty()
+		and bool(editor_pending_module_binding.get("target_selected", false))
+	)
+
+
+func _binding_overlay_rect_to_button_parent(button: Button, local_rect: Rect2) -> Rect2:
+	if editor_torso_detail_view == null:
+		return local_rect
+	var global_pos := editor_torso_detail_view.get_global_rect().position + local_rect.position
+	var local_pos := global_pos
+	var parent_control: Control = button.get_parent() as Control
+	if parent_control != null:
+		local_pos = parent_control.get_global_transform().affine_inverse() * global_pos
+	return Rect2(local_pos, local_rect.size)
+
+
+func _layout_module_binding_key_overlay() -> bool:
+	var overlay_active := _module_binding_overlay_active()
+	var side_required := overlay_active and bool(editor_pending_module_binding.get("side_mount_action_required", false))
+	var side_selected := String(editor_pending_module_binding.get("side_mount_action_side", "")) != ""
+	var key_ready := overlay_active and (not side_required or side_selected)
+	var overlay_has_click_targets := false
+	for side_key in ["left", "right"]:
+		var button_key := "bind_side_%s" % side_key
+		if not editor_action_buttons.has(button_key):
+			continue
+		var side_button: Button = editor_action_buttons[button_key]
+		var should_show_side := overlay_active and side_required
+		_set_canvas_item_visible_if_changed(side_button, should_show_side)
+		_set_button_disabled_if_changed(side_button, not should_show_side)
+		if should_show_side:
+			var side_rect := _binding_overlay_rect_to_button_parent(side_button, editor_torso_detail_view._binding_action_side_rect(side_key))
+			_set_control_position_if_changed(side_button, side_rect.position)
+			_set_control_size_if_changed(side_button, side_rect.size)
+			side_button.mouse_filter = Control.MOUSE_FILTER_STOP
+			side_button.z_index = MODULE_BINDING_OVERLAY_Z_INDEX
+			_set_control_text_if_changed(side_button, _side_mount_action_side_label(side_key))
+			_set_control_tooltip_if_changed(side_button, ("选择%s后再绑定攻击键" if _ui_is_zh() else "Pick %s before choosing an attack key") % _side_mount_action_side_label(side_key))
+			var selected: bool = _normalize_side_mount_action_side(editor_pending_module_binding.get("side_mount_action_side", "")) == side_key
+			_set_canvas_item_modulate_if_changed(side_button, Color(1.0, 0.86, 0.22, 1.0) if selected else Color(0.56, 0.92, 1.0, 0.96))
+			side_button.move_to_front()
+			overlay_has_click_targets = true
+	for key_index in range(1, ATTACK_GROUP_COUNT + 1):
+		var button_key := "bind_key_%d" % key_index
+		if not editor_action_buttons.has(button_key):
+			continue
+		var key_button: Button = editor_action_buttons[button_key]
+		if key_ready:
+			var key_rect := _binding_overlay_rect_to_button_parent(key_button, editor_torso_detail_view._binding_key_rect(key_index))
+			_set_control_position_if_changed(key_button, key_rect.position)
+			_set_control_size_if_changed(key_button, key_rect.size)
+			key_button.mouse_filter = Control.MOUSE_FILTER_STOP
+			key_button.z_index = MODULE_BINDING_OVERLAY_Z_INDEX
+			_set_canvas_item_visible_if_changed(key_button, true)
+			_set_button_disabled_if_changed(key_button, false)
+			_set_control_text_if_changed(key_button, "%d %s" % [key_index, _attack_key_label(key_index)])
+			_set_control_tooltip_if_changed(key_button, ("绑定到攻击键 %d（键盘 %s）" if _ui_is_zh() else "Bind to attack key %d (keyboard %s)") % [key_index, _attack_key_label(key_index)])
+			var selected_key := int(editor_pending_module_binding.get("attack_key", 0))
+			_set_canvas_item_modulate_if_changed(key_button, Color(1.0, 0.86, 0.22, 1.0) if selected_key == key_index else Color(0.58, 0.82, 1.0, 0.96))
+			key_button.move_to_front()
+			overlay_has_click_targets = true
+		elif overlay_active:
+			_set_canvas_item_visible_if_changed(key_button, false)
+			_set_button_disabled_if_changed(key_button, true)
+	if overlay_has_click_targets:
+		_clear_editor_hover_card(true)
+		_close_engine_momentum_allocation_panel()
+	return overlay_active
+
+
 func _refresh_editor_module_binding_buttons() -> void:
 	var pending := not editor_pending_module_binding.is_empty()
-	var target_ready := pending and bool(editor_pending_module_binding.get("target_selected", false))
-	var selected_key := clampi(int(editor_pending_module_binding.get("attack_key", 0)), 1, ATTACK_GROUP_COUNT) if target_ready and int(editor_pending_module_binding.get("attack_key", 0)) > 0 else 0
+	var overlay_handled := _layout_module_binding_key_overlay()
+	if overlay_handled:
+		return
 	var bound_keys := {}
 	if not pending:
 		var role_key: String = ROLE_ORDER[editor_role_index]
@@ -50083,6 +50353,10 @@ func _refresh_editor_module_binding_buttons() -> void:
 		var button: Button = editor_action_buttons[button_key]
 		var bound_ready := bound_keys.has(key_index)
 		var should_show := bound_ready and not pending and editor_layer != null and editor_layer.visible
+		_set_control_position_if_changed(button, Vector2(286.0 + float(key_index - 1) * 56.0, 618.0))
+		_set_control_size_if_changed(button, Vector2(50.0, 24.0))
+		button.mouse_filter = Control.MOUSE_FILTER_STOP
+		button.z_index = MODULE_BINDING_TRYOUT_Z_INDEX
 		_set_canvas_item_visible_if_changed(button, should_show)
 		_set_button_disabled_if_changed(button, not should_show)
 		var label_prefix := "试" if bound_ready and not pending and _ui_is_zh() else ("TRY" if bound_ready and not pending else "")
@@ -50090,9 +50364,16 @@ func _refresh_editor_module_binding_buttons() -> void:
 		_set_control_text_if_changed(button, button_text)
 		var tip := ("试用攻击键 %d（无伤害、不耗弹、不发热）" if _ui_is_zh() else "Try attack key %d (no damage, ammo, or heat)") % key_index if bound_ready and not pending else (("绑定到攻击键 %d（键盘 %s）" if _ui_is_zh() else "Bind to attack key %d (keyboard %s)") % [key_index, _attack_key_label(key_index)])
 		_set_control_tooltip_if_changed(button, tip)
-		_set_canvas_item_modulate_if_changed(button, Color(1.0, 0.86, 0.22, 1.0) if key_index == selected_key else (Color(0.42, 1.0, 0.76, 0.96) if bound_ready and not pending else Color(0.58, 0.82, 1.0, 0.92)))
+		_set_canvas_item_modulate_if_changed(button, Color(0.42, 1.0, 0.76, 0.96) if bound_ready and not pending else Color(0.58, 0.82, 1.0, 0.92))
 		if button.visible:
 			button.move_to_front()
+	for side_key in ["left", "right"]:
+		var side_button_key := "bind_side_%s" % side_key
+		if not editor_action_buttons.has(side_button_key):
+			continue
+		var side_button: Button = editor_action_buttons[side_button_key]
+		_set_canvas_item_visible_if_changed(side_button, false)
+		_set_button_disabled_if_changed(side_button, true)
 
 
 func _editor_template_category_label(role_key: String) -> String:
@@ -53119,7 +53400,10 @@ func _refresh_torso_detail_view() -> void:
 				var module_name := _zh_part_name(String(module_part.get("name", "行动模块"))) if _ui_is_zh() else String(module_part.get("name", "MODULE"))
 				var bind_title := ("绑定行动模块：%s" if _ui_is_zh() else "Bind action module: %s") % module_name
 				var bind_subtitle := _pending_module_binding_hint()
-				editor_torso_detail_view.set_binding_state(true, bind_title, bind_subtitle, candidates, selected_index, bool(editor_pending_module_binding.get("target_selected", false)))
+				var side_required := bool(editor_pending_module_binding.get("side_mount_action_required", false))
+				var side_selected := String(editor_pending_module_binding.get("side_mount_action_side", ""))
+				var key_ready := bool(editor_pending_module_binding.get("target_selected", false)) and (not side_required or side_selected != "")
+				editor_torso_detail_view.set_binding_state(true, bind_title, bind_subtitle, candidates, selected_index, key_ready, side_required and bool(editor_pending_module_binding.get("target_selected", false)), side_selected)
 			else:
 				editor_torso_detail_view.set_binding_state(false)
 		else:
@@ -53127,6 +53411,7 @@ func _refresh_torso_detail_view() -> void:
 	else:
 		editor_torso_detail_view.set_binding_state(false)
 	_set_editor_torso_detail_binding_layout(binding_active)
+	_refresh_editor_module_binding_buttons()
 
 
 func _editor_side_preview_signature(slot_key: String, part: Dictionary, snap_amount: float) -> String:

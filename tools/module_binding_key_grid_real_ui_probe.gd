@@ -63,6 +63,10 @@ func _global_click(main, pos: Vector2) -> void:
 	main._input(event)
 
 
+func _click_button(button: Button) -> void:
+	button.pressed.emit()
+
+
 func _init() -> void:
 	var main = MainScene.new()
 	root.add_child(main)
@@ -117,10 +121,19 @@ func _init() -> void:
 		_fail("Binding key row did not become active after selecting a target.")
 	for key_value in range(1, MainScene.ATTACK_GROUP_COUNT + 1):
 		var button_key := "bind_key_%d" % key_value
-		if main.editor_action_buttons.has(button_key) and main.editor_action_buttons[button_key].visible:
-			_fail("Global bind key button %d became visible after target selection; side panel should own key selection." % key_value)
+		if not main.editor_action_buttons.has(button_key):
+			_fail("Missing real bind key button %d." % key_value)
+		var button: Button = main.editor_action_buttons[button_key]
+		if not button.visible or button.disabled:
+			_fail("Real bind key button %d should be visible and enabled after target selection." % key_value)
+		if button.mouse_filter != Control.MOUSE_FILTER_STOP:
+			_fail("Real bind key button %d must stop mouse input." % key_value)
+		var expected_rect: Rect2 = Rect2(view.get_global_rect().position + view._binding_key_rect(key_value).position, view._binding_key_rect(key_value).size)
+		var actual_rect: Rect2 = button.get_global_rect()
+		if actual_rect.position.distance_to(expected_rect.position) > 1.5 or absf(actual_rect.size.x - expected_rect.size.x) > 1.5 or actual_rect.size.y < expected_rect.size.y:
+			_fail("Real bind key button %d is not aligned with the torso detail key grid. actual=%s expected=%s" % [key_value, str(actual_rect), str(expected_rect)])
 
-	_global_click(main, view.get_global_rect().position + view._binding_key_rect(3).get_center())
+	_click_button(main.editor_action_buttons["bind_key_3"])
 	var bindings: Array = Array(unit_bp.get("module_bindings", []))
 	if bindings.size() != 1:
 		_fail("Global key click did not finalize a module binding.")

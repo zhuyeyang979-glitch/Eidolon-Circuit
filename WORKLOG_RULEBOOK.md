@@ -4100,6 +4100,19 @@ Findings:
 Sync:
 - Implemented in `E:\New project`; mirror sync and local commit recorded by the surrounding Git history.
 
+## 2026-05-26 Module Binding Attack-Key Overlay Click Fix
+
+Rules:
+- During TeamEdit module binding, attack-key selection uses real top-layer `Button` controls, not only the torso detail panel's drawn key grid.
+- Binding-mode key buttons align with the torso detail key rectangles, stop mouse input, and sit above torso detail, allocation, hover, and side-mount popups.
+- The same `bind_key_1..6` controls keep their non-binding tryout role after binding finishes; side-action modules use matching top-layer left/right action buttons before key selection.
+
+Verification:
+- Passed `module_binding_target_then_key_probe`, `module_binding_key_buttons_top_layer_probe`, `module_binding_key_buttons_real_click_probe`, `module_binding_side_action_top_layer_probe`, `module_binding_overlay_clears_probe`, `module_binding_key_grid_real_ui_probe`, `module_binding_torso_detail_mouse_probe`, `module_binding_panel_click_probe`, `module_binding_hover_does_not_cover_keys_probe`, `module_binding_board_highlight_probe`, `teamedit_bound_module_tryout_probe`, `ui_visible_button_wiring_probe`, `ui_layout_probe`, `text_overflow_probe`, `probe_manifest_no_legacy_fixture_probe`, and `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120`.
+
+Sync:
+- Implemented in `E:\New project`; Documents and OneDrive mirrors should be refreshed from this source after commit.
+
 ## 2026-05-25 Mobius Surface Mesh Stardust Backdrop
 
 Rules:
