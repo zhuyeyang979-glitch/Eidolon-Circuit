@@ -51,6 +51,9 @@ func _init() -> void:
 	if not main.editor_action_buttons.has("set_handedness_right") or not bool(main.editor_action_buttons["set_handedness_right"].visible):
 		_fail("Right blade choice button is not visible.")
 		return
+	if main.editor_orientation_popup_panel == null or not bool(main.editor_orientation_popup_panel.visible):
+		_fail("Side-mount popup is not visible after installing a scythe.")
+		return
 	main._editor_action("set_handedness_left")
 	unit_bp = main._editor_current_blueprint()
 	nodes = Dictionary(unit_bp.get("custom_topology", {})).get("nodes", [])

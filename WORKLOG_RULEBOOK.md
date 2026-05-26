@@ -12,6 +12,24 @@ Primary implementation file: `scripts/main.gd`
 
 Godot version in workspace: `tools/godot-4.6.2/Godot_v4.6.2-stable_win64_console.exe`
 
+## 2026-05-26 Scythe Root-Joint Link and Side-Mount Choice Popup
+
+Rules:
+- Scythes and other `orthogonal_side_mount` terminal weapons still connect like ordinary terminal weapons: the weapon node uses `root_joint`, and the parent uses a limb `distal` socket or a torso port.
+- The 90-degree scythe rule is visual only. The blade side is derived from the previous limb/torso-port axis normal through `visual_mount_side`; the socket centerline, damage, drive, and module legality do not change.
+- `visual_mount_side` is the canonical saved/runtime field. `visual_handedness` remains only a compatibility alias.
+- Installing or linking a scythe starts a side-mount choice on the scythe node itself and shows both the bottom buttons and the board popup for `左侧挂刃 / 右侧挂刃`.
+
+Implementation notes:
+- Catalog-drop scythe placement now attempts the same magnetic `root_joint -> distal/torso_port` finalization as manual board linking when the drop is near a legal parent socket.
+- Link finalization resolves the actual side-mounted terminal from the changed nodes before starting orientation choice, so a reversed generic relation cannot attach the popup to the parent limb.
+- The board popup is a lightweight UI overlay that follows the selected scythe node and calls the same mount-side setter as the bottom buttons.
+
+Verification:
+- Added `scythe_catalog_drop_link_orientation_popup_probe`.
+- Strengthened scythe install/manual/magnetic probes to require the side-mount popup, not only the bottom buttons.
+- Scythe focused probes passed for root socket linkage, magnetic/manual/catalog-drop popup, parent-axis side mount, board/runtime/save/load persistence, and module binding.
+
 ## 2026-05-26 Boost Heat Cost Contract
 
 Rules:

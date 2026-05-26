@@ -754,10 +754,10 @@ static func normalized_mount_side(node: Dictionary) -> String:
 	var handedness := String(node.get("visual_handedness", "")).strip_edges().to_lower()
 	var default_side := String(node.get("default_mount_side", node.get("default_visual_handedness", "right"))).strip_edges().to_lower()
 	default_side = "left" if default_side == "left" else "right"
-	if handedness != "" and (mount_side == "" or (("left" if mount_side == "left" else "right") == default_side)):
-		return "left" if handedness == "left" else "right"
 	if mount_side != "":
 		return "left" if mount_side == "left" else "right"
+	if handedness != "":
+		return "left" if handedness == "left" else "right"
 	return "left" if default_side == "left" else "right"
 
 

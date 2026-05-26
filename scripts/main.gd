@@ -10626,6 +10626,11 @@ var editor_drag_catalog_start := Vector2.ZERO
 var editor_drag_catalog_last := Vector2.ZERO
 var editor_drag_ghost_view: PartDragGhostView
 var editor_board_hint_label: Label
+var editor_orientation_popup_panel: ColorRect
+var editor_orientation_popup_label: Label
+var editor_orientation_popup_left_button: Button
+var editor_orientation_popup_right_button: Button
+var editor_orientation_popup_cancel_button: Button
 var editor_board_zoom_label: Label
 var editor_catalog_page_label: Label
 var menu_backdrop: BackdropView
@@ -20705,6 +20710,7 @@ func _refresh_editor_visual_views_fast_drag(changed_nodes: Array = [], component
 		"language": ui_language,
 		"motion_phase": editor_canvas_motion_phase,
 	}, fast_revision)
+	_refresh_editor_orientation_popup()
 	if hot_path_profiler != null:
 		hot_path_profiler.scope_end("pose.visual.apply_diff")
 
@@ -21467,10 +21473,24 @@ func _topology_socket_candidate_for_pair(role_key: String, unit_bp: Dictionary, 
 			if require_snap_threshold and socket_gap > threshold:
 				continue
 			var score := socket_gap
+			var source_single_endpoint := _topology_node_is_single_endpoint_muscle(role_key, dragged_node, unit_bp)
+			var target_single_endpoint := _topology_node_is_single_endpoint_muscle(role_key, target_node, unit_bp)
+			if source_single_endpoint and not (id_a == "root_joint" and (id_b == "distal" or id_b.begins_with("torso_port:"))):
+				continue
+			if target_single_endpoint and not (id_b == "root_joint" and (id_a == "distal" or id_a.begins_with("torso_port:"))):
+				continue
+			if _topology_node_supports_visual_handedness(role_key, unit_bp, dragged_node) and id_a == "root_joint":
+				score -= 0.001
+			if _topology_node_supports_visual_handedness(role_key, unit_bp, target_node) and id_b == "root_joint":
+				score -= 0.001
 			if score < best_score:
 				best_score = score
 				best = {
 					"target": target_index,
+					"source_node": source_index,
+					"target_node": target_index,
+					"source_socket": id_a,
+					"target_socket": id_b,
 					"socket_a": socket_a,
 					"socket_b": socket_b,
 					"socket_gap": socket_gap,
@@ -22240,6 +22260,85 @@ func _pending_canvas_part_name(role_key: String) -> String:
 	return "%s %s" % [_slot_name(editor_pending_place_slot), _short_part_name(String(part.get("name", "")))]
 
 
+func _topology_node_is_orthogonal_side_mount_terminal(role_key: String, unit_bp: Dictionary, node: Dictionary) -> bool:
+	if not _topology_node_is_component(node):
+		return false
+	var slot_key := _topology_node_slot(node)
+	if slot_key != "muscle":
+		return false
+	var part := _topology_node_part(role_key, node, unit_bp)
+	return _part_is_orthogonal_side_mount_candidate(part, slot_key)
+
+
+func _side_mount_orientation_node_from_indices(role_key: String, unit_bp: Dictionary, nodes: Array, candidate_indices: Array) -> int:
+	var fallback := -1
+	for raw_index in candidate_indices:
+		var index := int(raw_index)
+		if index < 0 or index >= nodes.size() or not (nodes[index] is Dictionary):
+			continue
+		var node: Dictionary = nodes[index]
+		if not _topology_node_supports_visual_handedness(role_key, unit_bp, node):
+			continue
+		if fallback < 0:
+			fallback = index
+		if _topology_node_is_orthogonal_side_mount_terminal(role_key, unit_bp, node):
+			return index
+	return fallback
+
+
+func _set_pending_visual_handedness(side: String) -> void:
+	if editor_pending_orientation_node_index >= 0:
+		_set_topology_node_visual_handedness(editor_pending_orientation_node_index, side, false)
+
+
+func _cancel_visual_handedness_choice() -> void:
+	if editor_pending_orientation_node_index < 0:
+		return
+	editor_pending_orientation_node_index = -1
+	if editor_board_hint_label != null:
+		_set_control_text_if_changed(editor_board_hint_label, "侧挂刃朝向稍后可用“翻侧刃”调整。" if _ui_is_zh() else "Side-mounted blade can be adjusted later with FLIP SIDE.")
+	_refresh_editor_orientation_buttons()
+	_refresh_editor_orientation_popup()
+	mark_editor_dirty(EDITOR_DIRTY_ACTION_BUTTONS | EDITOR_DIRTY_BOARD_UI, "node.visual_mount_side.cancel")
+
+
+func _refresh_editor_orientation_popup() -> void:
+	if editor_orientation_popup_panel == null:
+		return
+	var unit_bp: Dictionary = _editor_current_blueprint()
+	var show_popup := _orientation_choice_is_active(unit_bp)
+	_set_canvas_item_visible_if_changed(editor_orientation_popup_panel, show_popup)
+	if not show_popup:
+		return
+	var topology: Dictionary = unit_bp.get("custom_topology", {})
+	var nodes: Array = Array(topology.get("nodes", []))
+	var node_index := editor_pending_orientation_node_index
+	if node_index < 0 or node_index >= nodes.size() or not (nodes[node_index] is Dictionary):
+		_set_canvas_item_visible_if_changed(editor_orientation_popup_panel, false)
+		return
+	var node: Dictionary = nodes[node_index]
+	var popup_size := Vector2(256.0, 86.0)
+	var anchor := _topology_position_to_board(_topology_node_position(node)) + Vector2(18.0, -94.0)
+	var viewport := _ui_viewport_size()
+	anchor.x = clampf(anchor.x, 12.0, maxf(12.0, viewport.x - popup_size.x - 12.0))
+	anchor.y = clampf(anchor.y, 90.0, maxf(90.0, viewport.y - popup_size.y - 12.0))
+	_set_control_position_if_changed(editor_orientation_popup_panel, anchor)
+	_set_control_size_if_changed(editor_orientation_popup_panel, popup_size)
+	_set_canvas_item_modulate_if_changed(editor_orientation_popup_panel, Color(1.0, 1.0, 1.0, 1.0))
+	if editor_orientation_popup_label != null:
+		_set_control_text_if_changed(editor_orientation_popup_label, "选择镰刀侧挂刃朝向" if _ui_is_zh() else "Choose scythe blade side")
+	if editor_orientation_popup_left_button != null:
+		_set_control_text_if_changed(editor_orientation_popup_left_button, "左侧挂刃" if _ui_is_zh() else "LEFT")
+		_set_button_disabled_if_changed(editor_orientation_popup_left_button, false)
+	if editor_orientation_popup_right_button != null:
+		_set_control_text_if_changed(editor_orientation_popup_right_button, "右侧挂刃" if _ui_is_zh() else "RIGHT")
+		_set_button_disabled_if_changed(editor_orientation_popup_right_button, false)
+	if editor_orientation_popup_cancel_button != null:
+		_set_control_text_if_changed(editor_orientation_popup_cancel_button, "稍后" if _ui_is_zh() else "LATER")
+		_set_button_disabled_if_changed(editor_orientation_popup_cancel_button, false)
+	editor_orientation_popup_panel.move_to_front()
+
+
 func _orientation_choice_is_active(unit_bp: Dictionary) -> bool:
 	if editor_pending_orientation_node_index < 0 or not unit_bp.has("custom_topology"):
 		return false
@@ -22275,6 +22374,7 @@ func _start_visual_handedness_choice_if_needed(unit_bp: Dictionary, node_index: 
 		_set_control_text_if_changed(editor_board_hint_label, "选择侧挂刃朝向：左侧挂刃 / 右侧挂刃。以上一段肢体为柄，只改变法线侧向，不改变接口。" if _ui_is_zh() else "Choose side-mounted blade: LEFT / RIGHT. The previous limb is the handle; only the normal-side mount changes.")
 	mark_editor_dirty(EDITOR_DIRTY_BOARD_UI | EDITOR_DIRTY_ACTION_BUTTONS, "node.visual_mount_side.choice")
 	_refresh_editor_orientation_buttons()
+	_refresh_editor_orientation_popup()
 	return true
 
 
@@ -22304,6 +22404,7 @@ func _set_topology_node_visual_handedness(node_index: int, side: String, record_
 	node["orientation_basis"] = String(node.get("orientation_basis", "parent_normal"))
 	node["mount_side_choices"] = Array(node.get("mount_side_choices", node.get("orientation_choices", ["left", "right"])))
 	node["orientation_choices"] = Array(node.get("mount_side_choices", ["left", "right"]))
+	node["mount_parent_axis_local"] = _topology_mount_parent_axis_for_node(role_key, unit_bp, nodes, topology.get("edges", []), node_index)
 	nodes[node_index] = node
 	topology["nodes"] = nodes
 	unit_bp["custom_topology"] = topology
@@ -22320,6 +22421,7 @@ func _set_topology_node_visual_handedness(node_index: int, side: String, record_
 	_mark_editor_board_model_dirty("node.visual_mount_side", false)
 	mark_editor_dirty(EDITOR_DIRTY_ACTION_BUTTONS | EDITOR_DIRTY_BOARD_UI, "node.visual_mount_side")
 	_refresh_editor_orientation_buttons()
+	_refresh_editor_orientation_popup()
 	flush_editor_dirty(1400)
 	return true
 
@@ -22367,6 +22469,7 @@ func _refresh_editor_orientation_buttons() -> void:
 		_set_canvas_item_modulate_if_changed(action_button, Color(0.42, 1.0, 0.82, 1.0) if show_orientation_action else Color(0.78, 0.9, 1.0, 0.72))
 		if show_orientation_action:
 			action_button.move_to_front()
+	_refresh_editor_orientation_popup()
 
 
 func _record_editor_undo_state(label: String = "") -> void:
@@ -22652,14 +22755,27 @@ func _drop_catalog_part_on_board(slot_key: String, part_index: int, local_positi
 			hot_path_profiler.scope_end("drop.pending_part")
 		var new_index := _add_topology_node_at(local_position)
 		if new_index >= 0:
-			# Dropping from the catalog is a placement operation; socket linking remains on
-			# board drag/release so catalog drops do not scan the whole topology.
+			var topology_after_drop: Dictionary = unit_bp.get("custom_topology", {})
+			var nodes_after_drop: Array = topology_after_drop.get("nodes", [])
+			var side_mount_drop := new_index < nodes_after_drop.size() \
+					and nodes_after_drop[new_index] is Dictionary \
+					and _topology_node_is_orthogonal_side_mount_terminal(role_key, unit_bp, Dictionary(nodes_after_drop[new_index]))
+			var linked_after_drop := false
+			if side_mount_drop:
+				linked_after_drop = _try_magnetic_link_for_node(unit_bp, new_index, false)
+				if not linked_after_drop:
+					topology_after_drop = unit_bp.get("custom_topology", {})
+					nodes_after_drop = topology_after_drop.get("nodes", [])
+					if new_index < nodes_after_drop.size() and nodes_after_drop[new_index] is Dictionary:
+						_start_visual_handedness_choice_if_needed(unit_bp, new_index, Dictionary(nodes_after_drop[new_index]))
 			editor_dragging_node_index = -1
 			editor_preview_pause_until_msec = max(editor_preview_pause_until_msec, Time.get_ticks_msec() + 120)
 			editor_dirty_flags &= ~EDITOR_DIRTY_BOARD
 			if hot_path_profiler != null:
 				hot_path_profiler.scope_begin("drop.fast_board_diff")
-			if not _apply_editor_component_node_direct(new_index, true):
+			if linked_after_drop:
+				_refresh_editor_visual_views_fast_drag([new_index])
+			elif not _apply_editor_component_node_direct(new_index, true):
 				_refresh_editor_visual_views_fast_drag([new_index], true)
 			if hot_path_profiler != null:
 				hot_path_profiler.scope_end("drop.fast_board_diff")
@@ -24935,6 +25051,83 @@ func _unlink_joint_edges(unit_bp: Dictionary, joint_index: int, preferred_neighb
 	return true
 
 
+func _topology_link_child_parent_from_sockets(a: int, a_socket: String, b: int, b_socket: String) -> Dictionary:
+	var socket_a := _topology_canonical_socket_id(a_socket)
+	var socket_b := _topology_canonical_socket_id(b_socket)
+	if socket_a == "root_joint" and (socket_b == "distal" or socket_b.begins_with("torso_port:")):
+		return {"child": a, "parent": b, "child_socket": socket_a, "parent_socket": socket_b}
+	if socket_b == "root_joint" and (socket_a == "distal" or socket_a.begins_with("torso_port:")):
+		return {"child": b, "parent": a, "child_socket": socket_b, "parent_socket": socket_a}
+	return {"child": a, "parent": b, "child_socket": socket_a, "parent_socket": socket_b}
+
+
+func _finalize_topology_link_success(unit_bp: Dictionary, child_index: int, parent_index: int, changed_nodes: Array, reason: String = "board.link") -> void:
+	if not unit_bp.has("custom_topology"):
+		return
+	var role_key: String = ROLE_ORDER[editor_role_index]
+	var topology: Dictionary = unit_bp.get("custom_topology", {})
+	var nodes: Array = Array(topology.get("nodes", [])).duplicate(true)
+	var orientation_index := _side_mount_orientation_node_from_indices(role_key, unit_bp, nodes, [child_index] + changed_nodes)
+	var refresh_indices := [child_index]
+	if orientation_index >= 0 and not refresh_indices.has(orientation_index):
+		refresh_indices.append(orientation_index)
+	for raw_refresh_index in refresh_indices:
+		var refresh_index := int(raw_refresh_index)
+		if refresh_index < 0 or refresh_index >= nodes.size() or not (nodes[refresh_index] is Dictionary):
+			continue
+		var refresh_node: Dictionary = Dictionary(nodes[refresh_index]).duplicate(true)
+		if _topology_node_supports_visual_handedness(role_key, unit_bp, refresh_node):
+			var part := _topology_node_part(role_key, refresh_node, unit_bp)
+			_apply_visual_handedness_defaults_to_node(refresh_node, part, _topology_node_slot(refresh_node))
+			refresh_node["mount_parent_axis_local"] = _topology_mount_parent_axis_for_node(role_key, unit_bp, nodes, topology.get("edges", []), refresh_index)
+			nodes[refresh_index] = refresh_node
+			topology["nodes"] = nodes
+			unit_bp["custom_topology"] = topology
+	_topology_update_local_pose_fields(role_key, unit_bp)
+	topology = unit_bp.get("custom_topology", {})
+	nodes = Array(topology.get("nodes", []))
+	var orientation_choice := false
+	orientation_index = _side_mount_orientation_node_from_indices(role_key, unit_bp, nodes, [orientation_index, child_index] + changed_nodes)
+	if orientation_index >= 0 and orientation_index < nodes.size() and nodes[orientation_index] is Dictionary:
+		var refreshed_orientation_node: Dictionary = nodes[orientation_index]
+		if _topology_node_supports_visual_handedness(role_key, unit_bp, refreshed_orientation_node):
+			var refreshed_part := _topology_node_part(role_key, refreshed_orientation_node, unit_bp)
+			refreshed_orientation_node = Dictionary(refreshed_orientation_node).duplicate(true)
+			_apply_visual_handedness_defaults_to_node(refreshed_orientation_node, refreshed_part, _topology_node_slot(refreshed_orientation_node))
+			refreshed_orientation_node["mount_parent_axis_local"] = _topology_mount_parent_axis_for_node(role_key, unit_bp, nodes, topology.get("edges", []), orientation_index)
+			nodes[orientation_index] = refreshed_orientation_node
+			topology["nodes"] = nodes
+			unit_bp["custom_topology"] = topology
+			editor_topology_node_index = orientation_index
+			editor_selected_topology_nodes = [orientation_index]
+			orientation_choice = _start_visual_handedness_choice_if_needed(unit_bp, orientation_index, refreshed_orientation_node)
+	else:
+		if child_index >= 0 and child_index < nodes.size() and nodes[child_index] is Dictionary:
+			editor_topology_node_index = child_index
+			editor_selected_topology_nodes = [child_index]
+		else:
+			editor_topology_node_index = child_index
+			editor_selected_topology_nodes = [child_index] if child_index >= 0 else []
+	editor_snap_timer = 0.22
+	editor_snap_part = "link"
+	var changed := changed_nodes.duplicate()
+	for index in [child_index, parent_index]:
+		if index >= 0 and not changed.has(index):
+			changed.append(index)
+	if editor_board_hint_label != null:
+		if orientation_choice:
+			editor_board_hint_label.text = "咔哒：节点 %d 已连接节点 %d；请选择左/右挂刃。" % [child_index + 1, parent_index + 1] if _ui_is_zh() else "Click: node %d linked to node %d; choose LEFT or RIGHT blade side." % [child_index + 1, parent_index + 1]
+		else:
+			editor_board_hint_label.text = "咔哒：节点 %d 的接口已一对一连接节点 %d。" % [child_index + 1, parent_index + 1] if _ui_is_zh() else "Click: node %d socket linked one-to-one with node %d." % [child_index + 1, parent_index + 1]
+	_play_sfx_wave("clack", 720.0, 0.055, -17.0)
+	ai_team_manual_lock[_editor_player()] = true
+	_clear_cached_board_socket_candidate()
+	_refresh_editor_visual_views_fast_drag(changed)
+	_schedule_editor_stats_idle_refresh(reason)
+	mark_editor_dirty(EDITOR_DIRTY_ACTION_BUTTONS | EDITOR_DIRTY_BOARD_UI, reason)
+	flush_editor_dirty(600)
+
+
 func _try_magnetic_link_for_node(unit_bp: Dictionary, node_index: int, show_material_warning: bool = true) -> bool:
 	if hot_path_profiler != null:
 		hot_path_profiler.scope_begin("magnetic_link")
@@ -25003,18 +25196,8 @@ func _try_magnetic_link_for_node(unit_bp: Dictionary, node_index: int, show_mate
 	topology["nodes"] = nodes
 	topology["edges"] = edges
 	unit_bp["custom_topology"] = topology
-	editor_topology_node_index = node_index
-	editor_snap_timer = 0.22
-	editor_snap_part = "link"
-	if editor_board_hint_label != null:
-		editor_board_hint_label.text = "咔哒：节点 %d 的接口已一对一连接节点 %d。" % [node_index + 1, best_index + 1] if _ui_is_zh() else "Click: node %d socket linked one-to-one with node %d." % [node_index + 1, best_index + 1]
-	_play_sfx_wave("clack", 720.0, 0.055, -17.0)
-	ai_team_manual_lock[_editor_player()] = true
-	_clear_cached_board_socket_candidate()
-	_refresh_editor_visual_views_fast_drag([node_index, best_index])
-	_schedule_editor_stats_idle_refresh("board.magnetic_link")
-	mark_editor_dirty(EDITOR_DIRTY_ACTION_BUTTONS, "board.magnetic_link")
-	flush_editor_dirty(600)
+	var relation := _topology_link_child_parent_from_sockets(node_index, own_socket, best_index, target_socket)
+	_finalize_topology_link_success(unit_bp, int(relation.get("child", node_index)), int(relation.get("parent", best_index)), [node_index, best_index], "board.magnetic_link")
 	if hot_path_profiler != null:
 		hot_path_profiler.scope_end("magnetic_link")
 	return true
@@ -27099,6 +27282,17 @@ func _link_topology_node() -> void:
 		editor_board_hint_label.text = "至少放置两个节点后才能连接。" if _ui_is_zh() else "Add at least two nodes before linking."
 		return
 	var current := clampi(editor_topology_node_index, 0, nodes.size() - 1)
+	if nodes[current] is Dictionary \
+			and _topology_node_edge_count(topology.get("edges", []), current) <= 0 \
+			and _topology_node_is_single_endpoint_muscle(role_key, Dictionary(nodes[current]), unit_bp):
+		var nearest_candidate := _topology_socket_candidate(role_key, unit_bp, nodes, topology.get("edges", []), current, false)
+		if not nearest_candidate.is_empty():
+			_link_topology_nodes(unit_bp, current, int(nearest_candidate.get("target", -1)))
+			return
+		if editor_board_hint_label != null:
+			editor_board_hint_label.text = "警报：这个末端武器附近没有可用的父级 distal/躯干端口。" if _ui_is_zh() else "ALARM: this terminal weapon has no legal parent distal/torso port to link."
+		_play_sfx_wave("alarm", 170.0, 0.12, -13.0)
+		return
 	var previous := maxi(0, current - 1)
 	if current == previous:
 		previous = 1
@@ -27112,12 +27306,16 @@ func _link_topology_nodes(unit_bp: Dictionary, current: int, previous: int) -> v
 		return
 	var edges: Array = topology.get("edges", [])
 	var exists := false
+	var existing_edge = null
 	for edge in edges:
 		var a := _topology_edge_node_a(edge)
 		var b := _topology_edge_node_b(edge)
 		if (a == current and b == previous) or (a == previous and b == current):
 			exists = true
+			existing_edge = edge
 			break
+	var link_child := current
+	var link_parent := previous
 	if not exists:
 		var socket_error := _topology_socket_edge_error(ROLE_ORDER[editor_role_index], unit_bp, nodes, edges, previous, current)
 		if socket_error != "":
@@ -27147,26 +27345,46 @@ func _link_topology_nodes(unit_bp: Dictionary, current: int, previous: int) -> v
 			return
 		var source_socket: Dictionary = candidate.get("socket_a", {})
 		var target_socket: Dictionary = candidate.get("socket_b", {})
+		var source_socket_id := String(source_socket.get("id", ""))
+		var target_socket_id := String(target_socket.get("id", ""))
+		var relation := {}
 		if source_is_current:
-			if not _topology_append_socket_edge_if_free(role_key, unit_bp, nodes, edges, current, String(source_socket.get("id", "")), previous, String(target_socket.get("id", ""))):
+			var connect_result := _topology_try_connect_sockets(role_key, unit_bp, nodes, edges, current, source_socket_id, previous, target_socket_id)
+			if not bool(connect_result.get("ok", false)):
 				editor_board_hint_label.text = "警报：该关节槽已占用，请右键解绑后再连接。" if _ui_is_zh() else "ALARM: socket occupied; right-click unlink before reconnecting."
 				_play_sfx_wave("alarm", 170.0, 0.12, -13.0)
 				return
+			relation = _topology_link_child_parent_from_sockets(current, source_socket_id, previous, target_socket_id)
 		else:
-			if not _topology_append_socket_edge_if_free(role_key, unit_bp, nodes, edges, previous, String(source_socket.get("id", "")), current, String(target_socket.get("id", ""))):
+			var connect_result := _topology_try_connect_sockets(role_key, unit_bp, nodes, edges, previous, source_socket_id, current, target_socket_id)
+			if not bool(connect_result.get("ok", false)):
 				editor_board_hint_label.text = "警报：该关节槽已占用，请右键解绑后再连接。" if _ui_is_zh() else "ALARM: socket occupied; right-click unlink before reconnecting."
 				_play_sfx_wave("alarm", 170.0, 0.12, -13.0)
 				return
+			relation = _topology_link_child_parent_from_sockets(previous, source_socket_id, current, target_socket_id)
+		link_child = int(relation.get("child", current))
+		link_parent = int(relation.get("parent", previous))
+	elif existing_edge is Dictionary:
+		link_child = int(_topology_link_child_parent_from_sockets(
+			_topology_edge_node_a(existing_edge),
+			_topology_edge_socket_for_node(existing_edge, _topology_edge_node_a(existing_edge)),
+			_topology_edge_node_b(existing_edge),
+			_topology_edge_socket_for_node(existing_edge, _topology_edge_node_b(existing_edge))
+		).get("child", current))
+		link_parent = _topology_edge_other_node(existing_edge, link_child)
 	topology["edges"] = edges
-	var node: Dictionary = nodes[current]
-	node["pos"] = _snap_position_to_fixed_connection(ROLE_ORDER[editor_role_index], unit_bp, nodes, edges, current, _topology_node_position(node))
-	nodes[current] = node
+	if link_child >= 0 and link_child < nodes.size() and link_parent >= 0 and link_parent < nodes.size():
+		var edge_for_alignment = _topology_find_edge_between(edges, link_child, link_parent)
+		var child_socket := _topology_edge_socket_for_node(edge_for_alignment, link_child)
+		var parent_socket := _topology_edge_socket_for_node(edge_for_alignment, link_parent)
+		var child_node: Dictionary = nodes[link_child]
+		var target_pos := _topology_socket_position_by_id(ROLE_ORDER[editor_role_index], unit_bp, nodes, edges, link_parent, parent_socket, link_child)
+		child_node = _topology_apply_socket_alignment(ROLE_ORDER[editor_role_index], unit_bp, nodes, edges, link_child, child_socket, target_pos, _topology_node_position(child_node))
+		nodes[link_child] = child_node
 	topology["nodes"] = nodes
 	topology["edges"] = edges
 	unit_bp["custom_topology"] = topology
-	_trigger_editor_snap("link", "节点 %d 连接节点 %d" % [previous + 1, current + 1] if _ui_is_zh() else "node %d linked to node %d" % [previous + 1, current + 1])
-	ai_team_manual_lock[_editor_player()] = true
-	_update_editor_ui()
+	_finalize_topology_link_success(unit_bp, link_child, link_parent, [current, previous, link_child, link_parent], "board.manual_link")
 
 
 func _ensure_custom_topology(unit_bp: Dictionary) -> void:
@@ -44208,10 +44426,6 @@ func _default_visual_handedness_for_part(part: Dictionary) -> String:
 func _topology_node_visual_handedness(node: Dictionary) -> String:
 	var explicit_mount_side := String(node.get("visual_mount_side", "")).strip_edges()
 	var explicit_handedness := String(node.get("visual_handedness", "")).strip_edges()
-	if explicit_handedness != "":
-		var default_side := _normalize_mount_side(node.get("default_mount_side", node.get("default_visual_handedness", "right")))
-		if explicit_mount_side == "" or _normalize_mount_side(explicit_mount_side) == default_side:
-			return _normalize_mount_side(explicit_handedness)
 	if explicit_mount_side != "":
 		return _normalize_mount_side(explicit_mount_side)
 	if explicit_handedness != "":
@@ -48162,6 +48376,40 @@ func _build_editor_ui() -> void:
 	editor_section_labels["board"] = _make_label(root, "BoardTitle", "", Vector2.ZERO, Vector2.ZERO, 1, Color.TRANSPARENT, HORIZONTAL_ALIGNMENT_LEFT)
 	editor_section_labels["board"].visible = false
 	editor_board_hint_label = _make_label(root, "BoardHint", "", Vector2(296.0, 72.0), Vector2(620.0, 18.0), 10, Color(1.0, 0.9, 0.45, 1.0), HORIZONTAL_ALIGNMENT_RIGHT)
+	editor_orientation_popup_panel = ColorRect.new()
+	editor_orientation_popup_panel.name = "ScytheSideMountChoicePopup"
+	editor_orientation_popup_panel.color = Color(0.015, 0.025, 0.038, 0.9)
+	editor_orientation_popup_panel.size = Vector2(256.0, 86.0)
+	editor_orientation_popup_panel.visible = false
+	editor_orientation_popup_panel.mouse_filter = Control.MOUSE_FILTER_STOP
+	editor_orientation_popup_panel.z_index = 272
+	root.add_child(editor_orientation_popup_panel)
+	editor_orientation_popup_label = _make_label(editor_orientation_popup_panel, "ScytheSideMountChoiceLabel", "", Vector2(10.0, 6.0), Vector2(236.0, 28.0), 10, Color(0.82, 1.0, 0.92, 1.0), HORIZONTAL_ALIGNMENT_CENTER)
+	editor_orientation_popup_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	editor_orientation_popup_left_button = Button.new()
+	editor_orientation_popup_left_button.name = "ScytheSideMountLeftButton"
+	editor_orientation_popup_left_button.text = "左侧挂刃"
+	editor_orientation_popup_left_button.position = Vector2(10.0, 42.0)
+	editor_orientation_popup_left_button.size = Vector2(86.0, 28.0)
+	editor_orientation_popup_left_button.focus_mode = Control.FOCUS_NONE
+	editor_orientation_popup_left_button.pressed.connect(_set_pending_visual_handedness.bind("left"))
+	editor_orientation_popup_panel.add_child(editor_orientation_popup_left_button)
+	editor_orientation_popup_right_button = Button.new()
+	editor_orientation_popup_right_button.name = "ScytheSideMountRightButton"
+	editor_orientation_popup_right_button.text = "右侧挂刃"
+	editor_orientation_popup_right_button.position = Vector2(102.0, 42.0)
+	editor_orientation_popup_right_button.size = Vector2(86.0, 28.0)
+	editor_orientation_popup_right_button.focus_mode = Control.FOCUS_NONE
+	editor_orientation_popup_right_button.pressed.connect(_set_pending_visual_handedness.bind("right"))
+	editor_orientation_popup_panel.add_child(editor_orientation_popup_right_button)
+	editor_orientation_popup_cancel_button = Button.new()
+	editor_orientation_popup_cancel_button.name = "ScytheSideMountLaterButton"
+	editor_orientation_popup_cancel_button.text = "稍后"
+	editor_orientation_popup_cancel_button.position = Vector2(194.0, 42.0)
+	editor_orientation_popup_cancel_button.size = Vector2(52.0, 28.0)
+	editor_orientation_popup_cancel_button.focus_mode = Control.FOCUS_NONE
+	editor_orientation_popup_cancel_button.pressed.connect(_cancel_visual_handedness_choice)
+	editor_orientation_popup_panel.add_child(editor_orientation_popup_cancel_button)
 	editor_engine_allocation_button = Button.new()
 	editor_engine_allocation_button.name = "DashboardPowerAllocationButton"
 	editor_engine_allocation_button.text = "动力预算"
@@ -50175,6 +50423,7 @@ func _apply_editor_panel_visibility(role_key: String, unit_bp: Dictionary) -> vo
 		var refreshed_sort_key_button: Button = editor_action_buttons["sort_key"]
 		var refreshed_sort_names := EDITOR_SORT_KEY_NAMES_ZH if _ui_is_zh() else EDITOR_SORT_KEY_NAMES_EN
 		_set_control_text_if_changed(refreshed_sort_key_button, ("排序：%s" if _ui_is_zh() else "SORT: %s") % String(refreshed_sort_names.get(editor_catalog_sort_key, editor_catalog_sort_key.to_upper())))
+	_refresh_editor_orientation_popup()
 	if editor_sort_panel != null:
 		_set_canvas_item_visible_if_changed(editor_sort_panel, parts_visible and editor_sort_menu_open)
 		if editor_sort_panel.visible:
@@ -52967,6 +53216,7 @@ func _refresh_editor_visual_views(precomputed_stats: Dictionary = {}, update_sid
 		if update_side_panels:
 			_refresh_torso_detail_view()
 			_refresh_engine_momentum_allocation_view()
+		_refresh_editor_orientation_popup()
 		if hot_path_profiler != null:
 			hot_path_profiler.count("teamedit.visual_refresh.skip")
 			hot_path_profiler.scope_end("teamedit.visual_refresh")
@@ -53168,6 +53418,7 @@ func _refresh_editor_visual_views(precomputed_stats: Dictionary = {}, update_sid
 		snapshot = _apply_editor_board_dynamic_fields(snapshot, role_key, unit_bp, custom_board_cache_key, visual_stats)
 	var board_revision_key := String(snapshot.get("revision_key", ""))
 	assembly_board_view.set_board(snapshot, editor_selected_body_part, illegal_parts, editor_snap_part, clampf(editor_snap_timer / 0.28, 0.0, 1.0), board_mode, ui_language, editor_canvas_motion_phase, board_revision_key)
+	_refresh_editor_orientation_popup()
 	if update_side_panels:
 		_refresh_torso_detail_view()
 		_refresh_engine_momentum_allocation_view()
