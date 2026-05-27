@@ -60,11 +60,12 @@ Passed governance probes:
 
 ## Next Safe Step
 
-`EC-SLIM-002` has started with four low-risk inline views extracted:
+`EC-SLIM-002` has started with five low-risk inline views extracted:
 
 - `BackdropView` -> `scripts/views/backdrop_view.gd`
 - `SortieThumbView` -> `scripts/views/sortie_thumb_view.gd`
 - `CockpitHudView` -> `scripts/views/cockpit_hud_view.gd`
 - `BattleInstrumentGaugeView` -> `scripts/views/battle_instrument_gauge_view.gd`
+- `BattleMinimapView` -> `scripts/views/battle_minimap_view.gd`
 
 Next safe chunk: extract another low-state inline view from `scripts/main.gd`, keep the legacy symbol/preload path stable, extend `view_extraction_contract_probe`, then rerun `view_extraction_contract_probe`, `main_file_extraction_contract_probe`, `ui_layout_probe`, `text_overflow_probe`, and check-only.

@@ -69,6 +69,25 @@ Verification:
 - `tools/run_godot_checked.ps1 -Headless -Probe text_overflow_probe -TimeoutSec 120` passed.
 - `tools/run_godot_checked.ps1 -Headless -CheckOnly -TimeoutSec 120` passed.
 
+## 2026-05-27 Battle Minimap View Extraction
+
+Rules:
+- A minimap view may own visual wrap drawing and marker formatting, but it must receive already-computed world/camera marker data from `main.gd`; extraction does not migrate battle authority.
+- Preserve display constants and alpha characteristics during structural cleanup so this refactor does not silently redesign combat readability.
+
+Implementation notes:
+- Extracted `BattleMinimapView` into `scripts/views/battle_minimap_view.gd` and replaced the inline class with a preload constant in `scripts/main.gd`.
+- Expanded `tools/view_extraction_contract_probe.gd` to assert minimap preload/removal and retain the `set_world()` display-state contract.
+- Used the existing `minimap_alpha_probe` as a focused visual-setting regression check.
+
+Verification:
+- `tools/run_godot_checked.ps1 -Headless -Probe view_extraction_contract_probe -TimeoutSec 120` passed.
+- `tools/run_godot_checked.ps1 -Headless -Probe minimap_alpha_probe -TimeoutSec 120` passed.
+- `tools/run_godot_checked.ps1 -Headless -Probe main_file_extraction_contract_probe -TimeoutSec 120` passed.
+- `tools/run_godot_checked.ps1 -Headless -Probe ui_layout_probe -TimeoutSec 120` passed.
+- `tools/run_godot_checked.ps1 -Headless -Probe text_overflow_probe -TimeoutSec 120` passed.
+- `tools/run_godot_checked.ps1 -Headless -CheckOnly -TimeoutSec 120` passed.
+
 ## 2026-05-27 Local Development Baseline And Linear Mirror
 
 Rules:

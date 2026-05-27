@@ -4,11 +4,13 @@ const VIEW_PATH := "res://scripts/views/backdrop_view.gd"
 const SORTIE_THUMB_VIEW_PATH := "res://scripts/views/sortie_thumb_view.gd"
 const COCKPIT_HUD_VIEW_PATH := "res://scripts/views/cockpit_hud_view.gd"
 const BATTLE_GAUGE_VIEW_PATH := "res://scripts/views/battle_instrument_gauge_view.gd"
+const BATTLE_MINIMAP_VIEW_PATH := "res://scripts/views/battle_minimap_view.gd"
 const MAIN_PATH := "res://scripts/main.gd"
 const BackdropViewScript := preload("res://scripts/views/backdrop_view.gd")
 const SortieThumbViewScript := preload("res://scripts/views/sortie_thumb_view.gd")
 const CockpitHudViewScript := preload("res://scripts/views/cockpit_hud_view.gd")
 const BattleInstrumentGaugeViewScript := preload("res://scripts/views/battle_instrument_gauge_view.gd")
+const BattleMinimapViewScript := preload("res://scripts/views/battle_minimap_view.gd")
 
 
 func _fail(message: String) -> void:
@@ -25,6 +27,8 @@ func _init() -> void:
 		_fail("Missing extracted CockpitHudView script.")
 	if not FileAccess.file_exists(BATTLE_GAUGE_VIEW_PATH):
 		_fail("Missing extracted BattleInstrumentGaugeView script.")
+	if not FileAccess.file_exists(BATTLE_MINIMAP_VIEW_PATH):
+		_fail("Missing extracted BattleMinimapView script.")
 	var view_source := FileAccess.get_file_as_string(ProjectSettings.globalize_path(VIEW_PATH))
 	if view_source.find("class_name BackdropView") < 0:
 		_fail("Extracted BackdropView should publish the legacy class name.")
@@ -46,6 +50,12 @@ func _init() -> void:
 	for required in ["set_values", "_dominant_ammo_info", "_draw_ammo_segments", "_draw_ammo_icon"]:
 		if gauge_source.find(required) < 0:
 			_fail("Extracted BattleInstrumentGaugeView is missing behavior token: %s" % required)
+	var minimap_source := FileAccess.get_file_as_string(ProjectSettings.globalize_path(BATTLE_MINIMAP_VIEW_PATH))
+	if minimap_source.find("class_name BattleMinimapView") < 0:
+		_fail("Extracted BattleMinimapView should publish the legacy class name.")
+	for required in ["set_world", "_draw_camera_window", "_draw_unit_marker", "_map_point"]:
+		if minimap_source.find(required) < 0:
+			_fail("Extracted BattleMinimapView is missing behavior token: %s" % required)
 	var main_source := FileAccess.get_file_as_string(ProjectSettings.globalize_path(MAIN_PATH))
 	if main_source.find("preload(\"res://scripts/views/backdrop_view.gd\")") < 0:
 		_fail("main.gd should preload the extracted BackdropView.")
@@ -55,6 +65,8 @@ func _init() -> void:
 		_fail("main.gd should preload the extracted CockpitHudView.")
 	if main_source.find("preload(\"res://scripts/views/battle_instrument_gauge_view.gd\")") < 0:
 		_fail("main.gd should preload the extracted BattleInstrumentGaugeView.")
+	if main_source.find("preload(\"res://scripts/views/battle_minimap_view.gd\")") < 0:
+		_fail("main.gd should preload the extracted BattleMinimapView.")
 	if main_source.find("\nclass BackdropView:") >= 0:
 		_fail("main.gd should not keep the inline BackdropView class.")
 	if main_source.find("\nclass SortieThumbView:") >= 0:
@@ -63,6 +75,8 @@ func _init() -> void:
 		_fail("main.gd should not keep the inline CockpitHudView class.")
 	if main_source.find("\nclass BattleInstrumentGaugeView:") >= 0:
 		_fail("main.gd should not keep the inline BattleInstrumentGaugeView class.")
+	if main_source.find("\nclass BattleMinimapView:") >= 0:
+		_fail("main.gd should not keep the inline BattleMinimapView class.")
 	var backdrop = BackdropViewScript.new()
 	if not (backdrop is Control):
 		_fail("Extracted BackdropView should instantiate as a Control.")
@@ -97,5 +111,12 @@ func _init() -> void:
 	if String(ammo_info.get("kind", "")) != "bullet" or int(ammo_info.get("capacity", 0)) != 6:
 		_fail("BattleInstrumentGaugeView should retain its dominant ammo calculation.")
 	gauge.free()
-	print("VIEW_EXTRACTION_CONTRACT_PROBE ok views=4")
+	var minimap = BattleMinimapViewScript.new()
+	if not (minimap is Control):
+		_fail("Extracted BattleMinimapView should instantiate as a Control.")
+	minimap.set_world([{"owner": 1, "role": "hero", "ring": 4.0, "lane": -1.0}], 3.0, -0.5)
+	if minimap.unit_points.size() != 1 or minimap.camera_ring != 3.0 or minimap.camera_lane != -0.5:
+		_fail("BattleMinimapView.set_world should preserve legacy display state.")
+	minimap.free()
+	print("VIEW_EXTRACTION_CONTRACT_PROBE ok views=5")
 	quit(0)
