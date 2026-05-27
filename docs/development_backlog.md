@@ -6,7 +6,23 @@ This backlog is written in a Linear-ready format. The intended Linear epic is:
 
 `Eidolon Circuit Codebase Slimdown 2026-05-27`
 
-Current connector note: the Linear skill is visible in Codex, but callable Linear issue/project tools are not exposed in this session. Until those tools are available, this file is the source backlog. When Linear access is restored, create one Linear epic with the title above and copy each `EC-SLIM-*` item below as an issue.
+Linear sync:
+- Project: https://linear.app/godot-fighting-game/project/eidolon-circuit-codebase-slimdown-2026-05-27-a8cf730c1ca3
+- Team: `Godot fighting game`
+- Label: `codebase-slimdown`
+- Synced at: 2026-05-27
+
+Issue mapping:
+- `EC-SLIM-001` -> `GOD-5` (Done)
+- `EC-SLIM-002` -> `GOD-6`
+- `EC-SLIM-003` -> `GOD-7`
+- `EC-SLIM-004` -> `GOD-8`
+- `EC-SLIM-005` -> `GOD-9`
+- `EC-SLIM-006` -> `GOD-10`
+- `EC-SLIM-007` -> `GOD-11`
+- `EC-SLIM-008` -> `GOD-12`
+
+Connector note: Linear issue/project tools are now reachable in this session. The project and issues above are the external tracking source; this file remains the checked-in mirror for implementation context.
 
 ## EC-SLIM-001 Baseline Code Health Audit
 

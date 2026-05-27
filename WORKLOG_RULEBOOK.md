@@ -16,7 +16,7 @@ Godot version in workspace: `tools/godot-4.6.2/Godot_v4.6.2-stable_win64_console
 
 Rules:
 - Codebase slimdown work is tracked as Linear-ready issues before implementation. The intended Linear epic is `Eidolon Circuit Codebase Slimdown 2026-05-27`.
-- If callable Linear tools are not exposed in the Codex session, `docs/development_backlog.md` is the source backlog and must be copied into Linear once access is restored.
+- If callable Linear tools are not exposed in a future Codex session, `docs/development_backlog.md` is the checked-in mirror and must be reconciled with Linear before implementation continues.
 - Refactor work proceeds in staged commits: baseline audit, view extraction, Unit Editor controllers, saved-unit/training services, battle runtime services, Fighter runtime models, Mobius visual boundary, and CI/probe governance.
 - Large refactors must preserve gameplay behavior and add extraction contract probes before deleting compatibility wrappers.
 
@@ -24,11 +24,13 @@ Implementation notes:
 - Added `docs/development_backlog.md` with eight `EC-SLIM-*` issues written in Linear-ready format.
 - Added `tools/codebase_slimdown_backlog_probe.gd` to guard the epic title, issue IDs, and key extraction boundaries.
 - Added the backlog probe to `tools/probe_manifest.json` core governance.
+- Linear sync completed after tool connection: project `Eidolon Circuit Codebase Slimdown 2026-05-27`, label `codebase-slimdown`, and issues `GOD-5` through `GOD-12`.
+- `GOD-5 / EC-SLIM-001 Baseline Code Health Audit` was marked Done because commit `054383d` and GitHub Actions `Godot Governance #19` already completed successfully.
 
 Verification:
 - Passed: `codebase_slimdown_backlog_probe`, `probe_manifest_no_legacy_fixture_probe`, `main_file_extraction_contract_probe`.
 - `tools/run_godot_checked.ps1 -Headless -CheckOnly -TimeoutSec 120` passed.
-- Linear connector status: Linear skill is visible, but callable Linear issue/project tools were not exposed by `tool_search`; no external Linear issue was created in this step.
+- Linear project URL: `https://linear.app/godot-fighting-game/project/eidolon-circuit-codebase-slimdown-2026-05-27-a8cf730c1ca3`.
 
 ## 2026-05-27 Code Health First-Pass Extraction Guard
 
