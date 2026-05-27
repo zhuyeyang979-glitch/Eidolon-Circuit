@@ -32,6 +32,24 @@ Verification:
 - `tools/run_godot_checked.ps1 -Headless -Probe text_overflow_probe -TimeoutSec 120` passed.
 - `tools/run_godot_checked.ps1 -Headless -CheckOnly -TimeoutSec 120` passed.
 
+## 2026-05-27 Sortie Thumbnail View Extraction
+
+Rules:
+- Small reusable UI controls used across multiple pages should be extracted before large editor/battle panels, because their public state contract is easier to preserve.
+- Extend the existing view extraction probe instead of creating a new one for every tiny view; this keeps the contract centralized and cheap to run.
+
+Implementation notes:
+- Extracted `SortieThumbView` from `scripts/main.gd` into `scripts/views/sortie_thumb_view.gd` with `class_name SortieThumbView`.
+- `main.gd` now preloads `SortieThumbView`; saved-unit, editor roster, scout, and sortie thumbnail call sites continue to use the same symbol.
+- Expanded `tools/view_extraction_contract_probe.gd` to validate both extracted view scripts, their retained public methods, preload references, and removal of the inline classes.
+
+Verification:
+- `tools/run_godot_checked.ps1 -Headless -Probe view_extraction_contract_probe -TimeoutSec 120` passed.
+- `tools/run_godot_checked.ps1 -Headless -Probe main_file_extraction_contract_probe -TimeoutSec 120` passed.
+- `tools/run_godot_checked.ps1 -Headless -Probe ui_layout_probe -TimeoutSec 120` passed.
+- `tools/run_godot_checked.ps1 -Headless -Probe text_overflow_probe -TimeoutSec 120` passed.
+- `tools/run_godot_checked.ps1 -Headless -CheckOnly -TimeoutSec 120` passed.
+
 ## 2026-05-27 Local Development Baseline While Linear Is Parked
 
 Rules:
