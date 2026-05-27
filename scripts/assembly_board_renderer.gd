@@ -773,9 +773,9 @@ static func terminal_visual_forward(node: Dictionary, fallback_axis: Vector2) ->
 	var fallback := _safe_axis(fallback_axis)
 	if not _terminal_uses_orthogonal_side_mount(node):
 		return fallback
-	var raw_axis = node.get("mount_parent_axis_local", Vector2.ZERO)
-	if raw_axis is Vector2 and Vector2(raw_axis).length() > 0.0001:
-		return Vector2(raw_axis).normalized()
+	# The resolved segment axis is the handle axis and socket authority.  Older
+	# data may still carry mount_parent_axis_local, but using it for runtime
+	# drawing can visually detach side-mounted terminals from their joint slot.
 	return fallback
 
 

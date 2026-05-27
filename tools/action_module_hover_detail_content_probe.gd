@@ -39,10 +39,33 @@ func _init() -> void:
 	var module := _module_by_profile(main, "gun_activate")
 	var lines: Array = main._hover_card_player_detail_lines("module", module)
 	var joined := _joined(lines)
-	_assert_terms(joined, ["Use Scope", "Action", "Timing", "Resolve Source", "Drive & Heat"], "gun_activate detail sections")
+	_assert_terms(joined, ["Use Scope", "Action", "Timing", "Resolve Source", "Consistency", "Drive & Heat"], "gun_activate detail sections")
 	_assert_terms(joined, ["Can bind", "Hold X", "bound firearm", "projectile momentum", "Action speed"], "gun_activate explanatory copy")
 	var melee := _module_by_profile(main, "two_link_forward_snap")
 	var melee_joined := _joined(main._hover_card_player_detail_lines("module", melee))
-	_assert_terms(melee_joined, ["real contact", "allocated drive", "no fixed damage"], "melee module resolve copy")
+	_assert_terms(
+			melee_joined,
+			[
+				"linkage-style",
+				"Can bind",
+				"two-part non-torso chain",
+				"Forward + X",
+				"Back + X",
+				"startup 1/3",
+				"recovery 2/3",
+				"real contact",
+				"allocated drive",
+				"no fixed damage",
+				"Consistency",
+				"does not float",
+				"no projectile",
+			],
+			"two-link player contract copy"
+	)
+	for raw_impl_term in ["TopologyPoseResolver", "runtime_topology_segments"]:
+		if melee_joined.find(raw_impl_term) >= 0:
+			_fail("Two-link detail leaked implementation term %s in: %s" % [raw_impl_term, melee_joined])
+	if melee_joined.to_lower().strip_edges() == "x: two-link forward snap.":
+		_fail("Two-link detail regressed to a one-line input label.")
 	print("ACTION_MODULE_HOVER_DETAIL_CONTENT_PROBE ok")
 	quit()

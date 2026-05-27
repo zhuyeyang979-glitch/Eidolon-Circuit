@@ -13,12 +13,14 @@ var phase := PHASE_PAGE
 var blocking := true
 var idle_optional := false
 var callable := Callable()
+var target_page := ""
+var generation_id := 0
 
 static func _script():
 	return load("res://scripts/services/loading_task.gd")
 
 
-static func create(task_id: String, task_label: String, task_weight: float, task_callable: Callable, task_phase: String = PHASE_PAGE, task_blocking: bool = true, task_idle_optional: bool = false) -> LoadingTask:
+static func create(task_id: String, task_label: String, task_weight: float, task_callable: Callable, task_phase: String = PHASE_PAGE, task_blocking: bool = true, task_idle_optional: bool = false, task_target_page: String = "", task_generation_id: int = 0) -> LoadingTask:
 	var task = _script().new()
 	task.id = task_id
 	task.label = task_label
@@ -27,6 +29,8 @@ static func create(task_id: String, task_label: String, task_weight: float, task
 	task.phase = normalized_phase(task_phase)
 	task.blocking = task_blocking
 	task.idle_optional = task_idle_optional
+	task.target_page = task_target_page
+	task.generation_id = task_generation_id
 	return task
 
 
@@ -47,7 +51,9 @@ static func from_legacy(value: Variant) -> LoadingTask:
 		data.get("callable", Callable()),
 		phase,
 		blocking,
-		bool(data.get("idle_optional", false))
+		bool(data.get("idle_optional", false)),
+		String(data.get("target_page", "")),
+		int(data.get("generation_id", 0))
 	)
 
 
@@ -81,4 +87,6 @@ func to_dictionary() -> Dictionary:
 		"callable": callable,
 		"essential": blocking,
 		"first_interaction_critical": first_interaction_critical(),
+		"target_page": target_page,
+		"generation_id": generation_id,
 	}

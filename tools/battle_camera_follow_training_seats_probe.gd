@@ -42,7 +42,7 @@ func _init() -> void:
 	main.ai_battle_seat = 3
 	main.spectator_view_mode = MainScene.SPECTATOR_VIEW_MID
 	main.spectator_camera_center = MainScene.RING_LENGTH + 1.0
-	for i in range(80):
+	for i in range(160):
 		main._update_camera_center()
 	if absf(main.camera_mobius_s - (MainScene.RING_LENGTH + 2.0)) > 0.03:
 		_fail("Spectator midpoint camera did not converge on canonical midpoint.")

@@ -33,6 +33,9 @@ func _init() -> void:
 	var two_link_text := _joined(main._hover_card_player_detail_lines("module", two_link)).to_lower()
 	if two_link_text.find("startup 1/3") < 0 or two_link_text.find("recovery 2/3") < 0:
 		_fail("Two-link module should explain startup 1/3 and recovery 2/3: %s" % two_link_text)
+	for term in ["pose persists", "two-bar linkage", "stays attached"]:
+		if two_link_text.find(term) < 0:
+			_fail("Two-link timing detail should explain linked recovery contract term %s in %s" % [term, two_link_text])
 	var gun := _module_by_profile(main, "gun_activate")
 	var gun_text := _joined(main._hover_card_player_detail_lines("module", gun)).to_lower()
 	for term in ["hold", "interval", "release", "bound firearm"]:

@@ -64,6 +64,12 @@ const AMMO_FOR_PROJECTILE_PROFILE := {
 	"web_tether_activate": "web",
 }
 
+const PROJECTILE_MOBILITY_CONTRACT := {
+	"move_while_firing": true,
+	"direction_boost_while_firing": true,
+	"aim_input_mode": "turn_keys",
+}
+
 
 func projectile_profiles() -> Array:
 	return PROJECTILE_PROFILES.duplicate()
@@ -96,6 +102,12 @@ func is_melee_profile(profile: String) -> bool:
 func is_live_profile(profile: String) -> bool:
 	var key := profile.to_lower()
 	return is_melee_profile(key) or is_projectile_profile(key)
+
+
+func projectile_mobility_contract(profile: String) -> Dictionary:
+	if not is_projectile_profile(profile):
+		return {}
+	return PROJECTILE_MOBILITY_CONTRACT.duplicate(true)
 
 
 func profile_for_gun_kind(gun_kind: String) -> String:

@@ -54,7 +54,7 @@ func _entry_with_kind(entries: Array, kind: String) -> Dictionary:
 
 func _contains_required_terms(text: String) -> bool:
 	var lower := text.to_lower()
-	return (lower.find("boost") >= 0 and (lower.find("动量") >= 0 or lower.find("momentum") >= 0 or lower.find("b+") >= 0) and (lower.find("热耗") >= 0 or lower.find("heat cost") >= 0))
+	return (lower.find("boost") >= 0 and (lower.find("动量") >= 0 or lower.find("momentum") >= 0 or lower.find("b+") >= 0) and (lower.find("事件热") >= 0 or lower.find("热耗") >= 0 or lower.find("event heat") >= 0 or lower.find("heat cost") >= 0))
 
 
 func _init() -> void:
@@ -113,7 +113,7 @@ func _init() -> void:
 		if not (raw_entry is Dictionary):
 			continue
 		var label := String(Dictionary(raw_entry).get("label", ""))
-		if label.find("单次Boost热耗") >= 0 or label.find("Boost Heat Cost") >= 0:
+		if label.find("Boost事件热") >= 0 or label.find("单次Boost热耗") >= 0 or label.find("Boost Event Heat") >= 0 or label.find("Boost Heat Cost") >= 0:
 			saw_heat_cost = true
 		if label.find("Boost动量") >= 0 or label.find("Boost总动量") >= 0 or label.find("Boost Momentum") >= 0 or label.find("Total Boost Momentum") >= 0:
 			saw_boost_momentum = true
@@ -129,7 +129,7 @@ func _init() -> void:
 	if boost_entry.is_empty():
 		_fail("Torso detail allocation should expose a Boost/brake row.")
 	var boost_line := "%s\n%s" % [String(boost_entry.get("line", "")), String(boost_entry.get("heat_label", ""))]
-	if boost_line.find("单次Boost热耗") < 0 and boost_line.to_lower().find("heat cost") < 0:
+	if boost_line.find("Boost事件热") < 0 and boost_line.find("单次Boost热耗") < 0 and boost_line.to_lower().find("event heat") < 0 and boost_line.to_lower().find("heat cost") < 0:
 		_fail("Boost/brake allocation row should state single-use boost heat cost: %s" % boost_line)
 	print("BOOST_HEAT_UI_TERMS_PROBE ok")
 	quit()

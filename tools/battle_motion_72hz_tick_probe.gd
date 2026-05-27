@@ -14,11 +14,11 @@ func _init() -> void:
 	root.add_child(main)
 	main._ready()
 	main._apply_performance_profile("compat_60", false)
-	if int(round(MainScene.BATTLE_SIMULATION_FPS)) != 72:
-		_fail("Battle simulation FPS should be 72, got %.2f." % MainScene.BATTLE_SIMULATION_FPS)
+	if int(round(MainScene.BATTLE_SIMULATION_FPS)) != 120:
+		_fail("Battle simulation FPS should be 120, got %.2f." % MainScene.BATTLE_SIMULATION_FPS)
 		return
-	if Engine.max_fps < 72 or Engine.physics_ticks_per_second < 72:
-		_fail("Runtime frame/tick caps should both be at least 72, got fps=%d physics=%d." % [Engine.max_fps, Engine.physics_ticks_per_second])
+	if Engine.max_fps < 72 or Engine.physics_ticks_per_second != 120:
+		_fail("Compat rendering may remain 72fps, but physics should be 120Hz; got fps=%d physics=%d." % [Engine.max_fps, Engine.physics_ticks_per_second])
 		return
 	var fighter = FighterScene.new()
 	root.add_child(fighter)
@@ -55,7 +55,7 @@ func _init() -> void:
 	var max_move_step := 0.0
 	var max_turn_step := 0.0
 	var max_limb_step := 0.0
-	for i in range(72):
+	for i in range(120):
 		fighter.request_turn(1, MainScene.BATTLE_FRAME_DELTA)
 		fighter.move_by(Vector2.RIGHT, MainScene.BATTLE_FRAME_DELTA, MainScene.RING_LENGTH)
 		fighter.tick(MainScene.BATTLE_FRAME_DELTA, MainScene.RING_LENGTH)
@@ -70,16 +70,16 @@ func _init() -> void:
 	if total_delta.length() <= 1.0:
 		_fail("72Hz movement did not advance enough over one second: %.3f." % total_delta.length())
 		return
-	if max_move_step > 0.052:
-		_fail("72Hz movement frame step is too chunky: %.4f." % max_move_step)
+	if max_move_step > 0.032:
+		_fail("120Hz movement step is too chunky: %.4f." % max_move_step)
 		return
-	if max_turn_step > 0.09:
-		_fail("72Hz turn frame step is too chunky: %.4f." % max_turn_step)
+	if max_turn_step > 0.055:
+		_fail("120Hz turn step is too chunky: %.4f." % max_turn_step)
 		return
-	if max_limb_step > 0.06:
-		_fail("72Hz limb frame step is too chunky: %.4f." % max_limb_step)
+	if max_limb_step > 0.04:
+		_fail("120Hz limb step is too chunky: %.4f." % max_limb_step)
 		return
-	print("BATTLE_MOTION_72HZ_TICK_PROBE ok move_step=%.4f turn_step=%.4f limb_step=%.4f total=%.3f" % [
+	print("BATTLE_MOTION_120HZ_COMPAT_PROBE ok move_step=%.4f turn_step=%.4f limb_step=%.4f total=%.3f" % [
 		max_move_step,
 		max_turn_step,
 		max_limb_step,

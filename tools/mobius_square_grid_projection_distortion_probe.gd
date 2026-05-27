@@ -17,70 +17,65 @@ func _surface_config() -> Dictionary:
 		MainScene.VIEW_HEIGHT,
 		Rect2(Vector2(MainScene.ARENA_LEFT, MainScene.ARENA_TOP), Vector2(MainScene.ARENA_WIDTH, MainScene.ARENA_HEIGHT))
 	)
-	config["enabled"] = true
 	config["screen_scale"] = MainScene.ARENA_HEIGHT / MainScene.VIEW_HEIGHT
 	config["local_rectangular_projection"] = false
 	config["twist_visual_enabled"] = true
-	config["twist_wave_amplitude"] = 0.0
+	config["twist_wave_amplitude"] = 0.18
 	config["twist_pivot_influence"] = 0.0
-	config["depth_strength"] = 0.58
-	config["depth_contrast"] = 1.22
-	config["near_scale"] = 1.24
-	config["far_scale"] = 0.68
+	config["depth_strength"] = 0.52
+	config["depth_contrast"] = 1.18
+	config["ridge_period"] = 1.92
+	config["surface_perspective_strength"] = 0.36
 	return config
 
 
-func _projection(coord: Vector2, camera: Vector2, config: Dictionary, state: Dictionary) -> Dictionary:
-	return MobiusWorld.project_to_screen(coord, camera, config, state)
+func _coord_from_plane(plane: Vector2, config: Dictionary) -> Vector2:
+	var screen_scale := float(config.get("screen_scale", MainScene.ARENA_HEIGHT / MainScene.VIEW_HEIGHT))
+	return Vector2(plane.x * (MainScene.ARENA_WIDTH / screen_scale * 0.5), plane.y * (MainScene.VIEW_HEIGHT * 0.5))
+
+
+func _frame_for_plane(plane: Vector2, config: Dictionary, state: Dictionary) -> Dictionary:
+	return MobiusWorld.frame_at(_coord_from_plane(plane, config), Vector2.ZERO, config, state)
+
+
+func _project_for_plane(plane: Vector2, config: Dictionary, state: Dictionary) -> Dictionary:
+	return MobiusWorld.project_to_screen(_coord_from_plane(plane, config), Vector2.ZERO, config, state)
 
 
 func _init() -> void:
 	var config := _surface_config()
-	var camera := Vector2.ZERO
 	var state := {
-		"twist_phase": 0.0,
-		"twist_speed": 0.0,
-		"twist_amplitude": 0.0,
-		"pivot": Vector2.ZERO,
-		"diagonal_phase": 0.0,
+		"twist_phase": 0.36,
+		"ridge_phase": 0.0,
+		"ridge_angle_phase": 0.0,
+		"twist_amplitude": 0.18,
+		"pivot_influence": 0.0,
 	}
-	var ds := 2.6
-	var dv := 2.0
-	var top_right := _projection(Vector2(ds, dv), camera, config, state)
-	var bottom_left := _projection(Vector2(-ds, -dv), camera, config, state)
-	var top_left := _projection(Vector2(-ds, dv), camera, config, state)
-	var bottom_right := _projection(Vector2(ds, -dv), camera, config, state)
-	var near_mean := (float(top_right.get("scale", 1.0)) + float(bottom_left.get("scale", 1.0))) * 0.5
-	var far_mean := (float(top_left.get("scale", 1.0)) + float(bottom_right.get("scale", 1.0))) * 0.5
-	var near_pair_delta := absf(float(top_right.get("scale", 1.0)) - float(bottom_left.get("scale", 1.0)))
-	var far_pair_delta := absf(float(top_left.get("scale", 1.0)) - float(bottom_right.get("scale", 1.0)))
-	if near_pair_delta > 0.075 or far_pair_delta > 0.075:
-		_fail("Same diagonal corners should share comparable projection scale; near_delta=%.4f far_delta=%.4f." % [near_pair_delta, far_pair_delta])
+	var center := _frame_for_plane(Vector2.ZERO, config, state)
+	var normal: Vector2 = center.get("ridge_normal", Vector2(0.707, 0.707))
+	var ridge_offset := float(config.get("ridge_period", 1.92)) * 0.5
+	var ridge_a := _project_for_plane(-normal * ridge_offset, config, state)
+	var ridge_b := _project_for_plane(normal * ridge_offset, config, state)
+	var valley := _project_for_plane(Vector2.ZERO, config, state)
+	var ridge_scale := (float(ridge_a.get("scale", 0.0)) + float(ridge_b.get("scale", 0.0))) * 0.5
+	var valley_scale := float(valley.get("scale", 1.0))
+	if ridge_scale <= valley_scale + 0.18:
+		_fail("Parallel ridge lines should project larger/brighter than their midpoint valley; ridge=%.3f valley=%.3f." % [ridge_scale, valley_scale])
 		return
-	if near_mean <= far_mean + 0.12:
-		_fail("One diagonal should read nearer/larger than the other; near=%.4f far=%.4f." % [near_mean, far_mean])
+	var tangent := Vector2(-normal.y, normal.x)
+	var line_a0 := _project_for_plane(-normal * ridge_offset + tangent * 0.55, config, state)
+	var line_a1 := _project_for_plane(-normal * ridge_offset - tangent * 0.55, config, state)
+	var line_b0 := _project_for_plane(normal * ridge_offset + tangent * 0.55, config, state)
+	var line_b1 := _project_for_plane(normal * ridge_offset - tangent * 0.55, config, state)
+	var slope_a := (Vector2(line_a1.get("position", Vector2.ZERO)) - Vector2(line_a0.get("position", Vector2.ZERO))).normalized()
+	var slope_b := (Vector2(line_b1.get("position", Vector2.ZERO)) - Vector2(line_b0.get("position", Vector2.ZERO))).normalized()
+	if absf(slope_a.cross(slope_b)) > 0.08:
+		_fail("The two high lines should stay parallel after projection; cross=%.4f." % absf(slope_a.cross(slope_b)))
 		return
-	var tr_pos: Vector2 = top_right.get("position", Vector2.ZERO)
-	var bl_pos: Vector2 = bottom_left.get("position", Vector2.ZERO)
-	var tl_pos: Vector2 = top_left.get("position", Vector2.ZERO)
-	var br_pos: Vector2 = bottom_right.get("position", Vector2.ZERO)
-	var near_diagonal := tr_pos.distance_to(bl_pos)
-	var far_diagonal := tl_pos.distance_to(br_pos)
-	var right_height := tr_pos.distance_to(br_pos)
-	var left_height := tl_pos.distance_to(bl_pos)
-	if absf(near_diagonal - far_diagonal) < 60.0:
-		_fail("Projected square grid should visibly compress one diagonal and enlarge the other; near_diag=%.2f far_diag=%.2f." % [near_diagonal, far_diagonal])
+	var valley_pos: Vector2 = valley.get("position", Vector2.ZERO)
+	var ridge_mid := (Vector2(ridge_a.get("position", Vector2.ZERO)) + Vector2(ridge_b.get("position", Vector2.ZERO))) * 0.5
+	if valley_pos.distance_to(ridge_mid) > 140.0:
+		_fail("The valley should sit between the two projected ridge lines; offset=%.2f." % valley_pos.distance_to(ridge_mid))
 		return
-	if absf(right_height - left_height) < 24.0:
-		_fail("Projected square grid should shear under the Mobius surface projection; right=%.2f left=%.2f." % [right_height, left_height])
-		return
-	var rectangular_config := config.duplicate(true)
-	rectangular_config["local_rectangular_projection"] = true
-	var rect_top := _projection(Vector2(0.0, dv), camera, rectangular_config, state)
-	var rect_bottom := _projection(Vector2(0.0, -dv), camera, rectangular_config, state)
-	var rect_height := Vector2(rect_top.get("position", Vector2.ZERO)).distance_to(Vector2(rect_bottom.get("position", Vector2.ZERO)))
-	if rect_height <= 0.0:
-		_fail("Rectangular gameplay projection sanity check failed.")
-		return
-	print("MOBIUS_SQUARE_GRID_PROJECTION_DISTORTION_PROBE ok near=%.3f far=%.3f diagonals=%.1f/%.1f heights=%.1f/%.1f" % [near_mean, far_mean, near_diagonal, far_diagonal, right_height, left_height])
+	print("MOBIUS_SQUARE_GRID_PROJECTION_DISTORTION_PROBE ok ridge=%.3f valley=%.3f parallel_cross=%.4f" % [ridge_scale, valley_scale, absf(slope_a.cross(slope_b))])
 	quit()

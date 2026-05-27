@@ -32,6 +32,10 @@ func _assert_parent_axis(main: Node, unit_bp: Dictionary, limb: int, scythe: int
 	var mount_axis: Vector2 = enriched.get("mount_parent_axis_local", Vector2.ZERO)
 	if mount_axis.length() < 0.001 or absf(mount_axis.normalized().dot(expected_axis)) < 0.99:
 		_fail("%s scythe mount axis should follow parent limb axis, got %s expected %s." % [label, str(mount_axis), str(expected_axis)])
+		return
+	var handle_axis: Vector2 = main._topology_endpoint_axis_for_node(scythe, nodes, edges).normalized()
+	if handle_axis.length() < 0.001 or handle_axis.dot(expected_axis) < 0.999:
+		_fail("%s scythe handle axis should be the parent joint-slot axis, got %s expected %s." % [label, str(handle_axis), str(expected_axis)])
 
 
 func _init() -> void:

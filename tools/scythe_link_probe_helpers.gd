@@ -24,6 +24,14 @@ static func scythe_index(main: Node) -> int:
 	return -1
 
 
+static func scythe_module_index(main: Node) -> int:
+	var catalog: Array = main._catalog_for("hero", "module")
+	for i in range(catalog.size()):
+		if String(main._selected_component("hero", "module", i).get("module_action_profile", "")) == "scythe_hook_return":
+			return i
+	return -1
+
+
 static func setup_main(tree: SceneTree) -> Node:
 	var main = MainScene.new()
 	tree.root.add_child(main)
@@ -47,6 +55,59 @@ static func build_torso_limb(main: Node) -> Dictionary:
 	unit_bp["custom_topology"] = {"nodes": nodes, "edges": edges, "edge_snap_version": MainScene.TOPOLOGY_SNAP_VERSION}
 	unit_bp["blank_canvas"] = false
 	return {"unit_bp": unit_bp, "nodes": nodes, "edges": edges, "torso": torso, "limb": limb}
+
+
+static func build_torso_limb_scythe_module(main: Node, visual_side: String = "right") -> Dictionary:
+	var setup := build_torso_limb(main)
+	if setup.is_empty():
+		return {}
+	var unit_bp: Dictionary = setup.get("unit_bp", {})
+	var topology: Dictionary = unit_bp.get("custom_topology", {})
+	var nodes: Array = Array(topology.get("nodes", [])).duplicate(true)
+	var edges: Array = Array(topology.get("edges", [])).duplicate(true)
+	var limb: int = int(setup.get("limb", -1))
+	var module_index: int = scythe_module_index(main)
+	var scythe_part: int = scythe_index(main)
+	if limb < 0 or module_index < 0 or scythe_part < 0:
+		return {}
+	var scythe: int = main._append_directed_component_node("hero", unit_bp, nodes, edges, limb, "SIDE SCYTHE", "muscle", scythe_part, Vector2.RIGHT)
+	var node: Dictionary = Dictionary(nodes[scythe]).duplicate(true)
+	node["visual_mount_side"] = visual_side
+	node["visual_handedness"] = visual_side
+	node["orientation_category"] = "orthogonal_side_mount"
+	node["orientation_basis"] = "parent_normal"
+	nodes[scythe] = node
+	topology["nodes"] = nodes
+	topology["edges"] = edges
+	unit_bp["custom_topology"] = topology
+	unit_bp["slot_payloads"] = [{"kind": "module", "module": module_index, "torso_node": int(setup.get("torso", 0))}]
+	main.editor_working_role_key = "hero"
+	main.editor_working_blueprint = unit_bp
+	main.editor_role_index = MainScene.ROLE_ORDER.find("hero")
+	main.editor_open_torso_node_index = int(setup.get("torso", 0))
+	setup["unit_bp"] = unit_bp
+	setup["nodes"] = nodes
+	setup["edges"] = edges
+	setup["scythe"] = scythe
+	setup["module"] = module_index
+	return setup
+
+
+static func select_scythe_binding_target(main: Node, unit_bp: Dictionary, scythe: int, module_index: int) -> bool:
+	var module_part: Dictionary = main._selected_component("hero", "module", module_index)
+	main._start_editor_module_binding_flow(0, module_part)
+	var candidate: Dictionary = main._torso_detail_binding_candidate_for_node(unit_bp, 0, module_part, scythe)
+	if candidate.is_empty() or not bool(candidate.get("valid", false)):
+		return false
+	return main._complete_pending_module_binding_with_selection(unit_bp, Array(candidate.get("selection", [scythe])))
+
+
+static func bind_scythe_action_side(main: Node, unit_bp: Dictionary, scythe: int, module_index: int, side: String, attack_key: int = 1) -> bool:
+	if not select_scythe_binding_target(main, unit_bp, scythe, module_index):
+		return false
+	main._select_torso_detail_binding_action_side(side)
+	main._set_pending_module_attack_key(attack_key)
+	return main.editor_pending_module_binding.is_empty() and Array(unit_bp.get("module_bindings", [])).size() > 0
 
 
 static func append_loose_scythe_near_limb(main: Node, unit_bp: Dictionary, limb: int) -> int:

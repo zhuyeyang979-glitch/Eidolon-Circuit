@@ -20,16 +20,20 @@ func _init() -> void:
 			return true,
 		LoadingTask.PHASE_FIRST_INTERACTION,
 		false,
-		false
+		false,
+		"editor",
+		7
 	)
 	if task.id != "typed" or task.label != "Typed Task" or absf(task.weight - 2.5) > 0.001:
 		_fail("LoadingTask fixed fields were not stored.")
 	if task.phase != LoadingTask.PHASE_FIRST_INTERACTION or task.blocking or task.idle_optional:
 		_fail("LoadingTask phase/blocking fields were not stored.")
+	if task.target_page != "editor" or task.generation_id != 7:
+		_fail("LoadingTask target page/generation fields were not stored.")
 	if not task.first_interaction_critical():
 		_fail("First-interaction phase should be critical.")
 	var dict := task.to_dictionary()
-	for key in ["id", "label", "weight", "phase", "blocking", "idle_optional", "callable", "essential", "first_interaction_critical"]:
+	for key in ["id", "label", "weight", "phase", "blocking", "idle_optional", "callable", "essential", "first_interaction_critical", "target_page", "generation_id"]:
 		if not dict.has(key):
 			_fail("LoadingTask dictionary missing key: %s" % key)
 	var legacy = LoadingTask.from_legacy({"id": "old", "label": "Old", "weight": 1.0, "essential": false, "first_interaction_critical": true, "callable": Callable()})

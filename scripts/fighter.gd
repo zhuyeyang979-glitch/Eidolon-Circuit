@@ -3,6 +3,7 @@ extends Node2D
 
 const PartArt = preload("res://scripts/part_art.gd")
 const AssemblyBoardRenderer = preload("res://scripts/assembly_board_renderer.gd")
+const TopologyPoseResolver = preload("res://scripts/topology_pose_resolver.gd")
 const MotionBudget = preload("res://scripts/motion_budget.gd")
 const MobiusWorld = preload("res://scripts/mobius_world.gd")
 const GameplayTransform = preload("res://scripts/gameplay_transform.gd")
@@ -52,6 +53,7 @@ const REAR_BRAKE_HALF_ANGLE_DEGREES = 50.0
 const BOOST_COOLDOWN_DEFAULT = 0.5
 const MOBIUS_VISUAL_SCALE_MIN = 0.05
 const MOBIUS_VISUAL_SCALE_MAX_STEP = 0.045
+const MOBIUS_VISUAL_SCALE_MAX_RATE = MOBIUS_VISUAL_SCALE_MAX_STEP * 120.0
 
 var owner_id := 1
 var role := "hero"
@@ -70,7 +72,16 @@ var mobius_depth01 := 0.5
 var mobius_visual_scale := 1.0
 var mobius_visual_scale_target := 1.0
 var mobius_visual_scale_initialized := false
+var mobius_surface_brightness := 1.0
 var visual_hitbox_scale := 1.0
+var presentation_motion_initialized := false
+var presentation_pose_enabled := false
+var presentation_previous_coord := Vector2.ZERO
+var presentation_current_coord := Vector2.ZERO
+var presentation_coord := Vector2.ZERO
+var presentation_previous_facing_angle := 0.0
+var presentation_current_facing_angle := 0.0
+var presentation_facing_angle := 0.0
 var velocity := Vector2.ZERO
 var facing := 1
 var facing_angle := 0.0
@@ -165,6 +176,7 @@ func _ready() -> void:
 
 func _draw() -> void:
 	runtime_status_curve_overlay_last_count = 0
+	_draw_mobius_contact_shadow()
 	if _is_training_ball_dummy():
 		_draw_training_ball_dummy()
 		_draw_runtime_status_curve_overlay()
@@ -172,6 +184,24 @@ func _draw() -> void:
 	if _is_teamedit_runtime_unit() and _has_runtime_topology():
 		_draw_runtime_assembly_board_unit()
 		_draw_runtime_status_curve_overlay()
+
+
+func _draw_mobius_contact_shadow() -> void:
+	if not active:
+		return
+	if String(get_meta("projection_source", "")) != "mobius" and not mobius_visual_scale_initialized:
+		return
+	var body_length := clampf(float(stats.get("length", 1.0)), 0.18, 4.8)
+	var body_radius := clampf(float(stats.get("radius", 0.32)), 0.06, 3.2)
+	var width := clampf(maxf(body_length * 0.62, body_radius * 2.4) * PART_VISUAL_SCALE, 18.0, 180.0)
+	var height := clampf(body_radius * PART_VISUAL_SCALE * 0.62, 7.0, 78.0)
+	var center := Vector2(0.0, height * 0.18)
+	var alpha := clampf(0.035 + mobius_depth01 * 0.035, 0.035, 0.075)
+	var points := PackedVector2Array()
+	for i in range(28):
+		var t := float(i) / 28.0 * TAU
+		points.append(center + Vector2(cos(t) * width * 0.5, sin(t) * height * 0.5))
+	draw_colored_polygon(points, Color(0.0, 0.025, 0.045, alpha))
 
 
 func setup_unit(config: Dictionary) -> void:
@@ -208,13 +238,23 @@ func deploy(spawn_ring_pos: float, spawn_lane: float) -> void:
 	mobius_visual_scale = 1.0
 	mobius_visual_scale_target = 1.0
 	mobius_visual_scale_initialized = false
+	mobius_surface_brightness = 1.0
 	visual_hitbox_scale = GameplayTransform.hitbox_scale_for_visual_scale(mobius_visual_scale)
+	presentation_motion_initialized = false
+	presentation_pose_enabled = false
+	presentation_previous_coord = Vector2(mobius_s, mobius_v)
+	presentation_current_coord = presentation_previous_coord
+	presentation_coord = presentation_previous_coord
 	scale = Vector2.ONE * mobius_visual_scale
+	self_modulate = Color.WHITE
 	ring_pos = fposmod(mobius_s, 24.0)
 	lane = mobius_v
 	velocity = Vector2.ZERO
 	facing = 1 if owner_id == 1 else -1
 	set_facing_immediate(facing)
+	presentation_previous_facing_angle = facing_angle
+	presentation_current_facing_angle = facing_angle
+	presentation_facing_angle = facing_angle
 	health = max_health
 	heat = 0.0
 	overheated = false
@@ -383,6 +423,39 @@ func sync_mobius_from_compat(ring_length: float, force_from_compat: bool = false
 	lane = mobius_v
 
 
+func capture_motion_snapshot(before_step: bool = false) -> void:
+	var authoritative_coord := Vector2(mobius_s, mobius_v)
+	presentation_pose_enabled = false
+	if not presentation_motion_initialized:
+		presentation_previous_coord = authoritative_coord
+		presentation_current_coord = authoritative_coord
+		presentation_previous_facing_angle = facing_angle
+		presentation_current_facing_angle = facing_angle
+		presentation_motion_initialized = true
+	elif before_step:
+		presentation_previous_coord = presentation_current_coord
+		presentation_previous_facing_angle = presentation_current_facing_angle
+	else:
+		presentation_current_coord = authoritative_coord
+		presentation_current_facing_angle = facing_angle
+
+
+func apply_interpolated_presentation(alpha: float) -> void:
+	if not presentation_motion_initialized:
+		capture_motion_snapshot(false)
+	var ratio := clampf(alpha, 0.0, 1.0)
+	presentation_coord = presentation_previous_coord.lerp(presentation_current_coord, ratio)
+	var angle_delta := wrapf(presentation_current_facing_angle - presentation_previous_facing_angle + PI, 0.0, TAU) - PI
+	presentation_facing_angle = wrapf(presentation_previous_facing_angle + angle_delta * ratio, 0.0, TAU)
+	presentation_pose_enabled = true
+	_invalidate_runtime_geometry_cache()
+	_refresh_visuals()
+
+
+func presentation_combat_coord() -> Vector2:
+	return presentation_coord if presentation_pose_enabled else Vector2(mobius_s, mobius_v)
+
+
 func set_facing_immediate(direction_sign: int) -> void:
 	facing = 1 if direction_sign >= 0 else -1
 	facing_angle = 0.0 if facing > 0 else PI
@@ -516,7 +589,7 @@ func _tick_boost_drive(delta: float) -> void:
 
 
 func _forward_vector() -> Vector2:
-	var body_angle := facing_angle + body_swing_angle
+	var body_angle := (presentation_facing_angle if presentation_pose_enabled else facing_angle) + body_swing_angle
 	return Vector2(cos(body_angle), sin(body_angle)).normalized()
 
 
@@ -764,11 +837,18 @@ func move_by(input_vector: Vector2, delta: float, ring_length: float) -> void:
 
 
 func move_by_gameplay(input_vector: Vector2, delta: float, ring_length: float) -> void:
-	if not active or role == "barrier":
+	set_meta("movement_gate_reason", "")
+	if not active:
+		set_meta("movement_gate_reason", "inactive")
+		return
+	if role == "barrier":
+		set_meta("movement_gate_reason", "barrier")
 		return
 	if melee_stagger_timer > 0.0:
+		set_meta("movement_gate_reason", "stagger")
 		return
 	if cooling_lock_timer > 0.0:
+		set_meta("movement_gate_reason", "overheat_shutdown" if overheated or forced_cooling_timer > 0.0 else "cooling_lock")
 		return
 
 	var speed: float = float(stats.get("move_speed", 0.0))
@@ -781,6 +861,7 @@ func move_by_gameplay(input_vector: Vector2, delta: float, ring_length: float) -
 
 	var desired := input_vector
 	if desired.length() <= 0.04:
+		set_meta("movement_gate_reason", "no_input")
 		set_meta("last_move_command_mode", "none")
 		return
 	if desired.length() > 1.0:
@@ -790,12 +871,15 @@ func move_by_gameplay(input_vector: Vector2, delta: float, ring_length: float) -
 
 	var command_mode := _movement_command_mode(desired)
 	if command_mode == MOVE_COMMAND_NONE:
+		set_meta("movement_gate_reason", "unusable_direction")
 		return
 	if command_mode == MOVE_COMMAND_BRAKE:
+		set_meta("movement_gate_reason", "braking")
 		_apply_velocity_brake(delta, "reverse_brake", false, desired)
 		return
 	var drive_dir := _drive_direction_for_command(desired, command_mode)
 	if drive_dir.length() <= 0.04:
+		set_meta("movement_gate_reason", "unusable_direction")
 		set_meta("last_move_command_mode", "none")
 		return
 	drive_dir = drive_dir.normalized()
@@ -805,6 +889,7 @@ func move_by_gameplay(input_vector: Vector2, delta: float, ring_length: float) -
 
 	var acceleration: float = float(stats.get("move_acceleration", 0.0))
 	if speed <= 0.0001 or acceleration <= 0.0001:
+		set_meta("movement_gate_reason", "no_drive")
 		return
 	var cornering: float = maxf(0.35, float(stats.get("cornering", 1.0)))
 	if recovery_boost_timer > 0.0:
@@ -1024,6 +1109,26 @@ func _runtime_child_nodes_for(parent_node: int) -> Array:
 			if _runtime_socket_is_parent_side(parent_socket_b) and _runtime_socket_is_child_root(child_socket_a):
 				result.append(a)
 	return result
+
+
+func _runtime_parent_node_for(child_node: int) -> int:
+	for raw_edge in Array(stats.get("runtime_topology_edges", [])):
+		if not (raw_edge is Dictionary):
+			continue
+		var edge: Dictionary = raw_edge
+		var a := _runtime_edge_node(edge, "a_node")
+		var b := _runtime_edge_node(edge, "b_node")
+		if a == child_node:
+			var child_socket := _runtime_edge_socket_for_node(edge, a)
+			var parent_socket := _runtime_edge_socket_for_node(edge, b)
+			if _runtime_socket_is_child_root(child_socket) and _runtime_socket_is_parent_side(parent_socket):
+				return b
+		elif b == child_node:
+			var child_socket_b := _runtime_edge_socket_for_node(edge, b)
+			var parent_socket_a := _runtime_edge_socket_for_node(edge, a)
+			if _runtime_socket_is_child_root(child_socket_b) and _runtime_socket_is_parent_side(parent_socket_a):
+				return a
+	return -1
 
 
 func _runtime_downstream_motion_for_node(node_index: int, included_nodes: Dictionary) -> Dictionary:
@@ -1449,7 +1554,7 @@ func _begin_runtime_blunt_terminal_action(action_kind: String, binding: Dictiona
 	var contact_speed := maxf(float(motion_budget.get("contact_speed", 0.0)), base_length * maxf(0.1, swing_arc) / maxf(0.001, duration)) * momentum_mult
 	var special_heat_fraction := maxf(0.0, float(module_part.get("special_heat_fraction", 0.0)))
 	if state_key in [STATE_ARMOR, STATE_ACTIVE] and special_heat_fraction > 0.0:
-		add_heat(maxf(1.0, float(stats.get("heat_capacity", 100.0))) * special_heat_fraction, "heat:repeat heat:blunt")
+		add_heat_event(maxf(1.0, float(stats.get("heat_capacity", 100.0))) * special_heat_fraction, ["repeat"], "blunt_module")
 	_apply_whole_body_action_state(state_key, duration)
 	action_cooldown = cooldown
 	active_part_index = attack_key - 1
@@ -1565,7 +1670,7 @@ func _begin_runtime_blade_action(action_kind: String, binding: Dictionary, input
 		contact_speed *= 1.18
 	var special_heat_fraction := maxf(0.0, float(module_part.get("special_heat_fraction", 0.0)))
 	if state_key in [STATE_ARMOR, STATE_ACTIVE] and special_heat_fraction > 0.0:
-		add_heat(maxf(1.0, float(stats.get("heat_capacity", 100.0))) * special_heat_fraction, "heat:repeat heat:blade")
+		add_heat_event(maxf(1.0, float(stats.get("heat_capacity", 100.0))) * special_heat_fraction, ["repeat"], "blade_module")
 	_apply_whole_body_action_state(state_key, duration)
 	action_cooldown = cooldown
 	active_part_index = attack_key - 1
@@ -1661,7 +1766,7 @@ func _begin_runtime_gauntlet_extend_swing_action(action_kind: String, binding: D
 	contact_speed *= maxf(0.1, float(module_part.get("blunt_momentum_mult", 1.5)))
 	if state_key in [STATE_ARMOR, STATE_ACTIVE]:
 		var heat_fraction := maxf(0.0, float(module_part.get("special_heat_fraction", 0.1)))
-		add_heat(maxf(1.0, float(stats.get("heat_capacity", 100.0))) * heat_fraction, "heat:repeat heat:gauntlet")
+		add_heat_event(maxf(1.0, float(stats.get("heat_capacity", 100.0))) * heat_fraction, ["repeat"], "gauntlet_module")
 	_apply_whole_body_action_state(state_key, duration)
 	action_cooldown = cooldown
 	active_part_index = attack_key - 1
@@ -3095,22 +3200,24 @@ func _runtime_actions_cache_signature() -> String:
 
 
 func _runtime_geometry_signature(include_torso: bool, include_dynamic: bool, kind: String) -> String:
+	var visible_facing_angle := presentation_facing_angle if presentation_pose_enabled else facing_angle
 	return "%s|%s|%s|%.3f|%.3f|%.4f|%s|%d" % [
 		kind,
 		str(include_torso),
 		str(include_dynamic),
 		ring_pos,
 		lane,
-		facing_angle,
+		visible_facing_angle,
 		_runtime_actions_cache_signature(),
 		Array(stats.get("runtime_topology_segments", [])).size(),
 	]
 
 
 func _runtime_visual_redraw_signature() -> String:
+	var visible_facing_angle := presentation_facing_angle if presentation_pose_enabled else facing_angle
 	return "%s|%.4f|%s|%d|%d|%d|%s|%d|%d|%d|%d" % [
 		String(current_state),
-		facing_angle,
+		visible_facing_angle,
 		_runtime_actions_cache_signature(),
 		int(round(state_timer * 1000.0)),
 		int(round(heat * 100.0)),
@@ -3330,6 +3437,10 @@ func _runtime_segment_to_world(raw_segment: Dictionary) -> Dictionary:
 		result["terminal_tip"] = world_b
 		result["terminal_handle_visible"] = true
 		result["terminal_handle_start"] = world_a
+	for anchor_key in ["root_anchor", "tip_anchor", "parent_socket_anchor"]:
+		var local_key := "%s_local" % anchor_key
+		if raw_segment.has(local_key):
+			result[anchor_key] = _runtime_local_to_world(_runtime_local_vector(raw_segment.get(local_key, Vector2.ZERO)))
 	result["pivot"] = world_a
 	result["local_joint_center"] = world_a
 	result["rotation_radius_start"] = 0.0
@@ -3917,6 +4028,17 @@ func _runtime_blade_side_sign(root_local: Vector2, base_dir: Vector2) -> float:
 	return 1.0 if side_probe < 0.0 else -1.0
 
 
+func _runtime_blade_action_side_sign(action: Dictionary, root_local: Vector2, base_dir: Vector2) -> float:
+	var binding: Dictionary = action.get("binding", {}) if action.get("binding", {}) is Dictionary else {}
+	if binding.has("side_mount_action_side"):
+		return 1.0 if String(binding.get("side_mount_action_side", "right")).to_lower() == "left" else -1.0
+	return _runtime_blade_side_sign(root_local, base_dir)
+
+
+func _runtime_side_mount_action_angle_offset(binding: Dictionary) -> float:
+	return -PI * 0.5 if String(binding.get("side_mount_action_side", "right")).to_lower() == "left" else PI * 0.5
+
+
 func _runtime_blade_target_delta(command_variant: String, module_part: Dictionary, side_sign: float) -> float:
 	var arc := deg_to_rad(maxf(1.0, float(module_part.get("swing_arc_degrees", 180.0))))
 	match command_variant:
@@ -3951,6 +4073,12 @@ func _runtime_blade_action_local_overrides(action: Dictionary) -> Dictionary:
 	var base_first_dir := (first_b - root_local).normalized()
 	if base_first_dir.length() <= 0.001:
 		base_first_dir = Vector2.RIGHT
+	var side_mount_node := int(binding.get("side_mount_action_node", -1))
+	var has_side_mount_action := side_mount_node >= 0 and binding.has("side_mount_action_side")
+	# Side-mounted terminals only change the terminal's local action basis. The
+	# ordinary limb chain must keep the same blade-chain delta as a straight
+	# terminal weapon, otherwise choosing left/right side would bend upstream
+	# limbs differently.
 	var side_sign := _runtime_blade_side_sign(root_local, base_first_dir)
 	var command_variant := String(action.get("command_variant", "normal_sweep"))
 	var target_delta := _runtime_blade_target_delta(command_variant, module_part, side_sign)
@@ -3970,8 +4098,11 @@ func _runtime_blade_action_local_overrides(action: Dictionary) -> Dictionary:
 	var profile := String(action.get("profile", ""))
 	var extension_m := maxf(0.0, float(action.get("extension_m", 0.0))) if profile == "extend_slash_driver" else 0.0
 	var previous_b := root_local
+	var previous_axis := base_first_dir
+	var override_by_node := {}
 	for i in range(sources.size()):
 		var source: Dictionary = Dictionary(sources[i])
+		var node_index := int(source.get("node_index", -1))
 		var base_a := _runtime_local_vector(source.get("a_local", previous_b))
 		var base_b := _runtime_local_vector(source.get("b_local", base_a + Vector2.RIGHT * 0.5))
 		var base_dir := (base_b - base_a).normalized()
@@ -3980,13 +4111,34 @@ func _runtime_blade_action_local_overrides(action: Dictionary) -> Dictionary:
 		var length := maxf(0.001, base_a.distance_to(base_b))
 		if i == sources.size() - 1 and extension_m > 0.0:
 			length += extension_m * extension_ratio
+		var root_for_override := previous_b
 		var dir := base_dir.rotated(delta).normalized()
+		if has_side_mount_action and node_index == side_mount_node:
+			var parent_axis := Vector2.ZERO
+			var parent_tip := previous_b
+			var parent_node := _runtime_parent_node_for(node_index)
+			var parent_segment: Dictionary = {}
+			if parent_node >= 0:
+				parent_segment = Dictionary(override_by_node.get(parent_node, {}))
+				if parent_segment.is_empty():
+					parent_segment = _runtime_segment_source_by_node(parent_node)
+			if not parent_segment.is_empty():
+				var parent_a := _runtime_local_vector(parent_segment.get("a_local", Vector2.ZERO))
+				var parent_b := _runtime_local_vector(parent_segment.get("b_local", parent_a + Vector2.RIGHT))
+				parent_axis = (parent_b - parent_a).normalized()
+				parent_tip = parent_b
+			if parent_axis.length() <= 0.001:
+				parent_axis = previous_axis if previous_axis.length() > 0.001 else Vector2.RIGHT
+			root_for_override = parent_tip
+			dir = parent_axis.normalized().rotated(_runtime_side_mount_action_angle_offset(binding) + delta).normalized()
 		var override := source.duplicate(true)
-		override["a_local"] = previous_b
-		override["b_local"] = previous_b + dir * length
+		override["a_local"] = root_for_override
+		override["b_local"] = root_for_override + dir * length
 		override["axis_local"] = dir
 		overrides[_runtime_segment_key(source)] = override
+		override_by_node[node_index] = override
 		previous_b = override["b_local"]
+		previous_axis = dir
 	return overrides
 
 
@@ -4147,6 +4299,7 @@ func _runtime_topology_world_segments_uncached(include_torso: bool = true, inclu
 	var body_length: float = clampf(float(stats.get("length", 1.0)), 0.12, 4.5)
 	var body_radius: float = clampf(float(stats.get("radius", 0.28)), 0.04, 3.2)
 	var overrides := _runtime_module_segment_overrides(body_length, body_radius) if include_dynamic else {}
+	var pose_overrides := {}
 	for raw_segment in Array(stats.get("runtime_topology_segments", [])):
 		if not (raw_segment is Dictionary):
 			continue
@@ -4154,14 +4307,16 @@ func _runtime_topology_world_segments_uncached(include_torso: bool = true, inclu
 		var part_kind := String(source_segment.get("part_kind", ""))
 		if part_kind == "torso" and not include_torso:
 			continue
-		if include_dynamic:
-			source_segment = _runtime_segment_with_aim_pose(source_segment)
 		var key := _runtime_segment_key(source_segment)
+		var base_world := _runtime_segment_to_world(source_segment)
+		result.append(base_world)
+		if include_dynamic and _aim_pose_active(int(source_segment.get("node_index", -9999))):
+			pose_overrides[key] = _runtime_segment_to_world(_runtime_segment_with_aim_pose(source_segment))
 		if overrides.has(key):
-			result.append(Dictionary(overrides[key]).duplicate(true))
-		else:
-			result.append(_runtime_segment_to_world(source_segment))
-	return result
+			pose_overrides[key] = Dictionary(overrides[key]).duplicate(true)
+	var resolved: Dictionary = TopologyPoseResolver.resolve_runtime_segments(result, Array(stats.get("runtime_topology_edges", [])), pose_overrides, false)
+	set_meta("runtime_topology_max_socket_gap", float(resolved.get("max_socket_gap", 0.0)))
+	return Array(resolved.get("segments", result))
 
 
 func _rest_direction_for_group(part_index: int, group: Dictionary, lane_bias: float) -> Vector2:
@@ -4253,7 +4408,7 @@ func boost(direction: Vector2, ring_length: float) -> bool:
 	boost_flash_timer = maxf(boost_flash_timer, flash_duration)
 	thruster_visual_timer = maxf(thruster_visual_timer, flash_duration)
 	thruster_output_direction = boost_dir
-	add_heat(maxf(0.0, float(stats.get("boost_heat", 0.0))), "heat:boost")
+	add_heat_event(maxf(0.0, float(stats.get("boost_heat", 0.0))), ["boost"], "boost")
 	moved_this_frame = true
 	boost_cooldown_timer = maxf(boost_cooldown_timer, maxf(0.0, float(stats.get("boost_cooldown", BOOST_COOLDOWN_DEFAULT))))
 	_refresh_visuals()
@@ -4278,12 +4433,28 @@ func trigger_overheat_shutdown(reason: String = "") -> void:
 
 
 func add_heat(amount: float, reason: String = "") -> void:
+	add_heat_event(amount, _canonical_heat_tags_for_reason(reason), reason)
+
+
+func add_heat_event(amount: float, tags: Array, source: String = "") -> void:
 	if not _uses_heat_resource() or amount <= 0.0:
 		return
 	var heat_capacity: float = maxf(1.0, float(stats.get("heat_capacity", 100.0)))
-	heat = clampf(heat + _heat_amount_after_cooling_relief(amount, reason), 0.0, heat_capacity)
+	var canonical_tags := _canonical_heat_tags_for_event(tags, source)
+	var relieved_amount := _heat_amount_after_cooling_relief_for_tags(amount, canonical_tags)
+	var heat_event := {
+		"heat_event_amount": amount,
+		"heat_event_relief_amount": amount - relieved_amount,
+		"heat_event_tags": canonical_tags.duplicate(),
+		"heat_event_source": source,
+	}
+	set_meta("last_heat_event", heat_event)
+	set_meta("heat_event_tags", canonical_tags.duplicate())
+	set_meta("heat_event_source", source)
+	set_meta("heat_event_amount", amount)
+	heat = clampf(heat + relieved_amount, 0.0, heat_capacity)
 	if heat >= heat_capacity:
-		trigger_overheat_shutdown(reason)
+		trigger_overheat_shutdown(source)
 
 
 func _overheat_clear_ratio() -> float:
@@ -4300,8 +4471,12 @@ func _runtime_cooling_rate() -> float:
 
 
 func _heat_amount_after_cooling_relief(amount: float, reason: String) -> float:
+	return _heat_amount_after_cooling_relief_for_tags(amount, _canonical_heat_tags_for_reason(reason))
+
+
+func _heat_amount_after_cooling_relief_for_tags(amount: float, tags: Array) -> float:
 	var relief := 0.0
-	for tag in _canonical_heat_tags_for_reason(reason):
+	for tag in tags:
 		match String(tag):
 			"boost":
 				relief = maxf(relief, float(stats.get("boost_heat_relief", 0.0)))
@@ -4318,6 +4493,16 @@ func _heat_amount_after_cooling_relief(amount: float, reason: String) -> float:
 	return amount * (1.0 - clampf(relief, 0.0, 0.72))
 
 
+func _canonical_heat_tags_for_event(tags: Array, source: String = "") -> Array:
+	var canonical: Array = []
+	for raw_tag in tags:
+		_append_heat_tag(canonical, String(raw_tag))
+	if canonical.is_empty() and source.strip_edges() != "":
+		for tag in _canonical_heat_tags_for_reason(source):
+			_append_heat_tag(canonical, String(tag))
+	return canonical
+
+
 func _canonical_heat_tags_for_reason(reason: String) -> Array:
 	var tags: Array = []
 	var reason_key := reason.to_lower()
@@ -4332,7 +4517,7 @@ func _canonical_heat_tags_for_reason(reason: String) -> Array:
 		_append_heat_tag(tags, "boost")
 	if reason_key.contains("gauntlet") or reason_key.contains("blade") or reason_key.contains("blunt") or reason_key.contains("combo") or reason_key.contains("module"):
 		_append_heat_tag(tags, "repeat")
-	if reason_key.contains("projectile") or reason_key.contains("gun") or reason_key.contains("ammo") or reason_key.contains("external heat"):
+	if reason_key.contains("projectile") or reason_key.contains("gun") or reason_key.contains("ammo"):
 		_append_heat_tag(tags, "projectile")
 	if reason_key.contains("laser"):
 		_append_heat_tag(tags, "laser")
@@ -4340,6 +4525,8 @@ func _canonical_heat_tags_for_reason(reason: String) -> Array:
 		_append_heat_tag(tags, "chemical")
 	if reason_key.contains("missile") or reason_key.contains("explosive"):
 		_append_heat_tag(tags, "missile")
+	if reason_key.contains("external") or reason_key.contains("field") or reason_key.contains("aura"):
+		_append_heat_tag(tags, "external")
 	return tags
 
 
@@ -4354,9 +4541,8 @@ func _append_heat_tag(tags: Array, raw_tag: String) -> void:
 			tag = "projectile"
 		"explosive", "grenade":
 			tag = "missile"
-	if tag == "laser" or tag == "chemical" or tag == "missile":
-		if not tags.has("projectile"):
-			tags.append("projectile")
+		"field", "aura":
+			tag = "external"
 	if not tags.has(tag):
 		tags.append(tag)
 
@@ -4462,7 +4648,7 @@ func apply_projectile_recoil(projectile_direction: Vector2, projectile_momentum:
 		return
 	velocity -= dir * recoil_velocity
 	last_action_direction = dir
-	request_collision_auto_brake()
+	set_meta("last_projectile_recoil_velocity", recoil_velocity)
 	thruster_output_direction = dir
 	thruster_visual_timer = maxf(thruster_visual_timer, 0.12)
 
@@ -4621,7 +4807,9 @@ func set_screen_position(screen_position: Vector2, is_visible_in_view: bool) -> 
 	mobius_visual_scale = 1.0
 	mobius_visual_scale_target = 1.0
 	mobius_visual_scale_initialized = false
+	mobius_surface_brightness = 1.0
 	scale = Vector2.ONE
+	self_modulate = Color.WHITE
 	position = screen_position if _is_teamedit_runtime_unit() else screen_position + body_sway_offset
 	set_meta("last_projection_visible", is_visible_in_view)
 	set_meta("projection_guarded", false)
@@ -4631,7 +4819,7 @@ func set_screen_position(screen_position: Vector2, is_visible_in_view: bool) -> 
 	visible = active and is_visible_in_view
 
 
-func set_mobius_screen_projection(projection: Dictionary, is_visible_in_view: bool) -> void:
+func set_mobius_screen_projection(projection: Dictionary, is_visible_in_view: bool, frame_delta: float = 1.0 / 120.0) -> void:
 	var screen_position: Vector2 = projection.get("position", position)
 	if not (is_finite(screen_position.x) and is_finite(screen_position.y)):
 		var last_finite = get_meta("last_finite_screen_position", null)
@@ -4640,6 +4828,7 @@ func set_mobius_screen_projection(projection: Dictionary, is_visible_in_view: bo
 	var projection_guarded := bool(projection.get("guarded", false))
 	var projection_critical := bool(projection.get("critical", false))
 	mobius_depth01 = clampf(float(projection.get("depth01", mobius_depth01)), 0.0, 1.0)
+	mobius_surface_brightness = clampf(float(projection.get("brightness", mobius_surface_brightness)), 0.96, 1.12)
 	var target_scale := maxf(MOBIUS_VISUAL_SCALE_MIN, float(projection.get("scale", 1.0)))
 	mobius_visual_scale_target = target_scale
 	if not mobius_visual_scale_initialized:
@@ -4647,7 +4836,8 @@ func set_mobius_screen_projection(projection: Dictionary, is_visible_in_view: bo
 		mobius_visual_scale_initialized = true
 	else:
 		var scale_delta := target_scale - mobius_visual_scale
-		var max_step: float = maxf(0.001, float(stats.get("mobius_visual_scale_max_step", MOBIUS_VISUAL_SCALE_MAX_STEP)))
+		var max_rate: float = maxf(0.001, float(stats.get("mobius_visual_scale_max_rate", float(stats.get("mobius_visual_scale_max_step", MOBIUS_VISUAL_SCALE_MAX_STEP)) * 120.0)))
+		var max_step: float = maxf(0.001, max_rate * clampf(maxf(0.001, frame_delta), 0.0, 0.1))
 		if absf(scale_delta) <= max_step:
 			mobius_visual_scale = target_scale
 		else:
@@ -4664,8 +4854,10 @@ func set_mobius_screen_projection(projection: Dictionary, is_visible_in_view: bo
 				clampf(position.y, (readable_min as Vector2).y, (readable_max as Vector2).y)
 			)
 	scale = Vector2.ONE * mobius_visual_scale
+	self_modulate = Color(mobius_surface_brightness, mobius_surface_brightness, mobius_surface_brightness, 1.0)
 	set_meta("mobius_visual_scale_target", mobius_visual_scale_target)
 	set_meta("mobius_visual_scale_applied", mobius_visual_scale)
+	set_meta("mobius_surface_brightness", mobius_surface_brightness)
 	set_meta("last_projection_visible", projection_visible)
 	set_meta("projection_guarded", projection_guarded)
 	set_meta("projection_critical", projection_critical)
@@ -4739,7 +4931,7 @@ func _build_visuals() -> void:
 func _refresh_visuals() -> void:
 
 	if _is_teamedit_runtime_unit():
-		scale = Vector2.ONE
+		scale = Vector2.ONE * mobius_visual_scale
 		rotation = 0.0
 		var runtime_material_color := _team_material_color()
 		state_flash.visible = false

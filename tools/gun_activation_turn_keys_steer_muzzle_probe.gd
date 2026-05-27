@@ -46,7 +46,6 @@ func _gun_segment(part: Dictionary) -> Dictionary:
 	segment["projectile_only"] = true
 	segment["joint_output_momentum_base"] = 80.0
 	segment["joint_drive_allocation"] = 80.0
-	segment["allocated_limb_momentum"] = 80.0
 	return segment
 
 
@@ -62,7 +61,6 @@ func _make_fixture(main) -> Dictionary:
 		"module_action_profile": "gun_activate",
 		"module_part": module_part.duplicate(true),
 		"joint_drive_allocation_by_node": {"2": 80.0},
-		"allocated_limb_momentum_by_node": {"2": 80.0},
 	}
 	var fighter = FighterScene.new()
 	root.add_child(fighter)
@@ -76,9 +74,7 @@ func _make_fixture(main) -> Dictionary:
 			"max_health": 100,
 			"mass": 32.0,
 			"move_speed": 4.0,
-			"body_move_speed": 4.0,
 			"move_acceleration": 30.0,
-			"thruster_acceleration": 30.0,
 			"turn_speed": 3.2,
 			"turn_command_rate": 3.2,
 			"teamedit_runtime_topology": true,
@@ -124,6 +120,11 @@ func _run() -> void:
 	var delta := wrapf(after_direction.angle() - before_direction.angle(), -PI, PI)
 	if delta <= 0.001:
 		_fail("Turn Right key should rotate active gun aim to the right; delta=%.4f." % delta)
+	var event: Dictionary = main._runtime_gun_activation_event_for(1)
+	if event.is_empty() or not bool(event.get("projectile", false)):
+		_fail("Active turn-key gun aim should keep producing a projectile event while movement is held.")
+	if String(main.gun_activation_state[1].get("aim_input_mode", "")) != "turn_keys":
+		_fail("Runtime gun activation should declare turn-key aim input mode.")
 	if absf(wrapf(float(fighter.target_facing_angle) - before_target_angle, -PI, PI)) > 0.001 or bool(fighter.turn_input_active):
 		_fail("Turn keys should be reserved by active gun aim and must not rotate torso.")
 	if signf(fighter.velocity.y) != -1.0:

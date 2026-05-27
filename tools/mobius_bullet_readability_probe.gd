@@ -35,9 +35,11 @@ func _init() -> void:
 	var lateral_error := absf((mid - start).cross(aim))
 	if lateral_error > 0.001:
 		_fail("Gameplay projectile path should be a straight Euclidean ray.")
-	var p0 := MobiusWorld.project_to_screen(camera_coord, camera_coord, config, state)
+	var gameplay_config := config.duplicate(true)
+	gameplay_config["local_rectangular_projection"] = true
+	var p0 := MobiusWorld.project_to_screen(camera_coord, camera_coord, gameplay_config, state)
 	var center := Rect2(Vector2.ZERO, Vector2(1280.0, 720.0)).get_center()
 	if Vector2(p0.get("position", Vector2.ZERO)).distance_to(center) > 0.01:
-		_fail("Camera center should not rotate away from screen center.")
+		_fail("Gameplay camera center should not rotate away from screen center.")
 	print("MOBIUS_BULLET_READABILITY_PROBE ok ray_len=%.3f aim=%s" % [start.distance_to(end), str(aim)])
 	quit()

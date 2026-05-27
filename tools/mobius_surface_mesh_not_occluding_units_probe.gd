@@ -140,7 +140,7 @@ func _run() -> void:
 		if surface_z >= hero_z:
 			_fail("Mobius mesh surface should draw behind units in headless fallback; surface_z=%d hero_z=%d." % [surface_z, hero_z])
 			return
-		if max_alpha > 0.18:
+		if max_alpha > 0.24:
 			_fail("Mobius mesh texture alpha is too strong for headless occlusion fallback; max_alpha=%.4f." % max_alpha)
 			return
 		print("MOBIUS_SURFACE_MESH_NOT_OCCLUDING_UNITS_PROBE ok headless_fallback surface_z=%d hero_z=%d max_alpha=%.4f" % [surface_z, hero_z, max_alpha])

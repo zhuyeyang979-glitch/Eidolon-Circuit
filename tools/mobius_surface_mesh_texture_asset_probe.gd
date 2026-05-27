@@ -62,10 +62,10 @@ func _init() -> void:
 			if alpha > 0.008:
 				visible_samples += 1
 	var average_alpha := total_alpha / float(maxi(1, samples))
-	if max_alpha < 0.11 or max_alpha > 0.160:
+	if max_alpha < 0.16 or max_alpha > 0.235:
 		_fail("Mobius square grid texture max alpha should be uniform but restrained, got %.4f." % max_alpha)
 		return
-	if average_alpha < 0.006 or average_alpha > 0.055:
+	if average_alpha < 0.012 or average_alpha > 0.085:
 		_fail("Mobius square grid texture average alpha should stay low, got %.4f." % average_alpha)
 		return
 	if visible_samples < 4000:

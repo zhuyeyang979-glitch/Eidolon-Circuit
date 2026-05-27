@@ -120,7 +120,7 @@ func main_menu_model(language: String, ai_battle_seat: int, match_format_short: 
 		"subtitle": "Mobius Arsenal" if not zh else "莫比乌斯兵装",
 		"callsign": "拓扑机甲 / 资源召唤" if zh else "topology mechs / resource summons",
 		"telemetry": ("实验室就绪 / %s / 首发200" if zh else "LAB READY / %s / START 200") % match_format_short,
-		"help": "鼠标点击菜单；键盘/手柄仍可用。" if zh else "Click menus; keyboard/controller optional.",
+		"help": "鼠标点击菜单；Enter 仅提交数值，Esc 仅关闭详情。" if zh else "Click menus; Enter only submits numeric values, Esc only closes details.",
 		"ai_seat_title": "AI 对战席位" if zh else "AI BATTLE SEAT",
 		"ai_seat_hint": "点击下方 P1/P2/P3 进入 AI 对战。" if zh else "Click P1/P2/P3 below to enter.",
 	}

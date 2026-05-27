@@ -34,7 +34,7 @@ func _init() -> void:
 	var text := _joined(lines)
 	for required in [
 		"装入英雄躯干的软件槽。",
-		"满足决斗誓约后生效；不满足时只提供热槽。",
+		"满足决斗誓约后生效；不满足时只提供热池。",
 		"适合轻/中型、小半径、三组以上行动模块的近战决斗机。",
 		"连续换不同绑定肢体行动，可触发回响窗口，缩短下一次恢复或减轻热负担。",
 		"重型盾锤、导弹/纯远程、XL 肢体不会触发誓约。",
@@ -42,7 +42,7 @@ func _init() -> void:
 		"软件槽",
 		"真实接触",
 		"换肢连段",
-		"热槽",
+		"热池",
 	]:
 		if text.find(String(required)) < 0:
 			_fail("Soul hover missing usage text '%s' in %s" % [String(required), text])

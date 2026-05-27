@@ -4,11 +4,11 @@ const OUT_PATH := "res://assets/generated/mobius_surface_mesh_net.png"
 const WIDTH := 4096
 const HEIGHT := 512
 const CELL_PX := 32
-const LINE_HALF_WIDTH := 0.88
-const GLOW_HALF_WIDTH := 3.2
-const MAX_ALPHA := 0.155
-const CORE_ALPHA := 0.140
-const GLOW_ALPHA := 0.040
+const LINE_HALF_WIDTH := 1.16
+const GLOW_HALF_WIDTH := 4.0
+const MAX_ALPHA := 0.235
+const CORE_ALPHA := 0.210
+const GLOW_ALPHA := 0.066
 
 
 func _fail(message: String) -> void:

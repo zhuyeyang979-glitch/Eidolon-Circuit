@@ -110,12 +110,13 @@ func _run() -> void:
 	await process_frame
 	main._handle_player_battle_input(1, 0.12, "p1")
 	var actual: Vector2 = unit.get_meta("actual_move_input_vector", Vector2.ZERO)
-	if actual.distance_to(expected_surface) > 0.015:
-		_fail("Player input path should use Mobius surface vector %s, got %s." % [str(expected_surface), str(actual)])
-	if actual.distance_to(raw) < 0.025:
-		_fail("Player input path still matches raw gameplay vector %s instead of surface vector." % str(raw))
-	if unit.velocity.length() <= 0.001 or unit.velocity.normalized().distance_to(expected_surface.normalized()) > 0.08:
-		_fail("Unit velocity should follow actual Mobius surface input; velocity=%s surface=%s." % [str(unit.velocity), str(expected_surface)])
+	var surface_meta: Vector2 = unit.get_meta("surface_move_input_vector", Vector2.ZERO)
+	if surface_meta.distance_to(expected_surface) > 0.015:
+		_fail("Player input path should still record Mobius surface vector %s for visual/debug use, got %s." % [str(expected_surface), str(surface_meta)])
+	if actual.distance_to(raw) > 0.015:
+		_fail("Actual locomotion should remain raw gameplay vector %s, got %s." % [str(raw), str(actual)])
+	if unit.velocity.length() <= 0.001 or unit.velocity.normalized().distance_to(raw.normalized()) > 0.08:
+		_fail("Unit velocity should follow gameplay input, not Mobius visual surface input; velocity=%s raw=%s." % [str(unit.velocity), str(raw)])
 	_release_actions()
 	print("BATTLE_PLAYER_INPUT_USES_MOBIUS_SURFACE_PROBE ok raw=%s surface=%s actual=%s" % [str(raw), str(expected_surface), str(actual)])
 	quit()

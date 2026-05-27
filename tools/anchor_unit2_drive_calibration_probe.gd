@@ -53,11 +53,14 @@ func _init() -> void:
 	var stats := main._compute_unit_stats(1, role_key, -1, unit_bp)
 	if float(stats.get("mass", 0.0)) <= 0.0:
 		_fail("Unit 2 mass must be positive.")
-	if float(stats.get("body_move_speed", 0.0)) <= 0.0:
+	var move_speed := maxf(float(stats.get("move_speed", 0.0)), float(stats.get("body_move_speed", 0.0)))
+	var thruster_drive := maxf(float(stats.get("thruster_drive_demand", 0.0)), float(stats.get("thruster_allocated_momentum", 0.0)))
+	var drive_margin := float(stats.get("drive_margin", stats.get("engine_momentum_margin", -999999.0)))
+	if move_speed <= 0.0:
 		_fail("Unit 2 move speed must be positive.")
-	if float(stats.get("thruster_allocated_momentum", 0.0)) <= 0.0:
+	if thruster_drive <= 0.0:
 		_fail("Unit 2 must have allocated thruster power.")
-	if float(stats.get("engine_momentum_margin", -999999.0)) < -0.01:
-		_fail("Unit 2 engine power allocation is illegal: %.1f" % float(stats.get("engine_momentum_margin", 0.0)))
-	print("ANCHOR_UNIT2_DRIVE_CALIBRATION_PROBE ok mass=%.2f move=%.3f allocated=%.1f path=%s" % [float(stats.get("mass", 0.0)), float(stats.get("body_move_speed", 0.0)), float(stats.get("thruster_allocated_momentum", 0.0)), ProjectSettings.globalize_path(path)])
+	if drive_margin < -0.01:
+		_fail("Unit 2 engine power allocation is illegal: %.1f" % drive_margin)
+	print("ANCHOR_UNIT2_DRIVE_CALIBRATION_PROBE ok mass=%.2f move=%.3f allocated=%.1f path=%s" % [float(stats.get("mass", 0.0)), move_speed, thruster_drive, ProjectSettings.globalize_path(path)])
 	quit()

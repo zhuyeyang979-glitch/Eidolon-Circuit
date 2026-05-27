@@ -12,6 +12,162 @@ Primary implementation file: `scripts/main.gd`
 
 Godot version in workspace: `tools/godot-4.6.2/Godot_v4.6.2-stable_win64_console.exe`
 
+## 2026-05-27 Code Health First-Pass Extraction Guard
+
+Rules:
+- `E:\New project` is the implementation source. The Documents copy remains a mirror and must not be used as the primary checkout.
+- New UI/navigation/loading/lifecycle work should add small service contracts instead of adding more ad hoc glue to `scripts/main.gd`.
+- Page transitions keep using `_transition_page -> _exit_page/_enter_page`; `_set_visible_layer()` stays a visual-only helper.
+- Loading idle task target/generation stamping, dedupe, and stale cancellation are owned by `LoadingLifecycleService`.
+- UI lifecycle diagnostics and bounded dictionary trimming are owned by `UILifecycleService`.
+- Headed gate remains the UI acceptance source; headless/parser checks are auxiliary only.
+
+Implementation notes:
+- Added `scripts/services/loading_lifecycle_service.gd` for typed `LoadingTask` preparation, idle-task keying, dedupe, and target/generation cleanup.
+- Added `scripts/services/ui_lifecycle_service.gd` for cache trimming and UI tree/layer snapshot counting.
+- Kept existing `main.gd` wrapper functions for compatibility, but delegated first-pass lifecycle glue to the new services.
+- Strengthened extraction probes so future changes cannot silently move this glue back into `main.gd`.
+
+Verification:
+- Added `lifecycle_services_contract_probe` and included it in the headed navigation/menu gate.
+- Focused headed probes passed: `lifecycle_services_contract_probe`, `main_file_extraction_contract_probe`, and `loading_idle_task_dedupe_probe`.
+
+## 2026-05-26 Side-Mount Blade Action Terminal-Only Contract
+
+Rules:
+- Side-mounted blade weapons may differ from straight weapons only at the terminal weapon segment. Ordinary upstream limb segments must keep the same blade-chain motion as the non-side-mounted baseline.
+- `side_mount_action_side`, `side_mount_action_angle_offset`, and `visual_mount_side` must not change the first limb or intermediate limb `axis/a/b` during runtime blade actions.
+- The side-mounted terminal still uses the resolved parent segment axis as its basis, then applies the selected left/right 90-degree side action and the blade module delta.
+
+Implementation notes:
+- `Fighter._runtime_blade_action_local_overrides()` now computes chain delta from the ordinary blade baseline only; side action data is consumed only when the current node is `side_mount_action_node`.
+- Removed a duplicate `_visible_control_count()` definition that blocked fresh Godot parsing in this dirty worktree; the null-safe Control-counting helper remains the single definition.
+- Added `scythe_action_limb_matches_straight_weapon_probe` and strengthened the existing side-rotation probe to compare side-mount motion against a straight-baseline binding.
+
+Verification:
+- Passed: `scythe_action_limb_matches_straight_weapon_probe`, `scythe_action_group_limb_chain_not_side_rotated_probe`, `scythe_side_mount_offset_terminal_only_probe`, `scythe_action_pose_socket_invariant_probe`, `scythe_tryout_runtime_side_match_probe`, `scythe_module_binding_mount_side_probe`, `runtime_contact_visual_identity_probe`, `runtime_melee_never_projectile_gate_probe`, `probe_manifest_no_legacy_fixture_probe`, `ui_layout_probe`, `text_overflow_probe`, and `check-only`.
+
+## 2026-05-26 Action Module Detail Player Contract Copy
+
+Rules:
+- Action module detail pages must read like player decision cards: use case, binding requirement, input, motion process, resolve source, consistency guarantee, and drive/heat cost.
+- The UI copy must not expose raw runtime implementation names. It should say player-facing rules such as "the second root joint stays attached" and "no projectile event" instead of internal resolver or segment terms.
+- `双段正锋折返 / TWO-LINK FORWARD SNAP` is documented as a two-part linkage action: startup straightens both segments forward, recovery folds the first segment back while the second keeps the forward edge, and the second root joint stays attached to the first tip.
+- The module keeps the current behavior. This entry is a copy/contract change only: it preserves real contact, no hidden expanded range, no projectile gate, and action speed from allocated drive and joint allocation.
+
+Verification:
+- Passed: `action_module_hover_detail_content_probe`, `action_module_hover_timing_ratio_probe`, `two_link_forward_snap_module_probe`, `two_link_recovery_pose_probe`, `runtime_melee_never_projectile_gate_probe`, `ui_layout_probe`, `text_overflow_probe`, and `check-only`.
+
+## 2026-05-26 Shared Topology Pose Resolver For Board And Battle
+
+Rules:
+- Board preview, saved-unit runtime stats, thumbnails, training, and battle must resolve connected component pose through `TopologyPoseResolver` before drawing or collision.
+- A connected child component's `root_joint` must remain coincident with the parent `distal` or torso port in every pose: entry/default, startup, active, recovery, aim override, and restored state.
+- Scythe and other orthogonal side-mount terminals still use ordinary terminal socket linkage. `visual_mount_side` only flips the blade side; `side_mount_action_side` only offsets module pose by left/right 90 degrees. Neither field may move the root socket.
+- The side-mount action offset is terminal-only. In a multi-node blade binding, only `side_mount_action_node` receives the left/right 90-degree action baseline; ordinary upstream limb segments keep the module's normal swing/extend pose and must not inherit the side-mount offset.
+- Runtime module overrides may submit pose parameters or full segment overrides, but final segment endpoints, socket anchors, polygons, and hit geometry must come from the resolver output.
+- `mount_parent_axis_local` is compatibility/diagnostic metadata. It must not be the authority for battle scythe handle direction.
+
+Implementation notes:
+- Added `scripts/topology_pose_resolver.gd` with `resolve_runtime_segments()`, socket anchor diagnostics, socket gap tracking, downstream child maps, and pose-source tagging.
+- `main.gd` now feeds runtime topology segments through the resolver after board FK/default-pose generation, and records root/tip/parent socket diagnostics on segments.
+- `Fighter` now resolves aim/module runtime overrides through the same resolver before exposing world segments, collision polygons, muzzle/weapon geometry, and visual anchors.
+- `AssemblyBoardRenderer.terminal_visual_forward()` now uses resolved segment axis for orthogonal side-mount terminal handles, preventing stale parent-axis metadata from visually detaching scythes in battle.
+- Pose-mode hit testing uses geometry-only scoring, while layout selection keeps terminal-priority scoring; this preserves connected-scythe clickability without stealing middle-limb pose drags.
+- Blade/scythe runtime action overrides now use the normal blade swing direction for ordinary bound limb segments, then apply `side_mount_action_side` only when resolving the side-mounted terminal node against its current parent axis.
+
+Verification:
+- New probes passed: `unit2_scythe_battle_root_flush_probe`, `scythe_action_pose_socket_invariant_probe`, `board_battle_topology_pose_identity_probe`, `runtime_segment_renderer_socket_identity_probe`, and `module_override_uses_pose_resolver_probe`.
+- Added terminal-only guard probes: `scythe_side_mount_offset_terminal_only_probe` and `scythe_action_group_limb_chain_not_side_rotated_probe`.
+- Regressions passed: `scythe_link_joint_slot_flush_probe`, `scythe_action_left_right_90deg_pose_probe`, `runtime_module_entry_pose_restore_probe`, `pose_mode_downstream_chain_rotation_probe`, and `combat_probe`.
+- Full headed gate passed: `tools/run_headed_gate.ps1 -TimeoutSec 120` completed `147/147`.
+- `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120` passed.
+
+## 2026-05-26 Gun Activation Move And Direction Boost While Firing
+
+Rules:
+- Explicit firearm action modules allow normal movement while firing or locking. Movement keys continue to drive the unit; turn keys steer the muzzle in `turn_keys` aim mode.
+- Direction double-tap Boost remains available during firearm activation. `Q/E` face-chord Boost stays reserved away from gun activation so it cannot conflict with muzzle steering.
+- Firearm recoil remains real physics. It can slow or push the unit, but it must not call collision auto-brake; collision auto-brake is only for contact/collision recovery.
+- Movement failures during gun activation must report a concrete `movement_gate_reason`, such as `active_cool_lock`, `jammed`, `stagger`, `cooling_lock`, or `overheat_shutdown`.
+
+Implementation notes:
+- Added a projectile mobility contract in `ActionProfileRegistry`: `move_while_firing=true`, `direction_boost_while_firing=true`, `aim_input_mode="turn_keys"`.
+- Runtime gun activation state now stores the mobility contract and `_handle_direction_taps()` allows direction-double-tap Boost while the active gun profile permits it.
+- `Fighter.apply_projectile_recoil()` no longer requests collision auto-brake. Recoil still changes velocity and records `last_projectile_recoil_velocity`.
+- Added focused probes for the registry contract, true Training move+fire path, direction Boost while firing, input separation, and movement gate diagnostics. Current probe fixtures were kept free of legacy `body_move_speed` and related old drive tokens.
+
+Verification:
+- `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120` passed.
+- New and updated probes passed: `gun_activation_mobility_contract_probe`, `gun_activation_move_while_fire_all_profiles_probe`, `gun_activation_training_move_fire_probe`, `gun_activation_direction_boost_while_fire_probe`, `gun_activation_movement_gate_reason_probe`, `turn_key_gun_aim_does_not_consume_movement_probe`, `direction_key_aim_policy_probe`, `gun_activation_turn_keys_steer_muzzle_probe`, `gun_activate_binding_real_ui_probe`, `gun_activate_all_live_firearms_binding_probe`, `drive_budget_teamedit_probe`, `projectile_profile_whitelist_probe`, `probe_manifest_no_legacy_fixture_probe`, `ui_layout_probe`, and `text_overflow_probe`.
+- Known non-fatal Godot exit warning remains: `ObjectDB instances leaked at exit`.
+
+## 2026-05-26 Unit Editor Torso Detail Reliable Open
+
+Rules:
+- The unit-editor torso detail target is resolved independently from the power allocation target: selected valid torso first, currently open torso second, then the first valid torso on the body board.
+- The dedicated `躯干详情 / TORSO` button is a stable body-board entry. It stays visible in Unit Edit whenever the role uses the body board, and is disabled with a clear hint when no torso exists.
+- A left-button double-click on a torso opens or refreshes `TorsoDetailPanelView` before pinned part-card closing, pose-drag rejection, or layout drag setup can consume the click.
+- A single torso click only selects/drags the torso. It does not open the generic pinned part detail card; ordinary limb/weapon part-card behavior is unchanged.
+- If a generic pinned part card is open, double-clicking a torso clears that card and opens torso detail in the same interaction instead of merely closing the old card.
+
+Implementation notes:
+- Added `_editor_torso_detail_target_node_index()` and `_editor_torso_detail_button_target()` in `scripts/main.gd`.
+- Added `_try_open_editor_torso_detail_from_board_double_click()` to the unit-editor priority input route ahead of pinned hover-card handling.
+- Added `_open_editor_torso_detail_from_board_node()` as the shared board/open helper for both real priority input and board-local clicks.
+- Drag release suppresses generic pinned details for torso nodes only, preserving non-torso release-to-detail behavior.
+
+Verification:
+- New probes passed: `torso_detail_real_double_click_open_probe`, `torso_detail_double_click_with_pinned_part_probe`.
+- Updated probe passed: `unit_editor_torso_detail_button_probe`.
+- Regressions passed: `torso_detail_probe`, `torso_detail_global_close_button_probe`, `torso_detail_close_no_reopen_probe`, `torso_detail_module_drive_allocation_probe`, `module_binding_torso_detail_pick_probe`, `module_binding_torso_detail_mouse_probe`, `editor_part_detail_global_close_button_probe`, `editor_part_detail_click_outside_close_probe`, `editor_part_detail_right_click_close_no_unlink_probe`, `editor_part_detail_close_no_reopen_probe`, `board_click_part_hover_probe`, `ui_layout_probe`, `text_overflow_probe`.
+- `tools/run_godot_checked.ps1 -Headless -CheckOnly -TimeoutSec 120` passed.
+
+## 2026-05-26 Saved Unit Topology Identity Resolver
+
+Rules:
+- Saved component topology nodes are resolved from the node's full identity, not from `part_index` or `part_name` alone. Exact `name`, `component_name`, `part_name`, and index candidates are scored against torso/material/category hints.
+- If a saved node says it is a torso (`is_torso`, `material_class`, `catalog_role`, or `part_category`) but stale `part_name` points to a non-torso catalog entry, the torso identity wins.
+- Saved node restamping updates `part_index`, `part_name`, `component_name`, material/category hints, and exact catalog-style `name` values so later saves naturally repair drift.
+- Modern module bindings are canonical when `slot_payloads` contains installed modules. Stale node-level module arrays are de-duplicated and filtered to installed module payload indices so old default module `0` residues cannot create ghost attack-key conflicts.
+- Torso payload stats resolve engine/booster/cooling/module/special parts through saved payload names before indices, preserving old saves after catalog order changes.
+
+Implementation notes:
+- Added `_topology_node_part_name_candidates()`, `_topology_node_part_identity_score()`, and `_topology_node_resolved_part_index()`.
+- `_topology_node_part()` and `_stamp_saved_blueprint_part_names()` now use the resolver.
+- `_module_indices_for_topology_node()` now filters node modules against installed module payloads when payload data exists.
+- `_apply_torso_slot_payload_stats()` now uses `_payload_part_for_payload()` for installed internal parts.
+- Updated Unit 2 drive calibration probe to read canonical `move_speed`, `thruster_drive_demand`, and `drive_margin` fields instead of scrubbed legacy aliases.
+
+Verification:
+- New probes passed: `saved_unit_topology_part_name_conflict_probe`, `unit2_scythe_saved_torso_resolution_probe`.
+- Unit 2 passed `unit2_training_probe` after resolving node 0 as `PARACHUTE CLAIM PLATING` and keeping three runtime module bindings.
+- Regressions passed: `anchor_unit2_drive_calibration_probe`, `scythe_binding_action_side_persist_probe`, `scythe_action_left_right_90deg_pose_probe`, `scythe_tryout_runtime_side_match_probe`, `scythe_module_binding_mount_side_probe`, `saved_unit_strict_rejection_probe`, `saved_unit_overwrite_save_as_probe`, `ui_layout_probe`, `text_overflow_probe`.
+- `tools/run_godot_checked.ps1 -Headless -CheckOnly -TimeoutSec 120` passed.
+
+## 2026-05-26 Thermal Event Tags and Player Heat Terms
+
+Rules:
+- Runtime heat now has a canonical event path: heat amount plus explicit tags such as `boost`, `repeat`, `projectile`, `laser`, `chemical`, `missile`, and `external`.
+- `add_heat(amount, reason)` remains a compatibility entry, but new runtime call sites should use explicit heat tags. Free-form reason strings are no longer the primary design surface.
+- Heat relief remains conservative: matching relief fields use the strongest single reduction, never stacked multiplication.
+- Build legality continues to use idle heat load versus heat pool. Boost heat, projectile heat, and other event heat do not participate in idle thermal legality.
+- Manual cooling is intentionally two-part: active venting immediately removes heat and also grants short accelerated cooling.
+- Player-facing UI should distinguish `热池 / Heat Pool`, `常热负载 / Idle Load`, `热余量 / Thermal Margin`, `散热/秒 / Cooling/sec`, `事件热 / Event Heat`, and `专项减免 / Specialized Relief`.
+
+Implementation notes:
+- Added `Fighter.add_heat_event(amount, tags, source)` and canonical tag normalization/relief helpers while preserving legacy `add_heat()`.
+- Boost, runtime melee module heat, projectile firing heat, barrier heat fields, traps, lease penalties, back-hit heat, and barrier-break heat now pass explicit tags.
+- Projectile heat events are tagged from gun/ammo/projectile behavior; external heat is no longer silently treated as generic projectile heat.
+- Cooling, engine, booster, module, scout/detail, allocation panel, catalog card, and hover terms were updated to the current player vocabulary.
+- Added heat-event matrix, reason-compatibility, manual-cooling contract, thermal UI terms, and idle-vs-event heat probes.
+
+Verification:
+- `tools/run_godot_checked.ps1 -Headless -CheckOnly -TimeoutSec 120` passed. ObjectDB cleanup warnings appeared on some headless exits and were treated as non-functional Godot cleanup noise.
+- New probes passed: `heat_event_tag_matrix_probe`, `heat_event_reason_compat_probe`, `manual_cooling_contract_probe`, `thermal_ui_terms_probe`, `thermal_idle_vs_event_heat_probe`.
+- Heat/UI regressions passed: `heat_event_tag_unification_probe`, `cooling_runtime_heat_probe`, `cooling_weapon_fit_probe`, `thermal_allocation_probe`, `thermal_idle_vs_boost_probe`, `engine_thruster_cooling_economy_probe`, `boost_cooldown_probe`, `laser_ammo_heat_probe`, `missile_ammo_heat_probe`, `chemical_heat_probe`, `ether_heat_economy_probe`, `part_hover_detail_page_probe`, `catalog_ui_terms_probe`, `cooling_ui_terms_probe`, `boost_heat_ui_terms_probe`, `ui_layout_probe`, `text_overflow_probe`.
+- Core regressions passed: `no_old_combat_terms_probe`, `no_legacy_runtime_pointers_probe`, `combat_probe`, `runtime_geometry_identity_probe`, `board_battle_art_identity_probe`, `probe_manifest_no_legacy_fixture_probe`.
+
 ## 2026-05-26 Scythe Root-Joint Link and Side-Mount Choice Popup
 
 Rules:
@@ -30,6 +186,23 @@ Verification:
 - Strengthened scythe install/manual/magnetic probes to require the side-mount popup, not only the bottom buttons.
 - Scythe focused probes passed for root socket linkage, magnetic/manual/catalog-drop popup, parent-axis side mount, board/runtime/save/load persistence, and module binding.
 
+## 2026-05-26 Turn-Key Gun Aim Movement Contract
+
+Rules:
+- Gun activation modules that steer with left/right turn keys must leave movement keys owned by ordinary locomotion while firing, charging, locking, or holding a stream.
+- Turn-key gun aim reserves face-left/face-right from torso turning and face-chord boost for the active aim window.
+- Direction-key/manual aim modules that do not opt into turn-key steering keep their old input policy.
+- Mobius surface input remains available as visual/debug metadata, but actual player locomotion uses stable gameplay input.
+
+Implementation notes:
+- Added explicit `gun_aim_input_mode` handling for gun activation data and runtime activation state.
+- Catalog gun activation modules now advertise `turn_keys` aim mode and explain that movement keys still move.
+- Runtime gun activation reads turn keys for muzzle steering and movement keys for locomotion through separate input helpers.
+
+Verification:
+- New probes: `gun_activation_move_while_fire_all_profiles_probe`, `turn_key_gun_aim_does_not_consume_movement_probe`, and `direction_key_aim_policy_probe`.
+- Regressions: turn-key muzzle steering, gun rotate command, chemical sprayer rotate command, vertical movement during activation, all-profile vertical movement, semantic dispatch, battle movement no double transform, UI layout, text overflow, and check-only.
+
 ## 2026-05-26 Boost Heat Cost Contract
 
 Rules:
@@ -45,6 +218,87 @@ Implementation notes:
 Verification:
 - New probes: `boost_heat_runtime_consumption_probe`, `boost_heat_independent_from_drive_allocation_probe`, `boost_heat_relief_probe`, `boost_heat_not_drive_or_idle_legality_probe`, and `boost_heat_ui_terms_probe`.
 - Regressions: Boost cooldown/heat, thermal idle-vs-Boost, thruster gradient, drive budget/runtime movement, eight-direction Boost, UI layout, text overflow, and check-only.
+
+## 2026-05-26 Mobius Quiet Field Readability Pass
+
+Rules:
+- Mobius square-grid field remains the battle surface and topology readout, but combat readability wins over grid brightness.
+- The surface grid should be large, readable, and lower-priority than combat objects. It may show ridge depth and half-twist motion, but must not sit in the same visual priority band as units or projectiles.
+- The field grid must have a visibility floor: valley/far grid lines cannot fade into complete darkness or break continuity across the arena.
+- Unit anchors, aim rays, projectile paths, and collisions remain Euclidean. Units still scale and sort from the surface field below them, but their brightness uses a tight foreground range so far units do not fade into the grid.
+- Projectile traces, aim lines, and hit effects must render clearly above the field layer.
+
+Implementation notes:
+- Displayed grid cell size is now 56px-equivalent, with surface material gain set to `surface_alpha_gain=1.06`, `surface_alpha_max=0.18`, and `surface_color_gain=1.22`.
+- Grid brightness is separated from unit brightness: grid uses `0.52..0.88`, while unit foreground brightness uses `0.96..1.12`.
+- `Fighter.set_mobius_screen_projection()` consumes the foreground unit brightness range while preserving surface scale and strong hitbox matching.
+- Aim lines and `CombatEffects` now have explicit foreground z-index values; runtime units draw a subtle contact shadow to separate silhouettes from the field grid.
+
+Verification:
+- New probes passed: `mobius_surface_quiet_readability_probe`, `mobius_grid_visibility_floor_probe`, `mobius_unit_foreground_contrast_probe`, and `combat_projectile_foreground_layer_probe`.
+- Updated/readability regressions passed: `mobius_grid_full_coverage_brightness_probe`, `mobius_grid_shader_deformation_probe`, `mobius_unit_surface_depth_sync_probe`, `mobius_target_hitbox_strong_match_probe`, `mobius_bullet_readability_probe`, `aim_line_straight_euclidean_probe`, `mobius_square_grid_source_uniform_probe`, `mobius_square_grid_projection_distortion_probe`, `mobius_surface_not_background_probe`, `mobius_double_ridge_field_consistency_probe`, `mobius_unit_anchor_stability_probe`, `gameplay_visual_transform_separation_probe`, `ui_layout_probe`, and `text_overflow_probe`.
+- `tools/run_godot_checked.ps1 -Headless -CheckOnly -TimeoutSec 120` passed.
+
+## 2026-05-26 Editor Board Part Detail Close Routing
+
+Rules:
+- Pinned part detail cards opened from the unit editor board must close through the editor priority input route, not only through the popup's local `_gui_input()`.
+- While a pinned part detail is visible, `Esc`, left-click on the close box, left-click outside the card, and right-click anywhere close the card before board input can drag, select, reopen, or unlink.
+- Closing a pinned part detail must preserve the suppress token and clear board click/reopen candidates so the same release or hover motion cannot immediately resurrect the card.
+
+Implementation notes:
+- `_handle_editor_hover_detail_global_input()` now handles left-click close-box hits, outside-click close, and any right-click close for `EditorPartHoverPopupView`.
+- `_close_editor_hover_detail()` now calls `_clear_editor_detail_reopen_candidates()` before clearing the hover card.
+- The popup's local `_gui_input()` close behavior remains as a compatibility path for direct Control events.
+
+Verification:
+- New probes passed: `editor_part_detail_global_close_button_probe`, `editor_part_detail_click_outside_close_probe`, `editor_part_detail_right_click_close_no_unlink_probe`, and `editor_part_detail_close_no_reopen_probe`.
+- Regressions passed: `editor_unit_detail_global_close_button_probe`, `torso_detail_global_close_button_probe`, `torso_detail_close_no_reopen_probe`, `hover_detail_close_button_probe`, `board_click_part_hover_probe`, `ui_layout_probe`, and `text_overflow_probe`.
+- `tools/run_godot_checked.ps1 -Headless -CheckOnly -TimeoutSec 120` passed.
+
+## 2026-05-26 Mobius Full-Rect Surface Sampling and Unit Depth Sync
+
+Rules:
+- The Mobius square grid is not a projected mesh patch that may leave gaps. Battle renders a full arena rectangle and the shader inverse-samples the Mobius surface for every pixel.
+- Source grid cells remain equal squares in surface coordinates. Apparent grid growth, compression, diagonal shear, and near/far brightness come from the double-ridge surface field and continuous half-twist sampling.
+- Unit, projectile, aim, and collision anchors remain Euclidean gameplay coordinates. Unit presentation reads the same surface field at its anchor: scale, brightness, z-index, and projectile target hitbox scale must match the ground depth beneath it.
+- Strong visual hitbox matching remains clamped to `0.70..1.30`; body pushing, melee paths, projectile rays, and aim lines do not bend with the surface shader.
+
+Implementation notes:
+- Added `MobiusWorld.surface_field_at()` and `project_gameplay_anchor_to_screen()` so gameplay anchors and surface depth are separate but composable.
+- `MobiusStripSurfaceView` now draws the battle arena rect once in `full_rect_inverse_sample` mode; `mobius_strip_surface.gdshader` maps screen UVs back to surface coordinates using ridge depth, twist shear/warp, and square-grid world cell size.
+- Added a CPU mirror of the shader sampling model through `surface_sample_coord_from_screen_uv()` for probes and future tuning.
+- `Fighter.set_mobius_screen_projection()` now accepts render `frame_delta`, keeps the gameplay anchor stable, and applies surface scale/brightness plus strong projectile-target hitbox scaling from the shared depth field.
+- Updated the spectator camera convergence probe to match the existing response-per-second camera follow over 120Hz simulation steps.
+
+Verification:
+- `tools/run_godot_checked.ps1 -Headless -CheckOnly -TimeoutSec 120` passed.
+- New probes passed: `mobius_surface_full_rect_coverage_probe`, `mobius_grid_shader_deformation_probe`, `mobius_double_ridge_field_consistency_probe`, `mobius_unit_surface_depth_sync_probe`, `mobius_unit_anchor_stability_probe`, and `mobius_target_hitbox_strong_match_probe`.
+- Related Mobius/gameplay probes passed: square-grid source/projection, 120Hz phase, double ridge, symmetric falloff, surface motion, half-twist, bullet readability, straight aim line, visual transform separation, controlled-unit visibility, and camera follow probes.
+- The full 16-probe `Godot Governance` headless mirror passed locally.
+
+## 2026-05-26 Mobius Double-Ridge Linear Field Phase
+
+Rules:
+- The Mobius field grid has two parallel diagonal high/near ridge lines in the local screen rectangle. These ridges divide the visible field into two matching parallelogram rhythms.
+- A ridge is the nearest, largest, and brightest line. Points at the same periodic distance on either side of a ridge must have matching depth, scale, and brightness; the two sides are symmetric in the 2D readability model even if a physical strip would fall away unevenly.
+- Visual twist phase must be linear. Randomization may choose new target speed, direction, pivot influence, and amplitude every 30-60 seconds, but it must not reset the phase or jump the ridge position.
+- The visual state advances with an internal 120Hz substep when frame delta is large. This protects the strip motion from visible stepping while keeping combat geometry independent and stable.
+- Source grid cells remain square before projection. Any apparent diagonal shear, near/far compression, or brightness change comes from the Mobius surface projection, not from pre-stretched texture art.
+
+Implementation notes:
+- `MobiusWorld.frame_at()` now computes a periodic double-diagonal ridge depth model from `ridge_phase`, `ridge_angle_phase`, `ridge_period`, and `ridge_width`, and exposes ridge debug fields for probes.
+- `advance_rotation_state_substepped()` integrates twist/ridge phases in substeps based on `mobius_visual_update_hz=120.0`; target speed/amplitude changes are smoothed while phase values continue monotonically.
+- `project_to_screen()` keeps gameplay rectangular projection separate, but surface visual projection uses a uniform X/Y base scale plus ridge-driven perspective scale, ridge lift, and subtle twist shear.
+- `surface_sample_grid()` expands the sampled field span to 1.5x view width and uses denser width sampling so the grid covers left, center, and right of the battle rectangle.
+- Regenerated `assets/generated/mobius_surface_mesh_net.png` with brighter, wider but still uniform square grid lines. Surface alpha/gain in battle was raised enough for the grid to read under units without becoming an occluding foreground.
+
+Verification:
+- `tools/run_godot_checked.ps1 -Headless -CheckOnly -TimeoutSec 120` passed.
+- New probes passed: `mobius_linear_phase_120hz_probe`, `mobius_double_diagonal_ridge_probe`, `mobius_ridge_symmetric_falloff_probe`, `mobius_square_grid_aspect_projection_probe`, and `mobius_grid_full_coverage_brightness_probe`.
+- Related Mobius surface probes passed: `mobius_square_grid_source_uniform_probe`, `mobius_square_grid_projection_distortion_probe`, `mobius_surface_motion_randomized_probe`, `mobius_surface_not_background_probe`, `mobius_surface_mesh_texture_asset_probe`, `mobius_surface_mesh_uv_attachment_probe`, `mobius_surface_mesh_twist_readability_probe`, `mobius_surface_mesh_not_occluding_units_probe`, `mobius_surface_uv_motion_probe`, and `mobius_surface_half_twist_uv_probe`.
+- Gameplay separation regressions passed: `mobius_bullet_readability_probe`, `aim_line_straight_euclidean_probe`, and `gameplay_visual_transform_separation_probe`.
+- The full 16-probe `Godot Governance` headless mirror passed locally.
 
 ## 2026-05-26 Mobius Square-Grid Field Projection
 
@@ -4099,6 +4353,52 @@ Findings:
 
 Sync:
 - Implemented in `E:\New project`; mirror sync and local commit recorded by the surrounding Git history.
+
+## 2026-05-27 Code Governance Baseline Freeze
+
+Rules:
+- `E:\New project` remains the single development source. Documents and OneDrive are mirrors only.
+- Freeze a green baseline before large refactors. Do not mix new gameplay balance with governance commits.
+- Current gameplay/editor rules must flow through five named contracts: `ActionProfileRegistry`, `DriveSystemService`, `UnitBlueprintValidator`, `TopologyPoseResolver`, and UI/loading lifecycle services.
+- Legacy drive/action pointer fields are not valid current runtime data. `engine_momentum`, `thruster_momentum`, `body_move_speed`, `joint_power`, `allocated_momentum`, `attack_groups`, and `action_groups` may appear only in validators, legacy-rejection probes, or historical notes.
+- `main.gd` extraction should proceed by verified seams: catalog normalization, module binding, torso detail, board controller, battle/training session, then Mobius visual runtime. Keep compatibility wrappers until probes prove callers have moved.
+
+Implementation notes:
+- Preserved the current safety branch `safety/eidolon-health-audit-20260525-004915` as the governance baseline branch.
+- Classified current untracked service/probe files as part of the green baseline because they are referenced by manifest or headed-gate coverage.
+- `probe_manifest.json` is now treated as the source of truth for current vs legacy/manual/obsolete probe groups.
+- GitHub publishing uses the configured `origin` remote. `gh` is installed but not authenticated in this environment, so draft PR creation must use the pushed branch URL or a later authenticated `gh auth login`.
+- Linear tools are not exposed in this session; the governance work breakdown is recorded here and can be copied into Linear epics once the connector is available.
+
+Verification:
+- `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120` passed headed on RTX 4080 SUPER.
+- Governance/core probes passed:
+  - `probe_manifest_no_legacy_fixture_probe`
+  - `runtime_no_legacy_drive_reads_probe`
+  - `action_profile_registry_completeness_probe`
+  - `unit_validator_single_source_probe`
+  - `main_file_extraction_contract_probe`
+  - `lifecycle_services_contract_probe`
+- Gameplay/editor smoke probes passed:
+  - `teamedit_probe`
+  - `action_module_execution_matrix_probe`
+  - `projectile_profile_whitelist_probe`
+  - `drive_budget_teamedit_probe`
+  - `drive_runtime_movement_probe`
+  - `scythe_action_limb_matches_straight_weapon_probe`
+  - `mobius_bullet_readability_probe`
+  - `ui_layout_probe`
+  - `text_overflow_probe`
+- `tools/run_headed_gate.ps1 -TimeoutSec 120` passed all 155 headed gate entries, including navigation, unit edit, scythe side-mount, gun firing mobility, loading lifecycle, and final check-only.
+- Godot still reports the known ObjectDB leak warning on exit, but all listed commands exit `0`.
+
+Next development order:
+- Open/publish the baseline PR first.
+- Then burn down legacy runtime/UI field reads behind the service contracts.
+- Then extract one `main.gd` subsystem per PR, with manifest probes proving behavior did not drift.
+
+Sync:
+- After committing and pushing this baseline, refresh Documents and OneDrive mirrors from `E:\New project` excluding `.git`, `.godot`, `.import`, Godot binaries/download caches, and logs.
 
 ## 2026-05-26 Module Binding Attack-Key Overlay Click Fix
 

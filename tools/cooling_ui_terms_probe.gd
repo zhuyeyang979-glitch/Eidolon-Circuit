@@ -30,9 +30,9 @@ func _init() -> void:
 		var labels: Array = []
 		for entry in entries:
 			labels.append(String(Dictionary(entry).get("label", "")))
-		if not labels.has("Cooling") and not labels.has("散热"):
-			_fail("Cooling hover stats should show cooling.")
-		if not labels.has("Heat Pool") and not labels.has("热力池"):
+		if not labels.has("Cooling/sec") and not labels.has("散热/秒"):
+			_fail("Cooling hover stats should show cooling per second.")
+		if not labels.has("Heat Pool") and not labels.has("热池") and not labels.has("热力池"):
 			_fail("Cooling hover stats should show the unified heat pool term.")
 		var lines: Array = main._hover_card_detail_lines("cooling", part, {"cost": 0, "mass": 0.0, "required_power": 0.0}, {"cost": 0, "mass": 0.0, "required_power": 0.0})
 		if not _contains(lines, "combo_vent") and not _contains(lines, "连段"):

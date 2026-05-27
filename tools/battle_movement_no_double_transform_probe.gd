@@ -62,8 +62,8 @@ func _init() -> void:
 	var raw := Vector2.RIGHT
 	var vectors: Dictionary = main._battle_movement_vector_for_unit(unit, raw)
 	var actual: Vector2 = vectors.get("actual", Vector2.ZERO)
-	if actual.length() <= 0.01 or actual.distance_to(raw) < 0.02:
-		_fail("Fixture should produce a Mobius-adjusted actual vector, got %s." % str(actual))
+	if actual.length() <= 0.01 or actual.distance_to(raw) > 0.001:
+		_fail("Actual locomotion input should remain screen-stable gameplay input, got %s." % str(actual))
 	unit.move_by_gameplay(actual, 0.12, MainScene.RING_LENGTH)
 	if unit.velocity.length() <= 0.001 or unit.velocity.normalized().distance_to(actual.normalized()) > 0.08:
 		_fail("move_by_gameplay should follow the already-converted vector; velocity=%s actual=%s." % [str(unit.velocity), str(actual)])

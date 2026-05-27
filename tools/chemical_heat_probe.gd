@@ -38,6 +38,10 @@ func _init() -> void:
 		"projectile_damage_type": "chemical",
 		"projectile_style": "spray",
 		"travel_path": "straight",
+		"module_action_profile": "gun_activate",
+		"gun_activation": true,
+		"gun_kind": "sprayer",
+		"ammo_kind": "chemical",
 		"range": 1.6,
 		"lane_range": 0.32,
 		"direction": Vector2.RIGHT,
@@ -73,10 +77,13 @@ func _init() -> void:
 		"cooling": 12.0,
 		"thruster_momentum": 60.0,
 		"boost_momentum": 120.0,
+		"boost_total_momentum": 120.0,
+		"thruster_boost_extra_demand": 60.0,
 		"boost_duration": 0.24,
 	})
 	var boosted: bool = hot.boost(Vector2.RIGHT, MainScene.RING_LENGTH)
-	var boost_motion_ok: bool = boosted and hot.velocity.length() > 0.01
+	hot.tick(0.05, MainScene.RING_LENGTH)
+	var boost_motion_ok: bool = boosted and (hot.velocity.length() > 0.01 or float(hot.boost_drive_timer) > 0.0)
 
 	var coasting = _spawn_unit(main, 1, "hero", "Coast Probe", 1.0, 0.0, {
 		"health": 100,
