@@ -1,8 +1,8 @@
 # Eidolon Circuit Local Development Status
 
-Last updated: 2026-05-27 17:31 JST
+Last updated: 2026-05-27
 
-This file is the local execution board while Linear is being used by another project. The checked-in backlog remains `docs/development_backlog.md`; this file records the current local baseline and the next safe implementation order.
+This file is the local execution board for the active Linear project `Eidolon Circuit Codebase Slimdown 2026-05-27`. The checked-in backlog remains `docs/development_backlog.md`; this file records local baseline and the next safe implementation order between Linear updates.
 
 ## Current Baseline
 
@@ -60,9 +60,11 @@ Passed governance probes:
 
 ## Next Safe Step
 
-`EC-SLIM-002` has started with two low-risk inline views extracted:
+`EC-SLIM-002` has started with four low-risk inline views extracted:
 
 - `BackdropView` -> `scripts/views/backdrop_view.gd`
 - `SortieThumbView` -> `scripts/views/sortie_thumb_view.gd`
+- `CockpitHudView` -> `scripts/views/cockpit_hud_view.gd`
+- `BattleInstrumentGaugeView` -> `scripts/views/battle_instrument_gauge_view.gd`
 
 Next safe chunk: extract another low-state inline view from `scripts/main.gd`, keep the legacy symbol/preload path stable, extend `view_extraction_contract_probe`, then rerun `view_extraction_contract_probe`, `main_file_extraction_contract_probe`, `ui_layout_probe`, `text_overflow_probe`, and check-only.

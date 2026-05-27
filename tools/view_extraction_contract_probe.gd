@@ -2,9 +2,13 @@ extends SceneTree
 
 const VIEW_PATH := "res://scripts/views/backdrop_view.gd"
 const SORTIE_THUMB_VIEW_PATH := "res://scripts/views/sortie_thumb_view.gd"
+const COCKPIT_HUD_VIEW_PATH := "res://scripts/views/cockpit_hud_view.gd"
+const BATTLE_GAUGE_VIEW_PATH := "res://scripts/views/battle_instrument_gauge_view.gd"
 const MAIN_PATH := "res://scripts/main.gd"
 const BackdropViewScript := preload("res://scripts/views/backdrop_view.gd")
 const SortieThumbViewScript := preload("res://scripts/views/sortie_thumb_view.gd")
+const CockpitHudViewScript := preload("res://scripts/views/cockpit_hud_view.gd")
+const BattleInstrumentGaugeViewScript := preload("res://scripts/views/battle_instrument_gauge_view.gd")
 
 
 func _fail(message: String) -> void:
@@ -17,6 +21,10 @@ func _init() -> void:
 		_fail("Missing extracted BackdropView script.")
 	if not FileAccess.file_exists(SORTIE_THUMB_VIEW_PATH):
 		_fail("Missing extracted SortieThumbView script.")
+	if not FileAccess.file_exists(COCKPIT_HUD_VIEW_PATH):
+		_fail("Missing extracted CockpitHudView script.")
+	if not FileAccess.file_exists(BATTLE_GAUGE_VIEW_PATH):
+		_fail("Missing extracted BattleInstrumentGaugeView script.")
 	var view_source := FileAccess.get_file_as_string(ProjectSettings.globalize_path(VIEW_PATH))
 	if view_source.find("class_name BackdropView") < 0:
 		_fail("Extracted BackdropView should publish the legacy class name.")
@@ -29,15 +37,32 @@ func _init() -> void:
 	for required in ["set_entry", "trigger_flash", "_role_short", "_draw_icon"]:
 		if sortie_source.find(required) < 0:
 			_fail("Extracted SortieThumbView is missing behavior token: %s" % required)
+	var cockpit_source := FileAccess.get_file_as_string(ProjectSettings.globalize_path(COCKPIT_HUD_VIEW_PATH))
+	if cockpit_source.find("class_name CockpitHudView") < 0 or cockpit_source.find("_draw_corner") < 0:
+		_fail("Extracted CockpitHudView should preserve its overlay drawing contract.")
+	var gauge_source := FileAccess.get_file_as_string(ProjectSettings.globalize_path(BATTLE_GAUGE_VIEW_PATH))
+	if gauge_source.find("class_name BattleInstrumentGaugeView") < 0:
+		_fail("Extracted BattleInstrumentGaugeView should publish the legacy class name.")
+	for required in ["set_values", "_dominant_ammo_info", "_draw_ammo_segments", "_draw_ammo_icon"]:
+		if gauge_source.find(required) < 0:
+			_fail("Extracted BattleInstrumentGaugeView is missing behavior token: %s" % required)
 	var main_source := FileAccess.get_file_as_string(ProjectSettings.globalize_path(MAIN_PATH))
 	if main_source.find("preload(\"res://scripts/views/backdrop_view.gd\")") < 0:
 		_fail("main.gd should preload the extracted BackdropView.")
 	if main_source.find("preload(\"res://scripts/views/sortie_thumb_view.gd\")") < 0:
 		_fail("main.gd should preload the extracted SortieThumbView.")
+	if main_source.find("preload(\"res://scripts/views/cockpit_hud_view.gd\")") < 0:
+		_fail("main.gd should preload the extracted CockpitHudView.")
+	if main_source.find("preload(\"res://scripts/views/battle_instrument_gauge_view.gd\")") < 0:
+		_fail("main.gd should preload the extracted BattleInstrumentGaugeView.")
 	if main_source.find("\nclass BackdropView:") >= 0:
 		_fail("main.gd should not keep the inline BackdropView class.")
 	if main_source.find("\nclass SortieThumbView:") >= 0:
 		_fail("main.gd should not keep the inline SortieThumbView class.")
+	if main_source.find("\nclass CockpitHudView:") >= 0:
+		_fail("main.gd should not keep the inline CockpitHudView class.")
+	if main_source.find("\nclass BattleInstrumentGaugeView:") >= 0:
+		_fail("main.gd should not keep the inline BattleInstrumentGaugeView class.")
 	var backdrop = BackdropViewScript.new()
 	if not (backdrop is Control):
 		_fail("Extracted BackdropView should instantiate as a Control.")
@@ -58,5 +83,19 @@ func _init() -> void:
 	if sortie_thumb.flash_until_msec <= Time.get_ticks_msec():
 		_fail("SortieThumbView.trigger_flash should set a future flash deadline.")
 	sortie_thumb.free()
-	print("VIEW_EXTRACTION_CONTRACT_PROBE ok views=2")
+	var cockpit = CockpitHudViewScript.new()
+	if not (cockpit is Control):
+		_fail("Extracted CockpitHudView should instantiate as a Control.")
+	cockpit.free()
+	var gauge = BattleInstrumentGaugeViewScript.new()
+	if not (gauge is Control):
+		_fail("Extracted BattleInstrumentGaugeView should instantiate as a Control.")
+	gauge.set_values(3.5, 7.0, {"bullet": {"current": 4, "capacity": 6}}, "en")
+	if gauge.speed != 3.5 or gauge.speed_max != 7.0 or gauge.ui_lang != "en":
+		_fail("BattleInstrumentGaugeView.set_values should preserve legacy state fields.")
+	var ammo_info: Dictionary = gauge._dominant_ammo_info()
+	if String(ammo_info.get("kind", "")) != "bullet" or int(ammo_info.get("capacity", 0)) != 6:
+		_fail("BattleInstrumentGaugeView should retain its dominant ammo calculation.")
+	gauge.free()
+	print("VIEW_EXTRACTION_CONTRACT_PROBE ok views=4")
 	quit(0)

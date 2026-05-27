@@ -50,11 +50,30 @@ Verification:
 - `tools/run_godot_checked.ps1 -Headless -Probe text_overflow_probe -TimeoutSec 120` passed.
 - `tools/run_godot_checked.ps1 -Headless -CheckOnly -TimeoutSec 120` passed.
 
-## 2026-05-27 Local Development Baseline While Linear Is Parked
+## 2026-05-27 Battle HUD View Extraction
 
 Rules:
-- Linear is not the active working surface for this thread right now; continue local organization from `E:\New project`.
-- `docs/development_backlog.md` remains the backlog mirror. `docs/local_development_status.md` is the local execution board while Linear is busy elsewhere.
+- Extract display-only battle HUD controls before views that render units, own user input, or depend on controller state.
+- Preserve access through `MainScene.<ViewClass>` when existing probes or call sites use that boundary; a preloaded script constant is the compatibility bridge.
+
+Implementation notes:
+- Extracted `CockpitHudView` into `scripts/views/cockpit_hud_view.gd`.
+- Extracted `BattleInstrumentGaugeView` into `scripts/views/battle_instrument_gauge_view.gd`; the gauge still owns only speed/ammo display state and rendering helpers.
+- Expanded `tools/view_extraction_contract_probe.gd` to cover four extracted views and exercised the pre-existing battle ammo gauge probe as a compatibility assertion.
+
+Verification:
+- `tools/run_godot_checked.ps1 -Headless -Probe view_extraction_contract_probe -TimeoutSec 120` passed.
+- `tools/run_godot_checked.ps1 -Headless -Probe battle_ammo_segment_gauge_probe -TimeoutSec 120` passed.
+- `tools/run_godot_checked.ps1 -Headless -Probe main_file_extraction_contract_probe -TimeoutSec 120` passed.
+- `tools/run_godot_checked.ps1 -Headless -Probe ui_layout_probe -TimeoutSec 120` passed.
+- `tools/run_godot_checked.ps1 -Headless -Probe text_overflow_probe -TimeoutSec 120` passed.
+- `tools/run_godot_checked.ps1 -Headless -CheckOnly -TimeoutSec 120` passed.
+
+## 2026-05-27 Local Development Baseline And Linear Mirror
+
+Rules:
+- Linear project `Eidolon Circuit Codebase Slimdown 2026-05-27` is the active issue tracker for this refactor; continue implementation from `E:\New project`.
+- `docs/development_backlog.md` remains the checked-in backlog mirror. `docs/local_development_status.md` records local execution state between Linear updates.
 - Before starting extraction work, preserve a clean baseline: branch, HEAD, worktree state, large-file sizes, check-only result, and governance probe result.
 - Refactor stages still follow the slimdown sequence: view extraction first, then Unit Editor controllers, saved-unit/training services, battle runtime services, Fighter runtime models, Mobius boundary, and CI/probe governance.
 
