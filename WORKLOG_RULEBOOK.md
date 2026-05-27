@@ -12,6 +12,44 @@ Primary implementation file: `scripts/main.gd`
 
 Godot version in workspace: `tools/godot-4.6.2/Godot_v4.6.2-stable_win64_console.exe`
 
+## 2026-05-27 Backdrop View Extraction
+
+Rules:
+- Inline view extraction must keep legacy class names and public methods stable before deleting inline compatibility code.
+- Each extracted view needs a focused contract probe that confirms the new file exists, `main.gd` preloads it, and the inline class is gone.
+- Start with low-risk views that do not own game state; keep larger editor/battle surfaces behind dedicated Linear cards.
+
+Implementation notes:
+- Extracted `BackdropView` from `scripts/main.gd` into `scripts/views/backdrop_view.gd` with `class_name BackdropView`.
+- `main.gd` now preloads `BackdropView`, so existing type annotations, `.new()` calls, and `MenuView.build_main_menu(..., BackdropView, ...)` continue to use the same symbol.
+- Added `tools/view_extraction_contract_probe.gd` and registered it in `tools/probe_manifest.json`.
+
+Verification:
+- `tools/run_godot_checked.ps1 -Headless -Probe view_extraction_contract_probe -TimeoutSec 120` passed.
+- `tools/run_godot_checked.ps1 -Headless -Probe main_file_extraction_contract_probe -TimeoutSec 120` passed.
+- `tools/run_godot_checked.ps1 -Headless -Probe menu_view_signal_contract_probe -TimeoutSec 120` passed.
+- `tools/run_godot_checked.ps1 -Headless -Probe ui_layout_probe -TimeoutSec 120` passed.
+- `tools/run_godot_checked.ps1 -Headless -Probe text_overflow_probe -TimeoutSec 120` passed.
+- `tools/run_godot_checked.ps1 -Headless -CheckOnly -TimeoutSec 120` passed.
+
+## 2026-05-27 Local Development Baseline While Linear Is Parked
+
+Rules:
+- Linear is not the active working surface for this thread right now; continue local organization from `E:\New project`.
+- `docs/development_backlog.md` remains the backlog mirror. `docs/local_development_status.md` is the local execution board while Linear is busy elsewhere.
+- Before starting extraction work, preserve a clean baseline: branch, HEAD, worktree state, large-file sizes, check-only result, and governance probe result.
+- Refactor stages still follow the slimdown sequence: view extraction first, then Unit Editor controllers, saved-unit/training services, battle runtime services, Fighter runtime models, Mobius boundary, and CI/probe governance.
+
+Implementation notes:
+- Added `docs/local_development_status.md` with the current branch, HEAD, remote, clean worktree state, large-file watch, governance probe pass list, and next local execution order.
+- Confirmed current source is `E:\New project`; Documents and OneDrive copies are mirrors only.
+- Current large-file watch: `scripts/main.gd` 51,650 lines / 3,101,256 bytes; `scripts/fighter.gd` 4,617 lines / 224,371 bytes; `scripts/assembly_board_renderer.gd` 1,911 lines / 107,736 bytes.
+
+Verification:
+- `tools/run_godot_checked.ps1 -Headless -CheckOnly -TimeoutSec 120` passed.
+- The 16-probe Godot Governance mirror passed locally: action profile registry, drive service, validator single source, main extraction contract, legacy drive rejection, probe manifest, drive budget/runtime, action module matrix, projectile whitelist, bound module tryout, Mobius bullet readability, controlled-unit centering, VFX budget, layout, and text overflow.
+- Some runs emitted Godot ObjectDB cleanup warnings only; no functional assertion failed.
+
 ## 2026-05-27 Linear-Ready Codebase Slimdown Backlog
 
 Rules:

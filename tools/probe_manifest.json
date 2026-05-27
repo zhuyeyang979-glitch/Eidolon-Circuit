@@ -19,6 +19,7 @@
     "drive_service_contract_probe",
     "unit_validator_single_source_probe",
     "main_file_extraction_contract_probe",
+    "view_extraction_contract_probe",
     "codebase_slimdown_backlog_probe",
     "lifecycle_services_contract_probe",
     "runtime_no_legacy_drive_reads_probe",
