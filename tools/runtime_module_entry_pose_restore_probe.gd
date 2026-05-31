@@ -65,10 +65,17 @@ func _run_case(name: String, profile: String, target_nodes: Array, segments: Arr
 		"module_part": module_part.duplicate(true),
 	}
 	binding["module_part"]["module_action_profile"] = profile
+	if profile == "boot_action_driver":
+		binding["target_kind"] = "boot_driver_limb_group"
+		binding["boot_driver_rotating_node"] = int(target_nodes[0])
+		binding["boot_driver_weapon_node"] = int(target_nodes[1])
+		binding["boot_driver_extension_m"] = 1.2
 	var event: Dictionary = fighter.begin_runtime_module_action("normal", binding, Vector2.RIGHT)
 	if event.is_empty():
 		_fail("%s did not start: %s" % [name, String(fighter.get_meta("last_module_gate_reason", ""))])
 		return
+	if profile == "boot_action_driver":
+		fighter.release_boot_action_driver_hold("")
 	fighter._tick_runtime_module_actions(10.0)
 	if not fighter.runtime_module_actions.is_empty():
 		_fail("%s did not finish." % name)
@@ -81,6 +88,10 @@ func _run_case(name: String, profile: String, target_nodes: Array, segments: Arr
 
 
 func _init() -> void:
+	_run_case("boot_driver", "boot_action_driver", [1, 2], [
+		_segment(1, Vector2.ZERO, Vector2(0.62, 0.0)),
+		_segment(2, Vector2(0.62, 0.0), Vector2(1.08, 0.0), "terminal").merged({"damage_type": "blunt", "joint_extension_m": 1.2}, true),
+	], {"startup_ratio": 0.333333, "recovery_ratio": 0.666667, "damage_type": "blunt", "projectile": false})
 	_run_case("two_link", "two_link_forward_snap", [1, 2], [
 		_segment(1, Vector2.ZERO, Vector2(0.6, 0.18)),
 		_segment(2, Vector2(0.6, 0.18), Vector2(1.1, -0.08)),

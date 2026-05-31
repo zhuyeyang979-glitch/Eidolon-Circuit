@@ -27,11 +27,8 @@ func _init() -> void:
 	if stardust.name != "MobiusStardustBandView":
 		_fail("Independent stardust node should keep its explicit runtime name.")
 		return
-	if not stardust.visible:
-		_fail("MobiusStardustBandView should be visible in Mobius battle.")
-		return
-	if int(stardust.z_index) <= int(surface.z_index):
-		_fail("Stardust band should render above the Mobius surface texture.")
+	if stardust.visible:
+		_fail("MobiusStardustBandView should stay hidden in world-grid Mobius battle.")
 		return
 	if main.units_root != null and int(stardust.z_index) >= int(main.units_root.z_index):
 		_fail("Stardust band should render below units.")
@@ -43,7 +40,10 @@ func _init() -> void:
 	if bool(surface_snapshot.get("visible", false)):
 		_fail("MobiusStripSurfaceView should no longer draw the stardust band internally.")
 		return
-	print("MOBIUS_STARDUST_NAMED_NODE_PROBE ok surface_z=%d stardust_z=%d units_z=%d" % [
+	if String(surface_snapshot.get("surface_render_mode", "")) != "world_grid":
+		_fail("MobiusStripSurfaceView should render the world-grid surface.")
+		return
+	print("MOBIUS_STARDUST_NAMED_NODE_PROBE ok hidden=true surface_z=%d stardust_z=%d units_z=%d" % [
 		int(surface.z_index),
 		int(stardust.z_index),
 		int(main.units_root.z_index) if main.units_root != null else 0,

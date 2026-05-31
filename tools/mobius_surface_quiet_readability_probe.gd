@@ -30,14 +30,17 @@ func _init() -> void:
 		_fail("Mobius surface view should be visible.")
 		return
 	var snapshot: Dictionary = main.mobius_strip_surface_view.stardust_band_snapshot()
+	if String(snapshot.get("surface_render_mode", "")) != "world_grid":
+		_fail("Quiet battlefield grid should use world-grid rendering, got %s." % String(snapshot.get("surface_render_mode", "")))
+		return
 	if float(snapshot.get("surface_grid_cell_px", 0.0)) < 56.0:
 		_fail("Quiet battlefield grid should use large displayed cells; got %.1fpx." % float(snapshot.get("surface_grid_cell_px", 0.0)))
 		return
-	if float(snapshot.get("surface_alpha_gain", 0.0)) < 1.0 or float(snapshot.get("surface_alpha_gain", 99.0)) > 1.12 or float(snapshot.get("surface_alpha_max", 0.0)) < 0.17 or float(snapshot.get("surface_alpha_max", 99.0)) > 0.20:
-		_fail("Quiet battlefield grid should stay visible without returning to high gain; got gain=%.2f max=%.2f." % [float(snapshot.get("surface_alpha_gain", 0.0)), float(snapshot.get("surface_alpha_max", 0.0))])
+	if float(snapshot.get("surface_alpha_gain", 0.0)) < 0.88 or float(snapshot.get("surface_alpha_gain", 99.0)) > 0.96 or float(snapshot.get("surface_alpha_max", 0.0)) < 0.15 or float(snapshot.get("surface_alpha_max", 99.0)) > 0.17:
+		_fail("Quiet world grid should stay visible without returning to high ripple gain; got gain=%.2f max=%.2f." % [float(snapshot.get("surface_alpha_gain", 0.0)), float(snapshot.get("surface_alpha_max", 0.0))])
 		return
-	if float(snapshot.get("surface_color_gain", 0.0)) < 1.16 or float(snapshot.get("surface_color_gain", 99.0)) > 1.28:
-		_fail("Quiet battlefield grid should be readable but not use strong color gain; got %.2f." % float(snapshot.get("surface_color_gain", 0.0)))
+	if float(snapshot.get("surface_color_gain", 0.0)) < 1.02 or float(snapshot.get("surface_color_gain", 99.0)) > 1.10:
+		_fail("Quiet world grid should be readable but not use strong color gain; got %.2f." % float(snapshot.get("surface_color_gain", 0.0)))
 		return
 	var grid_near := float(snapshot.get("grid_near_brightness", 1.0))
 	var grid_far := float(snapshot.get("grid_far_brightness", 0.0))
@@ -50,7 +53,7 @@ func _init() -> void:
 		return
 	var params := MobiusWorld.surface_shader_parameters(main._mobius_camera_coord(), main.mobius_strip_surface_view.config, main.mobius_rotation_state)
 	if float(params.get("grid_far_brightness", 0.0)) < 0.50 or float(params.get("grid_near_brightness", 0.0)) > 0.90:
-		_fail("Shader grid brightness uniforms should stay quiet; got %.2f/%.2f." % [float(params.get("grid_far_brightness", 0.0)), float(params.get("grid_near_brightness", 0.0))])
+		_fail("World-grid brightness uniforms should stay quiet; got %.2f/%.2f." % [float(params.get("grid_far_brightness", 0.0)), float(params.get("grid_near_brightness", 0.0))])
 		return
-	print("MOBIUS_SURFACE_QUIET_READABILITY_PROBE ok grid=%.1f alpha=%.2f/%.2f" % [float(snapshot.get("surface_grid_cell_px", 0.0)), float(snapshot.get("surface_alpha_gain", 0.0)), float(snapshot.get("surface_alpha_max", 0.0))])
+	print("MOBIUS_SURFACE_QUIET_READABILITY_PROBE ok mode=world_grid grid=%.1f alpha=%.2f/%.2f" % [float(snapshot.get("surface_grid_cell_px", 0.0)), float(snapshot.get("surface_alpha_gain", 0.0)), float(snapshot.get("surface_alpha_max", 0.0))])
 	quit()

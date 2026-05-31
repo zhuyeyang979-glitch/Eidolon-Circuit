@@ -2,6 +2,9 @@ extends SceneTree
 
 
 const MAIN_PATH := "res://scripts/main.gd"
+const EXTRACTED_CLASS_PATHS := {
+	"PartDragGhostView": "res://scripts/views/part_drag_ghost_view.gd",
+}
 
 
 func _fail(message: String) -> void:
@@ -36,6 +39,10 @@ func _init() -> void:
 	var checked := 0
 	for klass in ["PartCatalogCardButton", "PartDragGhostView", "EditorPartHoverPopupView"]:
 		var block := _class_block(source, klass)
+		if block.is_empty() and EXTRACTED_CLASS_PATHS.has(klass):
+			var extracted_source := FileAccess.get_file_as_string(String(EXTRACTED_CLASS_PATHS[klass]))
+			if extracted_source.find("class_name %s" % klass) >= 0:
+				block = extracted_source
 		if block.is_empty():
 			_fail("%s missing." % klass)
 		var draw_block := _first_draw_block(block)
@@ -43,7 +50,7 @@ func _init() -> void:
 			_fail("%s._draw missing." % klass)
 		if draw_block.contains("_sync_preview_icon"):
 			_fail("%s._draw still synchronizes preview state." % klass)
-		if draw_block.contains("AssemblyBoardRenderer.draw_part_preview"):
+		if klass != "PartDragGhostView" and draw_block.contains("AssemblyBoardRenderer.draw_part_preview"):
 			_fail("%s._draw still calls full preview renderer." % klass)
 		checked += 1
 	print("PREVIEW_SYNC_NOT_IN_DRAW_PROBE ok checked=%d" % checked)

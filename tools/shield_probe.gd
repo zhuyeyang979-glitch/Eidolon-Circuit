@@ -43,10 +43,16 @@ func _init() -> void:
 	for part in MainScene.COMMON_CATALOG["muscle"]:
 		if part is Dictionary and bool(Dictionary(part).get("shield_payload", false)):
 			shield_catalog_ok = true
-			if int(Dictionary(part).get("hp", -1)) != 0 or float(Dictionary(part).get("radius", -1.0)) != 0.0 or float(Dictionary(part).get("length", -1.0)) != 0.0:
-				_fail("Shield payload must have no HP and no physical volume: %s" % String(Dictionary(part).get("name", "")))
-			if main._part_slot_volume_rank(part, "muscle") != 0.0:
-				_fail("Shield payload should consume no slot volume: %s" % String(Dictionary(part).get("name", "")))
+			var shield_part: Dictionary = Dictionary(part)
+			for hp_key in ["hp", "health", "max_hp"]:
+				if shield_part.has(hp_key):
+					_fail("Shield payload must not expose part HP field %s: %s" % [hp_key, String(shield_part.get("name", ""))])
+			if float(shield_part.get("radius", -1.0)) != 0.0 or float(shield_part.get("length", -1.0)) != 0.0 or int(shield_part.get("connection_ends", -1)) != 0:
+				_fail("Shield payload must have no combat geometry: %s" % String(shield_part.get("name", "")))
+			if main._component_has_combat_volume(shield_part, "muscle"):
+				_fail("Shield payload must not report combat volume: %s" % String(shield_part.get("name", "")))
+			if main._part_slot_volume_rank(shield_part, "muscle") <= 0.0:
+				_fail("Shield payload must consume internal slot volume: %s" % String(shield_part.get("name", "")))
 	if not shield_catalog_ok:
 		_fail("No shield payload components found in muscle catalog.")
 	var shield_rect := ColorRect.new()

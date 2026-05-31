@@ -30,11 +30,14 @@ func _init() -> void:
 	if String(surface_snapshot.get("surface_field_kind", "")) != "square_grid_field":
 		_fail("Mobius surface should expose the square-grid field semantics.")
 		return
-	if bool(surface_snapshot.get("lane_guides_enabled", true)):
-		_fail("Mobius surface must not render internal straight lane guides.")
+	if String(surface_snapshot.get("surface_render_mode", "")) != "world_grid":
+		_fail("Mobius surface should render the square-grid field as a world-anchored grid.")
 		return
-	if bool(surface_snapshot.get("local_rectangular_projection", true)):
-		_fail("Mobius visual surface should use true Mobius projection, not rectangular gameplay projection.")
+	if not bool(surface_snapshot.get("lane_guides_enabled", false)):
+		_fail("World-grid surface should expose guide lines as battle-map references.")
+		return
+	if not bool(surface_snapshot.get("local_rectangular_projection", false)):
+		_fail("Mobius world-grid surface should use the same gameplay camera projection as units/projectiles.")
 		return
 	var gameplay_config: Dictionary = main._mobius_config()
 	if not bool(gameplay_config.get("local_rectangular_projection", false)):

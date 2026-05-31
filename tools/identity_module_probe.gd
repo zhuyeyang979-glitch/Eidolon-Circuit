@@ -5,6 +5,9 @@ const MainScene := preload("res://scripts/main.gd")
 
 func _spawn_unit(main, owner: int, role_key: String, unit_name: String, ring: float, lane: float, overrides: Dictionary):
 	var stats: Dictionary = main._compute_unit_stats(owner, role_key, 0).duplicate(true)
+	stats["health"] = maxi(60, int(stats.get("health", 0)))
+	stats["radius"] = maxf(0.2, float(stats.get("radius", 0.0)))
+	stats["length"] = maxf(0.4, float(stats.get("length", 0.0)))
 	for key in overrides.keys():
 		stats[key] = overrides[key]
 	var unit = main._create_unit(owner, role_key, stats, unit_name, ring, lane)

@@ -25,8 +25,8 @@ func _init() -> void:
 	if Vector2(a.get("position", Vector2.ZERO)).distance_to(Vector2(b.get("position", Vector2.ZERO))) > 0.001:
 		_fail("Visual ridge motion must not move a gameplay unit anchor.")
 		return
-	if absf(float(a.get("scale", 1.0)) - float(b.get("scale", 1.0))) < 0.01:
-		_fail("Stable anchors should still inherit changing surface depth presentation.")
+	if absf(float(a.get("scale", 1.0)) - float(b.get("scale", 1.0))) > 0.001:
+		_fail("Stable unit anchors should not inherit ripple/ridge scale changes.")
 		return
-	print("MOBIUS_UNIT_ANCHOR_STABILITY_PROBE ok scale_shift=%.3f" % absf(float(a.get("scale")) - float(b.get("scale"))))
+	print("MOBIUS_UNIT_ANCHOR_STABILITY_PROBE ok scale=%.3f" % float(a.get("scale")))
 	quit()

@@ -32,18 +32,21 @@ func _init() -> void:
 	if String(snapshot.get("surface_field_kind", "")) != "square_grid_field":
 		_fail("Mobius surface view should advertise the square-grid field, got %s." % String(snapshot.get("surface_field_kind", "")))
 		return
-	if bool(snapshot.get("local_rectangular_projection", true)):
-		_fail("Mobius surface field should use visual Mobius projection, not gameplay rectangular projection.")
+	if String(snapshot.get("surface_render_mode", "")) != "world_grid":
+		_fail("Mobius surface should use the world-grid field, got %s." % String(snapshot.get("surface_render_mode", "")))
 		return
-	if String(snapshot.get("surface_texture_path", "")) != MainScene.MOBIUS_SURFACE_TEXTURE_PATH:
-		_fail("Mobius surface field should own the grid texture, got %s." % String(snapshot.get("surface_texture_path", "")))
+	if not bool(snapshot.get("local_rectangular_projection", false)):
+		_fail("World-grid surface should share the gameplay camera projection so map marks stay world-anchored.")
+		return
+	if String(snapshot.get("surface_texture_path", "")) != "":
+		_fail("Mobius world grid should not use the old full-screen ripple texture as the main map.")
 		return
 	if main.mobius_stardust_band_view != null and main.mobius_stardust_band_view.visible:
-		_fail("Independent stardust band should stay hidden; the field texture is the Mobius surface itself.")
+		_fail("Independent stardust band should stay hidden; world-grid marks are the battlefield reference.")
 		return
 	var battle_backdrop := main.find_child("GeneratedSpaceBackdrop", true, false) as CanvasItem
 	if battle_backdrop != null and battle_backdrop.visible:
 		_fail("Static generated battle backdrop should be hidden while Mobius field rendering is active.")
 		return
-	print("MOBIUS_SURFACE_NOT_BACKGROUND_PROBE ok texture=%s stardust_hidden=true" % MainScene.MOBIUS_SURFACE_TEXTURE_PATH)
+	print("MOBIUS_SURFACE_NOT_BACKGROUND_PROBE ok mode=world_grid stardust_hidden=true")
 	quit()

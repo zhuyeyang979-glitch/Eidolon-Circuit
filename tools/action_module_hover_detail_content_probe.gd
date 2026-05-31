@@ -39,7 +39,7 @@ func _init() -> void:
 	var module := _module_by_profile(main, "gun_activate")
 	var lines: Array = main._hover_card_player_detail_lines("module", module)
 	var joined := _joined(lines)
-	_assert_terms(joined, ["Use Scope", "Action", "Timing", "Resolve Source", "Consistency", "Drive & Heat"], "gun_activate detail sections")
+	_assert_terms(joined, ["Action Module Scope", "Action", "Timing", "Resolve Source", "Consistency", "Drive & Heat"], "gun_activate detail sections")
 	_assert_terms(joined, ["Can bind", "Hold X", "bound firearm", "projectile momentum", "Action speed"], "gun_activate explanatory copy")
 	var melee := _module_by_profile(main, "two_link_forward_snap")
 	var melee_joined := _joined(main._hover_card_player_detail_lines("module", melee))

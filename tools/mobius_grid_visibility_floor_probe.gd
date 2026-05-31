@@ -38,21 +38,20 @@ func _init() -> void:
 		_fail("Mobius surface view should be visible.")
 		return
 	var config: Dictionary = main.mobius_strip_surface_view.config
-	var image := _load_grid_image()
-	if image == null:
+	var snapshot: Dictionary = main.mobius_strip_surface_view.stardust_band_snapshot()
+	if String(snapshot.get("surface_render_mode", "")) != "world_grid":
+		_fail("Grid visibility floor should verify the world-grid surface, got %s." % String(snapshot.get("surface_render_mode", "")))
 		return
-	var source_alpha := _mean_line_alpha(image)
 	var alpha_gain := float(config.get("surface_alpha_gain", 0.0))
 	var grid_far := float(config.get("grid_far_brightness", 0.0))
-	var far_line_alpha := source_alpha * alpha_gain * grid_far
 	if grid_far < 0.50:
 		_fail("Grid far/valley brightness floor is too low; got %.3f." % grid_far)
 		return
-	if far_line_alpha < 0.10:
-		_fail("Far/valley grid line alpha can disappear; estimated %.4f from source=%.4f gain=%.2f brightness=%.2f." % [far_line_alpha, source_alpha, alpha_gain, grid_far])
+	if alpha_gain < 0.88:
+		_fail("World-grid alpha gain should not make auxiliary battlefield lines disappear; gain=%.2f." % alpha_gain)
 		return
 	if float(config.get("grid_near_brightness", 1.0)) >= float(config.get("unit_surface_far_brightness", 0.0)):
 		_fail("Grid should remain below foreground units after raising floor.")
 		return
-	print("MOBIUS_GRID_VISIBILITY_FLOOR_PROBE ok far_alpha=%.4f grid=%.2f/%.2f" % [far_line_alpha, grid_far, float(config.get("grid_near_brightness", 0.0))])
+	print("MOBIUS_GRID_VISIBILITY_FLOOR_PROBE ok mode=world_grid gain=%.2f grid=%.2f/%.2f" % [alpha_gain, grid_far, float(config.get("grid_near_brightness", 0.0))])
 	quit()

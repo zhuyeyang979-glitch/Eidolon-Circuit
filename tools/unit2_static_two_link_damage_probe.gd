@@ -76,6 +76,20 @@ func _first_torso_collider(unit) -> Dictionary:
 	return {}
 
 
+func _place_target_torso_on_attack(main, target, attack_collider: Dictionary, target_collider: Dictionary) -> float:
+	var attack_center: Vector2 = main._collider_center(attack_collider)
+	var target_center: Vector2 = main._collider_center(target_collider)
+	target.ring_pos += attack_center.x - target_center.x
+	target.lane += attack_center.y - target_center.y
+	if target.has_method("sync_mobius_from_compat"):
+		target.sync_mobius_from_compat(MainScene.RING_LENGTH, true)
+	var gap := INF
+	for raw_collider in target.part_colliders():
+		if raw_collider is Dictionary:
+			gap = minf(gap, main._collider_gap(attack_collider, Dictionary(raw_collider)))
+	return gap
+
+
 func _init() -> void:
 	var main = MainScene.new()
 	root.add_child(main)
@@ -117,22 +131,21 @@ func _init() -> void:
 	if target_collider.is_empty():
 		_fail("Target unit 2 has no torso collider.")
 		return
-	var attack_center := main._collider_center(attack_collider)
-	var target_center := main._collider_center(target_collider)
-	target.ring_pos += attack_center.x - target_center.x + 0.015
-	target.lane += attack_center.y - target_center.y
+	var gap := _place_target_torso_on_attack(main, target, attack_collider, target_collider)
 	attacker.velocity = Vector2.ZERO
 	target.velocity = Vector2.ZERO
 	main.active_units = {
 		1: {"hero": attacker, "barrier": null, "puppet": []},
 		2: {"hero": target, "barrier": null, "puppet": []},
 	}
-	var gap := INF
-	for raw_collider in target.part_colliders():
-		if raw_collider is Dictionary:
-			gap = minf(gap, main._collider_gap(attack_collider, Dictionary(raw_collider)))
 	if gap > 0.0:
-		_fail("Probe setup has no contact; gap=%.4f" % gap)
+		_fail("Probe setup has no contact; gap=%.4f contact_velocity=%.3f action_speed=%.3f duration=%.3f targets=%s" % [
+			gap,
+			attacker.contact_velocity_for_collider(attack_collider).length(),
+			float(action.get("runtime_contact_speed", 0.0)),
+			float(action.get("duration", 0.0)),
+			str(action.get("target_nodes", [])),
+		])
 		return
 	var hp_before := int(target.health)
 	main._resolve_attack(attacker, event)

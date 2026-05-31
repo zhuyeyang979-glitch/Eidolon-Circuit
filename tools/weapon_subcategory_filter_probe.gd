@@ -14,6 +14,22 @@ func _entries_for_filter(main, filter_key: String) -> Array:
 	return main._editor_catalog_raw_entries("hero", "muscle")
 
 
+func _entry_names(entries: Array) -> Array:
+	var names: Array = []
+	for raw_entry in entries:
+		if raw_entry is Dictionary:
+			var entry: Dictionary = raw_entry
+			var part: Dictionary = entry.get("part", {})
+			names.append(String(part.get("name", "")))
+	return names
+
+
+func _assert_filter_has(main, filter_key: String, item_name: String) -> void:
+	var names := _entry_names(_entries_for_filter(main, filter_key))
+	if not names.has(item_name):
+		_fail("%s should expose %s." % [filter_key, item_name])
+
+
 func _assert_matches(main, filter_key: String) -> void:
 	var entries := _entries_for_filter(main, filter_key)
 	if entries.is_empty():
@@ -84,7 +100,7 @@ func _init() -> void:
 		"gun_sniper", "gun_rifle", "gun_laser_gun", "gun_sprayer",
 		"gun_grenade_launcher", "gun_missile_launcher", "gun_web",
 	]
-	var options := main._part_filter_options_for_group("terminal_weapon")
+	var options := main._all_part_filter_options_for_group("terminal_weapon")
 	var option_keys: Array = []
 	for option in options:
 		option_keys.append(String(Dictionary(option).get("key", "")))
@@ -94,6 +110,14 @@ func _init() -> void:
 		_assert_matches(main, key)
 	if _entries_for_filter(main, "weapon_gauntlet").is_empty():
 		_fail("Gauntlet filter should expose the current blunt gauntlet gradient.")
+	_assert_filter_has(main, "weapon_scythe", "SHORT CRESCENT SCYTHE")
+	_assert_filter_has(main, "weapon_katana", "WAKIZASHI KATANA MUSCLE")
+	_assert_filter_has(main, "weapon_greatsword", "STANDARD GREATSWORD MUSCLE")
+	_assert_filter_has(main, "weapon_shield", "BUCKLER RAM SHIELD")
+	_assert_filter_has(main, "weapon_hammer", "COLOSSUS ARENA MAUL")
+	_assert_filter_has(main, "weapon_lance", "SHORT JOUSTING LANCE")
+	_assert_filter_has(main, "weapon_rapier", "DUELING RAPIER MUSCLE")
+	_assert_filter_has(main, "weapon_drill", "MICRO DRILL BIT")
 	if _entries_for_filter(main, "gun_rifle").is_empty():
 		_fail("Rifle filter should expose the existing rifle data.")
 	print("WEAPON_SUBCATEGORY_FILTER_PROBE ok")

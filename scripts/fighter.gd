@@ -7,6 +7,12 @@ const TopologyPoseResolver = preload("res://scripts/topology_pose_resolver.gd")
 const MotionBudget = preload("res://scripts/motion_budget.gd")
 const MobiusWorld = preload("res://scripts/mobius_world.gd")
 const GameplayTransform = preload("res://scripts/gameplay_transform.gd")
+const FighterHeatModel = preload("res://scripts/services/fighter_heat_model.gd")
+const FighterMovementModel = preload("res://scripts/services/fighter_movement_model.gd")
+const FighterTurnModel = preload("res://scripts/services/fighter_turn_model.gd")
+const FighterActionModel = preload("res://scripts/services/fighter_action_model.gd")
+const RuntimeColliderGeometryService = preload("res://scripts/services/runtime_collider_geometry_service.gd")
+const RuntimeColliderBuilderService = preload("res://scripts/services/runtime_collider_builder_service.gd")
 
 signal knocked_out(unit)
 signal combat_event(message: String)
@@ -54,6 +60,8 @@ const BOOST_COOLDOWN_DEFAULT = 0.5
 const MOBIUS_VISUAL_SCALE_MIN = 0.05
 const MOBIUS_VISUAL_SCALE_MAX_STEP = 0.045
 const MOBIUS_VISUAL_SCALE_MAX_RATE = MOBIUS_VISUAL_SCALE_MAX_STEP * 120.0
+const MOBIUS_VISUAL_SCALE_MAX = 1.55
+const BOOT_ACTION_DRIVER_PROFILE = "boot_action_driver"
 
 var owner_id := 1
 var role := "hero"
@@ -166,12 +174,60 @@ var boost_flash: Polygon2D
 var thruster_flames: Array = []
 var heat_bar_back: Polygon2D
 var heat_bar_fill: Polygon2D
+var heat_model: FighterHeatModel
+var movement_model: FighterMovementModel
+var turn_model: FighterTurnModel
+var action_model: FighterActionModel
+var runtime_collider_geometry_service: RuntimeColliderGeometryService
+var runtime_collider_builder_service: RuntimeColliderBuilderService
 
 
 func _ready() -> void:
+	_heat_model()
+	_movement_model()
+	_turn_model()
+	_action_model()
+	_runtime_collider_geometry_service()
+	_runtime_collider_builder_service()
 	if state_flash == null:
 		_build_visuals()
 	visible = false
+
+
+func _heat_model() -> FighterHeatModel:
+	if heat_model == null:
+		heat_model = FighterHeatModel.new()
+	return heat_model
+
+
+func _movement_model() -> FighterMovementModel:
+	if movement_model == null:
+		movement_model = FighterMovementModel.new()
+	return movement_model
+
+
+func _turn_model() -> FighterTurnModel:
+	if turn_model == null:
+		turn_model = FighterTurnModel.new()
+	return turn_model
+
+
+func _action_model() -> FighterActionModel:
+	if action_model == null:
+		action_model = FighterActionModel.new()
+	return action_model
+
+
+func _runtime_collider_geometry_service() -> RuntimeColliderGeometryService:
+	if runtime_collider_geometry_service == null:
+		runtime_collider_geometry_service = RuntimeColliderGeometryService.new()
+	return runtime_collider_geometry_service
+
+
+func _runtime_collider_builder_service() -> RuntimeColliderBuilderService:
+	if runtime_collider_builder_service == null:
+		runtime_collider_builder_service = RuntimeColliderBuilderService.new()
+	return runtime_collider_builder_service
 
 
 func _draw() -> void:
@@ -387,19 +443,27 @@ func tick(delta: float, ring_length: float) -> void:
 	_tick_boost_drive(delta)
 
 	action_cooldown = maxf(0.0, action_cooldown - delta)
-	var heat_capacity: float = maxf(1.0, float(stats.get("heat_capacity", 100.0)))
-	var cooling: float = _runtime_cooling_rate()
-	var cooling_mult := 0.35 if moved_this_frame or action_cooldown > 0.0 or current_state != STATE_NORMAL else 1.15
-	if _is_straight_inertial_cooling():
-		cooling_mult = 3.2
-	if manual_cooling:
-		cooling_mult = 3.2
-	if _uses_heat_resource():
-		heat = clampf(heat - cooling * cooling_mult * delta * HEAT_RATE_MULT, 0.0, heat_capacity)
-		if heat >= heat_capacity:
+	var cooling_intent := _heat_model().cooling_tick_intent({
+		"stats": stats,
+		"role": role,
+		"delta": delta,
+		"heat": heat,
+		"overheated": overheated,
+		"moved_this_frame": moved_this_frame,
+		"action_cooldown": action_cooldown,
+		"current_state": current_state,
+		"manual_cooling": manual_cooling,
+		"straight_inertial_cooling": _is_straight_inertial_cooling(),
+	})
+	if not bool(cooling_intent.get("uses_heat", _uses_heat_resource())):
+		heat = 0.0
+		overheated = false
+		manual_cooling = false
+	else:
+		heat = float(cooling_intent.get("heat", heat))
+		overheated = bool(cooling_intent.get("overheated", overheated))
+		if bool(cooling_intent.get("trigger_overheat_shutdown", false)):
 			trigger_overheat_shutdown("heat cap")
-		elif overheated and heat <= heat_capacity * _overheat_clear_ratio():
-			overheated = false
 	_clamp_velocity_to_speedometer()
 	moved_this_frame = false
 	manual_cooling = false
@@ -464,90 +528,65 @@ func set_facing_immediate(direction_sign: int) -> void:
 	turn_direction_bias = 0.0
 
 
+func _turn_model_context(direction_sign: int = 0, delta: float = 0.0, extra := {}) -> Dictionary:
+	var context := {
+		"stats": stats,
+		"role": role,
+		"active": active,
+		"direction_sign": direction_sign,
+		"delta": delta,
+		"melee_stagger_timer": melee_stagger_timer,
+		"turn_input_active": turn_input_active,
+		"turn_input_timer": turn_input_timer,
+		"facing_angle": facing_angle,
+		"target_facing_angle": target_facing_angle,
+		"angular_velocity": angular_velocity,
+		"turn_direction_bias": turn_direction_bias,
+		"overheated": overheated,
+		"current_state": current_state,
+	}
+	for key in Dictionary(extra).keys():
+		context[key] = extra[key]
+	return context
+
+
 func request_facing(direction_sign: int) -> void:
-	if not active:
+	var intent := _turn_model().request_facing_intent(_turn_model_context(direction_sign))
+	if not bool(intent.get("allowed", false)):
 		return
-	if melee_stagger_timer > 0.0:
-		return
-	if direction_sign == 0:
-		return
-	target_facing_angle = 0.0 if direction_sign > 0 else PI
-	turn_direction_bias = 1.0 if direction_sign > 0 else -1.0
+	target_facing_angle = float(intent.get("target_facing_angle", target_facing_angle))
+	turn_direction_bias = float(intent.get("turn_direction_bias", turn_direction_bias))
 
 
 func request_turn(direction_sign: int, delta: float) -> void:
-	if not active:
+	var intent := _turn_model().request_turn_intent(_turn_model_context(direction_sign, delta))
+	if not bool(intent.get("allowed", false)):
 		return
-	if melee_stagger_timer > 0.0:
-		return
-	if direction_sign == 0 or delta <= 0.0:
-		return
-	turn_input_active = true
-	turn_input_timer = maxf(turn_input_timer, maxf(0.18, delta * 1.2))
-	var command_rate: float = maxf(0.0, float(stats.get("turn_command_rate", stats.get("turn_speed", 0.0))))
-	if command_rate <= 0.0001:
-		return
-	target_facing_angle = wrapf(target_facing_angle + float(direction_sign) * command_rate * delta, 0.0, TAU)
-	turn_direction_bias = float(signi(direction_sign))
+	turn_input_active = bool(intent.get("turn_input_active", turn_input_active))
+	turn_input_timer = float(intent.get("turn_input_timer", turn_input_timer))
+	target_facing_angle = float(intent.get("target_facing_angle", target_facing_angle))
+	turn_direction_bias = float(intent.get("turn_direction_bias", turn_direction_bias))
 
 
 func set_turn_input_active(is_active: bool) -> void:
-	turn_input_active = is_active
-	if is_active:
-		turn_input_timer = maxf(turn_input_timer, 0.18)
-	else:
-		turn_input_timer = 0.0
-		target_facing_angle = facing_angle
+	var intent := _turn_model().set_turn_input_active_intent(_turn_model_context(0, 0.0, {"is_active": is_active}))
+	turn_input_active = bool(intent.get("turn_input_active", is_active))
+	turn_input_timer = float(intent.get("turn_input_timer", turn_input_timer))
+	target_facing_angle = float(intent.get("target_facing_angle", target_facing_angle))
 
 
 func _tick_turn_dynamics(delta: float) -> void:
-	turn_input_timer = maxf(0.0, turn_input_timer - delta)
-	turn_input_active = turn_input_timer > 0.0
-	if melee_stagger_timer > 0.0:
-		var turn_damping: float = maxf(0.1, float(stats.get("turn_damping", 3.2)))
-		angular_velocity = move_toward(angular_velocity, 0.0, turn_damping * delta * 0.6)
-		facing_angle = wrapf(facing_angle + angular_velocity * delta, 0.0, TAU)
-		_sync_facing_from_angle()
-		return
-	var angle_delta := _angle_delta(facing_angle, target_facing_angle)
-	if absf(absf(angle_delta) - PI) < 0.001 and turn_direction_bias != 0.0:
-		angle_delta = turn_direction_bias * PI
-	var turn_speed: float = maxf(0.0, float(stats.get("turn_speed", 0.0)))
-	var turn_acceleration: float = maxf(0.0, float(stats.get("turn_acceleration", 0.0)))
-	var turn_damping: float = maxf(0.0, float(stats.get("turn_damping", 0.0)))
-	if turn_speed <= 0.0001 or turn_acceleration <= 0.0001:
-		angular_velocity = 0.0
-		_sync_facing_from_angle()
-		return
-	if overheated and role == "hero":
-		turn_speed *= 0.62
-		turn_acceleration *= 0.58
-	if current_state == STATE_ARMOR:
-		turn_speed *= 0.58
-		turn_acceleration *= 0.52
-	elif current_state == STATE_ACTIVE:
-		turn_speed *= 0.78
-		turn_acceleration *= 0.72
-	if not turn_input_active:
-		var brake_accel := _turn_brake_acceleration()
-		angular_velocity = move_toward(angular_velocity, 0.0, brake_accel * delta)
-		facing_angle = wrapf(facing_angle + angular_velocity * delta, 0.0, TAU)
-		target_facing_angle = facing_angle
-		if absf(angular_velocity) < 0.002:
-			angular_velocity = 0.0
-		_sync_facing_from_angle()
-		return
-	var angular_acceleration := angle_delta * turn_acceleration * 3.2 - angular_velocity * turn_damping
-	angular_velocity = clampf(angular_velocity + angular_acceleration * delta, -turn_speed, turn_speed)
-	facing_angle = wrapf(facing_angle + angular_velocity * delta, 0.0, TAU)
-	if absf(angle_delta) < 0.006 and absf(angular_velocity) < 0.04:
-		facing_angle = target_facing_angle
-		angular_velocity = 0.0
+	var intent := _turn_model().tick_turn_dynamics_intent(_turn_model_context(0, delta))
+	turn_input_timer = float(intent.get("turn_input_timer", turn_input_timer))
+	turn_input_active = bool(intent.get("turn_input_active", turn_input_active))
+	facing_angle = float(intent.get("facing_angle", facing_angle))
+	target_facing_angle = float(intent.get("target_facing_angle", target_facing_angle))
+	angular_velocity = float(intent.get("angular_velocity", angular_velocity))
 	_sync_facing_from_angle()
 
 
 func _angle_delta(from_angle: float, to_angle: float) -> float:
-	return wrapf(to_angle - from_angle + PI, 0.0, TAU) - PI
+	return _turn_model().angle_delta(from_angle, to_angle)
 
 
 func _sync_facing_from_angle() -> void:
@@ -557,17 +596,7 @@ func _sync_facing_from_angle() -> void:
 
 
 func _turn_brake_acceleration() -> float:
-	var brake_power: float = maxf(0.0, float(stats.get("brake_power", 0.0)))
-	var mass: float = maxf(1.0, float(stats.get("mass", 1.0)))
-	var duration: float = maxf(0.04, float(stats.get("boost_duration", 0.3)))
-	var allocated_momentum := maxf(0.0, float(stats.get("move_momentum", 0.0)))
-	if allocated_momentum <= 0.0:
-		allocated_momentum = maxf(0.0, float(stats.get("boost_momentum", 0.0)))
-	var momentum_brake := brake_power / duration
-	if momentum_brake <= 0.0:
-		momentum_brake = (allocated_momentum / mass) / duration
-	var damping_fallback := maxf(0.0, float(stats.get("turn_damping", 0.0)))
-	return maxf(maxf(momentum_brake, damping_fallback), 0.1)
+	return _turn_model().turn_brake_acceleration(stats)
 
 
 func _tick_boost_drive(delta: float) -> void:
@@ -603,10 +632,7 @@ func _side_vector() -> Vector2:
 
 
 func _has_bidirectional_thrusters() -> bool:
-	if bool(stats.get("bidirectional_thrusters", false)):
-		return true
-	var mount := String(stats.get("thruster_mount", stats.get("booster_mount", ""))).to_lower()
-	return mount.contains("front_back") or mount.contains("omni") or mount.contains("bidirectional")
+	return _movement_model().has_bidirectional_thrusters(stats)
 
 
 func _attitude_stabilization() -> float:
@@ -626,70 +652,33 @@ func _recovery_linger_multiplier() -> float:
 
 
 func _thruster_drive_direction(requested: Vector2) -> Vector2:
-	if requested.length() <= 0.04:
-		return Vector2.ZERO
-	var desired := requested.normalized()
-	if _has_runtime_topology():
-		return desired
-	if _has_bidirectional_thrusters():
-		return desired
-	return _direction_inside_thruster_cone(desired, float(stats.get("thruster_cone_degrees", 180.0)))
+	return _movement_model().thruster_drive_direction({
+		"requested": requested,
+		"stats": stats,
+		"forward": _forward_vector(),
+		"side": _side_vector(),
+		"has_runtime_topology": _has_runtime_topology(),
+	})
 
 
 func _direction_inside_thruster_cone(desired: Vector2, cone_degrees: float) -> Vector2:
-	if desired.length() <= 0.04:
-		return Vector2.ZERO
-	var forward := _forward_vector()
-	var side := _side_vector()
-	var forward_component := desired.dot(forward)
-	var side_component := desired.dot(side)
-	cone_degrees = clampf(cone_degrees, 20.0, 360.0)
-	if cone_degrees >= 359.0:
-		return desired.normalized()
-	var cone_cos := cos(deg_to_rad(cone_degrees * 0.5))
-	if forward_component >= cone_cos:
-		return desired.normalized()
-	if cone_degrees >= 179.0:
-		if absf(side_component) <= 0.001:
-			return Vector2.ZERO
-		return (side * side_component).normalized()
-	var side_sign := signf(side_component)
-	if side_sign == 0.0:
-		return Vector2.ZERO
-	var clamped := forward * cone_cos + side * side_sign * sqrt(maxf(0.0, 1.0 - cone_cos * cone_cos))
-	return clamped.normalized()
+	return _movement_model().direction_inside_thruster_cone(desired, _forward_vector(), _side_vector(), cone_degrees)
 
 
 func _thruster_boost_direction(requested: Vector2) -> Vector2:
-	if requested.length() <= 0.04:
-		return Vector2.ZERO
-	var desired := requested.normalized()
-	var profile := String(stats.get("movement_profile", "omni")).to_lower()
-	if profile == "car" and desired.dot(_forward_vector()) <= 0.0:
-		return Vector2.ZERO
-	var boost_angle := clampf(float(stats.get("boost_angle_degrees", 360.0)), 20.0, 360.0)
-	if boost_angle >= 359.0:
-		return desired
-	var cone_cos := cos(deg_to_rad(boost_angle * 0.5))
-	return desired if desired.dot(_forward_vector()) >= cone_cos else Vector2.ZERO
+	return _movement_model().thruster_boost_direction({
+		"requested": requested,
+		"stats": stats,
+		"forward": _forward_vector(),
+	})
 
 
 func _is_rear_brake_zone(input_dir: Vector2) -> bool:
-	if input_dir.length() <= 0.04:
-		return false
-	var rear := -_forward_vector()
-	var rear_dot := input_dir.normalized().dot(rear)
-	var rear_limit := cos(deg_to_rad(REAR_BRAKE_HALF_ANGLE_DEGREES))
-	return rear_dot >= rear_limit
+	return _movement_model().rear_brake_zone(input_dir, _forward_vector(), REAR_BRAKE_HALF_ANGLE_DEGREES)
 
 
 func _speedometer_max_speed() -> float:
-	var explicit_limit := maxf(0.0, float(stats.get("speedometer_max_speed", 0.0)))
-	if explicit_limit > 0.001:
-		return explicit_limit
-	var body_speed := maxf(0.0, float(stats.get("move_speed", 0.0)))
-	var boost_speed := maxf(0.0, float(stats.get("boost_speed", 0.0)))
-	return maxf(1.0, maxf(body_speed * 3.0, boost_speed * 2.0) * 1.5)
+	return _movement_model().speedometer_max_speed(stats)
 
 
 func _clamp_velocity_to_speedometer() -> void:
@@ -700,23 +689,15 @@ func _clamp_velocity_to_speedometer() -> void:
 
 
 func _brake_delta_velocity() -> float:
-	var brake_power: float = maxf(0.0, float(stats.get("brake_power", 0.0)))
-	if brake_power > 0.0:
-		return brake_power
-	var allocated_momentum: float = maxf(0.0, float(stats.get("move_momentum", 0.0)))
-	if allocated_momentum <= 0.0:
-		allocated_momentum = maxf(0.0, float(stats.get("boost_momentum", 0.0)))
-	var mass: float = maxf(1.0, float(stats.get("mass", 1.0)))
-	return allocated_momentum / mass
+	return _movement_model().brake_delta_velocity(stats)
 
 
 func _boost_brake_acceleration() -> float:
-	var boost_duration: float = maxf(0.04, float(stats.get("boost_duration", 0.3)))
-	return _brake_delta_velocity() / boost_duration
+	return _movement_model().boost_brake_acceleration(stats)
 
 
 func _can_velocity_brake() -> bool:
-	return velocity.length() > 0.001 and _brake_delta_velocity() > 0.001
+	return _movement_model().can_velocity_brake(velocity, stats)
 
 
 func _set_brake_reverse_ready(input_dir: Vector2) -> void:
@@ -739,42 +720,51 @@ func note_movement_input_pressed(input_dir: Vector2) -> void:
 	set_meta("move_input_pressed_dir", input_dir.normalized() if input_dir.length() > 0.04 else Vector2.ZERO)
 
 
+func _movement_model_context(input_vector: Vector2 = Vector2.ZERO, delta: float = 0.0) -> Dictionary:
+	return {
+		"stats": stats,
+		"role": role,
+		"active": active,
+		"input_vector": input_vector,
+		"direction": input_vector,
+		"delta": delta,
+		"velocity": velocity,
+		"forward": _forward_vector(),
+		"side": _side_vector(),
+		"has_runtime_topology": _has_runtime_topology(),
+		"brake_reverse_ready_dir": brake_reverse_ready_dir,
+		"brake_reverse_ready_timer": brake_reverse_ready_timer,
+		"brake_reverse_requires_repress": brake_reverse_requires_repress,
+		"brake_reverse_dir_dot": BRAKE_REVERSE_DIR_DOT,
+		"rear_brake_half_angle_degrees": REAR_BRAKE_HALF_ANGLE_DEGREES,
+		"melee_stagger_timer": melee_stagger_timer,
+		"cooling_lock_timer": cooling_lock_timer,
+		"forced_cooling_timer": forced_cooling_timer,
+		"overheated": overheated,
+		"current_state": current_state,
+		"module_clamp_pin_timer": module_clamp_pin_timer,
+		"module_clamp_velocity_mult": module_clamp_velocity_mult,
+		"recovery_boost_timer": recovery_boost_timer,
+		"recovery_response": _recovery_response_multiplier(),
+		"boost_cooldown_timer": boost_cooldown_timer,
+		"boost_cooldown_default": BOOST_COOLDOWN_DEFAULT,
+	}
+
+
 func _reverse_drive_allowed(input_vector: Vector2) -> bool:
-	if input_vector.length() <= 0.04:
-		return false
-	if brake_reverse_ready_timer <= 0.0 or brake_reverse_ready_dir.length() <= 0.04:
-		return false
-	if brake_reverse_requires_repress:
-		return false
-	return input_vector.normalized().dot(brake_reverse_ready_dir.normalized()) >= BRAKE_REVERSE_DIR_DOT
+	return _movement_model().reverse_drive_allowed(_movement_model_context(input_vector))
 
 
 func _brake_reverse_waiting_for_repress(input_vector: Vector2) -> bool:
-	if input_vector.length() <= 0.04:
-		return false
-	if brake_reverse_ready_timer <= 0.0 or brake_reverse_ready_dir.length() <= 0.04:
-		return false
-	if not brake_reverse_requires_repress:
-		return false
-	return input_vector.normalized().dot(brake_reverse_ready_dir.normalized()) >= BRAKE_REVERSE_DIR_DOT
+	return _movement_model().brake_reverse_waiting_for_repress(_movement_model_context(input_vector))
 
 
 func _boost_request_is_reverse_only(input_vector: Vector2) -> bool:
-	if input_vector.length() <= 0.04:
-		return false
-	if _reverse_drive_allowed(input_vector) or _brake_reverse_waiting_for_repress(input_vector):
-		return true
-	return _is_rear_brake_zone(input_vector)
+	return _movement_model().boost_request_is_reverse_only(_movement_model_context(input_vector))
 
 
 func _input_should_velocity_brake(input_vector: Vector2) -> bool:
-	if input_vector.length() <= 0.04 or velocity.length() <= 0.01:
-		return false
-	if _reverse_drive_allowed(input_vector):
-		return false
-	var input_dir := input_vector.normalized()
-	var velocity_dir := velocity.normalized()
-	return input_dir.dot(velocity_dir) <= -0.12
+	return _movement_model().input_should_velocity_brake(_movement_model_context(input_vector))
 
 
 func _clear_brake_reverse_ready() -> void:
@@ -784,51 +774,42 @@ func _clear_brake_reverse_ready() -> void:
 
 
 func _apply_velocity_brake(delta: float, reason: String = "", full_boost: bool = false, input_dir: Vector2 = Vector2.ZERO) -> bool:
-	if not _can_velocity_brake():
+	var intent := _movement_model().velocity_brake_intent({
+		"stats": stats,
+		"velocity": velocity,
+		"delta": delta,
+		"full_boost": full_boost,
+		"reason": reason,
+		"input_dir": input_dir,
+	})
+	if not bool(intent.get("allowed", false)):
 		return false
-	var old_dir := velocity.normalized()
-	var brake_step := _brake_delta_velocity() if full_boost else _boost_brake_acceleration() * maxf(0.0, delta)
-	brake_step = minf(velocity.length(), brake_step)
-	if brake_step <= 0.0001:
-		return false
-	velocity -= old_dir * brake_step
-	if velocity.length() < 0.001 or velocity.dot(old_dir) <= 0.0:
-		velocity = Vector2.ZERO
-		if reason.begins_with("unusable_") or reason == "reverse_brake":
-			_set_brake_reverse_ready(input_dir)
+	velocity = Vector2(intent.get("velocity", velocity))
+	if bool(intent.get("set_reverse_ready", false)):
+		_set_brake_reverse_ready(Vector2(intent.get("reverse_ready_dir", input_dir)))
 	moved_this_frame = true
-	thruster_output_direction = -old_dir
-	thruster_visual_timer = maxf(thruster_visual_timer, 0.18)
-	boost_flash_timer = maxf(boost_flash_timer, 0.16)
+	thruster_output_direction = Vector2(intent.get("thruster_output_direction", thruster_output_direction))
+	thruster_visual_timer = maxf(thruster_visual_timer, float(intent.get("thruster_visual_timer", 0.18)))
+	boost_flash_timer = maxf(boost_flash_timer, float(intent.get("boost_flash_timer", 0.16)))
 	if reason != "":
 		set_meta("last_velocity_brake_reason", reason)
 	return true
 
 
 func _movement_command_mode(input_vector: Vector2) -> String:
-	if input_vector.length() <= 0.04:
-		return MOVE_COMMAND_NONE
-	if _reverse_drive_allowed(input_vector):
-		set_meta("last_move_command_mode", "reverse")
-		return MOVE_COMMAND_DRIVE
-	if _brake_reverse_waiting_for_repress(input_vector):
-		set_meta("last_move_command_mode", "none")
-		return MOVE_COMMAND_NONE
-	if _input_should_velocity_brake(input_vector):
-		set_meta("last_move_command_mode", "brake" if _can_velocity_brake() else "none")
-		return MOVE_COMMAND_BRAKE if _can_velocity_brake() else MOVE_COMMAND_NONE
-	var desired := _thruster_drive_direction(input_vector)
-	if desired.length() > 0.04:
-		set_meta("last_move_command_mode", "drive")
-		return MOVE_COMMAND_DRIVE
-	set_meta("last_move_command_mode", "brake" if _can_velocity_brake() else "none")
-	return MOVE_COMMAND_BRAKE if _can_velocity_brake() else MOVE_COMMAND_NONE
+	var intent := _movement_model().movement_command_intent(_movement_model_context(input_vector))
+	set_meta("last_move_command_mode", String(intent.get("meta_mode", "none")))
+	return String(intent.get("mode", MOVE_COMMAND_NONE))
 
 
 func _drive_direction_for_command(input_vector: Vector2, command_mode: String) -> Vector2:
-	if command_mode == MOVE_COMMAND_DRIVE and _reverse_drive_allowed(input_vector):
-		return input_vector.normalized()
-	return _thruster_drive_direction(input_vector)
+	var context := _movement_model_context(input_vector)
+	var intent := _movement_model().movement_command_intent(context)
+	if String(intent.get("mode", MOVE_COMMAND_NONE)) == command_mode:
+		var drive_dir: Vector2 = intent.get("drive_dir", Vector2.ZERO)
+		if drive_dir.length() > 0.04:
+			return drive_dir.normalized()
+	return _movement_model().thruster_drive_direction(context)
 
 
 func move_by(input_vector: Vector2, delta: float, ring_length: float) -> void:
@@ -838,70 +819,30 @@ func move_by(input_vector: Vector2, delta: float, ring_length: float) -> void:
 
 func move_by_gameplay(input_vector: Vector2, delta: float, ring_length: float) -> void:
 	set_meta("movement_gate_reason", "")
-	if not active:
-		set_meta("movement_gate_reason", "inactive")
+	var intent := _movement_model().movement_drive_intent(_movement_model_context(input_vector, delta))
+	var gate_reason := String(intent.get("gate_reason", ""))
+	var meta_mode := String(intent.get("meta_mode", ""))
+	if meta_mode != "":
+		set_meta("last_move_command_mode", meta_mode)
+	if not bool(intent.get("allowed", false)):
+		if gate_reason != "":
+			set_meta("movement_gate_reason", gate_reason)
+		if gate_reason == "braking":
+			_apply_velocity_brake(delta, "reverse_brake", false, Vector2(intent.get("brake_input", input_vector)))
+		elif gate_reason == "no_drive":
+			var no_drive_dir: Vector2 = intent.get("drive_dir", Vector2.ZERO)
+			if no_drive_dir.length() > 0.04:
+				moved_this_frame = true
+				thruster_output_direction = no_drive_dir.normalized()
+				thruster_visual_timer = maxf(thruster_visual_timer, float(intent.get("thruster_visual_timer", 0.16)))
 		return
-	if role == "barrier":
-		set_meta("movement_gate_reason", "barrier")
-		return
-	if melee_stagger_timer > 0.0:
-		set_meta("movement_gate_reason", "stagger")
-		return
-	if cooling_lock_timer > 0.0:
-		set_meta("movement_gate_reason", "overheat_shutdown" if overheated or forced_cooling_timer > 0.0 else "cooling_lock")
-		return
-
-	var speed: float = float(stats.get("move_speed", 0.0))
-	if overheated and role == "hero":
-		speed *= 0.58
-	if current_state == STATE_ARMOR:
-		speed *= 0.48
-	elif current_state == STATE_ACTIVE:
-		speed *= 0.72
-
-	var desired := input_vector
-	if desired.length() <= 0.04:
-		set_meta("movement_gate_reason", "no_input")
-		set_meta("last_move_command_mode", "none")
-		return
-	if desired.length() > 1.0:
-		desired = desired.normalized()
-	if module_clamp_pin_timer > 0.0:
-		desired *= clampf(module_clamp_velocity_mult, 0.05, 1.0)
-
-	var command_mode := _movement_command_mode(desired)
-	if command_mode == MOVE_COMMAND_NONE:
-		set_meta("movement_gate_reason", "unusable_direction")
-		return
-	if command_mode == MOVE_COMMAND_BRAKE:
-		set_meta("movement_gate_reason", "braking")
-		_apply_velocity_brake(delta, "reverse_brake", false, desired)
-		return
-	var drive_dir := _drive_direction_for_command(desired, command_mode)
-	if drive_dir.length() <= 0.04:
-		set_meta("movement_gate_reason", "unusable_direction")
-		set_meta("last_move_command_mode", "none")
-		return
-	drive_dir = drive_dir.normalized()
-	moved_this_frame = true
-	thruster_output_direction = drive_dir
-	thruster_visual_timer = maxf(thruster_visual_timer, 0.16)
-
-	var acceleration: float = float(stats.get("move_acceleration", 0.0))
-	if speed <= 0.0001 or acceleration <= 0.0001:
-		set_meta("movement_gate_reason", "no_drive")
-		return
-	var cornering: float = maxf(0.35, float(stats.get("cornering", 1.0)))
-	if recovery_boost_timer > 0.0:
-		var recovery_response := _recovery_response_multiplier()
-		acceleration *= recovery_response
-		cornering *= clampf(0.7 + recovery_response * 0.3, 0.62, 1.22)
-	var target_velocity := Vector2(drive_dir.x * speed, drive_dir.y * speed)
-	var needed_delta := target_velocity - velocity
-	if needed_delta.length() <= 0.001:
-		return
-	velocity += needed_delta.limit_length(acceleration * cornering * delta)
-	if not _reverse_drive_allowed(desired):
+	var drive_dir: Vector2 = intent.get("drive_dir", Vector2.ZERO)
+	if drive_dir.length() > 0.04:
+		moved_this_frame = true
+		thruster_output_direction = drive_dir.normalized()
+		thruster_visual_timer = maxf(thruster_visual_timer, float(intent.get("thruster_visual_timer", 0.16)))
+	velocity = Vector2(intent.get("velocity", velocity))
+	if bool(intent.get("clear_reverse_ready", false)):
 		_clear_brake_reverse_ready()
 
 
@@ -924,48 +865,27 @@ func module_clamp_pin_ratio() -> float:
 
 
 func begin_action(action_kind: String) -> Dictionary:
-	if not active or action_cooldown > 0.0 or health <= 0:
-		return {}
-	if melee_stagger_timer > 0.0:
-		return {}
-
-	var cooldown_mult := 1.45 if overheated and role == "hero" else 1.0
-
-	if action_kind == STATE_ARMOR:
-		current_state = STATE_ARMOR
-		state_timer = float(stats.get("armor_duration", 0.48))
-		action_cooldown = float(stats.get("armor_cooldown", 0.34)) * cooldown_mult
-		combat_event.emit("%s armored" % unit_name)
-		return {
-			"owner_id": owner_id,
-			"state": STATE_ARMOR,
-			"damage": int(stats.get("armor_damage", 7)),
-			"range": float(stats.get("armor_range", 0.24)),
-			"lane_range": float(stats.get("armor_lane_range", 0.2)),
-			"knock": float(stats.get("armor_knock", 0.05)),
-			"damage_type": String(stats.get("damage_type", "blunt")),
-			"material_class": String(stats.get("material_class", "weapon")),
-			"recoil": float(stats.get("recoil", 0.05)),
-			"source_name": unit_name,
-		}
-
-	var attack_state := STATE_ACTIVE if action_kind == STATE_ACTIVE else STATE_NORMAL
-	current_state = attack_state
-	state_timer = float(stats.get("%s_duration" % attack_state, 0.22))
-	action_cooldown = float(stats.get("%s_cooldown" % attack_state, 0.38)) * cooldown_mult
-
-	return {
+	var intent := _action_model().basic_action_intent({
+		"active": active,
+		"health": health,
+		"melee_stagger_timer": melee_stagger_timer,
+		"action_cooldown": action_cooldown,
+		"stats": stats,
+		"role": role,
+		"overheated": overheated,
+		"action_kind": action_kind,
 		"owner_id": owner_id,
-		"state": attack_state,
-		"damage": int(stats.get("%s_damage" % attack_state, 12)),
-		"range": float(stats.get("%s_range" % attack_state, 0.48)),
-		"lane_range": float(stats.get("%s_lane_range" % attack_state, 0.28)),
-		"knock": float(stats.get("%s_knock" % attack_state, 0.12)),
-		"damage_type": String(stats.get("damage_type", "blunt")),
-		"material_class": String(stats.get("material_class", "weapon")),
-		"recoil": float(stats.get("recoil", 0.06)),
 		"source_name": unit_name,
-	}
+	})
+	if not bool(intent.get("allowed", false)):
+		return {}
+	current_state = String(intent.get("current_state", current_state))
+	state_timer = float(intent.get("state_timer", state_timer))
+	action_cooldown = float(intent.get("action_cooldown", action_cooldown))
+	var message := String(intent.get("message", ""))
+	if message != "":
+		combat_event.emit(message)
+	return Dictionary(intent.get("event", {}))
 
 
 func begin_module_action(action_kind: String, module_key: String = "", part_index: int = -1, allow_same_frame_pair: bool = false) -> Dictionary:
@@ -1193,25 +1113,29 @@ func _runtime_action_motion_budget(target_nodes: Array, module_part: Dictionary,
 
 
 func _apply_whole_body_action_state(state_key: String, duration: float) -> void:
+	var intent := _action_model().whole_body_action_state_intent(state_key, duration)
+	current_state = String(intent.get("current_state", current_state))
 	if state_key in [STATE_ARMOR, STATE_ACTIVE]:
-		current_state = state_key
-		state_timer = maxf(state_timer, maxf(0.08, duration))
+		state_timer = maxf(state_timer, float(intent.get("state_timer", state_timer)))
 	else:
-		current_state = STATE_NORMAL
-		state_timer = 0.0
+		state_timer = float(intent.get("state_timer", 0.0))
 
 
 func begin_runtime_module_action(action_kind: String, binding: Dictionary, input_direction: Vector2 = Vector2.ZERO) -> Dictionary:
-	if not _has_runtime_topology() or not active or health <= 0:
-		return {}
-	if melee_stagger_timer > 0.0:
-		set_meta("last_module_gate_reason", "stagger")
-		return {}
-	if action_cooldown > 0.0:
-		set_meta("last_module_gate_reason", "cooldown")
+	var runtime_gate := _action_model().runtime_module_gate_intent({
+		"has_runtime_topology": _has_runtime_topology(),
+		"active": active,
+		"health": health,
+		"melee_stagger_timer": melee_stagger_timer,
+		"action_cooldown": action_cooldown,
+	})
+	if not bool(runtime_gate.get("allowed", false)):
+		set_meta("last_module_gate_reason", String(runtime_gate.get("reason", "inactive")))
 		return {}
 	var module_part: Dictionary = binding.get("module_part", {}) if binding.get("module_part", {}) is Dictionary else {}
 	var profile := String(binding.get("module_action_profile", module_part.get("module_action_profile", "")))
+	if profile == BOOT_ACTION_DRIVER_PROFILE:
+		return _begin_runtime_boot_action_driver(action_kind, binding, input_direction)
 	if profile == "blunt_gauntlet_extend_swing":
 		return _begin_runtime_gauntlet_extend_swing_action(action_kind, binding, input_direction)
 	if profile in ["blunt_shield_guard_bash", "blunt_hammer_windup_slam"]:
@@ -1230,11 +1154,24 @@ func begin_runtime_module_action(action_kind: String, binding: Dictionary, input
 	var attack_key := clampi(int(binding.get("attack_key", 1)), 1, 6)
 	var state_key := action_kind if action_kind in [STATE_NORMAL, STATE_ARMOR, STATE_ACTIVE] else STATE_NORMAL
 	var fallback_duration := 0.62
-	var motion_budget := _runtime_action_motion_budget(target_nodes, module_part, float(module_part.get("swing_arc_degrees", 180.0)), 0.0, fallback_duration, state_key, binding)
-	var duration := maxf(0.12, float(motion_budget.get("duration", fallback_duration)))
-	var cooldown := maxf(0.12, float(module_part.get("cooldown", binding.get("cooldown", duration * 0.72))))
-	var startup_ratio := clampf(float(module_part.get("startup_ratio", module_part.get("two_link_straight_phase", TWO_LINK_DEFAULT_STARTUP_RATIO))), 0.05, 0.95)
-	var joint_actuation_speed := maxf(0.0, float(motion_budget.get("contact_speed", 0.0)))
+	var authored_duration := maxf(0.12, float(module_part.get("runtime_action_duration", module_part.get("duration", fallback_duration))))
+	var swing_arc_degrees := float(module_part.get("swing_arc_degrees", 180.0))
+	var motion_budget := _runtime_action_motion_budget(target_nodes, module_part, swing_arc_degrees, 0.0, authored_duration, state_key, binding)
+	var timing := _action_model().two_link_timing_intent({
+		"module_part": module_part,
+		"binding": binding,
+		"motion_budget": motion_budget,
+		"fallback_duration": fallback_duration,
+		"swing_arc_degrees": swing_arc_degrees,
+		"default_startup_ratio": TWO_LINK_DEFAULT_STARTUP_RATIO,
+	})
+	var duration := float(timing.get("duration", authored_duration))
+	var cooldown := float(timing.get("cooldown", maxf(0.12, duration * 0.72)))
+	var startup_ratio := float(timing.get("startup_ratio", TWO_LINK_DEFAULT_STARTUP_RATIO))
+	var budget_duration := float(timing.get("budget_duration", duration))
+	var contact_distance := float(timing.get("contact_distance", 0.0))
+	var effective_contact_distance := float(timing.get("runtime_contact_distance", contact_distance * startup_ratio))
+	var joint_actuation_speed := float(timing.get("joint_actuation_speed", 0.0))
 	var soul_echo := _runtime_apply_soul_echo_to_cooldown(attack_key, cooldown)
 	cooldown = float(soul_echo.get("cooldown", cooldown))
 	var soul_echo_refund_applied := bool(soul_echo.get("applied", false))
@@ -1262,6 +1199,9 @@ func begin_runtime_module_action(action_kind: String, binding: Dictionary, input
 		"recovery_ratio": maxf(0.0, 1.0 - startup_ratio),
 		"joint_actuation_speed": joint_actuation_speed,
 		"runtime_contact_speed": joint_actuation_speed,
+		"runtime_contact_distance": effective_contact_distance,
+		"motion_budget_contact_distance": contact_distance,
+		"motion_budget_duration": budget_duration,
 		"driven_mass": float(motion_budget.get("driven_mass", 0.0)),
 		"soul_echo_refund_applied": soul_echo_refund_applied,
 	}
@@ -1283,11 +1223,14 @@ func begin_runtime_module_action(action_kind: String, binding: Dictionary, input
 		"module_action_profile": profile,
 		"runtime_binding": true,
 		"runtime_target_nodes": target_nodes.duplicate(true),
-		"muscle_node": attack_key - 1,
-		"joint_actuation_speed": joint_actuation_speed,
-		"runtime_contact_speed": joint_actuation_speed,
+	"muscle_node": attack_key - 1,
+	"joint_actuation_speed": joint_actuation_speed,
+	"runtime_contact_speed": joint_actuation_speed,
+	"runtime_contact_distance": effective_contact_distance,
+	"motion_budget_contact_distance": contact_distance,
+	"motion_budget_duration": budget_duration,
 		"runtime_action_duration": duration,
-		"runtime_action_base_duration": fallback_duration,
+		"runtime_action_base_duration": duration,
 		"startup_ratio": startup_ratio,
 		"recovery_ratio": maxf(0.0, 1.0 - startup_ratio),
 		"soul_echo_refund_applied": soul_echo_refund_applied,
@@ -1834,6 +1777,173 @@ func _begin_runtime_gauntlet_extend_swing_action(action_kind: String, binding: D
 	}
 
 
+func _begin_runtime_boot_action_driver(action_kind: String, binding: Dictionary, input_direction: Vector2 = Vector2.ZERO) -> Dictionary:
+	var module_part: Dictionary = binding.get("module_part", {}) if binding.get("module_part", {}) is Dictionary else {}
+	var target_nodes: Array = _runtime_node_array(Array(binding.get("target_nodes", [])))
+	if target_nodes.size() != 2:
+		set_meta("last_module_gate_reason", "Boot Driver needs rotating limb + telescopic weapon")
+		return {}
+	var rotating_node := int(target_nodes[0])
+	var weapon_node := int(target_nodes[1])
+	var rotating_source := _runtime_segment_source_by_node(rotating_node)
+	var weapon_source := _runtime_segment_source_by_node(weapon_node)
+	if rotating_source.is_empty() or weapon_source.is_empty():
+		set_meta("last_module_gate_reason", "Boot Driver segment missing")
+		return {}
+	var extension_m := maxf(0.0, float(binding.get("boot_driver_extension_m", module_part.get("boot_driver_extension_m", module_part.get("module_extension_m", 0.0)))))
+	if extension_m <= 0.0:
+		extension_m = maxf(0.0, float(weapon_source.get("joint_extension_m", 0.0)))
+	if extension_m <= 0.0:
+		set_meta("last_module_gate_reason", "Boot Driver weapon needs extension")
+		return {}
+	var attack_key := clampi(int(binding.get("attack_key", 1)), 1, 6)
+	var state_key := action_kind if action_kind in [STATE_NORMAL, STATE_ARMOR, STATE_ACTIVE] else STATE_NORMAL
+	var startup_ratio := clampf(float(module_part.get("startup_ratio", 1.0 / 3.0)), 0.05, 0.95)
+	var recovery_ratio := clampf(float(module_part.get("recovery_ratio", 1.0 - startup_ratio)), 0.05, 0.95)
+	var authored_duration := maxf(0.18, float(module_part.get("duration", module_part.get("runtime_action_duration", 0.72))))
+	var motion_budget := _runtime_action_motion_budget(target_nodes, module_part, 0.0, extension_m, authored_duration, state_key, binding)
+	var duration := maxf(0.18, float(motion_budget.get("duration", authored_duration)))
+	var cooldown := maxf(0.12, float(module_part.get("cooldown", binding.get("cooldown", duration * 0.72))))
+	var soul_echo := _runtime_apply_soul_echo_to_cooldown(attack_key, cooldown)
+	cooldown = float(soul_echo.get("cooldown", cooldown))
+	var soul_echo_refund_applied := bool(soul_echo.get("applied", false))
+	var rotating_a := _runtime_local_vector(rotating_source.get("a_local", Vector2.ZERO))
+	var rotating_b := _runtime_local_vector(rotating_source.get("b_local", rotating_a + Vector2.RIGHT))
+	var base_dir := (rotating_b - rotating_a).normalized()
+	if base_dir.length() <= 0.001:
+		base_dir = Vector2.RIGHT
+	var requested_world_dir := input_direction.normalized() if input_direction.length() > 0.01 else _forward_vector()
+	var requested_local_dir := Vector2(requested_world_dir.dot(_forward_vector()), requested_world_dir.dot(_side_vector()))
+	if requested_local_dir.length() <= 0.001:
+		requested_local_dir = base_dir
+	requested_local_dir = requested_local_dir.normalized()
+	var initial_steer_angle := wrapf(requested_local_dir.angle() - base_dir.angle(), -PI, PI)
+	var contact_speed := maxf(float(motion_budget.get("contact_speed", 0.0)), extension_m / maxf(0.001, duration * startup_ratio))
+	if state_key == STATE_ARMOR:
+		contact_speed *= 1.08
+	elif state_key == STATE_ACTIVE:
+		contact_speed *= 1.14
+	_apply_whole_body_action_state(state_key, duration)
+	action_cooldown = cooldown
+	active_part_index = attack_key - 1
+	active_part_state = state_key
+	active_part_direction = requested_world_dir
+	active_part_duration = duration
+	active_part_timer = duration
+	active_module_key = "runtime:%d:%s" % [attack_key, BOOT_ACTION_DRIVER_PROFILE]
+	active_module_part_index = attack_key - 1
+	active_module_started_at = Time.get_ticks_msec() * 0.001
+	set_meta("active_module_key", active_module_key)
+	set_meta("active_module_part_index", active_module_part_index)
+	var action := {
+		"profile": BOOT_ACTION_DRIVER_PROFILE,
+		"target_nodes": target_nodes.duplicate(true),
+		"attack_key": attack_key,
+		"timer": duration,
+		"duration": duration,
+		"state": state_key,
+		"binding": binding.duplicate(true),
+		"startup_ratio": startup_ratio,
+		"recovery_ratio": recovery_ratio,
+		"held_activation": true,
+		"hold_released": false,
+		"hold_action_name": String(binding.get("action_name", "")),
+		"boot_driver_rotating_node": rotating_node,
+		"boot_driver_weapon_node": weapon_node,
+		"boot_driver_extension_m": extension_m,
+		"boot_driver_base_angle": base_dir.angle(),
+		"boot_driver_steer_angle": initial_steer_angle,
+		"boot_driver_turn_rate": maxf(0.0, float(module_part.get("manual_turn_rate", binding.get("manual_turn_rate", 3.4)))),
+		"joint_actuation_speed": contact_speed,
+		"runtime_contact_speed": contact_speed,
+		"runtime_contact_distance": extension_m,
+		"driven_mass": float(motion_budget.get("driven_mass", 0.0)),
+		"soul_echo_refund_applied": soul_echo_refund_applied,
+	}
+	runtime_module_actions.append(action)
+	_invalidate_runtime_geometry_cache()
+	_refresh_visuals()
+	var base_damage := float(module_part.get("%s_damage" % state_key, module_part.get("normal_damage", module_part.get("damage", 10.0))))
+	return {
+		"owner_id": owner_id,
+		"state": state_key,
+		"damage": int(roundf(base_damage)),
+		"range": float(module_part.get("range", maxf(0.24, extension_m * 0.16 + 0.18))),
+		"lane_range": float(module_part.get("lane_range", 0.24)),
+		"knock": float(module_part.get("knock", 0.14)),
+		"damage_type": String(module_part.get("damage_type", "blunt")),
+		"material_class": String(module_part.get("material_class", "weapon")),
+		"recoil": float(module_part.get("recoil", 0.04)),
+		"source_name": unit_name,
+		"attack_key": attack_key,
+		"module_action_profile": BOOT_ACTION_DRIVER_PROFILE,
+		"runtime_binding": true,
+		"runtime_melee_contact": true,
+		"runtime_target_nodes": target_nodes.duplicate(true),
+		"source_node_index": weapon_node,
+		"muscle_node": weapon_node,
+		"boot_driver_rotating_node": rotating_node,
+		"boot_driver_weapon_node": weapon_node,
+		"boot_driver_extension_m": extension_m,
+		"joint_actuation_speed": contact_speed,
+		"runtime_contact_speed": contact_speed,
+		"runtime_contact_distance": extension_m,
+		"runtime_action_duration": duration,
+		"runtime_action_base_duration": authored_duration,
+		"startup_ratio": startup_ratio,
+		"recovery_ratio": recovery_ratio,
+		"projectile": false,
+		"projectile_only": false,
+		"soul_echo_refund_applied": soul_echo_refund_applied,
+	}
+
+
+func update_boot_action_driver_hold(attack_action_name: String, turn_input: float, delta: float) -> void:
+	if runtime_module_actions.is_empty():
+		return
+	for i in range(runtime_module_actions.size()):
+		if not (runtime_module_actions[i] is Dictionary):
+			continue
+		var action: Dictionary = runtime_module_actions[i]
+		if String(action.get("profile", "")) != BOOT_ACTION_DRIVER_PROFILE:
+			continue
+		if bool(action.get("hold_released", false)):
+			continue
+		var stored_name := String(action.get("hold_action_name", ""))
+		if stored_name != "" and attack_action_name != "" and stored_name != attack_action_name:
+			continue
+		var turn_rate := maxf(0.0, float(action.get("boot_driver_turn_rate", 3.4)))
+		var steer_angle := float(action.get("boot_driver_steer_angle", 0.0)) + clampf(turn_input, -1.0, 1.0) * turn_rate * maxf(0.0, delta)
+		action["boot_driver_steer_angle"] = wrapf(steer_angle, -PI, PI)
+		action["boot_driver_turn_input"] = clampf(turn_input, -1.0, 1.0)
+		runtime_module_actions[i] = action
+		_invalidate_runtime_geometry_cache()
+		_refresh_visuals()
+		return
+
+
+func release_boot_action_driver_hold(attack_action_name: String) -> void:
+	if runtime_module_actions.is_empty():
+		return
+	for i in range(runtime_module_actions.size()):
+		if not (runtime_module_actions[i] is Dictionary):
+			continue
+		var action: Dictionary = runtime_module_actions[i]
+		if String(action.get("profile", "")) != BOOT_ACTION_DRIVER_PROFILE:
+			continue
+		var stored_name := String(action.get("hold_action_name", ""))
+		if stored_name != "" and attack_action_name != "" and stored_name != attack_action_name:
+			continue
+		action["hold_released"] = true
+		var duration := maxf(0.001, float(action.get("duration", 0.72)))
+		var recovery_timer := duration * (1.0 - _runtime_action_startup_ratio(action))
+		action["timer"] = minf(float(action.get("timer", duration)), recovery_timer)
+		runtime_module_actions[i] = action
+		_invalidate_runtime_geometry_cache()
+		_refresh_visuals()
+		return
+
+
 func _module_variant_input_direction() -> Vector2:
 	var raw: Variant = get_meta("gameplay_move_input_vector", Vector2.ZERO)
 	if raw is Vector2 and raw.length() > 0.18:
@@ -1855,9 +1965,8 @@ func _module_variant_clamped_retarget(base_direction: Vector2, desired_direction
 func _tick_module_variant_action(action: Dictionary, _delta: float) -> Dictionary:
 	if String(action.get("module_variant_key", "")) != "feint_thrust":
 		return action
-	var phase := _runtime_action_phase(action)
-	var startup_ratio := _runtime_action_startup_ratio(action)
-	if phase > startup_ratio:
+	var variant_pose := _runtime_action_variant_pose_intent(action)
+	if not bool(variant_pose.get("feint_retarget_allowed", false)):
 		return action
 	var desired := _module_variant_input_direction()
 	if desired.length() <= 0.01:
@@ -1912,9 +2021,22 @@ func _tick_runtime_module_actions(delta: float) -> void:
 			runtime_module_actions.remove_at(i)
 			continue
 		var action: Dictionary = runtime_module_actions[i]
-		action["timer"] = maxf(0.0, float(action.get("timer", 0.0)) - delta)
+		if String(action.get("profile", "")) == BOOT_ACTION_DRIVER_PROFILE and bool(action.get("held_activation", false)) and not bool(action.get("hold_released", false)):
+			var duration := maxf(0.001, float(action.get("duration", 0.72)))
+			var startup_timer_floor := duration * (1.0 - _runtime_action_startup_ratio(action))
+			var next_timer := maxf(startup_timer_floor, float(action.get("timer", duration)) - delta)
+			action["timer"] = next_timer
+			runtime_module_actions[i] = action
+			if absf(next_timer - startup_timer_floor) <= 0.0001:
+				active_part_timer = maxf(active_part_timer, startup_timer_floor)
+			_invalidate_runtime_geometry_cache()
+			_refresh_visuals()
+			continue
+		var tick_intent := _action_model().tick_runtime_action_intent(action, delta)
 		action = _tick_module_variant_action(action, delta)
-		if float(action["timer"]) <= 0.0:
+		var post_tick_action := Dictionary(tick_intent.get("action", action))
+		action["timer"] = float(post_tick_action.get("timer", action.get("timer", 0.0)))
+		if bool(tick_intent.get("finished", false)) or float(action.get("timer", 0.0)) <= 0.0:
 			restore_runtime_module_entry_pose_for_nodes(Array(action.get("target_nodes", [])))
 			_commit_combo_balance_window(action)
 			_commit_soul_echo_window(action)
@@ -1935,11 +2057,9 @@ func force_runtime_recovery_from_collision(node_index: int) -> void:
 		var target_nodes: Array = Array(action.get("target_nodes", []))
 		if not _runtime_node_array_has(target_nodes, node_index):
 			continue
-		var startup_ratio := clampf(float(action.get("startup_ratio", TWO_LINK_DEFAULT_STARTUP_RATIO)), 0.05, 0.95)
-		if _runtime_action_phase(action) < startup_ratio:
-			var duration := maxf(0.001, float(action.get("duration", 0.0)))
-			action["timer"] = minf(float(action.get("timer", duration)), duration * (1.0 - startup_ratio))
-			runtime_module_actions[i] = action
+		var recovery_intent := _action_model().force_runtime_recovery_intent(action, TWO_LINK_DEFAULT_STARTUP_RATIO, true)
+		if bool(recovery_intent.get("changed", false)):
+			runtime_module_actions[i] = Dictionary(recovery_intent.get("action", action))
 
 
 func force_runtime_recovery_from_gpu(node_index: int) -> void:
@@ -1952,10 +2072,9 @@ func force_runtime_recovery_from_gpu(node_index: int) -> void:
 		var target_nodes: Array = Array(action.get("target_nodes", []))
 		if not _runtime_node_array_has(target_nodes, node_index):
 			continue
-		var startup_ratio := clampf(float(action.get("startup_ratio", TWO_LINK_DEFAULT_STARTUP_RATIO)), 0.05, 0.95)
-		var duration := maxf(0.001, float(action.get("duration", 0.0)))
-		action["timer"] = minf(float(action.get("timer", duration)), duration * (1.0 - startup_ratio))
-		runtime_module_actions[i] = action
+		var recovery_intent := _action_model().force_runtime_recovery_intent(action, TWO_LINK_DEFAULT_STARTUP_RATIO, false)
+		if bool(recovery_intent.get("changed", false)):
+			runtime_module_actions[i] = Dictionary(recovery_intent.get("action", action))
 
 
 func request_collision_auto_brake() -> void:
@@ -1985,39 +2104,35 @@ func _tick_collision_auto_brake(delta: float) -> void:
 
 
 func _module_action_gate(module_key: String, part_index: int, allow_same_frame_pair: bool) -> Dictionary:
-	if not active or health <= 0:
-		return {"allowed": false, "reason": "inactive"}
-	if melee_stagger_timer > 0.0:
-		return {"allowed": false, "reason": "stagger"}
-	if module_key == "":
-		return {"allowed": action_cooldown <= 0.0, "reason": "cooldown"}
 	var now := Time.get_ticks_msec() * 0.001
-	if active_module_key == module_key:
-		var paired_instant := allow_same_frame_pair and now - active_module_started_at <= 0.055
-		if not paired_instant and not _module_curve_fully_decelerated(active_module_part_index):
-			return {"allowed": false, "reason": "same_module_decelerating", "previous_key": active_module_key}
-		if action_cooldown > 0.0 and not paired_instant:
-			return {"allowed": false, "reason": "same_module_cooldown", "previous_key": active_module_key}
-		return {"allowed": true, "reason": "same_module_ready", "previous_key": active_module_key}
-	if action_cooldown <= 0.0:
-		return {"allowed": true, "reason": "free", "previous_key": active_module_key}
+	var same_module_decelerated := true
+	if active_module_key == module_key and module_key != "":
+		same_module_decelerated = _module_curve_fully_decelerated(active_module_part_index)
+	var peak_cancel_ready := false
+	var phase := 1.0
+	var power := 0.0
 	if active_module_key != "" and active_module_part_index >= 0:
 		_ensure_limb_index(active_module_part_index)
-		var phase := _limb_drive_phase(active_module_part_index)
-		var power := _limb_drive_power(active_module_part_index)
-		var in_peak_cancel := float(limb_drive_timers[active_module_part_index]) > 0.0 and phase >= MODULE_CANCEL_PHASE_START and phase <= MODULE_CANCEL_PHASE_END and power >= MODULE_CANCEL_MIN_POWER
-		if in_peak_cancel:
-			set_meta("module_cancel_ready", true)
-			return {
-				"allowed": true,
-				"cancel": true,
-				"reason": "peak_cancel",
-				"previous_key": active_module_key,
-				"phase": phase,
-				"power": power,
-			}
-	set_meta("module_cancel_ready", false)
-	return {"allowed": false, "reason": "cooldown", "previous_key": active_module_key}
+		phase = _limb_drive_phase(active_module_part_index)
+		power = _limb_drive_power(active_module_part_index)
+		peak_cancel_ready = float(limb_drive_timers[active_module_part_index]) > 0.0 and phase >= MODULE_CANCEL_PHASE_START and phase <= MODULE_CANCEL_PHASE_END and power >= MODULE_CANCEL_MIN_POWER
+	var intent := _action_model().module_action_gate_intent({
+		"active": active,
+		"health": health,
+		"melee_stagger_timer": melee_stagger_timer,
+		"module_key": module_key,
+		"action_cooldown": action_cooldown,
+		"active_module_key": active_module_key,
+		"active_module_started_at": active_module_started_at,
+		"allow_same_frame_pair": allow_same_frame_pair,
+		"now": now,
+		"same_module_decelerated": same_module_decelerated,
+		"peak_cancel_ready": peak_cancel_ready,
+		"phase": phase,
+		"power": power,
+	})
+	set_meta("module_cancel_ready", bool(intent.get("cancel", false)))
+	return intent
 
 
 func _module_curve_fully_decelerated(part_index: int) -> bool:
@@ -2567,51 +2682,29 @@ func _runtime_cached_part_colliders() -> Array:
 	for raw_segment in _runtime_topology_world_segments(true, true):
 		if not (raw_segment is Dictionary):
 			continue
-		var segment_dict: Dictionary = Dictionary(raw_segment).duplicate(true)
-		var part_kind := String(segment_dict.get("part_kind", "limb_muscle"))
-		var node_index := int(segment_dict.get("node_index", segment_dict.get("part_index", -999999)))
-		var independent_damage := part_kind == "torso" or active_nodes.has(node_index)
-		var part_name := String(segment_dict.get("name", part_kind.to_upper()))
-		segment_dict["runtime_topology"] = true
-		segment_dict["independent_damage"] = independent_damage
-		if not independent_damage:
-			segment_dict["damage_proxy"] = "torso"
-			segment_dict["damage_proxy_torso_unit_index"] = int(segment_dict.get("torso_unit_index", 0))
-		var runtime_polygon := _runtime_segment_polygon_world(segment_dict)
-		if runtime_polygon.size() >= 3:
-			segment_dict["shape"] = "polygon"
-			segment_dict["polygon"] = runtime_polygon
-			segment_dict["radius"] = 0.0
-		else:
-			segment_dict["radius"] = maxf(0.006, float(segment_dict.get("radius", 0.04)) * BODY_COLLIDER_EXPAND)
-		segment_dict["part_index"] = -1 if part_kind == "torso" else _runtime_attack_index_for_segment(segment_dict)
-		segment_dict["name"] = part_name
-		var contact_group := _runtime_contact_group_for_segment(segment_dict)
-		var contact_fields := _contact_fields_for_segment(contact_group, part_kind)
-		if part_kind == "torso":
-			contact_fields = {
-				"damage_type": "blunt",
-				"material_class": String(segment_dict.get("material_class", "body")),
-				"contact_damage": 0.4,
-				"contact_damage_mult": 0.08,
-				"damage_coeff": 1.0,
-				"break_coeff": 0.5,
-				"contact_shape_kind": "rounded_torso",
-			}
-			segment_dict["torso_unit_index"] = int(segment_dict.get("node_index", 0))
-		for key in contact_fields.keys():
-			segment_dict[key] = contact_fields[key]
-		if not segment_dict.has("contact_shape_kind"):
-			segment_dict["contact_shape_kind"] = "rounded_terminal" if part_kind == "terminal" else ("rounded_panel" if part_kind == "barrier_tile" else "rounded_limb")
-		if not segment_dict.has("stiffness_momentum"):
-			segment_dict["stiffness_momentum"] = _default_stiffness_for_segment(segment_dict, part_kind)
-		if not segment_dict.has("path_stiffness_momentum"):
-			segment_dict["path_stiffness_momentum"] = _default_path_stiffness_for_segment(segment_dict, part_kind)
+		var segment_dict: Dictionary = _runtime_collider_payload_for_segment(Dictionary(raw_segment), active_nodes)
 		colliders.append(_runtime_collider_with_bounds(segment_dict))
 	runtime_geometry_cache_colliders_key = cache_key
 	runtime_geometry_cache_colliders = colliders
 	runtime_geometry_collider_builds += 1
 	return runtime_geometry_cache_colliders
+
+
+func _runtime_collider_payload_for_segment(segment: Dictionary, active_nodes: Dictionary) -> Dictionary:
+	var part_kind := String(segment.get("part_kind", "limb_muscle"))
+	var runtime_polygon := _runtime_segment_polygon_world(segment)
+	var contact_group := _runtime_contact_group_for_segment(segment)
+	var contact_fields := _contact_fields_for_segment(contact_group, part_kind)
+	return _runtime_collider_builder_service().runtime_segment_collider_payload({
+		"segment": segment,
+		"active_nodes": active_nodes,
+		"runtime_polygon": runtime_polygon,
+		"body_collider_expand": BODY_COLLIDER_EXPAND,
+		"attack_index": _runtime_attack_index_for_segment(segment),
+		"contact_fields": contact_fields,
+		"default_stiffness": _default_stiffness_for_segment(segment, part_kind),
+		"default_path_stiffness": _default_path_stiffness_for_segment(segment, part_kind),
+	})
 
 
 func _runtime_active_collider_node_set() -> Dictionary:
@@ -3189,12 +3282,12 @@ func _runtime_actions_cache_signature() -> String:
 		var action: Dictionary = raw_action
 		parts.append("%s:%d:%d:%d:%d:%d:%d" % [
 			String(action.get("profile", "")),
-			int(action.get("variant", STATE_NORMAL)),
-			int(action.get("phase", 0)),
+			hash(String(action.get("state", STATE_NORMAL))),
+			int(round(float(action.get("boot_driver_steer_angle", 0.0)) * 10000.0)),
 			int(action.get("node_index", -1)),
 			int(round(float(action.get("timer", 0.0)) * 1000.0)),
 			int(round(float(action.get("duration", 0.0)) * 1000.0)),
-			int(round(float(action.get("phase_timer", 0.0)) * 1000.0)),
+			1 if bool(action.get("hold_released", false)) else 0,
 		])
 	return "|".join(parts)
 
@@ -3231,41 +3324,7 @@ func _runtime_visual_redraw_signature() -> String:
 
 
 func _runtime_collider_with_bounds(collider: Dictionary) -> Dictionary:
-	var result: Dictionary = collider.duplicate(true)
-	var raw_a = result.get("a", Vector2.ZERO)
-	var raw_b = result.get("b", Vector2.ZERO)
-	var a_for_center: Vector2 = raw_a if raw_a is Vector2 else Vector2.ZERO
-	var b_for_center: Vector2 = raw_b if raw_b is Vector2 else a_for_center
-	var raw_center = result.get("center", (a_for_center + b_for_center) * 0.5)
-	var center: Vector2 = raw_center if raw_center is Vector2 else (a_for_center + b_for_center) * 0.5
-	var min_point := center
-	var max_point := center
-	var radius := 0.0
-	var polygon := Array(result.get("polygon", []))
-	if polygon.size() > 0:
-		min_point = polygon[0]
-		max_point = polygon[0]
-		for raw_point in polygon:
-			var point: Vector2 = raw_point
-			min_point.x = minf(min_point.x, point.x)
-			min_point.y = minf(min_point.y, point.y)
-			max_point.x = maxf(max_point.x, point.x)
-			max_point.y = maxf(max_point.y, point.y)
-			radius = maxf(radius, point.distance_to(center))
-	else:
-		var a: Vector2 = raw_a if raw_a is Vector2 else center
-		var b: Vector2 = raw_b if raw_b is Vector2 else center
-		var shape_radius := float(result.get("radius", 0.0))
-		min_point = Vector2(minf(a.x, b.x), minf(a.y, b.y)) - Vector2.ONE * shape_radius
-		max_point = Vector2(maxf(a.x, b.x), maxf(a.y, b.y)) + Vector2.ONE * shape_radius
-		radius = maxf(a.distance_to(center), b.distance_to(center)) + shape_radius
-	if radius <= 0.0:
-		radius = maxf((max_point.x - min_point.x) * 0.5, (max_point.y - min_point.y) * 0.5)
-	result["center"] = center
-	result["bounding_radius"] = radius
-	result["aabb_min"] = min_point
-	result["aabb_max"] = max_point
-	return result
+	return _runtime_collider_geometry_service().collider_with_bounds(collider)
 
 
 func _runtime_entry_pose_from_segment(segment: Dictionary) -> Dictionary:
@@ -3679,12 +3738,64 @@ func runtime_group_for_node(node_index: int) -> Dictionary:
 
 
 func _runtime_action_phase(action: Dictionary) -> float:
-	var duration := maxf(0.001, float(action.get("duration", 0.62)))
-	return clampf(1.0 - float(action.get("timer", 0.0)) / duration, 0.0, 1.0)
+	return _action_model().runtime_action_phase(action)
 
 
 func _runtime_action_startup_ratio(action: Dictionary) -> float:
-	return clampf(float(action.get("startup_ratio", TWO_LINK_DEFAULT_STARTUP_RATIO)), 0.05, 0.95)
+	return _action_model().runtime_action_startup_ratio(action, TWO_LINK_DEFAULT_STARTUP_RATIO)
+
+
+func _runtime_action_phase_label(action: Dictionary) -> String:
+	return _action_model().runtime_action_phase_label(action, TWO_LINK_DEFAULT_STARTUP_RATIO)
+
+
+func _runtime_action_curve_intent(action: Dictionary) -> Dictionary:
+	return _action_model().runtime_action_curve_intent(action, TWO_LINK_DEFAULT_STARTUP_RATIO)
+
+
+func _runtime_action_variant_pose_intent(action: Dictionary) -> Dictionary:
+	return _action_model().runtime_action_variant_pose_intent(action, TWO_LINK_DEFAULT_STARTUP_RATIO)
+
+
+func runtime_action_telemetry_snapshot() -> Dictionary:
+	return _action_model().runtime_action_telemetry(runtime_module_actions, {
+		"active_module_key": active_module_key,
+		"active_module_part_index": active_module_part_index,
+		"active_part_state": active_part_state,
+		"active_part_timer": active_part_timer,
+		"active_part_duration": active_part_duration,
+		"gate_diagnostics": _runtime_gate_diagnostics_snapshot(),
+	}, TWO_LINK_DEFAULT_STARTUP_RATIO)
+
+
+func _runtime_gate_diagnostics_snapshot() -> Dictionary:
+	var part_index := active_module_part_index
+	var cancel_phase := 1.0
+	var cancel_power := 0.0
+	var same_module_decelerated := true
+	var cancel_ready := false
+	if part_index >= 0 and part_index < limb_drive_timers.size() and part_index < limb_drive_durations.size():
+		var drive_timer := maxf(0.0, float(limb_drive_timers[part_index]))
+		var drive_duration := maxf(0.001, float(limb_drive_durations[part_index]))
+		cancel_phase = clampf(1.0 - drive_timer / drive_duration, 0.0, 1.0) if drive_timer > 0.0 else 1.0
+		cancel_power = sin(cancel_phase * PI) if drive_timer > 0.0 else 0.0
+		if part_index < limb_swing_velocities.size() and part_index < limb_linear_velocities.size():
+			var linear_velocity: Vector2 = limb_linear_velocities[part_index]
+			same_module_decelerated = drive_timer <= 0.0 and absf(float(limb_swing_velocities[part_index])) <= MODULE_FULL_DECEL_VELOCITY and linear_velocity.length() <= MODULE_FULL_DECEL_LINEAR_VELOCITY
+		cancel_ready = drive_timer > 0.0 and cancel_phase >= MODULE_CANCEL_PHASE_START and cancel_phase <= MODULE_CANCEL_PHASE_END and cancel_power >= MODULE_CANCEL_MIN_POWER
+	return _action_model().runtime_gate_diagnostics({
+		"active": active,
+		"health": health,
+		"action_cooldown": action_cooldown,
+		"melee_stagger_timer": melee_stagger_timer,
+		"active_module_key": active_module_key,
+		"active_module_part_index": active_module_part_index,
+		"same_module_decelerated": same_module_decelerated,
+		"cancel_ready": cancel_ready,
+		"cancel_phase": cancel_phase,
+		"cancel_power": cancel_power,
+		"last_gate_reason": String(get_meta("last_module_gate_reason", "")),
+	})
 
 
 func _directed_lerp_angle(from_angle: float, to_angle: float, t: float, turn_sign: float) -> float:
@@ -3724,19 +3835,17 @@ func _runtime_two_link_forward_snap_local_overrides(action: Dictionary) -> Dicti
 	var base_second_dir := (second_b - second_a).normalized()
 	if base_second_dir.length() <= 0.001:
 		base_second_dir = Vector2.RIGHT
-	var phase := _runtime_action_phase(action)
-	var startup_ratio := _runtime_action_startup_ratio(action)
+	var curve := _runtime_action_curve_intent(action)
 	var forward_angle := 0.0
 	var first_angle := base_first_dir.angle()
 	var second_angle := base_second_dir.angle()
 	var startup_turn_sign := _two_link_turn_sign_from_root(first_a, base_first_dir)
-	if phase < startup_ratio:
-		var t := sin((phase / startup_ratio) * PI * 0.5)
+	if bool(curve.get("in_startup", false)):
+		var t := float(curve.get("startup_t", 0.0))
 		first_angle = _directed_lerp_angle(base_first_dir.angle(), forward_angle, t, startup_turn_sign)
 		second_angle = _directed_lerp_angle(base_second_dir.angle(), forward_angle, t, startup_turn_sign)
 	else:
-		var recovery_span := maxf(0.001, 1.0 - startup_ratio)
-		var t := sin(((phase - startup_ratio) / recovery_span) * PI * 0.5)
+		var t := float(curve.get("recovery_t", 0.0))
 		first_angle = _directed_lerp_angle(forward_angle, PI, t, -startup_turn_sign)
 		second_angle = forward_angle
 	var root_local := first_a
@@ -3764,9 +3873,7 @@ func _runtime_two_link_forward_snap_overrides(action: Dictionary) -> Dictionary:
 		world["runtime_action"] = true
 		world["runtime_action_state"] = String(action.get("state", STATE_NORMAL))
 		var phase := _runtime_action_phase(action)
-		var startup_ratio := _runtime_action_startup_ratio(action)
-		var in_startup := phase <= startup_ratio
-		world["runtime_action_phase"] = "startup" if in_startup else "recovery"
+		world["runtime_action_phase"] = _runtime_action_phase_label(action)
 		world["runtime_action_progress"] = phase
 		var target_nodes: Array = _runtime_node_array(Array(action.get("target_nodes", [])))
 		if target_nodes.size() > 0:
@@ -3849,17 +3956,15 @@ func _runtime_gauntlet_extend_swing_local_overrides(action: Dictionary) -> Dicti
 	var command_variant := String(action.get("command_variant", "normal_extend"))
 	var target_angle := _runtime_gauntlet_target_angle(base_dir.angle(), side_sign, command_variant, module_part)
 	var max_extension := _runtime_gauntlet_max_extension(command_variant, module_part, action)
-	var phase := _runtime_action_phase(action)
-	var startup_ratio := _runtime_action_startup_ratio(action)
+	var curve := _runtime_action_curve_intent(action)
 	var angle := recovery_angle
 	var extension := 0.0
-	if phase < startup_ratio:
-		var t := sin((phase / startup_ratio) * PI * 0.5)
+	if bool(curve.get("in_startup", false)):
+		var t := float(curve.get("startup_t", 0.0))
 		angle = lerp_angle(recovery_angle, target_angle, t)
 		extension = lerpf(0.0, max_extension, t)
 	else:
-		var recovery_span := maxf(0.001, 1.0 - startup_ratio)
-		var t := sin(((phase - startup_ratio) / recovery_span) * PI * 0.5)
+		var t := float(curve.get("recovery_t", 0.0))
 		angle = lerp_angle(target_angle, recovery_angle, t)
 		extension = lerpf(max_extension, 0.0, t)
 	var dir := Vector2.RIGHT.rotated(angle).normalized()
@@ -3880,8 +3985,7 @@ func _runtime_gauntlet_extend_swing_overrides(action: Dictionary) -> Dictionary:
 		world["runtime_action"] = true
 		world["runtime_action_state"] = String(action.get("state", STATE_NORMAL))
 		var phase := _runtime_action_phase(action)
-		var startup_ratio := _runtime_action_startup_ratio(action)
-		world["runtime_action_phase"] = "startup" if phase <= startup_ratio else "recovery"
+		world["runtime_action_phase"] = _runtime_action_phase_label(action)
 		world["runtime_action_progress"] = phase
 		world["pivot"] = _runtime_local_to_world(_runtime_local_vector(source.get("a_local", Vector2.ZERO)))
 		overrides[key] = world
@@ -3911,6 +4015,72 @@ func _commit_runtime_gauntlet_extend_swing_pose(action: Dictionary) -> void:
 	stats["runtime_topology_segments"] = segments
 	_invalidate_runtime_geometry_cache()
 	_refresh_visuals()
+
+
+func _runtime_boot_driver_pose_t(action: Dictionary) -> float:
+	if bool(action.get("held_activation", false)) and not bool(action.get("hold_released", false)):
+		var duration := maxf(0.001, float(action.get("duration", 0.72)))
+		var startup_ratio := _runtime_action_startup_ratio(action)
+		var phase := clampf(1.0 - float(action.get("timer", duration)) / duration, 0.0, 1.0)
+		return clampf(phase / maxf(0.001, startup_ratio), 0.0, 1.0)
+	var curve := _runtime_action_curve_intent(action)
+	return float(curve.get("target_t", 0.0))
+
+
+func _runtime_boot_driver_local_overrides(action: Dictionary) -> Dictionary:
+	var overrides := {}
+	var target_nodes: Array = _runtime_node_array(Array(action.get("target_nodes", [])))
+	if target_nodes.size() != 2:
+		return overrides
+	var rotating_source := _runtime_segment_source_by_node(int(target_nodes[0]))
+	var weapon_source := _runtime_segment_source_by_node(int(target_nodes[1]))
+	if rotating_source.is_empty() or weapon_source.is_empty():
+		return overrides
+	var rotating_a := _runtime_local_vector(rotating_source.get("a_local", Vector2.ZERO))
+	var rotating_b := _runtime_local_vector(rotating_source.get("b_local", rotating_a + Vector2.RIGHT))
+	var rotating_length := maxf(0.001, rotating_a.distance_to(rotating_b))
+	var base_dir := (rotating_b - rotating_a).normalized()
+	if base_dir.length() <= 0.001:
+		base_dir = Vector2.RIGHT
+	var steer_angle := float(action.get("boot_driver_steer_angle", 0.0))
+	var state := String(action.get("state", STATE_NORMAL))
+	if state == STATE_ACTIVE:
+		steer_angle -= deg_to_rad(6.0)
+	elif state == STATE_ARMOR:
+		steer_angle += deg_to_rad(4.0)
+	var driven_dir := base_dir.rotated(steer_angle).normalized()
+	var weapon_a := _runtime_local_vector(weapon_source.get("a_local", rotating_b))
+	var weapon_b := _runtime_local_vector(weapon_source.get("b_local", weapon_a + driven_dir * 0.4))
+	var weapon_base_length := maxf(0.001, weapon_a.distance_to(weapon_b))
+	var extension := maxf(0.0, float(action.get("boot_driver_extension_m", 0.0))) * _runtime_boot_driver_pose_t(action)
+	var rotating_override := rotating_source.duplicate(true)
+	rotating_override["a_local"] = rotating_a
+	rotating_override["b_local"] = rotating_a + driven_dir * rotating_length
+	rotating_override["axis_local"] = driven_dir
+	var weapon_override := weapon_source.duplicate(true)
+	weapon_override["a_local"] = rotating_override["b_local"]
+	weapon_override["b_local"] = Vector2(weapon_override["a_local"]) + driven_dir * (weapon_base_length + extension)
+	weapon_override["axis_local"] = driven_dir
+	overrides[_runtime_segment_key(rotating_source)] = rotating_override
+	overrides[_runtime_segment_key(weapon_source)] = weapon_override
+	return overrides
+
+
+func _runtime_boot_driver_overrides(action: Dictionary) -> Dictionary:
+	var overrides := {}
+	var local_overrides := _runtime_boot_driver_local_overrides(action)
+	for key in local_overrides.keys():
+		var source: Dictionary = Dictionary(local_overrides[key])
+		var world := _runtime_segment_to_world(source)
+		world["runtime_action"] = true
+		world["runtime_action_state"] = String(action.get("state", STATE_NORMAL))
+		var phase := _runtime_action_phase(action)
+		world["runtime_action_phase"] = "hold" if bool(action.get("held_activation", false)) and not bool(action.get("hold_released", false)) and phase >= _runtime_action_startup_ratio(action) else _runtime_action_phase_label(action)
+		world["runtime_action_progress"] = phase
+		world["boot_driver_action"] = true
+		world["pivot"] = _runtime_local_to_world(_runtime_local_vector(source.get("a_local", Vector2.ZERO)))
+		overrides[key] = world
+	return overrides
 
 
 func _runtime_blunt_terminal_target_delta(profile: String, command_variant: String, module_part: Dictionary, side_sign: float) -> float:
@@ -3960,15 +4130,13 @@ func _runtime_blunt_terminal_local_overrides(action: Dictionary) -> Dictionary:
 	var command_variant := String(action.get("command_variant", "normal_guard"))
 	var recovery_delta := deg_to_rad(float(module_part.get("recovery_angle_degrees", 10.0 if profile == "blunt_shield_guard_bash" else -18.0))) * side_sign
 	var target_delta := _runtime_blunt_terminal_target_delta(profile, command_variant, module_part, side_sign)
-	var phase := _runtime_action_phase(action)
-	var startup_ratio := _runtime_action_startup_ratio(action)
+	var curve := _runtime_action_curve_intent(action)
 	var delta := recovery_delta
-	if phase < startup_ratio:
-		var t := sin((phase / startup_ratio) * PI * 0.5)
+	if bool(curve.get("in_startup", false)):
+		var t := float(curve.get("startup_t", 0.0))
 		delta = lerp_angle(recovery_delta, target_delta, t)
 	else:
-		var recovery_span := maxf(0.001, 1.0 - startup_ratio)
-		var t := sin(((phase - startup_ratio) / recovery_span) * PI * 0.5)
+		var t := float(curve.get("recovery_t", 0.0))
 		delta = lerp_angle(target_delta, recovery_delta, t)
 	var dir := base_dir.rotated(delta).normalized()
 	var override := source.duplicate(true)
@@ -3988,8 +4156,7 @@ func _runtime_blunt_terminal_overrides(action: Dictionary) -> Dictionary:
 		world["runtime_action"] = true
 		world["runtime_action_state"] = String(action.get("state", STATE_NORMAL))
 		var phase := _runtime_action_phase(action)
-		var startup_ratio := _runtime_action_startup_ratio(action)
-		world["runtime_action_phase"] = "startup" if phase <= startup_ratio else "recovery"
+		world["runtime_action_phase"] = _runtime_action_phase_label(action)
 		world["runtime_action_progress"] = phase
 		world["pivot"] = _runtime_local_to_world(_runtime_local_vector(source.get("a_local", Vector2.ZERO)))
 		overrides[key] = world
@@ -4082,19 +4249,10 @@ func _runtime_blade_action_local_overrides(action: Dictionary) -> Dictionary:
 	var side_sign := _runtime_blade_side_sign(root_local, base_first_dir)
 	var command_variant := String(action.get("command_variant", "normal_sweep"))
 	var target_delta := _runtime_blade_target_delta(command_variant, module_part, side_sign)
-	var phase := _runtime_action_phase(action)
-	var startup_ratio := _runtime_action_startup_ratio(action)
+	var curve := _runtime_action_curve_intent(action)
 	var delta := 0.0
-	var extension_ratio := 0.0
-	if phase < startup_ratio:
-		var t := sin((phase / startup_ratio) * PI * 0.5)
-		delta = lerpf(0.0, target_delta, t)
-		extension_ratio = t
-	else:
-		var recovery_span := maxf(0.001, 1.0 - startup_ratio)
-		var t := sin(((phase - startup_ratio) / recovery_span) * PI * 0.5)
-		delta = lerpf(target_delta, 0.0, t)
-		extension_ratio = 1.0 - t
+	var extension_ratio := float(curve.get("target_t", 0.0))
+	delta = lerpf(0.0, target_delta, extension_ratio)
 	var profile := String(action.get("profile", ""))
 	var extension_m := maxf(0.0, float(action.get("extension_m", 0.0))) if profile == "extend_slash_driver" else 0.0
 	var previous_b := root_local
@@ -4151,8 +4309,7 @@ func _runtime_blade_action_overrides(action: Dictionary) -> Dictionary:
 		world["runtime_action"] = true
 		world["runtime_action_state"] = String(action.get("state", STATE_NORMAL))
 		var phase := _runtime_action_phase(action)
-		var startup_ratio := _runtime_action_startup_ratio(action)
-		world["runtime_action_phase"] = "startup" if phase <= startup_ratio else "recovery"
+		world["runtime_action_phase"] = _runtime_action_phase_label(action)
 		world["runtime_action_progress"] = phase
 		world["pivot"] = _runtime_local_to_world(_runtime_local_vector(source.get("a_local", Vector2.ZERO)))
 		overrides[key] = world
@@ -4193,6 +4350,8 @@ func _runtime_module_segment_overrides(body_length: float, body_radius: float) -
 		var action_overrides := {}
 		if String(action.get("profile", "")) == "two_link_forward_snap":
 			action_overrides = _runtime_two_link_forward_snap_overrides(action)
+		elif String(action.get("profile", "")) == BOOT_ACTION_DRIVER_PROFILE:
+			action_overrides = _runtime_boot_driver_overrides(action)
 		elif String(action.get("profile", "")) == "blunt_gauntlet_extend_swing":
 			action_overrides = _runtime_gauntlet_extend_swing_overrides(action)
 		elif String(action.get("profile", "")) in ["blunt_shield_guard_bash", "blunt_hammer_windup_slam"]:
@@ -4210,15 +4369,8 @@ func _runtime_module_segment_overrides(body_length: float, body_radius: float) -
 
 func _runtime_generic_melee_overrides(action: Dictionary) -> Dictionary:
 	var overrides := {}
-	var phase := _runtime_action_phase(action)
-	var startup_ratio := _runtime_action_startup_ratio(action)
-	var pose_t := 0.0
-	if phase <= startup_ratio:
-		pose_t = sin((phase / maxf(0.001, startup_ratio)) * PI * 0.5)
-	else:
-		var recovery_span := maxf(0.001, 1.0 - startup_ratio)
-		pose_t = cos(((phase - startup_ratio) / recovery_span) * PI * 0.5)
-	pose_t = clampf(pose_t, 0.0, 1.0)
+	var variant_pose := _runtime_action_variant_pose_intent(action)
+	var phase := float(variant_pose.get("phase", _runtime_action_phase(action)))
 	var extension_m := maxf(0.0, float(action.get("module_extension_m", 0.0)))
 	var swing_arc := deg_to_rad(maxf(0.0, float(action.get("swing_arc_degrees", 0.0))))
 	var side_sign := -1.0 if String(action.get("state", STATE_NORMAL)) == STATE_ACTIVE else 1.0
@@ -4235,12 +4387,8 @@ func _runtime_generic_melee_overrides(action: Dictionary) -> Dictionary:
 		var base_length := maxf(0.001, base_vector.length())
 		var base_dir := base_vector.normalized()
 		var dir := base_dir
-		var pose_scale := pose_t
-		if variant_key == "crush_windup":
-			pose_scale = pow(pose_t, 1.35)
-		elif variant_key == "feint_thrust":
-			var ghost_phase := clampf(float(action.get("feint_ghost_phase", 0.42)), 0.12, 0.84)
-			pose_scale = pose_t * 0.42 if phase <= startup_ratio * ghost_phase else pose_t
+		var pose_scale := float(variant_pose.get("pose_scale", variant_pose.get("pose_t", 0.0)))
+		if variant_key == "feint_thrust":
 			var retarget: Vector2 = action.get("feint_retarget_direction", base_dir)
 			if retarget.length() > 0.01:
 				dir = retarget.normalized()
@@ -4257,7 +4405,7 @@ func _runtime_generic_melee_overrides(action: Dictionary) -> Dictionary:
 		var world := _runtime_segment_to_world(override)
 		world["runtime_action"] = true
 		world["runtime_action_state"] = String(action.get("state", STATE_NORMAL))
-		world["runtime_action_phase"] = "startup" if phase <= startup_ratio else "recovery"
+		world["runtime_action_phase"] = _runtime_action_phase_label(action)
 		world["runtime_action_progress"] = phase
 		world["module_variant_key"] = variant_key
 		world["module_visual_family"] = String(action.get("module_visual_family", variant_key))
@@ -4271,7 +4419,7 @@ func _runtime_generic_melee_overrides(action: Dictionary) -> Dictionary:
 			world["clamp_pin_seconds"] = float(action.get("clamp_pin_seconds", 0.38))
 			world["clamp_velocity_mult"] = float(action.get("clamp_velocity_mult", 0.35))
 		elif variant_key == "feint_thrust":
-			world["feint_ghost_visible"] = phase <= startup_ratio * clampf(float(action.get("feint_ghost_phase", 0.42)), 0.12, 0.84)
+			world["feint_ghost_visible"] = bool(variant_pose.get("feint_ghost_visible", false))
 			world["feint_retarget_direction"] = action.get("feint_retarget_direction", dir)
 			world["contact_damage_mult"] = float(world.get("contact_damage_mult", 1.0)) * clampf(float(action.get("feint_final_width_mult", 0.65)), 0.35, 1.0)
 		world["pivot"] = _runtime_local_to_world(root_local)
@@ -4334,102 +4482,85 @@ func barrier_pulse() -> Dictionary:
 
 
 func manual_cool(delta: float) -> void:
-	if not active or role != "hero":
+	var intent := _heat_model().manual_cool_intent({
+		"stats": stats,
+		"role": role,
+		"active": active,
+		"melee_stagger_timer": melee_stagger_timer,
+		"delta": delta,
+		"heat": heat,
+		"overheated": overheated,
+		"cooling_lock_timer": cooling_lock_timer,
+	})
+	if not bool(intent.get("allowed", false)):
 		return
-	if melee_stagger_timer > 0.0:
-		return
-	manual_cooling = true
-	smoke_timer = 0.18
-	cooling_lock_timer = maxf(cooling_lock_timer, 0.4)
+	manual_cooling = bool(intent.get("manual_cooling", true))
+	smoke_timer = float(intent.get("smoke_timer", 0.18))
+	cooling_lock_timer = float(intent.get("cooling_lock_timer", maxf(cooling_lock_timer, 0.4)))
 	velocity = velocity.move_toward(Vector2.ZERO, 9.0 * delta)
-	var heat_capacity: float = maxf(1.0, float(stats.get("heat_capacity", 100.0)))
-	heat = clampf(heat - float(stats.get("manual_cooling", 48.0)) * delta * HEAT_RATE_MULT, 0.0, heat_capacity)
-	if overheated and heat <= heat_capacity * _overheat_clear_ratio():
-		overheated = false
+	heat = float(intent.get("heat", heat))
+	overheated = bool(intent.get("overheated", overheated))
 	_refresh_visuals()
 
 
 func boost(direction: Vector2, ring_length: float) -> bool:
-	if not active or role != "hero" or direction.length() < 0.1 or cooling_lock_timer > 0.0:
-		return false
-	if melee_stagger_timer > 0.0:
-		return false
-	if boost_cooldown_timer > 0.0:
-		return false
-	if _boost_request_is_reverse_only(direction):
-		if _can_velocity_brake():
-			_apply_velocity_brake(0.0, "reverse_brake", true, direction)
-		else:
+	var intent := _movement_model().boost_intent(_movement_model_context(direction))
+	if not bool(intent.get("allowed", false)):
+		if bool(intent.get("should_brake", false)):
+			_apply_velocity_brake(0.0, String(intent.get("brake_reason", "reverse_brake")), true, direction)
+		elif String(intent.get("reason", "")) == "reverse_only":
 			set_meta("last_velocity_brake_reason", "reverse_boost_disabled")
 		return false
-	if _brake_reverse_waiting_for_repress(direction) or _input_should_velocity_brake(direction):
-		_apply_velocity_brake(0.0, "reverse_brake", true, direction)
-		return false
-	var boost_extra_demand: float = maxf(0.0, float(stats.get("thruster_boost_extra_demand", 0.0)))
-	var boost_total_momentum: float = maxf(0.0, float(stats.get("boost_total_momentum", stats.get("boost_momentum", 0.0))))
-	var boost_speed: float = maxf(0.0, float(stats.get("boost_speed", 0.0)))
-	var boost_duration := maxf(0.0, float(stats.get("boost_duration", 0.0)))
-	if boost_extra_demand <= 0.0 or boost_duration <= 0.0 or (boost_total_momentum <= 0.0 and boost_speed <= 0.0):
-		return false
-	var boost_dir := _thruster_boost_direction(direction)
+	var boost_dir: Vector2 = intent.get("boost_dir", Vector2.ZERO)
 	if boost_dir.length() <= 0.04:
-		_apply_velocity_brake(0.0, "unusable_boost_angle", true, direction)
 		return false
 	boost_dir = boost_dir.normalized()
-	var recovery_return := recovery_boost_timer > 0.0 and velocity.length() > 0.08 and boost_dir.dot(-velocity.normalized()) > 0.18
-	var thruster_family := String(stats.get("thruster_family", "")).to_lower()
-	var mass := maxf(1.0, float(stats.get("mass", 1.0)))
-	var max_delta_v := boost_total_momentum / mass
-	if boost_speed > 0.0:
-		max_delta_v = maxf(max_delta_v, boost_speed - maxf(0.0, velocity.dot(boost_dir)))
-	if recovery_return:
-		var recovery_response := _recovery_response_multiplier()
-		max_delta_v *= 1.08 + recovery_response * 0.22
+	var boost_duration := float(intent.get("boost_duration", 0.0))
+	var max_delta_v := float(intent.get("delta_v", 0.0))
+	if bool(intent.get("recovery_return", false)):
 		body_sway_velocity += boost_dir * 18.0 * _impulse_response_multiplier()
 		body_swing_velocity -= _side_vector().dot(boost_dir) * 0.72 * _impulse_response_multiplier()
-	elif recovery_boost_timer > 0.0:
-		max_delta_v *= clampf(0.82 + _recovery_response_multiplier() * 0.18, 0.72, 1.16)
-	if max_delta_v <= 0.001:
-		return false
-	boost_duration = maxf(0.04, boost_duration)
 	boost_drive_direction = boost_dir
 	boost_drive_duration = boost_duration
 	boost_drive_timer = boost_duration
-	boost_drive_velocity_remaining = boost_dir * max_delta_v
-	boost_projection_guard_timer = maxf(boost_projection_guard_timer, boost_duration + 0.18)
-	boost_projection_guard_direction = boost_dir
+	boost_drive_velocity_remaining = Vector2(intent.get("velocity_remaining", boost_dir * max_delta_v))
+	boost_projection_guard_timer = maxf(boost_projection_guard_timer, float(intent.get("projection_guard_timer", boost_duration + 0.18)))
+	boost_projection_guard_direction = Vector2(intent.get("projection_guard_direction", boost_dir))
 	set_meta("boost_projection_guard_timer", boost_projection_guard_timer)
 	set_meta("boost_projection_guard_direction", boost_projection_guard_direction)
 	set_meta("boost_projection_guard_started_msec", Time.get_ticks_msec())
-	var flash_duration := 0.34 if recovery_return else 0.18
-	if thruster_family == "overburn_red":
-		flash_duration += 0.12
-	flash_duration = maxf(flash_duration, boost_duration)
+	var flash_duration := float(intent.get("flash_duration", boost_duration))
 	boost_flash_timer = maxf(boost_flash_timer, flash_duration)
 	thruster_visual_timer = maxf(thruster_visual_timer, flash_duration)
 	thruster_output_direction = boost_dir
-	add_heat_event(maxf(0.0, float(stats.get("boost_heat", 0.0))), ["boost"], "boost")
+	add_heat_event(float(intent.get("heat", 0.0)), ["boost"], "boost")
 	moved_this_frame = true
-	boost_cooldown_timer = maxf(boost_cooldown_timer, maxf(0.0, float(stats.get("boost_cooldown", BOOST_COOLDOWN_DEFAULT))))
+	boost_cooldown_timer = maxf(boost_cooldown_timer, float(intent.get("cooldown", BOOST_COOLDOWN_DEFAULT)))
 	_refresh_visuals()
 	return true
 
 
 func trigger_overheat_shutdown(reason: String = "") -> void:
-	if not _uses_heat_resource():
+	var intent := _heat_model().overheat_shutdown_intent({
+		"stats": stats,
+		"role": role,
+		"forced_cooling_timer": forced_cooling_timer,
+		"cooling_lock_timer": cooling_lock_timer,
+		"action_cooldown": action_cooldown,
+		"smoke_timer": smoke_timer,
+	})
+	if not bool(intent.get("allowed", false)):
 		return
-	var heat_capacity: float = maxf(1.0, float(stats.get("heat_capacity", 100.0)))
-	heat = heat_capacity
-	overheated = true
-	var shutdown_mult := clampf(float(stats.get("overheat_shutdown_mult", 1.0)), 0.35, 1.0)
-	forced_cooling_timer = maxf(forced_cooling_timer, float(stats.get("overheat_shutdown_seconds", 0.3)) * shutdown_mult)
-	cooling_lock_timer = maxf(cooling_lock_timer, forced_cooling_timer)
-	action_cooldown = maxf(action_cooldown, forced_cooling_timer)
-	current_state = STATE_NORMAL
-	state_timer = 0.0
-	manual_cooling = true
-	smoke_timer = maxf(smoke_timer, forced_cooling_timer + 0.12)
-	velocity *= 0.82
+	heat = float(intent.get("heat", heat))
+	overheated = bool(intent.get("overheated", true))
+	forced_cooling_timer = float(intent.get("forced_cooling_timer", forced_cooling_timer))
+	cooling_lock_timer = float(intent.get("cooling_lock_timer", cooling_lock_timer))
+	action_cooldown = float(intent.get("action_cooldown", action_cooldown))
+	current_state = String(intent.get("current_state", STATE_NORMAL))
+	state_timer = float(intent.get("state_timer", 0.0))
+	manual_cooling = bool(intent.get("manual_cooling", true))
+	smoke_timer = float(intent.get("smoke_timer", smoke_timer))
+	velocity *= float(intent.get("motion_mult", 0.82))
 
 
 func add_heat(amount: float, reason: String = "") -> void:
@@ -4437,114 +4568,53 @@ func add_heat(amount: float, reason: String = "") -> void:
 
 
 func add_heat_event(amount: float, tags: Array, source: String = "") -> void:
-	if not _uses_heat_resource() or amount <= 0.0:
+	var intent := _heat_model().add_heat_event_intent({
+		"stats": stats,
+		"role": role,
+		"amount": amount,
+		"tags": tags,
+		"source": source,
+		"heat": heat,
+	})
+	if not bool(intent.get("allowed", false)):
 		return
-	var heat_capacity: float = maxf(1.0, float(stats.get("heat_capacity", 100.0)))
-	var canonical_tags := _canonical_heat_tags_for_event(tags, source)
-	var relieved_amount := _heat_amount_after_cooling_relief_for_tags(amount, canonical_tags)
-	var heat_event := {
-		"heat_event_amount": amount,
-		"heat_event_relief_amount": amount - relieved_amount,
-		"heat_event_tags": canonical_tags.duplicate(),
-		"heat_event_source": source,
-	}
+	var heat_event: Dictionary = Dictionary(intent.get("heat_event", {}))
+	var canonical_tags: Array = Array(heat_event.get("heat_event_tags", []))
 	set_meta("last_heat_event", heat_event)
 	set_meta("heat_event_tags", canonical_tags.duplicate())
 	set_meta("heat_event_source", source)
 	set_meta("heat_event_amount", amount)
-	heat = clampf(heat + relieved_amount, 0.0, heat_capacity)
-	if heat >= heat_capacity:
+	heat = float(intent.get("heat", heat))
+	if bool(intent.get("trigger_overheat_shutdown", false)):
 		trigger_overheat_shutdown(source)
 
 
 func _overheat_clear_ratio() -> float:
-	return clampf(float(stats.get("overheat_clear_ratio", 0.42)), 0.3, 0.62)
+	return _heat_model().overheat_clear_ratio(stats)
 
 
 func _runtime_cooling_rate() -> float:
-	var rate := maxf(0.0, float(stats.get("cooling_rate", stats.get("cooling", 12.0))))
-	rate = maxf(rate, float(stats.get("cooling", 0.0)))
-	rate = maxf(rate, float(stats.get("thermal_dissipation_rate", 0.0)))
-	rate = maxf(rate, float(stats.get("heat_dissipation", 0.0)))
-	rate = maxf(rate, float(stats.get("runtime_cooling_rate", 0.0)))
-	return rate
+	return _heat_model().runtime_cooling_rate(stats)
 
 
 func _heat_amount_after_cooling_relief(amount: float, reason: String) -> float:
-	return _heat_amount_after_cooling_relief_for_tags(amount, _canonical_heat_tags_for_reason(reason))
+	return _heat_model().heat_amount_after_cooling_relief(amount, reason, stats)
 
 
 func _heat_amount_after_cooling_relief_for_tags(amount: float, tags: Array) -> float:
-	var relief := 0.0
-	for tag in tags:
-		match String(tag):
-			"boost":
-				relief = maxf(relief, float(stats.get("boost_heat_relief", 0.0)))
-			"repeat":
-				relief = maxf(relief, float(stats.get("repeat_heat_relief", 0.0)))
-			"projectile":
-				relief = maxf(relief, float(stats.get("projectile_heat_relief", 0.0)))
-			"laser":
-				relief = maxf(relief, float(stats.get("laser_heat_relief", 0.0)))
-			"chemical":
-				relief = maxf(relief, float(stats.get("chemical_heat_relief", 0.0)))
-			"missile":
-				relief = maxf(relief, float(stats.get("missile_heat_relief", 0.0)))
-	return amount * (1.0 - clampf(relief, 0.0, 0.72))
+	return _heat_model().heat_amount_after_cooling_relief_for_tags(amount, tags, stats)
 
 
 func _canonical_heat_tags_for_event(tags: Array, source: String = "") -> Array:
-	var canonical: Array = []
-	for raw_tag in tags:
-		_append_heat_tag(canonical, String(raw_tag))
-	if canonical.is_empty() and source.strip_edges() != "":
-		for tag in _canonical_heat_tags_for_reason(source):
-			_append_heat_tag(canonical, String(tag))
-	return canonical
+	return _heat_model().canonical_heat_tags_for_event(tags, source)
 
 
 func _canonical_heat_tags_for_reason(reason: String) -> Array:
-	var tags: Array = []
-	var reason_key := reason.to_lower()
-	var explicit_text := reason_key.replace(",", " ").replace(";", " ").replace("|", " ")
-	for token in explicit_text.split(" ", false):
-		var token_text := String(token).strip_edges()
-		if token_text.begins_with(HEAT_TAG_PREFIX):
-			_append_heat_tag(tags, token_text.substr(HEAT_TAG_PREFIX.length()))
-		elif token_text.begins_with(HEAT_TAG_EVENT_PREFIX):
-			_append_heat_tag(tags, token_text.substr(HEAT_TAG_EVENT_PREFIX.length()))
-	if reason_key.contains("boost"):
-		_append_heat_tag(tags, "boost")
-	if reason_key.contains("gauntlet") or reason_key.contains("blade") or reason_key.contains("blunt") or reason_key.contains("combo") or reason_key.contains("module"):
-		_append_heat_tag(tags, "repeat")
-	if reason_key.contains("projectile") or reason_key.contains("gun") or reason_key.contains("ammo"):
-		_append_heat_tag(tags, "projectile")
-	if reason_key.contains("laser"):
-		_append_heat_tag(tags, "laser")
-	if reason_key.contains("chemical"):
-		_append_heat_tag(tags, "chemical")
-	if reason_key.contains("missile") or reason_key.contains("explosive"):
-		_append_heat_tag(tags, "missile")
-	if reason_key.contains("external") or reason_key.contains("field") or reason_key.contains("aura"):
-		_append_heat_tag(tags, "external")
-	return tags
+	return _heat_model().canonical_heat_tags_for_reason(reason)
 
 
 func _append_heat_tag(tags: Array, raw_tag: String) -> void:
-	var tag := raw_tag.strip_edges().to_lower()
-	if tag == "":
-		return
-	match tag:
-		"gauntlet", "blade", "blunt", "combo", "module", "melee":
-			tag = "repeat"
-		"gun", "ammo", "bullet", "true_bullet", "bullet_hell", "web":
-			tag = "projectile"
-		"explosive", "grenade":
-			tag = "missile"
-		"field", "aura":
-			tag = "external"
-	if not tags.has(tag):
-		tags.append(tag)
+	_heat_model().append_heat_tag(tags, raw_tag)
 
 
 func _is_straight_inertial_cooling() -> bool:
@@ -4765,7 +4835,7 @@ func shield_ratio() -> float:
 
 
 func _uses_heat_resource() -> bool:
-	return role == "hero"
+	return _heat_model().uses_heat_resource(role)
 
 
 func _is_training_ball_dummy() -> bool:
@@ -4798,21 +4868,35 @@ func _training_ball_dummy_collider() -> Dictionary:
 func heat_ratio() -> float:
 	if not _uses_heat_resource():
 		return 0.0
-	var heat_capacity: float = maxf(1.0, float(stats.get("heat_capacity", 100.0)))
-	return clampf(heat / heat_capacity, 0.0, 1.0)
+	var capacity := _heat_model().heat_capacity(stats)
+	return clampf(heat / capacity, 0.0, 1.0)
 
 
 func set_screen_position(screen_position: Vector2, is_visible_in_view: bool) -> void:
-	visual_hitbox_scale = 1.0
-	mobius_visual_scale = 1.0
-	mobius_visual_scale_target = 1.0
-	mobius_visual_scale_initialized = false
-	mobius_surface_brightness = 1.0
-	scale = Vector2.ONE
-	self_modulate = Color.WHITE
-	position = screen_position if _is_teamedit_runtime_unit() else screen_position + body_sway_offset
+	var previous_source := String(get_meta("projection_source", "")).to_lower()
+	var preserve_mobius_scale := is_visible_in_view and mobius_visual_scale_initialized and previous_source.begins_with("mobius")
+	if preserve_mobius_scale:
+		var max_scale := maxf(1.0, float(stats.get("mobius_visual_scale_max", MOBIUS_VISUAL_SCALE_MAX)))
+		mobius_visual_scale = clampf(mobius_visual_scale, MOBIUS_VISUAL_SCALE_MIN, max_scale)
+		mobius_visual_scale_target = clampf(mobius_visual_scale_target, MOBIUS_VISUAL_SCALE_MIN, max_scale)
+		visual_hitbox_scale = GameplayTransform.hitbox_scale_for_visual_scale(mobius_visual_scale)
+		scale = Vector2.ONE * mobius_visual_scale
+		self_modulate = Color(mobius_surface_brightness, mobius_surface_brightness, mobius_surface_brightness, 1.0)
+		position = screen_position if _is_teamedit_runtime_unit() else screen_position + body_sway_offset * mobius_visual_scale
+	else:
+		visual_hitbox_scale = 1.0
+		mobius_visual_scale = 1.0
+		mobius_visual_scale_target = 1.0
+		mobius_visual_scale_initialized = false
+		mobius_surface_brightness = 1.0
+		scale = Vector2.ONE
+		self_modulate = Color.WHITE
+		position = screen_position if _is_teamedit_runtime_unit() else screen_position + body_sway_offset
+	set_meta("mobius_visual_scale_target", mobius_visual_scale_target)
+	set_meta("mobius_visual_scale_applied", mobius_visual_scale)
 	set_meta("last_projection_visible", is_visible_in_view)
 	set_meta("projection_guarded", false)
+	set_meta("projection_source", "screen")
 	set_meta("last_screen_position", screen_position)
 	if is_finite(screen_position.x) and is_finite(screen_position.y):
 		set_meta("last_finite_screen_position", screen_position)
@@ -4827,9 +4911,22 @@ func set_mobius_screen_projection(projection: Dictionary, is_visible_in_view: bo
 	var projection_visible := bool(projection.get("visible", is_visible_in_view))
 	var projection_guarded := bool(projection.get("guarded", false))
 	var projection_critical := bool(projection.get("critical", false))
+	var projection_source := String(projection.get("projection_source", "mobius"))
+	var projection_source_lower := projection_source.to_lower()
+	var unstable_projection := projection_guarded or projection_source_lower.find("guard") >= 0 or projection_source_lower.find("hysteresis") >= 0 or projection_source_lower.find("fallback") >= 0
 	mobius_depth01 = clampf(float(projection.get("depth01", mobius_depth01)), 0.0, 1.0)
 	mobius_surface_brightness = clampf(float(projection.get("brightness", mobius_surface_brightness)), 0.96, 1.12)
-	var target_scale := maxf(MOBIUS_VISUAL_SCALE_MIN, float(projection.get("scale", 1.0)))
+	var max_scale := maxf(1.0, float(stats.get("mobius_visual_scale_max", MOBIUS_VISUAL_SCALE_MAX)))
+	var preserved_scale := mobius_visual_scale_target if mobius_visual_scale_initialized else mobius_visual_scale
+	if not is_finite(preserved_scale) or preserved_scale <= 0.0:
+		preserved_scale = 1.0
+	var target_scale := clampf(preserved_scale, MOBIUS_VISUAL_SCALE_MIN, max_scale)
+	if projection.has("scale"):
+		var raw_scale := float(projection.get("scale", target_scale))
+		if is_finite(raw_scale) and raw_scale > 0.0:
+			var candidate_scale := clampf(raw_scale, MOBIUS_VISUAL_SCALE_MIN, max_scale)
+			if not unstable_projection or not mobius_visual_scale_initialized:
+				target_scale = candidate_scale
 	mobius_visual_scale_target = target_scale
 	if not mobius_visual_scale_initialized:
 		mobius_visual_scale = target_scale
@@ -4861,7 +4958,7 @@ func set_mobius_screen_projection(projection: Dictionary, is_visible_in_view: bo
 	set_meta("last_projection_visible", projection_visible)
 	set_meta("projection_guarded", projection_guarded)
 	set_meta("projection_critical", projection_critical)
-	set_meta("projection_source", String(projection.get("projection_source", "mobius")))
+	set_meta("projection_source", projection_source)
 	set_meta("last_screen_position", screen_position)
 	if is_finite(screen_position.x) and is_finite(screen_position.y):
 		set_meta("last_finite_screen_position", screen_position)

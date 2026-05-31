@@ -28,14 +28,17 @@ func _init() -> void:
 	if backdrop == null:
 		_fail("Generated fallback battle backdrop node should exist.")
 	if backdrop.visible:
-		_fail("Fallback battle backdrop should be hidden while textured Möbius surface is active.")
+		_fail("Fallback battle backdrop should be hidden while Möbius world-grid surface is active.")
 	if main.mobius_strip_surface_view == null or not main.mobius_strip_surface_view.visible:
 		_fail("Mobius surface decoration should be visible as the battle surface background.")
-	if main.mobius_strip_surface_view.surface_texture == null:
-		_fail("Mobius surface decoration should use the generated surface texture.")
+	var surface_snapshot: Dictionary = main.mobius_strip_surface_view.stardust_band_snapshot()
+	if String(surface_snapshot.get("surface_render_mode", "")) != "world_grid":
+		_fail("Mobius surface decoration should be the world-grid battlefield reference.")
+	if main.mobius_strip_surface_view.surface_texture != null:
+		_fail("Mobius surface decoration should not use the old screen-locked generated texture.")
 	var stardust: Dictionary = main.mobius_stardust_band_view.stardust_band_snapshot()
-	if not bool(stardust.get("visible", false)):
-		_fail("Mobius surface decoration should include the subtle stardust band.")
+	if bool(stardust.get("visible", false)):
+		_fail("Mobius surface decoration should keep the screen-locked stardust band disabled.")
 	if bool(stardust.get("lane_guides_enabled", true)):
 		_fail("Mobius surface decoration should not draw straight lane guides.")
 	if not main.parallax_nodes.is_empty() or not main.world_background_art_nodes.is_empty() or not main.world_near_dust_nodes.is_empty():
@@ -49,9 +52,9 @@ func _init() -> void:
 		_fail("Mobius seam projection should still wrap/invert continuously; distance %.3f" % seam_distance)
 	if main.arena_top_boundary_line.visible or main.arena_bottom_boundary_line.visible:
 		_fail("Minimal battle background should hide top/bottom map boundary borders.")
-	print("MOBIUS_BACKGROUND_CONTINUITY_PROBE textured seam=%.3f surface=%s stardust_points=%d" % [
+	print("MOBIUS_BACKGROUND_CONTINUITY_PROBE world_grid seam=%.3f mode=%s stardust_visible=%s" % [
 		seam_distance,
-		str(main.mobius_strip_surface_view.surface_texture.get_size()),
-		PackedVector2Array(stardust.get("points", PackedVector2Array())).size(),
+		String(surface_snapshot.get("surface_render_mode", "")),
+		str(bool(stardust.get("visible", false))),
 	])
 	quit()

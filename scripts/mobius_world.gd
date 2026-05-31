@@ -372,6 +372,84 @@ static func surface_field_at(coord: Vector2, camera_coord: Vector2, config: Dict
 	}
 
 
+static func stable_unit_field_at(coord: Vector2, camera_coord: Vector2, config: Dictionary, _rotation_state: Dictionary = {}) -> Dictionary:
+	var loop := maxf(0.001, float(config.get("loop_length", DEFAULT_LOOP_LENGTH)))
+	var screen_rect: Rect2 = config.get("screen_rect", Rect2(Vector2.ZERO, Vector2(1280.0, 720.0)))
+	var screen_scale := float(config.get("screen_scale", screen_rect.size.y / maxf(0.001, float(config.get("view_height", 5.2)))))
+	var delta := delta_vec(camera_coord, coord, loop)
+	var world_s := camera_coord.x + delta.x
+	var phase := TAU * world_s / loop
+	var camera_phase := TAU * camera_coord.x / loop
+	var loop_depth := clampf(0.5 + cos(phase) * 0.5, 0.0, 1.0)
+	var depth_contrast := maxf(0.1, float(config.get("unit_depth_contrast", config.get("depth_contrast", 1.0))))
+	var depth01 := clampf(0.5 + (loop_depth - 0.5) * depth_contrast, 0.0, 1.0)
+	var near_scale := maxf(0.01, float(config.get("near_scale", 1.22)))
+	var far_scale := maxf(0.01, float(config.get("far_scale", 0.70)))
+	var visual_scale := lerpf(far_scale, near_scale, depth01)
+	var unit_far_brightness := maxf(0.0, float(config.get("unit_surface_far_brightness", 0.96)))
+	var unit_near_brightness := maxf(unit_far_brightness, float(config.get("unit_surface_near_brightness", 1.12)))
+	var unit_brightness := lerpf(unit_far_brightness, unit_near_brightness, depth01)
+	var grid_far_brightness := maxf(0.0, float(config.get("grid_far_brightness", config.get("surface_far_brightness", 0.52))))
+	var grid_near_brightness := maxf(grid_far_brightness, float(config.get("grid_near_brightness", config.get("surface_near_brightness", 0.88))))
+	var depth_strength := float(config.get("depth_strength", 0.42))
+	var tangent_screen := Vector2(1.0, cos(phase) * 0.10 * depth_strength).normalized()
+	var twist := twist_angle(world_s, loop)
+	var width_screen := Vector2(sin(twist) * 0.18, visual_scale * (0.88 + depth01 * 0.12)).normalized()
+	if tangent_screen.length() <= 0.001:
+		tangent_screen = Vector2.RIGHT
+	if width_screen.length() <= 0.001:
+		width_screen = Vector2.DOWN
+	return {
+		"coord": coord,
+		"camera_coord": camera_coord,
+		"delta": delta,
+		"world_s": world_s,
+		"loop": loop,
+		"screen_rect": screen_rect,
+		"screen_scale": screen_scale,
+		"depth01": depth01,
+		"surface_depth01": depth01,
+		"scale": visual_scale,
+		"surface_scale": visual_scale,
+		"brightness": unit_brightness,
+		"unit_brightness": unit_brightness,
+		"grid_brightness": lerpf(grid_far_brightness, grid_near_brightness, depth01),
+		"z_index": int(round(lerpf(-18.0, 42.0, depth01))),
+		"twist_angle": twist,
+		"local_up": local_up_vector(world_s, loop),
+		"tangent": Vector2(1.0, 0.0),
+		"width_axis": Vector2(0.0, 1.0),
+		"tangent_screen": tangent_screen,
+		"width_screen": width_screen,
+		"screen_basis": {"tangent": tangent_screen, "width": width_screen},
+		"boundary_softness": boundary_softness(coord.y, config),
+		"diagonal_depth": depth01,
+		"diagonal_saddle": depth01 * 2.0 - 1.0,
+		"loop_depth": loop_depth,
+		"phase": phase,
+		"camera_phase": camera_phase,
+		"visual_axis_angle": 0.0,
+		"fairness_blend": 0.0,
+		"pivot": Vector2(loop * 0.5, 0.0),
+		"pivot_delta": Vector2.ZERO,
+		"diagonal_phase": 0.0,
+		"diagonal_angle": PI * 0.25,
+		"ridge_phase": 0.0,
+		"ridge_angle_phase": 0.0,
+		"ridge_normal": Vector2(0.70710678, 0.70710678),
+		"ridge_period": maxf(0.25, float(config.get("ridge_period", 1.92))),
+		"ridge_width": 1.0,
+		"ridge_offset": 0.0,
+		"ridge_coord": 0.0,
+		"ridge_distance": 0.0,
+		"ridge_distance01": 0.5,
+		"ridge_depth": depth01,
+		"pivot_bias": Vector2.ZERO,
+		"twist_phase": 0.0,
+		"visual_twist_wave": 0.0,
+	}
+
+
 static func project_gameplay_anchor_to_screen(coord: Vector2, camera_coord: Vector2, config: Dictionary) -> Dictionary:
 	var loop := maxf(0.001, float(config.get("loop_length", DEFAULT_LOOP_LENGTH)))
 	var screen_rect: Rect2 = config.get("screen_rect", Rect2(Vector2.ZERO, Vector2(1280.0, 720.0)))
@@ -387,7 +465,8 @@ static func surface_shader_parameters(camera_coord: Vector2, config: Dictionary,
 	var loop := maxf(0.001, float(config.get("loop_length", DEFAULT_LOOP_LENGTH)))
 	var screen_rect: Rect2 = config.get("screen_rect", Rect2(Vector2.ZERO, Vector2(1280.0, 720.0)))
 	var screen_scale := float(config.get("screen_scale", screen_rect.size.y / maxf(0.001, float(config.get("view_height", 5.2)))))
-	var center_field := surface_field_at(camera_coord, camera_coord, config, rotation_state)
+	var world_grid_mode := String(config.get("surface_projection_mode", "")).to_lower() == "world_grid" or bool(config.get("surface_world_grid_stable", false))
+	var center_field := stable_unit_field_at(camera_coord, camera_coord, config, rotation_state) if world_grid_mode else surface_field_at(camera_coord, camera_coord, config, rotation_state)
 	return {
 		"camera_surface_coord": camera_coord,
 		"surface_view_world_size": Vector2(screen_rect.size.x / maxf(0.001, screen_scale), float(config.get("view_height", 5.2))),
@@ -398,9 +477,9 @@ static func surface_shader_parameters(camera_coord: Vector2, config: Dictionary,
 		"ridge_width": float(center_field.get("ridge_width", 1.0)),
 		"ridge_offset": float(center_field.get("ridge_offset", 0.0)),
 		"ridge_pivot_bias": center_field.get("pivot_bias", Vector2.ZERO),
-		"ridge_warp_amplitude": clampf(float(config.get("surface_ridge_warp_amplitude", 0.125)), 0.0, 0.20),
-		"twist_shear_strength": clampf(float(config.get("surface_twist_shear_strength", 0.17)), 0.0, 0.28),
-		"twist_warp_strength": clampf(float(config.get("surface_twist_warp_strength", 0.035)), 0.0, 0.12),
+		"ridge_warp_amplitude": 0.0 if world_grid_mode else clampf(float(config.get("surface_ridge_warp_amplitude", 0.125)), 0.0, 0.20),
+		"twist_shear_strength": 0.0 if world_grid_mode else clampf(float(config.get("surface_twist_shear_strength", 0.17)), 0.0, 0.28),
+		"twist_warp_strength": 0.0 if world_grid_mode else clampf(float(config.get("surface_twist_warp_strength", 0.035)), 0.0, 0.12),
 		"far_brightness": float(config.get("grid_far_brightness", config.get("surface_far_brightness", 0.52))),
 		"near_brightness": float(config.get("grid_near_brightness", config.get("surface_near_brightness", 0.88))),
 		"grid_far_brightness": float(config.get("grid_far_brightness", config.get("surface_far_brightness", 0.52))),
@@ -411,6 +490,25 @@ static func surface_shader_parameters(camera_coord: Vector2, config: Dictionary,
 static func surface_sample_coord_from_screen_uv(screen_uv: Vector2, camera_coord: Vector2, config: Dictionary, rotation_state: Dictionary = {}) -> Dictionary:
 	var params := surface_shader_parameters(camera_coord, config, rotation_state)
 	var plane := screen_uv * 2.0 - Vector2.ONE
+	var world_grid_mode := String(config.get("surface_projection_mode", "")).to_lower() == "world_grid" or bool(config.get("surface_world_grid_stable", false))
+	var world_size: Vector2 = params.get("surface_view_world_size", Vector2(7.2, 5.2))
+	var grid_cell_world := maxf(0.001, float(params.get("grid_cell_world", 0.16)))
+	if world_grid_mode:
+		var world_surface_coord := camera_coord + plane * world_size * 0.5
+		var stable_field := stable_unit_field_at(world_surface_coord, camera_coord, config, rotation_state)
+		var depth01 := clampf(float(stable_field.get("depth01", 0.5)), 0.0, 1.0)
+		return {
+			"surface_coord": world_surface_coord,
+			"ridge_coord": 0.0,
+			"ridge_distance01": 0.5,
+			"ridge_depth": depth01,
+			"depth01": depth01,
+			"brightness": lerpf(float(params.get("grid_far_brightness", params.get("far_brightness", 0.52))), float(params.get("grid_near_brightness", params.get("near_brightness", 0.88))), depth01),
+			"grid_coord": world_surface_coord / grid_cell_world,
+			"u_shear": 0.0,
+			"v_warp": 0.0,
+			"world_grid": true,
+		}
 	var ridge_normal: Vector2 = Vector2(params.get("ridge_normal", Vector2(0.707, 0.707))).normalized()
 	var tangent_axis := Vector2(-ridge_normal.y, ridge_normal.x)
 	var ridge_period := maxf(0.001, float(params.get("ridge_period", 1.92)))
@@ -422,7 +520,6 @@ static func surface_sample_coord_from_screen_uv(screen_uv: Vector2, camera_coord
 	var depth01 := clampf(0.5 + (ridge_depth - 0.5) * float(config.get("depth_contrast", 1.0)), 0.0, 1.0)
 	var ridge_wave := sin(TAU * ridge_coord / ridge_period)
 	var sampled_plane := plane - ridge_normal * ridge_wave * float(params.get("ridge_warp_amplitude", 0.125))
-	var world_size: Vector2 = params.get("surface_view_world_size", Vector2(7.2, 5.2))
 	var preliminary_s := camera_coord.x + sampled_plane.x * world_size.x * 0.5
 	var mobius_twist := PI * preliminary_s / maxf(0.001, float(params.get("loop_length", DEFAULT_LOOP_LENGTH)))
 	var twist_phase := float(rotation_state.get("twist_phase", rotation_state.get("angle", 0.0)))
@@ -430,7 +527,6 @@ static func surface_sample_coord_from_screen_uv(screen_uv: Vector2, camera_coord
 	var v_warp := sin(mobius_twist * 2.0 + twist_phase) * ridge_wave * float(params.get("twist_warp_strength", 0.035))
 	sampled_plane += tangent_axis * u_shear + ridge_normal * v_warp
 	var surface_coord := camera_coord + sampled_plane * world_size * 0.5
-	var grid_cell_world := maxf(0.001, float(params.get("grid_cell_world", 0.16)))
 	return {
 		"surface_coord": surface_coord,
 		"ridge_coord": ridge_coord,
@@ -447,7 +543,7 @@ static func surface_sample_coord_from_screen_uv(screen_uv: Vector2, camera_coord
 static func project_to_screen(coord: Vector2, camera_coord: Vector2, config: Dictionary, rotation_state: Dictionary = {}) -> Dictionary:
 	if bool(config.get("local_rectangular_projection", false)):
 		var anchor := project_gameplay_anchor_to_screen(coord, camera_coord, config)
-		var field := surface_field_at(coord, camera_coord, config, rotation_state)
+		var field := stable_unit_field_at(coord, camera_coord, config, rotation_state)
 		for key in anchor.keys():
 			field[key] = anchor[key]
 		return field

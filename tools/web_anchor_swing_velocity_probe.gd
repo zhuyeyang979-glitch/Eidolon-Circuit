@@ -25,7 +25,7 @@ func _make_unit() -> Node:
 			"runtime_module_bindings": [],
 		},
 	})
-	fighter.deploy(4.0, 1.0)
+	fighter.deploy(4.0, 4.2)
 	return fighter
 
 

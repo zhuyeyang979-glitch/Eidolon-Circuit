@@ -31,20 +31,23 @@ func _init() -> void:
 	if backdrop.visible:
 		_fail("Fallback backdrop image should be hidden while the Möbius strip surface is active.")
 	if main.mobius_strip_surface_view == null or not main.mobius_strip_surface_view.visible:
-		_fail("Battle background should use the textured Möbius strip surface.")
-	if main.mobius_strip_surface_view.surface_texture == null:
-		_fail("Textured Möbius strip surface should have a loaded surface texture.")
+		_fail("Battle background should use the Mobius world-grid surface.")
+	var surface_snapshot: Dictionary = main.mobius_strip_surface_view.stardust_band_snapshot()
+	if String(surface_snapshot.get("surface_render_mode", "")) != "world_grid":
+		_fail("Battle background should use world-grid rendering, got %s." % String(surface_snapshot.get("surface_render_mode", "")))
+	if main.mobius_strip_surface_view.surface_texture != null:
+		_fail("Battle background should not use the old full-screen generated texture in Mobius mode.")
 	var stardust: Dictionary = main.mobius_stardust_band_view.stardust_band_snapshot()
-	if not bool(stardust.get("visible", false)):
-		_fail("Battle background should keep the dedicated subtle Mobius stardust band.")
+	if bool(stardust.get("visible", false)):
+		_fail("Battle background should keep screen-locked Mobius stardust disabled.")
 	if bool(stardust.get("lane_guides_enabled", true)):
 		_fail("Battle background should disable straight Mobius lane guide lines.")
 	if main.arena_top_boundary_line == null or main.arena_bottom_boundary_line == null:
 		_fail("Battle should keep map boundary line nodes.")
 	if main.arena_top_boundary_line.visible or main.arena_bottom_boundary_line.visible:
 		_fail("Battle should hide top/bottom map boundary borders.")
-	print("BATTLE_XY_BACKGROUND_PROBE minimal surface=%s stardust_points=%d" % [
-		str(main.mobius_strip_surface_view.surface_texture.get_size()),
-		PackedVector2Array(stardust.get("points", PackedVector2Array())).size(),
+	print("BATTLE_XY_BACKGROUND_PROBE world_grid mode=%s stardust_visible=%s" % [
+		String(surface_snapshot.get("surface_render_mode", "")),
+		str(bool(stardust.get("visible", false))),
 	])
 	quit()

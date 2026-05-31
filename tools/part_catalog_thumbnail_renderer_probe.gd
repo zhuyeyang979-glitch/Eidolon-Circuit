@@ -4,8 +4,9 @@ extends SceneTree
 func _init() -> void:
 	var main_source := FileAccess.get_file_as_string("res://scripts/main.gd")
 	var renderer_source := FileAccess.get_file_as_string("res://scripts/assembly_board_renderer.gd")
-	if main_source.is_empty() or renderer_source.is_empty():
-		push_error("Unable to read main.gd or assembly_board_renderer.gd")
+	var ghost_source := FileAccess.get_file_as_string("res://scripts/views/part_drag_ghost_view.gd")
+	if main_source.is_empty() or renderer_source.is_empty() or ghost_source.is_empty():
+		push_error("Unable to read main.gd, assembly_board_renderer.gd, or part_drag_ghost_view.gd")
 		quit(1)
 		return
 	var failures: Array[String] = []
@@ -35,8 +36,12 @@ func _init() -> void:
 		var canvas_block := main_source.substr(canvas_pos, min(600, main_source.length() - canvas_pos))
 		if not canvas_block.contains("AssemblyBoardRenderer.draw_part_preview"):
 			failures.append("Offscreen preview canvas is not renderer-driven")
-	if not main_source.contains("class PartDragGhostView") or not main_source.contains("extends PartCatalogCardButton"):
-		failures.append("PartDragGhostView no longer inherits catalog card renderer")
+	if not main_source.contains("preload(\"res://scripts/views/part_drag_ghost_view.gd\")"):
+		failures.append("main.gd should preload extracted PartDragGhostView")
+	if not ghost_source.contains("class_name PartDragGhostView") or not ghost_source.contains("AssemblyBoardRenderer.draw_part_preview"):
+		failures.append("PartDragGhostView should remain renderer-driven after extraction")
+	if not ghost_source.contains("func set_card") or not ghost_source.contains("func set_art_sheets"):
+		failures.append("PartDragGhostView should preserve legacy drag-preview call-site methods")
 	if main_source.contains("func set_art_sheets") and not main_source.contains("Thumbnail art is now renderer-driven"):
 		failures.append("set_art_sheets is not marked as renderer-driven compatibility")
 	if not failures.is_empty():

@@ -40,8 +40,8 @@ func _init() -> void:
 	root.add_child(main)
 	main._ready()
 	main._show_editor()
-	main._select_editor_part_group("muscle")
-	main._select_editor_part_filter(5)
+	main._select_editor_part_group("terminal_weapon")
+	main._select_editor_part_filter(0)
 	var button = _first_catalog_button(main)
 	if button == null:
 		_fail("No visible physical catalog card button found.")

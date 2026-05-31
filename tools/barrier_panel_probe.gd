@@ -43,10 +43,50 @@ func _base_barrier_bp(tile_names: Array) -> Dictionary:
 	}
 
 
+func _catalog_part(main, item_name: String) -> Dictionary:
+	var index: int = main._component_index_by_exact_name("hero", "muscle", item_name)
+	if index < 0:
+		_fail("Missing barrier catalog part: %s" % item_name)
+		return {}
+	return main._selected_component("hero", "muscle", index)
+
+
+func _assert_live_panel(main, item_name: String) -> void:
+	var part := _catalog_part(main, item_name)
+	if part.is_empty():
+		return
+	if main._part_is_catalog_frozen("muscle", part):
+		_fail("%s should be live." % item_name)
+	if not bool(part.get("barrier_panel", false)) or not bool(part.get("barrier_tile_component", false)):
+		_fail("%s should retain barrier panel runtime flags." % item_name)
+
+
+func _assert_frozen_panel(main, item_name: String) -> void:
+	var part := _catalog_part(main, item_name)
+	if part.is_empty():
+		return
+	if not main._part_is_catalog_frozen("muscle", part):
+		_fail("%s should stay frozen." % item_name)
+
+
 func _init() -> void:
 	var main = MainScene.new()
 	root.add_child(main)
 	main._ready()
+	for item_name in [
+		"VAULT DIVIDEND BULKHEAD",
+		"CRUSTA PRESSURE GATE PANEL",
+		"LONGSIGHT ONE-WAY SNIPER SCREEN",
+		"COINRUN JACKPOT BLOCK",
+		"MAZE RIGHT GRAVITY FLOOR PANEL",
+		"MAZE REPAIR DOCK FLOOR PANEL",
+		"MAZE SPEED RAIL STRIP PANEL",
+		"MAZE BULLET RICOCHET WALL PANEL",
+		"MAZE ENTRY BREACH CHARGE PANEL",
+		"MAZE HARDLIGHT CAGE WALL PANEL",
+	]:
+		_assert_live_panel(main, String(item_name))
+	_assert_frozen_panel(main, "REDLINE SHELL CRATER PANEL")
 	var panel_names := [
 		"MAZE RIGHT GRAVITY FLOOR PANEL",
 		"MAZE COOLANT FLOOR PANEL",

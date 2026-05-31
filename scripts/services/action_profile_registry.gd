@@ -34,6 +34,7 @@ const MELEE_PROFILES := [
 	"inward_pincer_clamp",
 	"chain_backlash",
 	"reeling_hook_rip",
+	"boot_action_driver",
 	"two_link_forward_snap",
 	"blunt_gauntlet_extend_swing",
 	"blunt_shield_guard_bash",

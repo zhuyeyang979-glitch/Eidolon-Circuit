@@ -18,6 +18,7 @@ func _init() -> void:
 		"laser_beam_activate",
 		"missile_lock_activate",
 		"web_tether_activate",
+		"boot_action_driver",
 		"two_link_forward_snap",
 		"blunt_gauntlet_extend_swing",
 		"blunt_shield_guard_bash",

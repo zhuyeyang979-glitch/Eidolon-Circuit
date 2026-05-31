@@ -55,6 +55,14 @@ func _init() -> void:
 	var startup_len := Vector2(startup_segment.get("a", Vector2.ZERO)).distance_to(Vector2(startup_segment.get("b", Vector2.ZERO)))
 	if startup_len <= base_len + 0.4:
 		_fail("Normal gauntlet startup should extend beyond base segment length.")
+	action["timer"] = duration * 0.22
+	fighter.runtime_module_actions[0] = action
+	var recovery_segment := _target_segment(fighter, target_node)
+	var recovery_len := Vector2(recovery_segment.get("a", Vector2.ZERO)).distance_to(Vector2(recovery_segment.get("b", Vector2.ZERO)))
+	if recovery_len >= startup_len - 0.2:
+		_fail("Normal gauntlet recovery should retract after startup: startup=%.2f recovery=%.2f." % [startup_len, recovery_len])
+	if recovery_len <= base_len + 0.05:
+		_fail("Normal gauntlet recovery sample should still be visibly returning, not already snapped to base length.")
 	fighter._tick_runtime_module_actions(duration + 0.2)
 	var final_segment := _target_segment(fighter, target_node)
 	var final_axis := _axis(final_segment)
@@ -64,5 +72,5 @@ func _init() -> void:
 	var final_len := Vector2(final_segment.get("a", Vector2.ZERO)).distance_to(Vector2(final_segment.get("b", Vector2.ZERO)))
 	if absf(final_len - base_len) > 0.08:
 		_fail("Gauntlet should finish retracted to base length.")
-	print("GAUNTLET_MOTION_POSE_PROBE ok base=%.2f startup=%.2f final_angle=%.2f" % [base_len, startup_len, final_angle])
+	print("GAUNTLET_MOTION_POSE_PROBE ok base=%.2f startup=%.2f recovery=%.2f final_angle=%.2f" % [base_len, startup_len, recovery_len, final_angle])
 	quit()

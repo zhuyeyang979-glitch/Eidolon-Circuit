@@ -71,8 +71,8 @@ func _init() -> void:
 		return
 	var config: Dictionary = main.mobius_strip_surface_view.config
 	var snapshot: Dictionary = main.mobius_strip_surface_view.stardust_band_snapshot()
-	if String(snapshot.get("surface_render_mode", "")) != "full_rect_inverse_sample":
-		_fail("Mobius surface should use full-rect inverse sampling, got %s." % String(snapshot.get("surface_render_mode", "")))
+	if String(snapshot.get("surface_render_mode", "")) != "world_grid":
+		_fail("Mobius surface should use world-grid rendering, got %s." % String(snapshot.get("surface_render_mode", "")))
 		return
 	var draw_rect: Rect2 = snapshot.get("surface_draw_rect", Rect2())
 	var arena_rect := Rect2(Vector2(MainScene.ARENA_LEFT, MainScene.ARENA_TOP), Vector2(MainScene.ARENA_WIDTH, MainScene.ARENA_HEIGHT))
@@ -94,8 +94,8 @@ func _init() -> void:
 	if float(config.get("surface_grid_cell_px", 0.0)) < 56.0:
 		_fail("Mobius quiet grid should use larger displayed cells; got %.1f." % float(config.get("surface_grid_cell_px", 0.0)))
 		return
-	if float(config.get("surface_alpha_gain", 0.0)) < 1.0 or float(config.get("surface_alpha_gain", 99.0)) > 1.12 or float(config.get("surface_alpha_max", 0.0)) < 0.17 or float(config.get("surface_alpha_max", 99.0)) > 0.20:
-		_fail("Mobius surface material should be quiet but readable; gain=%.2f max=%.2f." % [float(config.get("surface_alpha_gain", 0.0)), float(config.get("surface_alpha_max", 0.0))])
+	if float(config.get("surface_alpha_gain", 0.0)) < 0.88 or float(config.get("surface_alpha_gain", 99.0)) > 0.96 or float(config.get("surface_alpha_max", 0.0)) < 0.15 or float(config.get("surface_alpha_max", 99.0)) > 0.17:
+		_fail("Mobius world-grid material should be quiet but readable; gain=%.2f max=%.2f." % [float(config.get("surface_alpha_gain", 0.0)), float(config.get("surface_alpha_max", 0.0))])
 		return
 	if float(config.get("grid_far_brightness", 0.0)) < 0.50:
 		_fail("Mobius grid valley/far brightness floor should not disappear; got %.2f." % float(config.get("grid_far_brightness", 0.0)))
@@ -103,5 +103,5 @@ func _init() -> void:
 	if float(config.get("grid_near_brightness", 1.0)) >= float(config.get("unit_surface_far_brightness", 0.0)):
 		_fail("Mobius grid should not outshine foreground units; grid_near=%.2f unit_far=%.2f." % [float(config.get("grid_near_brightness", 0.0)), float(config.get("unit_surface_far_brightness", 0.0))])
 		return
-	print("MOBIUS_GRID_FULL_COVERAGE_BRIGHTNESS_PROBE ok rect=%s alpha=%.4f" % [str(draw_rect), mean_alpha])
+	print("MOBIUS_GRID_FULL_COVERAGE_BRIGHTNESS_PROBE ok mode=world_grid rect=%s alpha=%.4f" % [str(draw_rect), mean_alpha])
 	quit()

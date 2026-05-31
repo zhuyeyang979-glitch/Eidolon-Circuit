@@ -31,19 +31,22 @@ func _init() -> void:
 			_fail("Battle minimal background should not include parallax layer %s." % layer_name)
 	if main.mobius_strip_surface_view == null or not main.mobius_strip_surface_view.visible:
 		_fail("Mobius strip surface should remain visible as the core battle background.")
-	if main.mobius_strip_surface_view.surface_texture == null:
-		_fail("Mobius strip surface should use the generated surface texture.")
+	var surface_snapshot: Dictionary = main.mobius_strip_surface_view.stardust_band_snapshot()
+	if String(surface_snapshot.get("surface_render_mode", "")) != "world_grid":
+		_fail("Mobius strip surface should use the world-grid battlefield background.")
+	if main.mobius_strip_surface_view.surface_texture != null:
+		_fail("Mobius world grid should not use the old full-screen generated texture as the main map.")
 	var stardust: Dictionary = main.mobius_stardust_band_view.stardust_band_snapshot()
-	if not bool(stardust.get("visible", false)):
-		_fail("Minimal battle background should allow the dedicated Mobius stardust band.")
+	if bool(stardust.get("visible", false)):
+		_fail("Minimal battle background should keep screen-locked Mobius stardust disabled.")
 	if bool(stardust.get("lane_guides_enabled", true)):
 		_fail("Minimal battle background should not show straight Mobius lane guides.")
 	if main.arena_top_boundary_line == null or main.arena_bottom_boundary_line == null:
 		_fail("Arena boundary line nodes should exist.")
 	if main.arena_top_boundary_line.visible or main.arena_bottom_boundary_line.visible:
 		_fail("Arena top/bottom boundary borders should stay hidden.")
-	print("BATTLE_MINIMAL_BACKGROUND_PROBE ok surface=%s stardust_points=%d borders_hidden=true" % [
-		str(main.mobius_strip_surface_view.surface_texture.get_size()),
-		PackedVector2Array(stardust.get("points", PackedVector2Array())).size(),
+	print("BATTLE_MINIMAL_BACKGROUND_PROBE ok mode=%s stardust_visible=%s borders_hidden=true" % [
+		String(surface_snapshot.get("surface_render_mode", "")),
+		str(bool(stardust.get("visible", false))),
 	])
 	quit()

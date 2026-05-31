@@ -10,9 +10,32 @@ const GameStateStore = preload("res://scripts/state/game_state_store.gd")
 const DirtyGraph = preload("res://scripts/state/dirty_graph.gd")
 const DerivedStateCache = preload("res://scripts/state/derived_state_cache.gd")
 const HotPathProfiler = preload("res://scripts/perf/hot_path_profiler.gd")
+const PartZhNames = preload("res://scripts/data/part_zh_names.gd")
 const GpuGeometryService = preload("res://scripts/services/gpu_geometry_service.gd")
 const PartCatalogService = preload("res://scripts/services/part_catalog_service.gd")
 const UnitStatsService = preload("res://scripts/services/unit_stats_service.gd")
+const TrainingEntryService = preload("res://scripts/services/training_entry_service.gd")
+const SavedUnitLibraryService = preload("res://scripts/services/saved_unit_library_service.gd")
+const BattleInputService = preload("res://scripts/services/battle_input_service.gd")
+const ProjectileRuntimeService = preload("res://scripts/services/projectile_runtime_service.gd")
+const RuntimeContactService = preload("res://scripts/services/runtime_contact_service.gd")
+const RuntimeColliderGeometryService = preload("res://scripts/services/runtime_collider_geometry_service.gd")
+const BattleVfxBudgetService = preload("res://scripts/services/battle_vfx_budget_service.gd")
+const BattleFrameOrchestratorService = preload("res://scripts/services/battle_frame_orchestrator_service.gd")
+const BattleActorCommandService = preload("res://scripts/services/battle_actor_command_service.gd")
+const BattleFieldRuntimeService = preload("res://scripts/services/battle_field_runtime_service.gd")
+const BattleHitResolutionService = preload("res://scripts/services/battle_hit_resolution_service.gd")
+const BattleProjectileLifecycleService = preload("res://scripts/services/battle_projectile_lifecycle_service.gd")
+const BattleActionEventService = preload("res://scripts/services/battle_action_event_service.gd")
+const BattleImpactQueryService = preload("res://scripts/services/battle_impact_query_service.gd")
+const BattleRuntimeLifecycleService = preload("res://scripts/services/battle_runtime_lifecycle_service.gd")
+const BattleIdentityRuntimeService = preload("res://scripts/services/battle_identity_runtime_service.gd")
+const BattleSpatialRuntimeService = preload("res://scripts/services/battle_spatial_runtime_service.gd")
+const BattleMapOcclusionService = preload("res://scripts/services/battle_map_occlusion_service.gd")
+const BattleTargetAcquisitionService = preload("res://scripts/services/battle_target_acquisition_service.gd")
+const BattleHudStateService = preload("res://scripts/services/battle_hud_state_service.gd")
+const BattleAwarenessService = preload("res://scripts/services/battle_awareness_service.gd")
+const BattleRuntimeActionTelemetryService = preload("res://scripts/services/battle_runtime_action_telemetry_service.gd")
 const PowerAllocationService = preload("res://scripts/services/power_allocation_service.gd")
 const ActionProfileRegistry = preload("res://scripts/services/action_profile_registry.gd")
 const DriveSystemService = preload("res://scripts/services/drive_system_service.gd")
@@ -22,6 +45,8 @@ const UILifecycleService = preload("res://scripts/services/ui_lifecycle_service.
 const LoadingLifecycleService = preload("res://scripts/services/loading_lifecycle_service.gd")
 const NavigationService = preload("res://scripts/services/navigation_service.gd")
 const TeamEditController = preload("res://scripts/controllers/team_edit_controller.gd")
+const UnitEditorCatalogController = preload("res://scripts/controllers/unit_editor_catalog_controller.gd")
+const UnitEditorBoardController = preload("res://scripts/controllers/unit_editor_board_controller.gd")
 const BattleController = preload("res://scripts/controllers/battle_controller.gd")
 const SavedUnitsController = preload("res://scripts/controllers/saved_units_controller.gd")
 const SettingsController = preload("res://scripts/controllers/settings_controller.gd")
@@ -35,6 +60,14 @@ const SortieThumbView = preload("res://scripts/views/sortie_thumb_view.gd")
 const CockpitHudView = preload("res://scripts/views/cockpit_hud_view.gd")
 const BattleInstrumentGaugeView = preload("res://scripts/views/battle_instrument_gauge_view.gd")
 const BattleMinimapView = preload("res://scripts/views/battle_minimap_view.gd")
+const BattleActionDiagnosticsView = preload("res://scripts/views/battle_action_diagnostics_view.gd")
+const BattlePartPreviewView = preload("res://scripts/views/battle_part_preview_view.gd")
+const TrainingEntryIntroView = preload("res://scripts/views/training_entry_intro_view.gd")
+const PartDragGhostView = preload("res://scripts/views/part_drag_ghost_view.gd")
+const ComponentArtView = preload("res://scripts/views/component_art_view.gd")
+const HitEffect = preload("res://scripts/effects/hit_effect.gd")
+const ComboRippleEffect = preload("res://scripts/effects/combo_ripple_effect.gd")
+const ProjectileTraceEffect = preload("res://scripts/effects/projectile_trace_effect.gd")
 const UILayoutTokens = preload("res://scripts/ui_layout_tokens.gd")
 const MotionBudget = preload("res://scripts/motion_budget.gd")
 const MobiusWorld = preload("res://scripts/mobius_world.gd")
@@ -70,6 +103,9 @@ class MobiusStripSurfaceView:
 	var stardust_last_max_alpha := 0.0
 	var surface_render_mode := "full_rect_inverse_sample"
 	var last_surface_draw_rect := Rect2()
+	var world_grid_last_anchor_coord := Vector2.ZERO
+	var world_grid_last_cell_world := 0.0
+	var world_grid_last_line_count := 0
 
 	func set_surface_texture(texture: Texture2D) -> void:
 		surface_texture = texture
@@ -94,6 +130,11 @@ class MobiusStripSurfaceView:
 		stardust_particle_budget = clampi(int(config.get("stardust_particle_budget", stardust_particle_budget)), 0, 240)
 		rotation_state = next_rotation_state.duplicate(true)
 		camera_coord = next_camera_coord
+		if surface_render_mode == "world_grid":
+			var world_grid_screen_scale := maxf(1.0, float(config.get("screen_scale", 1.0)))
+			world_grid_last_anchor_coord = camera_coord
+			world_grid_last_cell_world = maxf(0.10, surface_grid_cell_px / world_grid_screen_scale)
+			world_grid_last_line_count = 0
 		if material is ShaderMaterial:
 			var shader_material := material as ShaderMaterial
 			var shader_parameters := MobiusWorld.surface_shader_parameters(camera_coord, config, rotation_state)
@@ -130,6 +171,9 @@ class MobiusStripSurfaceView:
 			_reset_stardust_band_cache()
 			return
 		last_surface_draw_rect = config.get("screen_rect", Rect2(Vector2.ZERO, size))
+		if surface_render_mode == "world_grid":
+			_draw_world_grid_surface()
+			return
 		if surface_texture != null:
 			draw_texture_rect(surface_texture, last_surface_draw_rect, false, Color.WHITE)
 		else:
@@ -154,6 +198,87 @@ class MobiusStripSurfaceView:
 			var alpha := 0.22 if absf(lane_ratio) < 0.9 else 0.34
 			var edge_softness := MobiusWorld.boundary_softness(half_width * lane_ratio, config)
 			draw_polyline(points, Color(0.72, 0.94, 1.0, alpha * (0.28 + edge_softness * 0.72)), 1.2 if absf(lane_ratio) < 0.9 else 3.6, true)
+
+	func _world_grid_projection_config() -> Dictionary:
+		var draw_config := config.duplicate(true)
+		draw_config["surface_projection_mode"] = "world_grid"
+		draw_config["surface_world_grid_stable"] = true
+		draw_config["local_rectangular_projection"] = true
+		draw_config["twist_visual_enabled"] = false
+		draw_config["surface_ridge_lift_strength"] = 0.0
+		draw_config["surface_ridge_warp_amplitude"] = 0.0
+		draw_config["surface_twist_shear_strength"] = 0.0
+		draw_config["surface_twist_warp_strength"] = 0.0
+		return draw_config
+
+	func _project_world_grid_polyline(coords: PackedVector2Array, draw_config: Dictionary) -> PackedVector2Array:
+		var points := PackedVector2Array()
+		for coord in coords:
+			var projection := MobiusWorld.project_to_screen(coord, camera_coord, draw_config, rotation_state)
+			var pos: Vector2 = projection.get("position", Vector2.ZERO)
+			if is_finite(pos.x) and is_finite(pos.y):
+				points.append(pos)
+		return points
+
+	func _draw_world_grid_polyline(coords: PackedVector2Array, draw_config: Dictionary, color: Color, width: float) -> void:
+		var points := _project_world_grid_polyline(coords, draw_config)
+		if points.size() >= 2:
+			draw_polyline(points, color, width, true)
+			world_grid_last_line_count += 1
+
+	func _draw_world_grid_surface() -> void:
+		world_grid_last_line_count = 0
+		var draw_config := _world_grid_projection_config()
+		var screen_scale := maxf(1.0, float(draw_config.get("screen_scale", 1.0)))
+		var view_world_width := last_surface_draw_rect.size.x / screen_scale
+		var view_world_height := float(draw_config.get("view_height", last_surface_draw_rect.size.y / screen_scale))
+		var half_width := MobiusWorld.strip_half_width(draw_config)
+		var span_s := view_world_width * 0.5 + maxf(1.0, view_world_width * 0.18)
+		var span_v := minf(half_width, view_world_height * 0.5 + 0.65)
+		var grid_cell_world := maxf(0.10, float(draw_config.get("surface_grid_cell_px", surface_grid_cell_px)) / screen_scale)
+		world_grid_last_anchor_coord = camera_coord
+		world_grid_last_cell_world = grid_cell_world
+		draw_rect(last_surface_draw_rect, Color(0.018, 0.027, 0.038, 0.90), true)
+		draw_rect(last_surface_draw_rect, Color(0.10, 0.19, 0.24, 0.18), false, 1.0, true)
+		var s_start: float = floor((camera_coord.x - span_s) / grid_cell_world) * grid_cell_world
+		var s_end: float = camera_coord.x + span_s
+		var v_start: float = floor((camera_coord.y - span_v) / grid_cell_world) * grid_cell_world
+		var v_end: float = camera_coord.y + span_v
+		var segment_count_s := clampi(int(ceil((span_s * 2.0) / maxf(grid_cell_world, 0.001))) * 2, 18, 140)
+		var segment_count_v := clampi(int(ceil((span_v * 2.0) / maxf(grid_cell_world, 0.001))) * 2, 8, 80)
+		var s: float = s_start
+		while s <= s_end + 0.001:
+			var coords := PackedVector2Array()
+			for i in range(segment_count_v + 1):
+				var t := float(i) / float(segment_count_v)
+				coords.append(Vector2(s, clampf(lerpf(-span_v, span_v, t) + camera_coord.y, -half_width, half_width)))
+			var major := absf(fposmod(s, grid_cell_world * 4.0)) < grid_cell_world * 0.08
+			_draw_world_grid_polyline(coords, draw_config, Color(0.42, 0.78, 0.88, 0.18 if major else 0.10), 1.15 if major else 0.72)
+			s += grid_cell_world
+		var v: float = v_start
+		while v <= v_end + 0.001:
+			var clamped_v := clampf(v, -half_width, half_width)
+			var coords := PackedVector2Array()
+			for i in range(segment_count_s + 1):
+				var t := float(i) / float(segment_count_s)
+				coords.append(Vector2(lerpf(camera_coord.x - span_s, camera_coord.x + span_s, t), clamped_v))
+			var center_line := absf(clamped_v) <= grid_cell_world * 0.12
+			var boundary_line := absf(absf(clamped_v) - half_width) <= grid_cell_world * 0.65
+			var alpha := 0.18 if center_line else 0.11
+			var width := 1.35 if center_line else 0.78
+			if boundary_line:
+				alpha = 0.30
+				width = 2.0
+			_draw_world_grid_polyline(coords, draw_config, Color(0.50, 0.86, 0.94, alpha), width)
+			v += grid_cell_world
+		for lane_ratio in [-1.0, 0.0, 1.0]:
+			var lane_v := half_width * float(lane_ratio)
+			var coords := PackedVector2Array()
+			for i in range(segment_count_s + 1):
+				var t := float(i) / float(segment_count_s)
+				coords.append(Vector2(lerpf(camera_coord.x - span_s, camera_coord.x + span_s, t), lane_v))
+			var line_color := Color(0.76, 0.96, 1.0, 0.22 if absf(lane_ratio) < 0.5 else 0.32)
+			_draw_world_grid_polyline(coords, draw_config, line_color, 1.55 if absf(lane_ratio) < 0.5 else 2.4)
 
 	func _sort_surface_sample(a: Dictionary, b: Dictionary) -> bool:
 		return float(a.get("avg_depth", 0.0)) < float(b.get("avg_depth", 0.0))
@@ -245,6 +370,9 @@ class MobiusStripSurfaceView:
 			"local_rectangular_projection": bool(config.get("local_rectangular_projection", false)),
 			"surface_render_mode": surface_render_mode,
 			"surface_draw_rect": last_surface_draw_rect,
+			"world_grid_anchor_coord": world_grid_last_anchor_coord,
+			"world_grid_cell_world": world_grid_last_cell_world,
+			"world_grid_line_count": world_grid_last_line_count,
 			"surface_alpha_gain": float(config.get("surface_alpha_gain", 1.0)),
 			"surface_alpha_max": float(config.get("surface_alpha_max", 0.18)),
 			"surface_color_gain": float(config.get("surface_color_gain", 1.0)),
@@ -425,403 +553,6 @@ class MobiusStardustBandView:
 		snapshot["display_alphas"] = stardust_last_display_alphas
 		snapshot["depths"] = stardust_last_depths
 		return snapshot
-
-
-class BattlePartPreviewView:
-	extends Control
-
-	var slot_key := ""
-	var part := {}
-	var language := "zh"
-	var last_component_signature := ""
-
-	func set_component(next_slot: String, next_part: Dictionary, next_language: String = "zh") -> void:
-		var signature := _component_signature(next_slot, next_part, next_language)
-		if signature == last_component_signature:
-			return
-		last_component_signature = signature
-		slot_key = next_slot
-		part = next_part.duplicate(true)
-		language = next_language
-		queue_redraw()
-
-	func _component_signature(next_slot: String, next_part: Dictionary, next_language: String) -> String:
-		return "%s|%s|%s|%s|%s|%s|%s|%s|%s" % [
-			next_slot,
-			next_language,
-			String(next_part.get("name", "")),
-			str(next_part.get("cost", "")),
-			str(next_part.get("mass", "")),
-			str(next_part.get("length", "")),
-			str(next_part.get("radius", "")),
-			str(next_part.get("shape", "")),
-			str(next_part.get("material_visual", "")),
-		]
-
-	func _draw() -> void:
-		draw_rect(Rect2(Vector2.ZERO, size), Color(0.006, 0.012, 0.018, 0.96), true)
-		draw_rect(Rect2(Vector2.ZERO, size), Color(0.25, 0.88, 1.0, 0.22), false, 1.4)
-		var title := "战斗外观预览" if language == "zh" else "BATTLE ART PREVIEW"
-		draw_string(ThemeDB.get_fallback_font(), Vector2(12.0, 18.0), title, HORIZONTAL_ALIGNMENT_LEFT, size.x - 24.0, 12, Color(0.72, 0.95, 1.0, 0.94))
-		var center := Vector2(size.x * 0.5, size.y * 0.58)
-		var scale := minf(size.x / 280.0, size.y / 110.0)
-		var material := _material_color()
-		var accent := _damage_color()
-		if slot_key == "joint":
-			_draw_joint(center, scale, material, accent)
-		elif slot_key == "limb_muscle":
-			_draw_limb(center, scale, material, accent)
-		elif slot_key == "booster":
-			_draw_booster(center, scale, material, accent)
-		elif slot_key == "muscle" and (bool(part.get("is_torso", false)) or String(part.get("material_class", "")).to_lower() == "torso"):
-			_draw_torso(center, scale, material, accent)
-		elif slot_key == "muscle" and (bool(part.get("projectile", false)) or String(part.get("material_class", "")) in ["gun", "missile_launcher", "web_gun"]):
-			_draw_gun(center, scale, material, accent)
-		elif slot_key == "muscle" and String(part.get("damage_type", "")) == "tear":
-			_draw_blade(center, scale, material, accent)
-		elif slot_key == "muscle" and String(part.get("damage_type", "")) == "pierce":
-			_draw_pierce(center, scale, material, accent)
-		elif slot_key == "muscle":
-			_draw_blunt(center, scale, material, accent)
-		else:
-			_draw_software(center, scale, material, accent)
-		draw_string(ThemeDB.get_fallback_font(), Vector2(12.0, size.y - 10.0), _caption(), HORIZONTAL_ALIGNMENT_LEFT, size.x - 24.0, 10, Color(0.9, 0.92, 0.96, 0.9))
-
-	func _material_color() -> Color:
-		if slot_key in ["special", "module", "engine", "cooling"]:
-			return Color(0.26, 0.82, 1.0, 1.0)
-		return PartArt.material_color_for(_material_style(), slot_key)
-
-	func _material_style() -> String:
-		var style_part := part.duplicate(true)
-		style_part["slot"] = slot_key
-		return PartArt.material_style_for(style_part)
-
-	func _damage_color() -> Color:
-		match String(part.get("projectile_damage_type", part.get("damage_type", ""))):
-			"laser":
-				return Color(0.28, 0.82, 1.0, 1.0)
-			"chemical":
-				return Color(0.58, 1.0, 0.3, 1.0)
-			"bullet":
-				return Color(1.0, 0.78, 0.32, 1.0)
-			"tear":
-				return Color(1.0, 0.28, 0.48, 1.0)
-			"pierce":
-				return Color(0.94, 0.96, 1.0, 1.0)
-			"blunt":
-				return Color(1.0, 0.52, 0.24, 1.0)
-		return Color(0.92, 0.9, 0.82, 1.0)
-
-	func _caption() -> String:
-		var kind := "软件/插槽件" if language == "zh" else "software slot"
-		if slot_key == "joint":
-			kind = "关节：旋转/伸缩" if language == "zh" else "joint: rotate/extend"
-		elif slot_key == "limb_muscle":
-			kind = "普通肢体：两端接关节" if language == "zh" else "limb: two joint ends"
-		elif slot_key == "muscle":
-			kind = "武器/躯干肌肉" if language == "zh" else "weapon or torso muscle"
-		elif slot_key == "booster":
-			kind = "推进器：喷口与火焰同轴" if language == "zh" else "thruster: aligned flame"
-		return "%s | %s" % [String(part.get("name", slot_key.to_upper())), kind]
-
-	func _draw_capsule(a: Vector2, b: Vector2, radius: float, color: Color, outline: Color) -> void:
-		draw_line(a, b, outline, radius * 2.35)
-		draw_circle(a, radius * 1.18, outline)
-		draw_circle(b, radius * 1.18, outline)
-		draw_line(a, b, color, radius * 1.8)
-		draw_circle(a, radius * 0.9, color)
-		draw_circle(b, radius * 0.9, color)
-
-	func _draw_connector(pos: Vector2, radius: float, color: Color) -> void:
-		draw_circle(pos, radius, Color(0.02, 0.04, 0.06, 1.0))
-		draw_circle(pos, radius * 0.64, color)
-		draw_circle(pos, radius * 0.34, Color(0.0, 0.0, 0.0, 0.55))
-
-	func _rect_points(center: Vector2, axis: Vector2, length: float, width: float) -> PackedVector2Array:
-		var forward := axis.normalized()
-		if forward.length() < 0.01:
-			forward = Vector2.RIGHT
-		var right := Vector2(-forward.y, forward.x)
-		return PackedVector2Array([
-			center - forward * length * 0.5 - right * width * 0.5,
-			center + forward * length * 0.5 - right * width * 0.5,
-			center + forward * length * 0.5 + right * width * 0.5,
-			center - forward * length * 0.5 + right * width * 0.5,
-		])
-
-	func _draw_preview_outline(points: PackedVector2Array, color: Color, width: float) -> void:
-		for i in range(points.size()):
-			draw_line(points[i], points[(i + 1) % points.size()], color, width)
-
-	func _draw_material_rect_marks(center: Vector2, axis: Vector2, length: float, width: float, material_style: String, alpha: float = 1.0) -> void:
-		var forward := axis.normalized()
-		if forward.length() < 0.01:
-			forward = Vector2.RIGHT
-		var right := Vector2(-forward.y, forward.x)
-		match material_style:
-			"metal":
-				draw_line(center - forward * length * 0.42 - right * width * 0.24, center + forward * length * 0.42 - right * width * 0.1, Color(1.0, 1.0, 1.0, 0.38 * alpha), maxf(1.0, width * 0.12))
-				draw_line(center - forward * length * 0.46 + right * width * 0.38, center + forward * length * 0.46 + right * width * 0.38, Color(0.02, 0.05, 0.07, 0.46 * alpha), maxf(1.0, width * 0.08))
-			"wood":
-				for i in range(4):
-					var t := -0.34 + float(i) * 0.22
-					var yoff := right * width * t
-					draw_line(center - forward * length * 0.42 + yoff, center + forward * length * 0.42 + yoff + right * sin(float(i)) * width * 0.04, Color(0.18, 0.1, 0.04, 0.5 * alpha), maxf(1.0, width * 0.06))
-				draw_circle(center + forward * length * 0.08 + right * width * 0.12, maxf(1.4, width * 0.09), Color(0.12, 0.06, 0.02, 0.38 * alpha))
-			"ceramic":
-				for i in range(3):
-					var p0 := center - forward * length * (0.34 - float(i) * 0.18) + right * width * (0.18 - float(i) * 0.12)
-					var p1 := p0 + forward * length * 0.16 + right * width * (0.18 if i % 2 == 0 else -0.18)
-					draw_line(p0, p1, Color(0.18, 0.17, 0.15, 0.38 * alpha), maxf(1.0, width * 0.045))
-				for i in range(7):
-					var p := center + forward * length * (-0.42 + float(i) * 0.14) + right * width * (0.28 * sin(float(i) * 1.7))
-					draw_circle(p, maxf(0.8, width * 0.025), Color(1.0, 1.0, 1.0, 0.28 * alpha))
-			"fur":
-				for i in range(10):
-					var t := -0.48 + float(i) / 9.0 * 0.96
-					for side in [-1.0, 1.0]:
-						var base: Vector2 = center + forward * length * t + right * width * 0.5 * float(side)
-						draw_line(base, base + right * side * width * 0.22 + forward * width * 0.06 * sin(float(i)), Color(0.92, 0.76, 0.48, 0.46 * alpha), maxf(1.0, width * 0.045))
-
-	func _draw_joint(center: Vector2, scale: float, material: Color, accent: Color) -> void:
-		var axis := Vector2.RIGHT
-		draw_circle(center, 32.0 * scale, Color(0.0, 0.0, 0.0, 0.72))
-		draw_circle(center, 24.0 * scale, material)
-		_draw_material_rect_marks(center, axis, 48.0 * scale, 16.0 * scale, _material_style(), 0.62)
-		draw_arc(center, 39.0 * scale, -PI * 0.75, PI * 0.75, 28, accent, 3.0 * scale)
-		_draw_connector(center - axis * 27.0 * scale, 8.0 * scale, accent)
-		_draw_connector(center + axis * 27.0 * scale, 8.0 * scale, accent)
-
-	func _draw_limb(center: Vector2, scale: float, material: Color, accent: Color) -> void:
-		var half := 58.0 * scale * (0.72 + clampf(float(part.get("length", 0.55)), 0.25, 1.35))
-		var width := 25.0 * scale
-		var beam := _rect_points(center, Vector2.RIGHT, half * 2.0, width)
-		draw_colored_polygon(beam, material.darkened(0.08))
-		_draw_preview_outline(beam, Color(0.0, 0.0, 0.0, 0.82), 2.0 * scale)
-		_draw_material_rect_marks(center, Vector2.RIGHT, half * 1.82, width * 0.86, _material_style(), 0.95)
-		draw_line(center - Vector2(half, 0.0), center + Vector2(half, 0.0), accent.lerp(Color.WHITE, 0.2), 1.6 * scale)
-		_draw_connector(center - Vector2(half, 0.0), 9.0 * scale, accent)
-		_draw_connector(center + Vector2(half, 0.0), 9.0 * scale, accent)
-
-	func _draw_gun(center: Vector2, scale: float, material: Color, accent: Color) -> void:
-		var back := center - Vector2(78.0, 0.0) * scale
-		var front := center + Vector2(80.0, 0.0) * scale
-		_draw_capsule(back, center + Vector2(24.0, 0.0) * scale, 17.0 * scale, material, Color(0.0, 0.0, 0.0, 0.82))
-		draw_rect(Rect2(center + Vector2(20.0, -8.0) * scale, Vector2(64.0, 16.0) * scale), material.darkened(0.2), true)
-		draw_line(center + Vector2(36.0, 0.0) * scale, front, accent, 5.0 * scale)
-		draw_line(front, front + Vector2(46.0, 0.0) * scale, Color(accent.r, accent.g, accent.b, 0.34), 2.0 * scale)
-		_draw_connector(back, 10.0 * scale, accent)
-
-	func _draw_blade(center: Vector2, scale: float, material: Color, accent: Color) -> void:
-		var pts := PackedVector2Array([center - Vector2(80.0, 15.0) * scale, center + Vector2(52.0, -24.0) * scale, center + Vector2(92.0, 0.0) * scale, center + Vector2(50.0, 24.0) * scale])
-		draw_colored_polygon(pts, material.lerp(accent, 0.2))
-		var closed := PackedVector2Array(pts)
-		closed.append(pts[0])
-		draw_polyline(closed, accent, 2.4 * scale)
-		_draw_connector(center - Vector2(92.0, 0.0) * scale, 10.0 * scale, accent)
-
-	func _draw_pierce(center: Vector2, scale: float, material: Color, accent: Color) -> void:
-		_draw_capsule(center - Vector2(86.0, 0.0) * scale, center + Vector2(48.0, 0.0) * scale, 8.0 * scale, material, Color(0.0, 0.0, 0.0, 0.8))
-		draw_colored_polygon(PackedVector2Array([center + Vector2(48.0, -16.0) * scale, center + Vector2(102.0, 0.0) * scale, center + Vector2(48.0, 16.0) * scale]), accent)
-		_draw_connector(center - Vector2(90.0, 0.0) * scale, 9.0 * scale, accent)
-
-	func _draw_blunt(center: Vector2, scale: float, material: Color, accent: Color) -> void:
-		_draw_capsule(center - Vector2(86.0, 0.0) * scale, center + Vector2(38.0, 0.0) * scale, 12.0 * scale, material, Color(0.0, 0.0, 0.0, 0.8))
-		draw_circle(center + Vector2(72.0, 0.0) * scale, 28.0 * scale, Color(0.0, 0.0, 0.0, 0.78))
-		draw_circle(center + Vector2(72.0, 0.0) * scale, 22.0 * scale, material.lerp(accent, 0.28))
-		draw_arc(center + Vector2(72.0, 0.0) * scale, 24.0 * scale, -1.2, 1.2, 16, accent, 3.0 * scale)
-		_draw_connector(center - Vector2(92.0, 0.0) * scale, 9.0 * scale, accent)
-
-	func _draw_torso(center: Vector2, scale: float, material: Color, accent: Color) -> void:
-		var length := 190.0 * scale
-		var front_width := 70.0 * scale
-		var rear_width := 132.0 * scale
-		var pts := _preview_saddle_polygon(center, Vector2.RIGHT, length, front_width, rear_width)
-		draw_colored_polygon(pts, material.darkened(0.04))
-		var closed := PackedVector2Array(pts)
-		closed.append(pts[0])
-		draw_polyline(closed, accent, 2.2 * scale)
-		_draw_material_rect_marks(center, Vector2.RIGHT, length * 0.48, rear_width * 0.44, _material_style(), 0.86)
-		draw_line(center + Vector2(length * 0.5, -front_width * 0.42), center + Vector2(length * 0.5, front_width * 0.42), accent.lerp(Color.WHITE, 0.25), 2.0 * scale)
-		for port_pos in _preview_saddle_port_positions(center, Vector2.RIGHT, PartArt.torso_saddle_port_count(part), length, front_width, rear_width):
-			_draw_connector(port_pos, 7.0 * scale, accent)
-
-	func _preview_saddle_polygon(center: Vector2, axis: Vector2, length: float, front_width: float, rear_width: float) -> PackedVector2Array:
-		var forward := axis.normalized()
-		if forward.length() < 0.01:
-			forward = Vector2.RIGHT
-		var right := Vector2(-forward.y, forward.x)
-		var pts := PackedVector2Array()
-		for local in PartArt.torso_hull_local_points(part, length, front_width, rear_width):
-			var p: Vector2 = local
-			pts.append(center + forward * p.x + right * p.y)
-		return pts
-
-	func _preview_saddle_port_positions(center: Vector2, axis: Vector2, port_count: int, length: float, front_width: float, rear_width: float) -> Array:
-		var forward := axis.normalized()
-		if forward.length() < 0.01:
-			forward = Vector2.RIGHT
-		var right := Vector2(-forward.y, forward.x)
-		var positions: Array = []
-		for local in PartArt.torso_hull_port_local_offsets(part, port_count, length, front_width, rear_width):
-			var p: Vector2 = local
-			positions.append(center + forward * p.x + right * p.y)
-		return positions
-
-	func _draw_booster(center: Vector2, scale: float, material: Color, accent: Color) -> void:
-		draw_colored_polygon(PackedVector2Array([center + Vector2(-76.0, -22.0) * scale, center + Vector2(32.0, -18.0) * scale, center + Vector2(72.0, 0.0) * scale, center + Vector2(32.0, 18.0) * scale, center + Vector2(-76.0, 22.0) * scale]), material)
-		draw_colored_polygon(PackedVector2Array([center + Vector2(-74.0, -14.0) * scale, center + Vector2(-140.0, 0.0) * scale, center + Vector2(-74.0, 14.0) * scale]), Color(accent.r, accent.g, accent.b, 0.46))
-		_draw_connector(center + Vector2(70.0, 0.0) * scale, 8.0 * scale, accent)
-
-	func _draw_software(center: Vector2, scale: float, material: Color, accent: Color) -> void:
-		var card := Rect2(center - Vector2(78.0, 30.0) * scale, Vector2(156.0, 60.0) * scale)
-		draw_rect(card, Color(0.03, 0.08, 0.12, 1.0), true)
-		draw_rect(card, accent, false, 2.0 * scale)
-		draw_circle(center, 18.0 * scale, Color(accent.r, accent.g, accent.b, 0.22))
-		draw_circle(center, 7.0 * scale, accent)
-		draw_line(center - Vector2(54.0, 0.0) * scale, center + Vector2(54.0, 0.0) * scale, material, 2.0 * scale)
-
-
-class TrainingEntryIntroView:
-	extends Control
-
-	var entries: Array = []
-	var language := "zh"
-	var visible_until_msec := 0
-
-	func set_entries(next_entries: Array, next_language: String, duration_sec: float = 3.0) -> void:
-		entries = next_entries.duplicate(true)
-		language = next_language
-		visible_until_msec = Time.get_ticks_msec() + int(maxf(0.2, duration_sec) * 1000.0)
-		visible = not entries.is_empty()
-		set_process(visible)
-		queue_redraw()
-
-	func clear_intro() -> void:
-		entries = []
-		visible_until_msec = 0
-		visible = false
-		set_process(false)
-		queue_redraw()
-
-	func _process(_delta: float) -> void:
-		if visible_until_msec > 0 and Time.get_ticks_msec() >= visible_until_msec:
-			clear_intro()
-
-	func _draw() -> void:
-		if entries.is_empty():
-			return
-		var font := ThemeDB.get_fallback_font()
-		var panel_count := entries.size()
-		var panel_width := minf(376.0, (size.x - 72.0) / maxf(1.0, float(panel_count)))
-		var panel_height := 126.0
-		var total_width := panel_width * float(panel_count) + 16.0 * float(maxi(0, panel_count - 1))
-		var start := Vector2(size.x * 0.5 - total_width * 0.5, 92.0)
-		for i in range(panel_count):
-			var entry: Dictionary = entries[i] if entries[i] is Dictionary else {}
-			var rect := Rect2(start + Vector2(float(i) * (panel_width + 16.0), 0.0), Vector2(panel_width, panel_height))
-			var player_id := int(entry.get("player_id", i + 1))
-			var base := Color(0.24, 0.86, 1.0, 0.92) if player_id == 1 else Color(1.0, 0.28, 0.44, 0.92)
-			draw_rect(rect, Color(0.004, 0.012, 0.02, 0.84), true)
-			draw_rect(rect, base, false, 1.5)
-			var title := String(entry.get("name", "UNIT"))
-			var label := String(entry.get("label", "P%d" % player_id))
-			draw_string(font, rect.position + Vector2(14.0, 22.0), _trim(label, 18), HORIZONTAL_ALIGNMENT_LEFT, 76.0, 12, Color(base.r, base.g, base.b, 1.0))
-			draw_string(font, rect.position + Vector2(86.0, 22.0), _trim(title, 30), HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 100.0, 15, Color(0.94, 0.98, 1.0, 1.0))
-			var thumb_rect := Rect2(rect.position + Vector2(14.0, 36.0), Vector2(rect.size.x - 28.0, rect.size.y - 50.0))
-			_draw_unit_thumbnail(thumb_rect, entry, base)
-
-	func _draw_unit_thumbnail(rect: Rect2, entry: Dictionary, base: Color) -> void:
-		draw_rect(rect, Color(0.0, 0.0, 0.0, 0.24), true)
-		draw_rect(rect, Color(base.r, base.g, base.b, 0.28), false, 1.0)
-		if bool(entry.get("training_ball_dummy", false)):
-			var radius_m := maxf(0.01, float(entry.get("dummy_radius", 0.6)))
-			var radius_ratio := clampf(radius_m / 2.0, 0.18, 1.0)
-			var visual_radius := minf(rect.size.x, rect.size.y) * lerpf(0.24, 0.44, radius_ratio)
-			var center := rect.get_center()
-			draw_circle(center, visual_radius, Color(base.r, base.g, base.b, 0.52))
-			draw_circle(center + Vector2(-visual_radius * 0.24, -visual_radius * 0.28), visual_radius * 0.34, Color(1.0, 1.0, 1.0, 0.16))
-			draw_arc(center, visual_radius, 0.0, TAU, 42, base.lerp(Color.WHITE, 0.26), 2.0)
-			draw_arc(center, visual_radius * 0.68, -PI * 0.9, PI * 0.9, 32, Color(base.r, base.g, base.b, 0.42), 1.2)
-			draw_line(center + Vector2(-visual_radius, 0.0), center + Vector2(visual_radius, 0.0), Color(1.0, 1.0, 1.0, 0.18), 1.0)
-			return
-		var segments: Array = Array(entry.get("segments", []))
-		if segments.is_empty():
-			draw_circle(rect.get_center(), minf(rect.size.x, rect.size.y) * 0.22, Color(base.r, base.g, base.b, 0.78))
-			return
-		var bounds := _segment_bounds(segments)
-		var fit_rect := rect.grow(-10.0)
-		var scale := minf(fit_rect.size.x / maxf(0.001, bounds.size.x), fit_rect.size.y / maxf(0.001, bounds.size.y))
-		for raw_segment in segments:
-			if not (raw_segment is Dictionary):
-				continue
-			var segment: Dictionary = Dictionary(raw_segment).duplicate(true)
-			var a := _segment_local_point(segment, "a_local", "a")
-			var b := _segment_local_point(segment, "b_local", "b")
-			segment["a"] = fit_rect.get_center() + (a - bounds.get_center()) * scale
-			segment["b"] = fit_rect.get_center() + (b - bounds.get_center()) * scale
-			segment["radius"] = maxf(2.0, float(segment.get("radius", 0.025)) * scale)
-			var part_kind := String(segment.get("part_kind", "limb_muscle"))
-			var material := Color(0.45, 0.62, 0.78, 0.9)
-			var primary := base.lerp(Color.WHITE, 0.08)
-			if part_kind == "torso":
-				material = base.lerp(Color(0.42, 0.54, 0.66, 1.0), 0.38)
-			AssemblyBoardRenderer.draw_runtime_segment(self, segment, Vector2.ZERO, 0.0, 1.0, material, primary)
-
-	func _segment_bounds(segments: Array) -> Rect2:
-		var first := true
-		var min_point := Vector2.ZERO
-		var max_point := Vector2.ZERO
-		for raw_segment in segments:
-			if not (raw_segment is Dictionary):
-				continue
-			var segment: Dictionary = raw_segment
-			var radius := maxf(0.0, float(segment.get("radius", 0.025)))
-			for point in _segment_local_bound_points(segment):
-				if first:
-					min_point = point - Vector2(radius, radius)
-					max_point = point + Vector2(radius, radius)
-					first = false
-				else:
-					min_point.x = minf(min_point.x, point.x - radius)
-					min_point.y = minf(min_point.y, point.y - radius)
-					max_point.x = maxf(max_point.x, point.x + radius)
-					max_point.y = maxf(max_point.y, point.y + radius)
-		if first:
-			return Rect2(Vector2(-1.0, -1.0), Vector2(2.0, 2.0))
-		var rect := Rect2(min_point, max_point - min_point)
-		if rect.size.x < 0.05:
-			rect.size.x = 0.05
-		if rect.size.y < 0.05:
-			rect.size.y = 0.05
-		return rect.grow(maxf(rect.size.x, rect.size.y) * 0.08 + 0.08)
-
-	func _segment_local_bound_points(segment: Dictionary) -> Array:
-		var points: Array = []
-		var polygon = segment.get("polygon_local", [])
-		if polygon is Array:
-			for raw_point in Array(polygon):
-				if raw_point is Vector2:
-					points.append(raw_point)
-				elif raw_point is Dictionary:
-					points.append(Vector2(float(raw_point.get("x", 0.0)), float(raw_point.get("y", 0.0))))
-		elif polygon is PackedVector2Array:
-			for raw_point in polygon:
-				points.append(raw_point)
-		if points.is_empty():
-			points.append(_segment_local_point(segment, "a_local", "a"))
-			points.append(_segment_local_point(segment, "b_local", "b"))
-		return points
-
-	func _segment_local_point(segment: Dictionary, primary_key: String, fallback_key: String) -> Vector2:
-		var value = segment.get(primary_key, segment.get(fallback_key, Vector2.ZERO))
-		return value if value is Vector2 else Vector2.ZERO
-
-	func _trim(value: String, max_chars: int) -> String:
-		if value.length() <= max_chars:
-			return value
-		return value.substr(0, maxi(1, max_chars - 1)) + "."
 
 
 class ScoutUnitDetailView:
@@ -1128,6 +859,20 @@ class PartPreviewTextureCache:
 		pending_requests.clear()
 		pending_order.clear()
 		active_request = {}
+
+	static func clear_all(release_renderer: bool = true) -> void:
+		textures.clear()
+		lru_order.clear()
+		last_captured_keys.clear()
+		clear_pending_requests()
+		if release_renderer and render_viewport != null:
+			if is_instance_valid(render_viewport):
+				var parent := render_viewport.get_parent()
+				if parent != null:
+					parent.remove_child(render_viewport)
+				render_viewport.queue_free()
+			render_viewport = null
+			render_canvas = null
 
 	static func process_queue(owner: Node, budget: int = 2) -> int:
 		last_captured_keys = []
@@ -1518,6 +1263,20 @@ class CatalogCardBodyTextureCache:
 		pending_requests.clear()
 		pending_order.clear()
 		active_request = {}
+
+	static func clear_all(release_renderer: bool = true) -> void:
+		textures.clear()
+		lru_order.clear()
+		last_captured_keys.clear()
+		clear_pending_requests()
+		if release_renderer and render_viewport != null:
+			if is_instance_valid(render_viewport):
+				var parent := render_viewport.get_parent()
+				if parent != null:
+					parent.remove_child(render_viewport)
+				render_viewport.queue_free()
+			render_viewport = null
+			render_canvas = null
 
 	static func process_queue(owner: Node, budget: int = 1) -> int:
 		last_captured_keys = []
@@ -2530,39 +2289,6 @@ class PartCatalogCardButton:
 		return pts
 
 
-class PartDragGhostView:
-	extends PartCatalogCardButton
-
-	func _init() -> void:
-		size = Vector2(118.0, 82.0)
-		custom_minimum_size = size
-		mouse_filter = Control.MOUSE_FILTER_IGNORE
-		modulate = Color(1.0, 1.0, 1.0, 0.55)
-		focus_mode = Control.FOCUS_NONE
-
-	func set_card(next_slot: String, next_part: Dictionary, next_selected: bool, next_language: String, next_index: int, next_display_name: String, next_line_a: String, next_line_b: String) -> void:
-		super.set_card(next_slot, next_part, next_selected, next_language, next_index, next_display_name, next_line_a, next_line_b)
-		var rank := clampi(_card_size_rank(), 1, 5)
-		var size_scale := lerpf(0.78, 1.22, float(rank - 1) / 4.0)
-		size = Vector2(112.0, 78.0) * size_scale
-		size.x = clampf(size.x, 88.0, 142.0)
-		size.y = clampf(size.y, 62.0, 100.0)
-		custom_minimum_size = size
-		_sync_preview_icon(true)
-
-	func _draw() -> void:
-		if not visible or part.is_empty() or slot_key == "":
-			return
-		var rect := Rect2(Vector2.ZERO, size)
-		draw_rect(rect.grow(2.0), Color(0.0, 0.0, 0.0, 0.22), true)
-		draw_rect(rect, Color(0.02, 0.04, 0.052, 0.58), true)
-		draw_rect(rect, _slot_color().lerp(Color.WHITE, 0.18), false, 1.6)
-		var art_rect := Rect2(Vector2(7.0, 7.0), size - Vector2(14.0, 14.0))
-		draw_rect(art_rect, Color(0.0, 0.0, 0.0, 0.22), true)
-		_draw_size_ruler(art_rect, _thumbnail_size_scale())
-		_draw_size_badge(art_rect)
-
-
 class EditorStatsRailView:
 	extends Control
 
@@ -3208,766 +2934,6 @@ class EditorPartHoverPopupView:
 		if value.length() <= max_chars:
 			return value
 		return value.substr(0, maxi(1, max_chars - 1)) + "."
-
-
-class ComponentArtView:
-	extends Control
-
-	var slot_key := ""
-	var part := {}
-	var snap_amount := 0.0
-	var asset_sheet: Texture2D
-	var joint_sheet: Texture2D
-	var limb_muscle_sheet: Texture2D
-	var blade_weapon_sheet: Texture2D
-	var blunt_weapon_sheet: Texture2D
-	var pierce_weapon_sheet: Texture2D
-	var torso_sheet: Texture2D
-	var booster_sheet: Texture2D
-	var engine_sheet: Texture2D
-	var last_component_signature := ""
-
-	func set_asset_sheet(texture: Texture2D) -> void:
-		asset_sheet = texture
-		queue_redraw()
-
-	func set_joint_sheet(texture: Texture2D) -> void:
-		joint_sheet = texture
-		queue_redraw()
-
-	func set_limb_muscle_sheet(texture: Texture2D) -> void:
-		limb_muscle_sheet = texture
-		queue_redraw()
-
-	func set_blade_weapon_sheet(texture: Texture2D) -> void:
-		blade_weapon_sheet = texture
-		queue_redraw()
-
-	func set_blunt_weapon_sheet(texture: Texture2D) -> void:
-		blunt_weapon_sheet = texture
-		queue_redraw()
-
-	func set_pierce_weapon_sheet(texture: Texture2D) -> void:
-		pierce_weapon_sheet = texture
-		queue_redraw()
-
-	func set_torso_sheet(texture: Texture2D) -> void:
-		torso_sheet = texture
-		queue_redraw()
-
-	func set_booster_sheet(texture: Texture2D) -> void:
-		booster_sheet = texture
-		queue_redraw()
-
-	func set_engine_sheet(texture: Texture2D) -> void:
-		engine_sheet = texture
-		queue_redraw()
-
-	func set_component(next_slot: String, next_part: Dictionary, next_snap: float = 0.0) -> void:
-		var snap_key := snappedf(next_snap, 0.01)
-		var signature := "%s|%s|%s|%s|%s|%s|%s|%s" % [
-			next_slot,
-			String(next_part.get("name", "")),
-			str(next_part.get("cost", "")),
-			str(next_part.get("mass", "")),
-			str(next_part.get("length", "")),
-			str(next_part.get("radius", "")),
-			str(next_part.get("shape", "")),
-			str(snap_key),
-		]
-		if signature == last_component_signature:
-			return
-		last_component_signature = signature
-		slot_key = next_slot
-		part = next_part.duplicate(true)
-		snap_amount = next_snap
-		queue_redraw()
-
-	func _draw() -> void:
-		draw_rect(Rect2(Vector2.ZERO, size), Color(0.018, 0.026, 0.032, 0.96), true)
-		_draw_grid()
-		var center := size * 0.5
-		var scale := minf(size.x, size.y) / 210.0
-		var glow := clampf(snap_amount, 0.0, 1.0)
-		if glow > 0.0:
-			draw_circle(center, 82.0 * scale + glow * 18.0, Color(0.3, 0.92, 1.0, 0.18 * glow))
-			draw_arc(center, 92.0 * scale + glow * 22.0, 0.0, TAU, 40, Color(1.0, 0.88, 0.28, 0.55 * glow), 3.0)
-		_draw_component(center, scale)
-
-	func _asset_region_for_component() -> Rect2:
-		var cell := asset_sheet.get_size() / 4.0
-		var index := _asset_index_for_component()
-		return Rect2(Vector2(float(index % 4) * cell.x, float(index / 4) * cell.y), cell)
-
-	func _joint_asset_region() -> Rect2:
-		var cell := joint_sheet.get_size() / Vector2(4.0, 7.0)
-		var column := _joint_material_column()
-		var row := _joint_type_row()
-		return Rect2(Vector2(float(column) * cell.x, float(row) * cell.y), cell)
-
-	func _joint_material_column() -> int:
-		var name := String(part.get("name", "")).to_upper()
-		var shape := String(part.get("shape", "")).to_lower()
-		var material_class := String(part.get("material_class", "")).to_lower()
-		if name.contains("CERAMIC") or name.contains("STONE") or shape.contains("ceramic") or material_class.contains("ceramic"):
-			return 1
-		if name.contains("WOOD") or name.contains("TIMBER") or name.contains("COMPOSITE") or shape.contains("wood") or material_class.contains("wood"):
-			return 2
-		if name.contains("FUR") or name.contains("SLEEVE") or name.contains("PADDED") or shape.contains("fur") or material_class.contains("fur"):
-			return 3
-		return 0
-
-	func _joint_type_row() -> int:
-		var name := String(part.get("name", "")).to_upper()
-		var shape := String(part.get("shape", "")).to_lower()
-		var cancel_profile := String(part.get("cancel_profile", "")).to_lower()
-		var joint_length := float(part.get("length", 0.12))
-		var joint_range := float(part.get("range", 0.0))
-		if _part_is_fixed_corner_joint():
-			return 5
-		if name.contains("90") or shape.contains("ball_90") or shape.contains("socket_90"):
-			return 0
-		if name.contains("180") or name.contains("YOKE") or name.contains("GIMBAL") or shape.contains("ball_180") or cancel_profile == "bidirectional":
-			return 1
-		if name.contains("CURVED") or name.contains("ARC") or shape.contains("curved") or shape.contains("arc"):
-			return 5 if joint_length <= 0.34 else 6
-		if name.contains("TELESCOPIC") or name.contains("LINEAR") or joint_range > 0.08:
-			if joint_length <= 0.12:
-				return 2
-			if joint_length <= 0.32:
-				return 3
-			return 4
-		if joint_length >= 0.42:
-			return 4
-		return 0
-
-	func _part_is_fixed_corner_joint() -> bool:
-		var shape := String(part.get("shape", "")).to_lower()
-		return bool(part.get("fixed_corner_joint", false)) or shape.contains("corner") or int(part.get("connection_angle_degrees", 0)) == 90
-
-	func _draw_fixed_corner_joint_overlay(center: Vector2, scale: float, color: Color, light: Color, dark: Color) -> void:
-		var p0 := center + Vector2(-72.0, 44.0) * scale
-		var corner := center + Vector2(-18.0, 44.0) * scale
-		var p1 := center + Vector2(-18.0, -62.0) * scale
-		var width := 18.0 * scale
-		draw_line(p0, corner, dark, width + 8.0 * scale)
-		draw_line(corner, p1, dark, width + 8.0 * scale)
-		draw_line(p0, corner, color, width)
-		draw_line(corner, p1, color, width)
-		draw_circle(corner, 26.0 * scale, light)
-		draw_circle(corner, 13.0 * scale, dark)
-		draw_line(corner + Vector2(20.0, 0.0) * scale, corner + Vector2(20.0, -40.0) * scale, Color(0.9, 1.0, 1.0, 0.72), 3.0 * scale)
-		draw_line(corner + Vector2(20.0, -40.0) * scale, corner + Vector2(58.0, -40.0) * scale, Color(0.9, 1.0, 1.0, 0.72), 3.0 * scale)
-		draw_string(ThemeDB.get_fallback_font(), center + Vector2(14.0, 34.0) * scale, "90", HORIZONTAL_ALIGNMENT_CENTER, 54.0 * scale, int(32.0 * scale), Color(0.92, 1.0, 1.0, 0.9))
-
-	func _limb_muscle_asset_region() -> Rect2:
-		var cell := limb_muscle_sheet.get_size() / Vector2(4.0, 3.0)
-		var column := _limb_muscle_material_column()
-		var row := _limb_muscle_length_row()
-		return Rect2(Vector2(float(column) * cell.x, float(row) * cell.y), cell)
-
-	func _limb_muscle_material_column() -> int:
-		var name := String(part.get("name", "")).to_upper()
-		var shape := String(part.get("shape", "")).to_lower()
-		var material_class := String(part.get("material_class", "")).to_lower()
-		if name.contains("CERAMIC") or name.contains("SHIN") or shape.contains("ceramic") or material_class.contains("ceramic"):
-			return 1
-		if name.contains("WOOD") or name.contains("STAKE") or name.contains("COMPOSITE") or shape.contains("wood") or shape.contains("stake") or material_class.contains("wood"):
-			return 2
-		if name.contains("FUR") or name.contains("SLEEVE") or name.contains("FIBER") or shape.contains("fur") or material_class.contains("fur"):
-			return 3
-		return 0
-
-	func _limb_muscle_length_row() -> int:
-		var muscle_length := float(part.get("length", 0.48))
-		if muscle_length <= 0.4:
-			return 0
-		if muscle_length <= 0.7:
-			return 1
-		return 2
-
-	func _blade_weapon_asset_region() -> Rect2:
-		var cell := blade_weapon_sheet.get_size() / Vector2(3.0, 3.0)
-		var column := _blade_weapon_family_column()
-		var row := _blade_weapon_length_row()
-		return Rect2(Vector2(float(column) * cell.x, float(row) * cell.y), cell)
-
-	func _part_is_blade_weapon() -> bool:
-		var name := String(part.get("name", "")).to_upper()
-		var shape := String(part.get("shape", "")).to_lower()
-		var damage_type := String(part.get("damage_type", ""))
-		var material_class := String(part.get("material_class", "")).to_lower()
-		var terminal_like := bool(part.get("terminal_weapon", false)) or int(part.get("connection_ends", 2)) <= 1 or material_class in ["weapon", "racket"]
-		return damage_type == "tear" and (terminal_like or name.contains("SCYTHE") or name.contains("KATANA") or name.contains("GREATSWORD") or name.contains("GREAT SWORD") or name.contains("BUSTER") or name.contains("ODACHI") or name.contains("MACHETE") or name.contains("RAZOR") or name.contains("SABER") or name.contains("WING") or name.contains("TAIL") or shape.contains("scythe") or shape.contains("katana") or shape.contains("greatsword") or shape.contains("great_sword") or shape.contains("machete") or shape.contains("blade") or shape.contains("razor") or shape.contains("saber") or shape.contains("wing") or shape.contains("tail"))
-
-	func _blade_weapon_family_column() -> int:
-		var name := String(part.get("name", "")).to_upper()
-		var shape := String(part.get("shape", "")).to_lower()
-		if name.contains("SCYTHE") or shape.contains("scythe") or shape.contains("crescent"):
-			return 0
-		if name.contains("KATANA") or name.contains("ODACHI") or shape.contains("katana") or shape.contains("saber"):
-			return 1
-		return 2
-
-	func _blade_weapon_length_row() -> int:
-		var name := String(part.get("name", "")).to_upper()
-		var muscle_length := float(part.get("length", 0.66))
-		var mass := float(part.get("mass", 8.0))
-		if name.contains("SHORT") or name.contains("LIGHT") or muscle_length <= 0.52 or mass <= 5.0:
-			return 0
-		if name.contains("LONG") or name.contains("HEAVY") or name.contains("KAIJU") or name.contains("COLOSSUS") or muscle_length >= 1.0 or mass >= 28.0:
-			return 2
-		return 1
-
-	func _blunt_weapon_asset_region() -> Rect2:
-		var cell := blunt_weapon_sheet.get_size() / Vector2(3.0, 3.0)
-		var column := _blunt_weapon_family_column()
-		var row := _blunt_weapon_length_row()
-		return Rect2(Vector2(float(column) * cell.x, float(row) * cell.y), cell)
-
-	func _part_is_blunt_weapon() -> bool:
-		var name := String(part.get("name", "")).to_upper()
-		var shape := String(part.get("shape", "")).to_lower()
-		var damage_type := String(part.get("damage_type", ""))
-		var material_class := String(part.get("material_class", "")).to_lower()
-		var terminal_like := bool(part.get("terminal_weapon", false)) or int(part.get("connection_ends", 2)) <= 1 or material_class in ["weapon", "racket"]
-		return damage_type == "blunt" and (terminal_like or name.contains("SHIELD") or name.contains("BUCKLER") or name.contains("HAMMER") or name.contains("MACE") or name.contains("GLOVE") or name.contains("GAUNTLET") or name.contains("FIST") or name.contains("JACK") or shape.contains("shield") or shape.contains("hammer") or shape.contains("glove") or shape.contains("gauntlet") or shape.contains("fist") or shape.contains("jack"))
-
-	func _blunt_weapon_family_column() -> int:
-		var name := String(part.get("name", "")).to_upper()
-		var shape := String(part.get("shape", "")).to_lower()
-		if name.contains("SHIELD") or name.contains("BUCKLER") or shape.contains("shield") or shape.contains("buckler"):
-			return 0
-		if name.contains("HAMMER") or name.contains("MACE") or name.contains("JACK") or shape.contains("hammer") or shape.contains("jack") or shape.contains("mace"):
-			return 1
-		return 2
-
-	func _blunt_weapon_length_row() -> int:
-		var name := String(part.get("name", "")).to_upper()
-		var muscle_length := float(part.get("length", 0.5))
-		var mass := float(part.get("mass", 9.0))
-		if name.contains("SHORT") or name.contains("LIGHT") or name.contains("BUCKLER") or muscle_length <= 0.45 or mass <= 6.0:
-			return 0
-		if name.contains("LONG") or name.contains("HEAVY") or name.contains("COLOSSUS") or name.contains("TOWER") or muscle_length >= 0.95 or mass >= 32.0:
-			return 2
-		return 1
-
-	func _pierce_weapon_asset_region() -> Rect2:
-		var cell := pierce_weapon_sheet.get_size() / Vector2(3.0, 3.0)
-		var column := _pierce_weapon_family_column()
-		var row := _pierce_weapon_length_row()
-		return Rect2(Vector2(float(column) * cell.x, float(row) * cell.y), cell)
-
-	func _part_is_pierce_weapon() -> bool:
-		var name := String(part.get("name", "")).to_upper()
-		var shape := String(part.get("shape", "")).to_lower()
-		var damage_type := String(part.get("damage_type", ""))
-		var material_class := String(part.get("material_class", "")).to_lower()
-		var terminal_like := bool(part.get("terminal_weapon", false)) or int(part.get("connection_ends", 2)) <= 1 or material_class in ["weapon", "racket"]
-		return damage_type == "pierce" and (terminal_like or name.contains("LANCE") or name.contains("SPEAR") or name.contains("PIKE") or name.contains("HARPOON") or name.contains("RAPIER") or name.contains("FOIL") or name.contains("EPEE") or name.contains("NEEDLE") or name.contains("STILETTO") or name.contains("DRILL") or name.contains("AUGER") or name.contains("BORER") or name.contains("SPIKE") or name.contains("TALON") or shape.contains("lance") or shape.contains("spear") or shape.contains("pike") or shape.contains("harpoon") or shape.contains("rapier") or shape.contains("foil") or shape.contains("needle") or shape.contains("drill") or shape.contains("auger") or shape.contains("spike") or shape.contains("talon"))
-
-	func _pierce_weapon_family_column() -> int:
-		var name := String(part.get("name", "")).to_upper()
-		var shape := String(part.get("shape", "")).to_lower()
-		if name.contains("DRILL") or name.contains("AUGER") or name.contains("BORER") or shape.contains("drill") or shape.contains("auger") or shape.contains("borer"):
-			return 2
-		if name.contains("RAPIER") or name.contains("FOIL") or name.contains("EPEE") or name.contains("NEEDLE") or name.contains("STILETTO") or name.contains("ROD") or shape.contains("rapier") or shape.contains("foil") or shape.contains("needle") or shape.contains("rod"):
-			return 1
-		return 0
-
-	func _pierce_weapon_length_row() -> int:
-		var name := String(part.get("name", "")).to_upper()
-		var muscle_length := float(part.get("length", 0.62))
-		var mass := float(part.get("mass", 6.0))
-		if name.contains("SHORT") or name.contains("LIGHT") or name.contains("MICRO") or name.contains("FOIL") or muscle_length <= 0.48 or mass <= 4.0:
-			return 0
-		if name.contains("LONG") or name.contains("HEAVY") or name.contains("TITAN") or name.contains("COLOSSUS") or name.contains("SIEGE") or muscle_length >= 1.05 or mass >= 30.0:
-			return 2
-		return 1
-
-	func _torso_asset_region() -> Rect2:
-		var cell := torso_sheet.get_size() / Vector2(8.0, 4.0)
-		var column := _torso_archetype_column()
-		var row := _torso_material_row()
-		return Rect2(Vector2(float(column) * cell.x, float(row) * cell.y), cell)
-
-	func _part_is_torso() -> bool:
-		var material_class := String(part.get("material_class", "")).to_lower()
-		return bool(part.get("is_torso", false)) or material_class == "torso"
-
-	func _torso_archetype_column() -> int:
-		var name := String(part.get("name", "")).to_upper()
-		var shape := String(part.get("shape", "")).to_lower()
-		var archetype := String(part.get("archetype", "")).to_lower()
-		var key := "%s %s %s" % [name.to_lower(), shape, archetype]
-		if key.contains("shrimp") or key.contains("prawn") or key.contains("lobster"):
-			return 1
-		if key.contains("octopus") or key.contains("mantle") or key.contains("tentacle"):
-			return 2
-		if key.contains("snake") or key.contains("serpent"):
-			return 3
-		if key.contains("centipede") or key.contains("leviathan"):
-			return 4
-		if key.contains("tank") or key.contains("arsenal"):
-			return 5
-		if key.contains("hound") or key.contains("dog"):
-			return 6
-		if key.contains("human") or key.contains("pilot") or key.contains("humanoid") or key.contains("head") or key.contains("chest") or key.contains("scout_core"):
-			return 7
-		return 0
-
-	func _torso_material_row() -> int:
-		var name := String(part.get("name", "")).to_upper()
-		var visual := String(part.get("torso_material", part.get("material_visual", ""))).to_lower()
-		if visual.contains("ceramic") or name.contains("CERAMIC") or name.contains("STONE"):
-			return 1
-		if visual.contains("wood") or name.contains("WOOD") or name.contains("TIMBER"):
-			return 2
-		if visual.contains("fur") or visual.contains("padded") or name.contains("FUR") or name.contains("PADDED") or name.contains("SLEEVE"):
-			return 3
-		return 0
-
-	func _booster_asset_region() -> Rect2:
-		var cell := booster_sheet.get_size() / Vector2(3.0, 4.0)
-		var column := _booster_family_column()
-		var row := _booster_art_row()
-		return Rect2(Vector2(float(column) * cell.x, float(row) * cell.y), cell)
-
-	func _booster_family_column() -> int:
-		var flame := String(part.get("flame_color", "")).to_lower()
-		var style := String(part.get("thruster_family", "")).to_lower()
-		var name := String(part.get("name", "")).to_upper()
-		if flame.contains("yellow") or style.contains("sustain") or name.contains("YELLOW") or name.contains("SUSTAIN"):
-			return 1
-		if flame.contains("red") or style.contains("overburn") or style.contains("burst") or name.contains("RED") or name.contains("OVERBURN"):
-			return 2
-		return 0
-
-	func _booster_art_row() -> int:
-		var name := String(part.get("name", "")).to_upper()
-		var mass := float(part.get("mass", 0.0))
-		var momentum := float(part.get("boost_momentum", 0.0)) + float(part.get("drive_demand", part.get("momentum_min", part.get("allocated_momentum", 0.0))))
-		if name.contains("NANO") or name.contains("MICRO") or mass <= 2.5 or momentum <= 70.0:
-			return 0
-		if name.contains("COLOSSUS") or name.contains("TITAN") or name.contains("SIEGE") or mass >= 34.0 or momentum >= 360.0:
-			return 3
-		if name.contains("HEAVY") or mass >= 10.0 or momentum >= 170.0:
-			return 2
-		return 1
-
-	func _engine_asset_region() -> Rect2:
-		var cell := engine_sheet.get_size() / Vector2(3.0, 3.0)
-		var column := _engine_family_column()
-		var row := _engine_size_row()
-		return Rect2(Vector2(float(column) * cell.x, float(row) * cell.y), cell)
-
-	func _engine_family_column() -> int:
-		var name := String(part.get("name", "")).to_upper()
-		var family := String(part.get("engine_family", "")).to_lower()
-		if family.contains("furnace") or name.contains("FURNACE") or name.contains("TITAN") or name.contains("COLOSSUS"):
-			return 2
-		if family.contains("mobility") or name.contains("LIGHT") or name.contains("TURBINE") or name.contains("COMPACT"):
-			return 1
-		return 0
-
-	func _engine_size_row() -> int:
-		var tier := String(part.get("slot_volume_tier", "")).to_upper()
-		var power := float(part.get("power", 0.0))
-		var mass := float(part.get("mass", 0.0))
-		if tier in ["XS", "S"] or _engine_name_contains_any(["NANO", "SPARK"]) or power <= 28.0 or mass <= 3.0:
-			return 0
-		if tier == "XL" or _engine_name_contains_any(["TITAN", "COLOSSUS"]) or power >= 140.0 or mass >= 70.0:
-			return 2
-		return 1
-
-	func _engine_name_contains_any(tokens: Array) -> bool:
-		var name := String(part.get("name", "")).to_upper()
-		for token in tokens:
-			if name.contains(String(token)):
-				return true
-		return false
-
-	func _asset_index_for_component() -> int:
-		var name := String(part.get("name", "")).to_upper()
-		var shape := String(part.get("shape", "")).to_lower()
-		var material_class := String(part.get("material_class", ""))
-		var damage_type := String(part.get("damage_type", part.get("projectile_damage_type", "blunt")))
-		if slot_key == "special":
-			return 0
-		if slot_key == "joint":
-			if name.contains("TELESCOPIC"):
-				return 5
-			if name.contains("VECTOR") or name.contains("BALL"):
-				return 6
-			if name.contains("CHAIN"):
-				return 7
-			return 4
-		if slot_key == "limb_muscle":
-			if material_class == "chain" or name.contains("CHAIN") or name.contains("TENDON"):
-				return 7
-			if name.contains("COLOSSUS") or name.contains("GIRDER"):
-				return 14
-			if name.contains("CERAMIC") or name.contains("SHIN"):
-				return 5
-			return 6
-		if slot_key == "booster":
-			return 15
-		if slot_key == "engine" or slot_key == "cooling" or slot_key == "module":
-			return 6
-		if bool(part.get("projectile", false)) or material_class in ["gun", "missile_launcher"]:
-			if name.contains("MISSILE") or name.contains("MORTAR") or name.contains("CANNON") or name.contains("TURRET") or shape.contains("missile") or shape.contains("mortar"):
-				return 11
-			if String(part.get("projectile_damage_type", damage_type)) == "laser":
-				return 9
-			if String(part.get("projectile_damage_type", damage_type)) == "chemical":
-				return 10
-			return 8
-		if material_class == "chain" or name.contains("CHAIN") or name.contains("TENTACLE"):
-			return 7
-		if damage_type == "tear" or name.contains("SCYTHE") or name.contains("KATANA") or name.contains("BLADE") or name.contains("MACHETE"):
-			return 12
-		if damage_type == "pierce" or name.contains("SPIKE") or name.contains("LANCE") or name.contains("PIKE") or name.contains("TALON"):
-			return 13
-		return 14
-
-	func _draw_grid() -> void:
-		for x in range(0, int(size.x), 28):
-			draw_line(Vector2(float(x), 0.0), Vector2(float(x), size.y), Color(0.45, 0.92, 1.0, 0.05), 1.0)
-		for y in range(0, int(size.y), 28):
-			draw_line(Vector2(0.0, float(y)), Vector2(size.x, float(y)), Color(0.45, 0.92, 1.0, 0.05), 1.0)
-
-	func _draw_component(center: Vector2, scale: float) -> void:
-		var name := String(part.get("name", ""))
-		var shape := String(part.get("shape", ""))
-		var color := _part_color()
-		var dark := color.darkened(0.45)
-		var light := color.lerp(Color.WHITE, 0.38)
-		if slot_key == "special":
-			_draw_diamond(center, 58.0 * scale, color)
-			draw_circle(center, 20.0 * scale, Color(1.0, 0.88, 0.28, 0.85))
-			for i in range(6):
-				var angle := TAU * float(i) / 6.0
-				draw_line(center + Vector2(cos(angle), sin(angle)) * 24.0 * scale, center + Vector2(cos(angle), sin(angle)) * 58.0 * scale, light, 2.0 * scale)
-		elif slot_key == "joint":
-			if _part_is_fixed_corner_joint():
-				_draw_fixed_corner_joint_overlay(center, scale, color, light, dark)
-			elif name.contains("HINGE"):
-				draw_line(center + Vector2(-70.0, 0.0) * scale, center + Vector2(70.0, 0.0) * scale, light, 9.0 * scale)
-				draw_circle(center, 32.0 * scale, color)
-				draw_circle(center, 15.0 * scale, dark)
-			elif name.contains("VECTOR"):
-				_draw_triangle(center + Vector2(-34.0, 0.0) * scale, 40.0 * scale, -PI * 0.5, color)
-				_draw_triangle(center + Vector2(34.0, 0.0) * scale, 40.0 * scale, PI * 0.5, light)
-				draw_circle(center, 18.0 * scale, dark)
-			elif name.contains("LOCK"):
-				draw_rect(Rect2(center - Vector2(48.0, 48.0) * scale, Vector2(96.0, 96.0) * scale), color, true)
-				draw_rect(Rect2(center - Vector2(26.0, 26.0) * scale, Vector2(52.0, 52.0) * scale), dark, true)
-			else:
-				for i in range(4):
-					draw_rect(Rect2(center + Vector2(-76.0 + float(i) * 38.0, -16.0) * scale, Vector2(26.0, 32.0) * scale), color.lerp(light, float(i) * 0.18), true)
-				draw_line(center + Vector2(-76.0, 0.0) * scale, center + Vector2(74.0, 0.0) * scale, light, 5.0 * scale)
-		elif slot_key == "limb_muscle":
-			var axis := Vector2.RIGHT
-			var radius := 18.0 * scale
-			if shape.contains("chain"):
-				for i in range(6):
-					var x := -72.0 + float(i) * 28.0
-					draw_circle(center + Vector2(x, sin(float(i)) * 7.0) * scale, 13.0 * scale, color.lerp(light, float(i) * 0.08))
-					draw_line(center + Vector2(x + 10.0, sin(float(i)) * 7.0) * scale, center + Vector2(x + 26.0, sin(float(i + 1)) * 7.0) * scale, light, 5.0 * scale)
-			else:
-				draw_line(center - axis * 82.0 * scale, center + axis * 82.0 * scale, dark, radius)
-				draw_line(center - axis * 64.0 * scale, center + axis * 64.0 * scale, color, radius * 0.72)
-				for x in [-82.0, 82.0]:
-					draw_circle(center + Vector2(x, 0.0) * scale, 15.0 * scale, light)
-					draw_circle(center + Vector2(x, 0.0) * scale, 7.0 * scale, dark)
-				for i in range(5):
-					var rib_x := -48.0 + float(i) * 24.0
-					draw_line(center + Vector2(rib_x, -16.0) * scale, center + Vector2(rib_x + 10.0, 16.0) * scale, light.lerp(color, 0.35), 3.0 * scale)
-		elif slot_key == "muscle":
-			if _part_is_torso():
-				var port_count := PartArt.torso_saddle_port_count(part)
-				var length := 168.0 * scale
-				var front_width := 60.0 * scale
-				var rear_width := 118.0 * scale
-				draw_colored_polygon(_component_saddle_polygon(center, Vector2.RIGHT, length, front_width, rear_width), dark)
-				draw_colored_polygon(_component_saddle_polygon(center, Vector2.RIGHT, length * 0.62, front_width * 0.58, rear_width * 0.58), color)
-				draw_line(center + Vector2(length * 0.5, -front_width * 0.42), center + Vector2(length * 0.5, front_width * 0.42), light, maxf(1.0, 3.0 * scale))
-				for port_pos in _component_saddle_port_positions(center, Vector2.RIGHT, port_count, length, front_width, rear_width):
-					draw_circle(port_pos, maxf(4.0, 6.0 * scale), light)
-					draw_circle(port_pos, maxf(1.6, 2.4 * scale), dark)
-				return
-			# Base part art is procedural-only. Legacy image sheets are
-			# intentionally ignored here so TeamEdit previews and combat use the
-			# same AssemblyBoard-style visual language.
-			if shape == "electronic_armor" or shape == "shield_software":
-				draw_circle(center, 62.0 * scale, Color(0.08, 0.22, 0.34, 0.92))
-				draw_arc(center, 74.0 * scale, 0.0, TAU, 54, Color(0.36, 0.92, 1.0, 0.82), 5.0 * scale)
-				draw_arc(center, 46.0 * scale, -0.7, TAU - 0.7, 48, Color(0.86, 1.0, 1.0, 0.72), 3.0 * scale)
-				for i in range(6):
-					var angle := TAU * float(i) / 6.0
-					var p0 := center + Vector2(cos(angle), sin(angle)) * 20.0 * scale
-					var p1 := center + Vector2(cos(angle + 0.34), sin(angle + 0.34)) * 58.0 * scale
-					draw_line(p0, p1, color.lerp(Color.WHITE, 0.32), 3.0 * scale)
-				draw_string(ThemeDB.get_fallback_font(), center + Vector2(-31.0, 12.0) * scale, "SH", HORIZONTAL_ALIGNMENT_CENTER, 36.0 * scale, int(64.0 * scale), Color(0.9, 1.0, 1.0, 0.95))
-			elif shape == "web_gun":
-				draw_rect(Rect2(center + Vector2(-74.0, -18.0) * scale, Vector2(104.0, 36.0) * scale), dark, true)
-				draw_rect(Rect2(center + Vector2(20.0, -10.0) * scale, Vector2(66.0, 20.0) * scale), color.lerp(Color.WHITE, 0.16), true)
-				for i in range(4):
-					draw_arc(center + Vector2(-34.0 + float(i) * 17.0, 0.0) * scale, 16.0 * scale, -1.2, 1.2, 18, Color(0.84, 0.96, 1.0, 0.72), 2.0 * scale)
-				draw_line(center + Vector2(84.0, 0.0) * scale, center + Vector2(116.0, -22.0) * scale, Color(0.86, 0.96, 1.0, 0.86), 2.0 * scale)
-				draw_line(center + Vector2(84.0, 0.0) * scale, center + Vector2(118.0, 22.0) * scale, Color(0.86, 0.96, 1.0, 0.86), 2.0 * scale)
-				draw_circle(center + Vector2(94.0, 0.0) * scale, 8.0 * scale, Color(0.9, 0.98, 1.0, 1.0))
-			elif shape == "light_sink":
-				draw_rect(Rect2(center + Vector2(-76.0, -20.0) * scale, Vector2(112.0, 40.0) * scale), dark, true)
-				draw_circle(center + Vector2(42.0, 0.0) * scale, 34.0 * scale, Color(0.02, 0.0, 0.06, 1.0))
-				draw_arc(center + Vector2(42.0, 0.0) * scale, 42.0 * scale, 0.0, TAU, 42, Color(0.54, 0.74, 1.0, 0.72), 3.0 * scale)
-				for i in range(8):
-					var angle := TAU * float(i) / 8.0
-					draw_line(center + Vector2(42.0, 0.0) * scale, center + Vector2(42.0, 0.0) * scale + Vector2(cos(angle), sin(angle)) * 64.0 * scale, Color(0.1, 0.02, 0.22, 0.42), 3.0 * scale)
-			elif shape == "drone_core":
-				draw_circle(center, 54.0 * scale, dark)
-				draw_circle(center, 34.0 * scale, color)
-				draw_circle(center, 14.0 * scale, Color(0.9, 0.98, 1.0, 0.9))
-				for i in range(6):
-					var angle := TAU * float(i) / 6.0
-					var p0 := center + Vector2(cos(angle), sin(angle)) * 38.0 * scale
-					var p1 := center + Vector2(cos(angle), sin(angle)) * 76.0 * scale
-					draw_line(p0, p1, light, 4.0 * scale)
-					draw_circle(p1, 7.0 * scale, color.lerp(Color.WHITE, 0.25))
-			elif shape == "gun":
-				draw_rect(Rect2(center + Vector2(-70.0, -18.0) * scale, Vector2(108.0, 36.0) * scale), dark, true)
-				draw_rect(Rect2(center + Vector2(26.0, -9.0) * scale, Vector2(62.0, 18.0) * scale), color, true)
-				draw_rect(Rect2(center + Vector2(-48.0, 18.0) * scale, Vector2(28.0, 42.0) * scale), color.darkened(0.2), true)
-				draw_circle(center + Vector2(94.0, 0.0) * scale, 9.0 * scale, _damage_color(String(part.get("projectile_damage_type", "bullet"))))
-			elif shape == "scythe":
-				draw_arc(center + Vector2(4.0, 16.0) * scale, 72.0 * scale, -2.2, 0.7, 38, light, 14.0 * scale)
-				draw_line(center + Vector2(-64.0, 42.0) * scale, center + Vector2(46.0, -44.0) * scale, dark, 8.0 * scale)
-				draw_circle(center + Vector2(-64.0, 42.0) * scale, 12.0 * scale, color)
-			elif shape == "spike":
-				_draw_triangle(center + Vector2(18.0, 0.0) * scale, 86.0 * scale, PI * 0.5, color)
-				draw_rect(Rect2(center + Vector2(-78.0, -18.0) * scale, Vector2(70.0, 36.0) * scale), dark, true)
-			elif shape == "glove":
-				draw_rect(Rect2(center + Vector2(-78.0, -16.0) * scale, Vector2(60.0, 32.0) * scale), dark, true)
-				for i in range(4):
-					draw_circle(center + Vector2(-4.0 + float(i) * 22.0, -20.0) * scale, 18.0 * scale, color.lerp(light, float(i) * 0.12))
-				draw_circle(center + Vector2(28.0, 18.0) * scale, 38.0 * scale, color)
-			elif shape == "hammer":
-				draw_line(center + Vector2(-82.0, 30.0) * scale, center + Vector2(42.0, -32.0) * scale, dark, 13.0 * scale)
-				draw_rect(Rect2(center + Vector2(24.0, -62.0) * scale, Vector2(70.0, 46.0) * scale), color, true)
-				draw_rect(Rect2(center + Vector2(8.0, -50.0) * scale, Vector2(18.0, 24.0) * scale), light, true)
-			elif shape == "jack":
-				draw_rect(Rect2(center + Vector2(-78.0, -14.0) * scale, Vector2(96.0, 28.0) * scale), dark, true)
-				draw_rect(Rect2(center + Vector2(12.0, -8.0) * scale, Vector2(72.0, 16.0) * scale), color, true)
-				draw_line(center + Vector2(-36.0, -36.0) * scale, center + Vector2(42.0, 36.0) * scale, light, 5.0 * scale)
-				draw_line(center + Vector2(-36.0, 36.0) * scale, center + Vector2(42.0, -36.0) * scale, light, 5.0 * scale)
-			elif shape.begins_with("wood"):
-				var amp := 34.0 if shape == "wood_curve_large" else (16.0 if shape == "wood_curve_small" else 0.0)
-				var pts := PackedVector2Array()
-				for i in range(18):
-					var t := float(i) / 17.0
-					pts.append(center + Vector2(lerpf(-86.0, 86.0, t), sin(t * PI) * amp) * scale)
-				draw_polyline(pts, Color(0.78, 0.7, 0.52, 1.0), 15.0 * scale)
-				draw_circle(center + Vector2(-90.0, 0.0) * scale, 10.0 * scale, light)
-				draw_circle(center + Vector2(90.0, 0.0) * scale, 10.0 * scale, light)
-			elif shape == "crab":
-				draw_rect(Rect2(center + Vector2(-70.0, -44.0) * scale, Vector2(140.0, 88.0) * scale), dark, true)
-				for i in range(6):
-					var side := -1.0 if i < 3 else 1.0
-					var y := -34.0 + float(i % 3) * 34.0
-					draw_line(center + Vector2(side * 70.0, y) * scale, center + Vector2(side * 112.0, y + side * 4.0) * scale, light, 5.0 * scale)
-				draw_circle(center, 24.0 * scale, color)
-			elif shape == "machete":
-				draw_line(center + Vector2(-84.0, 34.0) * scale, center + Vector2(58.0, -36.0) * scale, dark, 8.0 * scale)
-				draw_colored_polygon(PackedVector2Array([center + Vector2(-22.0, -16.0) * scale, center + Vector2(92.0, -56.0) * scale, center + Vector2(78.0, -4.0) * scale, center + Vector2(-8.0, 22.0) * scale]), color)
-			elif shape == "katana":
-				draw_line(center + Vector2(-88.0, 42.0) * scale, center + Vector2(88.0, -44.0) * scale, light, 7.0 * scale)
-				draw_line(center + Vector2(-74.0, 36.0) * scale, center + Vector2(-34.0, 14.0) * scale, dark, 12.0 * scale)
-				draw_rect(Rect2(center + Vector2(-38.0, 4.0) * scale, Vector2(18.0, 8.0) * scale), color, true)
-			elif shape == "pike":
-				draw_line(center + Vector2(-92.0, 0.0) * scale, center + Vector2(54.0, 0.0) * scale, dark, 8.0 * scale)
-				_draw_triangle(center + Vector2(86.0, 0.0) * scale, 38.0 * scale, PI * 0.5, color)
-			elif shape == "cactus":
-				draw_rect(Rect2(center + Vector2(-60.0, -16.0) * scale, Vector2(80.0, 32.0) * scale), dark, true)
-				for i in range(9):
-					var angle := -0.9 + float(i) * 0.22
-					var base := center + Vector2(14.0 + float(i % 3) * 10.0, -18.0 + float(floori(float(i) / 3.0)) * 18.0) * scale
-					draw_line(base, base + Vector2(cos(angle), sin(angle)) * 42.0 * scale, color, 4.0 * scale)
-			elif shape in ["octopus", "bull", "hound", "lizard", "centipede", "roach", "bird", "dino"]:
-				var side_map: Dictionary = {"octopus": 8, "bull": 5, "hound": 6, "lizard": 7, "centipede": 10, "roach": 6, "bird": 5, "dino": 7}
-				var sides: int = int(side_map.get(shape, 6))
-				draw_colored_polygon(_regular_preview_polygon(center, 62.0 * scale, int(sides)), dark)
-				draw_colored_polygon(_regular_preview_polygon(center, 38.0 * scale, int(sides)), color)
-				for i in range(int(sides)):
-					var angle := TAU * float(i) / float(sides)
-					draw_line(center + Vector2(cos(angle), sin(angle)) * 44.0 * scale, center + Vector2(cos(angle), sin(angle)) * 78.0 * scale, light, 4.0 * scale)
-			elif shape in ["tentacle", "antenna"]:
-				var pts := PackedVector2Array()
-				for i in range(22):
-					var t := float(i) / 21.0
-					pts.append(center + Vector2(lerpf(-92.0, 92.0, t), sin(t * TAU * 1.5) * 28.0) * scale)
-				draw_polyline(pts, color, 10.0 * scale)
-				draw_polyline(pts, light, 3.0 * scale)
-			elif shape in ["horn", "talon", "pike", "gecko_claw", "paw", "segment_leg"]:
-				draw_line(center + Vector2(-78.0, 18.0) * scale, center + Vector2(34.0, -18.0) * scale, dark, 9.0 * scale)
-				_draw_triangle(center + Vector2(76.0, -22.0) * scale, 40.0 * scale, PI * 0.5, color)
-				if shape in ["paw", "gecko_claw", "segment_leg"]:
-					for i in range(3):
-						draw_circle(center + Vector2(20.0 + float(i) * 18.0, 22.0) * scale, 10.0 * scale, light)
-			elif shape in ["jaw", "dino_jaw"]:
-				draw_arc(center + Vector2(-8.0, 4.0) * scale, 62.0 * scale, -0.8, 0.8, 24, color, 13.0 * scale)
-				draw_arc(center + Vector2(-8.0, -4.0) * scale, 62.0 * scale, -0.8, 0.8, 24, dark, 7.0 * scale)
-				for i in range(5):
-					_draw_triangle(center + Vector2(22.0 + float(i) * 14.0, -20.0 + float(i % 2) * 38.0) * scale, 8.0 * scale, PI * 0.5, light)
-			elif shape in ["wing", "feather_wing"]:
-				draw_colored_polygon(PackedVector2Array([center + Vector2(-78.0, 34.0) * scale, center + Vector2(-20.0, -54.0) * scale, center + Vector2(92.0, -12.0) * scale, center + Vector2(20.0, 46.0) * scale]), color)
-				for i in range(5):
-					draw_line(center + Vector2(-42.0 + float(i) * 22.0, 28.0) * scale, center + Vector2(-8.0 + float(i) * 20.0, -32.0) * scale, dark, 2.0 * scale)
-			elif shape in ["tail_scythe", "dino_tail"]:
-				var pts := PackedVector2Array()
-				for i in range(18):
-					var t := float(i) / 17.0
-					pts.append(center + Vector2(lerpf(-94.0, 72.0, t), sin(t * PI) * 34.0) * scale)
-				draw_polyline(pts, dark, 12.0 * scale)
-				draw_arc(center + Vector2(54.0, -10.0) * scale, 38.0 * scale, -1.9, 0.3, 20, color, 10.0 * scale)
-			elif shape == "question_block":
-				draw_rect(Rect2(center + Vector2(-54.0, -54.0) * scale, Vector2(108.0, 108.0) * scale), Color(0.54, 0.28, 0.04, 1.0), true)
-				draw_rect(Rect2(center + Vector2(-44.0, -44.0) * scale, Vector2(88.0, 88.0) * scale), Color(1.0, 0.74, 0.12, 1.0), true)
-				draw_string(ThemeDB.get_fallback_font(), center + Vector2(-18.0, 22.0) * scale, "?", HORIZONTAL_ALIGNMENT_CENTER, 36.0 * scale, int(58.0 * scale), Color(1.0, 0.98, 0.62, 1.0))
-				for i in range(4):
-					var sx := -36.0 if i < 2 else 36.0
-					var sy := -36.0 if i % 2 == 0 else 36.0
-					draw_circle(center + Vector2(sx, sy) * scale, 5.0 * scale, Color(1.0, 0.92, 0.38, 1.0))
-			elif shape == "speed_lane":
-				draw_rect(Rect2(center + Vector2(-88.0, -24.0) * scale, Vector2(176.0, 48.0) * scale), Color(0.22, 0.2, 0.12, 1.0), true)
-				for i in range(5):
-					var y := -16.0 + float(i) * 8.0
-					draw_line(center + Vector2(-78.0, y) * scale, center + Vector2(78.0, y) * scale, Color(1.0, 0.86, 0.18, 1.0), 2.0 * scale)
-				for i in range(4):
-					var x := -56.0 + float(i) * 34.0
-					_draw_triangle(center + Vector2(x, 0.0) * scale, 12.0 * scale, PI * 0.5, Color(0.32, 0.96, 1.0, 0.9))
-			elif shape == "one_way_shield":
-				draw_rect(Rect2(center + Vector2(-82.0, -34.0) * scale, Vector2(164.0, 68.0) * scale), Color(0.12, 0.26, 0.38, 1.0), true)
-				draw_rect(Rect2(center + Vector2(-74.0, -22.0) * scale, Vector2(148.0, 44.0) * scale), Color(0.32, 0.86, 1.0, 0.36), true)
-				draw_line(center + Vector2(-76.0, -26.0) * scale, center + Vector2(76.0, -26.0) * scale, Color(0.88, 1.0, 1.0, 1.0), 3.0 * scale)
-				draw_line(center + Vector2(-76.0, 26.0) * scale, center + Vector2(76.0, 26.0) * scale, Color(0.88, 1.0, 1.0, 1.0), 3.0 * scale)
-				for i in range(4):
-					_draw_triangle(center + Vector2(-42.0 + float(i) * 28.0, 0.0) * scale, 13.0 * scale, PI * 0.5, Color(0.96, 1.0, 1.0, 0.9))
-			elif shape in ["gravity_plate", "repulsor_field", "heat_field", "coolant_field", "hack_field"]:
-				var field_color := Color(0.62, 0.48, 1.0, 1.0)
-				if shape == "repulsor_field":
-					field_color = Color(1.0, 0.22, 0.62, 1.0)
-				elif shape == "heat_field":
-					field_color = Color(1.0, 0.32, 0.08, 1.0)
-				elif shape == "coolant_field":
-					field_color = Color(0.18, 0.92, 1.0, 1.0)
-				elif shape == "hack_field":
-					field_color = Color(0.34, 1.0, 0.42, 1.0)
-				draw_rect(Rect2(center + Vector2(-52.0, -52.0) * scale, Vector2(104.0, 104.0) * scale), dark, true)
-				draw_circle(center, 34.0 * scale, field_color.darkened(0.3))
-				for i in range(3):
-					draw_arc(center, (50.0 + float(i) * 18.0) * scale, 0.0, TAU, 44, Color(field_color.r, field_color.g, field_color.b, 0.24 + float(i) * 0.12), 3.0 * scale)
-				for i in range(8):
-					var angle := TAU * float(i) / 8.0
-					var dir := Vector2(cos(angle), sin(angle))
-					var p0 := center + dir * (26.0 if shape != "repulsor_field" else 58.0) * scale
-					var p1 := center + dir * (72.0 if shape == "repulsor_field" else 42.0) * scale
-					draw_line(p0, p1, field_color.lerp(Color.WHITE, 0.18), 3.0 * scale)
-			elif shape == "siphon":
-				draw_rect(Rect2(center + Vector2(-62.0, -16.0) * scale, Vector2(78.0, 32.0) * scale), dark, true)
-				draw_arc(center + Vector2(34.0, 0.0) * scale, 38.0 * scale, -1.1, 1.1, 24, color, 8.0 * scale)
-				draw_circle(center + Vector2(82.0, 0.0) * scale, 9.0 * scale, Color(1.0, 0.9, 0.12, 1.0))
-			else:
-				draw_rect(Rect2(center + Vector2(-84.0, -22.0) * scale, Vector2(168.0, 44.0) * scale), color, true)
-		elif slot_key == "booster":
-			draw_rect(Rect2(center + Vector2(-58.0, -34.0) * scale, Vector2(74.0, 68.0) * scale), dark, true)
-			_draw_triangle(center + Vector2(44.0, 0.0) * scale, 68.0 * scale, PI * 0.5, Color(1.0, 0.42, 0.16, 0.9))
-			draw_line(center + Vector2(-28.0, -24.0) * scale, center + Vector2(12.0, -24.0) * scale, light, 4.0 * scale)
-			draw_line(center + Vector2(-28.0, 24.0) * scale, center + Vector2(12.0, 24.0) * scale, light, 4.0 * scale)
-		elif slot_key == "engine":
-			draw_circle(center, 62.0 * scale, dark)
-			draw_circle(center, 36.0 * scale, color)
-			draw_arc(center, 76.0 * scale, 0.2, TAU - 0.2, 48, light, 5.0 * scale)
-			draw_line(center + Vector2(-82.0, 0.0) * scale, center + Vector2(82.0, 0.0) * scale, light, 3.0 * scale)
-		elif slot_key == "cooling":
-			for i in range(6):
-				draw_rect(Rect2(center + Vector2(-82.0 + float(i) * 28.0, -54.0) * scale, Vector2(14.0, 108.0) * scale), color.lerp(light, float(i) * 0.08), true)
-			draw_rect(Rect2(center + Vector2(-84.0, -10.0) * scale, Vector2(172.0, 20.0) * scale), dark, true)
-		else:
-			draw_rect(Rect2(center + Vector2(-72.0, -50.0) * scale, Vector2(144.0, 100.0) * scale), color, true)
-			for i in range(7):
-				draw_line(center + Vector2(-88.0, -42.0 + float(i) * 14.0) * scale, center + Vector2(-72.0, -42.0 + float(i) * 14.0) * scale, light, 2.0 * scale)
-				draw_line(center + Vector2(72.0, -42.0 + float(i) * 14.0) * scale, center + Vector2(88.0, -42.0 + float(i) * 14.0) * scale, light, 2.0 * scale)
-			draw_polyline(PackedVector2Array([center + Vector2(-46.0, 18.0) * scale, center + Vector2(-18.0, -20.0) * scale, center + Vector2(12.0, 12.0) * scale, center + Vector2(48.0, -24.0) * scale]), dark, 5.0 * scale)
-
-	func _part_color() -> Color:
-		var damage_type := String(part.get("damage_type", part.get("projectile_damage_type", "")))
-		if damage_type != "":
-			return _damage_color(damage_type)
-		var palette := {
-			"special": Color(1.0, 0.86, 0.24, 1.0),
-			"joint": Color(0.28, 0.88, 1.0, 1.0),
-			"muscle": Color(0.92, 0.24, 0.44, 1.0),
-			"booster": Color(1.0, 0.44, 0.18, 1.0),
-			"engine": Color(0.58, 0.44, 1.0, 1.0),
-			"cooling": Color(0.32, 1.0, 0.64, 1.0),
-			"module": Color(0.92, 0.94, 0.9, 1.0),
-		}
-		return palette.get(slot_key, Color(0.8, 0.84, 0.9, 1.0))
-
-	func _damage_color(damage_type: String) -> Color:
-		match damage_type:
-			"bullet":
-				return Color(1.0, 0.1, 0.08, 1.0)
-			"chemical":
-				return Color(1.0, 0.9, 0.12, 1.0)
-			"laser":
-				return Color(0.2, 0.8, 1.0, 1.0)
-			"blunt":
-				return Color(0.78, 0.84, 0.9, 1.0)
-			"pierce":
-				return Color(0.9, 0.3, 1.0, 1.0)
-			"tear":
-				return Color(0.18, 1.0, 0.62, 1.0)
-		return Color(0.8, 0.84, 0.9, 1.0)
-
-	func _draw_diamond(center: Vector2, radius: float, color: Color) -> void:
-		draw_colored_polygon(PackedVector2Array([center + Vector2(0.0, -radius), center + Vector2(radius, 0.0), center + Vector2(0.0, radius), center + Vector2(-radius, 0.0)]), color)
-
-	func _draw_triangle(center: Vector2, radius: float, rotation: float, color: Color) -> void:
-		var pts := PackedVector2Array()
-		for i in range(3):
-			var angle := rotation + TAU * float(i) / 3.0
-			pts.append(center + Vector2(cos(angle), sin(angle)) * radius)
-		draw_colored_polygon(pts, color)
-
-	func _component_saddle_polygon(center: Vector2, axis: Vector2, length: float, front_width: float, rear_width: float) -> PackedVector2Array:
-		var forward := axis.normalized()
-		if forward.length() < 0.01:
-			forward = Vector2.RIGHT
-		var right := Vector2(-forward.y, forward.x)
-		var pts := PackedVector2Array()
-		for local in PartArt.torso_hull_local_points(part, length, front_width, rear_width):
-			var p: Vector2 = local
-			pts.append(center + forward * p.x + right * p.y)
-		return pts
-
-	func _component_saddle_port_positions(center: Vector2, axis: Vector2, port_count: int, length: float, front_width: float, rear_width: float) -> Array:
-		var forward := axis.normalized()
-		if forward.length() < 0.01:
-			forward = Vector2.RIGHT
-		var right := Vector2(-forward.y, forward.x)
-		var positions: Array = []
-		for local in PartArt.torso_hull_port_local_offsets(part, port_count, length, front_width, rear_width):
-			var p: Vector2 = local
-			positions.append(center + forward * p.x + right * p.y)
-		return positions
-
-	func _regular_preview_polygon(center: Vector2, radius: float, sides: int) -> PackedVector2Array:
-		var pts := PackedVector2Array()
-		for i in range(maxi(3, sides)):
-			var angle := -PI * 0.5 + TAU * float(i) / float(maxi(3, sides))
-			pts.append(center + Vector2(cos(angle), sin(angle)) * radius)
-		return pts
 
 
 class TorsoDetailPanelView:
@@ -5821,7 +4787,6 @@ class AssemblyBoardView:
 	const CUSTOM_BOARD_MARGIN = 54.0
 	const BARRIER_BOARD_COLUMNS = 10
 	const BARRIER_BOARD_ROWS = 5
-	const BARRIER_VIEW_ASPECT = 2.0
 
 	var board_mode := "hero"
 	var selected_part := "left_claw"
@@ -6643,25 +5608,33 @@ class AssemblyBoardView:
 
 	func _draw_barrier_board() -> void:
 		var screen_rect := _barrier_board_rect()
-		var columns := BARRIER_BOARD_COLUMNS
-		var rows := BARRIER_BOARD_ROWS
+		var columns := _barrier_columns()
+		var rows := _barrier_rows()
+		var show_grid_guides := bool(board_snapshot.get("show_grid_guides", true))
 		draw_rect(screen_rect.grow(10.0), Color(0.08, 0.14, 0.18, 0.72), true)
 		draw_rect(screen_rect.grow(10.0), Color(0.34, 0.9, 1.0, 0.2), false, 2.0)
 		draw_rect(screen_rect, Color(0.01, 0.02, 0.028, 0.82), true)
 		draw_rect(screen_rect, Color(0.72, 0.9, 1.0, 0.5), false, 2.0)
 		draw_line(Vector2(screen_rect.get_center().x, screen_rect.position.y), Vector2(screen_rect.get_center().x, screen_rect.end.y), Color(0.34, 0.92, 1.0, 0.18), 1.0)
 		draw_line(Vector2(screen_rect.position.x, screen_rect.get_center().y), Vector2(screen_rect.end.x, screen_rect.get_center().y), Color(1.0, 0.86, 0.24, 0.16), 1.0)
+		if show_grid_guides:
+			for x in range(1, columns):
+				var px := screen_rect.position.x + screen_rect.size.x * float(x) / float(columns)
+				_draw_dashed_line(Vector2(px, screen_rect.position.y), Vector2(px, screen_rect.end.y), Color(0.58, 0.95, 1.0, 0.26), 1.0, 7.0, 5.0)
+			for y in range(1, rows):
+				var py := screen_rect.position.y + screen_rect.size.y * float(y) / float(rows)
+				_draw_dashed_line(Vector2(screen_rect.position.x, py), Vector2(screen_rect.end.x, py), Color(1.0, 0.86, 0.32, 0.22), 1.0, 7.0, 5.0)
 		var ether_color := Color(0.76, 0.42, 1.0, 0.92)
-		for y in range(rows):
-			for x in range(columns):
-				var rect := _barrier_cell_rect(y * columns + x)
-				draw_rect(rect.grow(-2.0), Color(0.035, 0.047, 0.055, 0.34), true)
-				draw_rect(rect, Color(0.28, 0.92, 1.0, 0.14), false, 1.0)
 		for key in board_snapshot.keys():
-			var item: Dictionary = board_snapshot[key]
+			if not String(key).begins_with("tile_") or not (board_snapshot[key] is Dictionary):
+				continue
+			var item: Dictionary = Dictionary(board_snapshot[key])
 			var index := int(item.get("index", 0))
+			var tile_pos: Vector2 = item.get("pos", Vector2(-1.0, -1.0)) if item.get("pos", null) is Vector2 else Vector2(-1.0, -1.0)
 			var cell_rect := _barrier_cell_rect(index)
 			var center := cell_rect.get_center()
+			if tile_pos.x >= 0.0:
+				center = screen_rect.position + Vector2(clampf(tile_pos.x, 0.0, 1.0) * screen_rect.size.x, clampf(tile_pos.y, 0.0, 1.0) * screen_rect.size.y)
 			var pulse := snap_amount if String(key) == snap_part else 0.0
 			var kind := String(item.get("kind", "ether_pin"))
 			if kind == "question_block":
@@ -6680,24 +5653,6 @@ class AssemblyBoardView:
 					draw_line(center, center + Vector2(cos(angle), sin(angle)) * (radius * 1.34 + pulse * 7.0), Color(0.34, 0.92, 1.0, 0.44), 2.0)
 		var barrier_hint := "结界屏幕蓝图 / 最大一屏 / 以太固定不相连组件" if _board_is_zh() else "BARRIER SCREEN BLUEPRINT / max one viewport; ether binds disconnected tiles"
 		draw_string(ThemeDB.get_fallback_font(), Vector2(38.0, size.y - 22.0), barrier_hint, HORIZONTAL_ALIGNMENT_LEFT, size.x - 76.0, 13, Color(0.78, 0.9, 1.0, 0.72))
-
-	func _barrier_board_rect() -> Rect2:
-		var margin := Vector2(8.0, 44.0)
-		var available := Vector2(maxf(64.0, size.x - margin.x * 2.0), maxf(64.0, size.y - margin.y * 2.0))
-		var rect_size := available
-		if rect_size.x / maxf(1.0, rect_size.y) > BARRIER_VIEW_ASPECT:
-			rect_size.x = rect_size.y * BARRIER_VIEW_ASPECT
-		else:
-			rect_size.y = rect_size.x / BARRIER_VIEW_ASPECT
-		return Rect2((size - rect_size) * 0.5, rect_size)
-
-	func _barrier_cell_rect(index: int) -> Rect2:
-		var rect := _barrier_board_rect()
-		var cell_size := Vector2(rect.size.x / float(BARRIER_BOARD_COLUMNS), rect.size.y / float(BARRIER_BOARD_ROWS))
-		var clamped := clampi(index, 0, BARRIER_BOARD_COLUMNS * BARRIER_BOARD_ROWS - 1)
-		var x := clamped % BARRIER_BOARD_COLUMNS
-		var y := int(floori(float(clamped) / float(BARRIER_BOARD_COLUMNS)))
-		return Rect2(rect.position + Vector2(float(x), float(y)) * cell_size, cell_size)
 
 	func _edge_node_a(edge) -> int:
 		if edge is Dictionary:
@@ -7371,6 +6326,55 @@ class AssemblyBoardView:
 		var offset = board_snapshot.get("view_offset", Vector2.ZERO)
 		return offset if offset is Vector2 else Vector2.ZERO
 
+	func _barrier_view_zoom() -> float:
+		return clampf(float(board_snapshot.get("view_zoom", 1.0)), EDITOR_BOARD_ZOOM_MIN, EDITOR_BOARD_ZOOM_MAX)
+
+	func _barrier_view_offset() -> Vector2:
+		var offset = board_snapshot.get("view_offset", Vector2.ZERO)
+		return offset if offset is Vector2 else Vector2.ZERO
+
+	func _barrier_columns() -> int:
+		return maxi(1, int(board_snapshot.get("barrier_columns", BARRIER_BOARD_COLUMNS)))
+
+	func _barrier_rows() -> int:
+		return maxi(1, int(board_snapshot.get("barrier_rows", BARRIER_BOARD_ROWS)))
+
+	func _barrier_board_rect() -> Rect2:
+		var margin := Vector2(8.0, 44.0)
+		var available := Vector2(maxf(64.0, size.x - margin.x * 2.0), maxf(64.0, size.y - margin.y * 2.0))
+		var blueprint_width := maxf(1.0, float(board_snapshot.get("barrier_width", BARRIER_BLUEPRINT_WIDTH)))
+		var blueprint_height := maxf(1.0, float(board_snapshot.get("barrier_height", BARRIER_BLUEPRINT_HEIGHT)))
+		var aspect := blueprint_width / blueprint_height
+		var rect_size := available
+		if rect_size.x / maxf(1.0, rect_size.y) > aspect:
+			rect_size.x = rect_size.y * aspect
+		else:
+			rect_size.y = rect_size.x / aspect
+		rect_size *= _barrier_view_zoom()
+		return Rect2((size - rect_size) * 0.5 + _barrier_view_offset(), rect_size)
+
+	func _barrier_cell_rect(index: int) -> Rect2:
+		var rect := _barrier_board_rect()
+		var columns := _barrier_columns()
+		var rows := _barrier_rows()
+		var cell_size := Vector2(rect.size.x / float(columns), rect.size.y / float(rows))
+		var clamped := clampi(index, 0, columns * rows - 1)
+		var x := clamped % columns
+		var y := int(floori(float(clamped) / float(columns)))
+		return Rect2(rect.position + Vector2(float(x), float(y)) * cell_size, cell_size)
+
+	func _draw_dashed_line(from: Vector2, to: Vector2, color: Color, width: float = 1.0, dash: float = 8.0, gap: float = 6.0) -> void:
+		var delta := to - from
+		var length := delta.length()
+		if length <= 0.01:
+			return
+		var direction := delta / length
+		var cursor := 0.0
+		while cursor < length:
+			var segment_end := minf(cursor + dash, length)
+			draw_line(from + direction * cursor, from + direction * segment_end, color, width)
+			cursor += dash + gap
+
 	func _custom_clamp_topology_position(pos: Vector2) -> Vector2:
 		return Vector2(clampf(pos.x, 0.0, 1.0), clampf(pos.y, 0.0, 1.0))
 
@@ -7604,225 +6608,6 @@ class AssemblyBoardView:
 		draw_circle(center, 5.0 + pulse * 4.0, Color.WHITE.lerp(color, 0.45))
 
 
-class HitEffect:
-	extends Node2D
-
-	var lifetime := 0.0
-	var max_lifetime := 0.62
-	var tier := 0
-	var damage_type := "blunt"
-	var nullified := false
-	var projectile_style := ""
-	var label := ""
-	var vfx_texture: Texture2D
-
-	func setup(effect_tier: int, effect_damage_type: String, was_nullified: bool, next_projectile_style: String = "", next_vfx_texture: Texture2D = null, block_label: String = "NULL") -> void:
-		tier = clampi(effect_tier, 0, 3)
-		damage_type = effect_damage_type
-		nullified = was_nullified
-		projectile_style = next_projectile_style
-		vfx_texture = next_vfx_texture
-		if nullified:
-			label = block_label
-		elif tier <= 0:
-			label = ""
-		else:
-			label = ["", "SMALL", "MEDIUM", "LARGE"][tier]
-		max_lifetime = 0.78 if nullified or tier >= 3 else 0.58
-		lifetime = max_lifetime
-		queue_redraw()
-
-	func _process(delta: float) -> void:
-		lifetime -= delta
-		if lifetime <= 0.0:
-			queue_free()
-			return
-		position.y -= delta * 18.0
-		queue_redraw()
-
-	func _draw() -> void:
-		var ratio := clampf(lifetime / max_lifetime, 0.0, 1.0)
-		var inv := 1.0 - ratio
-		var color := _effect_color()
-		var radius := 18.0 + inv * (28.0 + float(tier) * 13.0)
-		draw_arc(Vector2.ZERO, radius, 0.0, TAU, 44, Color(color.r, color.g, color.b, ratio), 2.0 + float(tier) * 1.2)
-		if tier >= 2 or nullified:
-			draw_arc(Vector2.ZERO, radius * 0.62, -PI * 0.3, PI * 1.25, 26, Color(1.0, 1.0, 1.0, ratio * 0.82), 2.0)
-		for i in range(4 + tier * 3):
-			var angle := TAU * float(i) / float(4 + tier * 3) + inv * 1.6
-			var p0 := Vector2(cos(angle), sin(angle)) * (radius * 0.42)
-			var p1 := Vector2(cos(angle), sin(angle)) * (radius * (0.78 + inv * 0.38))
-			draw_line(p0, p1, Color(color.r, color.g, color.b, ratio * 0.8), 2.0)
-		_draw_vfx_cell(_hit_vfx_index(), Vector2.ZERO, Vector2.ONE * radius * 2.25, 0.0, ratio * 0.86)
-		_draw_damage_motif(color, ratio, radius, inv)
-		if label != "":
-			draw_string(ThemeDB.get_fallback_font(), Vector2(-32.0, -radius - 8.0), label, HORIZONTAL_ALIGNMENT_LEFT, 96.0, 13, Color(1.0, 1.0, 1.0, ratio))
-
-	func _draw_vfx_cell(index: int, center: Vector2, draw_size: Vector2, angle: float, alpha: float) -> void:
-		if vfx_texture == null:
-			return
-		var cell := vfx_texture.get_size() / 4.0
-		var safe_index := clampi(index, 0, 15)
-		var region := Rect2(Vector2(float(safe_index % 4) * cell.x, float(safe_index / 4) * cell.y), cell)
-		draw_set_transform(center, angle, Vector2.ONE)
-		draw_texture_rect_region(vfx_texture, Rect2(-draw_size * 0.5, draw_size), region, Color(1.0, 1.0, 1.0, alpha))
-		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
-
-	func _hit_vfx_index() -> int:
-		if nullified or projectile_style == "shield":
-			return 9
-		if projectile_style == "blind":
-			return 15
-		if projectile_style in ["guided", "web", "web_snap"]:
-			return 14
-		if projectile_style == "missile":
-			return 1
-		if projectile_style == "spray":
-			return 5
-		if projectile_style == "true_bullet":
-			return 1
-		if projectile_style == "bullet_hell":
-			return 0
-		match damage_type:
-			"bullet":
-				return 1
-			"chemical":
-				return 5
-			"laser":
-				return 3
-			"tear":
-				return 6
-			"blunt":
-				return 7
-			"pierce":
-				return 8
-		return 10
-
-	func _draw_damage_motif(color: Color, alpha: float, radius: float, inv: float) -> void:
-		if projectile_style == "web" or projectile_style == "web_snap":
-			for i in range(7):
-				var angle := TAU * float(i) / 7.0 + inv * 0.45
-				var p0 := Vector2(cos(angle), sin(angle)) * radius * 0.16
-				var p1 := Vector2(cos(angle + sin(inv * TAU + float(i)) * 0.22), sin(angle + sin(inv * TAU + float(i)) * 0.22)) * radius * (0.72 + float(i % 3) * 0.08)
-				draw_line(p0, p1, Color(0.86, 0.98, 1.0, 0.74 * alpha), 2.0)
-			draw_arc(Vector2.ZERO, radius * 0.62, 0.0, TAU, 18, Color(0.86, 0.98, 1.0, 0.54 * alpha), 2.0)
-			if projectile_style == "web_snap":
-				draw_line(Vector2(-radius, -radius * 0.22), Vector2(radius, radius * 0.18), Color(1.0, 0.32, 0.24, 0.86 * alpha), 4.0)
-			return
-		if projectile_style == "blind":
-			draw_circle(Vector2.ZERO, radius * 0.72, Color(0.0, 0.0, 0.018, 0.78 * alpha))
-			for i in range(10):
-				var angle := TAU * float(i) / 10.0 - inv * 1.2
-				var p0 := Vector2(cos(angle), sin(angle)) * radius * 0.18
-				var p1 := Vector2(cos(angle), sin(angle)) * radius * 1.05
-				draw_line(p1, p0, Color(0.4, 0.56, 1.0, 0.26 * alpha), 3.0)
-			draw_arc(Vector2.ZERO, radius * 0.9, 0.0, TAU, 34, Color(0.68, 0.82, 1.0, 0.46 * alpha), 2.0)
-			return
-		if projectile_style == "shield":
-			draw_arc(Vector2.ZERO, radius * 0.8, 0.0, TAU, 6, Color(0.86, 0.94, 1.0, 0.82 * alpha), 5.0)
-			draw_arc(Vector2.ZERO, radius * 1.12, -0.7, 0.9, 18, Color(1.0, 0.84, 0.24, 0.72 * alpha), 3.0)
-			return
-		if projectile_style == "guided":
-			for i in range(4):
-				var t := float(i) / 3.0
-				var p := Vector2(lerpf(-radius, radius, t), sin(t * TAU + inv * TAU) * radius * 0.28)
-				draw_circle(p, 5.0 + float(i), Color(0.32, 1.0, 0.78, 0.62 * alpha))
-			draw_polyline(PackedVector2Array([Vector2(-radius, 0.0), Vector2(-radius * 0.2, -radius * 0.32), Vector2(radius * 0.42, radius * 0.18), Vector2(radius, -radius * 0.08)]), Color(0.32, 1.0, 0.78, 0.7 * alpha), 3.0)
-			return
-		if projectile_style == "missile":
-			for i in range(8):
-				var angle := TAU * float(i) / 8.0 + inv * 1.4
-				var p := Vector2(cos(angle), sin(angle)) * radius * (0.22 + float(i % 3) * 0.1)
-				draw_circle(p, 5.0 + float(i % 2) * 4.0, Color(1.0, 0.5, 0.12, 0.28 * alpha))
-			draw_arc(Vector2.ZERO, radius * 1.18, 0.0, TAU, 42, Color(1.0, 0.8, 0.18, 0.58 * alpha), 4.0)
-			return
-		if projectile_style == "true_bullet":
-			draw_line(Vector2(-radius * 1.05, 0.0), Vector2(radius * 1.05, 0.0), Color(1.0, 0.92, 0.58, 0.9 * alpha), 3.0)
-			draw_line(Vector2(0.0, -radius * 0.62), Vector2(0.0, radius * 0.62), Color(1.0, 0.68, 0.22, 0.6 * alpha), 2.0)
-			draw_arc(Vector2.ZERO, radius * (0.52 + inv * 0.36), 0.0, TAU, 36, Color(1.0, 0.72, 0.18, 0.62 * alpha), 2.0)
-			for i in range(5):
-				var p := Vector2(-radius * 0.5 + float(i) * radius * 0.25, sin(float(i) * 1.7 + inv * TAU) * radius * 0.12)
-				draw_circle(p, 2.0 + float(i % 2), Color(1.0, 0.95, 0.62, 0.62 * alpha))
-			return
-		if projectile_style == "bullet_hell":
-			for i in range(7):
-				var angle := -0.75 + float(i) * 0.25 + inv * 0.24
-				var p0 := Vector2(cos(angle), sin(angle)) * radius * 0.12
-				var p1 := Vector2(cos(angle), sin(angle)) * radius * (0.56 + float(i % 3) * 0.11)
-				draw_line(p0, p1, Color(1.0, 0.54, 0.1, 0.78 * alpha), 2.0)
-				draw_circle(p1, 2.5 + float(i % 2), Color(1.0, 0.92, 0.44, 0.58 * alpha))
-			draw_arc(Vector2.ZERO, radius * 0.44, -0.4, PI + 0.4, 18, Color(1.0, 0.78, 0.22, 0.42 * alpha), 3.0)
-			return
-		if projectile_style == "spray":
-			for i in range(16):
-				var angle := TAU * float(i) / 16.0 + sin(inv * TAU + float(i)) * 0.18
-				var dist := radius * (0.18 + float((i * 5) % 11) / 12.0)
-				var p := Vector2(cos(angle), sin(angle)) * dist
-				draw_circle(p, 3.0 + float(i % 5) * 1.4, Color(0.62, 1.0, 0.12, 0.42 * alpha))
-			draw_arc(Vector2.ZERO, radius * 0.72, PI * 0.18, PI * 1.74, 28, Color(0.28, 1.0, 0.44, 0.72 * alpha), 5.0)
-			draw_arc(Vector2.ZERO, radius * 0.38, -PI * 0.4, PI * 0.8, 18, Color(1.0, 0.92, 0.24, 0.52 * alpha), 3.0)
-			return
-		match damage_type:
-			"tear":
-				for i in range(3):
-					var offset := -16.0 + float(i) * 16.0
-					draw_line(Vector2(-radius * 0.95, offset + radius * 0.28), Vector2(radius * 0.82, offset - radius * 0.42), Color(0.92, 1.0, 0.88, 0.86 * alpha), 4.0 - float(i) * 0.5)
-					draw_line(Vector2(-radius * 0.62, offset + radius * 0.1), Vector2(radius * 0.68, offset - radius * 0.5), Color(color.r, color.g, color.b, 0.5 * alpha), 1.0)
-			"blunt":
-				draw_arc(Vector2.ZERO, radius * 0.55, 0.0, TAU, 6, Color(1.0, 1.0, 1.0, 0.68 * alpha), 5.0)
-				for i in range(6):
-					var angle := TAU * float(i) / 6.0
-					var p := Vector2(cos(angle), sin(angle)) * radius * 0.42
-					draw_rect(Rect2(p - Vector2(5.0, 5.0), Vector2(10.0, 10.0)), Color(color.r, color.g, color.b, 0.68 * alpha), true)
-			"pierce":
-				for i in range(5):
-					var angle := -0.35 + float(i) * 0.17
-					var tip := Vector2(cos(angle), sin(angle)) * radius
-					draw_line(-tip * 0.25, tip, Color(1.0, 1.0, 1.0, 0.82 * alpha), 2.0)
-					draw_line(-tip * 0.05, tip * 0.7, Color(color.r, color.g, color.b, 0.58 * alpha), 1.0)
-			"chemical":
-				for i in range(12):
-					var angle := TAU * float(i) / 12.0 + inv * 0.7
-					var dist := radius * (0.22 + float((i * 7) % 9) / 12.0)
-					var p := Vector2(cos(angle), sin(angle)) * dist
-					draw_circle(p, 3.0 + float(i % 4) * 1.6, Color(0.78, 1.0, 0.12, 0.34 * alpha))
-				draw_arc(Vector2.ZERO, radius * 0.48, PI * 0.15, PI * 1.55, 22, Color(0.2, 1.0, 0.46, 0.62 * alpha), 5.0)
-			"laser":
-				for i in range(3):
-					var y := -8.0 + float(i) * 8.0
-					draw_line(Vector2(-radius * 1.05, y), Vector2(radius * 1.05, y + sin(inv * TAU + float(i)) * 5.0), Color(0.75, 0.95, 1.0, 0.9 * alpha), 2.0)
-				draw_circle(Vector2.ZERO, 7.0, Color(1.0, 1.0, 1.0, 0.82 * alpha))
-			"bullet":
-				for i in range(9):
-					var angle := TAU * float(i) / 9.0 - inv * 1.4
-					var p0 := Vector2(cos(angle), sin(angle)) * radius * 0.18
-					var p1 := Vector2(cos(angle), sin(angle)) * radius * 0.72
-					draw_line(p0, p1, Color(1.0, 0.7, 0.22, 0.82 * alpha), 2.0)
-				draw_circle(Vector2.ZERO, 5.0 + tier * 2.0, Color(1.0, 1.0, 1.0, 0.74 * alpha))
-
-	func _effect_color() -> Color:
-		if nullified:
-			return Color(0.3, 0.36, 0.42, 1.0)
-		var tier_palette: Array = [Color(0.82, 0.86, 0.9, 1.0), Color(0.34, 0.9, 1.0, 1.0), Color(1.0, 0.82, 0.18, 1.0), Color(1.0, 0.2, 0.12, 1.0)]
-		var tier_color: Color = tier_palette[tier]
-		if projectile_style == "web" or projectile_style == "web_snap":
-			return tier_color.lerp(Color(0.72, 0.96, 1.0, 1.0), 0.55)
-		if projectile_style == "blind":
-			return tier_color.lerp(Color(0.12, 0.1, 0.32, 1.0), 0.6)
-		match damage_type:
-			"bullet":
-				return tier_color.lerp(Color(1.0, 0.08, 0.05, 1.0), 0.3)
-			"chemical":
-				return tier_color.lerp(Color(0.9, 1.0, 0.12, 1.0), 0.35)
-			"laser":
-				return tier_color.lerp(Color(0.2, 0.78, 1.0, 1.0), 0.35)
-			"pierce":
-				return tier_color.lerp(Color(0.95, 0.24, 1.0, 1.0), 0.3)
-			"tear":
-				return tier_color.lerp(Color(0.2, 1.0, 0.58, 1.0), 0.3)
-		return tier_color
-
-
 class BattleContactVfxPool:
 	extends Node2D
 
@@ -7877,266 +6662,6 @@ class BattleContactVfxPool:
 		particle.visible = true
 		particle.restart()
 		particle.emitting = true
-
-
-class ComboRippleEffect:
-	extends Control
-
-	var lifetime := 0.0
-	var max_lifetime := 0.62
-	var origin := Vector2.ZERO
-	var tint := Color(0.32, 0.92, 1.0, 1.0)
-	var strength := 1.0
-
-	func setup(next_origin: Vector2, next_tint: Color, next_strength: float = 1.0) -> void:
-		origin = next_origin
-		tint = next_tint
-		strength = clampf(next_strength, 0.65, 1.5)
-		lifetime = max_lifetime
-		mouse_filter = Control.MOUSE_FILTER_IGNORE
-		queue_redraw()
-
-	func _process(delta: float) -> void:
-		lifetime -= delta
-		if lifetime <= 0.0:
-			queue_free()
-			return
-		queue_redraw()
-
-	func _draw() -> void:
-		var ratio := clampf(lifetime / max_lifetime, 0.0, 1.0)
-		var inv := 1.0 - ratio
-		var max_radius := maxf(size.x, size.y) * 1.18
-		draw_rect(Rect2(Vector2.ZERO, size), Color(tint.r, tint.g, tint.b, 0.032 * ratio * strength), true)
-		for i in range(5):
-			var t := clampf(inv + float(i) * 0.065, 0.0, 1.0)
-			var radius := max_radius * t
-			var alpha := (0.36 - float(i) * 0.045) * ratio * strength
-			if radius > 4.0 and alpha > 0.005:
-				draw_arc(origin, radius, 0.0, TAU, 118, Color(tint.r, tint.g, tint.b, alpha), 2.0 + float(i) * 0.65)
-		draw_circle(origin, 16.0 + inv * 48.0, Color(1.0, 1.0, 1.0, 0.12 * ratio * strength))
-
-
-class ProjectileTraceEffect:
-	extends Node2D
-
-	var start_point := Vector2.ZERO
-	var end_point := Vector2.RIGHT
-	var damage_type := "bullet"
-	var projectile_style := "bullet"
-	var travel_path := "straight"
-	var projectile_speed_mult := 2.8
-	var lifetime := 0.0
-	var max_lifetime := 0.22
-	var vfx_texture: Texture2D
-
-	func setup(next_start: Vector2, next_end: Vector2, next_damage_type: String, next_style: String, next_path: String, next_vfx_texture: Texture2D = null, next_speed_mult: float = 2.8) -> void:
-		start_point = next_start
-		end_point = next_end
-		damage_type = next_damage_type
-		projectile_style = next_style
-		travel_path = next_path
-		projectile_speed_mult = clampf(next_speed_mult, 0.35, 2.4) if next_damage_type == "chemical" else clampf(next_speed_mult, 1.5, 5.0)
-		vfx_texture = next_vfx_texture
-		max_lifetime = 0.34
-		if projectile_style in ["beam", "rail", "chaos"] or travel_path == "instant_line":
-			max_lifetime = 0.18
-		elif projectile_style == "true_bullet":
-			max_lifetime = 0.16
-		elif projectile_style == "bullet_hell":
-			max_lifetime = clampf(0.92 / projectile_speed_mult, 0.18, 0.62)
-		elif projectile_style in ["explosive", "blast"]:
-			max_lifetime = 0.5
-		elif projectile_style == "missile" or travel_path in ["arc_u", "homing"]:
-			max_lifetime = 0.42
-		elif projectile_style == "spray" or damage_type == "chemical":
-			max_lifetime = clampf(0.92 / maxf(0.35, projectile_speed_mult), 0.62, 1.55)
-		lifetime = max_lifetime
-		queue_redraw()
-
-	func _process(delta: float) -> void:
-		lifetime -= delta
-		if lifetime <= 0.0:
-			queue_free()
-			return
-		queue_redraw()
-
-	func _draw() -> void:
-		var ratio := clampf(lifetime / max_lifetime, 0.0, 1.0)
-		var inv := 1.0 - ratio
-		var color := _trace_color()
-		var points := _trace_points(inv)
-		if points.size() < 2:
-			return
-		if projectile_style in ["beam", "rail", "chaos"] or damage_type == "laser":
-			var beam_points := _prefix_points(points, clampf(inv * 2.8 + 0.04, 0.04, 1.0))
-			draw_polyline(beam_points, Color(color.r, color.g, color.b, 0.22 * ratio), 13.0)
-			draw_polyline(beam_points, Color(0.82, 0.96, 1.0, 0.9 * ratio), 4.0)
-			draw_polyline(beam_points, Color.WHITE, 1.6)
-			_draw_vfx_cell(2, _point_on_points(beam_points, 0.5), Vector2(maxf(46.0, _polyline_length(beam_points)), 54.0), (end_point - start_point).angle(), ratio * 0.62)
-			for point in beam_points:
-				draw_circle(point, 3.0 + 5.0 * inv, Color(0.86, 0.98, 1.0, 0.32 * ratio))
-			return
-		if projectile_style == "spray" or damage_type == "chemical":
-			if travel_path in ["firework", "burst", "shotgun"]:
-				_draw_chemical_firework(points, ratio, inv, color)
-				return
-			draw_polyline(points, Color(0.46, 1.0, 0.2, 0.42 * ratio), 9.0)
-			draw_polyline(points, Color(1.0, 0.92, 0.16, 0.68 * ratio), 3.0)
-			_draw_vfx_cell(4, _point_on_points(points, clampf(inv * 1.12, 0.0, 1.0)), Vector2.ONE * 76.0, (end_point - start_point).angle(), ratio * 0.76)
-			for i in range(14):
-				var t := fmod(float(i) / 14.0 + inv * 0.9, 1.0)
-				var p := _point_on_points(points, t)
-				var wobble := Vector2(sin(t * TAU * 3.0), cos(t * TAU * 2.0)) * (5.0 + float(i % 3) * 2.5)
-				draw_circle(p + wobble, 3.0 + float(i % 4), Color(0.74, 1.0, 0.18, 0.34 * ratio))
-			return
-		if projectile_style == "web" or projectile_style == "chain":
-			draw_polyline(points, Color(0.86, 0.98, 1.0, 0.76 * ratio), 2.8)
-			_draw_vfx_cell(14, _point_on_points(points, clampf(inv, 0.0, 1.0)), Vector2.ONE * 48.0, 0.0, ratio * 0.72)
-			for i in range(9):
-				var t := float(i) / 8.0
-				var p := _point_on_points(points, t)
-				draw_circle(p, 3.0, Color(0.9, 1.0, 1.0, 0.5 * ratio))
-			return
-		if projectile_style == "missile":
-			draw_polyline(points, Color(1.0, 0.48, 0.08, 0.56 * ratio), 5.0)
-			draw_polyline(points, Color(1.0, 0.9, 0.22, 0.38 * ratio), 2.0)
-			var head := _point_on_points(points, clampf(inv * 1.35, 0.0, 1.0))
-			var dir := (end_point - start_point).normalized()
-			if dir.length() <= 0.01:
-				dir = Vector2.RIGHT
-			var right := Vector2(-dir.y, dir.x)
-			draw_colored_polygon(PackedVector2Array([head + dir * 12.0, head - dir * 8.0 + right * 5.0, head - dir * 8.0 - right * 5.0]), Color(1.0, 0.86, 0.32, 0.9 * ratio))
-			draw_circle(head - dir * 14.0, 7.0, Color(1.0, 0.28, 0.04, 0.42 * ratio))
-			_draw_vfx_cell(12, head - dir * 10.0, Vector2.ONE * 64.0, dir.angle(), ratio * 0.7)
-			return
-		if projectile_style in ["explosive", "blast"]:
-			draw_polyline(points, Color(1.0, 0.34, 0.04, 0.62 * ratio), 9.0)
-			draw_polyline(points, Color(1.0, 0.86, 0.18, 0.58 * ratio), 3.2)
-			var shell_t := clampf(inv * 1.08, 0.0, 1.0)
-			var head := _point_on_points(points, shell_t)
-			var dir := (end_point - start_point).normalized()
-			if dir.length() <= 0.01:
-				dir = Vector2.RIGHT
-			var right := Vector2(-dir.y, dir.x)
-			draw_colored_polygon(PackedVector2Array([
-				head + dir * 15.0,
-				head - dir * 10.0 + right * 7.0,
-				head - dir * 14.0,
-				head - dir * 10.0 - right * 7.0,
-			]), Color(0.92, 0.22, 0.08, 0.96 * ratio))
-			draw_circle(head - dir * 14.0, 10.0 + 8.0 * inv, Color(1.0, 0.5, 0.05, 0.34 * ratio))
-			draw_circle(head, 5.5, Color(1.0, 0.95, 0.55, 0.92 * ratio))
-			_draw_vfx_cell(12, head - dir * 8.0, Vector2.ONE * 82.0, dir.angle(), ratio * 0.78)
-			return
-		if projectile_style == "true_bullet":
-			var bullet_points := _prefix_points(points, clampf(inv * 3.4 + 0.1, 0.1, 1.0))
-			var dir := (end_point - start_point).normalized()
-			if dir.length() <= 0.01:
-				dir = Vector2.RIGHT
-			var head := bullet_points[bullet_points.size() - 1]
-			draw_polyline(bullet_points, Color(1.0, 0.82, 0.34, 0.22 * ratio), 8.0)
-			draw_polyline(bullet_points, Color(1.0, 0.96, 0.72, 0.84 * ratio), 2.2)
-			draw_circle(head, 5.0 + inv * 7.0, Color(1.0, 0.93, 0.56, 0.86 * ratio))
-			_draw_vfx_cell(0, head, Vector2.ONE * 52.0, dir.angle(), ratio * 0.84)
-			return
-		if projectile_style == "bullet_hell":
-			var travel := clampf(inv * 1.1, 0.0, 1.0)
-			var head := _point_on_points(points, travel)
-			var dir := (end_point - start_point).normalized()
-			if dir.length() <= 0.01:
-				dir = Vector2.RIGHT
-			var tail := _point_on_points(points, maxf(0.0, travel - 0.16))
-			draw_line(tail, head, Color(1.0, 0.62, 0.16, 0.58 * ratio), 5.0)
-			draw_circle(head, 8.0, Color(1.0, 0.5, 0.08, 0.92 * ratio))
-			draw_circle(head, 3.2, Color(1.0, 0.98, 0.78, 0.95 * ratio))
-			_draw_vfx_cell(0, head, Vector2.ONE * 38.0, dir.angle(), ratio * 0.66)
-			return
-		draw_polyline(points, Color(1.0, 0.58, 0.12, 0.5 * ratio), 5.0)
-		draw_polyline(points, Color(1.0, 0.96, 0.74, 0.88 * ratio), 1.8)
-		_draw_vfx_cell(0, _point_on_points(points, clampf(inv * 1.2, 0.0, 1.0)), Vector2.ONE * 46.0, (end_point - start_point).angle(), ratio * 0.78)
-		for i in range(5):
-			var t := fmod(float(i) / 5.0 + inv * 1.6, 1.0)
-			var p := _point_on_points(points, t)
-			draw_circle(p, 3.0 + float(i % 2), Color(1.0, 0.78, 0.24, 0.76 * ratio))
-
-	func _trace_color() -> Color:
-		match damage_type:
-			"laser":
-				return Color(0.25, 0.82, 1.0, 1.0)
-			"chemical":
-				return Color(0.72, 1.0, 0.16, 1.0)
-			"bullet":
-				return Color(1.0, 0.48, 0.1, 1.0)
-			"explosive":
-				return Color(1.0, 0.36, 0.04, 1.0)
-		return Color(0.9, 0.95, 1.0, 1.0)
-
-	func _trace_points(inv: float) -> PackedVector2Array:
-		var points := PackedVector2Array()
-		var segments := 18
-		for i in range(segments):
-			var t := float(i) / float(segments - 1)
-			var p := start_point.lerp(end_point, t)
-			points.append(p)
-		return points
-
-	func _draw_chemical_firework(points: PackedVector2Array, ratio: float, inv: float, color: Color) -> void:
-		var start := points[0]
-		var end := points[points.size() - 1]
-		var base_dir := (end - start).normalized()
-		if base_dir.length() <= 0.01:
-			base_dir = Vector2.RIGHT
-		var origin := start.lerp(end, clampf(inv * 0.88, 0.0, 1.0))
-		for i in range(7):
-			var spread := (float(i) - 3.0) * 0.16
-			var dir := base_dir.rotated(spread)
-			var reach := 42.0 + float(i % 3) * 12.0
-			var pellet_head := origin + dir * reach * clampf(inv * 1.15, 0.0, 1.0)
-			draw_line(origin, pellet_head, Color(0.46, 1.0, 0.2, 0.22 * ratio), 6.0)
-			draw_line(origin, pellet_head, Color(1.0, 0.92, 0.16, 0.46 * ratio), 2.0)
-			draw_circle(pellet_head, 4.0 + float(i % 2) * 2.0, Color(color.r, color.g, color.b, 0.48 * ratio))
-		_draw_vfx_cell(4, origin, Vector2.ONE * 86.0, base_dir.angle(), ratio * 0.72)
-
-	func _draw_vfx_cell(index: int, center: Vector2, draw_size: Vector2, angle: float, alpha: float) -> void:
-		if vfx_texture == null:
-			return
-		var cell := vfx_texture.get_size() / 4.0
-		var safe_index := clampi(index, 0, 15)
-		var region := Rect2(Vector2(float(safe_index % 4) * cell.x, float(safe_index / 4) * cell.y), cell)
-		draw_set_transform(center, angle, Vector2.ONE)
-		draw_texture_rect_region(vfx_texture, Rect2(-draw_size * 0.5, draw_size), region, Color(1.0, 1.0, 1.0, alpha))
-		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
-
-	func _point_on_points(points: PackedVector2Array, t: float) -> Vector2:
-		if points.is_empty():
-			return Vector2.ZERO
-		if points.size() == 1:
-			return points[0]
-		var scaled := clampf(t, 0.0, 1.0) * float(points.size() - 1)
-		var index := clampi(int(floor(scaled)), 0, points.size() - 2)
-		var local_t := scaled - float(index)
-		return points[index].lerp(points[index + 1], local_t)
-
-	func _prefix_points(points: PackedVector2Array, t: float) -> PackedVector2Array:
-		var result := PackedVector2Array()
-		if points.is_empty():
-			return result
-		result.append(points[0])
-		var scaled := clampf(t, 0.0, 1.0) * float(points.size() - 1)
-		var last_full := clampi(int(floor(scaled)), 0, points.size() - 1)
-		for i in range(1, last_full + 1):
-			result.append(points[i])
-		if last_full < points.size() - 1:
-			var local_t := scaled - float(last_full)
-			result.append(points[last_full].lerp(points[last_full + 1], local_t))
-		return result
-
-	func _polyline_length(points: PackedVector2Array) -> float:
-		var total := 0.0
-		for i in range(1, points.size()):
-			total += points[i - 1].distance_to(points[i])
-		return total
 
 
 class SalvoLandingPreviewEffect:
@@ -8700,6 +7225,8 @@ const SAVED_TEAMS_DIR = "user://saved_teams"
 const SAVED_TEAM_SCHEMA_VERSION = "momentum_chain_v3"
 const SAVED_UNITS_DIR = "user://saved_units"
 const SAVED_UNIT_SCHEMA_VERSION = "momentum_chain_v3"
+const SAVE_KIND_SINGLE_UNIT = "single_unit"
+const SAVE_KIND_PUPPET_GROUP = "puppet_group"
 const BATTLE_INPUT_BINDINGS_PATH = "user://battle_input_bindings.json"
 const PERFORMANCE_SETTINGS_PATH = "user://performance_settings.json"
 const PERFORMANCE_PROFILE_DEFAULT = "balanced_4080s"
@@ -8875,6 +7402,8 @@ const STANDARD_GAUNTLET_EXTENSION_M = 2.0
 const STANDARD_GAUNTLET_MOMENTUM_MULT = 1.5
 const STANDARD_GAUNTLET_RECOVERY_ANGLE_DEGREES = 15.0
 const GAUNTLET_SPECIAL_HEAT_FRACTION = 0.1
+const BOOT_ACTION_DRIVER_PROFILE = "boot_action_driver"
+const BOOT_ACTION_DRIVER_TARGET_KIND = "boot_driver_limb_group"
 const SHIELD_GUARD_BASH_PROFILE = "blunt_shield_guard_bash"
 const HAMMER_WINDUP_SLAM_PROFILE = "blunt_hammer_windup_slam"
 const SHIELD_GUARD_BASH_HEAT_FRACTION = 0.08
@@ -9370,6 +7899,7 @@ const SPECIAL_CATALOG = {
 		{"name": "CODE: BODYGUARD SCREEN", "kind": "code", "maker": "CIPHER WARD", "cost": 118, "group_count": 3, "ai": "interceptor_screen", "module_sequence_limit": 3, "condition_slots": 5, "orbit_radius": 0.52, "hold_range": 0.76, "flank_width": 0.5, "sequence": ["armor", "normal", "normal"], "source_target_policy": "protect_hero", "source_attack_preference": "intercept_first", "source_close_response": "screen", "source_threat_override_range": 0.82, "source_keep_range": 0.64, "source_rules": {"enemy_shooting": {"move": "screen", "modules": [0, 1], "states": ["armor", "normal"]}, "enemy_far": {"move": "screen", "modules": [0], "states": ["armor"]}, "enemy_close": {"move": "screen", "modules": [0, 1, 2], "states": ["armor", "normal", "normal"]}, "hero_absent": {"move": "hold", "modules": [0, 1], "states": ["armor", "normal"]}, "self_overheat": {"move": "retreat", "modules": [5], "states": ["normal"]}, "default": {"move": "screen", "modules": [0, 1], "states": ["armor", "normal"]}}, "data_security": 0.08, "summary": "Bodyguard source: three puppets choose threats closest to their hero and occupy intercept lanes with armor-state checks before direct damage"},
 		{"name": "CODE: SIEGE BATTERY", "kind": "code", "maker": "LONGSIGHT AEGIS", "cost": 156, "group_count": 2, "ai": "siege_battery", "module_sequence_limit": 4, "condition_slots": 5, "orbit_radius": 1.18, "hold_range": 1.72, "flank_width": 0.42, "sequence": ["normal", "normal", "armor", "active"], "source_target_policy": "hero_siege", "source_attack_preference": "ranged_first", "source_close_response": "retreat", "source_threat_override_range": 0.72, "source_keep_range": 1.66, "source_rules": {"enemy_shooting": {"move": "retreat", "modules": [0, 1], "states": ["armor", "normal"]}, "enemy_far": {"move": "keep_range", "modules": [0, 1, 2, 3], "states": ["normal", "normal", "armor", "active"]}, "enemy_close": {"move": "retreat", "modules": [0, 1], "states": ["armor", "normal"]}, "hero_absent": {"move": "keep_range", "modules": [0, 1, 2], "states": ["normal", "normal", "armor"]}, "self_overheat": {"move": "retreat", "modules": [5], "states": ["normal"]}, "default": {"move": "keep_range", "modules": [0, 1, 2], "states": ["normal", "normal", "armor"]}}, "summary": "Siege source: two expensive puppets keep long range, prioritize enemy heroes, and use projectile weapons through sniper or artillery bodies"},
 		{"name": "CODE: VANGUARD COVER B", "kind": "code", "maker": "CIPHER WARD", "cost": 112, "group_count": 3, "ai": "vanguard_cover", "module_sequence_limit": 3, "condition_slots": 5, "orbit_radius": 0.46, "hold_range": 0.74, "flank_width": 0.44, "sequence": ["armor", "normal", "active"], "source_target_policy": "protect_puppet_group", "source_attack_preference": "melee_first", "source_close_response": "intercept", "source_threat_override_range": 0.88, "source_keep_range": 0.52, "source_rules": {"enemy_shooting": {"move": "intercept", "modules": [0, 1, 2], "states": ["armor", "normal", "active"]}, "enemy_far": {"move": "cover_group", "modules": [0, 1], "states": ["normal", "armor"]}, "enemy_close": {"move": "intercept", "modules": [0, 1, 2], "states": ["armor", "active", "normal"]}, "hero_absent": {"move": "cover_group", "modules": [0, 1], "states": ["armor", "normal"]}, "self_overheat": {"move": "cover_retreat", "modules": [5], "states": ["normal"]}, "default": {"move": "cover_group", "modules": [0, 1, 2], "states": ["armor", "normal", "active"]}}, "summary": "Vanguard cover source B: up to three puppets prefer melee, intercept enemies targeting this puppet group, and screen allied mechs while they retreat"},
+		{"name": "CODE: TRIAGE LATTICE", "maker": "HELIX CIVIC", "kind": "code", "cost": 132, "group_count": 4, "ai": "vanguard_cover", "module_sequence_limit": 3, "condition_slots": 5, "orbit_radius": 0.54, "hold_range": 0.82, "flank_width": 0.52, "sequence": ["armor", "normal", "active"], "source_target_policy": "protect_puppet_group", "source_attack_preference": "intercept_first", "source_close_response": "intercept", "source_threat_override_range": 0.86, "source_keep_range": 0.66, "source_rules": {"enemy_shooting": {"move": "intercept", "modules": [0, 1, 2], "states": ["armor", "normal", "active"]}, "enemy_far": {"move": "cover_group", "modules": [0, 1], "states": ["normal", "armor"]}, "enemy_close": {"move": "cover_retreat", "modules": [0, 1, 2], "states": ["armor", "active", "normal"]}, "hero_absent": {"move": "cover_group", "modules": [0, 1], "states": ["armor", "normal"]}, "self_overheat": {"move": "retreat", "modules": [5], "states": ["normal"]}, "default": {"move": "cover_group", "modules": [0, 1, 2], "states": ["armor", "normal", "active"]}}, "summary": "Triage lattice source: four puppets guard damaged allied puppets, intercept projectile or close threats, and rotate armor/active calls while the group retreats"},
 		{"name": "CODE: PIERCING RETINUE", "kind": "code", "maker": "HUMANOVA ATELIER", "cost": 126, "group_count": 3, "ai": "pincer", "module_sequence_limit": 4, "condition_slots": 5, "orbit_radius": 0.64, "hold_range": 0.72, "flank_width": 0.58, "sequence": ["normal", "active", "normal", "armor"], "source_target_policy": "protect_hero", "source_attack_preference": "melee_first", "source_close_response": "intercept", "source_threat_override_range": 0.78, "source_keep_range": 0.72, "source_rules": {"enemy_shooting": {"move": "intercept", "modules": [0, 1, 2], "states": ["armor", "normal", "active"]}, "enemy_far": {"move": "orbit", "modules": [0, 1, 2, 3], "states": ["normal", "active", "normal", "armor"]}, "enemy_close": {"move": "intercept", "modules": [0, 1, 2], "states": ["active", "normal", "armor"]}, "hero_absent": {"move": "orbit", "modules": [0, 1], "states": ["armor", "normal"]}, "self_overheat": {"move": "retreat", "modules": [5], "states": ["normal"]}, "default": {"move": "orbit", "modules": [0, 1, 2], "states": ["normal", "armor", "active"]}}, "summary": "Piercing retinue source: three small pincer puppets orbit the hero, intercept close threats, and prefer melee-first thrust openings for spear and spike teams"},
 		{"name": "CODE: THERMAL PIT CREW", "kind": "code", "maker": "SYNTAX ELEVEN", "cost": 136, "group_count": 4, "ai": "formation_xi", "module_sequence_limit": 3, "condition_slots": 5, "orbit_radius": 0.82, "hold_range": 1.08, "flank_width": 0.64, "sequence": ["normal", "armor", "normal", "active"], "source_target_policy": "heat_pressure_first", "source_attack_preference": "ranged_first", "source_close_response": "screen", "source_threat_override_range": 0.72, "source_keep_range": 1.04, "source_heat_focus_ratio": 0.68, "source_rules": {"enemy_shooting": {"move": "screen", "modules": [0, 1, 2], "states": ["armor", "normal", "normal"]}, "enemy_far": {"move": "keep_range", "modules": [0, 1, 2], "states": ["normal", "normal", "armor"]}, "enemy_close": {"move": "screen", "modules": [0, 1, 2], "states": ["armor", "normal", "active"]}, "hero_absent": {"move": "cover_group", "modules": [0, 1], "states": ["armor", "normal"]}, "self_overheat": {"move": "retreat", "modules": [5], "states": ["normal"]}, "default": {"move": "screen", "modules": [0, 1, 2], "states": ["armor", "normal", "normal"]}}, "summary": "Thermal rotation source: four puppets screen firing lanes, cycle armor coverage, and pressure overheated or high-heat targets so laser, missile, chemical, and cooling teams can trade windows instead of leaning on one ace"},
 	],
@@ -9762,7 +8292,7 @@ const COMMON_CATALOG = {
 		{"name": "HUMANOVA DUELIST BLADE", "maker": "HUMANOVA ATELIER", "cost": 54, "hp": 18, "mass": 3, "length": 0.48, "range": 0.16, "normal_damage": 8, "active_damage": 13, "damage_type": "pierce", "material_class": "weapon", "connection_ends": 1, "shape": "spike", "radius": 0.045, "recoil": 0.06, "counter_tiers": {"bullet": 0, "chemical": 0, "laser": 1, "blunt": 0, "pierce": 2, "tear": 1}, "resist": {"bullet": 1.08, "chemical": 1.08, "laser": 1.02, "blunt": 1.12, "pierce": 0.96, "tear": 1.02}, "summary": "Light humanoid terminal blade. Low mass, crisp cancels, and readable strike length for technical small-unit play"},
 		{"name": "UMBRA VENT STILETTO", "maker": "UMBRA REARWORKS", "cost": 84, "hp": 18, "mass": 4, "length": 0.56, "range": 0.28, "normal_damage": 11, "active_damage": 15, "damage_type": "pierce", "material_class": "weapon", "connection_ends": 1, "shape": "spike", "radius": 0.04, "recoil": 0.045, "back_hit_heat_bonus": 16.0, "back_hit_heat_mult": 1.18, "counter_tiers": {"bullet": 0, "chemical": 1, "laser": 1, "blunt": 0, "pierce": 3, "tear": 1}, "resist": {"bullet": 1.08, "chemical": 1.0, "laser": 0.96, "blunt": 1.2, "pierce": 0.9, "tear": 1.02}, "summary": "Rearworks piercer. Normal damage is modest, but back hits inject large heat through exposed vents"},
 		{"name": "UMBRA HEAT NEEDLER", "maker": "UMBRA REARWORKS", "cost": 112, "hp": 16, "mass": 5, "length": 0.64, "normal_damage": 10, "projectile_damage": 10, "damage_type": "laser", "projectile_damage_type": "laser", "normal_heat": 36.0, "range": 1.34, "projectile_range": 4.6, "projectile": true, "projectile_only": true, "projectile_style": "beam", "travel_path": "instant_line", "laser_aim_time": 0.32, "material_class": "gun", "connection_ends": 1, "shape": "gun", "radius": 0.04, "recoil": 0.04, "back_hit_heat_bonus": 22.0, "back_hit_heat_mult": 1.24, "counter_tiers": {"bullet": 0, "chemical": 1, "laser": 3, "blunt": 0, "pierce": 1, "tear": 1}, "resist": {"bullet": 1.12, "chemical": 1.06, "laser": 0.9, "blunt": 1.14, "pierce": 1.0, "tear": 1.02}, "summary": "Needle laser tuned for rear vents. Short warning line, lower damage, and high thermal shock on back shots"},
-		{"name": "SHIELD VEIL PATCH", "maker": "LONGSIGHT AEGIS", "cost": 36, "mass": 3, "length": 0.0, "connection_ends": 0, "material_class": "shield_payload", "shape": "shield_software", "radius": 0.0, "torso_slot_payload": true, "shield_payload": true, "electronic_armor": true, "shield_hp": 16.0, "shield_regen": 1.6, "shield_coverage": 0.42, "electronic_armor_hp": 16.0, "electronic_armor_regen": 1.6, "electronic_armor_coverage": 0.42, "summary": "Torso-slot shield software. Adds mass only: no HP, no collision volume, no slot volume; shield is consumed before HP"},
+		{"name": "SHIELD VEIL PATCH", "maker": "LONGSIGHT AEGIS", "cost": 36, "mass": 3, "length": 0.0, "connection_ends": 0, "material_class": "shield_payload", "shape": "shield_software", "radius": 0.0, "torso_slot_payload": true, "shield_payload": true, "electronic_armor": true, "shield_hp": 16.0, "shield_regen": 1.6, "shield_coverage": 0.42, "electronic_armor_hp": 16.0, "electronic_armor_regen": 1.6, "electronic_armor_coverage": 0.42, "summary": "Torso-slot shield software. Adds mass and consumes internal slot volume, but has no HP or collision volume; shield is consumed before HP"},
 		{"name": "SHIELD DUEL HALO", "maker": "LONGSIGHT AEGIS", "cost": 78, "mass": 8, "length": 0.0, "connection_ends": 0, "material_class": "shield_payload", "shape": "shield_software", "radius": 0.0, "torso_slot_payload": true, "shield_payload": true, "electronic_armor": true, "shield_hp": 42.0, "shield_regen": 2.8, "shield_coverage": 0.86, "electronic_armor_hp": 42.0, "electronic_armor_regen": 2.8, "electronic_armor_coverage": 0.86, "summary": "Duelist shield software. Covers small and standard bodies well; oversized mechs dilute the shield"},
 		{"name": "SHIELD SIEGE MANTLE", "maker": "LONGSIGHT AEGIS", "cost": 156, "mass": 24, "length": 0.0, "connection_ends": 0, "material_class": "shield_payload", "shape": "shield_software", "radius": 0.0, "torso_slot_payload": true, "shield_payload": true, "electronic_armor": true, "shield_hp": 96.0, "shield_regen": 4.2, "shield_coverage": 1.72, "electronic_armor_hp": 96.0, "electronic_armor_regen": 4.2, "electronic_armor_coverage": 1.72, "summary": "Heavy shield software for tanks and large heroes. Strong shield pool with real mass tax, but still no physical volume"},
 		{"name": "SHIELD TITAN DOME", "maker": "LONGSIGHT AEGIS", "cost": 288, "mass": 76, "length": 0.0, "connection_ends": 0, "material_class": "shield_payload", "shape": "shield_software", "radius": 0.0, "torso_slot_payload": true, "shield_payload": true, "electronic_armor": true, "shield_hp": 210.0, "shield_regen": 6.4, "shield_coverage": 3.3, "electronic_armor_hp": 210.0, "electronic_armor_regen": 6.4, "electronic_armor_coverage": 3.3, "summary": "Monster-scale shield software. Huge regenerating buffer, priced and weighted for colossal bodies; no extra collision body"},
@@ -9886,7 +8416,7 @@ const COMMON_CATALOG = {
 		{"name": "GRAPPLE CAPTURE", "cost": 86, "mass": 0, "aim_mode": "manual", "motion": "grapple", "command": "236", "skill_state": "armor", "module_effect": "capture", "module_state": "armor", "travel_path": "hook", "projectile_style": "chain", "module_range": 1.25, "module_lane_range": 0.38, "pull_power": 0.22, "summary": "Catch a material or enemy body; mass decides which side is pulled closer"},
 		{"name": "ENTANGLE WRAP", "cost": 104, "mass": 0, "aim_mode": "auto", "motion": "entangle", "command": "632146", "skill_state": "active", "module_effect": "entangle", "module_state": "active", "travel_path": "spiral", "projectile_style": "chain", "module_range": 1.05, "module_lane_range": 0.52, "pull_power": 0.18, "summary": "Wrap a unit or map piece with topology tension, briefly dragging and slowing it"},
 		{"name": "BARRIER SNAP THROW", "cost": 96, "mass": 0, "aim_mode": "fixed", "motion": "barrier_break", "command": "214", "skill_state": "armor", "module_effect": "barrier_break", "module_state": "armor", "travel_path": "throw_arc", "projectile_style": "thrown", "module_range": 1.45, "module_lane_range": 0.4, "summary": "Rip a material chunk from a barrier-map segment and throw it forward"},
-		{"name": "BOOT ACTION DRIVER", "cost": 8, "mass": 0, "aim_mode": "fixed", "motion": "straight", "range": 0.02, "command": "236", "skill_state": "active", "summary": "Bare software driver; keeps initial units legal but offers almost no offense"},
+		{"name": "BOOT ACTION DRIVER", "cost": 8, "mass": 0, "aim_mode": "manual", "motion": "boot_driver", "range": 0.02, "command": "X", "skill_state": "normal", "module_action_profile": "boot_action_driver", "module_target_kind": "boot_driver_limb_group", "command_window_profile": "boot_driver_4_6", "requires_bound_key": true, "hold_to_activate": true, "turn_keys_steer_joint": true, "startup_ratio": 0.333333, "recovery_ratio": 0.666667, "damage_type": "blunt", "projectile": false, "manual_turn_rate": 3.4, "summary": "Boot Driver: hold the bound key to drive one rotating limb plus a telescopic blunt terminal. 4X active, 6X armor; Q/E steer the rotating joint."},
 		{"name": "TURRET TRAVERSE FIRE", "cost": 52, "mass": 0, "aim_mode": "manual", "motion": "turret", "command": "236", "skill_state": "active", "projectile": true, "active_heat": 38.0, "module_range": 1.8, "module_lane_range": 0.2, "summary": "Manual turret aim module for tanks and fortress guns"},
 		{"name": "BARRIER: GALAXY CASTLE", "cost": 130, "mass": 0, "aim_mode": "auto", "motion": "fortress_logic", "command": "632146", "skill_state": "active", "barrier_logic": "galaxy_castle", "aura_range": 0.88, "aura_heat": 10.0, "slow_power": 0.24, "pulse_interval": 0.72, "summary": "Fortress logic: traps, gates, heat rooms, and reactive pulses like a tiny galactic Metroidvania"},
 		{"name": "BARRIER: REACTIVE GATE", "cost": 82, "mass": 0, "aim_mode": "auto", "motion": "reactive_gate", "command": "214", "skill_state": "armor", "barrier_logic": "reactive_gate", "aura_range": 0.62, "pulse_interval": 0.9, "summary": "A barrier action module that automatically snaps shut when enemies enter its trigger space"},
@@ -10127,6 +8657,7 @@ var aim_hold_fire_timers := {1: 0.0, 2: 0.0}
 var aim_locked_targets := {1: null, 2: null}
 var aim_locked_directions := {1: Vector2.ZERO, 2: Vector2.ZERO}
 var gun_activation_state := {1: {}, 2: {}}
+var held_melee_activation_state := {1: {}, 2: {}}
 var salvo_landing_preview_effects := {}
 var last_direction_taps := {}
 var unit2_boost_momentum_reference_cache := -1.0
@@ -10185,11 +8716,14 @@ var menu_status_label: Label
 var saved_units_backdrop: BackdropView
 var saved_unit_buttons: Array = []
 var saved_unit_thumb_views: Array = []
+var saved_unit_card_text_scrolls: Array = []
+var saved_unit_card_text_labels: Array = []
 var saved_unit_filter_buttons: Array = []
 var saved_unit_action_buttons := {}
 var saved_unit_detail_view: ScoutUnitDetailView
 var saved_unit_title_label: Label
 var saved_unit_hint_label: Label
+var saved_unit_selection_scroll: ScrollContainer
 var saved_unit_selection_label: Label
 var saved_unit_page_label: Label
 var saved_unit_filter := "all"
@@ -10249,6 +8783,8 @@ var editor_template_buttons: Array = []
 var editor_load_card_buttons: Array = []
 var editor_roster_slot_buttons: Array = []
 var editor_roster_slot_thumb_views: Array = []
+var editor_roster_prev_button: Button
+var editor_roster_next_button: Button
 var editor_template_panel: ColorRect
 var editor_template_menu_open := false
 var editor_color_panel: ColorRect
@@ -10270,6 +8806,9 @@ var editor_catalog_page := 0
 var editor_topology_node_index := 0
 var editor_selected_barrier_cell := -1
 var editor_selected_topology_nodes: Array = []
+var editor_topology_clipboard := {}
+var editor_clipboard_paste_count := 0
+var editor_last_board_mouse_position := Vector2.INF
 var editor_board_tool := "layout"
 var editor_pose_dragging := false
 var editor_pose_root_node := -1
@@ -10311,6 +8850,7 @@ var editor_selection_box_start := Vector2.ZERO
 var editor_selection_box_current := Vector2.ZERO
 var editor_board_zoom := 1.0
 var editor_board_view_offset := Vector2.ZERO
+var editor_barrier_grid_guides_enabled := true
 var editor_load_drag_index := -1
 var editor_undo_stack: Array = []
 var editor_pending_place_slot := ""
@@ -10337,6 +8877,7 @@ var settings_backdrop: BackdropView
 var hud_overlay: CockpitHudView
 var battle_minimap_view: BattleMinimapView
 var battle_instrument_gauge: BattleInstrumentGaugeView
+var battle_action_diagnostics_view: BattleActionDiagnosticsView
 var training_entry_intro_view: TrainingEntryIntroView
 var battle_ui_last_heavy_msec := -1000000
 var battle_ui_last_minimap_msec := -1000000
@@ -10429,6 +8970,28 @@ var hot_path_profiler: HotPathProfiler
 var gpu_geometry_service: GpuGeometryService
 var part_catalog_service: PartCatalogService
 var unit_stats_service: UnitStatsService
+var training_entry_service: TrainingEntryService
+var saved_unit_library_service: SavedUnitLibraryService
+var battle_input_service: BattleInputService
+var projectile_runtime_service: ProjectileRuntimeService
+var runtime_contact_service: RuntimeContactService
+var runtime_collider_geometry_service: RuntimeColliderGeometryService
+var battle_vfx_budget_service: BattleVfxBudgetService
+var battle_frame_orchestrator_service: BattleFrameOrchestratorService
+var battle_actor_command_service: BattleActorCommandService
+var battle_field_runtime_service: BattleFieldRuntimeService
+var battle_hit_resolution_service: BattleHitResolutionService
+var battle_projectile_lifecycle_service: BattleProjectileLifecycleService
+var battle_action_event_service: BattleActionEventService
+var battle_impact_query_service: BattleImpactQueryService
+var battle_runtime_lifecycle_service: BattleRuntimeLifecycleService
+var battle_identity_runtime_service: BattleIdentityRuntimeService
+var battle_spatial_runtime_service: BattleSpatialRuntimeService
+var battle_map_occlusion_service: BattleMapOcclusionService
+var battle_target_acquisition_service: BattleTargetAcquisitionService
+var battle_hud_state_service: BattleHudStateService
+var battle_awareness_service: BattleAwarenessService
+var battle_runtime_action_telemetry_service: BattleRuntimeActionTelemetryService
 var power_allocation_service: PowerAllocationService
 var action_profile_registry: ActionProfileRegistry
 var drive_system_service: DriveSystemService
@@ -10436,6 +8999,9 @@ var unit_blueprint_validator: UnitBlueprintValidator
 var data_rule_service: DataRuleService
 var navigation_service: NavigationService
 var team_edit_controller: TeamEditController
+var unit_editor_catalog_controller: UnitEditorCatalogController
+var unit_editor_board_controller: UnitEditorBoardController
+var editor_board_controller_missing_warned := false
 var battle_controller: BattleController
 var saved_units_controller: SavedUnitsController
 var settings_controller: SettingsController
@@ -10474,6 +9040,7 @@ var editor_perf_overlay_enabled := false
 var editor_perf_overlay_label: Label
 var editor_perf_overlay_frame_samples: Array = []
 var editor_perf_overlay_last_usec := 0
+var battle_action_diagnostics_overlay_enabled := false
 var editor_preview_pause_until_msec := 0
 var editor_dirty_flush_count := 0
 const EDITOR_DIRTY_CATALOG := 1
@@ -10562,6 +9129,7 @@ var editor_engine_allocation_panel_user_closed := true
 var editor_save_unit_name_panel: ColorRect
 var editor_save_unit_name_edit: LineEdit
 var editor_save_unit_name_label: Label
+var editor_save_unit_role_buttons := {}
 var editor_save_unit_feedback_label: Label
 var editor_save_success_flash_timer := 0.0
 var editor_save_success_flash_path := ""
@@ -10689,6 +9257,28 @@ func _initialize_hot_path_state_layer() -> void:
 	part_catalog_service.bind(self)
 	unit_stats_service = UnitStatsService.new()
 	unit_stats_service.bind(self, derived_state_cache)
+	training_entry_service = TrainingEntryService.new()
+	saved_unit_library_service = SavedUnitLibraryService.new()
+	battle_input_service = BattleInputService.new()
+	projectile_runtime_service = ProjectileRuntimeService.new()
+	runtime_contact_service = RuntimeContactService.new()
+	runtime_collider_geometry_service = RuntimeColliderGeometryService.new()
+	battle_vfx_budget_service = BattleVfxBudgetService.new()
+	battle_frame_orchestrator_service = BattleFrameOrchestratorService.new()
+	battle_actor_command_service = BattleActorCommandService.new()
+	battle_field_runtime_service = BattleFieldRuntimeService.new()
+	battle_hit_resolution_service = BattleHitResolutionService.new()
+	battle_projectile_lifecycle_service = BattleProjectileLifecycleService.new()
+	battle_action_event_service = BattleActionEventService.new()
+	battle_impact_query_service = BattleImpactQueryService.new()
+	battle_runtime_lifecycle_service = BattleRuntimeLifecycleService.new()
+	battle_identity_runtime_service = BattleIdentityRuntimeService.new()
+	battle_spatial_runtime_service = BattleSpatialRuntimeService.new()
+	battle_map_occlusion_service = BattleMapOcclusionService.new()
+	battle_target_acquisition_service = BattleTargetAcquisitionService.new()
+	battle_hud_state_service = BattleHudStateService.new()
+	battle_awareness_service = BattleAwarenessService.new()
+	battle_runtime_action_telemetry_service = BattleRuntimeActionTelemetryService.new()
 	power_allocation_service = PowerAllocationService.new()
 	action_profile_registry = ActionProfileRegistry.new()
 	drive_system_service = DriveSystemService.new()
@@ -10698,6 +9288,9 @@ func _initialize_hot_path_state_layer() -> void:
 	navigation_service.commit_transition(game_state, "ready")
 	team_edit_controller = TeamEditController.new()
 	team_edit_controller.bind(self, game_state_store, dirty_graph, derived_state_cache, hot_path_profiler)
+	unit_editor_catalog_controller = UnitEditorCatalogController.new()
+	unit_editor_catalog_controller.bind(hot_path_profiler)
+	unit_editor_board_controller = UnitEditorBoardController.new()
 	battle_controller = BattleController.new()
 	battle_controller.bind(self, game_state_store, dirty_graph, derived_state_cache, hot_path_profiler, gpu_geometry_service)
 	saved_units_controller = SavedUnitsController.new()
@@ -10761,6 +9354,22 @@ func _submit_gpu_geometry_queries_deferred(colliders: Array, queries: Array, del
 		hits = gpu_geometry_service.compute_geometry_queries_deferred(colliders, queries, delta)
 	else:
 		hits = gpu_collision_pipeline.compute_geometry_queries_deferred(colliders, queries, delta)
+	gpu_geometry_query_submit_count += 1
+	if not hits.is_empty():
+		gpu_geometry_query_consume_count += 1
+	gpu_geometry_query_readback_bytes += int(gpu_collision_pipeline.last_readback_bytes)
+	gpu_geometry_query_last_hits = hits.duplicate(true)
+	return hits
+
+
+func _submit_gpu_geometry_queries(colliders: Array, queries: Array, delta: float = 0.0) -> Array:
+	if gpu_collision_pipeline == null or not _gpu_collision_available():
+		return []
+	var hits := []
+	if gpu_geometry_service != null and gpu_geometry_service.has_method("compute_geometry_queries"):
+		hits = gpu_geometry_service.compute_geometry_queries(colliders, queries, delta)
+	else:
+		hits = gpu_collision_pipeline.compute_geometry_queries(colliders, queries, delta, false)
 	gpu_geometry_query_submit_count += 1
 	if not hits.is_empty():
 		gpu_geometry_query_consume_count += 1
@@ -10983,6 +9592,8 @@ func _route_reserved_keyboard_input(event: InputEvent) -> bool:
 func _route_unit_editor_priority_input(event: InputEvent) -> bool:
 	if game_state != STATE_EDITOR:
 		return false
+	if _handle_unit_editor_clipboard_shortcut(event):
+		return true
 	if _handle_editor_unit_detail_global_input(event):
 		return true
 	if _try_open_editor_torso_detail_from_board_double_click(event):
@@ -10998,6 +9609,50 @@ func _route_unit_editor_priority_input(event: InputEvent) -> bool:
 	if _handle_editor_catalog_manual_drag(event):
 		return true
 	return false
+
+
+func _handle_unit_editor_clipboard_shortcut(event: InputEvent) -> bool:
+	if not (event is InputEventKey):
+		return false
+	var role_key: String = ROLE_ORDER[editor_role_index]
+	var unit_bp: Dictionary = _editor_current_blueprint()
+	var context := _editor_board_input_context(role_key, unit_bp)
+	context["busy"] = _unit_editor_clipboard_busy()
+	var intent: Dictionary = unit_editor_board_controller.clipboard_shortcut_intent(event, context) if unit_editor_board_controller != null else _unit_editor_clipboard_shortcut_fallback(event, context)
+	var action := String(intent.get("action", "none"))
+	if not (action in ["copy_selection", "cut_selection", "paste_selection"]):
+		return false
+	_editor_action(action)
+	return true
+
+
+func _unit_editor_clipboard_shortcut_fallback(event: InputEvent, context: Dictionary) -> Dictionary:
+	if not (event is InputEventKey):
+		return {"action": "none"}
+	var key_event := event as InputEventKey
+	if not key_event.pressed or key_event.echo or not (key_event.ctrl_pressed or key_event.meta_pressed):
+		return {"action": "none"}
+	if bool(context.get("busy", false)) or not bool(context.get("role_uses_body_board", false)) or not bool(context.get("has_custom_topology", false)):
+		return {"action": "none"}
+	var keycode := key_event.physical_keycode if key_event.physical_keycode != 0 else key_event.keycode
+	match keycode:
+		KEY_C:
+			return {"action": "copy_selection"}
+		KEY_X:
+			return {"action": "cut_selection"}
+		KEY_V:
+			return {"action": "paste_selection"}
+	return {"action": "none"}
+
+
+func _unit_editor_clipboard_busy() -> bool:
+	return editor_pose_dragging \
+		or editor_selecting_topology_box \
+		or editor_dragging_node_index >= 0 \
+		or editor_dragging_whole_unit \
+		or editor_drag_catalog_active \
+		or not editor_pending_module_binding.is_empty() \
+		or editor_pending_orientation_node_index >= 0
 
 
 func _input(event: InputEvent) -> void:
@@ -11073,12 +9728,70 @@ func _begin_runtime_performance_frame(delta: float) -> void:
 
 
 func _reset_battle_vfx_frame_budget() -> void:
-	battle_vfx_spawn_count_this_frame = 0
-	battle_projectile_trace_count_this_frame = 0
-	battle_hit_effect_count_this_frame = 0
+	var state := battle_vfx_budget_service.reset_frame_state(_battle_vfx_frame_state()) if battle_vfx_budget_service != null else {
+		"spawn_count": 0,
+		"projectile_trace_count": 0,
+		"hit_effect_count": 0,
+		"drop_count": battle_vfx_budget_drop_count,
+	}
+	_apply_battle_vfx_frame_state(state)
 
 
 func _consume_battle_vfx_budget(kind: String) -> bool:
+	if battle_vfx_budget_service == null:
+		return _legacy_consume_battle_vfx_budget(kind)
+	var code := battle_vfx_budget_service.consume_code(
+		kind,
+		battle_vfx_spawn_count_this_frame,
+		battle_projectile_trace_count_this_frame,
+		battle_hit_effect_count_this_frame,
+		int(_runtime_quality_value("battle_vfx_budget", 260)),
+		int(_runtime_quality_value("projectile_trace_budget", 120)),
+		int(_runtime_quality_value("hit_effect_budget", 110))
+	)
+	if code <= 0:
+		battle_vfx_budget_drop_count += 1
+		return false
+	battle_vfx_spawn_count_this_frame += 1
+	if code == BattleVfxBudgetService.RESULT_ACCEPTED_PROJECTILE_TRACE:
+		battle_projectile_trace_count_this_frame += 1
+		battle_projectile_trace_spawn_count += 1
+	elif code == BattleVfxBudgetService.RESULT_ACCEPTED_HIT_EFFECT:
+		battle_hit_effect_count_this_frame += 1
+		battle_hit_effect_spawn_count += 1
+	return true
+
+
+func _battle_vfx_frame_state() -> Dictionary:
+	return battle_vfx_budget_service.frame_state(
+		battle_vfx_spawn_count_this_frame,
+		battle_projectile_trace_count_this_frame,
+		battle_hit_effect_count_this_frame,
+		battle_vfx_budget_drop_count
+	) if battle_vfx_budget_service != null else {
+		"spawn_count": battle_vfx_spawn_count_this_frame,
+		"projectile_trace_count": battle_projectile_trace_count_this_frame,
+		"hit_effect_count": battle_hit_effect_count_this_frame,
+		"drop_count": battle_vfx_budget_drop_count,
+	}
+
+
+func _battle_vfx_quality_values() -> Dictionary:
+	return {
+		"battle_vfx_budget": int(_runtime_quality_value("battle_vfx_budget", 260)),
+		"projectile_trace_budget": int(_runtime_quality_value("projectile_trace_budget", 120)),
+		"hit_effect_budget": int(_runtime_quality_value("hit_effect_budget", 110)),
+	}
+
+
+func _apply_battle_vfx_frame_state(state: Dictionary) -> void:
+	battle_vfx_spawn_count_this_frame = max(0, int(state.get("spawn_count", 0)))
+	battle_projectile_trace_count_this_frame = max(0, int(state.get("projectile_trace_count", 0)))
+	battle_hit_effect_count_this_frame = max(0, int(state.get("hit_effect_count", 0)))
+	battle_vfx_budget_drop_count = max(0, int(state.get("drop_count", battle_vfx_budget_drop_count)))
+
+
+func _legacy_consume_battle_vfx_budget(kind: String) -> bool:
 	var total_limit := int(_runtime_quality_value("battle_vfx_budget", 260))
 	if total_limit <= 0:
 		battle_vfx_budget_drop_count += 1
@@ -11477,6 +10190,7 @@ func _reset_editor_working_canvas(role_key: String = "") -> void:
 	editor_pending_place_slot = ""
 	editor_pending_place_index = -1
 	editor_undo_stack.clear()
+	_apply_editor_role_catalog_defaults(resolved_role)
 
 
 func _editor_is_blank_work_canvas() -> bool:
@@ -11527,6 +10241,63 @@ func _invalidate_editor_current_stats_cache() -> void:
 func _enter_editor_roster_entry(entry: Dictionary, update_ui: bool = true) -> void:
 	editor_canvas_mode = "roster_unit"
 	_select_editor_entry(entry, update_ui)
+
+
+func _reset_editor_unit_page_transient_state(clear_clipboard: bool = false) -> void:
+	_clear_editor_hover_card(true)
+	_clear_editor_unit_hover_card(true)
+	_close_engine_momentum_allocation_panel()
+	if editor_torso_detail_view != null:
+		editor_torso_detail_view.set_binding_state(false)
+		editor_torso_detail_view.visible = false
+	editor_open_torso_node_index = -1
+	editor_hovered_torso_node_index = -1
+	editor_selected_torso_slot_index = -1
+	editor_selected_torso_slot_kind = ""
+	editor_pending_module_binding = {}
+	editor_bound_module_tryout = {}
+	editor_pose_dragging = false
+	editor_pose_pending_update = false
+	editor_pose_root_node = -1
+	editor_pose_downstream_nodes = []
+	editor_pose_drag_original_positions = []
+	editor_pose_original_entry_pose = {}
+	editor_dragging_node_index = -1
+	editor_dragging_selected_nodes = false
+	editor_dragging_whole_unit = false
+	editor_node_click_candidate_index = -1
+	editor_node_click_moved = false
+	editor_drag_whole_original_positions = []
+	editor_group_drag_original_positions = []
+	editor_selecting_topology_box = false
+	editor_selection_box_start = Vector2.ZERO
+	editor_selection_box_current = Vector2.ZERO
+	editor_selected_topology_nodes = []
+	editor_pending_orientation_node_index = -1
+	editor_pending_place_slot = ""
+	editor_pending_place_index = -1
+	editor_cached_socket_candidate = {}
+	editor_cached_socket_candidate_node = -1
+	editor_cached_socket_candidate_pos = Vector2.INF
+	editor_cached_socket_candidate_msec = -1000000
+	editor_material_warning_nodes = []
+	if clear_clipboard:
+		editor_topology_clipboard = {}
+		editor_clipboard_paste_count = 0
+		editor_last_board_mouse_position = Vector2.INF
+	if editor_orientation_popup_panel != null:
+		editor_orientation_popup_panel.visible = false
+	_hide_editor_drag_ghost()
+	_invalidate_editor_board_snapshot_cache()
+	_invalidate_editor_current_stats_cache()
+
+
+func _switch_editor_to_roster_page(entry: Dictionary, update_ui: bool = true) -> void:
+	if entry.is_empty() or not _valid_roster_entry(_editor_player(), entry):
+		return
+	_reset_editor_unit_page_transient_state(false)
+	_enter_editor_roster_entry(entry, update_ui)
+	_apply_editor_role_catalog_defaults(String(entry.get("role", ROLE_ORDER[editor_role_index])))
 
 
 func _save_editor_working_canvas_to_roster() -> void:
@@ -11675,9 +10446,17 @@ func _saved_payload_has_legacy_power_fields(value: Variant) -> bool:
 	return _saved_payload_legacy_path(value) != ""
 
 
-func _without_legacy_power_fields(part: Dictionary) -> Dictionary:
+func _without_legacy_power_fields(part: Dictionary, slot_key: String = "") -> Dictionary:
 	var cleaned := part.duplicate(true)
+	var preserve_catalog_keys := {}
+	if slot_key == "booster":
+		preserve_catalog_keys = {
+			"allocated_momentum": true,
+			"brake_efficiency": true,
+		}
 	for key in _legacy_power_field_keys():
+		if preserve_catalog_keys.has(key):
+			continue
 		cleaned.erase(key)
 	return cleaned
 
@@ -11712,6 +10491,8 @@ func _saved_blueprint_has_current_topology(unit_bp: Dictionary) -> bool:
 func _saved_blueprint_current_topology_rejection_reason(unit_bp: Dictionary) -> String:
 	if str(unit_bp.get("schema_version", "")) != SAVED_UNIT_SCHEMA_VERSION:
 		return "blueprint schema is not %s" % SAVED_UNIT_SCHEMA_VERSION
+	if String(unit_bp.get("role", "")) == "barrier" and _barrier_uses_screen_board(unit_bp):
+		return ""
 	if not unit_bp.has("custom_topology"):
 		return "blueprint has no custom_topology"
 	var topology: Dictionary = Dictionary(unit_bp.get("custom_topology", {}))
@@ -11734,15 +10515,41 @@ func _is_current_saved_unit_payload(payload: Dictionary) -> bool:
 	return _saved_unit_payload_rejection_reason(payload) == ""
 
 
+func _saved_payload_save_kind(payload: Dictionary) -> String:
+	var save_kind := String(payload.get("save_kind", SAVE_KIND_SINGLE_UNIT))
+	if save_kind == "":
+		save_kind = SAVE_KIND_SINGLE_UNIT
+	return save_kind
+
+
 func _saved_unit_payload_rejection_reason(payload: Dictionary) -> String:
 	if str(payload.get("schema_version", "")) != SAVED_UNIT_SCHEMA_VERSION:
 		return "payload schema is not %s" % SAVED_UNIT_SCHEMA_VERSION
-	if not (payload.get("blueprint", {}) is Dictionary):
-		return "payload has no blueprint"
-	var unit_bp: Dictionary = Dictionary(_json_restore_value(payload.get("blueprint", {}))).duplicate(true)
-	var topology_reason := _saved_blueprint_current_topology_rejection_reason(unit_bp)
-	if topology_reason != "":
-		return topology_reason
+	var save_kind := _saved_payload_save_kind(payload)
+	if save_kind == SAVE_KIND_PUPPET_GROUP:
+		if String(payload.get("unit_role", "")) != "puppet":
+			return "puppet group payload must use puppet role"
+		var group_blueprints: Array = Array(payload.get("puppet_group_blueprints", []))
+		if group_blueprints.is_empty():
+			return "puppet group has no blueprints"
+		for raw_bp in group_blueprints:
+			if not (raw_bp is Dictionary):
+				return "puppet group contains a non-dictionary blueprint"
+			var member_bp: Dictionary = Dictionary(_json_restore_value(raw_bp)).duplicate(true)
+			member_bp["role"] = "puppet"
+			member_bp["schema_version"] = String(member_bp.get("schema_version", SAVED_UNIT_SCHEMA_VERSION))
+			var member_reason := _saved_blueprint_current_topology_rejection_reason(member_bp)
+			if member_reason != "":
+				return "puppet group member rejected: %s" % member_reason
+	elif save_kind == SAVE_KIND_SINGLE_UNIT:
+		if not (payload.get("blueprint", {}) is Dictionary):
+			return "payload has no blueprint"
+		var unit_bp: Dictionary = Dictionary(_json_restore_value(payload.get("blueprint", {}))).duplicate(true)
+		var topology_reason := _saved_blueprint_current_topology_rejection_reason(unit_bp)
+		if topology_reason != "":
+			return topology_reason
+	else:
+		return "unknown save_kind %s" % save_kind
 	var legacy_path := _saved_payload_legacy_path(payload)
 	if legacy_path != "":
 		return "legacy drive/pointer field at %s" % legacy_path
@@ -12130,6 +10937,11 @@ func _unit_blueprint_for_library(role_key: String, unit_bp: Dictionary) -> Dicti
 	var saved := _canonical_saved_unit_blueprint_for_library(unit_bp)
 	saved["role"] = role_key
 	saved["schema_version"] = SAVED_UNIT_SCHEMA_VERSION
+	saved["save_kind"] = SAVE_KIND_SINGLE_UNIT
+	if role_key == "barrier" and saved.has("barrier_tiles"):
+		saved["barrier_tiles"] = _barrier_tiles_with_screen_pos_for_save(Array(saved.get("barrier_tiles", [])))
+	else:
+		saved.erase("puppet_group_blueprints")
 	if not saved.has("unit_id") or String(saved.get("unit_id", "")) == "":
 		saved["unit_id"] = "%s_%d" % [role_key, int(Time.get_unix_time_from_system() * 1000.0)]
 	if not saved.has("unit_name") or String(saved.get("unit_name", "")) == "":
@@ -12221,12 +11033,14 @@ func _set_save_unit_failure_feedback(reason: String) -> void:
 
 
 func _latest_saved_unit_named_for_role(unit_name: String, role_key: String) -> Dictionary:
+	_ensure_saved_unit_library_cache(false, true)
+	if saved_unit_library_service != null:
+		return saved_unit_library_service.latest_entry_named(_unit_library_entries(), unit_name, role_key)
 	var clean_name := unit_name.strip_edges()
 	if clean_name == "":
 		return {}
 	var best_entry := {}
 	var best_time := -1
-	_ensure_saved_unit_library_cache(false, true)
 	for raw_entry in _unit_library_entries():
 		if not (raw_entry is Dictionary):
 			continue
@@ -12250,19 +11064,17 @@ func _save_editor_current_unit_to_library_named(unit_name_override: String = "",
 		unit_bp["unit_name"] = clean_name
 		unit_bp["name"] = clean_name
 	_ensure_saved_units_dir()
-	var export_path := path
-	if export_path == "" and not save_as_new:
-		if editor_source_saved_unit_path != "" and FileAccess.file_exists(editor_source_saved_unit_path):
-			export_path = editor_source_saved_unit_path
-		else:
-			var matching_entry := _latest_saved_unit_named_for_role(String(unit_bp.get("unit_name", unit_bp.get("name", ""))), role_key)
-			if not matching_entry.is_empty():
-				export_path = String(matching_entry.get("path", ""))
-	if export_path == "":
-		var stem := _safe_save_stem(String(unit_bp.get("unit_name", unit_bp.get("name", role_key))), "%s_unit" % role_key)
-		export_path = "%s/%s_%d.json" % [SAVED_UNITS_DIR, stem, int(Time.get_unix_time_from_system())]
-	var payload := {
+	var matching_path := ""
+	if path == "" and not save_as_new and not (editor_source_saved_unit_path != "" and FileAccess.file_exists(editor_source_saved_unit_path)):
+		var matching_entry := _latest_saved_unit_named_for_role(String(unit_bp.get("unit_name", unit_bp.get("name", ""))), role_key)
+		if not matching_entry.is_empty():
+			matching_path = String(matching_entry.get("path", ""))
+	var stem := _safe_save_stem(String(unit_bp.get("unit_name", unit_bp.get("name", role_key))), "%s_unit" % role_key)
+	var generated_path := "%s/%s_%d.json" % [SAVED_UNITS_DIR, stem, int(Time.get_unix_time_from_system())]
+	var export_path := saved_unit_library_service.resolve_save_path(path, save_as_new, editor_source_saved_unit_path, FileAccess.file_exists(editor_source_saved_unit_path), matching_path, generated_path) if saved_unit_library_service != null else _legacy_saved_unit_export_path(path, save_as_new, editor_source_saved_unit_path, matching_path, generated_path)
+	var payload := saved_unit_library_service.build_save_payload(unit_bp, role_key, SAVED_UNIT_SCHEMA_VERSION, _json_safe_value(unit_bp), SAVE_KIND_SINGLE_UNIT) if saved_unit_library_service != null else {
 		"schema_version": SAVED_UNIT_SCHEMA_VERSION,
+		"save_kind": SAVE_KIND_SINGLE_UNIT,
 		"unit_id": String(unit_bp.get("unit_id", "")),
 		"unit_name": String(unit_bp.get("unit_name", unit_bp.get("name", ""))),
 		"unit_role": role_key,
@@ -12281,9 +11093,10 @@ func _save_editor_current_unit_to_library_named(unit_name_override: String = "",
 	file.close()
 	_invalidate_saved_unit_library_cache()
 	var readback := _unit_library_entry_from_file(export_path)
-	if readback.is_empty() or bool(readback.get("canonical_rejected", false)):
-		var readback_reason := _saved_unit_rejection_reason_from_file(export_path)
-		_set_save_unit_failure_feedback(readback_reason if readback_reason != "" else "saved file cannot be read back by the unit library")
+	var readback_reason := _saved_unit_rejection_reason_from_file(export_path) if readback.is_empty() or bool(readback.get("canonical_rejected", false)) else ""
+	var readback_status := saved_unit_library_service.readback_status(readback, readback_reason) if saved_unit_library_service != null else {"ok": not readback.is_empty() and not bool(readback.get("canonical_rejected", false)), "reason": readback_reason if readback_reason != "" else "saved file cannot be read back by the unit library"}
+	if not bool(readback_status.get("ok", false)):
+		_set_save_unit_failure_feedback(String(readback_status.get("reason", "saved file cannot be read back by the unit library")))
 		return ""
 	editor_working_blueprint = unit_bp.duplicate(true)
 	editor_canvas_mode = "blank"
@@ -12340,6 +11153,17 @@ func _refresh_save_unit_name_dialog_text() -> void:
 		var button := editor_save_unit_name_panel.get_node_or_null(String(button_name))
 		if button is Button:
 			button.text = String(labels[button_name])
+	var current_role: String = ROLE_ORDER[editor_role_index]
+	var disabled_hint := "切换编辑身份后再保存为该类型" if _ui_is_zh() else "Switch editor role before saving as this type"
+	for role_key in ROLE_ORDER:
+		var role_button = editor_save_unit_role_buttons.get(role_key, editor_save_unit_name_panel.get_node_or_null("SaveUnitRole%s" % role_key))
+		if role_button is Button:
+			var button := role_button as Button
+			var selected := String(role_key) == current_role
+			button.disabled = not selected
+			button.text = ("> %s" if selected else "%s") % _role_name(String(role_key))
+			button.tooltip_text = "" if selected else disabled_hint
+			button.modulate = Color(1.0, 0.86, 0.28, 1.0) if selected else Color(0.48, 0.56, 0.62, 0.78)
 
 
 func _hide_save_unit_name_dialog() -> void:
@@ -12407,6 +11231,8 @@ func _saved_unit_file_records() -> Array:
 
 
 func _saved_unit_signature_from_records(records: Array) -> String:
+	if saved_unit_library_service != null:
+		return saved_unit_library_service.signature_from_records(records)
 	var parts: Array[String] = []
 	for raw_record in records:
 		if not (raw_record is Dictionary):
@@ -12441,11 +11267,18 @@ func _select_saved_unit_focus_path(path: String) -> bool:
 	if path == "":
 		return false
 	var entries := _saved_unit_filtered_entries()
-	for i in range(entries.size()):
-		if _saved_unit_entry_path(entries[i]) == path:
-			saved_unit_selected_index = i
-			saved_unit_page = int(floor(float(i) / float(maxi(1, saved_unit_buttons.size()))))
+	if saved_units_controller != null:
+		var state: Dictionary = saved_units_controller.page_for_focus_path(entries, path, saved_unit_buttons.size())
+		if bool(state.get("found", false)):
+			saved_unit_selected_index = int(state.get("selected_index", -1))
+			saved_unit_page = int(state.get("page", 0))
 			return true
+	else:
+		for i in range(entries.size()):
+			if _saved_unit_entry_path(entries[i]) == path:
+				saved_unit_selected_index = i
+				saved_unit_page = int(floor(float(i) / float(maxi(1, saved_unit_buttons.size()))))
+				return true
 	return false
 
 
@@ -12464,14 +11297,20 @@ func _flush_deferred_saved_unit_cache_refresh() -> void:
 
 
 func _ensure_saved_unit_library_cache(force: bool = false, check_disk: bool = false) -> void:
-	if saved_unit_library_cache_scan_deferred and not force and not check_disk:
-		return
-	if not force and not check_disk and not saved_unit_library_cache_dirty:
-		return
+	if saved_unit_library_service != null:
+		var preflight_intent: Dictionary = saved_unit_library_service.cache_refresh_intent(force, check_disk, saved_unit_library_cache_scan_deferred, saved_unit_library_cache_dirty, saved_unit_library_cache_signature, [])
+		if not bool(preflight_intent.get("should_refresh", false)):
+			return
+	else:
+		if saved_unit_library_cache_scan_deferred and not force and not check_disk:
+			return
+		if not force and not check_disk and not saved_unit_library_cache_dirty:
+			return
 	var records := _saved_unit_file_records()
-	var signature := _saved_unit_signature_from_records(records)
-	if not force and not saved_unit_library_cache_dirty and signature == saved_unit_library_cache_signature:
+	var intent := saved_unit_library_service.cache_refresh_intent(force, check_disk, saved_unit_library_cache_scan_deferred, saved_unit_library_cache_dirty, saved_unit_library_cache_signature, records) if saved_unit_library_service != null else _legacy_saved_unit_cache_refresh_intent(force, check_disk, saved_unit_library_cache_scan_deferred, saved_unit_library_cache_dirty, saved_unit_library_cache_signature, records)
+	if not bool(intent.get("should_refresh", false)):
 		return
+	var signature := String(intent.get("signature", _saved_unit_signature_from_records(records)))
 	saved_unit_library_cache_signature = signature
 	saved_unit_library_cache_dirty = false
 	saved_unit_filtered_cache.clear()
@@ -12480,19 +11319,44 @@ func _ensure_saved_unit_library_cache(force: bool = false, check_disk: bool = fa
 	saved_unit_hovered_path = ""
 	saved_unit_hovered_index = -1
 	saved_unit_detail_path = ""
+	var entries := saved_unit_library_service.entries_from_records(records, Callable(self, "_unit_library_entry_from_file")) if saved_unit_library_service != null else _legacy_saved_unit_entries_from_records(records)
+	saved_unit_library_cache = entries
+
+
+func _legacy_saved_unit_cache_refresh_intent(force: bool, check_disk: bool, scan_deferred: bool, dirty: bool, old_signature: String, records: Array) -> Dictionary:
+	if scan_deferred and not force and not check_disk:
+		return {"action": "skip_deferred", "should_refresh": false, "signature": old_signature}
+	if not force and not check_disk and not dirty:
+		return {"action": "skip_clean", "should_refresh": false, "signature": old_signature}
+	var signature := _saved_unit_signature_from_records(records)
+	if not force and not dirty and signature == old_signature:
+		return {"action": "skip_same_signature", "should_refresh": false, "signature": signature}
+	return {"action": "refresh", "should_refresh": true, "signature": signature}
+
+
+func _legacy_saved_unit_entries_from_records(records: Array) -> Array:
 	var entries: Array = []
 	for raw_record in records:
 		if not (raw_record is Dictionary):
 			continue
 		var record: Dictionary = raw_record
-		var path := String(record.get("path", ""))
-		var entry := _unit_library_entry_from_file(path)
+		var entry := _unit_library_entry_from_file(String(record.get("path", "")))
 		if entry.is_empty():
 			continue
 		entry["mtime"] = int(record.get("mtime", 0))
 		entry["size"] = int(record.get("size", 0))
 		entries.append(entry)
-	saved_unit_library_cache = entries
+	return entries
+
+
+func _saved_unit_library_context() -> Dictionary:
+	var role_names := {}
+	for role_key in ROLE_ORDER:
+		role_names[String(role_key)] = _role_name(String(role_key))
+	return {
+		"role_order": ROLE_ORDER.duplicate(),
+		"role_names": role_names,
+	}
 
 
 func _unit_library_entry_from_file(path: String) -> Dictionary:
@@ -12506,6 +11370,8 @@ func _unit_library_entry_from_file(path: String) -> Dictionary:
 	var rejection_reason := _saved_unit_payload_rejection_reason(payload)
 	if rejection_reason != "":
 		return _rejected_unit_library_entry_from_payload(path, payload, rejection_reason)
+	if saved_unit_library_service != null:
+		return saved_unit_library_service.entry_from_payload(path, payload, _saved_unit_library_context(), Callable(self, "_json_restore_value"), Callable(self, "_apply_entry_pose_to_blueprint"))
 	if not (payload.get("blueprint", {}) is Dictionary):
 		return {}
 	var unit_bp: Dictionary = Dictionary(_json_restore_value(payload.get("blueprint", {}))).duplicate(true)
@@ -12528,6 +11394,8 @@ func _unit_library_entry_from_file(path: String) -> Dictionary:
 
 
 func _rejected_unit_library_entry_from_payload(path: String, payload: Dictionary, rejection_reason: String) -> Dictionary:
+	if saved_unit_library_service != null:
+		return saved_unit_library_service.rejected_entry_from_payload(path, payload, rejection_reason, _saved_unit_library_context(), Callable(self, "_json_restore_value"))
 	var unit_bp := {}
 	if payload.get("blueprint", {}) is Dictionary:
 		unit_bp = Dictionary(_json_restore_value(payload.get("blueprint", {}))).duplicate(true)
@@ -12562,6 +11430,8 @@ func _unit_library_entries() -> Array:
 
 
 func _latest_saved_unit_named(unit_name: String) -> Dictionary:
+	if saved_unit_library_service != null:
+		return saved_unit_library_service.latest_entry_named(_unit_library_entries(), unit_name)
 	var best_entry := {}
 	var best_time := -1
 	for raw_entry in _unit_library_entries():
@@ -12577,31 +11447,49 @@ func _latest_saved_unit_named(unit_name: String) -> Dictionary:
 	return best_entry
 
 
+func _legacy_saved_unit_export_path(requested_path: String, save_as_new: bool, source_path: String, matching_entry_path: String, generated_path: String) -> String:
+	if requested_path != "":
+		return requested_path
+	if not save_as_new:
+		if source_path != "" and FileAccess.file_exists(source_path):
+			return source_path
+		if matching_entry_path != "":
+			return matching_entry_path
+	return generated_path
+
+
 func _training_ball_dummy_radius() -> float:
+	if training_entry_service != null:
+		return training_entry_service.clamped_radius(float(training_dummy_radius_m), TRAINING_DUMMY_RADIUS_MIN, TRAINING_DUMMY_RADIUS_MAX, TRAINING_DUMMY_RADIUS_STEP)
 	return clampf(float(training_dummy_radius_m), TRAINING_DUMMY_RADIUS_MIN, TRAINING_DUMMY_RADIUS_MAX)
 
 
 func _training_ball_dummy_volume(radius: float) -> float:
 	var safe_radius := clampf(radius, TRAINING_DUMMY_RADIUS_MIN, TRAINING_DUMMY_RADIUS_MAX)
+	if training_entry_service != null:
+		return training_entry_service.ball_volume(safe_radius)
 	return 4.0 / 3.0 * PI * safe_radius * safe_radius * safe_radius
 
 
 func _training_ball_dummy_mass(radius: float) -> float:
+	var safe_radius := clampf(radius, TRAINING_DUMMY_RADIUS_MIN, TRAINING_DUMMY_RADIUS_MAX)
+	if training_entry_service != null:
+		return training_entry_service.ball_mass(safe_radius, TRAINING_DUMMY_RADIUS_DEFAULT, TRAINING_DUMMY_BASE_MASS)
 	var default_volume := _training_ball_dummy_volume(TRAINING_DUMMY_RADIUS_DEFAULT)
-	var volume_ratio := _training_ball_dummy_volume(radius) / maxf(0.001, default_volume)
+	var volume_ratio := _training_ball_dummy_volume(safe_radius) / maxf(0.001, default_volume)
 	return maxf(1.0, TRAINING_DUMMY_BASE_MASS * volume_ratio)
 
 
 func _set_training_ball_dummy_radius(radius: float) -> void:
-	var stepped := roundf(clampf(radius, TRAINING_DUMMY_RADIUS_MIN, TRAINING_DUMMY_RADIUS_MAX) / TRAINING_DUMMY_RADIUS_STEP) * TRAINING_DUMMY_RADIUS_STEP
-	training_dummy_radius_m = clampf(stepped, TRAINING_DUMMY_RADIUS_MIN, TRAINING_DUMMY_RADIUS_MAX)
+	training_dummy_radius_m = _training_dummy_service_radius(radius)
 	_update_training_dummy_radius_ui()
 
 
 func _training_ball_dummy_stats(radius: float = -1.0) -> Dictionary:
 	var safe_radius := _training_ball_dummy_radius() if radius < 0.0 else clampf(radius, TRAINING_DUMMY_RADIUS_MIN, TRAINING_DUMMY_RADIUS_MAX)
+	if training_entry_service != null:
+		return training_entry_service.ball_stats(safe_radius, _training_ball_dummy_labels(), _training_ball_dummy_constants())
 	var mass := _training_ball_dummy_mass(safe_radius)
-	var diameter := safe_radius * 2.0
 	return {
 		"role": "hero",
 		"unit_index": 0,
@@ -12613,9 +11501,9 @@ func _training_ball_dummy_stats(radius: float = -1.0) -> Dictionary:
 		"mass": mass,
 		"structural_mass": mass,
 		"radius": safe_radius,
-		"length": diameter,
+		"length": safe_radius * 2.0,
 		"training_dummy_volume": _training_ball_dummy_volume(safe_radius),
-		"training_dummy_diameter": diameter,
+		"training_dummy_diameter": safe_radius * 2.0,
 		"training_dummy_radius_m": safe_radius,
 		"teamedit_runtime_topology": false,
 		"runtime_topology_segments": [],
@@ -12649,16 +11537,10 @@ func _training_ball_dummy_stats(radius: float = -1.0) -> Dictionary:
 
 func _training_ball_dummy_entry() -> Dictionary:
 	var radius := _training_ball_dummy_radius()
-	return {
-		"role": "hero",
-		"blueprint": {
-			"name": "训练球体靶机" if _ui_is_zh() else "Training Ball Dummy",
-			"unit_name": "训练球体靶机" if _ui_is_zh() else "Training Ball Dummy",
-			"role": "hero",
-			"training_ball_dummy": true,
-			"training_dummy_radius_m": radius,
-		},
-	}
+	if training_entry_service != null:
+		return training_entry_service.ball_entry(radius, _training_ball_dummy_labels())
+	var name := "训练球体靶机" if _ui_is_zh() else "Training Ball Dummy"
+	return {"role": "hero", "blueprint": {"name": name, "unit_name": name, "role": "hero", "training_ball_dummy": true, "training_dummy_radius_m": radius}}
 
 
 func _spawn_training_ball_dummy(player_id: int):
@@ -12674,14 +11556,29 @@ func _spawn_training_ball_dummy(player_id: int):
 
 func _training_ball_dummy_intro_segments(radius: float = -1.0) -> Array:
 	var safe_radius := _training_ball_dummy_radius() if radius < 0.0 else clampf(radius, TRAINING_DUMMY_RADIUS_MIN, TRAINING_DUMMY_RADIUS_MAX)
-	return [{
-		"part_kind": "torso",
-		"name": "TRAINING BALL",
-		"a_local": Vector2.ZERO,
-		"b_local": Vector2.ZERO,
-		"radius": safe_radius,
-		"material_class": "training_dummy",
-	}]
+	if training_entry_service != null:
+		return training_entry_service.ball_intro_segments(safe_radius)
+	return [{"part_kind": "torso", "name": "TRAINING BALL", "a_local": Vector2.ZERO, "b_local": Vector2.ZERO, "radius": safe_radius, "material_class": "training_dummy"}]
+
+
+func _training_dummy_service_radius(radius: float) -> float:
+	if training_entry_service != null:
+		return training_entry_service.clamped_radius(radius, TRAINING_DUMMY_RADIUS_MIN, TRAINING_DUMMY_RADIUS_MAX, TRAINING_DUMMY_RADIUS_STEP)
+	var stepped := roundf(clampf(radius, TRAINING_DUMMY_RADIUS_MIN, TRAINING_DUMMY_RADIUS_MAX) / TRAINING_DUMMY_RADIUS_STEP) * TRAINING_DUMMY_RADIUS_STEP
+	return clampf(stepped, TRAINING_DUMMY_RADIUS_MIN, TRAINING_DUMMY_RADIUS_MAX)
+
+
+func _training_ball_dummy_labels() -> Dictionary:
+	var name := "训练球体靶机" if _ui_is_zh() else "Training Ball Dummy"
+	return {"name": name, "unit_name": name}
+
+
+func _training_ball_dummy_constants() -> Dictionary:
+	return {
+		"default_radius": TRAINING_DUMMY_RADIUS_DEFAULT,
+		"base_mass": TRAINING_DUMMY_BASE_MASS,
+		"brake_delta_v": TRAINING_DUMMY_BRAKE_DELTA_V,
+	}
 
 
 func _latest_training_dummy_unit_path() -> String:
@@ -12882,36 +11779,75 @@ func _training_roster_from_single(entry: Dictionary) -> Dictionary:
 
 
 func _configure_training_sides_for_seat() -> bool:
-	if training_test_roster_cache.is_empty() or training_test_loadout_cache.is_empty():
-		training_import_error_note = "INVALID: no training player unit has been prepared."
-		return false
 	var dummy_entry := _training_dummy_unit2_entry()
 	if dummy_entry.is_empty():
 		return false
+	var player_state := {
+		"roster": training_test_roster_cache.duplicate(true),
+		"loadout": training_test_loadout_cache.duplicate(true),
+		"initial_slot": training_test_initial_slot_cache,
+		"initial_role": training_test_initial_role_cache,
+	}
+	var assignment := training_entry_service.training_side_assignment(player_state, dummy_entry, ai_battle_seat) if training_entry_service != null else _legacy_training_side_assignment(player_state, dummy_entry, ai_battle_seat)
+	if not bool(assignment.get("ok", false)):
+		var reason := String(assignment.get("error", ""))
+		if reason != "":
+			training_import_error_note = reason
+		return false
+	var next_blueprints: Dictionary = Dictionary(assignment.get("blueprints", {}))
+	var next_loadouts: Dictionary = Dictionary(assignment.get("sortie_loadouts", {}))
+	var next_slots: Dictionary = Dictionary(assignment.get("initial_sortie_slot", {}))
+	var next_roles: Dictionary = Dictionary(assignment.get("initial_role", {}))
+	for player_id in [1, 2]:
+		blueprints[player_id] = Dictionary(next_blueprints.get(player_id, {})).duplicate(true)
+		sortie_loadouts[player_id] = Array(next_loadouts.get(player_id, [])).duplicate(true)
+		initial_sortie_slot[player_id] = int(next_slots.get(player_id, 0))
+		initial_role[player_id] = String(next_roles.get(player_id, "hero"))
+		active_roster_indices[player_id] = Dictionary(Dictionary(assignment.get("active_roster_indices", {})).get(player_id, {"hero": 0, "puppet": 0, "barrier": 0})).duplicate(true)
+	return true
+
+
+func _legacy_training_side_assignment(player_state: Dictionary, dummy_entry: Dictionary, seat: int) -> Dictionary:
+	var player_roster: Dictionary = Dictionary(player_state.get("roster", {})).duplicate(true)
+	var player_loadout: Array = Array(player_state.get("loadout", [])).duplicate(true)
+	if player_roster.is_empty() or player_loadout.is_empty():
+		return {"ok": false, "error": "INVALID: no training player unit has been prepared."}
 	var dummy_roster := _training_roster_from_single(dummy_entry)
 	var dummy_loadout := [{"role": String(dummy_entry.get("role", "hero")), "index": 0}]
-	var player_seat := clampi(ai_battle_seat, 1, 3)
+	var player_seat := clampi(seat, 1, 3)
+	var next_blueprints := {}
+	var next_loadouts := {}
+	var next_slots := {}
+	var next_roles := {}
 	if player_seat == 2:
-		blueprints[1] = dummy_roster
-		sortie_loadouts[1] = dummy_loadout
-		initial_sortie_slot[1] = 0
-		initial_role[1] = String(dummy_loadout[0].get("role", "hero"))
-		blueprints[2] = training_test_roster_cache.duplicate(true)
-		sortie_loadouts[2] = training_test_loadout_cache.duplicate(true)
-		initial_sortie_slot[2] = training_test_initial_slot_cache
-		initial_role[2] = training_test_initial_role_cache
+		next_blueprints[1] = dummy_roster
+		next_loadouts[1] = dummy_loadout
+		next_slots[1] = 0
+		next_roles[1] = String(dummy_loadout[0].get("role", "hero"))
+		next_blueprints[2] = player_roster
+		next_loadouts[2] = player_loadout
+		next_slots[2] = int(player_state.get("initial_slot", 0))
+		next_roles[2] = String(player_state.get("initial_role", "hero"))
 	else:
-		blueprints[1] = training_test_roster_cache.duplicate(true)
-		sortie_loadouts[1] = training_test_loadout_cache.duplicate(true)
-		initial_sortie_slot[1] = training_test_initial_slot_cache
-		initial_role[1] = training_test_initial_role_cache
-		blueprints[2] = dummy_roster
-		sortie_loadouts[2] = dummy_loadout
-		initial_sortie_slot[2] = 0
-		initial_role[2] = String(dummy_loadout[0].get("role", "hero"))
-	for player_id in [1, 2]:
-		active_roster_indices[player_id] = {"hero": 0, "puppet": 0, "barrier": 0}
-	return true
+		next_blueprints[1] = player_roster
+		next_loadouts[1] = player_loadout
+		next_slots[1] = int(player_state.get("initial_slot", 0))
+		next_roles[1] = String(player_state.get("initial_role", "hero"))
+		next_blueprints[2] = dummy_roster
+		next_loadouts[2] = dummy_loadout
+		next_slots[2] = 0
+		next_roles[2] = String(dummy_loadout[0].get("role", "hero"))
+	return {
+		"ok": true,
+		"blueprints": next_blueprints,
+		"sortie_loadouts": next_loadouts,
+		"initial_sortie_slot": next_slots,
+		"initial_role": next_roles,
+		"active_roster_indices": {
+			1: {"hero": 0, "puppet": 0, "barrier": 0},
+			2: {"hero": 0, "puppet": 0, "barrier": 0},
+		},
+	}
 
 
 func _load_unit_library_entry_to_canvas(entry: Dictionary) -> void:
@@ -12921,6 +11857,7 @@ func _load_unit_library_entry_to_canvas(entry: Dictionary) -> void:
 	if not ROLE_ORDER.has(role_key):
 		return
 	editor_role_index = ROLE_ORDER.find(role_key)
+	_apply_editor_role_catalog_defaults(role_key)
 	editor_canvas_mode = "blank"
 	editor_working_role_key = role_key
 	editor_working_blueprint = Dictionary(entry.get("blueprint", {})).duplicate(true)
@@ -13002,7 +11939,48 @@ func _show_editor_library_unit_hover(entry: Dictionary, pinned: bool = false) ->
 
 
 func _saved_unit_entry_path(entry: Dictionary) -> String:
+	if saved_units_controller != null:
+		return saved_units_controller.entry_path(entry)
 	return String(entry.get("path", entry.get("unit_id", entry.get("unit_name", ""))))
+
+
+func _saved_entry_is_puppet_group(entry: Dictionary) -> bool:
+	return String(entry.get("save_kind", SAVE_KIND_SINGLE_UNIT)) == SAVE_KIND_PUPPET_GROUP and String(entry.get("role", "")) == "puppet"
+
+
+func _puppet_group_blueprints_from_entry(entry: Dictionary) -> Array:
+	var blueprints_out: Array = []
+	for raw_bp in Array(entry.get("puppet_group_blueprints", [])):
+		if raw_bp is Dictionary:
+			var member: Dictionary = Dictionary(raw_bp).duplicate(true)
+			member["role"] = "puppet"
+			member["schema_version"] = String(member.get("schema_version", SAVED_UNIT_SCHEMA_VERSION))
+			member["save_kind"] = SAVE_KIND_SINGLE_UNIT
+			member.erase("puppet_group_blueprints")
+			blueprints_out.append(member)
+	if blueprints_out.is_empty() and entry.get("blueprint", {}) is Dictionary:
+		var bp: Dictionary = Dictionary(entry.get("blueprint", {})).duplicate(true)
+		for raw_member in Array(bp.get("puppet_group_blueprints", [])):
+			if raw_member is Dictionary:
+				var member_bp: Dictionary = Dictionary(raw_member).duplicate(true)
+				member_bp["role"] = "puppet"
+				member_bp["schema_version"] = String(member_bp.get("schema_version", SAVED_UNIT_SCHEMA_VERSION))
+				member_bp["save_kind"] = SAVE_KIND_SINGLE_UNIT
+				member_bp.erase("puppet_group_blueprints")
+				blueprints_out.append(member_bp)
+	return blueprints_out
+
+
+func _puppet_group_blueprints_from_blueprint(unit_bp: Dictionary) -> Array:
+	if String(unit_bp.get("save_kind", SAVE_KIND_SINGLE_UNIT)) != SAVE_KIND_PUPPET_GROUP:
+		return []
+	var entry := {
+		"role": "puppet",
+		"save_kind": SAVE_KIND_PUPPET_GROUP,
+		"blueprint": unit_bp,
+		"puppet_group_blueprints": Array(unit_bp.get("puppet_group_blueprints", [])),
+	}
+	return _puppet_group_blueprints_from_entry(entry)
 
 
 func _saved_unit_entry_stats(entry: Dictionary) -> Dictionary:
@@ -13016,6 +11994,30 @@ func _saved_unit_entry_stats(entry: Dictionary) -> Dictionary:
 	var role_key := String(entry.get("role", "hero"))
 	saved_unit_cache_stats_compute_count += 1
 	var stats := _compute_unit_stats(1, role_key, -1, Dictionary(entry.get("blueprint", {})))
+	if _saved_entry_is_puppet_group(entry):
+		var members := _puppet_group_blueprints_from_entry(entry)
+		var total_cost := 0
+		var ai_values: Array = []
+		var source_values: Array = []
+		for raw_member in members:
+			if not (raw_member is Dictionary):
+				continue
+			var member_bp: Dictionary = Dictionary(raw_member).duplicate(true)
+			member_bp["role"] = "puppet"
+			var member_stats := _compute_unit_stats(1, "puppet", -1, member_bp)
+			total_cost += int(member_stats.get("cost", 0))
+			var ai_key := String(member_stats.get("ai", "direct"))
+			if ai_key != "" and not ai_values.has(ai_key):
+				ai_values.append(ai_key)
+			var source_key := String(member_stats.get("source_target_policy", ""))
+			if source_key != "" and not source_values.has(source_key):
+				source_values.append(source_key)
+		stats["save_kind"] = SAVE_KIND_PUPPET_GROUP
+		stats["group_count"] = members.size()
+		stats["cost"] = total_cost
+		stats["deploy_cost"] = total_cost
+		stats["ai"] = "mixed" if ai_values.size() > 1 else (String(ai_values[0]) if ai_values.size() == 1 else String(stats.get("ai", "direct")))
+		stats["source_target_policy"] = "mixed" if source_values.size() > 1 else (String(source_values[0]) if source_values.size() == 1 else String(stats.get("source_target_policy", "")))
 	if path != "":
 		saved_unit_stats_cache[path] = stats
 		_trim_dictionary_cache(saved_unit_stats_cache, 160)
@@ -13032,7 +12034,23 @@ func _saved_unit_entry_illegal_note(entry: Dictionary) -> String:
 		return String(saved_unit_illegal_cache[path])
 	var role_key := String(entry.get("role", "hero"))
 	saved_unit_cache_illegal_compute_count += 1
-	var note := _training_blueprint_illegal_note(1, role_key, Dictionary(entry.get("blueprint", {})))
+	var note := ""
+	if _saved_entry_is_puppet_group(entry):
+		var members := _puppet_group_blueprints_from_entry(entry)
+		if members.is_empty():
+			note = "INVALID: puppet group has no blueprints."
+		else:
+			for raw_member in members:
+				if not (raw_member is Dictionary):
+					note = "INVALID: puppet group contains a damaged blueprint."
+					break
+				var member_bp: Dictionary = Dictionary(raw_member).duplicate(true)
+				member_bp["role"] = "puppet"
+				note = _training_blueprint_illegal_note(1, "puppet", member_bp)
+				if note != "":
+					break
+	else:
+		note = _training_blueprint_illegal_note(1, role_key, Dictionary(entry.get("blueprint", {})))
 	if path != "":
 		saved_unit_illegal_cache[path] = note
 		_trim_dictionary_cache(saved_unit_illegal_cache, 160)
@@ -13042,31 +12060,38 @@ func _saved_unit_entry_illegal_note(entry: Dictionary) -> String:
 func _saved_unit_filtered_entries() -> Array:
 	_ensure_saved_unit_library_cache()
 	var cache_key := "%s|%s" % [saved_unit_filter, saved_unit_library_cache_signature]
+	if saved_units_controller != null:
+		cache_key = saved_units_controller.filtered_cache_key(saved_unit_filter, saved_unit_library_cache_signature)
 	if saved_unit_filtered_cache.has(cache_key):
 		return Array(saved_unit_filtered_cache[cache_key])
 	var entries := saved_unit_library_cache
 	var filtered: Array = []
-	for raw_entry in entries:
-		if not (raw_entry is Dictionary):
-			continue
-		var entry: Dictionary = raw_entry
-		var role_key := String(entry.get("role", "hero"))
-		var include := false
-		match saved_unit_filter:
-			"all":
-				include = true
-			"invalid":
-				include = _saved_unit_entry_illegal_note(entry) != ""
-			_:
-				include = role_key == saved_unit_filter
-		if include:
-			filtered.append(entry)
+	if saved_units_controller != null:
+		filtered = saved_units_controller.filter_entries(entries, saved_unit_filter, Callable(self, "_saved_unit_entry_illegal_note"))
+	else:
+		for raw_entry in entries:
+			if not (raw_entry is Dictionary):
+				continue
+			var entry: Dictionary = raw_entry
+			var role_key := String(entry.get("role", "hero"))
+			var include := false
+			match saved_unit_filter:
+				"all":
+					include = true
+				"invalid":
+					include = _saved_unit_entry_illegal_note(entry) != ""
+				_:
+					include = role_key == saved_unit_filter
+			if include:
+				filtered.append(entry)
 	saved_unit_filtered_cache[cache_key] = filtered
 	_trim_dictionary_cache(saved_unit_filtered_cache, 16)
 	return filtered
 
 
 func _saved_unit_absolute_index_for_card(card_index: int) -> int:
+	if saved_units_controller != null:
+		return saved_units_controller.absolute_index_for_card(card_index, saved_unit_page, saved_unit_buttons.size())
 	return saved_unit_page * maxi(1, saved_unit_buttons.size()) + card_index
 
 
@@ -13078,6 +12103,8 @@ func _saved_unit_entry_at_absolute_index(index: int) -> Dictionary:
 
 
 func _saved_unit_selected_entries() -> Array:
+	if saved_units_controller != null:
+		return saved_units_controller.selected_entries(_unit_library_entries(), saved_unit_selected_paths)
 	var selected: Array = []
 	var entries := _unit_library_entries()
 	for raw_entry in entries:
@@ -13090,6 +12117,8 @@ func _saved_unit_selected_entries() -> Array:
 
 
 func _saved_unit_delete_candidates() -> Array:
+	if saved_units_controller != null:
+		return saved_units_controller.delete_candidates(_unit_library_entries(), saved_unit_selected_paths, saved_unit_selected_index, _saved_unit_entry_at_absolute_index(saved_unit_selected_index))
 	var candidates := _saved_unit_selected_entries()
 	if not candidates.is_empty():
 		return candidates
@@ -13103,15 +12132,20 @@ func _request_delete_saved_units() -> void:
 	var candidates := _saved_unit_delete_candidates()
 	saved_unit_pending_delete_paths.clear()
 	var names: Array = []
-	for raw_entry in candidates:
-		if not (raw_entry is Dictionary):
-			continue
-		var entry: Dictionary = raw_entry
-		var path := _saved_unit_entry_path(entry)
-		if path == "" or saved_unit_pending_delete_paths.has(path):
-			continue
-		saved_unit_pending_delete_paths.append(path)
-		names.append(String(entry.get("unit_name", path.get_file())))
+	if saved_units_controller != null:
+		var intent: Dictionary = saved_units_controller.delete_request_intent(candidates)
+		saved_unit_pending_delete_paths = Array(intent.get("pending_delete_paths", []))
+		names = Array(intent.get("names", []))
+	else:
+		for raw_entry in candidates:
+			if not (raw_entry is Dictionary):
+				continue
+			var entry: Dictionary = raw_entry
+			var path := _saved_unit_entry_path(entry)
+			if path == "" or saved_unit_pending_delete_paths.has(path):
+				continue
+			saved_unit_pending_delete_paths.append(path)
+			names.append(String(entry.get("unit_name", path.get_file())))
 	if saved_unit_pending_delete_paths.is_empty():
 		if saved_unit_hint_label != null:
 			saved_unit_hint_label.text = "先选择要删除的保存单位。" if _ui_is_zh() else "Select a saved unit to delete first."
@@ -13167,38 +12201,71 @@ func _confirm_delete_saved_units() -> void:
 
 
 func _set_saved_unit_filter(filter_key: String) -> void:
-	saved_unit_filter = filter_key
-	saved_unit_page = 0
-	saved_unit_selected_index = -1
-	saved_unit_hovered_path = ""
-	saved_unit_hovered_index = -1
-	saved_unit_detail_path = ""
+	if saved_units_controller != null:
+		_apply_saved_unit_selection_state(saved_units_controller.selection_state_for_filter(filter_key))
+	else:
+		saved_unit_filter = filter_key
+		saved_unit_page = 0
+		saved_unit_selected_index = -1
+		saved_unit_hovered_path = ""
+		saved_unit_hovered_index = -1
+		saved_unit_detail_path = ""
 	_update_saved_units_ui()
 
 
 func _select_saved_unit_card(card_index: int) -> void:
-	var absolute_index := _saved_unit_absolute_index_for_card(card_index)
-	var entry := _saved_unit_entry_at_absolute_index(absolute_index)
-	if entry.is_empty():
-		return
-	saved_unit_selected_index = absolute_index
-	saved_unit_hovered_path = _saved_unit_entry_path(entry)
-	saved_unit_hovered_index = absolute_index
+	if saved_units_controller != null:
+		var state: Dictionary = saved_units_controller.selection_state_for_card(card_index, saved_unit_page, saved_unit_buttons.size(), _saved_unit_filtered_entries())
+		if not bool(state.get("valid", false)):
+			return
+		_apply_saved_unit_selection_state(state)
+	else:
+		var absolute_index := _saved_unit_absolute_index_for_card(card_index)
+		var entry := _saved_unit_entry_at_absolute_index(absolute_index)
+		if entry.is_empty():
+			return
+		saved_unit_selected_index = absolute_index
+		saved_unit_hovered_path = _saved_unit_entry_path(entry)
+		saved_unit_hovered_index = absolute_index
 	_update_saved_units_ui()
 	_play_sfx_wave("clack", 560.0, 0.035, -22.0)
 
 
+func _apply_saved_unit_selection_state(state: Dictionary) -> void:
+	if state.has("saved_unit_filter"):
+		saved_unit_filter = String(state.get("saved_unit_filter", saved_unit_filter))
+	if state.has("saved_unit_page"):
+		saved_unit_page = int(state.get("saved_unit_page", saved_unit_page))
+	if state.has("saved_unit_selected_index"):
+		saved_unit_selected_index = int(state.get("saved_unit_selected_index", saved_unit_selected_index))
+	if state.has("saved_unit_hovered_path"):
+		saved_unit_hovered_path = String(state.get("saved_unit_hovered_path", saved_unit_hovered_path))
+	if state.has("saved_unit_hovered_index"):
+		saved_unit_hovered_index = int(state.get("saved_unit_hovered_index", saved_unit_hovered_index))
+	if state.has("saved_unit_detail_path"):
+		saved_unit_detail_path = String(state.get("saved_unit_detail_path", saved_unit_detail_path))
+	if state.has("saved_unit_selected_paths"):
+		saved_unit_selected_paths = Array(state.get("saved_unit_selected_paths", saved_unit_selected_paths))
+
+
 func _hover_saved_unit_card(card_index: int) -> void:
-	var absolute_index := _saved_unit_absolute_index_for_card(card_index)
-	var entry := _saved_unit_entry_at_absolute_index(absolute_index)
-	if entry.is_empty():
-		return
-	var path := _saved_unit_entry_path(entry)
-	if saved_unit_hovered_index == absolute_index and saved_unit_hovered_path == path:
-		return
-	saved_unit_hovered_index = absolute_index
-	saved_unit_hovered_path = path
-	_show_saved_unit_detail(entry)
+	if saved_units_controller != null:
+		var state: Dictionary = saved_units_controller.hover_state_for_card(card_index, saved_unit_page, saved_unit_buttons.size(), _saved_unit_filtered_entries(), saved_unit_hovered_path, saved_unit_hovered_index)
+		if not bool(state.get("valid", false)) or not bool(state.get("changed", false)):
+			return
+		_apply_saved_unit_selection_state(state)
+		_show_saved_unit_detail(Dictionary(state.get("entry", {})))
+	else:
+		var absolute_index := _saved_unit_absolute_index_for_card(card_index)
+		var entry := _saved_unit_entry_at_absolute_index(absolute_index)
+		if entry.is_empty():
+			return
+		var path := _saved_unit_entry_path(entry)
+		if saved_unit_hovered_index == absolute_index and saved_unit_hovered_path == path:
+			return
+		saved_unit_hovered_index = absolute_index
+		saved_unit_hovered_path = path
+		_show_saved_unit_detail(entry)
 
 
 func _handle_saved_unit_card_input(event: InputEvent, card_index: int) -> void:
@@ -13212,6 +12279,23 @@ func _handle_saved_unit_card_input(event: InputEvent, card_index: int) -> void:
 		return
 	_toggle_saved_unit_selection(entry)
 	_mark_input_as_handled()
+
+
+func _handle_saved_unit_card_text_input(event: InputEvent, card_index: int) -> void:
+	if not (event is InputEventMouseButton):
+		return
+	var mouse_event := event as InputEventMouseButton
+	if not mouse_event.pressed:
+		return
+	if mouse_event.button_index == MOUSE_BUTTON_LEFT:
+		_select_saved_unit_card(card_index)
+		_mark_input_as_handled()
+	elif mouse_event.button_index == MOUSE_BUTTON_RIGHT:
+		var entry := _saved_unit_entry_at_absolute_index(_saved_unit_absolute_index_for_card(card_index))
+		if entry.is_empty():
+			return
+		_toggle_saved_unit_selection(entry)
+		_mark_input_as_handled()
 
 
 func _update_saved_units_hover(mouse_position: Vector2) -> void:
@@ -13230,14 +12314,22 @@ func _toggle_saved_unit_selection(entry: Dictionary) -> void:
 			saved_unit_hint_label.text = _localized_system_text(_saved_unit_entry_illegal_note(entry)) if _ui_is_zh() else _saved_unit_entry_illegal_note(entry)
 		_play_sfx_wave("alarm", 170.0, 0.08, -16.0)
 		return
-	var path := _saved_unit_entry_path(entry)
-	if path == "":
-		return
-	if saved_unit_selected_paths.has(path):
-		saved_unit_selected_paths.erase(path)
+	if saved_units_controller != null:
+		var state: Dictionary = saved_units_controller.toggle_selection_state(entry, saved_unit_selected_paths)
+		if not bool(state.get("valid", false)):
+			return
+		_apply_saved_unit_selection_state(state)
+		if state.has("saved_unit_selected_paths"):
+			saved_unit_selected_paths = Array(state.get("saved_unit_selected_paths", saved_unit_selected_paths))
 	else:
-		saved_unit_selected_paths.append(path)
-	saved_unit_detail_path = ""
+		var path := _saved_unit_entry_path(entry)
+		if path == "":
+			return
+		if saved_unit_selected_paths.has(path):
+			saved_unit_selected_paths.erase(path)
+		else:
+			saved_unit_selected_paths.append(path)
+		saved_unit_detail_path = ""
 	_update_saved_units_ui()
 
 
@@ -13279,10 +12371,15 @@ func _load_saved_unit_entry_into_unit_editor(entry: Dictionary) -> bool:
 	unit_bp["role"] = role_key
 	unit_bp["unit_name"] = String(entry.get("unit_name", unit_bp.get("unit_name", unit_bp.get("name", ""))))
 	unit_bp["name"] = String(unit_bp.get("unit_name", unit_bp.get("name", _role_name(role_key))))
+	if _saved_entry_is_puppet_group(entry):
+		unit_bp["save_kind"] = SAVE_KIND_PUPPET_GROUP
+		unit_bp["puppet_group_blueprints"] = _puppet_group_blueprints_from_entry(entry)
+		unit_bp["group_count"] = Array(unit_bp.get("puppet_group_blueprints", [])).size()
 	if _role_uses_body_board(role_key):
 		_normalize_unit_to_component_topology(role_key, unit_bp)
 	_apply_entry_pose_to_blueprint(unit_bp)
 	editor_role_index = ROLE_ORDER.find(role_key)
+	_apply_editor_role_catalog_defaults(role_key)
 	editor_canvas_mode = "blank"
 	editor_working_role_key = role_key
 	editor_working_blueprint = unit_bp
@@ -13300,7 +12397,10 @@ func _load_saved_unit_entry_into_unit_editor(entry: Dictionary) -> bool:
 	editor_source_saved_unit_path = saved_unit_focus_path
 	_show_unit_editor_preserve_loaded_blueprint()
 	if editor_summary_label != null:
-		editor_summary_label.text = "已载入单位编辑：%s" % String(unit_bp.get("unit_name", unit_bp.get("name", ""))) if _ui_is_zh() else "Loaded into Unit Edit: %s" % String(unit_bp.get("unit_name", unit_bp.get("name", "")))
+		if _saved_entry_is_puppet_group(entry):
+			editor_summary_label.text = "已载入傀儡组编辑：%s（默认打开第 1/%d 个成员）。" % [String(unit_bp.get("unit_name", unit_bp.get("name", ""))), int(unit_bp.get("group_count", 1))] if _ui_is_zh() else "Loaded puppet group edit: %s (member 1/%d opened by default)." % [String(unit_bp.get("unit_name", unit_bp.get("name", ""))), int(unit_bp.get("group_count", 1))]
+		else:
+			editor_summary_label.text = "已载入单位编辑：%s" % String(unit_bp.get("unit_name", unit_bp.get("name", ""))) if _ui_is_zh() else "Loaded into Unit Edit: %s" % String(unit_bp.get("unit_name", unit_bp.get("name", "")))
 	return true
 
 
@@ -13309,6 +12409,27 @@ func _show_unit_editor_preserve_loaded_blueprint() -> void:
 
 
 func _saved_units_action(action_key: String) -> void:
+	if saved_units_controller != null:
+		var entries := _saved_unit_filtered_entries()
+		match action_key:
+			"prev", "next", "clear":
+				var page_state: Dictionary = saved_units_controller.page_action_state(action_key, saved_unit_page, saved_unit_buttons.size(), entries.size(), saved_unit_selected_index, saved_unit_selected_paths)
+				if bool(page_state.get("valid", false)):
+					_apply_saved_unit_selection_state(page_state)
+					_update_saved_units_ui()
+				return
+			"toggle":
+				var toggle_entry := _saved_unit_entry_at_absolute_index(saved_unit_selected_index)
+				if toggle_entry.is_empty():
+					return
+				if bool(toggle_entry.get("canonical_rejected", false)):
+					_toggle_saved_unit_selection(toggle_entry)
+					return
+				var toggle_state: Dictionary = saved_units_controller.page_action_state(action_key, saved_unit_page, saved_unit_buttons.size(), entries.size(), saved_unit_selected_index, saved_unit_selected_paths, toggle_entry)
+				if bool(toggle_state.get("valid", false)):
+					_apply_saved_unit_selection_state(toggle_state)
+					_update_saved_units_ui()
+				return
 	match action_key:
 		"prev":
 			saved_unit_page = maxi(0, saved_unit_page - 1)
@@ -13337,6 +12458,11 @@ func _saved_units_action(action_key: String) -> void:
 			_import_saved_unit_entries_to_training(_saved_unit_selected_entries())
 		"delete_selected":
 			_request_delete_saved_units()
+		"save_puppet_group":
+			var puppet_selection := _saved_unit_selected_entries()
+			var group_name := "Puppet Group %d" % int(Time.get_unix_time_from_system())
+			_save_puppet_group_from_saved_unit_selection(group_name, puppet_selection)
+			_update_saved_units_ui()
 		"save_team":
 			var selection := _saved_units_team_selection_entries()
 			var name := "Team %d" % int(Time.get_unix_time_from_system())
@@ -13396,6 +12522,12 @@ func _show_saved_unit_detail(entry: Dictionary) -> void:
 		("选择：%s" if _ui_is_zh() else "Selection: %s") % selected_marker,
 		("操作：点击查看；右键或按钮加入队伍草稿；可载入编辑、训练或删除。" if _ui_is_zh() else "Actions: click inspect; right-click/button add to team draft; edit, train, or delete."),
 	]
+	if _saved_entry_is_puppet_group(entry):
+		detail_lines.insert(1, ("傀儡组：%d 个成员 / AI %s / source %s" if _ui_is_zh() else "Puppet group: %d members / AI %s / source %s") % [
+			int(entry.get("group_count", stats.get("group_count", 1))),
+			String(stats.get("ai", "direct")),
+			String(stats.get("source_target_policy", "")),
+		])
 	var view_entry := {"role": role_key, "index": 0}
 	saved_unit_detail_view.set_unit(1, view_entry, stats, "\n".join(detail_lines), ui_language)
 	saved_unit_detail_view.visible = true
@@ -13482,11 +12614,20 @@ func _update_saved_units_ui() -> void:
 		var absolute_index := saved_unit_page * page_size + i
 		var button: Button = saved_unit_buttons[i]
 		var thumb: SortieThumbView = saved_unit_thumb_views[i] if i < saved_unit_thumb_views.size() else null
+		var card_scroll: ScrollContainer = saved_unit_card_text_scrolls[i] if i < saved_unit_card_text_scrolls.size() else null
+		var card_label: Label = saved_unit_card_text_labels[i] if i < saved_unit_card_text_labels.size() else null
 		var visible_entry := absolute_index >= 0 and absolute_index < entries.size()
 		button.visible = visible_entry
 		button.disabled = not visible_entry
+		button.text = ""
 		if thumb != null:
 			thumb.visible = visible_entry
+		if card_scroll != null:
+			card_scroll.visible = visible_entry
+			if not visible_entry:
+				card_scroll.scroll_vertical = 0
+		if card_label != null and not visible_entry:
+			card_label.text = ""
 		if not visible_entry:
 			continue
 		var entry: Dictionary = entries[absolute_index]
@@ -13497,9 +12638,12 @@ func _update_saved_units_ui() -> void:
 		var multi_selected := saved_unit_selected_paths.has(_saved_unit_entry_path(entry))
 		var marker := "☑" if multi_selected else "☐"
 		var status := "!" if illegal else "✓"
-		var card_name_limit := 18 if _ui_is_zh() else 11
-		var select_hint := "右键多选" if _ui_is_zh() else "R-SEL"
-		button.text = "      %s %s %s\n      $%d  %s" % [marker, status, _trim_text(String(entry.get("unit_name", stats.get("name", ""))), card_name_limit), int(stats.get("cost", 0)), select_hint]
+		var card_name_limit := 14 if _ui_is_zh() else 10
+		var select_hint := "多选" if _ui_is_zh() else "SEL"
+		var group_tag := (" 组%d" if _ui_is_zh() else " G%d") % int(entry.get("group_count", stats.get("group_count", 1))) if _saved_entry_is_puppet_group(entry) else ""
+		var card_text := "%s %s %s%s\n$%d  %s" % [marker, status, _trim_text(String(entry.get("unit_name", stats.get("name", ""))), card_name_limit), group_tag, int(stats.get("cost", 0)), select_hint]
+		if card_label != null:
+			_set_scroll_label_text(card_label, card_text)
 		button.modulate = Color(1.0, 0.36, 0.34, 1.0) if illegal else (Color(0.35, 0.95, 1.0, 1.0) if selected else Color(0.86, 0.9, 0.94, 1.0))
 		if thumb != null:
 			thumb.set_entry(1, absolute_index, {"role": role_key, "index": 0}, stats, "pending" if multi_selected else "reserve", ui_language)
@@ -13516,21 +12660,25 @@ func _update_saved_units_ui() -> void:
 		else:
 			saved_team_selected_index = clampi(saved_team_selected_index, 0, teams.size() - 1)
 			var team_entry: Dictionary = teams[saved_team_selected_index]
-			team_line = ("保存队伍 %d/%d：%s  %d单位" if _ui_is_zh() else "Saved team %d/%d: %s  %d units") % [
+			team_line = ("队伍%d/%d：%s %d单位" if _ui_is_zh() else "Team %d/%d: %s %dU") % [
 				saved_team_selected_index + 1,
 				teams.size(),
-				_trim_text(String(team_entry.get("team_name", "")), 18),
+				_trim_text(String(team_entry.get("team_name", "")), 14 if _ui_is_zh() else 12),
 				int(team_entry.get("unit_count", 0)),
 			]
-		saved_unit_selection_label.text = ("%s\n草稿 %d：英%d 傀%d 界%d  总价 %d  %s" if _ui_is_zh() else "%s\nDRAFT %d: H%d P%d B%d  COST %d  %s") % [
+		saved_unit_selection_label.text = ("%s\n草稿%d 英%d 傀%d 界%d 总价%d %s" if _ui_is_zh() else "%s\nD%d H%d P%d B%d C%d %s") % [
 			team_line,
 			int(team_summary.get("count", 0)),
 			int(role_counts.get("hero", 0)),
 			int(role_counts.get("puppet", 0)),
 			int(role_counts.get("barrier", 0)),
 			int(team_summary.get("cost", 0)),
-			String(team_summary.get("note", "")),
+			_trim_text(String(team_summary.get("note", "")), 18 if _ui_is_zh() else 22),
 		]
+		var puppet_group_summary := _saved_units_puppet_group_selection_note(selected_entries)
+		if String(puppet_group_summary.get("note", "")) != "":
+			saved_unit_selection_label.text += "\n%s" % _trim_text(String(puppet_group_summary.get("note", "")), 28 if _ui_is_zh() else 30)
+		_refresh_scroll_label_size(saved_unit_selection_label)
 	if saved_unit_detail_view != null:
 		var detail_entry := _saved_unit_entry_at_absolute_index(saved_unit_selected_index)
 		if detail_entry.is_empty():
@@ -13575,6 +12723,9 @@ func _update_saved_units_ui() -> void:
 				action_button.text = "保存队伍" if _ui_is_zh() else "SAVE TEAM"
 				var draft_entries := _saved_units_team_selection_entries()
 				action_button.disabled = draft_entries.is_empty() or draft_entries.size() > _current_roster_cap()
+			"save_puppet_group":
+				action_button.text = "保存傀儡组" if _ui_is_zh() else "SAVE P-GRP"
+				action_button.disabled = not bool(_saved_units_puppet_group_selection_note(_saved_unit_selected_entries()).get("valid", false))
 			"team_prev":
 				action_button.text = "队伍 <" if _ui_is_zh() else "TEAM <"
 				action_button.disabled = _saved_teams_entries().is_empty()
@@ -13606,6 +12757,109 @@ func _saved_unit_selection_all_trainable() -> bool:
 
 func _saved_units_team_selection_entries() -> Array:
 	return _saved_unit_selected_entries()
+
+
+func _puppet_group_selection_members(selection: Array) -> Array:
+	var members: Array = []
+	for raw_entry in selection:
+		if not (raw_entry is Dictionary):
+			continue
+		var entry: Dictionary = raw_entry
+		if String(entry.get("role", "")) != "puppet" or bool(entry.get("canonical_rejected", false)):
+			continue
+		if _saved_entry_is_puppet_group(entry):
+			for raw_member in _puppet_group_blueprints_from_entry(entry):
+				if raw_member is Dictionary:
+					members.append(Dictionary(raw_member).duplicate(true))
+			continue
+		if entry.get("blueprint", {}) is Dictionary:
+			var bp: Dictionary = Dictionary(entry.get("blueprint", {})).duplicate(true)
+			bp["role"] = "puppet"
+			bp["schema_version"] = SAVED_UNIT_SCHEMA_VERSION
+			bp["save_kind"] = SAVE_KIND_SINGLE_UNIT
+			members.append(bp)
+	return members
+
+
+func _saved_units_puppet_group_selection_note(selection: Array) -> Dictionary:
+	var members := _puppet_group_selection_members(selection)
+	if members.size() < 2:
+		return {
+			"valid": false,
+			"note": "至少选择 2 个合法傀儡保存为傀儡组。" if _ui_is_zh() else "Select at least 2 legal puppets to save a puppet group.",
+			"members": members,
+		}
+	for raw_member in members:
+		if not (raw_member is Dictionary):
+			return {"valid": false, "note": "傀儡组中有损坏蓝图。" if _ui_is_zh() else "Puppet group contains a damaged blueprint.", "members": members}
+		var member: Dictionary = Dictionary(raw_member).duplicate(true)
+		member["role"] = "puppet"
+		var note := _training_blueprint_illegal_note(1, "puppet", member)
+		if note != "":
+			return {"valid": false, "note": _localized_system_text(note) if _ui_is_zh() else note, "members": members}
+	return {
+		"valid": true,
+		"note": ("傀儡组可保存：%d 个成员。" if _ui_is_zh() else "Puppet group ready: %d members.") % members.size(),
+		"members": members,
+	}
+
+
+func _save_puppet_group_from_saved_unit_selection(group_name: String, selection: Array) -> String:
+	var intent := _saved_units_puppet_group_selection_note(selection)
+	if not bool(intent.get("valid", false)):
+		if saved_unit_hint_label != null:
+			saved_unit_hint_label.text = String(intent.get("note", ""))
+		_play_sfx_wave("alarm", 170.0, 0.08, -16.0)
+		return ""
+	var members: Array = Array(intent.get("members", []))
+	var first_bp: Dictionary = Dictionary(members[0]).duplicate(true)
+	var clean_name := group_name.strip_edges()
+	if clean_name == "":
+		clean_name = "Puppet Group %d" % int(Time.get_unix_time_from_system())
+	first_bp["unit_name"] = clean_name
+	first_bp["name"] = clean_name
+	first_bp["role"] = "puppet"
+	first_bp["schema_version"] = SAVED_UNIT_SCHEMA_VERSION
+	first_bp["save_kind"] = SAVE_KIND_PUPPET_GROUP
+	first_bp["puppet_group_blueprints"] = members.duplicate(true)
+	first_bp["group_count"] = members.size()
+	if String(first_bp.get("unit_id", "")) == "":
+		first_bp["unit_id"] = "puppet_group_%d" % int(Time.get_unix_time_from_system() * 1000.0)
+	_ensure_saved_units_dir()
+	var path := "%s/%s_%d.json" % [SAVED_UNITS_DIR, _safe_save_stem(clean_name, "puppet_group"), int(Time.get_unix_time_from_system())]
+	var safe_members: Array = []
+	for raw_member in members:
+		safe_members.append(_json_safe_value(raw_member))
+	var payload := saved_unit_library_service.build_save_payload(first_bp, "puppet", SAVED_UNIT_SCHEMA_VERSION, _json_safe_value(first_bp), SAVE_KIND_PUPPET_GROUP, safe_members) if saved_unit_library_service != null else {
+		"schema_version": SAVED_UNIT_SCHEMA_VERSION,
+		"save_kind": SAVE_KIND_PUPPET_GROUP,
+		"unit_id": String(first_bp.get("unit_id", "")),
+		"unit_name": clean_name,
+		"unit_role": "puppet",
+		"team_color": first_bp.get("team_color", {}),
+		"blueprint": _json_safe_value(first_bp),
+		"puppet_group_blueprints": safe_members,
+	}
+	var preflight_reason := _saved_unit_payload_rejection_reason(payload)
+	if preflight_reason != "":
+		if saved_unit_hint_label != null:
+			saved_unit_hint_label.text = ("保存傀儡组失败：%s" if _ui_is_zh() else "Puppet group save failed: %s") % preflight_reason
+		_play_sfx_wave("alarm", 170.0, 0.08, -16.0)
+		return ""
+	var file := FileAccess.open(path, FileAccess.WRITE)
+	if file == null:
+		if saved_unit_hint_label != null:
+			saved_unit_hint_label.text = "保存傀儡组失败：无法写入单位库。" if _ui_is_zh() else "Puppet group save failed: cannot write unit library."
+		return ""
+	file.store_string(JSON.stringify(payload, "\t"))
+	file.close()
+	_invalidate_saved_unit_library_cache()
+	saved_unit_focus_path = path
+	_select_saved_unit_focus_path(path)
+	if saved_unit_hint_label != null:
+		saved_unit_hint_label.text = "已保存傀儡组：%s（%d 个成员）。" % [clean_name, members.size()] if _ui_is_zh() else "Saved puppet group: %s (%d members)." % [clean_name, members.size()]
+	_play_sfx_wave("clack", 760.0, 0.055, -16.0)
+	return path
 
 
 func _saved_teams_entries(force: bool = false) -> Array:
@@ -13800,7 +13054,7 @@ func _load_saved_team_to_current_roster(path: String) -> bool:
 	return true
 
 
-func _import_saved_unit_entries_to_training(entries: Array) -> void:
+func _training_import_intent_from_saved_unit_entries(entries: Array) -> Dictionary:
 	var imports: Array = []
 	for raw_entry in entries:
 		if not (raw_entry is Dictionary):
@@ -13810,17 +13064,41 @@ func _import_saved_unit_entries_to_training(entries: Array) -> void:
 			continue
 		var role_key := String(entry.get("role", "hero"))
 		var unit_bp: Dictionary = Dictionary(entry.get("blueprint", {})).duplicate(true)
-		var illegal_note := _training_blueprint_illegal_note(1, role_key, unit_bp)
+		var group_blueprints := _puppet_group_blueprints_from_entry(entry) if _saved_entry_is_puppet_group(entry) else []
+		if _saved_entry_is_puppet_group(entry):
+			unit_bp["save_kind"] = SAVE_KIND_PUPPET_GROUP
+			unit_bp["puppet_group_blueprints"] = group_blueprints.duplicate(true)
+			unit_bp["group_count"] = group_blueprints.size()
+		var illegal_note := _saved_unit_entry_illegal_note(entry) if _saved_entry_is_puppet_group(entry) else _training_blueprint_illegal_note(1, role_key, unit_bp)
 		if illegal_note != "":
-			if saved_unit_hint_label != null:
-				saved_unit_hint_label.text = ("训练导入被拦截：%s" if _ui_is_zh() else "Training import blocked: %s") % (_localized_system_text(illegal_note) if _ui_is_zh() else illegal_note)
-			_play_sfx_wave("alarm", 170.0, 0.08, -16.0)
-			return
-		imports.append({"role": role_key, "blueprint": unit_bp})
+			return {"ok": false, "error": illegal_note, "imports": []}
+		var import_entry := {"role": role_key, "blueprint": unit_bp}
+		if _saved_entry_is_puppet_group(entry):
+			import_entry["save_kind"] = SAVE_KIND_PUPPET_GROUP
+			import_entry["puppet_group_blueprints"] = group_blueprints.duplicate(true)
+		imports.append(import_entry)
 	if imports.is_empty():
+		return {"ok": false, "error": "NO_TRAINABLE_IMPORTS", "imports": []}
+	return {"ok": true, "error": "", "imports": imports}
+
+
+func _training_imports_from_saved_unit_entries(entries: Array) -> Array:
+	return Array(_training_import_intent_from_saved_unit_entries(entries).get("imports", [])).duplicate(true)
+
+
+func _import_saved_unit_entries_to_training(entries: Array) -> void:
+	var intent := _training_import_intent_from_saved_unit_entries(entries)
+	if not bool(intent.get("ok", false)):
+		var error := String(intent.get("error", ""))
 		if saved_unit_hint_label != null:
-			saved_unit_hint_label.text = "先选择至少一个可训练单位。" if _ui_is_zh() else "Select at least one trainable unit first."
+			if error == "NO_TRAINABLE_IMPORTS" or error == "":
+				saved_unit_hint_label.text = "先选择至少一个可训练单位。" if _ui_is_zh() else "Select at least one trainable unit first."
+			else:
+				saved_unit_hint_label.text = ("训练导入被拦截：%s" if _ui_is_zh() else "Training import blocked: %s") % (_localized_system_text(error) if _ui_is_zh() else error)
+		if error != "NO_TRAINABLE_IMPORTS":
+			_play_sfx_wave("alarm", 170.0, 0.08, -16.0)
 		return
+	var imports: Array = Array(intent.get("imports", [])).duplicate(true)
 	training_import_units = imports
 	var first_import: Dictionary = imports[0]
 	training_import_role_key = String(first_import.get("role", ""))
@@ -15314,6 +14592,71 @@ func _editor_team_order_entries(player_id: int) -> Array:
 	return entries
 
 
+func _editor_role_page_entries(player_id: int, role_key: String) -> Array:
+	var entries: Array = []
+	if not blueprints.has(player_id) or not ROLE_ORDER.has(role_key):
+		return entries
+	var roster: Array = Array(blueprints[player_id].get(role_key, []))
+	for i in range(roster.size()):
+		entries.append({
+			"role": role_key,
+			"index": i,
+			"in_sortie": _sortie_position(player_id, role_key, i) >= 0,
+		})
+	if _roster_unit_total(player_id) < _current_roster_cap():
+		entries.append({
+			"empty": true,
+			"slot": roster.size(),
+			"role": role_key,
+			"index": -1,
+			"in_sortie": false,
+		})
+	return entries
+
+
+func _create_editor_role_page(role_key: String) -> void:
+	var player_id := _editor_player()
+	if not blueprints.has(player_id):
+		blueprints[player_id] = _blank_player_roster()
+	if _roster_unit_total(player_id) >= _current_roster_cap():
+		editor_summary_label.text = "队伍已满：%s 当前最多构筑 %d 个单位。" % [_match_format_name(), _current_roster_cap()] if _ui_is_zh() else "ROSTER FULL: %s can build at most %d units." % [_match_format_name(), _current_roster_cap()]
+		_play_sfx_wave("alarm", 170.0, 0.08, -16.0)
+		return
+	if not blueprints[player_id].has(role_key):
+		blueprints[player_id][role_key] = []
+	var roster: Array = Array(blueprints[player_id].get(role_key, []))
+	var unit_index := roster.size()
+	var blank := _make_editor_blank_blueprint(role_key)
+	blank["role"] = role_key
+	blank["name"] = "P%d %s %d" % [player_id, _role_name(role_key), unit_index + 1]
+	blank["blank_canvas"] = true
+	if _role_uses_body_board(role_key):
+		blank["archetype"] = "custom"
+		blank["custom_topology"] = _blank_free_canvas_topology()
+		blank.erase("groups")
+	roster.append(blank)
+	blueprints[player_id][role_key] = roster
+	editor_role_index = ROLE_ORDER.find(role_key)
+	_apply_editor_role_catalog_defaults(role_key)
+	editor_canvas_mode = "roster_unit"
+	editor_unit_indices[role_key] = unit_index
+	active_roster_indices[player_id][role_key] = unit_index
+	sortie_loadouts[player_id] = []
+	initial_sortie_slot[player_id] = 0
+	ai_team_manual_lock[player_id] = true
+	editor_roster_page = int(floori(float(unit_index) / float(maxi(1, editor_roster_slot_buttons.size()))))
+	_reset_editor_unit_page_transient_state(false)
+	editor_summary_label.text = "已新建%s页 #%d，可直接在主画板编辑。" % [_role_name(role_key), unit_index + 1] if _ui_is_zh() else "Created %s page #%d. Edit it on the main board." % [_role_name(role_key), unit_index + 1]
+	_update_editor_ui()
+
+
+func _current_editor_role_page_index() -> int:
+	if _editor_is_blank_work_canvas():
+		return -1
+	var role_key: String = ROLE_ORDER[editor_role_index]
+	return int(editor_unit_indices.get(role_key, 0))
+
+
 func _select_editor_entry(entry: Dictionary, update_ui: bool = true) -> void:
 	var player_id := _editor_player()
 	if not _valid_roster_entry(player_id, entry):
@@ -15324,6 +14667,7 @@ func _select_editor_entry(entry: Dictionary, update_ui: bool = true) -> void:
 	editor_role_index = ROLE_ORDER.find(role_key)
 	if editor_role_index < 0:
 		editor_role_index = 0
+	_apply_editor_role_catalog_defaults(ROLE_ORDER[editor_role_index])
 	editor_unit_indices[role_key] = unit_index
 	active_roster_indices[player_id][role_key] = unit_index
 	if update_ui:
@@ -15360,7 +14704,7 @@ func _select_editor_load_card(card_index: int) -> void:
 		_update_editor_ui()
 		_show_editor_empty_slot_hover(actual_index, true)
 		return
-	_select_editor_entry(entry)
+	_switch_editor_to_roster_page(entry)
 	_show_editor_unit_hover(entry, true)
 
 
@@ -15380,7 +14724,8 @@ func _hover_editor_load_card(card_index: int) -> void:
 
 
 func _change_editor_roster_page(direction: int) -> void:
-	var entries := _editor_team_order_entries(_editor_player())
+	var role_key: String = ROLE_ORDER[editor_role_index]
+	var entries := _editor_role_page_entries(_editor_player(), role_key)
 	var page_size := maxi(1, editor_roster_slot_buttons.size())
 	var max_page := maxi(0, int(ceilf(float(entries.size()) / float(page_size))) - 1)
 	editor_roster_page = clampi(editor_roster_page + direction, 0, max_page)
@@ -15388,7 +14733,8 @@ func _change_editor_roster_page(direction: int) -> void:
 
 
 func _editor_roster_entry_for_overview_slot(local_slot: int) -> Dictionary:
-	var entries := _editor_team_order_entries(_editor_player())
+	var role_key: String = ROLE_ORDER[editor_role_index]
+	var entries := _editor_role_page_entries(_editor_player(), role_key)
 	var page_size := maxi(1, editor_roster_slot_buttons.size())
 	var actual_index := editor_roster_page * page_size + local_slot
 	if actual_index < 0 or actual_index >= entries.size():
@@ -15401,13 +14747,32 @@ func _select_editor_roster_overview_slot(local_slot: int) -> void:
 	if entry.is_empty():
 		return
 	if bool(entry.get("empty", false)):
-		_reset_editor_working_canvas(String(entry.get("role", ROLE_ORDER[editor_role_index])))
-		editor_summary_label.text = "已选择空队伍槽 %02d。当前画布仍为 0 造价，保存后才写入%s队伍。" % [int(entry.get("slot", 0)) + 1, _match_format_name()] if _ui_is_zh() else "Selected empty roster slot %02d. The canvas stays zero-cost until you save it into the %s roster." % [int(entry.get("slot", 0)) + 1, _match_format_name()]
-		_update_editor_ui()
-		_show_editor_empty_slot_hover(int(entry.get("slot", local_slot)), true)
+		_create_editor_role_page(String(entry.get("role", ROLE_ORDER[editor_role_index])))
 		return
-	_enter_editor_roster_entry(entry)
+	_switch_editor_to_roster_page(entry)
 	_show_editor_unit_hover(entry, true)
+
+
+func _select_adjacent_editor_unit_page(direction: int) -> void:
+	var player_id := _editor_player()
+	var role_key: String = ROLE_ORDER[editor_role_index]
+	var roster: Array = Array(blueprints[player_id].get(role_key, []))
+	if roster.is_empty():
+		if editor_summary_label != null:
+			editor_summary_label.text = "当前类别还没有可翻页的单位。" if _ui_is_zh() else "No unit pages in this role yet."
+		return
+	if roster.size() <= 1:
+		if editor_summary_label != null:
+			editor_summary_label.text = "当前类别只有 1 个单位页，无法继续翻页。" if _ui_is_zh() else "Only one unit page exists in this role."
+		return
+	var step := -1 if direction < 0 else 1
+	var current_index := clampi(int(editor_unit_indices.get(role_key, 0)), 0, roster.size() - 1)
+	var next_index := _wrapped_index(current_index + step, roster.size())
+	var next_roster_page := int(floori(float(next_index) / float(maxi(1, editor_roster_slot_buttons.size()))))
+	editor_roster_page = next_roster_page
+	_switch_editor_to_roster_page({"role": role_key, "index": next_index}, false)
+	editor_roster_page = next_roster_page
+	_update_editor_ui()
 
 
 func _hover_editor_roster_overview_slot(local_slot: int) -> void:
@@ -15424,58 +14789,64 @@ func _hover_editor_roster_overview_slot(local_slot: int) -> void:
 func _update_editor_roster_overview() -> void:
 	if editor_roster_slot_buttons.is_empty():
 		return
-	if editor_section_labels.has("roster_overview"):
-		_set_canvas_item_visible_if_changed(editor_section_labels["roster_overview"], false)
-	if editor_section_labels.has("roster_page"):
-		_set_canvas_item_visible_if_changed(editor_section_labels["roster_page"], false)
-	for i in range(editor_roster_slot_buttons.size()):
-		_set_canvas_item_visible_if_changed(editor_roster_slot_buttons[i], false)
-		_set_button_disabled_if_changed(editor_roster_slot_buttons[i], true)
-		if i < editor_roster_slot_thumb_views.size():
-			_set_canvas_item_visible_if_changed(editor_roster_slot_thumb_views[i], false)
-	return
 	var player_id := _editor_player()
-	var entries := _editor_team_order_entries(player_id)
+	var role_key: String = ROLE_ORDER[editor_role_index]
+	var entries := _editor_role_page_entries(player_id, role_key)
 	var page_size := maxi(1, editor_roster_slot_buttons.size())
-	var max_page := maxi(0, int(ceilf(float(entries.size()) / float(page_size))) - 1)
+	var max_page := maxi(0, int(ceilf(float(maxi(1, entries.size())) / float(page_size))) - 1)
 	editor_roster_page = clampi(editor_roster_page, 0, max_page)
 	if editor_section_labels.has("roster_overview"):
 		var label: Label = editor_section_labels["roster_overview"]
-		label.text = ("队伍 %s" if _ui_is_zh() else "TEAM %s") % _match_format_short()
+		var title := ""
+		if role_key == "puppet":
+			title = "傀儡组" if _ui_is_zh() else "PUPPET GROUP"
+		elif role_key == "barrier":
+			title = "结界组" if _ui_is_zh() else "BARRIER GROUP"
+		else:
+			title = "英雄单位页" if _ui_is_zh() else "HERO PAGES"
+		_set_control_text_if_changed(label, title)
+		_set_canvas_item_visible_if_changed(label, true)
 	if editor_section_labels.has("roster_page"):
 		var page_label: Label = editor_section_labels["roster_page"]
-		page_label.text = "%d/%d" % [editor_roster_page + 1, max_page + 1]
+		_set_control_text_if_changed(page_label, "%d/%d" % [editor_roster_page + 1, max_page + 1])
+		_set_canvas_item_visible_if_changed(page_label, true)
+	if editor_roster_prev_button != null:
+		_set_canvas_item_visible_if_changed(editor_roster_prev_button, true)
+		_set_button_disabled_if_changed(editor_roster_prev_button, editor_roster_page <= 0)
+	if editor_roster_next_button != null:
+		_set_canvas_item_visible_if_changed(editor_roster_next_button, true)
+		_set_button_disabled_if_changed(editor_roster_next_button, editor_roster_page >= max_page)
 	for i in range(editor_roster_slot_buttons.size()):
 		var actual_index := editor_roster_page * page_size + i
 		var button: Button = editor_roster_slot_buttons[i]
 		var thumb: SortieThumbView = editor_roster_slot_thumb_views[i] if i < editor_roster_slot_thumb_views.size() else null
 		var visible_entry := actual_index < entries.size()
-		button.visible = visible_entry
-		button.disabled = not visible_entry
+		_set_canvas_item_visible_if_changed(button, visible_entry)
+		_set_button_disabled_if_changed(button, not visible_entry)
 		if thumb != null:
-			thumb.visible = visible_entry
+			_set_canvas_item_visible_if_changed(thumb, visible_entry)
 		if not visible_entry:
-			button.text = ""
+			_set_control_text_if_changed(button, "")
 			if thumb != null:
 				thumb.set_entry(player_id, actual_index, {}, {}, "reserve", ui_language)
 			continue
 		var entry: Dictionary = entries[actual_index]
 		if bool(entry.get("empty", false)):
 			var empty_role := String(entry.get("role", ROLE_ORDER[actual_index % ROLE_ORDER.size()]))
-			button.text = "%02d %s 空" % [actual_index + 1, _role_short(empty_role)] if _ui_is_zh() else "%02d %s -" % [actual_index + 1, _role_short(empty_role)]
-			button.modulate = Color(0.58, 0.64, 0.68, 0.76)
+			_set_control_text_if_changed(button, ("%02d + %s" if _ui_is_zh() else "%02d +%s") % [actual_index + 1, _role_short(empty_role)])
+			_set_canvas_item_modulate_if_changed(button, Color(0.58, 0.64, 0.68, 0.76))
 			if thumb != null:
 				var empty_stats := _compute_unit_stats(player_id, empty_role, -1, _make_editor_blank_blueprint(empty_role))
 				thumb.set_entry(player_id, actual_index, entry, empty_stats, "reserve", ui_language)
 			continue
-		var role_key := String(entry.get("role", "hero"))
+		var entry_role_key := String(entry.get("role", "hero"))
 		var unit_index := int(entry.get("index", 0))
-		var stats := _compute_unit_stats(player_id, role_key, unit_index)
-		var selected: bool = not _editor_is_blank_work_canvas() and role_key == ROLE_ORDER[editor_role_index] and unit_index == int(editor_unit_indices.get(role_key, 0))
+		var stats := _compute_unit_stats(player_id, entry_role_key, unit_index)
+		var selected: bool = not _editor_is_blank_work_canvas() and entry_role_key == role_key and unit_index == int(editor_unit_indices.get(role_key, 0))
 		var blank: bool = bool(stats.get("blank_canvas", false))
-		var role_short: String = _role_short(role_key)
-		button.text = "%02d %s %d%s" % [actual_index + 1, role_short, int(stats.get("cost", 0)), " 空" if _ui_is_zh() and blank else (" BLK" if blank else "")]
-		button.modulate = Color(1.0, 0.86, 0.28, 1.0) if selected else Color(0.82, 0.9, 0.94, 0.92)
+		var role_short: String = _role_short(entry_role_key)
+		_set_control_text_if_changed(button, "%02d %s %d%s" % [unit_index + 1, role_short, int(stats.get("cost", 0)), " 空" if _ui_is_zh() and blank else (" BLK" if blank else "")])
+		_set_canvas_item_modulate_if_changed(button, Color(1.0, 0.86, 0.28, 1.0) if selected else Color(0.82, 0.9, 0.94, 0.92))
 		if thumb != null:
 			thumb.set_entry(player_id, actual_index, entry, stats, "pending" if selected else ("reserve" if blank else "live"), ui_language)
 
@@ -15742,6 +15113,8 @@ func _exit_page(from_page: String, to_page: String, reason: String = "", payload
 		return
 	if from_page == STATE_EDITOR:
 		_cleanup_unit_edit_page_runtime()
+		PartPreviewTextureCache.clear_all(true)
+		CatalogCardBodyTextureCache.clear_all(true)
 	elif from_page == STATE_SAVED_UNITS:
 		_cleanup_saved_units_page_runtime()
 	elif from_page == STATE_BATTLE:
@@ -15755,6 +15128,8 @@ func _exit_page(from_page: String, to_page: String, reason: String = "", payload
 	if to_page != STATE_EDITOR:
 		PartPreviewTextureCache.clear_pending_requests()
 		CatalogCardBodyTextureCache.clear_pending_requests()
+	if from_page != STATE_LOADING and not (from_page == STATE_BATTLE and to_page == STATE_SETTINGS and bool(payload.get("preserve_runtime", false))):
+		runtime_catalog_cache.clear()
 	if hot_path_profiler != null:
 		hot_path_profiler.count("page.exit.%s" % from_page)
 
@@ -15806,8 +15181,10 @@ func _cleanup_unit_edit_page_runtime() -> void:
 	if editor_orientation_popup_panel != null:
 		editor_orientation_popup_panel.visible = false
 	_hide_editor_drag_ghost()
-	_invalidate_editor_board_snapshot_cache()
-	_trim_editor_page_caches()
+	editor_topology_clipboard = {}
+	editor_clipboard_paste_count = 0
+	editor_last_board_mouse_position = Vector2.INF
+	_clear_unit_edit_page_caches()
 
 
 func _cleanup_saved_units_page_runtime() -> void:
@@ -15824,34 +15201,66 @@ func _cleanup_saved_units_page_runtime() -> void:
 		if raw_thumb is SortieThumbView:
 			var thumb: SortieThumbView = raw_thumb
 			thumb.set_entry(1, 0, {}, {}, "reserve", ui_language)
-	saved_unit_filtered_cache.clear()
-	_trim_dictionary_cache(saved_unit_stats_cache, 160)
-	_trim_dictionary_cache(saved_unit_illegal_cache, 160)
+	_clear_saved_units_page_caches()
 
 
 func _cleanup_battle_runtime(preserve_for_return: bool = false) -> void:
-	if preserve_for_return:
+	var cleanup_intent := battle_runtime_lifecycle_service.cleanup_intent(_battle_runtime_lifecycle_snapshot(), preserve_for_return) if battle_runtime_lifecycle_service != null else {
+		"preserve": preserve_for_return,
+		"clear_runtime": not preserve_for_return,
+		"hide_runtime_menu": true,
+		"hide_aim_lines": true,
+		"clear_attack_command_windows": true,
+		"clear_units": true,
+		"clear_presentation_state": true,
+		"clear_input_edges": true,
+		"clear_aim_state": true,
+		"clear_gun_state": true,
+	}
+	if bool(cleanup_intent.get("preserve", preserve_for_return)):
 		if hot_path_profiler != null:
 			hot_path_profiler.count("battle.cleanup.preserved")
 		return
-	_hide_battle_runtime_menu()
-	for player_id in [1, 2]:
-		if aim_lines.has(player_id) and aim_lines[player_id] is Line2D:
-			var line: Line2D = aim_lines[player_id]
-			line.visible = false
-	_clear_attack_command_windows(1)
-	_clear_attack_command_windows(2)
-	_clear_all_units()
-	battle_presentation_active = false
-	battle_input_frame_active = false
-	battle_active_input_frame = {}
-	battle_pending_pressed_actions.clear()
-	battle_pending_released_actions.clear()
-	aim_holding = {1: false, 2: false}
-	aim_locked_targets = {1: null, 2: null}
-	aim_locked_directions = {1: Vector2.ZERO, 2: Vector2.ZERO}
-	aim_hold_fire_timers = {1: 0.0, 2: 0.0}
-	gun_activation_state = {1: {}, 2: {}}
+	if bool(cleanup_intent.get("hide_runtime_menu", true)):
+		_hide_battle_runtime_menu()
+	if bool(cleanup_intent.get("hide_aim_lines", true)):
+		for player_id in [1, 2]:
+			if aim_lines.has(player_id) and aim_lines[player_id] is Line2D:
+				var line: Line2D = aim_lines[player_id]
+				line.visible = false
+	if bool(cleanup_intent.get("clear_attack_command_windows", true)):
+		_clear_attack_command_windows(1)
+		_clear_attack_command_windows(2)
+	if bool(cleanup_intent.get("clear_units", true)):
+		_clear_all_units()
+	if bool(cleanup_intent.get("clear_presentation_state", true)):
+		battle_presentation_active = false
+	if bool(cleanup_intent.get("clear_input_edges", true)):
+		battle_input_frame_active = false
+		battle_active_input_frame = {}
+		battle_pending_pressed_actions.clear()
+		battle_pending_released_actions.clear()
+	if bool(cleanup_intent.get("clear_aim_state", true)):
+		aim_holding = {1: false, 2: false}
+		aim_locked_targets = {1: null, 2: null}
+		aim_locked_directions = {1: Vector2.ZERO, 2: Vector2.ZERO}
+		aim_hold_fire_timers = {1: 0.0, 2: 0.0}
+	if bool(cleanup_intent.get("clear_gun_state", true)):
+		gun_activation_state = {1: {}, 2: {}}
+		held_melee_activation_state = {1: {}, 2: {}}
+
+
+func _battle_runtime_lifecycle_snapshot() -> Dictionary:
+	return {
+		"unit_count": all_units.size(),
+		"pending_laser_shots": pending_laser_shots.size(),
+		"pending_true_bullet_shots": pending_true_bullet_shots.size(),
+		"pending_chemical_projectiles": pending_chemical_projectiles.size(),
+		"pending_missile_projectiles": pending_missile_projectiles.size(),
+		"active_web_tethers": active_web_tethers.size(),
+		"active_web_swings": active_web_swings.size(),
+		"battle_effect_children": effects_root.get_child_count() if effects_root != null else 0,
+	}
 
 
 func _cleanup_loading_tasks_for_transition(target_page: String, generation_id: int) -> void:
@@ -15894,6 +15303,30 @@ func _trim_editor_page_caches() -> void:
 	_invalidate_editor_current_stats_cache()
 
 
+func _clear_unit_edit_page_caches() -> void:
+	_invalidate_editor_catalog_cache()
+	runtime_catalog_cache.clear()
+	editor_catalog_card_signature_cache.clear()
+	editor_torso_detail_template_cache.clear()
+	teamedit_placement_template_cache.clear()
+	teamedit_placement_template_index_cache.clear()
+	_invalidate_editor_board_snapshot_cache()
+	_invalidate_editor_current_stats_cache()
+
+
+func _clear_saved_units_page_caches() -> void:
+	saved_unit_filtered_cache.clear()
+	saved_unit_stats_cache.clear()
+	saved_unit_illegal_cache.clear()
+	saved_unit_hovered_path = ""
+	saved_unit_hovered_index = -1
+	saved_unit_detail_path = ""
+	saved_unit_focus_path = ""
+	saved_unit_deferred_focus_path = ""
+	saved_unit_library_cache_dirty = true
+	saved_unit_library_cache_scan_deferred = false
+
+
 func _node_descendant_count(node: Node) -> int:
 	return UILifecycleService.node_descendant_count(node)
 
@@ -15913,14 +15346,17 @@ func _ui_lifecycle_snapshot() -> Dictionary:
 		"loading": loading_layer,
 	}
 	var layer_snapshot := UILifecycleService.layer_snapshot(layers)
-	var battle_runtime_count := all_units.size() \
-		+ pending_laser_shots.size() \
-		+ pending_true_bullet_shots.size() \
-		+ pending_chemical_projectiles.size() \
-		+ pending_missile_projectiles.size() \
-		+ active_web_tethers.size() \
-		+ active_web_swings.size()
-	var effect_children := effects_root.get_child_count() if effects_root != null else 0
+	var battle_runtime_snapshot := _battle_runtime_lifecycle_snapshot()
+	var battle_runtime_summary := battle_runtime_lifecycle_service.snapshot_summary(battle_runtime_snapshot) if battle_runtime_lifecycle_service != null else {
+		"battle_runtime_count": all_units.size() \
+			+ pending_laser_shots.size() \
+			+ pending_true_bullet_shots.size() \
+			+ pending_chemical_projectiles.size() \
+			+ pending_missile_projectiles.size() \
+			+ active_web_tethers.size() \
+			+ active_web_swings.size(),
+		"battle_effect_children": effects_root.get_child_count() if effects_root != null else 0,
+	}
 	return {
 		"page": game_state,
 		"navigation": navigation_service.snapshot() if navigation_service != null else {},
@@ -15934,16 +15370,18 @@ func _ui_lifecycle_snapshot() -> Dictionary:
 		"loading_cancelled_stale": loading_idle_task_cancelled_stale_count,
 		"preview_texture_cache": PartPreviewTextureCache.textures.size(),
 		"preview_texture_pending": PartPreviewTextureCache.pending_order.size() + (0 if PartPreviewTextureCache.active_request.is_empty() else 1),
+		"preview_renderer_alive": PartPreviewTextureCache.render_viewport != null and is_instance_valid(PartPreviewTextureCache.render_viewport),
 		"catalog_body_cache": CatalogCardBodyTextureCache.textures.size(),
 		"catalog_body_pending": CatalogCardBodyTextureCache.pending_order.size() + (0 if CatalogCardBodyTextureCache.active_request.is_empty() else 1),
+		"catalog_renderer_alive": CatalogCardBodyTextureCache.render_viewport != null and is_instance_valid(CatalogCardBodyTextureCache.render_viewport),
 		"editor_catalog_cache": editor_catalog_raw_cache.size() + editor_catalog_entries_cache.size() + editor_catalog_card_model_cache.size() + editor_catalog_page_model_cache.size(),
 		"editor_load_stats_cache": editor_load_entry_stats_cache.size(),
 		"saved_filtered_cache": saved_unit_filtered_cache.size(),
 		"saved_stats_cache": saved_unit_stats_cache.size(),
 		"saved_illegal_cache": saved_unit_illegal_cache.size(),
 		"runtime_catalog_cache": runtime_catalog_cache.size(),
-		"battle_runtime_count": battle_runtime_count,
-		"battle_effect_children": effect_children,
+		"battle_runtime_count": int(battle_runtime_summary.get("battle_runtime_count", 0)),
+		"battle_effect_children": int(battle_runtime_summary.get("battle_effect_children", 0)),
 		"frame_avg_ms": performance_last_avg_ms,
 		"frame_max_ms": performance_last_max_ms,
 	}
@@ -16081,6 +15519,10 @@ func _show_editor(preloaded: bool = false) -> void:
 	editor_board_view_offset = Vector2.ZERO
 	_refresh_editor_board_zoom_ui()
 	_reset_editor_working_canvas(ROLE_ORDER[clampi(editor_role_index, 0, ROLE_ORDER.size() - 1)])
+	_apply_editor_role_catalog_defaults(ROLE_ORDER[clampi(editor_role_index, 0, ROLE_ORDER.size() - 1)])
+	editor_topology_clipboard = {}
+	editor_clipboard_paste_count = 0
+	editor_last_board_mouse_position = Vector2.INF
 	_set_visible_layer(editor_layer)
 	_update_editor_ui()
 
@@ -16092,6 +15534,10 @@ func _show_editor_preserve_canvas(preloaded: bool = false) -> void:
 	_transition_page(STATE_EDITOR, "teamedit_preserve", {"preserve_canvas": true})
 	_hide_match_format_select()
 	_refresh_editor_board_zoom_ui()
+	_apply_editor_role_catalog_defaults(ROLE_ORDER[clampi(editor_role_index, 0, ROLE_ORDER.size() - 1)])
+	editor_topology_clipboard = {}
+	editor_clipboard_paste_count = 0
+	editor_last_board_mouse_position = Vector2.INF
 	_set_visible_layer(editor_layer)
 	_update_editor_ui()
 
@@ -16566,6 +16012,16 @@ func _set_button_disabled_if_changed(button: Button, value: bool) -> void:
 	editor_property_write_count += 1
 
 
+func _layout_editor_save_unit_feedback() -> void:
+	if editor_save_unit_feedback_label == null:
+		return
+	_set_control_position_if_changed(editor_save_unit_feedback_label, Vector2(270.0, 654.0))
+	_set_control_size_if_changed(editor_save_unit_feedback_label, Vector2(622.0, 26.0))
+	editor_save_unit_feedback_label.autowrap_mode = TextServer.AUTOWRAP_OFF
+	editor_save_unit_feedback_label.clip_text = true
+	editor_save_unit_feedback_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+
+
 func _apply_ui_state(control_map: Dictionary, state: Dictionary) -> void:
 	for key in state.keys():
 		if not control_map.has(key):
@@ -16884,11 +16340,41 @@ func _start_editor_canvas_training_test() -> void:
 
 func _apply_training_import_loadout(require_dummy: bool = true) -> bool:
 	training_import_error_note = ""
-	var imports: Array = training_import_units.duplicate(true)
-	if imports.is_empty() and not training_import_blueprint.is_empty() and training_import_role_key != "":
-		imports.append({"role": training_import_role_key, "blueprint": training_import_blueprint.duplicate(true)})
-	if imports.is_empty():
+	var imports: Array = training_entry_service.pending_imports(training_import_units, training_import_role_key, training_import_blueprint) if training_entry_service != null else _legacy_training_pending_imports(training_import_units, training_import_role_key, training_import_blueprint)
+	var intent := training_entry_service.loadout_from_imports(imports, ROLE_ORDER, Callable(self, "_training_import_legality_note_for_service"), Callable(self, "_apply_entry_pose_to_blueprint")) if training_entry_service != null else _legacy_training_loadout_from_imports(imports)
+	if not bool(intent.get("ok", false)):
+		if bool(intent.get("clear_import", false)):
+			training_import_units = []
+			training_import_blueprint = {}
+			training_import_role_key = ""
+		var error := String(intent.get("error", ""))
+		if error != "":
+			training_import_error_note = error
 		return false
+	training_test_roster_cache = Dictionary(intent.get("roster", {})).duplicate(true)
+	training_test_loadout_cache = Array(intent.get("loadout", [])).duplicate(true)
+	training_test_initial_slot_cache = int(intent.get("initial_slot", 0))
+	training_test_initial_role_cache = String(intent.get("initial_role", "hero"))
+	if require_dummy and not _configure_training_sides_for_seat():
+		return false
+	training_import_units = []
+	return true
+
+
+func _training_import_legality_note_for_service(role_key: String, unit_bp: Dictionary) -> String:
+	return _training_blueprint_illegal_note(1, role_key, unit_bp)
+
+
+func _legacy_training_pending_imports(import_units: Array, import_role_key: String, import_blueprint: Dictionary) -> Array:
+	var imports: Array = import_units.duplicate(true)
+	if imports.is_empty() and not import_blueprint.is_empty() and import_role_key != "":
+		imports.append({"role": import_role_key, "blueprint": import_blueprint.duplicate(true)})
+	return imports
+
+
+func _legacy_training_loadout_from_imports(imports: Array) -> Dictionary:
+	if imports.is_empty():
+		return {"ok": false, "has_imports": false, "error": "", "clear_import": false}
 	var next_roster := _blank_player_roster()
 	var next_loadout: Array = []
 	var first_hero_slot := -1
@@ -16902,12 +16388,15 @@ func _apply_training_import_loadout(require_dummy: bool = true) -> bool:
 		var unit_bp: Dictionary = Dictionary(import_entry.get("blueprint", {})).duplicate(true)
 		var illegal_note := _training_blueprint_illegal_note(1, role_key, unit_bp)
 		if illegal_note != "":
-			training_import_error_note = illegal_note
-			training_import_units = []
-			training_import_blueprint = {}
-			training_import_role_key = ""
-			return false
+			return {"ok": false, "has_imports": true, "error": illegal_note, "clear_import": true}
 		unit_bp["role"] = role_key
+		var save_kind := String(import_entry.get("save_kind", unit_bp.get("save_kind", SAVE_KIND_SINGLE_UNIT)))
+		if save_kind == "":
+			save_kind = SAVE_KIND_SINGLE_UNIT
+		unit_bp["save_kind"] = save_kind
+		if save_kind == SAVE_KIND_PUPPET_GROUP:
+			unit_bp["puppet_group_blueprints"] = Array(import_entry.get("puppet_group_blueprints", unit_bp.get("puppet_group_blueprints", []))).duplicate(true)
+			unit_bp["group_count"] = Array(unit_bp.get("puppet_group_blueprints", [])).size()
 		_apply_entry_pose_to_blueprint(unit_bp)
 		var roster: Array = Array(next_roster.get(role_key, []))
 		var unit_index := roster.size()
@@ -16917,20 +16406,35 @@ func _apply_training_import_loadout(require_dummy: bool = true) -> bool:
 		if role_key == "hero" and first_hero_slot < 0:
 			first_hero_slot = next_loadout.size() - 1
 	if next_loadout.is_empty():
-		return false
-	training_test_roster_cache = next_roster.duplicate(true)
-	training_test_loadout_cache = next_loadout.duplicate(true)
-	training_test_initial_slot_cache = first_hero_slot if first_hero_slot >= 0 else 0
-	training_test_initial_role_cache = String(Dictionary(next_loadout[training_test_initial_slot_cache]).get("role", "hero"))
-	if require_dummy and not _configure_training_sides_for_seat():
-		return false
-	training_import_units = []
-	return true
+		return {"ok": false, "has_imports": true, "error": "", "clear_import": false}
+	var initial_slot := first_hero_slot if first_hero_slot >= 0 else 0
+	return {
+		"ok": true,
+		"has_imports": true,
+		"roster": next_roster,
+		"loadout": next_loadout,
+		"initial_slot": initial_slot,
+		"initial_role": String(Dictionary(next_loadout[initial_slot]).get("role", "hero")),
+		"clear_import": true,
+	}
 
 
 func _training_blueprint_illegal_note(player_id: int, role_key: String, unit_bp: Dictionary) -> String:
 	if not ROLE_ORDER.has(role_key):
 		return "INVALID: unknown unit role."
+	if role_key == "puppet" and String(unit_bp.get("save_kind", SAVE_KIND_SINGLE_UNIT)) == SAVE_KIND_PUPPET_GROUP:
+		var members := _puppet_group_blueprints_from_blueprint(unit_bp)
+		if members.is_empty():
+			return "INVALID: puppet group has no blueprints."
+		for raw_member in members:
+			if not (raw_member is Dictionary):
+				return "INVALID: puppet group contains a damaged blueprint."
+			var member: Dictionary = Dictionary(raw_member).duplicate(true)
+			member["role"] = "puppet"
+			var member_note := _training_blueprint_illegal_note(player_id, "puppet", member)
+			if member_note != "":
+				return member_note
+		return ""
 	var candidate := unit_bp.duplicate(true)
 	candidate["role"] = role_key
 	if _role_uses_body_board(role_key):
@@ -16960,10 +16464,22 @@ func _training_blueprint_illegal_note(player_id: int, role_key: String, unit_bp:
 func _first_training_hero_entry(player_id: int) -> Dictionary:
 	if not blueprints.has(player_id):
 		return {}
-	var hero_roster: Array = Array(blueprints[player_id].get("hero", []))
+	var roster: Dictionary = Dictionary(blueprints[player_id])
+	var active_indices: Dictionary = Dictionary(active_roster_indices.get(player_id, {}))
+	if training_entry_service != null:
+		return training_entry_service.first_legal_hero_entry(roster, active_indices, Callable(self, "_training_sortie_entry_is_legal_for_service").bind(player_id))
+	return _legacy_first_training_hero_entry(player_id, roster, active_indices)
+
+
+func _training_sortie_entry_is_legal_for_service(entry: Dictionary, player_id: int) -> bool:
+	return _sortie_entry_is_battle_legal(player_id, entry, false)
+
+
+func _legacy_first_training_hero_entry(player_id: int, roster: Dictionary, active_indices: Dictionary) -> Dictionary:
+	var hero_roster: Array = Array(roster.get("hero", []))
 	if hero_roster.is_empty():
 		return {}
-	var active_index := clampi(int(active_roster_indices.get(player_id, {}).get("hero", 0)), 0, hero_roster.size() - 1)
+	var active_index := clampi(int(active_indices.get("hero", 0)), 0, hero_roster.size() - 1)
 	var ordered_indices: Array = [active_index]
 	for i in range(hero_roster.size()):
 		if not ordered_indices.has(i):
@@ -16988,12 +16504,14 @@ func _prepare_training_battle_loadouts(require_dummy: bool = true) -> bool:
 	var hero_entry := _first_training_hero_entry(1)
 	if hero_entry.is_empty():
 		var starter := _ai_starter_unit("P1 Training Starter")
-		var starter_roster := _blank_player_roster()
-		starter_roster["hero"] = [starter]
-		training_test_roster_cache = starter_roster.duplicate(true)
-		training_test_loadout_cache = [{"role": "hero", "index": 0}]
-		training_test_initial_slot_cache = 0
-		training_test_initial_role_cache = "hero"
+		var starter_state := training_entry_service.starter_loadout(starter) if training_entry_service != null else _legacy_training_starter_loadout(starter)
+		if not bool(starter_state.get("ok", false)):
+			training_import_error_note = "INVALID: training starter could not be prepared."
+			return false
+		training_test_roster_cache = Dictionary(starter_state.get("roster", {})).duplicate(true)
+		training_test_loadout_cache = Array(starter_state.get("loadout", [])).duplicate(true)
+		training_test_initial_slot_cache = int(starter_state.get("initial_slot", 0))
+		training_test_initial_role_cache = String(starter_state.get("initial_role", "hero"))
 		if require_dummy and not _configure_training_sides_for_seat():
 			return false
 		hero_entry = {"role": "hero", "index": 0}
@@ -17007,6 +16525,20 @@ func _prepare_training_battle_loadouts(require_dummy: bool = true) -> bool:
 	elif require_dummy and not _configure_training_sides_for_seat():
 		return false
 	return true
+
+
+func _legacy_training_starter_loadout(starter: Dictionary) -> Dictionary:
+	if starter.is_empty():
+		return {"ok": false}
+	var starter_roster := _blank_player_roster()
+	starter_roster["hero"] = [starter.duplicate(true)]
+	return {
+		"ok": true,
+		"roster": starter_roster,
+		"loadout": [{"role": "hero", "index": 0}],
+		"initial_slot": 0,
+		"initial_role": "hero",
+	}
 
 
 func _start_battle(mode: String, preloaded: bool = false) -> void:
@@ -17098,6 +16630,7 @@ func _begin_battle(mode: String, preloaded: bool = false, reason: String = "") -
 	aim_locked_targets = {1: null, 2: null}
 	aim_locked_directions = {1: Vector2.ZERO, 2: Vector2.ZERO}
 	gun_activation_state = {1: {}, 2: {}}
+	held_melee_activation_state = {1: {}, 2: {}}
 	salvo_landing_preview_effects.clear()
 	_apply_ai_side_roster_mapping(mode)
 	_initialize_sortie_price_state()
@@ -18143,7 +17676,7 @@ func _try_begin_battle_from_scout() -> void:
 			scout_hint_label.text = "训练入场失败：%s" % _localized_system_text(training_import_error_note) if _ui_is_zh() else "Training entry failed: %s" % training_import_error_note
 			_update_scout_ui()
 			return
-		_begin_battle(pending_battle_mode)
+		_begin_battle(pending_battle_mode, true)
 		return
 	_normalize_initial_sortie_for_cost(1)
 	_normalize_initial_sortie_for_cost(2)
@@ -18182,15 +17715,7 @@ func _handle_editor_input() -> void:
 			if _tryout_editor_bound_module(attack_key):
 				return
 	if Input.is_action_just_pressed("editor_next_unit"):
-		var player_id := _editor_player()
-		var role_key_for_next: String = ROLE_ORDER[editor_role_index]
-		if Array(blueprints[player_id].get(role_key_for_next, [])).is_empty():
-			_reset_editor_working_canvas(role_key_for_next)
-			_update_editor_ui()
-			return
-		editor_unit_indices[role_key_for_next] = _wrapped_index(int(editor_unit_indices[role_key_for_next]) + 1, blueprints[player_id][role_key_for_next].size())
-		active_roster_indices[player_id][role_key_for_next] = int(editor_unit_indices[role_key_for_next])
-		_update_editor_ui()
+		_select_adjacent_editor_unit_page(1)
 		return
 	if Input.is_action_just_pressed("editor_add_unit"):
 		_add_roster_unit()
@@ -18203,15 +17728,18 @@ func _handle_editor_input() -> void:
 		return
 	if Input.is_action_just_pressed("editor_next_role"):
 		editor_role_index = _wrapped_index(editor_role_index + 1, ROLE_ORDER.size())
+		editor_roster_page = 0
+		_reset_editor_unit_page_transient_state(false)
+		_apply_editor_role_catalog_defaults(ROLE_ORDER[editor_role_index])
 		_update_editor_ui()
 	if Input.is_action_just_pressed("p1_up"):
 		editor_slot_index = _wrapped_index(editor_slot_index - 1, BUILD_SLOTS.size())
-		editor_part_group_mode = _part_group_for_slot(String(BUILD_SLOTS[editor_slot_index]))
+		_apply_editor_slot_catalog_defaults(ROLE_ORDER[editor_role_index], _editor_current_blueprint(), String(BUILD_SLOTS[editor_slot_index]))
 		editor_catalog_page = 0
 		_update_editor_ui()
 	elif Input.is_action_just_pressed("p1_down"):
 		editor_slot_index = _wrapped_index(editor_slot_index + 1, BUILD_SLOTS.size())
-		editor_part_group_mode = _part_group_for_slot(String(BUILD_SLOTS[editor_slot_index]))
+		_apply_editor_slot_catalog_defaults(ROLE_ORDER[editor_role_index], _editor_current_blueprint(), String(BUILD_SLOTS[editor_slot_index]))
 		editor_catalog_page = 0
 		_update_editor_ui()
 	if Input.is_action_just_pressed("p1_left"):
@@ -18533,6 +18061,15 @@ func _cycle_component(direction: int) -> void:
 		var frame_button: Button = editor_archetype_buttons[archetype_key]
 		frame_button.modulate = Color(0.32, 0.95, 1.0, 1.0) if archetype_key == current_archetype and _role_uses_body_board(role_key) else Color(0.86, 0.9, 0.94, 1.0)
 		frame_button.disabled = not _role_uses_body_board(role_key)
+	if role_key == "barrier" and _barrier_uses_screen_board(unit_bp) and _is_topology_part_slot(slot_key):
+		var next_index := _wrapped_index(int(unit_bp.get(slot_key, 0)) + direction, catalog.size())
+		unit_bp[slot_key] = next_index
+		_set_pending_canvas_part(unit_bp, slot_key, next_index)
+		editor_board_hint_label.text = "已选择：%s。点击结界屏幕格放置/替换。" % _pending_canvas_part_name(role_key) if _ui_is_zh() else "Selected: %s. Click a barrier screen cell to place/replace." % _pending_canvas_part_name(role_key)
+		_play_sfx_wave("clack", 640.0, 0.04, -18.0)
+		ai_team_manual_lock[player_id] = true
+		_mark_editor_board_interaction_dirty("shop.pending_barrier_part", false)
+		return
 	if _role_uses_body_board(role_key) and unit_bp.has("custom_topology") and _is_body_group_slot(slot_key):
 		if _is_topology_part_slot(slot_key):
 			var next_index := _wrapped_index(int(unit_bp.get(slot_key, 0)) + direction, catalog.size())
@@ -18552,6 +18089,7 @@ func _cycle_component(direction: int) -> void:
 			nodes[editor_topology_node_index] = node
 			topology["nodes"] = nodes
 			unit_bp["custom_topology"] = topology
+			editor_selected_topology_nodes = [editor_topology_node_index]
 			_trigger_editor_snap("node", String(catalog[next_node_index].get("name", "")))
 			ai_team_manual_lock[player_id] = true
 			_update_editor_ui()
@@ -18570,6 +18108,14 @@ func _select_editor_body_part(part_key: String) -> void:
 
 func _role_uses_body_board(role_key: String) -> bool:
 	return role_key in ["hero", "puppet", "barrier"]
+
+
+func _barrier_uses_screen_board(unit_bp: Dictionary) -> bool:
+	var role_key := String(unit_bp.get("role", ""))
+	if role_key != "" and role_key != "barrier":
+		return false
+	var topology: Dictionary = unit_bp.get("custom_topology", {})
+	return Array(topology.get("nodes", [])).is_empty() and Array(topology.get("edges", [])).is_empty()
 
 
 func _is_body_group_slot(slot_key: String) -> bool:
@@ -19039,6 +18585,8 @@ func _module_binding_invalid_reason(unit_bp: Dictionary, payload_index: int, pay
 	var root_index := int(target_nodes[0])
 	if root_index < 0 or root_index >= nodes.size():
 		return "target part removed"
+	if String(module_part.get("module_action_profile", "")) == BOOT_ACTION_DRIVER_PROFILE or String(binding.get("target_kind", "")) == BOOT_ACTION_DRIVER_TARGET_KIND:
+		return _boot_driver_invalid_reason_for_nodes(role_key, unit_bp, nodes, Array(topology.get("edges", [])), target_nodes, module_part)
 	var test_unit: Dictionary = unit_bp.duplicate(true)
 	var test_topology: Dictionary = topology.duplicate(true)
 	var test_nodes: Array = nodes.duplicate(true)
@@ -19250,7 +18798,7 @@ func _torso_payload_entries(unit_bp: Dictionary, torso_node_index: int, group_ki
 		entries.append({
 			"payload_index": i,
 			"kind": payload_kind,
-			"name": _zh_part_name(String(part.get("name", payload_kind))) if _ui_is_zh() else String(part.get("name", payload_kind)),
+			"name": _part_display_name(part, payload_kind),
 			"line": line,
 			"color": style.get("color", Color(0.28, 0.92, 1.0, 1.0)),
 			"payload_size_label": _volume_rank_label(payload_rank),
@@ -19384,7 +18932,7 @@ func _engine_allocation_limb_motion_context(segment: Dictionary, module_part: Di
 
 
 func _engine_allocation_limb_duration_label(module_part: Dictionary, min_momentum: float, max_momentum: float, duration_estimate: float) -> String:
-	var module_name := _short_part_name(_zh_part_name(String(module_part.get("name", "行动模块"))) if _ui_is_zh() else String(module_part.get("name", "ACTION")))
+	var module_name := _short_part_display_name(module_part, "ACTION")
 	var duration_text := "时长 --" if _ui_is_zh() else "DUR --"
 	if duration_estimate > 0.0:
 		duration_text = ("时长 %.2fs" if _ui_is_zh() else "DUR %.2fs") % duration_estimate
@@ -19459,7 +19007,7 @@ func _engine_allocation_entry_with_heat(entry: Dictionary, momentum: float, cool
 
 func _engine_allocation_engine_heat_entry(engine_part: Dictionary, engine_heat_load: float, cooling_pool: float) -> Dictionary:
 	var heat_load := maxf(0.0, engine_heat_load)
-	var engine_label := _short_part_name(_zh_part_name(String(engine_part.get("name", "引擎"))) if _ui_is_zh() else String(engine_part.get("name", "ENGINE")))
+	var engine_label := _short_part_display_name(engine_part, "ENGINE")
 	return {
 		"id": "engine_heat",
 		"kind": "engine_heat",
@@ -19578,7 +19126,7 @@ func _engine_momentum_allocation_data(unit_bp: Dictionary, torso_node_index: int
 		var boost_peak_ratio := boost_peak / maxf(1.0, pool) if pool > 0.0 else 0.0
 		var booster_heat_coeff := _thruster_idle_heat_coeff_for_part(booster_part)
 		var boost_heat_cost := maxf(0.0, float(_thruster_with_drive_defaults(booster_part).get("boost_heat", 0.0)))
-		var booster_label := _short_part_name(_zh_part_name(String(booster_part.get("name", "推进"))) if _ui_is_zh() else String(booster_part.get("name", "BOOSTER")))
+		var booster_label := _short_part_display_name(booster_part, "BOOSTER")
 		entries.append({
 			"id": "booster_drive:%d" % i,
 			"kind": "booster_drive",
@@ -19656,7 +19204,7 @@ func _engine_momentum_allocation_data(unit_bp: Dictionary, torso_node_index: int
 				"binding_index": binding_index,
 				"target_nodes": group_nodes.duplicate(true),
 				"root_index": int(binding.get("root_index", group_nodes[0])),
-				"label": _short_part_name(_zh_part_name(String(module_part.get("name", "行动模块"))) if _ui_is_zh() else String(module_part.get("name", "ACTION"))),
+				"label": _short_part_display_name(module_part, "ACTION"),
 			})
 		for raw_node in Array(binding.get("target_nodes", [])):
 			var node_index := int(raw_node)
@@ -19885,7 +19433,7 @@ func _show_editor_topology_node_detail(node_index: int, source: String = "board"
 	var module_names: Array = []
 	for module_part in _module_parts_for_topology_node(role_key, node, unit_bp):
 		if module_part is Dictionary:
-			module_names.append(_short_part_name(_zh_part_name(String(Dictionary(module_part).get("name", ""))) if _ui_is_zh() else String(Dictionary(module_part).get("name", ""))))
+			module_names.append(_short_part_display_name(Dictionary(module_part)))
 	if not module_names.is_empty():
 		var module_names_text := ", ".join(module_names)
 		context["bound_action_note"] = ("该节点携带行动模块：%s。" if _ui_is_zh() else "This node carries action module(s): %s.") % module_names_text
@@ -20404,6 +19952,8 @@ func _editor_topology_light_signature(topology: Dictionary) -> String:
 func _editor_board_snapshot_cache_key(role_key: String, unit_bp: Dictionary) -> String:
 	if not _role_uses_body_board(role_key) or not unit_bp.has("custom_topology"):
 		return ""
+	if role_key == "barrier" and _barrier_uses_screen_board(unit_bp):
+		return ""
 	var topology: Dictionary = unit_bp.get("custom_topology", {})
 	var nodes: Array = Array(topology.get("nodes", []))
 	var edges: Array = Array(topology.get("edges", []))
@@ -20799,6 +20349,9 @@ func _refresh_editor_visual_views_fast_drag(changed_nodes: Array = [], component
 		return
 	var role_key: String = ROLE_ORDER[editor_role_index]
 	var unit_bp: Dictionary = _editor_current_blueprint()
+	if role_key == "barrier" and _barrier_uses_screen_board(unit_bp):
+		_refresh_editor_visual_views({}, false)
+		return
 	if not _role_uses_body_board(role_key) or not unit_bp.has("custom_topology") or editor_board_base_snapshot_cache.is_empty():
 		_refresh_editor_visual_views({}, false)
 		return
@@ -22264,7 +21817,7 @@ func _topology_component_label(slot_key: String, part: Dictionary, node_index: i
 		prefix = "L"
 	elif slot_key == "joint":
 		prefix = "OLD"
-	var name := _short_part_name(String(part.get("name", slot_key.to_upper())))
+	var name := _short_part_display_name(part, slot_key.to_upper())
 	return "%s%02d %s" % [prefix, node_index + 1, name]
 
 
@@ -22293,7 +21846,7 @@ func _build_placement_template(slot_key: String, part_index: int, part: Dictiona
 		return {}
 	var effective_part := _part_with_effective_terminal_geometry(part, slot_key)
 	var component_node := AssemblyBoardRenderer.part_to_component_node(slot_key, effective_part)
-	var short_name := _short_part_name(String(part.get("name", slot_key.to_upper())))
+	var short_name := _short_part_display_name(part, slot_key.to_upper())
 	var node_base := component_node.duplicate(true)
 	node_base["slot"] = slot_key
 	node_base["part_index"] = part_index
@@ -22432,7 +21985,7 @@ func _pending_canvas_part_name(role_key: String) -> String:
 	if not _has_pending_canvas_part():
 		return ""
 	var part := _selected_component(role_key, editor_pending_place_slot, editor_pending_place_index)
-	return "%s %s" % [_slot_name(editor_pending_place_slot), _short_part_name(String(part.get("name", "")))]
+	return "%s %s" % [_slot_name(editor_pending_place_slot), _short_part_display_name(part)]
 
 
 func _topology_node_is_orthogonal_side_mount_terminal(role_key: String, unit_bp: Dictionary, node: Dictionary) -> bool:
@@ -22617,7 +22170,8 @@ func _flip_selected_topology_node_visual_handedness() -> bool:
 
 func _refresh_editor_orientation_buttons() -> void:
 	var unit_bp: Dictionary = _editor_current_blueprint()
-	var custom_board_enabled := _role_uses_body_board(ROLE_ORDER[editor_role_index]) and unit_bp.has("custom_topology")
+	var role_key: String = ROLE_ORDER[editor_role_index]
+	var custom_board_enabled := _role_uses_body_board(role_key) and unit_bp.has("custom_topology") and not (role_key == "barrier" and _barrier_uses_screen_board(unit_bp))
 	var orientation_choice_active := custom_board_enabled and _orientation_choice_is_active(unit_bp)
 	var selected_handedness_active := custom_board_enabled and _selected_node_supports_visual_handedness(unit_bp)
 	for action_name in ["set_handedness_left", "set_handedness_right", "flip_handedness"]:
@@ -22633,9 +22187,9 @@ func _refresh_editor_orientation_buttons() -> void:
 		_set_button_disabled_if_changed(action_button, not show_orientation_action)
 		var x_pos := 776.0
 		if action_name == "set_handedness_right":
-			x_pos = 870.0
+			x_pos = 846.0
 		_set_control_position_if_changed(action_button, Vector2(x_pos, 688.0))
-		_set_control_size_if_changed(action_button, Vector2(90.0, 24.0))
+		_set_control_size_if_changed(action_button, Vector2(66.0, 24.0))
 		if action_name == "set_handedness_left":
 			_set_control_text_if_changed(action_button, "左挂刃" if _ui_is_zh() else "LEFT")
 		elif action_name == "set_handedness_right":
@@ -22893,32 +22447,23 @@ func _drop_catalog_part_on_board(slot_key: String, part_index: int, local_positi
 		if hot_path_profiler != null:
 			hot_path_profiler.scope_end("drop.place_node")
 		return
-	if role_key == "barrier" and not unit_bp.has("custom_topology") and _is_topology_part_slot(slot_key):
-		_record_editor_undo_state("放置结界构件" if _ui_is_zh() else "place barrier part")
-		unit_bp["blank_canvas"] = false
-		var cell_index := _barrier_board_cell_index(local_position)
-		if cell_index >= 0:
-			var tiles: Array = Array(unit_bp.get("barrier_tiles", [])).duplicate(true)
-			var tile := {"index": cell_index}
-			if slot_key == "joint":
-				tile["joint"] = part_index
-			else:
-				tile["muscle"] = part_index
-			var replaced := false
-			for i in range(tiles.size()):
-				if int(Dictionary(tiles[i]).get("index", -1)) == cell_index:
-					tiles[i] = tile
-					replaced = true
-					break
-			if not replaced:
-				tiles.append(tile)
-			unit_bp["barrier_tiles"] = tiles
-			_trigger_editor_snap("barrier", String(part.get("name", "")))
-		else:
+	if role_key == "barrier" and _barrier_uses_screen_board(unit_bp) and _is_topology_part_slot(slot_key):
+		if not bool(part.get("barrier_tile_component", false)) and not bool(part.get("barrier_panel", false)) and String(part.get("barrier_logic", "")) == "":
+			if hot_path_profiler != null:
+				hot_path_profiler.scope_end("drop.place_node")
+			return
+		var screen_pos := _barrier_board_screen_pos(local_position)
+		if screen_pos.x >= 0.0 and _place_barrier_screen_tile(unit_bp, screen_pos, slot_key, part_index, "放置结界构件" if _ui_is_zh() else "place barrier part"):
+			if hot_path_profiler != null:
+				hot_path_profiler.scope_end("drop.place_node")
+			return
+		if screen_pos.x < 0.0:
+			_record_editor_undo_state("选择结界构件" if _ui_is_zh() else "select barrier part")
 			unit_bp[slot_key] = part_index
+			_set_pending_canvas_part(unit_bp, slot_key, part_index)
 			_trigger_editor_snap(slot_key, String(part.get("name", "")))
-		ai_team_manual_lock[player_id] = true
-		_mark_editor_board_model_dirty("drop.barrier")
+			ai_team_manual_lock[player_id] = true
+			_mark_editor_board_model_dirty("drop.barrier")
 		if hot_path_profiler != null:
 			hot_path_profiler.scope_end("drop.place_node")
 		return
@@ -23002,113 +22547,176 @@ func _drop_catalog_part_on_board(slot_key: String, part_index: int, local_positi
 
 
 func _handle_editor_board_input(event: InputEvent) -> void:
+	if event is InputEventMouseButton:
+		editor_last_board_mouse_position = (event as InputEventMouseButton).position
+	elif event is InputEventMouseMotion:
+		editor_last_board_mouse_position = (event as InputEventMouseMotion).position
 	var player_id := _editor_player()
 	var role_key: String = ROLE_ORDER[editor_role_index]
 	var unit_bp: Dictionary = _editor_current_blueprint()
+	if unit_editor_board_controller == null:
+		if not editor_board_controller_missing_warned:
+			push_warning("UnitEditorBoardController missing; editor board input ignored.")
+			editor_board_controller_missing_warned = true
+		return
+	var context := _editor_board_input_context(role_key, unit_bp)
+	var route: Dictionary = unit_editor_board_controller.route_board_input_event(event, context)
+	_dispatch_editor_board_input_route(route, event, unit_bp, role_key, player_id)
+
+
+func _editor_board_input_context(role_key: String, unit_bp: Dictionary) -> Dictionary:
+	var has_custom_topology := unit_bp.has("custom_topology")
+	var topology: Dictionary = unit_bp.get("custom_topology", {})
+	var nodes: Array = Array(topology.get("nodes", []))
+	var edges: Array = Array(topology.get("edges", []))
+	var is_barrier_screen_board := role_key == "barrier" and _barrier_uses_screen_board(unit_bp)
+	if is_barrier_screen_board:
+		nodes = []
+		edges = []
+	var dragged_node_is_torso := false
+	if editor_dragging_node_index >= 0 and editor_dragging_node_index < nodes.size() and nodes[editor_dragging_node_index] is Dictionary:
+		dragged_node_is_torso = _topology_node_is_torso(role_key, nodes[editor_dragging_node_index], unit_bp)
+	return {
+		"role_uses_body_board": _role_uses_body_board(role_key),
+		"has_custom_topology": has_custom_topology and not is_barrier_screen_board,
+		"is_barrier_without_topology": is_barrier_screen_board,
+		"pose_dragging": editor_pose_dragging,
+		"selecting_topology_box": editor_selecting_topology_box,
+		"dragging_node_index": editor_dragging_node_index,
+		"dragging_selected_nodes": editor_dragging_selected_nodes,
+		"dragging_whole_unit": editor_dragging_whole_unit,
+		"node_click_candidate_index": editor_node_click_candidate_index,
+		"node_click_moved": editor_node_click_moved,
+		"node_click_start_position": editor_node_click_start_position,
+		"selected_topology_nodes": editor_selected_topology_nodes.duplicate(),
+		"dragged_node_edge_count": _topology_node_edge_count(edges, editor_dragging_node_index),
+		"dragged_node_is_torso": dragged_node_is_torso,
+		"topology_node_count": nodes.size(),
+	}
+
+
+func _dispatch_editor_board_input_route(route: Dictionary, event: InputEvent, unit_bp: Dictionary, role_key: String, player_id: int) -> void:
+	var action := String(route.get("action", "none"))
+	if action == "none":
+		return
 	if event is InputEventMouseMotion:
 		var motion_event := event as InputEventMouseMotion
-		if editor_pose_dragging and _role_uses_body_board(role_key) and unit_bp.has("custom_topology"):
-			_update_editor_pose_drag(unit_bp, motion_event.position)
-		elif editor_selecting_topology_box and _role_uses_body_board(role_key) and unit_bp.has("custom_topology"):
-			editor_selection_box_current = motion_event.position
-			_refresh_editor_visual_views_fast_drag()
-		elif editor_dragging_node_index >= 0 and _role_uses_body_board(role_key) and unit_bp.has("custom_topology"):
-			if motion_event.position.distance_to(editor_node_click_start_position) > 6.0:
-				editor_node_click_moved = true
-			if editor_dragging_selected_nodes:
+		match action:
+			"update_pose_drag":
+				_update_editor_pose_drag(unit_bp, motion_event.position)
+			"update_selection_box":
+				editor_selection_box_current = motion_event.position
+				_refresh_editor_visual_views_fast_drag()
+			"move_selected_nodes":
+				if motion_event.position.distance_to(editor_node_click_start_position) > 6.0:
+					editor_node_click_moved = true
 				_move_selected_topology_nodes_by_delta(unit_bp, motion_event.position - editor_group_drag_start)
-			else:
+			"move_single_node":
+				if motion_event.position.distance_to(editor_node_click_start_position) > 6.0:
+					editor_node_click_moved = true
 				_move_custom_node_to(unit_bp, editor_dragging_node_index, motion_event.position)
-		elif editor_dragging_whole_unit and _role_uses_body_board(role_key) and unit_bp.has("custom_topology"):
-			if motion_event.position.distance_to(editor_node_click_start_position) > 6.0:
-				editor_node_click_moved = true
-			_move_custom_topology_by_delta(unit_bp, motion_event.position - editor_drag_whole_start)
-		else:
-			_update_editor_board_torso_hover(motion_event.position)
+			"move_whole_unit":
+				if motion_event.position.distance_to(editor_node_click_start_position) > 6.0:
+					editor_node_click_moved = true
+				_move_custom_topology_by_delta(unit_bp, motion_event.position - editor_drag_whole_start)
+			"torso_hover":
+				_update_editor_board_torso_hover(motion_event.position)
 		return
 	if not (event is InputEventMouseButton):
 		return
 	var mouse_event := event as InputEventMouseButton
-	if mouse_event.pressed and (mouse_event.button_index == MOUSE_BUTTON_WHEEL_UP or mouse_event.button_index == MOUSE_BUTTON_WHEEL_DOWN):
-		_handle_editor_board_zoom_wheel(mouse_event)
-		return
-	if not mouse_event.pressed:
-		if mouse_event.button_index == MOUSE_BUTTON_LEFT and editor_pose_dragging:
+	match action:
+		"zoom_wheel":
+			_handle_editor_board_zoom_wheel(mouse_event)
+		"finish_pose_drag":
 			_finish_editor_pose_drag(unit_bp)
-			return
-		if mouse_event.button_index == MOUSE_BUTTON_LEFT and editor_selecting_topology_box:
+		"finish_selection_box":
 			_finish_topology_selection_box(unit_bp, mouse_event.position)
-			return
-		if mouse_event.button_index == MOUSE_BUTTON_LEFT and editor_dragging_node_index >= 0:
-			var was_group_dragging := editor_dragging_selected_nodes
-			var released_node_index := editor_dragging_node_index
-			var released_group_nodes := editor_selected_topology_nodes.duplicate()
-			var released_is_torso := false
-			if unit_bp.has("custom_topology"):
-				var release_nodes: Array = Array(Dictionary(unit_bp.get("custom_topology", {})).get("nodes", []))
-				if released_node_index >= 0 and released_node_index < release_nodes.size() and release_nodes[released_node_index] is Dictionary:
-					released_is_torso = _topology_node_is_torso(role_key, release_nodes[released_node_index], unit_bp)
-			var show_detail_after_release := editor_node_click_candidate_index == released_node_index and not released_is_torso and not editor_node_click_moved and mouse_event.position.distance_to(editor_node_click_start_position) <= 6.0
-			if not was_group_dragging and _topology_node_edge_count(Array(Dictionary(unit_bp.get("custom_topology", {})).get("edges", [])), editor_dragging_node_index) <= 0:
-				_try_magnetic_link_for_node(unit_bp, editor_dragging_node_index)
-			editor_dragging_selected_nodes = false
-			editor_dragging_node_index = -1
-			editor_node_click_candidate_index = -1
-			editor_node_click_moved = false
-			editor_group_drag_original_positions = []
-			if was_group_dragging:
-				_finish_rigid_topology_drag(
-					unit_bp,
-					"连接岛已刚性平移；接口保持零余量贴合。" if _ui_is_zh() else "Connected island moved rigidly; sockets remain flush with zero gap.",
-					"已修正拖拽后的接口缝隙；连接重新贴合。" if _ui_is_zh() else "Repaired socket gaps after drag; links are flush again.",
-					true,
-					released_group_nodes
-				)
-			else:
-				_refresh_editor_visual_views_fast_drag([released_node_index])
-				_schedule_editor_stats_idle_refresh("drag.node_release")
-				mark_editor_dirty(EDITOR_DIRTY_ACTION_BUTTONS, "drag.node_release")
-				flush_editor_dirty(600)
-			_clear_cached_board_socket_candidate()
-			if show_detail_after_release:
-				_show_editor_topology_node_detail(released_node_index, "board", {"position": _editor_board_popup_position(mouse_event.position)})
-		elif mouse_event.button_index == MOUSE_BUTTON_LEFT and editor_dragging_whole_unit:
-			var whole_changed_nodes: Array = []
-			var whole_topology: Dictionary = unit_bp.get("custom_topology", {})
-			var whole_nodes: Array = whole_topology.get("nodes", [])
-			for i in range(whole_nodes.size()):
-				whole_changed_nodes.append(i)
-			editor_dragging_whole_unit = false
-			editor_node_click_candidate_index = -1
-			editor_node_click_moved = false
-			editor_drag_whole_original_positions = []
-			_finish_rigid_topology_drag(
-				unit_bp,
-				"整机/结界画布已刚性平移；连接保持零余量贴合。" if _ui_is_zh() else "Whole unit/barrier canvas moved rigidly; links remain flush with zero gap.",
-				"已修正整机平移后的接口缝隙；连接重新贴合。" if _ui_is_zh() else "Repaired socket gaps after whole-unit drag; links are flush again.",
-				true,
-				whole_changed_nodes
-			)
-		return
-	if role_key == "barrier" and not unit_bp.has("custom_topology"):
-		_handle_barrier_board_click(mouse_event, unit_bp)
-		ai_team_manual_lock[player_id] = true
-		return
-	if _role_uses_body_board(role_key):
-		if unit_bp.has("custom_topology"):
+		"finish_node_drag":
+			_finish_editor_node_drag_release(unit_bp, role_key, mouse_event)
+		"finish_whole_drag":
+			_finish_editor_whole_unit_drag_release(unit_bp)
+		"barrier_board_click":
+			_handle_barrier_board_click(mouse_event, unit_bp)
+			ai_team_manual_lock[player_id] = true
+		"custom_topology_click":
 			_handle_custom_topology_click(mouse_event, unit_bp)
-		else:
-			var part_key := _board_part_at(mouse_event.position)
-			if part_key != "":
-				editor_selected_body_part = part_key
-				editor_snap_timer = 0.18
-				editor_snap_part = part_key
-				editor_board_hint_label.text = "已选择插口：%s" % _body_part_label(part_key, unit_bp) if _ui_is_zh() else "Selected socket: %s" % _body_part_label(part_key, unit_bp)
-				ai_team_manual_lock[player_id] = true
-				_mark_editor_board_overlay_dirty("board.legacy_socket_select")
+		"legacy_body_socket_click":
+			_handle_legacy_body_socket_click(mouse_event, unit_bp, player_id)
+
+
+func _finish_editor_node_drag_release(unit_bp: Dictionary, role_key: String, mouse_event: InputEventMouseButton) -> void:
+	var release_context := _editor_board_input_context(role_key, unit_bp)
+	release_context["release_distance_from_click_start"] = mouse_event.position.distance_to(editor_node_click_start_position)
+	var intent: Dictionary = unit_editor_board_controller.node_drag_release_intent(release_context) if unit_editor_board_controller != null else {
+		"released_node_index": editor_dragging_node_index,
+		"released_group_nodes": editor_selected_topology_nodes.duplicate(),
+		"was_group_dragging": editor_dragging_selected_nodes,
+		"should_try_magnetic_link": _topology_node_edge_count(Array(Dictionary(unit_bp.get("custom_topology", {})).get("edges", [])), editor_dragging_node_index) <= 0,
+		"show_detail_after_release": editor_node_click_candidate_index == editor_dragging_node_index and not bool(release_context.get("dragged_node_is_torso", false)) and not editor_node_click_moved and mouse_event.position.distance_to(editor_node_click_start_position) <= 6.0,
+	}
+	var was_group_dragging := bool(intent.get("was_group_dragging", false))
+	var released_node_index := int(intent.get("released_node_index", -1))
+	var released_group_nodes: Array = Array(intent.get("released_group_nodes", [])).duplicate()
+	var show_detail_after_release := bool(intent.get("show_detail_after_release", false))
+	if bool(intent.get("should_try_magnetic_link", false)):
+		_try_magnetic_link_for_node(unit_bp, released_node_index)
+	editor_dragging_selected_nodes = false
+	editor_dragging_node_index = -1
+	editor_node_click_candidate_index = -1
+	editor_node_click_moved = false
+	editor_group_drag_original_positions = []
+	if was_group_dragging:
+		_finish_rigid_topology_drag(
+			unit_bp,
+			"连接岛已刚性平移；接口保持零余量贴合。" if _ui_is_zh() else "Connected island moved rigidly; sockets remain flush with zero gap.",
+			"已修正拖拽后的接口缝隙；连接重新贴合。" if _ui_is_zh() else "Repaired socket gaps after drag; links are flush again.",
+			true,
+			released_group_nodes
+		)
+	else:
+		_refresh_editor_visual_views_fast_drag([released_node_index])
+		_schedule_editor_stats_idle_refresh("drag.node_release")
+		mark_editor_dirty(EDITOR_DIRTY_ACTION_BUTTONS, "drag.node_release")
+		flush_editor_dirty(600)
+	_clear_cached_board_socket_candidate()
+	if show_detail_after_release:
+		_show_editor_topology_node_detail(released_node_index, "board", {"position": _editor_board_popup_position(mouse_event.position)})
+
+
+func _finish_editor_whole_unit_drag_release(unit_bp: Dictionary) -> void:
+	var role_key: String = ROLE_ORDER[editor_role_index]
+	var release_context := _editor_board_input_context(role_key, unit_bp)
+	var intent: Dictionary = unit_editor_board_controller.whole_drag_release_intent(release_context) if unit_editor_board_controller != null else {"changed_nodes": []}
+	var whole_changed_nodes: Array = Array(intent.get("changed_nodes", [])).duplicate()
+	editor_dragging_whole_unit = false
+	editor_node_click_candidate_index = -1
+	editor_node_click_moved = false
+	editor_drag_whole_original_positions = []
+	_finish_rigid_topology_drag(
+		unit_bp,
+		"整机/结界画布已刚性平移；连接保持零余量贴合。" if _ui_is_zh() else "Whole unit/barrier canvas moved rigidly; links remain flush with zero gap.",
+		"已修正整机平移后的接口缝隙；连接重新贴合。" if _ui_is_zh() else "Repaired socket gaps after whole-unit drag; links are flush again.",
+		true,
+		whole_changed_nodes
+	)
+
+
+func _handle_legacy_body_socket_click(mouse_event: InputEventMouseButton, unit_bp: Dictionary, player_id: int) -> void:
+	var part_key := _board_part_at(mouse_event.position)
+	if part_key == "":
+		return
+	editor_selected_body_part = part_key
+	editor_snap_timer = 0.18
+	editor_snap_part = part_key
+	editor_board_hint_label.text = "已选择插口：%s" % _body_part_label(part_key, unit_bp) if _ui_is_zh() else "Selected socket: %s" % _body_part_label(part_key, unit_bp)
+	ai_team_manual_lock[player_id] = true
+	_mark_editor_board_overlay_dirty("board.legacy_socket_select")
 
 
 func _editor_board_zoom_input_allowed() -> bool:
+	if unit_editor_board_controller != null:
+		return unit_editor_board_controller.zoom_input_allowed(_editor_board_input_context(ROLE_ORDER[editor_role_index], _editor_current_blueprint()))
 	return not editor_selecting_topology_box and editor_dragging_node_index < 0 and not editor_dragging_whole_unit and not editor_pose_dragging
 
 
@@ -23187,6 +22795,22 @@ func _set_editor_board_zoom(next_zoom: float, anchor_position = null) -> void:
 	_close_engine_momentum_allocation_panel()
 	var board_size := _topology_board_size()
 	var anchor: Vector2 = anchor_position if anchor_position is Vector2 else board_size * 0.5
+	var role_key: String = ROLE_ORDER[editor_role_index]
+	var unit_bp: Dictionary = _editor_current_blueprint()
+	if role_key == "barrier" and _barrier_uses_screen_board(unit_bp):
+		var before_rect := _barrier_editor_rect_for_size(board_size)
+		var normalized_anchor := Vector2(0.5, 0.5)
+		if before_rect.size.x > 1.0 and before_rect.size.y > 1.0:
+			normalized_anchor = Vector2(
+				clampf((anchor.x - before_rect.position.x) / before_rect.size.x, 0.0, 1.0),
+				clampf((anchor.y - before_rect.position.y) / before_rect.size.y, 0.0, 1.0)
+			)
+		editor_board_zoom = clampf(next_zoom, EDITOR_BOARD_ZOOM_MIN, EDITOR_BOARD_ZOOM_MAX)
+		var after_rect := _barrier_editor_rect_for_size(board_size)
+		editor_board_view_offset += anchor - (after_rect.position + normalized_anchor * after_rect.size)
+		_refresh_editor_board_zoom_ui()
+		_refresh_editor_visual_views()
+		return
 	var topology_under_anchor := _board_position_to_topology(anchor)
 	editor_board_zoom = clampf(next_zoom, EDITOR_BOARD_ZOOM_MIN, EDITOR_BOARD_ZOOM_MAX)
 	var new_scale := _topology_board_uniform_scale()
@@ -23263,147 +22887,183 @@ func _handle_custom_topology_click(mouse_event: InputEventMouseButton, unit_bp: 
 	var role_key: String = ROLE_ORDER[editor_role_index]
 	var topology: Dictionary = unit_bp["custom_topology"]
 	var nodes: Array = topology.get("nodes", [])
-	if not editor_pending_module_binding.is_empty():
-		if mouse_event.button_index == MOUSE_BUTTON_RIGHT:
-			_cancel_editor_module_binding(true)
-			if hot_path_profiler != null:
-				hot_path_profiler.scope_end("board_click")
-			return
-		if mouse_event.button_index == MOUSE_BUTTON_LEFT:
-			var nearest_for_binding := _nearest_custom_node_index(role_key, unit_bp, nodes, mouse_event.position)
-			var candidate := _pending_module_binding_candidate_for_point(unit_bp, mouse_event.position)
-			if candidate.is_empty() and nearest_for_binding >= 0:
-				candidate = _pending_module_binding_candidate_for_node(unit_bp, nearest_for_binding)
-			if not candidate.is_empty():
-				if candidate.is_empty() or not bool(candidate.get("valid", false)):
-					var reason := String(candidate.get("reason", candidate.get("note", ""))) if not candidate.is_empty() else ("没有可绑定部位" if _ui_is_zh() else "No bindable target")
-					if editor_summary_label != null:
-						editor_summary_label.text = ("绑定目标非法：%s" if _ui_is_zh() else "Illegal binding target: %s") % reason
-					if editor_board_hint_label != null:
-						editor_board_hint_label.text = reason
-					_play_sfx_wave("alarm", 170.0, 0.08, -16.0)
-					_refresh_editor_visual_views()
-					if hot_path_profiler != null:
-						hot_path_profiler.scope_end("board_click")
-					return
-				_complete_pending_module_binding_with_selection(unit_bp, Array(candidate.get("selection", candidate.get("target_nodes", []))))
-				if hot_path_profiler != null:
-					hot_path_profiler.scope_end("board_click")
-				return
-			_start_topology_selection_box(unit_bp, mouse_event.position)
-			if hot_path_profiler != null:
-				hot_path_profiler.scope_end("board_click")
-			return
+	var edges: Array = topology.get("edges", [])
 	var nearest := _nearest_custom_node_index(role_key, unit_bp, nodes, mouse_event.position)
-	if mouse_event.button_index == MOUSE_BUTTON_RIGHT:
-		var edge_hit := _nearest_topology_edge_hit(unit_bp, mouse_event.position)
-		if not edge_hit.is_empty():
-			_unlink_topology_edge_at_index(unit_bp, int(edge_hit.get("edge_index", -1)))
-			if hot_path_profiler != null:
-				hot_path_profiler.scope_end("board_click")
-			return
-		var clicked_node := nearest if nearest >= 0 and nearest < nodes.size() else (editor_topology_node_index if editor_topology_node_index >= 0 and editor_topology_node_index < nodes.size() else -1)
-		if clicked_node >= 0:
-			_unlink_joint_edges(unit_bp, clicked_node)
-			if hot_path_profiler != null:
-				hot_path_profiler.scope_end("board_click")
-			return
-		if editor_board_hint_label != null:
-			editor_board_hint_label.text = "右键需要点在构件或连接边上才能解绑。" if _ui_is_zh() else "Right-click a component or link edge to unlink."
-		_play_sfx_wave("alarm", 170.0, 0.08, -16.0)
-		if hot_path_profiler != null:
-			hot_path_profiler.scope_end("board_click")
-		return
-	if _has_pending_canvas_part():
-		editor_dragging_node_index = _add_topology_node_at(mouse_event.position)
-		editor_dragging_selected_nodes = false
-		editor_dragging_whole_unit = false
-		editor_selected_topology_nodes = [editor_dragging_node_index] if editor_dragging_node_index >= 0 else []
-		if editor_dragging_node_index >= 0:
-			editor_node_click_candidate_index = -1
-			editor_node_click_start_position = mouse_event.position
-			editor_node_click_moved = false
-		_mark_editor_board_model_dirty("board.pending_place")
-		if hot_path_profiler != null:
-			hot_path_profiler.scope_end("board_click")
-		return
+	var edge_hit := _nearest_topology_edge_hit(unit_bp, mouse_event.position) if mouse_event.button_index == MOUSE_BUTTON_RIGHT and editor_pending_module_binding.is_empty() else {}
+	var clicked_node := nearest if nearest >= 0 and nearest < nodes.size() else (editor_topology_node_index if editor_topology_node_index >= 0 and editor_topology_node_index < nodes.size() else -1)
+	var nearest_is_torso := false
+	var dragging_selection := false
+	var nearest_unconnected_draggable := false
+	var nearest_edge_count := 0
+	var pose_candidate := {}
 	if nearest >= 0:
-		var nearest_is_torso := _topology_node_is_torso(role_key, nodes[nearest], unit_bp)
-		if mouse_event.button_index == MOUSE_BUTTON_LEFT and mouse_event.double_click and nearest_is_torso:
-			_open_editor_torso_detail_from_board_node(nearest)
-			if hot_path_profiler != null:
-				hot_path_profiler.scope_end("board_click")
+		nearest_is_torso = _topology_node_is_torso(role_key, nodes[nearest], unit_bp)
+		dragging_selection = editor_selected_topology_nodes.has(nearest) and editor_selected_topology_nodes.size() > 1
+		nearest_unconnected_draggable = _topology_node_is_unconnected_draggable_component(role_key, unit_bp, nodes, edges, nearest)
+		nearest_edge_count = _topology_node_edge_count(edges, nearest)
+		if editor_board_tool == "pose" and mouse_event.button_index == MOUSE_BUTTON_LEFT and not nearest_unconnected_draggable:
+			pose_candidate = _pose_drag_candidate_for_point(role_key, unit_bp, nodes, edges, mouse_event.position)
+	var binding_candidate := {}
+	if not editor_pending_module_binding.is_empty() and mouse_event.button_index == MOUSE_BUTTON_LEFT:
+		binding_candidate = _pending_module_binding_candidate_for_point(unit_bp, mouse_event.position)
+		if binding_candidate.is_empty() and nearest >= 0:
+			binding_candidate = _pending_module_binding_candidate_for_node(unit_bp, nearest)
+	var click_context := {
+		"button_index": mouse_event.button_index,
+		"double_click": mouse_event.double_click,
+		"pending_module_binding": not editor_pending_module_binding.is_empty(),
+		"binding_candidate_found": not binding_candidate.is_empty(),
+		"binding_candidate_valid": bool(binding_candidate.get("valid", false)),
+		"binding_selection": Array(binding_candidate.get("selection", binding_candidate.get("target_nodes", []))),
+		"has_pending_canvas_part": _has_pending_canvas_part(),
+		"board_tool": editor_board_tool,
+		"nearest_node_index": nearest,
+		"nearest_is_torso": nearest_is_torso,
+		"nearest_unconnected_draggable": nearest_unconnected_draggable,
+		"nearest_edge_count": nearest_edge_count,
+		"selected_topology_nodes": editor_selected_topology_nodes.duplicate(),
+		"dragging_selection": dragging_selection,
+		"selection_contains_torso": _topology_selection_contains_torso(role_key, unit_bp, nodes, editor_selected_topology_nodes) if dragging_selection else false,
+		"selection_connected_node": _topology_selection_has_connected_node(edges, editor_selected_topology_nodes) if dragging_selection else false,
+		"edge_hit_index": int(edge_hit.get("edge_index", -1)) if edge_hit is Dictionary else -1,
+		"right_clicked_node_index": clicked_node,
+		"pose_candidate_valid": not pose_candidate.is_empty() and bool(pose_candidate.get("valid", false)),
+		"pose_candidate_reason": String(pose_candidate.get("reason", "姿态编辑需要点击已连接肢体。" if _ui_is_zh() else "Pose edit needs a connected limb.")),
+		"pose_candidate_root_index": int(pose_candidate.get("root_index", -1)),
+		"pose_candidate_downstream_count": int(pose_candidate.get("downstream_count", 0)),
+		"has_nodes": not nodes.is_empty(),
+	}
+	var intent: Dictionary = unit_editor_board_controller.custom_topology_click_intent(click_context) if unit_editor_board_controller != null else {"action": "none"}
+	_apply_custom_topology_click_intent(intent, mouse_event, unit_bp, binding_candidate, nearest)
+
+
+func _apply_custom_topology_click_intent(intent: Dictionary, mouse_event: InputEventMouseButton, unit_bp: Dictionary, binding_candidate: Dictionary, nearest: int) -> void:
+	var action := String(intent.get("action", "none"))
+	if bool(intent.get("set_node_click_candidate", false)):
+		editor_node_click_candidate_index = int(intent.get("node_index", nearest))
+		editor_node_click_start_position = mouse_event.position
+		editor_node_click_moved = false
+	match action:
+		"binding_cancel":
+			_cancel_editor_module_binding(true)
+			_end_custom_topology_click_profiler()
 			return
-		if mouse_event.button_index == MOUSE_BUTTON_LEFT:
-			editor_node_click_candidate_index = nearest
-			editor_node_click_start_position = mouse_event.position
-			editor_node_click_moved = false
-		var dragging_selection := editor_selected_topology_nodes.has(nearest) and editor_selected_topology_nodes.size() > 1
-		if mouse_event.button_index == MOUSE_BUTTON_LEFT and (editor_board_tool == "pose" or not dragging_selection) and _topology_node_is_unconnected_draggable_component(role_key, unit_bp, nodes, topology.get("edges", []), nearest):
-			if _start_unconnected_topology_node_drag(unit_bp, nearest, mouse_event.position, "pose" if editor_board_tool == "pose" else "layout"):
-				if hot_path_profiler != null:
-					hot_path_profiler.scope_end("board_click")
+		"binding_invalid":
+			var reason := String(binding_candidate.get("reason", binding_candidate.get("note", ""))) if not binding_candidate.is_empty() else ("没有可绑定部位" if _ui_is_zh() else "No bindable target")
+			if editor_summary_label != null:
+				editor_summary_label.text = ("绑定目标非法：%s" if _ui_is_zh() else "Illegal binding target: %s") % reason
+			if editor_board_hint_label != null:
+				editor_board_hint_label.text = reason
+			_play_sfx_wave("alarm", 170.0, 0.08, -16.0)
+			_refresh_editor_visual_views()
+			_end_custom_topology_click_profiler()
+			return
+		"binding_complete":
+			_complete_pending_module_binding_with_selection(unit_bp, Array(intent.get("binding_selection", [])))
+			_end_custom_topology_click_profiler()
+			return
+		"start_selection_box":
+			_start_topology_selection_box(unit_bp, mouse_event.position)
+			_end_custom_topology_click_profiler()
+			return
+		"unlink_edge":
+			_unlink_topology_edge_at_index(unit_bp, int(intent.get("edge_index", -1)))
+			_end_custom_topology_click_profiler()
+			return
+		"unlink_node":
+			_unlink_joint_edges(unit_bp, int(intent.get("node_index", -1)))
+			_end_custom_topology_click_profiler()
+			return
+		"right_click_unlink_miss":
+			if editor_board_hint_label != null:
+				editor_board_hint_label.text = "右键需要点在构件或连接边上才能解绑。" if _ui_is_zh() else "Right-click a component or link edge to unlink."
+			_play_sfx_wave("alarm", 170.0, 0.08, -16.0)
+			_end_custom_topology_click_profiler()
+			return
+		"place_pending_part":
+			editor_dragging_node_index = _add_topology_node_at(mouse_event.position)
+			editor_dragging_selected_nodes = false
+			editor_dragging_whole_unit = false
+			editor_selected_topology_nodes = [editor_dragging_node_index] if editor_dragging_node_index >= 0 else []
+			if editor_dragging_node_index >= 0:
+				editor_node_click_candidate_index = -1
+				editor_node_click_start_position = mouse_event.position
+				editor_node_click_moved = false
+			_mark_editor_board_model_dirty("board.pending_place")
+			_end_custom_topology_click_profiler()
+			return
+		"open_torso_detail":
+			_open_editor_torso_detail_from_board_node(int(intent.get("node_index", -1)))
+			_end_custom_topology_click_profiler()
+			return
+		"start_unconnected_drag":
+			if _start_unconnected_topology_node_drag(unit_bp, int(intent.get("node_index", -1)), mouse_event.position, String(intent.get("source_mode", "layout"))):
+				_end_custom_topology_click_profiler()
 				return
-		if editor_board_tool == "pose" and mouse_event.button_index == MOUSE_BUTTON_LEFT:
-			var pose_candidate := _pose_drag_candidate_for_point(role_key, unit_bp, nodes, topology.get("edges", []), mouse_event.position)
-			if pose_candidate.is_empty() or not bool(pose_candidate.get("valid", false)):
-				_set_pose_drag_reject(String(pose_candidate.get("reason", "姿态编辑需要点击已连接肢体。" if _ui_is_zh() else "Pose edit needs a connected limb.")), int(pose_candidate.get("root_index", -1)), int(pose_candidate.get("downstream_count", 0)), true)
-				_play_sfx_wave("alarm", 170.0, 0.08, -16.0)
-				if hot_path_profiler != null:
-					hot_path_profiler.scope_end("board_click")
-				return
-			var root_index := int(pose_candidate.get("root_index", -1))
-			if _start_editor_pose_drag(unit_bp, root_index, mouse_event.position):
-				if hot_path_profiler != null:
-					hot_path_profiler.scope_end("board_click")
+		"pose_drag_invalid":
+			_set_pose_drag_reject(String(intent.get("pose_reject_reason", "姿态编辑需要点击已连接肢体。" if _ui_is_zh() else "Pose edit needs a connected limb.")), int(intent.get("pose_root_index", -1)), int(intent.get("pose_downstream_count", 0)), true)
+			_play_sfx_wave("alarm", 170.0, 0.08, -16.0)
+			_end_custom_topology_click_profiler()
+			return
+		"start_pose_drag":
+			if _start_editor_pose_drag(unit_bp, int(intent.get("pose_root_index", -1)), mouse_event.position):
+				_end_custom_topology_click_profiler()
 				return
 			_play_sfx_wave("alarm", 170.0, 0.08, -16.0)
-			if hot_path_profiler != null:
-				hot_path_profiler.scope_end("board_click")
+			_end_custom_topology_click_profiler()
 			return
-		editor_topology_node_index = nearest
-		if dragging_selection:
-			if _topology_selection_contains_torso(role_key, unit_bp, nodes, editor_selected_topology_nodes):
-				_start_topology_group_drag(unit_bp, mouse_event.position, editor_selected_topology_nodes, true)
-			elif _topology_selection_has_connected_node(topology.get("edges", []), editor_selected_topology_nodes):
-				_set_layout_drag_reject("connected_selection", nearest, "visible")
-				editor_dragging_node_index = -1
-				editor_dragging_selected_nodes = false
-				editor_dragging_whole_unit = false
-				editor_selecting_topology_box = false
-				if editor_board_hint_label != null:
-					editor_board_hint_label.text = "布局模式不会拖断已连接肢体；切到姿态模式拖动近端肢体来旋转。" if _ui_is_zh() else "Layout mode will not tear linked limbs loose; switch to POSE and drag the proximal limb to rotate."
-				_play_sfx_wave("alarm", 170.0, 0.08, -16.0)
-			else:
-				_start_topology_group_drag(unit_bp, mouse_event.position, editor_selected_topology_nodes, false)
-		elif nearest_is_torso:
-			_start_topology_group_drag(unit_bp, mouse_event.position, [nearest], true)
-		elif _topology_node_edge_count(topology.get("edges", []), nearest) > 0:
-			editor_selected_topology_nodes = [nearest]
+		"start_group_drag":
+			editor_topology_node_index = int(intent.get("node_index", nearest))
+			_start_topology_group_drag(unit_bp, mouse_event.position, Array(intent.get("group_nodes", [])), bool(intent.get("expand_connected_island", false)))
+		"layout_connected_selection_reject":
+			editor_topology_node_index = int(intent.get("node_index", nearest))
+			_set_layout_drag_reject("connected_selection", editor_topology_node_index, "visible")
 			editor_dragging_node_index = -1
 			editor_dragging_selected_nodes = false
 			editor_dragging_whole_unit = false
 			editor_selecting_topology_box = false
-			_set_layout_drag_reject("connected_part", nearest, "visible")
+			if editor_board_hint_label != null:
+				editor_board_hint_label.text = "布局模式不会拖断已连接肢体；切到姿态模式拖动近端肢体来旋转。" if _ui_is_zh() else "Layout mode will not tear linked limbs loose; switch to POSE and drag the proximal limb to rotate."
+			_play_sfx_wave("alarm", 170.0, 0.08, -16.0)
+		"layout_connected_part_reject":
+			editor_topology_node_index = int(intent.get("node_index", nearest))
+			editor_selected_topology_nodes = [editor_topology_node_index]
+			editor_dragging_node_index = -1
+			editor_dragging_selected_nodes = false
+			editor_dragging_whole_unit = false
+			editor_selecting_topology_box = false
+			_set_layout_drag_reject("connected_part", editor_topology_node_index, "visible")
 			if editor_board_hint_label != null:
 				editor_board_hint_label.text = "已连接肢体请用姿态模式旋转；布局模式只负责拼搭、解绑和移动未连接零件。" if _ui_is_zh() else "Use POSE to rotate linked limbs; layout mode builds, unlinks, and moves loose parts only."
 			_play_sfx_wave("alarm", 170.0, 0.08, -16.0)
-			_show_editor_topology_node_detail(nearest, "board", {"position": _editor_board_popup_position(mouse_event.position)})
-		else:
-			_start_unconnected_topology_node_drag(unit_bp, nearest, mouse_event.position, "layout")
-		editor_selected_body_part = BODY_PART_ORDER[nearest % BODY_PART_ORDER.size()]
-		_trigger_editor_snap("node", "topology node %d" % (nearest + 1))
-	else:
-		editor_dragging_node_index = -1
-		editor_dragging_selected_nodes = false
-		_hide_editor_structure_reference()
-		if not nodes.is_empty() and mouse_event.button_index == MOUSE_BUTTON_LEFT:
+			_show_editor_topology_node_detail(editor_topology_node_index, "board", {"position": _editor_board_popup_position(mouse_event.position)})
+		"start_loose_drag":
+			editor_topology_node_index = int(intent.get("node_index", nearest))
+			_start_unconnected_topology_node_drag(unit_bp, editor_topology_node_index, mouse_event.position, "layout")
+		"blank_canvas_select_box":
+			editor_dragging_node_index = -1
+			editor_dragging_selected_nodes = false
+			_hide_editor_structure_reference()
 			_start_topology_selection_box(unit_bp, mouse_event.position)
-			if hot_path_profiler != null:
-				hot_path_profiler.scope_end("board_click")
+			_end_custom_topology_click_profiler()
 			return
-		editor_board_hint_label.text = "空白位置：从零件库拖入肌肉构件；框选多个节点后可整体拖拽。" if _ui_is_zh() else "Blank canvas: drag in muscle components; box-select several nodes to drag them together."
-		_play_sfx_wave("alarm", 170.0, 0.1, -14.0)
+		"blank_canvas_hint":
+			editor_dragging_node_index = -1
+			editor_dragging_selected_nodes = false
+			_hide_editor_structure_reference()
+			editor_board_hint_label.text = "空白位置：从零件库拖入肌肉构件；框选多个节点后可整体拖拽。" if _ui_is_zh() else "Blank canvas: drag in muscle components; box-select several nodes to drag them together."
+			_play_sfx_wave("alarm", 170.0, 0.1, -14.0)
+		_:
+			pass
+	if action in ["start_group_drag", "layout_connected_selection_reject", "layout_connected_part_reject", "start_loose_drag"]:
+		var selected_node_index := int(intent.get("node_index", nearest))
+		if selected_node_index >= 0:
+			editor_selected_body_part = BODY_PART_ORDER[selected_node_index % BODY_PART_ORDER.size()]
+			_trigger_editor_snap("node", "topology node %d" % (selected_node_index + 1))
+	_end_custom_topology_click_profiler()
+
+
+func _end_custom_topology_click_profiler() -> void:
 	if hot_path_profiler != null:
 		hot_path_profiler.scope_end("board_click")
 
@@ -23461,7 +23121,7 @@ func _show_editor_torso_node_hover(unit_bp: Dictionary, node_index: int) -> void
 	editor_hover_part_index = _topology_node_part_index(node, unit_bp)
 	var plugin_entries := _torso_plugin_slot_summary(unit_bp, node_index)
 	var software_entries := _torso_software_slot_summary(unit_bp, node_index)
-	var title := "%02d %s" % [node_index + 1, _zh_part_name(String(part.get("name", "TORSO"))) if _ui_is_zh() else String(part.get("name", "TORSO"))]
+	var title := "%02d %s" % [node_index + 1, _part_display_name(part, "TORSO")]
 	var subtitle := ("双击打开躯干详情 / 接口 %d / 插件 %d/%d / 软件 %d/%d" if _ui_is_zh() else "Double-click for torso detail / ports %d / internal %d/%d / software %d/%d") % [
 		int(part.get("joint_ports", part.get("connection_ends", 0))),
 		plugin_entries.size(),
@@ -24122,6 +23782,8 @@ func _move_custom_node_to(unit_bp: Dictionary, node_index: int, local_position: 
 	unit_bp["custom_topology"] = topology
 	_topology_update_local_pose_fields(role_key, unit_bp)
 	editor_topology_node_index = node_index
+	if editor_selected_topology_nodes.is_empty() or not editor_selected_topology_nodes.has(node_index):
+		editor_selected_topology_nodes = [node_index]
 	editor_selected_body_part = BODY_PART_ORDER[node_index % BODY_PART_ORDER.size()]
 	editor_snap_timer = 0.08
 	editor_snap_part = "node"
@@ -24284,6 +23946,8 @@ func _finish_topology_selection_box(unit_bp: Dictionary, local_position: Vector2
 	editor_selecting_topology_box = false
 	editor_selection_box_current = local_position
 	if not unit_bp.has("custom_topology"):
+		if unit_editor_board_controller != null:
+			unit_editor_board_controller.selection_box_release_intent({"has_custom_topology": false})
 		editor_selected_topology_nodes = []
 		_mark_editor_board_overlay_dirty("selection_box.finish_no_topology")
 		return
@@ -24298,38 +23962,73 @@ func _finish_topology_selection_box(unit_bp: Dictionary, local_position: Vector2
 		if rect.has_point(node_pos):
 			selected.append(i)
 	editor_selected_topology_nodes = selected
-	if not editor_pending_module_binding.is_empty():
+	var selection_context := {
+		"has_custom_topology": true,
+		"selected_nodes": selected.duplicate(),
+		"pending_module_binding": not editor_pending_module_binding.is_empty(),
+		"board_tool": editor_board_tool,
+		"pose_root_index": -1,
+		"pose_chain_valid": false,
+		"pose_downstream_nodes": [],
+		"selection_contains_torso": false,
+		"selection_connected_node": false,
+		"expanded_selection_nodes": [],
+	}
+	if editor_pending_module_binding.is_empty() and not selected.is_empty():
+		if editor_board_tool == "pose":
+			var root_index := _pose_root_for_selection(role_key, unit_bp, nodes, topology.get("edges", []), selected)
+			selection_context["pose_root_index"] = root_index
+			if root_index >= 0:
+				var chain_valid := _pose_selection_is_single_downstream_chain(role_key, unit_bp, nodes, topology.get("edges", []), root_index, selected)
+				selection_context["pose_chain_valid"] = chain_valid
+				if chain_valid:
+					selection_context["pose_downstream_nodes"] = _topology_downstream_node_indices(role_key, unit_bp, nodes, topology.get("edges", []), root_index)
+		else:
+			var contains_torso := _topology_selection_contains_torso(role_key, unit_bp, nodes, selected)
+			selection_context["selection_contains_torso"] = contains_torso
+			if contains_torso:
+				selection_context["expanded_selection_nodes"] = _topology_connected_component_indices(topology.get("edges", []), nodes.size(), selected)
+			else:
+				selection_context["selection_connected_node"] = _topology_selection_has_connected_node(topology.get("edges", []), selected)
+	var intent: Dictionary = unit_editor_board_controller.selection_box_release_intent(selection_context) if unit_editor_board_controller != null else {
+		"action": "layout_loose_group",
+		"selected_nodes": selected.duplicate(),
+	}
+	var action := String(intent.get("action", "empty_selection"))
+	if action == "complete_module_binding":
 		_complete_pending_module_binding_with_selection(unit_bp, selected)
 		return
 	if not selected.is_empty():
 		editor_topology_node_index = int(selected[0])
 		editor_selected_body_part = BODY_PART_ORDER[editor_topology_node_index % BODY_PART_ORDER.size()]
-		if editor_board_tool == "pose":
-			var root_index := _pose_root_for_selection(role_key, unit_bp, nodes, topology.get("edges", []), selected)
-			if root_index >= 0 and _pose_selection_is_single_downstream_chain(role_key, unit_bp, nodes, topology.get("edges", []), root_index, selected):
-				editor_pose_root_node = root_index
-				editor_pose_downstream_nodes = _topology_downstream_node_indices(role_key, unit_bp, nodes, topology.get("edges", []), root_index)
-				editor_selected_topology_nodes = editor_pose_downstream_nodes.duplicate()
-				editor_topology_node_index = root_index
-				editor_board_hint_label.text = "已框选一条肢体子链：拖动构件 %d 只旋转它及下游链。" % (root_index + 1) if _ui_is_zh() else "Selected one limb subchain: drag part %d to rotate only it and its downstream chain." % (root_index + 1)
-			else:
-				editor_pose_root_node = -1
-				editor_pose_downstream_nodes = []
-				editor_board_hint_label.text = "框选内容不是同一条下游肢体链；请只框选一条肢体。" if _ui_is_zh() else "Selection is not one downstream limb chain; box-select only one limb."
-				_play_sfx_wave("alarm", 170.0, 0.08, -16.0)
-		else:
-			if _topology_selection_contains_torso(role_key, unit_bp, nodes, selected):
-				var expanded := _topology_connected_component_indices(topology.get("edges", []), nodes.size(), selected)
-				if not expanded.is_empty():
-					editor_selected_topology_nodes = expanded
-					editor_topology_node_index = int(expanded[0])
-				editor_board_hint_label.text = "框选包含躯干：拖动时整台机体按刚体平移。" if _ui_is_zh() else "Selection includes a torso: dragging moves the whole mech as a rigid body."
-			elif _topology_selection_has_connected_node(topology.get("edges", []), selected):
-				editor_board_hint_label.text = "框选的是已连接肢体链：请切到姿态模式进行旋转/伸缩测试。" if _ui_is_zh() else "Selected a connected limb chain: switch to POSE to rotate or extend it."
-			else:
-				editor_board_hint_label.text = "已框选 %d 个未连接构件：拖动可一起平移。" % editor_selected_topology_nodes.size() if _ui_is_zh() else "Selected %d loose parts: dragging moves them together." % editor_selected_topology_nodes.size()
-	else:
-		editor_board_hint_label.text = "框选为空：请从零件库拖入构件，或框住已有节点。" if _ui_is_zh() else "Empty selection: drag parts from the library or box existing nodes."
+	match action:
+		"pose_chain_selected":
+			var root_index := int(intent.get("pose_root_index", -1))
+			editor_pose_root_node = root_index
+			editor_pose_downstream_nodes = Array(intent.get("pose_downstream_nodes", [])).duplicate()
+			editor_selected_topology_nodes = Array(intent.get("selected_nodes", editor_pose_downstream_nodes)).duplicate()
+			editor_topology_node_index = root_index
+			editor_board_hint_label.text = "已框选一条肢体子链：拖动构件 %d 只旋转它及下游链。" % (root_index + 1) if _ui_is_zh() else "Selected one limb subchain: drag part %d to rotate only it and its downstream chain." % (root_index + 1)
+		"pose_invalid_selection":
+			editor_pose_root_node = -1
+			editor_pose_downstream_nodes = []
+			editor_board_hint_label.text = "框选内容不是同一条下游肢体链；请只框选一条肢体。" if _ui_is_zh() else "Selection is not one downstream limb chain; box-select only one limb."
+			_play_sfx_wave("alarm", 170.0, 0.08, -16.0)
+		"layout_whole_rigid":
+			var expanded := Array(intent.get("selected_nodes", [])).duplicate()
+			if not expanded.is_empty():
+				editor_selected_topology_nodes = expanded
+				editor_topology_node_index = int(expanded[0])
+			editor_board_hint_label.text = "框选包含躯干：拖动时整台机体按刚体平移。" if _ui_is_zh() else "Selection includes a torso: dragging moves the whole mech as a rigid body."
+		"layout_connected_hint":
+			editor_board_hint_label.text = "框选的是已连接肢体链：请切到姿态模式进行旋转/伸缩测试。" if _ui_is_zh() else "Selected a connected limb chain: switch to POSE to rotate or extend it."
+		"layout_loose_group":
+			editor_selected_topology_nodes = Array(intent.get("selected_nodes", selected)).duplicate()
+			editor_board_hint_label.text = "已框选 %d 个未连接构件：拖动可一起平移。" % editor_selected_topology_nodes.size() if _ui_is_zh() else "Selected %d loose parts: dragging moves them together." % editor_selected_topology_nodes.size()
+		"empty_selection":
+			editor_board_hint_label.text = "框选为空：请从零件库拖入构件，或框住已有节点。" if _ui_is_zh() else "Empty selection: drag parts from the library or box existing nodes."
+		_:
+			editor_board_hint_label.text = "框选为空：请从零件库拖入构件，或框住已有节点。" if _ui_is_zh() else "Empty selection: drag parts from the library or box existing nodes."
 	_mark_editor_board_model_dirty("selection_box.finish")
 
 
@@ -25483,66 +25182,155 @@ func _try_magnetic_link_for_node(unit_bp: Dictionary, node_index: int, show_mate
 
 
 func _handle_barrier_board_click(mouse_event: InputEventMouseButton, unit_bp: Dictionary) -> void:
-	var player_id := _editor_player()
-	var cell_index := _barrier_board_cell_index(mouse_event.position)
-	if cell_index < 0:
+	var screen_pos := _barrier_board_screen_pos(mouse_event.position)
+	if screen_pos.x < 0.0:
 		return
-	editor_selected_barrier_cell = cell_index
-	_record_editor_undo_state("编辑结界格" if _ui_is_zh() else "edit barrier cell")
-	unit_bp["blank_canvas"] = false
+	editor_selected_barrier_cell = _barrier_pos_to_legacy_cell_index(screen_pos)
 	var tiles: Array = Array(unit_bp.get("barrier_tiles", []))
 	if mouse_event.button_index == MOUSE_BUTTON_RIGHT:
-		for i in range(tiles.size() - 1, -1, -1):
-			var tile: Dictionary = tiles[i]
-			if int(tile.get("index", -1)) == cell_index:
-				tiles.remove_at(i)
-				break
+		var remove_index := _barrier_nearest_tile_index_for_pos(unit_bp, screen_pos)
+		if remove_index < 0:
+			return
+		_record_editor_undo_state("移除结界块" if _ui_is_zh() else "remove barrier tile")
+		tiles.remove_at(remove_index)
 		unit_bp["barrier_tiles"] = tiles
+		unit_bp["blank_canvas"] = tiles.is_empty()
 		editor_selected_barrier_cell = -1
-		_trigger_editor_snap("barrier", "removed tile %d" % cell_index)
+		_trigger_editor_snap("barrier", "removed tile")
 		_mark_editor_board_model_dirty("barrier.remove_tile")
 		return
-	var stats := _compute_unit_stats(player_id, "barrier", int(editor_unit_indices["barrier"]))
-	var slot_cap := maxi(1, int(stats.get("material_slots", 4)))
-	for tile in tiles:
-		if tile is Dictionary and int(tile.get("index", -1)) == cell_index:
-			tile["muscle"] = int(unit_bp.get("muscle", 0))
-			unit_bp["barrier_tiles"] = tiles
-			_trigger_editor_snap("barrier", "replaced tile %d" % cell_index)
-			_mark_editor_board_model_dirty("barrier.replace_tile")
-			return
-	if tiles.size() >= slot_cap:
-		editor_board_hint_label.text = "警报：以太可固定材料已满 %d/%d。" % [tiles.size(), slot_cap] if _ui_is_zh() else "ALARM: ether material slots full %d/%d." % [tiles.size(), slot_cap]
-		return
-	tiles.append({"index": cell_index, "muscle": int(unit_bp.get("muscle", 0))})
+	var placement := _selected_barrier_screen_part_for_click(unit_bp)
+	_place_barrier_screen_tile(unit_bp, screen_pos, String(placement.get("slot", "muscle")), int(placement.get("index", 0)), "编辑结界块" if _ui_is_zh() else "edit barrier tile")
+
+
+func _selected_barrier_screen_part_for_click(unit_bp: Dictionary) -> Dictionary:
+	if _has_pending_canvas_part():
+		return {"slot": editor_pending_place_slot, "index": editor_pending_place_index}
+	return {"slot": "muscle", "index": int(unit_bp.get("muscle", 0))}
+
+
+func _barrier_screen_tile_payload(screen_pos: Vector2, slot_key: String, part_index: int) -> Dictionary:
+	var tile := {"pos": Vector2(clampf(screen_pos.x, 0.0, 1.0), clampf(screen_pos.y, 0.0, 1.0))}
+	if slot_key == "joint":
+		tile["joint"] = part_index
+	else:
+		tile["muscle"] = part_index
+	return tile
+
+
+func _place_barrier_screen_tile(unit_bp: Dictionary, screen_pos: Vector2, slot_key: String, part_index: int, undo_label: String = "") -> bool:
+	if screen_pos.x < 0.0:
+		return false
+	if not _is_topology_part_slot(slot_key) and slot_key != "joint":
+		return false
+	var catalog := _catalog_for("barrier", slot_key)
+	if part_index < 0 or part_index >= catalog.size():
+		return false
+	var part := _selected_component("barrier", slot_key, part_index)
+	if not bool(part.get("barrier_tile_component", false)) and not bool(part.get("barrier_panel", false)) and String(part.get("barrier_logic", "")) == "":
+		return false
+	var tiles: Array = Array(unit_bp.get("barrier_tiles", [])).duplicate(true)
+	var replace_index := _barrier_nearest_tile_index_for_pos(unit_bp, screen_pos)
+	var replaced := replace_index >= 0
+	if not replaced:
+		var stats := _compute_unit_stats(_editor_player(), "barrier", int(editor_unit_indices.get("barrier", 0)), unit_bp if _editor_is_blank_work_canvas() else {})
+		var slot_cap := maxi(1, int(stats.get("material_slots", 4)))
+		if tiles.size() >= slot_cap:
+			if editor_board_hint_label != null:
+				editor_board_hint_label.text = "警报：以太可固定材料已满 %d/%d。" % [tiles.size(), slot_cap] if _ui_is_zh() else "ALARM: ether material slots full %d/%d." % [tiles.size(), slot_cap]
+			_play_sfx_wave("alarm", 170.0, 0.08, -16.0)
+			return false
+	_record_editor_undo_state(undo_label if undo_label != "" else ("编辑结界格" if _ui_is_zh() else "edit barrier cell"))
+	var payload := _barrier_screen_tile_payload(screen_pos, slot_key, part_index)
+	if replaced:
+		tiles[replace_index] = payload
+	else:
+		tiles.append(payload)
+	unit_bp["blank_canvas"] = false
 	unit_bp["barrier_tiles"] = tiles
-	_trigger_editor_snap("barrier", "barrier tile %d" % cell_index)
-	_mark_editor_board_model_dirty("barrier.add_tile")
+	if slot_key in BUILD_SLOTS:
+		unit_bp[slot_key] = part_index
+	_set_pending_canvas_part(unit_bp, slot_key, part_index)
+	editor_selected_barrier_cell = _barrier_pos_to_legacy_cell_index(screen_pos)
+	_trigger_editor_snap("barrier", String(part.get("name", "barrier tile")))
+	ai_team_manual_lock[_editor_player()] = true
+	_mark_editor_board_model_dirty("barrier.replace_tile" if replaced else "barrier.add_tile")
+	return true
 
 
 func _barrier_board_cell_index(local_pos: Vector2) -> int:
+	return _barrier_pos_to_legacy_cell_index(_barrier_board_screen_pos(local_pos))
+
+
+func _barrier_board_screen_pos(local_pos: Vector2) -> Vector2:
 	var rect := _barrier_editor_rect_for_size(assembly_board_view.size if assembly_board_view != null else Vector2(656.0, 482.0))
 	if not rect.has_point(local_pos):
-		return -1
-	var cell_size := Vector2(rect.size.x / float(BARRIER_MAP_COLUMNS), rect.size.y / float(BARRIER_MAP_ROWS))
+		return Vector2(-1.0, -1.0)
 	var rel := local_pos - rect.position
-	var x := int(floor(rel.x / maxf(1.0, cell_size.x)))
-	var y := int(floor(rel.y / maxf(1.0, cell_size.y)))
-	if x < 0 or x >= BARRIER_MAP_COLUMNS or y < 0 or y >= BARRIER_MAP_ROWS:
+	return Vector2(clampf(rel.x / maxf(1.0, rect.size.x), 0.0, 1.0), clampf(rel.y / maxf(1.0, rect.size.y), 0.0, 1.0))
+
+
+func _barrier_pos_to_legacy_cell_index(screen_pos: Vector2) -> int:
+	if screen_pos.x < 0.0:
 		return -1
+	var x := clampi(int(floor(screen_pos.x * float(BARRIER_MAP_COLUMNS))), 0, BARRIER_MAP_COLUMNS - 1)
+	var y := clampi(int(floor(screen_pos.y * float(BARRIER_MAP_ROWS))), 0, BARRIER_MAP_ROWS - 1)
 	return y * BARRIER_MAP_COLUMNS + x
+
+
+func _barrier_tile_screen_pos(tile: Dictionary) -> Vector2:
+	if tile.get("pos", null) is Vector2:
+		var pos: Vector2 = tile.get("pos")
+		return Vector2(clampf(pos.x, 0.0, 1.0), clampf(pos.y, 0.0, 1.0))
+	if tile.get("pos", null) is Dictionary:
+		var dict: Dictionary = tile.get("pos")
+		if String(dict.get("__type", "")) == "Vector2":
+			return Vector2(clampf(float(dict.get("x", 0.5)), 0.0, 1.0), clampf(float(dict.get("y", 0.5)), 0.0, 1.0))
+	var cell_index := clampi(int(tile.get("index", 0)), 0, BARRIER_MAP_COLUMNS * BARRIER_MAP_ROWS - 1)
+	var col := cell_index % BARRIER_MAP_COLUMNS
+	var row := int(floori(float(cell_index) / float(BARRIER_MAP_COLUMNS)))
+	return Vector2((float(col) + 0.5) / float(BARRIER_MAP_COLUMNS), (float(row) + 0.5) / float(BARRIER_MAP_ROWS))
+
+
+func _barrier_nearest_tile_index_for_pos(unit_bp: Dictionary, screen_pos: Vector2) -> int:
+	var tiles: Array = Array(unit_bp.get("barrier_tiles", []))
+	var best_index := -1
+	var best_distance := 99999.0
+	var threshold := maxf(0.028, 0.62 / float(maxi(BARRIER_MAP_COLUMNS, BARRIER_MAP_ROWS)))
+	for i in range(tiles.size()):
+		if not (tiles[i] is Dictionary):
+			continue
+		var tile_pos := _barrier_tile_screen_pos(Dictionary(tiles[i]))
+		var dist := tile_pos.distance_to(screen_pos)
+		if dist < best_distance:
+			best_distance = dist
+			best_index = i
+	return best_index if best_distance <= threshold else -1
+
+
+func _barrier_tiles_with_screen_pos_for_save(tiles: Array) -> Array:
+	var saved_tiles: Array = []
+	for raw_tile in tiles:
+		if not (raw_tile is Dictionary):
+			continue
+		var tile: Dictionary = Dictionary(raw_tile).duplicate(true)
+		tile["pos"] = _barrier_tile_screen_pos(tile)
+		tile.erase("index")
+		saved_tiles.append(tile)
+	return saved_tiles
 
 
 func _barrier_editor_rect_for_size(board_size: Vector2) -> Rect2:
 	var margin := Vector2(8.0, 44.0)
 	var available := Vector2(maxf(64.0, board_size.x - margin.x * 2.0), maxf(64.0, board_size.y - margin.y * 2.0))
-	var aspect := float(BARRIER_MAP_COLUMNS) / maxf(1.0, float(BARRIER_MAP_ROWS))
+	var aspect := BARRIER_BLUEPRINT_WIDTH / maxf(1.0, BARRIER_BLUEPRINT_HEIGHT)
 	var rect_size := available
 	if rect_size.x / maxf(1.0, rect_size.y) > aspect:
 		rect_size.x = rect_size.y * aspect
 	else:
 		rect_size.y = rect_size.x / aspect
-	return Rect2((board_size - rect_size) * 0.5, rect_size)
+	rect_size *= clampf(editor_board_zoom, EDITOR_BOARD_ZOOM_MIN, EDITOR_BOARD_ZOOM_MAX)
+	return Rect2((board_size - rect_size) * 0.5 + editor_board_view_offset, rect_size)
 
 
 func _cycle_body_part_component(slot_key: String, direction: int) -> void:
@@ -25576,6 +25364,7 @@ func _cycle_body_part_component(slot_key: String, direction: int) -> void:
 		topology["nodes"] = nodes
 		unit_bp["custom_topology"] = topology
 		unit_bp["blank_canvas"] = false
+		editor_selected_topology_nodes = [editor_topology_node_index]
 		_trigger_editor_snap("node", String(catalog_for_node[next_node_index].get("name", "")))
 		ai_team_manual_lock[player_id] = true
 		_mark_editor_board_interaction_dirty("shop.replace_node_part")
@@ -25614,6 +25403,9 @@ func _change_current_unit_role(role_key: String) -> void:
 		editor_role_index = ROLE_ORDER.find(role_key)
 		editor_working_role_key = role_key
 		editor_working_blueprint = _prepare_blueprint_for_role_conversion(working_source, role_key)
+		editor_roster_page = 0
+		_reset_editor_unit_page_transient_state(false)
+		_apply_editor_role_catalog_defaults(role_key)
 		editor_summary_label.text = "当前空白画布身份已设为：%s。" % _role_name(role_key) if _ui_is_zh() else "Current blank canvas role set to: %s." % _role_name(role_key)
 		_update_editor_ui()
 		return
@@ -25627,7 +25419,10 @@ func _change_current_unit_role(role_key: String) -> void:
 	var old_index := clampi(int(editor_unit_indices.get(old_role, 0)), 0, maxi(0, old_roster.size() - 1))
 	if old_roster.is_empty():
 		editor_role_index = ROLE_ORDER.find(role_key)
+		editor_roster_page = 0
+		_reset_editor_unit_page_transient_state(false)
 		_reset_editor_working_canvas(role_key)
+		_apply_editor_role_catalog_defaults(role_key)
 		_update_editor_ui()
 		return
 	var moved := _prepare_blueprint_for_role_conversion(Dictionary(old_roster[old_index]), role_key)
@@ -25650,6 +25445,9 @@ func _change_current_unit_role(role_key: String) -> void:
 	initial_sortie_slot[player_id] = 0
 	editor_canvas_mode = "roster_unit"
 	ai_team_manual_lock[player_id] = true
+	editor_roster_page = int(floori(float(new_index) / float(maxi(1, editor_roster_slot_buttons.size()))))
+	_reset_editor_unit_page_transient_state(false)
+	_apply_editor_role_catalog_defaults(role_key)
 	editor_summary_label.text = "单位身份已从 %s 改为 %s；赛前出战选择已清空以避免引用旧槽位。" % [_role_name(old_role), _role_name(role_key)] if _ui_is_zh() else "Unit role changed from %s to %s; sortie selection was cleared to avoid stale slots." % [_role_name(old_role), _role_name(role_key)]
 	_update_editor_ui()
 
@@ -25658,12 +25456,44 @@ func _select_editor_role(role_key: String) -> void:
 	_change_current_unit_role(role_key)
 
 
-func _select_editor_slot(slot_index: int) -> void:
-	editor_slot_index = clampi(slot_index, 0, BUILD_SLOTS.size() - 1)
-	editor_part_group_mode = _part_group_for_slot(String(BUILD_SLOTS[editor_slot_index]))
-	editor_part_filter_mode = _default_filter_for_slot(String(BUILD_SLOTS[editor_slot_index]))
+func _apply_editor_role_catalog_defaults(role_key: String) -> void:
+	if role_key != "barrier":
+		return
+	var limb_slot := BUILD_SLOTS.find("limb_muscle")
+	if limb_slot >= 0:
+		editor_slot_index = limb_slot
+	editor_part_group_mode = "barrier_panel"
+	editor_part_filter_mode = "barrier_muscle"
 	editor_weapon_filter_group = "all"
 	editor_weapon_filter_subtype = "all"
+	editor_catalog_page = 0
+	_invalidate_editor_catalog_cache()
+
+
+func _apply_editor_slot_catalog_defaults(role_key: String, unit_bp: Dictionary, slot_key: String) -> void:
+	if role_key == "barrier" and _barrier_uses_screen_board(unit_bp) and _is_topology_part_slot(slot_key):
+		editor_part_group_mode = "barrier_panel"
+		editor_part_filter_mode = "barrier_muscle"
+		editor_weapon_filter_group = "all"
+		editor_weapon_filter_subtype = "all"
+		return
+	editor_part_group_mode = _part_group_for_slot(slot_key)
+	editor_part_filter_mode = _default_filter_for_slot(slot_key)
+	editor_weapon_filter_group = "all"
+	editor_weapon_filter_subtype = "all"
+
+
+func _select_editor_slot(slot_index: int) -> void:
+	if unit_editor_catalog_controller != null:
+		var state := unit_editor_catalog_controller.state_for_slot_selection(slot_index, BUILD_SLOTS)
+		if not bool(state.get("valid", false)):
+			return
+		_apply_editor_catalog_selection_state(state)
+	else:
+		editor_slot_index = clampi(slot_index, 0, BUILD_SLOTS.size() - 1)
+	var role_key: String = ROLE_ORDER[editor_role_index]
+	var unit_bp: Dictionary = _editor_current_blueprint()
+	_apply_editor_slot_catalog_defaults(role_key, unit_bp, String(BUILD_SLOTS[editor_slot_index]))
 	editor_catalog_page = 0
 	_invalidate_editor_catalog_cache()
 	_clear_editor_hover_card()
@@ -25671,49 +25501,77 @@ func _select_editor_slot(slot_index: int) -> void:
 
 
 func _select_editor_part_group(group_key: String) -> void:
-	if not EDITOR_PART_GROUP_SLOTS.has(group_key):
-		return
-	editor_part_group_mode = group_key
-	editor_weapon_filter_group = "all"
-	editor_weapon_filter_subtype = "all"
+	if unit_editor_catalog_controller != null:
+		var role_key: String = ROLE_ORDER[editor_role_index]
+		var current_slot_key: String = BUILD_SLOTS[editor_slot_index]
+		var state := unit_editor_catalog_controller.state_for_part_group_selection(group_key, role_key, current_slot_key, BUILD_SLOTS, editor_weapon_filter_group)
+		if not bool(state.get("valid", false)):
+			return
+		_apply_editor_catalog_selection_state(state)
+	else:
+		if not EDITOR_PART_GROUP_SLOTS.has(group_key):
+			return
+		editor_part_group_mode = group_key
+		editor_weapon_filter_group = "all"
+		editor_weapon_filter_subtype = "all"
+		var filter_options := _part_filter_options_for_group(group_key)
+		if not filter_options.is_empty():
+			var preferred_filter := _preferred_filter_for_part_group(group_key)
+			var first_option: Dictionary = filter_options[0]
+			for option in filter_options:
+				if option is Dictionary and String(Dictionary(option).get("key", "")) == preferred_filter:
+					first_option = Dictionary(option)
+					break
+			editor_part_filter_mode = String(first_option.get("key", "all"))
+			editor_slot_index = BUILD_SLOTS.find(_primary_slot_from_filter_option(first_option, String(BUILD_SLOTS[editor_slot_index])))
+			if editor_slot_index < 0:
+				editor_slot_index = 0
 	editor_sort_menu_open = false
 	_invalidate_editor_catalog_cache()
-	var filter_options := _part_filter_options_for_group(group_key)
-	if not filter_options.is_empty():
-		var preferred_filter := _preferred_filter_for_part_group(group_key)
-		var first_option: Dictionary = filter_options[0]
-		for option in filter_options:
-			if option is Dictionary and String(Dictionary(option).get("key", "")) == preferred_filter:
-				first_option = Dictionary(option)
-				break
-		editor_part_filter_mode = String(first_option.get("key", "all"))
-		editor_slot_index = BUILD_SLOTS.find(_primary_slot_from_filter_option(first_option, String(BUILD_SLOTS[editor_slot_index])))
-		if editor_slot_index < 0:
-			editor_slot_index = 0
 	editor_catalog_page = 0
 	_clear_editor_hover_card()
 	_update_editor_ui()
 
 
 func _select_editor_part_filter(filter_index: int) -> void:
-	var filter_options := _part_filter_options_for_group(editor_part_group_mode)
-	if filter_index < 0 or filter_index >= filter_options.size():
-		return
-	var option: Dictionary = filter_options[filter_index]
-	editor_part_filter_mode = String(option.get("key", "all"))
-	if editor_part_group_mode == "terminal_weapon":
-		editor_weapon_filter_group = String(option.get("weapon_group", editor_weapon_filter_group))
-		editor_weapon_filter_subtype = String(option.get("weapon_subtype", "all"))
+	if unit_editor_catalog_controller != null:
+		var current_slot_key: String = BUILD_SLOTS[editor_slot_index]
+		var state := unit_editor_catalog_controller.state_for_filter_selection(filter_index, editor_part_group_mode, current_slot_key, BUILD_SLOTS, editor_weapon_filter_group)
+		if not bool(state.get("valid", false)):
+			return
+		_apply_editor_catalog_selection_state(state)
 	else:
-		editor_weapon_filter_group = "all"
-		editor_weapon_filter_subtype = "all"
-	editor_slot_index = BUILD_SLOTS.find(_primary_slot_from_filter_option(option, String(BUILD_SLOTS[editor_slot_index])))
-	if editor_slot_index < 0:
-		editor_slot_index = 0
+		var filter_options := _part_filter_options_for_group(editor_part_group_mode)
+		if filter_index < 0 or filter_index >= filter_options.size():
+			return
+		var option: Dictionary = filter_options[filter_index]
+		editor_part_filter_mode = String(option.get("key", "all"))
+		if editor_part_group_mode == "terminal_weapon":
+			editor_weapon_filter_group = String(option.get("weapon_group", editor_weapon_filter_group))
+			editor_weapon_filter_subtype = String(option.get("weapon_subtype", "all"))
+		else:
+			editor_weapon_filter_group = "all"
+			editor_weapon_filter_subtype = "all"
+		editor_slot_index = BUILD_SLOTS.find(_primary_slot_from_filter_option(option, String(BUILD_SLOTS[editor_slot_index])))
+		if editor_slot_index < 0:
+			editor_slot_index = 0
 	editor_catalog_page = 0
 	_invalidate_editor_catalog_cache()
 	_clear_editor_hover_card()
 	_update_editor_ui()
+
+
+func _apply_editor_catalog_selection_state(state: Dictionary) -> void:
+	if state.has("slot_index"):
+		editor_slot_index = clampi(int(state.get("slot_index", editor_slot_index)), 0, BUILD_SLOTS.size() - 1)
+	if state.has("part_group_mode"):
+		editor_part_group_mode = String(state.get("part_group_mode", editor_part_group_mode))
+	if state.has("part_filter_mode"):
+		editor_part_filter_mode = String(state.get("part_filter_mode", editor_part_filter_mode))
+	if state.has("weapon_filter_group"):
+		editor_weapon_filter_group = String(state.get("weapon_filter_group", editor_weapon_filter_group))
+	if state.has("weapon_filter_subtype"):
+		editor_weapon_filter_subtype = String(state.get("weapon_filter_subtype", editor_weapon_filter_subtype))
 
 
 func _toggle_editor_sort_menu() -> void:
@@ -25767,6 +25625,8 @@ func _set_editor_ammo_size_rank_from_slider(value: float) -> void:
 
 
 func _part_group_for_slot(slot_key: String) -> String:
+	if unit_editor_catalog_controller != null:
+		return unit_editor_catalog_controller.part_group_for_slot(slot_key)
 	match slot_key:
 		"limb_muscle":
 			return "limb"
@@ -25780,11 +25640,16 @@ func _part_group_for_slot(slot_key: String) -> String:
 
 
 func _part_group_name(group_key: String) -> String:
+	if unit_editor_catalog_controller != null:
+		return unit_editor_catalog_controller.part_group_name(group_key, _ui_is_zh())
 	var names := EDITOR_PART_GROUP_NAMES_ZH if _ui_is_zh() else EDITOR_PART_GROUP_NAMES_EN
 	return String(names.get(group_key, group_key.to_upper()))
 
 
 func _preferred_filter_for_part_group(group_key: String) -> String:
+	if unit_editor_catalog_controller != null:
+		var role_key: String = ROLE_ORDER[editor_role_index]
+		return unit_editor_catalog_controller.preferred_filter_for_part_group(group_key, role_key)
 	match group_key:
 		"torso":
 			return "connector_torso"
@@ -25810,6 +25675,8 @@ func _preferred_filter_for_part_group(group_key: String) -> String:
 
 
 func _part_filter_options_for_group(group_key: String) -> Array:
+	if unit_editor_catalog_controller != null:
+		return unit_editor_catalog_controller.filter_options_for_group(group_key, editor_weapon_filter_group)
 	if group_key == "torso":
 		return [
 			{"key": "connector_torso", "slot": "muscle", "zh": "躯干", "en": "TORSO"},
@@ -25867,11 +25734,21 @@ func _part_filter_options_for_group(group_key: String) -> Array:
 	return []
 
 
+func _all_part_filter_options_for_group(group_key: String) -> Array:
+	if unit_editor_catalog_controller != null:
+		return unit_editor_catalog_controller.filter_options_for_group(group_key, editor_weapon_filter_group, true)
+	return _part_filter_options_for_group(group_key)
+
+
 func _part_filter_name(option: Dictionary) -> String:
+	if unit_editor_catalog_controller != null:
+		return unit_editor_catalog_controller.filter_option_name(option, _ui_is_zh())
 	return String(option.get("zh", option.get("key", ""))) if _ui_is_zh() else String(option.get("en", option.get("key", ""))).to_upper()
 
 
 func _slot_keys_from_filter_option(option: Dictionary) -> Array:
+	if unit_editor_catalog_controller != null:
+		return unit_editor_catalog_controller.slot_keys_from_filter_option(option)
 	var slot_keys: Array = []
 	if option.has("slots") and option["slots"] is Array:
 		for raw_slot in Array(option["slots"]):
@@ -25886,6 +25763,8 @@ func _slot_keys_from_filter_option(option: Dictionary) -> Array:
 
 
 func _primary_slot_from_filter_option(option: Dictionary, fallback_slot: String) -> String:
+	if unit_editor_catalog_controller != null:
+		return unit_editor_catalog_controller.primary_slot_from_filter_option(option, fallback_slot)
 	var slot_keys := _slot_keys_from_filter_option(option)
 	if slot_keys.is_empty():
 		return fallback_slot
@@ -25893,6 +25772,8 @@ func _primary_slot_from_filter_option(option: Dictionary, fallback_slot: String)
 
 
 func _default_filter_for_slot(slot_key: String) -> String:
+	if unit_editor_catalog_controller != null:
+		return unit_editor_catalog_controller.default_filter_for_slot(slot_key)
 	match slot_key:
 		"muscle":
 			return "weapon_all"
@@ -25912,6 +25793,8 @@ func _default_filter_for_slot(slot_key: String) -> String:
 
 
 func _visible_part_group_slots() -> Array:
+	if unit_editor_catalog_controller != null:
+		return unit_editor_catalog_controller.visible_part_group_slots(editor_part_group_mode)
 	return Array(EDITOR_PART_GROUP_SLOTS.get(editor_part_group_mode, EDITOR_PART_GROUP_SLOTS["terminal_weapon"]))
 
 
@@ -25937,6 +25820,21 @@ func _select_catalog_component(component_index: int) -> void:
 		if hot_path_profiler != null:
 			hot_path_profiler.scope_end("install_part")
 		return
+	if role_key == "barrier" and _barrier_uses_screen_board(unit_bp) and _is_topology_part_slot(slot_key):
+		if not bool(clicked_part.get("barrier_tile_component", false)) and not bool(clicked_part.get("barrier_panel", false)) and String(clicked_part.get("barrier_logic", "")) == "":
+			if hot_path_profiler != null:
+				hot_path_profiler.scope_end("install_part")
+			return
+		unit_bp[slot_key] = actual_index
+		_set_pending_canvas_part(unit_bp, slot_key, actual_index)
+		_set_control_text_if_changed(editor_board_hint_label, "已选择：%s。点击结界屏幕格放置/替换。" % _pending_canvas_part_name(role_key) if _ui_is_zh() else "Selected: %s. Click a barrier screen cell to place/replace." % _pending_canvas_part_name(role_key))
+		_play_sfx_wave("clack", 640.0, 0.04, -18.0)
+		ai_team_manual_lock[player_id] = true
+		mark_editor_dirty(EDITOR_DIRTY_ACTION_BUTTONS | EDITOR_DIRTY_BOARD_UI, "catalog.pending_barrier_part")
+		flush_editor_dirty(600)
+		if hot_path_profiler != null:
+			hot_path_profiler.scope_end("install_part")
+		return
 	if _role_uses_body_board(role_key) and _is_body_group_slot(slot_key):
 		_ensure_custom_topology(unit_bp)
 		if _is_topology_part_slot(slot_key):
@@ -25959,6 +25857,7 @@ func _select_catalog_component(component_index: int) -> void:
 			topology["nodes"] = nodes
 			unit_bp["custom_topology"] = topology
 			unit_bp["blank_canvas"] = false
+			editor_selected_topology_nodes = [editor_topology_node_index]
 			_trigger_editor_snap("node", String(clicked_part.get("name", "")))
 			ai_team_manual_lock[player_id] = true
 	else:
@@ -26128,7 +26027,7 @@ func _pending_module_binding_hint() -> String:
 		return ""
 	var role_key: String = ROLE_ORDER[editor_role_index]
 	var module_part := _selected_component(role_key, "module", int(editor_pending_module_binding.get("module_index", 0)))
-	var module_name := _zh_part_name(String(module_part.get("name", "行动模块"))) if _ui_is_zh() else String(module_part.get("name", "MODULE"))
+	var module_name := _part_display_name(module_part, "MODULE")
 	if not bool(editor_pending_module_binding.get("target_selected", false)):
 		return ("绑定 %s：画板蓝绿部位可点击，红橙部位会显示原因；也可在躯干详情页点选。" if _ui_is_zh() else "Bind %s: click blue-green board targets; red-orange targets show why they fail. You can also pick in torso detail.") % module_name
 	var key := int(editor_pending_module_binding.get("attack_key", 0))
@@ -26377,6 +26276,139 @@ func _topology_node_is_blunt_terminal_family(role_key: String, unit_bp: Dictiona
 	return String(profile.get("kind", "")) == "ball" and float(profile.get("angle", 0.0)) >= float(required_degrees)
 
 
+func _boot_driver_weapon_extension_m(part: Dictionary, module_part: Dictionary = {}) -> float:
+	if part.is_empty():
+		return 0.0
+	for key in ["embedded_joint_extension", "max_extension_m", "joint_extension_m", "extension_m"]:
+		if part.has(String(key)) and float(part.get(String(key), 0.0)) > 0.0:
+			return maxf(0.0, float(part.get(String(key), 0.0)))
+	for profile_key in ["embedded_joint_profile", "embedded_joint", "joint_profile"]:
+		if part.get(profile_key, {}) is Dictionary:
+			var profile_data: Dictionary = part.get(profile_key, {})
+			for extension_key in ["extension", "max_extension_m", "range"]:
+				if profile_data.has(extension_key) and float(profile_data.get(extension_key, 0.0)) > 0.0:
+					return maxf(0.0, float(profile_data.get(extension_key, 0.0)))
+	var explicit_kind := String(part.get("embedded_joint_kind", "")).to_lower()
+	for profile_key in ["embedded_joint_profile", "embedded_joint", "joint_profile"]:
+		if explicit_kind == "" and part.get(profile_key, {}) is Dictionary:
+			explicit_kind = String(Dictionary(part.get(profile_key, {})).get("kind", "")).to_lower()
+	if bool(part.get("hybrid_embedded_joint", false)):
+		explicit_kind = "hybrid"
+	if explicit_kind not in ["linear", "hybrid"]:
+		return 0.0
+	var embedded_profile := _embedded_joint_profile_for_part(part, "muscle", module_part)
+	var profile_extension := maxf(0.0, float(embedded_profile.get("extension", 0.0)))
+	if profile_extension > 0.0:
+		return profile_extension
+	return maxf(0.0, float(part.get("range", 0.0)))
+
+
+func _topology_node_is_boot_driver_rotating_limb(role_key: String, unit_bp: Dictionary, nodes: Array, node_index: int, module_part: Dictionary = {}) -> bool:
+	if node_index < 0 or node_index >= nodes.size() or not (nodes[node_index] is Dictionary):
+		return false
+	var node: Dictionary = nodes[node_index]
+	if _topology_node_is_torso(role_key, node, unit_bp):
+		return false
+	var slot_key := _topology_node_slot(node)
+	if slot_key != "limb_muscle" and slot_key != "muscle":
+		return false
+	var part := _topology_node_part(role_key, node, unit_bp)
+	if _part_counts_as_terminal_weapon(part, slot_key):
+		return false
+	var profile := _embedded_joint_profile_for_part(part, slot_key, module_part)
+	var kind := String(profile.get("kind", "")).to_lower()
+	return kind in ["ball", "hybrid"] and float(profile.get("angle", 0.0)) > 0.0
+
+
+func _topology_node_is_boot_driver_telescopic_blunt_weapon(role_key: String, unit_bp: Dictionary, nodes: Array, node_index: int, module_part: Dictionary = {}) -> bool:
+	if node_index < 0 or node_index >= nodes.size() or not (nodes[node_index] is Dictionary):
+		return false
+	var node: Dictionary = nodes[node_index]
+	if _topology_node_slot(node) != "muscle":
+		return false
+	var part := _topology_node_part(role_key, node, unit_bp)
+	if bool(part.get("barrier_panel", false)) or bool(part.get("barrier_tile_component", false)):
+		return false
+	if _terminal_weapon_kind_for_part(part, "muscle") != "melee":
+		return false
+	if bool(part.get("projectile", false)) or _part_is_ranged_terminal_weapon(part):
+		return false
+	if not _component_is_blunt_weapon(part):
+		return false
+	var explicit_kind := String(part.get("embedded_joint_kind", "")).to_lower()
+	for profile_key in ["embedded_joint_profile", "embedded_joint", "joint_profile"]:
+		if explicit_kind == "" and part.get(profile_key, {}) is Dictionary:
+			explicit_kind = String(Dictionary(part.get(profile_key, {})).get("kind", "")).to_lower()
+	if bool(part.get("hybrid_embedded_joint", false)):
+		explicit_kind = "hybrid"
+	if explicit_kind == "" and _boot_driver_weapon_extension_m(part, module_part) > 0.0:
+		explicit_kind = String(_embedded_joint_profile_for_part(part, "muscle", module_part).get("kind", "")).to_lower()
+	if explicit_kind not in ["linear", "hybrid"]:
+		return false
+	return _boot_driver_weapon_extension_m(part, module_part) > 0.0
+
+
+func _boot_driver_binding_nodes_for_selection(role_key: String, unit_bp: Dictionary, nodes: Array, edges: Array, selection: Array, module_part: Dictionary) -> Array:
+	var candidates: Array = []
+	for raw_index in selection:
+		var index := int(raw_index)
+		if index >= 0 and index < nodes.size() and not candidates.has(index):
+			candidates.append(index)
+	for raw_index in selection:
+		var cursor := int(raw_index)
+		var guard := 0
+		while cursor >= 0 and cursor < nodes.size() and guard < nodes.size() + 8:
+			guard += 1
+			if not candidates.has(cursor):
+				candidates.append(cursor)
+			var parent_index := _topology_parent_index_for_node(role_key, unit_bp, nodes, edges, cursor)
+			if parent_index < 0 or parent_index >= nodes.size() or _topology_node_is_torso(role_key, nodes[parent_index], unit_bp):
+				break
+			cursor = parent_index
+	for raw_candidate in candidates:
+		var rotating := int(raw_candidate)
+		if not _topology_node_is_boot_driver_rotating_limb(role_key, unit_bp, nodes, rotating, module_part):
+			continue
+		var previous := -1
+		var current := rotating
+		var guard := 0
+		while current >= 0 and current < nodes.size() and guard < nodes.size() + 8:
+			guard += 1
+			if current != rotating and _topology_node_is_boot_driver_telescopic_blunt_weapon(role_key, unit_bp, nodes, current, module_part):
+				return [rotating, current]
+			var next_index := _next_topology_chain_node(role_key, unit_bp, nodes, edges, current, previous)
+			previous = current
+			current = next_index
+	return []
+
+
+func _boot_driver_binding_root_for_selection(role_key: String, unit_bp: Dictionary, nodes: Array, edges: Array, selection: Array, module_part: Dictionary) -> int:
+	var binding_nodes := _boot_driver_binding_nodes_for_selection(role_key, unit_bp, nodes, edges, selection, module_part)
+	return int(binding_nodes[0]) if binding_nodes.size() == 2 else -1
+
+
+func _boot_driver_invalid_reason_for_nodes(role_key: String, unit_bp: Dictionary, nodes: Array, edges: Array, target_nodes: Array, module_part: Dictionary) -> String:
+	if target_nodes.size() != 2:
+		return "Boot Driver needs exactly one rotating limb and one telescopic blunt terminal weapon."
+	var rotating := int(target_nodes[0])
+	var weapon := int(target_nodes[1])
+	if not _topology_node_is_boot_driver_rotating_limb(role_key, unit_bp, nodes, rotating, module_part):
+		return "Boot Driver root must be a non-terminal rotating limb muscle with a ball/hybrid embedded joint."
+	if not _topology_node_is_boot_driver_telescopic_blunt_weapon(role_key, unit_bp, nodes, weapon, module_part):
+		return "Boot Driver weapon must be a telescopic blunt melee terminal on the same chain."
+	var previous := -1
+	var current := rotating
+	var guard := 0
+	while current >= 0 and current < nodes.size() and guard < nodes.size() + 8:
+		guard += 1
+		if current == weapon:
+			return ""
+		var next_index := _next_topology_chain_node(role_key, unit_bp, nodes, edges, current, previous)
+		previous = current
+		current = next_index
+	return "Boot Driver weapon must be downstream of the rotating limb on the same chain."
+
+
 func _gauntlet_binding_root_for_selection(role_key: String, unit_bp: Dictionary, nodes: Array, edges: Array, selection: Array, module_part: Dictionary) -> int:
 	for raw_index in selection:
 		var index := int(raw_index)
@@ -26472,7 +26504,10 @@ func _complete_pending_module_binding_with_selection(unit_bp: Dictionary, select
 		root_index = torso_index
 	else:
 		var module_profile := String(module_part.get("module_action_profile", ""))
-		if module_profile == "two_link_forward_snap":
+		if module_profile == BOOT_ACTION_DRIVER_PROFILE:
+			root_index = _boot_driver_binding_root_for_selection(role_key, unit_bp, nodes, topology.get("edges", []), selection, module_part)
+			target_kind = BOOT_ACTION_DRIVER_TARGET_KIND
+		elif module_profile == "two_link_forward_snap":
 			root_index = _two_link_binding_root_for_selection(role_key, unit_bp, nodes, topology.get("edges", []), selection)
 		elif _gun_activation_profiles().has(module_profile):
 			root_index = _gun_activation_binding_root_for_selection(role_key, unit_bp, nodes, topology.get("edges", []), selection)
@@ -26498,7 +26533,7 @@ func _complete_pending_module_binding_with_selection(unit_bp: Dictionary, select
 		editor_summary_label.text = "警报：该行动模块需要绑定肢体，不是躯干。" if _ui_is_zh() else "ALARM: this action module needs a limb target, not a torso."
 		_play_sfx_wave("alarm", 170.0, 0.08, -16.0)
 		return true
-	if target_kind in ["limb", "gun_terminal", "gauntlet_terminal", "shield_terminal", "hammer_terminal"] and (_topology_node_is_torso(role_key, nodes[root_index], unit_bp) or _topology_node_slot(nodes[root_index]) == "joint"):
+	if target_kind in ["limb", "gun_terminal", "gauntlet_terminal", "shield_terminal", "hammer_terminal", BOOT_ACTION_DRIVER_TARGET_KIND] and (_topology_node_is_torso(role_key, nodes[root_index], unit_bp) or _topology_node_slot(nodes[root_index]) == "joint"):
 		editor_summary_label.text = "警报：该行动模块需要绑定带内置关节的肌肉段。" if _ui_is_zh() else "ALARM: bind this module to a muscle segment with an embedded root joint."
 		_play_sfx_wave("alarm", 170.0, 0.08, -16.0)
 		return true
@@ -26527,9 +26562,15 @@ func _complete_pending_module_binding_with_selection(unit_bp: Dictionary, select
 		editor_summary_label.text = "警报：大锤蓄砸只能绑定带内置球形关节的钝击大锤。" if _ui_is_zh() else "ALARM: Hammer Windup-Slam needs a blunt hammer terminal with an embedded ball joint."
 		_play_sfx_wave("alarm", 170.0, 0.08, -16.0)
 		return true
-	var target_nodes := [root_index] if target_kind in ["gun_terminal", "gauntlet_terminal", "shield_terminal", "hammer_terminal"] else (_topology_downstream_node_indices(role_key, unit_bp, nodes, topology.get("edges", []), root_index) if target_kind == "limb" else [root_index])
+	var target_nodes := _boot_driver_binding_nodes_for_selection(role_key, unit_bp, nodes, topology.get("edges", []), selection, module_part) if target_kind == BOOT_ACTION_DRIVER_TARGET_KIND else ([root_index] if target_kind in ["gun_terminal", "gauntlet_terminal", "shield_terminal", "hammer_terminal"] else (_topology_downstream_node_indices(role_key, unit_bp, nodes, topology.get("edges", []), root_index) if target_kind == "limb" else [root_index]))
 	if selection.size() > 1 and target_kind == "limb" and String(module_part.get("module_action_profile", "")) != "two_link_forward_snap":
 		target_nodes = selection
+	if target_kind == BOOT_ACTION_DRIVER_TARGET_KIND:
+		var boot_reason := _boot_driver_invalid_reason_for_nodes(role_key, unit_bp, nodes, topology.get("edges", []), target_nodes, module_part)
+		if boot_reason != "":
+			editor_summary_label.text = "警报：Boot Driver 绑定非法：%s" % boot_reason if _ui_is_zh() else "ALARM: illegal Boot Driver binding: %s" % boot_reason
+			_play_sfx_wave("alarm", 170.0, 0.08, -16.0)
+			return true
 	if torso_index < 0 and not target_nodes.is_empty():
 		torso_index = _topology_owner_torso_node_for_node(role_key, unit_bp, int(target_nodes[0]))
 	var drive_by_node := _module_binding_drive_allocation_for_nodes(role_key, unit_bp, nodes, target_nodes, module_part)
@@ -26545,7 +26586,7 @@ func _complete_pending_module_binding_with_selection(unit_bp: Dictionary, select
 	var test_unit: Dictionary = unit_bp.duplicate(true)
 	var test_topology: Dictionary = topology.duplicate(true)
 	var test_nodes: Array = nodes.duplicate(true)
-	if target_kind in ["limb", "gun_terminal", "gauntlet_terminal", "shield_terminal", "hammer_terminal"]:
+	if target_kind in ["limb", "gun_terminal", "gauntlet_terminal", "shield_terminal", "hammer_terminal", BOOT_ACTION_DRIVER_TARGET_KIND]:
 		var root_node: Dictionary = Dictionary(test_nodes[root_index]).duplicate(true)
 		var modules: Array = Array(root_node.get("modules", []))
 		if not modules.has(module_index):
@@ -26557,7 +26598,7 @@ func _complete_pending_module_binding_with_selection(unit_bp: Dictionary, select
 	test_topology["nodes"] = test_nodes
 	test_unit["custom_topology"] = test_topology
 	var invalid_reason := ""
-	if target_kind in ["limb", "gun_terminal", "gauntlet_terminal", "shield_terminal", "hammer_terminal"]:
+	if target_kind in ["limb", "gun_terminal", "gauntlet_terminal", "shield_terminal", "hammer_terminal", BOOT_ACTION_DRIVER_TARGET_KIND]:
 		var attack_nodes := _component_topology_attack_nodes(role_key, test_unit, false)
 		var matched := false
 		for attack_node in attack_nodes:
@@ -26590,6 +26631,11 @@ func _complete_pending_module_binding_with_selection(unit_bp: Dictionary, select
 	editor_pending_module_binding["joint_drive_allocation_total"] = joint_drive_total
 	editor_pending_module_binding["joint_drive_demand"] = joint_drive_total
 	editor_pending_module_binding["joint_output_momentum"] = joint_output_total
+	if target_kind == BOOT_ACTION_DRIVER_TARGET_KIND and target_nodes.size() == 2:
+		var weapon_part := _topology_node_part(role_key, nodes[int(target_nodes[1])], unit_bp)
+		editor_pending_module_binding["boot_driver_rotating_node"] = int(target_nodes[0])
+		editor_pending_module_binding["boot_driver_weapon_node"] = int(target_nodes[1])
+		editor_pending_module_binding["boot_driver_extension_m"] = _boot_driver_weapon_extension_m(weapon_part, module_part)
 	editor_pending_module_binding["attack_key"] = 0
 	editor_pending_module_binding["side_mount_action_required"] = side_mount_required
 	if side_mount_required:
@@ -26652,6 +26698,9 @@ func _module_binding_target_nodes_for_candidate(role_key: String, unit_bp: Dicti
 	if root_index < 0 or root_index >= nodes.size():
 		return []
 	match target_kind:
+		BOOT_ACTION_DRIVER_TARGET_KIND:
+			var resolved := _boot_driver_binding_nodes_for_selection(role_key, unit_bp, nodes, edges, [root_index], module_part)
+			return resolved if resolved.size() == 2 else []
 		"torso", "gun_terminal", "gauntlet_terminal", "shield_terminal", "hammer_terminal":
 			return [root_index]
 		_:
@@ -26727,7 +26776,12 @@ func _torso_detail_binding_candidate_for_node(unit_bp: Dictionary, _payload_inde
 		valid = false
 		note = "不是可发肌肉" if _ui_is_zh() else "Not a driven muscle"
 	else:
-		if module_profile == "two_link_forward_snap":
+		if module_profile == BOOT_ACTION_DRIVER_PROFILE:
+			root_index = _boot_driver_binding_root_for_selection(role_key, unit_bp, nodes, topology.get("edges", []), selection, module_part)
+			target_kind = BOOT_ACTION_DRIVER_TARGET_KIND
+			valid = root_index >= 0
+			note = "Boot Driver OK" if valid and not _ui_is_zh() else ("Boot Driver OK" if valid else ("需要旋转肢体 + 伸缩钝击末端" if _ui_is_zh() else "Needs rotating limb + telescopic blunt terminal"))
+		elif module_profile == "two_link_forward_snap":
 			root_index = _two_link_binding_root_for_selection(role_key, unit_bp, nodes, topology.get("edges", []), selection)
 			valid = root_index >= 0
 			note = "双段链 OK" if valid and _ui_is_zh() else ("TWO-LINK OK" if valid else ("需要两段旋转肢体" if _ui_is_zh() else "Needs two rotating links"))
@@ -26886,7 +26940,7 @@ func _finalize_pending_module_binding_after_key(unit_bp: Dictionary) -> bool:
 		_play_sfx_wave("alarm", 170.0, 0.08, -16.0)
 		return true
 	_record_editor_undo_state("绑定行动模块" if _ui_is_zh() else "bind action module")
-	if target_kind in ["limb", "gun_terminal", "gauntlet_terminal", "shield_terminal", "hammer_terminal"]:
+	if target_kind in ["limb", "gun_terminal", "gauntlet_terminal", "shield_terminal", "hammer_terminal", BOOT_ACTION_DRIVER_TARGET_KIND]:
 		var node: Dictionary = Dictionary(nodes[root_index]).duplicate(true)
 		var node_modules: Array = Array(node.get("modules", []))
 		if not node_modules.has(module_index):
@@ -26920,6 +26974,11 @@ func _finalize_pending_module_binding_after_key(unit_bp: Dictionary) -> bool:
 		"command_window_profile": String(module_part.get("command_window_profile", "")),
 		"binding_valid_note": "OK",
 	}
+	if target_kind == BOOT_ACTION_DRIVER_TARGET_KIND and target_nodes.size() == 2:
+		var weapon_part := _topology_node_part(role_key, nodes[int(target_nodes[1])], unit_bp)
+		next_binding["boot_driver_rotating_node"] = int(target_nodes[0])
+		next_binding["boot_driver_weapon_node"] = int(target_nodes[1])
+		next_binding["boot_driver_extension_m"] = _boot_driver_weapon_extension_m(weapon_part, module_part)
 	if side_mount_required:
 		next_binding["side_mount_action_side"] = side_mount_side
 		next_binding["side_mount_action_angle_offset"] = _side_mount_action_angle_offset(side_mount_side)
@@ -27135,14 +27194,24 @@ func _drop_catalog_part_on_torso_detail(slot_key: String, part_index: int, slot_
 	_add_torso_payload_component(slot_key, part_index, part, slot_index if slot_kind == "plugin" else -1)
 
 
-func _scroll_editor_catalog_page_from_card(direction: int) -> void:
-	if game_state != STATE_EDITOR or editor_panel_mode == "load":
-		return
+func _editor_load_max_page() -> int:
+	var page_size := maxi(1, editor_load_card_buttons.size())
+	var entries := _editor_load_entries()
+	return maxi(0, int(ceilf(float(entries.size()) / float(page_size))) - 1)
+
+
+func _editor_current_catalog_max_page() -> int:
 	var page_size := maxi(1, editor_catalog_buttons.size())
 	var role_key: String = ROLE_ORDER[editor_role_index]
 	var slot_key := String(BUILD_SLOTS[editor_slot_index])
 	var entries := _editor_catalog_entries(role_key, slot_key)
-	var max_page := maxi(0, int(ceilf(float(entries.size()) / float(page_size))) - 1)
+	return maxi(0, int(ceilf(float(entries.size()) / float(page_size))) - 1)
+
+
+func _scroll_editor_catalog_page_from_card(direction: int) -> void:
+	if game_state != STATE_EDITOR or editor_panel_mode == "load":
+		return
+	var max_page := _editor_current_catalog_max_page()
 	var step := -1 if direction < 0 else 1
 	var next_page := clampi(editor_catalog_page + step, 0, max_page)
 	if next_page == editor_catalog_page:
@@ -27291,31 +27360,9 @@ func _editor_action(action_key: String) -> void:
 			editor_summary_label.text = "对战规则已切换为：%s。队伍草稿不会自动补单位，出战前再选择对应数量。" % _match_format_name() if _ui_is_zh() else "Match format switched to: %s. Draft roster is not auto-filled; pick the sortie count before battle." % _match_format_name()
 			_update_editor_ui()
 		"prev_unit":
-			editor_canvas_mode = "roster_unit"
-			var player_id := _editor_player()
-			var role_key_for_prev: String = ROLE_ORDER[editor_role_index]
-			if Array(blueprints[player_id].get(role_key_for_prev, [])).is_empty():
-				_reset_editor_working_canvas(role_key_for_prev)
-				_update_editor_ui()
-				if hot_path_profiler != null:
-					hot_path_profiler.scope_end("editor_action")
-				return
-			editor_unit_indices[role_key_for_prev] = _wrapped_index(int(editor_unit_indices[role_key_for_prev]) - 1, blueprints[player_id][role_key_for_prev].size())
-			active_roster_indices[player_id][role_key_for_prev] = int(editor_unit_indices[role_key_for_prev])
-			_update_editor_ui()
+			_select_adjacent_editor_unit_page(-1)
 		"next_unit":
-			editor_canvas_mode = "roster_unit"
-			var player_id := _editor_player()
-			var role_key_for_next: String = ROLE_ORDER[editor_role_index]
-			if Array(blueprints[player_id].get(role_key_for_next, [])).is_empty():
-				_reset_editor_working_canvas(role_key_for_next)
-				_update_editor_ui()
-				if hot_path_profiler != null:
-					hot_path_profiler.scope_end("editor_action")
-				return
-			editor_unit_indices[role_key_for_next] = _wrapped_index(int(editor_unit_indices[role_key_for_next]) + 1, blueprints[player_id][role_key_for_next].size())
-			active_roster_indices[player_id][role_key_for_next] = int(editor_unit_indices[role_key_for_next])
-			_update_editor_ui()
+			_select_adjacent_editor_unit_page(1)
 		"duplicate":
 			_add_roster_unit()
 		"delete":
@@ -27347,18 +27394,20 @@ func _editor_action(action_key: String) -> void:
 			editor_summary_label.text = "召唤组合键绑定跟随本场出战槽，请在赛前选择后调整。" if _ui_is_zh() else "Summon-pair bindings belong to this match's sortie slots; adjust after choosing them pre-battle."
 		"prev_catalog":
 			if editor_panel_mode == "load":
-				editor_load_page = max(0, editor_load_page - 1)
-				_update_editor_ui()
+				editor_load_page = clampi(editor_load_page - 1, 0, _editor_load_max_page())
+				_update_editor_ui(true)
 			else:
-				editor_catalog_page = max(0, editor_catalog_page - 1)
+				editor_catalog_page = clampi(editor_catalog_page - 1, 0, _editor_current_catalog_max_page())
+				editor_catalog_buttons_revision_key = ""
 				mark_editor_dirty(EDITOR_DIRTY_CATALOG | EDITOR_DIRTY_ACTION_BUTTONS, "catalog.prev_page")
 				flush_editor_dirty(1200)
 		"next_catalog":
 			if editor_panel_mode == "load":
-				editor_load_page += 1
-				_update_editor_ui()
+				editor_load_page = clampi(editor_load_page + 1, 0, _editor_load_max_page())
+				_update_editor_ui(true)
 			else:
-				editor_catalog_page += 1
+				editor_catalog_page = clampi(editor_catalog_page + 1, 0, _editor_current_catalog_max_page())
+				editor_catalog_buttons_revision_key = ""
 				mark_editor_dirty(EDITOR_DIRTY_CATALOG | EDITOR_DIRTY_ACTION_BUTTONS, "catalog.next_page")
 				flush_editor_dirty(1200)
 		"toggle_templates":
@@ -27375,12 +27424,21 @@ func _editor_action(action_key: String) -> void:
 			_restore_editor_undo_state()
 		"delete_selected_part":
 			_delete_selected_canvas_part()
+		"copy_selection":
+			_copy_selected_topology_nodes(true)
+		"cut_selection":
+			_cut_selected_topology_nodes()
+		"paste_selection":
+			_paste_topology_clipboard()
 		"clear_canvas":
 			_clear_editor_canvas()
 		"add_node":
 			_add_topology_node()
 		"link_node":
 			_link_topology_node()
+		"toggle_barrier_grid":
+			editor_barrier_grid_guides_enabled = not editor_barrier_grid_guides_enabled
+			_mark_editor_board_overlay_dirty("barrier.grid_guides")
 		"set_handedness_left":
 			if editor_pending_orientation_node_index >= 0:
 				_set_topology_node_visual_handedness(editor_pending_orientation_node_index, "left", false)
@@ -27463,7 +27521,7 @@ func _delete_selected_canvas_part() -> void:
 	var player_id := _editor_player()
 	var role_key: String = ROLE_ORDER[editor_role_index]
 	var unit_bp: Dictionary = _editor_current_blueprint()
-	if role_key == "barrier":
+	if role_key == "barrier" and _barrier_uses_screen_board(unit_bp):
 		var tiles: Array = Array(unit_bp.get("barrier_tiles", [])).duplicate(true)
 		var selected_cell := editor_selected_barrier_cell
 		if selected_cell < 0 and not tiles.is_empty() and tiles[tiles.size() - 1] is Dictionary:
@@ -27566,6 +27624,536 @@ func _delete_selected_canvas_part() -> void:
 	_play_sfx_wave("clack", 520.0, 0.045, -18.0)
 	ai_team_manual_lock[player_id] = true
 	_update_editor_ui()
+
+
+func _selected_topology_node_indices_for_clipboard(nodes: Array) -> Array:
+	var selected := {}
+	for raw_index in editor_selected_topology_nodes:
+		var index := int(raw_index)
+		if index >= 0 and index < nodes.size():
+			selected[index] = true
+	var result: Array = selected.keys()
+	result.sort()
+	return result
+
+
+func _topology_selection_bounds(nodes: Array, selected_indices: Array) -> Rect2:
+	if selected_indices.is_empty():
+		return Rect2(Vector2(0.5, 0.5), Vector2.ZERO)
+	var first_index := int(selected_indices[0])
+	var first_pos := _topology_node_position(nodes[first_index])
+	var min_pos := first_pos
+	var max_pos := first_pos
+	for raw_index in selected_indices:
+		var index := int(raw_index)
+		if index < 0 or index >= nodes.size() or not (nodes[index] is Dictionary):
+			continue
+		var pos := _topology_node_position(nodes[index])
+		min_pos.x = minf(min_pos.x, pos.x)
+		min_pos.y = minf(min_pos.y, pos.y)
+		max_pos.x = maxf(max_pos.x, pos.x)
+		max_pos.y = maxf(max_pos.y, pos.y)
+	return Rect2(min_pos, max_pos - min_pos)
+
+
+func _remap_topology_edge(edge, index_map: Dictionary):
+	var a := _topology_edge_node_a(edge)
+	var b := _topology_edge_node_b(edge)
+	if not index_map.has(a) or not index_map.has(b):
+		return null
+	var next_a := int(index_map[a])
+	var next_b := int(index_map[b])
+	if next_a == next_b or next_a < 0 or next_b < 0:
+		return null
+	if edge is Dictionary:
+		var remapped: Dictionary = Dictionary(edge).duplicate(true)
+		remapped["a_node"] = next_a
+		remapped["b_node"] = next_b
+		remapped.erase("a")
+		remapped.erase("b")
+		return remapped
+	if edge is Array:
+		var remapped_array: Array = Array(edge).duplicate(true)
+		if remapped_array.size() >= 2:
+			remapped_array[0] = next_a
+			remapped_array[1] = next_b
+			return remapped_array
+	return [next_a, next_b]
+
+
+func _remap_node_index_value(value, index_map: Dictionary, require_present: bool) -> Variant:
+	var index := int(value)
+	if index_map.has(index):
+		return int(index_map[index])
+	return null if require_present else index
+
+
+func _remap_node_index_array(values: Array, index_map: Dictionary, require_all: bool) -> Array:
+	var result: Array = []
+	for raw_value in values:
+		var index := int(raw_value)
+		if not index_map.has(index):
+			if require_all:
+				return []
+			continue
+		result.append(int(index_map[index]))
+	return result
+
+
+func _remap_node_key_dictionary(values: Dictionary, index_map: Dictionary, require_all: bool) -> Dictionary:
+	var result := {}
+	for raw_key in values.keys():
+		var index := int(String(raw_key))
+		if not index_map.has(index):
+			if require_all:
+				return {}
+			continue
+		result[str(int(index_map[index]))] = values[raw_key]
+	return result
+
+
+func _remap_module_binding_for_clipboard(binding: Dictionary, index_map: Dictionary) -> Dictionary:
+	var target_nodes := _remap_node_index_array(Array(binding.get("target_nodes", [])), index_map, true)
+	if target_nodes.is_empty() and not Array(binding.get("target_nodes", [])).is_empty():
+		return {}
+	var remapped := binding.duplicate(true)
+	remapped["target_nodes"] = target_nodes
+	for key in ["root_index", "target_torso_node", "side_mount_action_node", "source_node", "node", "torso_node"]:
+		if not remapped.has(key):
+			continue
+		var value = _remap_node_index_value(remapped[key], index_map, true)
+		if value == null:
+			return {}
+		remapped[key] = int(value)
+	for dict_key in ["allocated_limb_momentum_by_node", "joint_drive_allocation_by_node"]:
+		if remapped.get(dict_key, {}) is Dictionary:
+			remapped[dict_key] = _remap_node_key_dictionary(Dictionary(remapped.get(dict_key, {})), index_map, true)
+	return remapped
+
+
+func _remap_payload_for_clipboard(payload: Dictionary, index_map: Dictionary) -> Dictionary:
+	var remapped := payload.duplicate(true)
+	if remapped.has("torso_node"):
+		var value = _remap_node_index_value(remapped["torso_node"], index_map, true)
+		if value == null:
+			return {}
+		remapped["torso_node"] = int(value)
+	return remapped
+
+
+func _copy_selected_topology_nodes(show_feedback: bool = true) -> bool:
+	var role_key: String = ROLE_ORDER[editor_role_index]
+	var unit_bp: Dictionary = _editor_current_blueprint()
+	if not _role_uses_body_board(role_key):
+		if show_feedback and editor_board_hint_label != null:
+			editor_board_hint_label.text = "警报：当前角色没有可复制的机体拓扑。" if _ui_is_zh() else "ALARM: this role has no copyable body topology."
+			_play_sfx_wave("alarm", 170.0, 0.08, -16.0)
+		return false
+	_ensure_custom_topology(unit_bp)
+	var topology: Dictionary = unit_bp.get("custom_topology", {})
+	var nodes: Array = Array(topology.get("nodes", [])).duplicate(true)
+	var edges: Array = Array(topology.get("edges", [])).duplicate(true)
+	var selected_indices := _selected_topology_node_indices_for_clipboard(nodes)
+	if selected_indices.is_empty():
+		if show_feedback and editor_board_hint_label != null:
+			editor_board_hint_label.text = "先框选或点选构件，再复制。" if _ui_is_zh() else "Select or box-select parts before copying."
+			_play_sfx_wave("alarm", 170.0, 0.08, -16.0)
+		return false
+	var old_to_clip := {}
+	var copied_nodes: Array = []
+	for i in range(selected_indices.size()):
+		var source_index := int(selected_indices[i])
+		if source_index < 0 or source_index >= nodes.size() or not (nodes[source_index] is Dictionary):
+			continue
+		old_to_clip[source_index] = copied_nodes.size()
+		var node: Dictionary = Dictionary(nodes[source_index]).duplicate(true)
+		node["id"] = copied_nodes.size()
+		copied_nodes.append(node)
+	if copied_nodes.is_empty():
+		return false
+	var copied_edges: Array = []
+	for raw_edge in edges:
+		var remapped = _remap_topology_edge(raw_edge, old_to_clip)
+		if remapped != null:
+			copied_edges.append(remapped)
+	var copied_payloads: Array = []
+	for raw_payload in Array(unit_bp.get("slot_payloads", [])):
+		if not (raw_payload is Dictionary):
+			continue
+		var payload := _remap_payload_for_clipboard(Dictionary(raw_payload), old_to_clip)
+		if not payload.is_empty():
+			copied_payloads.append(payload)
+	var copied_bindings: Array = []
+	for raw_binding in Array(unit_bp.get("module_bindings", [])):
+		if not (raw_binding is Dictionary):
+			continue
+		var binding := _remap_module_binding_for_clipboard(Dictionary(raw_binding), old_to_clip)
+		if not binding.is_empty():
+			copied_bindings.append(binding)
+	editor_topology_clipboard = {
+		"kind": "topology_nodes",
+		"role": role_key,
+		"nodes": copied_nodes,
+		"edges": copied_edges,
+		"slot_payloads": copied_payloads,
+		"module_bindings": copied_bindings,
+		"source_node_indices": selected_indices.duplicate(true),
+		"bounds": _topology_selection_bounds(nodes, selected_indices),
+		"schema_version": SAVED_UNIT_SCHEMA_VERSION,
+	}
+	editor_clipboard_paste_count = 0
+	if show_feedback and editor_board_hint_label != null:
+		editor_board_hint_label.text = "已复制 %d 个构件、%d 条内部连接。" % [copied_nodes.size(), copied_edges.size()] if _ui_is_zh() else "Copied %d part(s) and %d internal link(s)." % [copied_nodes.size(), copied_edges.size()]
+	mark_editor_dirty(EDITOR_DIRTY_ACTION_BUTTONS, "clipboard.copy")
+	flush_editor_dirty(600)
+	return true
+
+
+func _remap_unit_node_reference_after_delete(value, index_map: Dictionary, removed_set: Dictionary) -> Variant:
+	var index := int(value)
+	if removed_set.has(index):
+		return null
+	if index_map.has(index):
+		return int(index_map[index])
+	return index
+
+
+func _remap_unit_node_array_after_delete(values: Array, index_map: Dictionary, removed_set: Dictionary) -> Array:
+	var result: Array = []
+	for raw_value in values:
+		var index := int(raw_value)
+		if removed_set.has(index):
+			return []
+		result.append(int(index_map.get(index, index)))
+	return result
+
+
+func _remap_unit_node_key_dictionary_after_delete(values: Dictionary, index_map: Dictionary, removed_set: Dictionary) -> Dictionary:
+	var result := {}
+	for raw_key in values.keys():
+		var index := int(String(raw_key))
+		if removed_set.has(index):
+			continue
+		result[str(int(index_map.get(index, index)))] = values[raw_key]
+	return result
+
+
+func _delete_topology_nodes_from_unit(unit_bp: Dictionary, selected_indices: Array) -> bool:
+	if not unit_bp.has("custom_topology") or selected_indices.is_empty():
+		return false
+	var topology: Dictionary = unit_bp.get("custom_topology", {})
+	var old_nodes: Array = Array(topology.get("nodes", [])).duplicate(true)
+	var old_edges: Array = Array(topology.get("edges", [])).duplicate(true)
+	var removed_set := {}
+	for raw_index in selected_indices:
+		var index := int(raw_index)
+		if index >= 0 and index < old_nodes.size():
+			removed_set[index] = true
+	if removed_set.is_empty():
+		return false
+	var index_map := {}
+	var nodes: Array = []
+	for i in range(old_nodes.size()):
+		if removed_set.has(i):
+			continue
+		if not (old_nodes[i] is Dictionary):
+			continue
+		index_map[i] = nodes.size()
+		var node: Dictionary = Dictionary(old_nodes[i]).duplicate(true)
+		node["id"] = nodes.size()
+		nodes.append(node)
+	var edges: Array = []
+	for raw_edge in old_edges:
+		var a := _topology_edge_node_a(raw_edge)
+		var b := _topology_edge_node_b(raw_edge)
+		if removed_set.has(a) or removed_set.has(b):
+			continue
+		var remapped = _remap_topology_edge(raw_edge, index_map)
+		if remapped != null:
+			edges.append(remapped)
+	topology["nodes"] = nodes
+	topology["edges"] = edges
+	topology["edge_snap_version"] = TOPOLOGY_SNAP_VERSION
+	unit_bp["custom_topology"] = topology
+	unit_bp["blank_canvas"] = nodes.is_empty()
+	var payload_index_map := _remap_unit_payloads_after_node_delete(unit_bp, index_map, removed_set)
+	_remap_unit_module_bindings_after_node_delete(unit_bp, index_map, removed_set, payload_index_map)
+	if unit_bp.get("entry_pose", {}) is Dictionary:
+		var pose := {}
+		for raw_key in Dictionary(unit_bp.get("entry_pose", {})).keys():
+			var index := int(String(raw_key))
+			if removed_set.has(index):
+				continue
+			pose[str(int(index_map.get(index, index)))] = Dictionary(unit_bp["entry_pose"][raw_key]).duplicate(true) if unit_bp["entry_pose"][raw_key] is Dictionary else unit_bp["entry_pose"][raw_key]
+		unit_bp["entry_pose"] = pose
+	return true
+
+
+func _remap_unit_payloads_after_node_delete(unit_bp: Dictionary, index_map: Dictionary, removed_set: Dictionary) -> Dictionary:
+	var old_payloads: Array = Array(unit_bp.get("slot_payloads", [])).duplicate(true)
+	var payload_index_map := {}
+	var payloads: Array = []
+	for i in range(old_payloads.size()):
+		if not (old_payloads[i] is Dictionary):
+			continue
+		var payload: Dictionary = Dictionary(old_payloads[i]).duplicate(true)
+		if payload.has("torso_node"):
+			var remapped = _remap_unit_node_reference_after_delete(payload.get("torso_node", -1), index_map, removed_set)
+			if remapped == null:
+				continue
+			payload["torso_node"] = int(remapped)
+		payload_index_map[i] = payloads.size()
+		payloads.append(payload)
+	unit_bp["slot_payloads"] = payloads
+	return payload_index_map
+
+
+func _remap_unit_module_bindings_after_node_delete(unit_bp: Dictionary, index_map: Dictionary, removed_set: Dictionary, payload_index_map: Dictionary) -> void:
+	var bindings: Array = Array(unit_bp.get("module_bindings", [])).duplicate(true)
+	var kept: Array = []
+	for raw_binding in bindings:
+		if not (raw_binding is Dictionary):
+			continue
+		var binding: Dictionary = Dictionary(raw_binding).duplicate(true)
+		var old_payload_index := int(binding.get("software_slot_index", -1))
+		if old_payload_index >= 0:
+			if not payload_index_map.has(old_payload_index):
+				continue
+			binding["software_slot_index"] = int(payload_index_map[old_payload_index])
+		var target_nodes := _remap_unit_node_array_after_delete(Array(binding.get("target_nodes", [])), index_map, removed_set)
+		if target_nodes.is_empty() and not Array(binding.get("target_nodes", [])).is_empty():
+			continue
+		binding["target_nodes"] = target_nodes
+		var stale := false
+		for key in ["root_index", "target_torso_node", "side_mount_action_node", "source_node", "node", "torso_node"]:
+			if not binding.has(key):
+				continue
+			var remapped = _remap_unit_node_reference_after_delete(binding[key], index_map, removed_set)
+			if remapped == null:
+				stale = true
+				break
+			binding[key] = int(remapped)
+		if stale:
+			continue
+		for dict_key in ["allocated_limb_momentum_by_node", "joint_drive_allocation_by_node"]:
+			if binding.get(dict_key, {}) is Dictionary:
+				binding[dict_key] = _remap_unit_node_key_dictionary_after_delete(Dictionary(binding.get(dict_key, {})), index_map, removed_set)
+		kept.append(binding)
+	unit_bp["module_bindings"] = kept
+
+
+func _cut_selected_topology_nodes() -> bool:
+	var role_key: String = ROLE_ORDER[editor_role_index]
+	var unit_bp: Dictionary = _editor_current_blueprint()
+	if not _role_uses_body_board(role_key):
+		return false
+	_ensure_custom_topology(unit_bp)
+	var topology: Dictionary = unit_bp.get("custom_topology", {})
+	var nodes: Array = Array(topology.get("nodes", []))
+	var selected_indices := _selected_topology_node_indices_for_clipboard(nodes)
+	if selected_indices.is_empty():
+		if editor_board_hint_label != null:
+			editor_board_hint_label.text = "先框选或点选构件，再剪切。" if _ui_is_zh() else "Select or box-select parts before cutting."
+		_play_sfx_wave("alarm", 170.0, 0.08, -16.0)
+		return false
+	if not _copy_selected_topology_nodes(false):
+		return false
+	_record_editor_undo_state("剪切拓扑片段" if _ui_is_zh() else "cut topology fragment")
+	if not _delete_topology_nodes_from_unit(unit_bp, selected_indices):
+		return false
+	editor_topology_node_index = clampi(int(selected_indices[0]), 0, maxi(0, Array(Dictionary(unit_bp.get("custom_topology", {})).get("nodes", [])).size() - 1))
+	editor_selected_topology_nodes = []
+	editor_open_torso_node_index = -1
+	editor_hovered_torso_node_index = -1
+	editor_selected_torso_slot_index = -1
+	editor_selected_torso_slot_kind = ""
+	editor_pending_module_binding = {}
+	editor_bound_module_tryout = {}
+	editor_pending_orientation_node_index = -1
+	editor_dragging_node_index = -1
+	editor_dragging_selected_nodes = false
+	editor_dragging_whole_unit = false
+	editor_selecting_topology_box = false
+	_topology_update_local_pose_fields(role_key, unit_bp)
+	_store_entry_pose_from_topology(unit_bp)
+	ai_team_manual_lock[_editor_player()] = true
+	if editor_board_hint_label != null:
+		editor_board_hint_label.text = "已剪切 %d 个构件，可切换单位页后粘贴。" % selected_indices.size() if _ui_is_zh() else "Cut %d part(s). Switch pages and paste." % selected_indices.size()
+	_play_sfx_wave("clack", 520.0, 0.045, -18.0)
+	_invalidate_editor_board_snapshot_cache()
+	_update_editor_ui()
+	return true
+
+
+func _clipboard_paste_center_topology() -> Vector2:
+	if editor_last_board_mouse_position != Vector2.INF and assembly_board_view != null:
+		var local_rect := Rect2(Vector2.ZERO, assembly_board_view.size)
+		if local_rect.has_point(editor_last_board_mouse_position):
+			return _board_position_to_topology(editor_last_board_mouse_position)
+		if assembly_board_view.get_global_rect().has_point(editor_last_board_mouse_position):
+			return _board_position_to_topology(editor_last_board_mouse_position - assembly_board_view.get_global_rect().position)
+	var offset := Vector2(0.04, 0.04) * float(editor_clipboard_paste_count % 6)
+	return _clamp_topology_position(Vector2(0.5, 0.5) + offset)
+
+
+func _paste_topology_clipboard() -> bool:
+	if editor_topology_clipboard.is_empty() or String(editor_topology_clipboard.get("kind", "")) != "topology_nodes":
+		if editor_board_hint_label != null:
+			editor_board_hint_label.text = "剪贴板为空：先框选构件复制或剪切。" if _ui_is_zh() else "Clipboard is empty. Copy or cut selected parts first."
+		_play_sfx_wave("alarm", 170.0, 0.08, -16.0)
+		return false
+	var role_key: String = ROLE_ORDER[editor_role_index]
+	var unit_bp: Dictionary = _editor_current_blueprint()
+	if not _role_uses_body_board(role_key):
+		if editor_board_hint_label != null:
+			editor_board_hint_label.text = "警报：当前角色没有可粘贴的机体画板。" if _ui_is_zh() else "ALARM: this role has no body board to paste into."
+		_play_sfx_wave("alarm", 170.0, 0.08, -16.0)
+		return false
+	_ensure_custom_topology(unit_bp)
+	var topology: Dictionary = unit_bp.get("custom_topology", {})
+	var nodes: Array = Array(topology.get("nodes", [])).duplicate(true)
+	var clipboard_nodes: Array = Array(editor_topology_clipboard.get("nodes", [])).duplicate(true)
+	if clipboard_nodes.is_empty():
+		return false
+	if nodes.size() + clipboard_nodes.size() > TOPOLOGY_MAX_COMPONENT_NODES:
+		if editor_board_hint_label != null:
+			editor_board_hint_label.text = "警报：粘贴后会超过自由画布 %d 个构件上限。" % TOPOLOGY_MAX_COMPONENT_NODES if _ui_is_zh() else "ALARM: paste would exceed the %d-node free canvas limit." % TOPOLOGY_MAX_COMPONENT_NODES
+		_play_sfx_wave("alarm", 170.0, 0.08, -16.0)
+		return false
+	var bounds: Rect2 = editor_topology_clipboard.get("bounds", Rect2(Vector2(0.5, 0.5), Vector2.ZERO))
+	var source_center := bounds.position + bounds.size * 0.5
+	var target_center := _clipboard_paste_center_topology()
+	var requested_delta := target_center - source_center
+	var future_positions: Array = []
+	for raw_existing_node in nodes:
+		if raw_existing_node is Dictionary:
+			future_positions.append(_topology_node_position(Dictionary(raw_existing_node)))
+	for raw_node in clipboard_nodes:
+		if raw_node is Dictionary:
+			future_positions.append(_topology_node_position(Dictionary(raw_node)) + requested_delta)
+	var min_pos := Vector2(1.0, 1.0)
+	var max_pos := Vector2.ZERO
+	for raw_future_pos in future_positions:
+		if not (raw_future_pos is Vector2):
+			continue
+		var future_pos: Vector2 = raw_future_pos
+		min_pos.x = minf(min_pos.x, future_pos.x)
+		min_pos.y = minf(min_pos.y, future_pos.y)
+		max_pos.x = maxf(max_pos.x, future_pos.x)
+		max_pos.y = maxf(max_pos.y, future_pos.y)
+	if min_pos.x < 0.0:
+		requested_delta.x += -min_pos.x
+	elif max_pos.x > 1.0:
+		requested_delta.x -= max_pos.x - 1.0
+	if min_pos.y < 0.0:
+		requested_delta.y += -min_pos.y
+	elif max_pos.y > 1.0:
+		requested_delta.y -= max_pos.y - 1.0
+	_record_editor_undo_state("粘贴拓扑片段" if _ui_is_zh() else "paste topology fragment")
+	var clip_to_new := {}
+	var pasted_indices: Array = []
+	for i in range(clipboard_nodes.size()):
+		if not (clipboard_nodes[i] is Dictionary):
+			continue
+		var node: Dictionary = Dictionary(clipboard_nodes[i]).duplicate(true)
+		var new_index := nodes.size()
+		clip_to_new[i] = new_index
+		node["id"] = new_index
+		node["pos"] = _clamp_topology_position(_topology_node_position(node) + requested_delta)
+		nodes.append(node)
+		pasted_indices.append(new_index)
+	var edges: Array = Array(topology.get("edges", [])).duplicate(true)
+	for raw_edge in Array(editor_topology_clipboard.get("edges", [])):
+		var remapped = _remap_topology_edge(raw_edge, clip_to_new)
+		if remapped != null:
+			edges.append(remapped)
+	topology["nodes"] = nodes
+	topology["edges"] = edges
+	topology["edge_snap_version"] = TOPOLOGY_SNAP_VERSION
+	unit_bp["custom_topology"] = topology
+	unit_bp["blank_canvas"] = nodes.is_empty()
+	_append_clipboard_payloads_and_bindings(unit_bp, clip_to_new)
+	_topology_update_local_pose_fields(role_key, unit_bp)
+	_store_entry_pose_from_topology(unit_bp)
+	editor_clipboard_paste_count += 1
+	editor_topology_node_index = int(pasted_indices[0]) if not pasted_indices.is_empty() else clampi(editor_topology_node_index, 0, maxi(0, nodes.size() - 1))
+	editor_selected_topology_nodes = pasted_indices
+	editor_dragging_node_index = -1
+	editor_dragging_selected_nodes = false
+	editor_dragging_whole_unit = false
+	editor_selecting_topology_box = false
+	editor_open_torso_node_index = -1
+	editor_hovered_torso_node_index = -1
+	editor_selected_torso_slot_index = -1
+	editor_selected_torso_slot_kind = ""
+	editor_pending_module_binding = {}
+	editor_bound_module_tryout = {}
+	editor_pending_orientation_node_index = -1
+	ai_team_manual_lock[_editor_player()] = true
+	if editor_board_hint_label != null:
+		editor_board_hint_label.text = "已粘贴 %d 个构件到当前单位页。" % pasted_indices.size() if _ui_is_zh() else "Pasted %d part(s) onto this unit page." % pasted_indices.size()
+	_play_sfx_wave("clack", 620.0, 0.045, -18.0)
+	_invalidate_editor_board_snapshot_cache()
+	_update_editor_ui()
+	return true
+
+
+func _append_clipboard_payloads_and_bindings(unit_bp: Dictionary, clip_to_new: Dictionary) -> void:
+	var payload_index_map := {}
+	var payloads: Array = Array(unit_bp.get("slot_payloads", [])).duplicate(true)
+	var clipboard_payloads: Array = Array(editor_topology_clipboard.get("slot_payloads", []))
+	for i in range(clipboard_payloads.size()):
+		var raw_payload = clipboard_payloads[i]
+		if not (raw_payload is Dictionary):
+			continue
+		var payload := _paste_remap_payload(Dictionary(raw_payload), clip_to_new)
+		if payload.is_empty():
+			continue
+		payload_index_map[i] = payloads.size()
+		payloads.append(payload)
+	unit_bp["slot_payloads"] = payloads
+	var bindings: Array = Array(unit_bp.get("module_bindings", [])).duplicate(true)
+	for raw_binding in Array(editor_topology_clipboard.get("module_bindings", [])):
+		if not (raw_binding is Dictionary):
+			continue
+		var binding := _paste_remap_module_binding(Dictionary(raw_binding), clip_to_new, payload_index_map)
+		if not binding.is_empty():
+			bindings.append(binding)
+	unit_bp["module_bindings"] = bindings
+
+
+func _paste_remap_payload(payload: Dictionary, clip_to_new: Dictionary) -> Dictionary:
+	var remapped := payload.duplicate(true)
+	if remapped.has("torso_node"):
+		var source := int(remapped.get("torso_node", -1))
+		if not clip_to_new.has(source):
+			return {}
+		remapped["torso_node"] = int(clip_to_new[source])
+	return remapped
+
+
+func _paste_remap_module_binding(binding: Dictionary, clip_to_new: Dictionary, payload_index_map: Dictionary) -> Dictionary:
+	var remapped := binding.duplicate(true)
+	var old_payload_index := int(remapped.get("software_slot_index", -1))
+	if old_payload_index >= 0:
+		if not payload_index_map.has(old_payload_index):
+			return {}
+		remapped["software_slot_index"] = int(payload_index_map[old_payload_index])
+	var target_nodes := _remap_node_index_array(Array(remapped.get("target_nodes", [])), clip_to_new, true)
+	if target_nodes.is_empty() and not Array(remapped.get("target_nodes", [])).is_empty():
+		return {}
+	remapped["target_nodes"] = target_nodes
+	for key in ["root_index", "target_torso_node", "side_mount_action_node", "source_node", "node", "torso_node"]:
+		if not remapped.has(key):
+			continue
+		var value = _remap_node_index_value(remapped[key], clip_to_new, true)
+		if value == null:
+			return {}
+		remapped[key] = int(value)
+	for dict_key in ["allocated_limb_momentum_by_node", "joint_drive_allocation_by_node"]:
+		if remapped.get(dict_key, {}) is Dictionary:
+			remapped[dict_key] = _remap_node_key_dictionary(Dictionary(remapped.get(dict_key, {})), clip_to_new, true)
+	return remapped
 
 
 func _add_topology_node() -> void:
@@ -28053,7 +28641,10 @@ func _trigger_editor_snap(slot_key: String, part_name: String, defer_sfx: bool =
 	var role_key: String = ROLE_ORDER[editor_role_index]
 	var unit_bp: Dictionary = _editor_current_blueprint()
 	if role_key == "barrier" or slot_key == "barrier":
-		editor_board_hint_label.text = "咔哒：%s 已磁吸进结界自由画布。" % part_name if _ui_is_zh() else "CLACK: %s magnet-locked into barrier free canvas." % part_name
+		if _barrier_uses_screen_board(unit_bp):
+			editor_board_hint_label.text = "咔哒：%s 已固定到结界屏幕格。" % part_name if _ui_is_zh() else "CLACK: %s fixed to the barrier screen grid." % part_name
+		else:
+			editor_board_hint_label.text = "咔哒：%s 已磁吸进结界自由画布。" % part_name if _ui_is_zh() else "CLACK: %s magnet-locked into barrier free canvas." % part_name
 	else:
 		editor_board_hint_label.text = "咔哒：%s 已磁吸到 %s。" % [part_name, _body_part_label(editor_selected_body_part, unit_bp)] if _ui_is_zh() else "CLACK: %s magnet-locked into %s." % [part_name, _body_part_label(editor_selected_body_part, unit_bp)]
 
@@ -28143,7 +28734,7 @@ func _tick_editor_visuals(delta: float) -> void:
 	if visual_dirty:
 		var role_key: String = ROLE_ORDER[editor_role_index]
 		var unit_bp: Dictionary = _editor_current_blueprint()
-		if game_state == STATE_EDITOR and _role_uses_body_board(role_key) and unit_bp.has("custom_topology") and not editor_board_base_snapshot_cache.is_empty():
+		if game_state == STATE_EDITOR and _role_uses_body_board(role_key) and unit_bp.has("custom_topology") and not (role_key == "barrier" and _barrier_uses_screen_board(unit_bp)) and not editor_board_base_snapshot_cache.is_empty():
 			_refresh_editor_visual_views_fast_drag()
 		else:
 			_refresh_editor_visual_views({}, false)
@@ -28529,6 +29120,51 @@ func _update_editor_perf_overlay() -> void:
 	editor_perf_overlay_label.text = _editor_perf_overlay_text()
 
 
+func _set_battle_action_diagnostics_overlay_enabled(enabled: bool) -> void:
+	battle_action_diagnostics_overlay_enabled = enabled
+	if battle_action_diagnostics_view != null:
+		battle_action_diagnostics_view.visible = enabled
+		if not enabled:
+			battle_action_diagnostics_view.clear_model()
+	if enabled:
+		_update_battle_action_diagnostics_overlay(true)
+
+
+func _battle_action_diagnostics_overlay_text() -> String:
+	var model := _battle_action_diagnostics_model()
+	if battle_action_diagnostics_view != null:
+		battle_action_diagnostics_view.set_model(model)
+		return battle_action_diagnostics_view.text()
+	var lines: Array[String] = [
+		String(model.get("title", "BATTLE ACTION DIAGNOSTICS")),
+		"units:%d active_units:%d actions:%d" % [
+			int(model.get("unit_count", 0)),
+			int(model.get("active_action_unit_count", 0)),
+			int(model.get("active_action_count", 0)),
+		],
+	]
+	return "\n".join(lines)
+
+
+func _update_battle_action_diagnostics_overlay(force: bool = false) -> void:
+	if battle_action_diagnostics_view == null:
+		return
+	battle_action_diagnostics_view.visible = battle_action_diagnostics_overlay_enabled
+	if not battle_action_diagnostics_overlay_enabled and not force:
+		return
+	if not battle_action_diagnostics_overlay_enabled:
+		battle_action_diagnostics_view.clear_model()
+		return
+	battle_action_diagnostics_view.set_model(_battle_action_diagnostics_model())
+
+
+func _battle_action_diagnostics_model() -> Dictionary:
+	return _battle_runtime_action_telemetry_service().battle_action_diagnostics_model(
+		_battle_runtime_action_telemetry_snapshot(),
+		{"max_units": 5, "max_actions_per_unit": 2}
+	)
+
+
 func _module_material_rule_note(unit_bp: Dictionary) -> String:
 	if unit_bp.has("custom_topology"):
 		return _custom_module_material_rule_note(unit_bp)
@@ -28649,6 +29285,30 @@ func _module_execution_invalid_reason(module_part: Dictionary, attack_node: Dict
 	var target_kind := String(module_part.get("module_target_kind", ""))
 	if target_kind == "":
 		return ""
+	if target_kind == BOOT_ACTION_DRIVER_TARGET_KIND:
+		var topology: Dictionary = unit_bp.get("custom_topology", {})
+		var nodes: Array = Array(topology.get("nodes", []))
+		var edges: Array = Array(topology.get("edges", []))
+		var source_node := int(attack_node.get("source_embedded_joint_node", -1))
+		var module_nodes: Array = Array(attack_node.get("source_module_nodes", []))
+		var target_nodes: Array = []
+		var rotating_node := int(attack_node.get("boot_driver_rotating_node", source_node))
+		if rotating_node < 0:
+			rotating_node = source_node
+		var weapon_node := int(attack_node.get("boot_driver_weapon_node", -1))
+		if weapon_node < 0:
+			for raw_node in module_nodes:
+				var node_index := int(raw_node)
+				if node_index != rotating_node and _topology_node_is_boot_driver_telescopic_blunt_weapon(role_key, unit_bp, nodes, node_index, module_part):
+					weapon_node = node_index
+					break
+		if weapon_node < 0:
+			var resolved := _boot_driver_binding_nodes_for_selection(role_key, unit_bp, nodes, edges, [rotating_node], module_part)
+			if resolved.size() == 2:
+				rotating_node = int(resolved[0])
+				weapon_node = int(resolved[1])
+		target_nodes = [rotating_node, weapon_node] if weapon_node >= 0 else [rotating_node]
+		return _boot_driver_invalid_reason_for_nodes(role_key, unit_bp, nodes, edges, target_nodes, module_part)
 	if target_kind == "two_link_rotating_limb":
 		return _two_link_forward_snap_invalid_reason(module_part, attack_node, role_key, unit_bp)
 	var limb_part := _selected_component(role_key, "limb_muscle", int(attack_node.get("limb_muscle", unit_bp.get("limb_muscle", 0))))
@@ -29217,6 +29877,8 @@ func _delete_roster_unit() -> void:
 
 
 func _battle_input_action_names() -> Array:
+	if battle_input_service != null:
+		return battle_input_service.battle_action_names(["p1", "p2"], ATTACK_GROUP_COUNT)
 	var actions: Array = ["battle_pause"]
 	for prefix in ["p1", "p2"]:
 		for suffix in ["left", "right", "up", "down", "face_left", "face_right", "portal"]:
@@ -29227,6 +29889,9 @@ func _battle_input_action_names() -> Array:
 
 
 func _capture_battle_input_frame() -> Dictionary:
+	if battle_input_service != null:
+		var frame := battle_input_service.capture_edge_frame(_battle_input_action_names(), battle_pending_pressed_actions, battle_pending_released_actions, Callable(self, "_input_action_just_pressed_for_service"), Callable(self, "_input_action_just_released_for_service"))
+		return frame
 	for action_name in _battle_input_action_names():
 		if Input.is_action_just_pressed(String(action_name)):
 			battle_pending_pressed_actions[String(action_name)] = true
@@ -29238,7 +29903,24 @@ func _capture_battle_input_frame() -> Dictionary:
 	}
 
 
+func _input_action_just_pressed_for_service(action_name: String) -> bool:
+	return Input.is_action_just_pressed(action_name)
+
+
+func _input_action_just_released_for_service(action_name: String) -> bool:
+	return Input.is_action_just_released(action_name)
+
+
 func _consume_battle_input_edges_once(input_frame: Dictionary, consume_edges: bool) -> void:
+	if battle_input_service != null:
+		var state := battle_input_service.consume_edges_once(input_frame, consume_edges)
+		battle_active_input_frame = Dictionary(state.get("active_frame", {}))
+		battle_input_frame_active = bool(state.get("frame_active", false))
+		battle_input_edges_enabled = bool(state.get("edges_enabled", false))
+		if bool(state.get("clear_pending_edges", false)):
+			battle_pending_pressed_actions.clear()
+			battle_pending_released_actions.clear()
+		return
 	battle_active_input_frame = input_frame
 	battle_input_frame_active = true
 	battle_input_edges_enabled = consume_edges
@@ -29248,15 +29930,27 @@ func _consume_battle_input_edges_once(input_frame: Dictionary, consume_edges: bo
 
 
 func _battle_action_just_pressed(action_name: String) -> bool:
+	if battle_input_service != null:
+		return battle_input_service.action_just_pressed(action_name, _battle_input_frame_state(), Callable(self, "_input_action_just_pressed_for_service"))
 	if not battle_input_frame_active:
 		return Input.is_action_just_pressed(action_name)
 	return battle_input_edges_enabled and bool(Dictionary(battle_active_input_frame.get("pressed", {})).get(action_name, false))
 
 
 func _battle_action_just_released(action_name: String) -> bool:
+	if battle_input_service != null:
+		return battle_input_service.action_just_released(action_name, _battle_input_frame_state(), Callable(self, "_input_action_just_released_for_service"))
 	if not battle_input_frame_active:
 		return Input.is_action_just_released(action_name)
 	return battle_input_edges_enabled and bool(Dictionary(battle_active_input_frame.get("released", {})).get(action_name, false))
+
+
+func _battle_input_frame_state() -> Dictionary:
+	return {
+		"active_frame": battle_active_input_frame,
+		"frame_active": battle_input_frame_active,
+		"edges_enabled": battle_input_edges_enabled,
+	}
 
 
 func _capture_battle_motion_before_step() -> void:
@@ -29282,90 +29976,213 @@ func _capture_battle_motion_after_step() -> void:
 		battle_camera_snapshot_initialized = true
 
 
+func _battle_frame_orchestrator_service() -> BattleFrameOrchestratorService:
+	if battle_frame_orchestrator_service == null:
+		battle_frame_orchestrator_service = BattleFrameOrchestratorService.new()
+	return battle_frame_orchestrator_service
+
+
+func _battle_actor_command_service() -> BattleActorCommandService:
+	if battle_actor_command_service == null:
+		battle_actor_command_service = BattleActorCommandService.new()
+	return battle_actor_command_service
+
+
+func _battle_field_runtime_service() -> BattleFieldRuntimeService:
+	if battle_field_runtime_service == null:
+		battle_field_runtime_service = BattleFieldRuntimeService.new()
+	return battle_field_runtime_service
+
+
+func _battle_hit_resolution_service() -> BattleHitResolutionService:
+	if battle_hit_resolution_service == null:
+		battle_hit_resolution_service = BattleHitResolutionService.new()
+	return battle_hit_resolution_service
+
+
+func _battle_projectile_lifecycle_service() -> BattleProjectileLifecycleService:
+	if battle_projectile_lifecycle_service == null:
+		battle_projectile_lifecycle_service = BattleProjectileLifecycleService.new()
+	return battle_projectile_lifecycle_service
+
+
+func _battle_action_event_service() -> BattleActionEventService:
+	if battle_action_event_service == null:
+		battle_action_event_service = BattleActionEventService.new()
+	return battle_action_event_service
+
+
+func _battle_impact_query_service() -> BattleImpactQueryService:
+	if battle_impact_query_service == null:
+		battle_impact_query_service = BattleImpactQueryService.new()
+	return battle_impact_query_service
+
+
+func _battle_runtime_lifecycle_service() -> BattleRuntimeLifecycleService:
+	if battle_runtime_lifecycle_service == null:
+		battle_runtime_lifecycle_service = BattleRuntimeLifecycleService.new()
+	return battle_runtime_lifecycle_service
+
+
+func _battle_identity_runtime_service() -> BattleIdentityRuntimeService:
+	if battle_identity_runtime_service == null:
+		battle_identity_runtime_service = BattleIdentityRuntimeService.new()
+	return battle_identity_runtime_service
+
+
+func _battle_spatial_runtime_service() -> BattleSpatialRuntimeService:
+	if battle_spatial_runtime_service == null:
+		battle_spatial_runtime_service = BattleSpatialRuntimeService.new()
+	return battle_spatial_runtime_service
+
+
+func _battle_map_occlusion_service() -> BattleMapOcclusionService:
+	if battle_map_occlusion_service == null:
+		battle_map_occlusion_service = BattleMapOcclusionService.new()
+	return battle_map_occlusion_service
+
+
+func _battle_target_acquisition_service() -> BattleTargetAcquisitionService:
+	if battle_target_acquisition_service == null:
+		battle_target_acquisition_service = BattleTargetAcquisitionService.new()
+	return battle_target_acquisition_service
+
+
+func _battle_runtime_action_telemetry_service() -> BattleRuntimeActionTelemetryService:
+	if battle_runtime_action_telemetry_service == null:
+		battle_runtime_action_telemetry_service = BattleRuntimeActionTelemetryService.new()
+	return battle_runtime_action_telemetry_service
+
+
+func _battle_action_event_constants() -> Dictionary:
+	return {
+		"standard_sniper_projectile_width_m": STANDARD_SNIPER_PROJECTILE_WIDTH_M,
+		"true_bullet_default_lock_seconds": TRUE_BULLET_DEFAULT_LOCK_SECONDS,
+		"standard_chemical_sprayer_range_m": STANDARD_CHEMICAL_SPRAYER_RANGE_M,
+		"standard_chemical_sprayer_dot_seconds": STANDARD_CHEMICAL_SPRAYER_DOT_SECONDS,
+		"standard_chemical_sprayer_tick_seconds": STANDARD_CHEMICAL_SPRAYER_TICK_SECONDS,
+		"chemical_projectile_default_speed_mult": CHEMICAL_PROJECTILE_DEFAULT_SPEED_MULT,
+		"standard_laser_range_m": STANDARD_LASER_RANGE_M,
+		"standard_laser_width_m": STANDARD_LASER_WIDTH_M,
+		"bullet_hell_default_speed_mult": BULLET_HELL_DEFAULT_SPEED_MULT,
+		"standard_web_tether_range_m": STANDARD_WEB_TETHER_RANGE_M,
+		"standard_web_tether_strength": STANDARD_WEB_TETHER_STRENGTH,
+		"standard_web_tether_break_force": STANDARD_WEB_TETHER_BREAK_FORCE,
+		"standard_web_tether_duration": STANDARD_WEB_TETHER_DURATION,
+		"standard_missile_range_m": STANDARD_MISSILE_RANGE_M,
+		"standard_missile_speed_mult": STANDARD_MISSILE_SPEED_MULT,
+		"standard_missile_projectile_momentum": STANDARD_MISSILE_PROJECTILE_MOMENTUM,
+		"standard_missile_explosion_radius": STANDARD_MISSILE_EXPLOSION_RADIUS,
+		"standard_missile_occlusion_grace": STANDARD_MISSILE_OCCLUSION_GRACE,
+	}
+
+
 func _tick_battle(delta: float) -> void:
 	_reset_battle_vfx_frame_budget()
-	if game_over:
+	var plan := _battle_frame_orchestrator_service().frame_step_plan(delta, battle_simulation_accumulator, {
+		"game_over": game_over,
+		"max_frame_delta": 0.25,
+		"step_delta": BATTLE_SIMULATION_DELTA,
+		"max_steps": BATTLE_MAX_SIMULATION_STEPS_PER_FRAME,
+	})
+	if bool(plan.get("game_over", false)):
 		return
-	var frame_delta := clampf(delta, 0.0, 0.25)
-	battle_simulation_accumulator += frame_delta
+	var frame_delta := float(plan.get("frame_delta", 0.0))
+	var steps := int(plan.get("steps", 0))
 	var input_frame := _capture_battle_input_frame()
-	var steps := 0
-	while battle_simulation_accumulator + 0.0000001 >= BATTLE_SIMULATION_DELTA and steps < BATTLE_MAX_SIMULATION_STEPS_PER_FRAME:
+	for step_index in range(steps):
 		_capture_battle_motion_before_step()
-		_consume_battle_input_edges_once(input_frame, steps == 0)
+		_consume_battle_input_edges_once(input_frame, step_index == 0)
 		_tick_battle_simulation(BATTLE_SIMULATION_DELTA)
 		battle_input_frame_active = false
 		_capture_battle_motion_after_step()
-		battle_simulation_accumulator -= BATTLE_SIMULATION_DELTA
-		battle_simulation_step_count += 1
-		steps += 1
-	if steps >= BATTLE_MAX_SIMULATION_STEPS_PER_FRAME and battle_simulation_accumulator >= BATTLE_SIMULATION_DELTA:
-		battle_simulation_accumulator = fmod(battle_simulation_accumulator, BATTLE_SIMULATION_DELTA)
-	battle_simulation_last_frame_steps = steps
-	_render_battle_frame(frame_delta, clampf(battle_simulation_accumulator / BATTLE_SIMULATION_DELTA, 0.0, 1.0))
+	battle_simulation_accumulator = float(plan.get("accumulator_after", battle_simulation_accumulator))
+	var post_state := _battle_frame_orchestrator_service().post_step_state({
+		"steps": steps,
+		"step_delta": BATTLE_SIMULATION_DELTA,
+		"accumulator": battle_simulation_accumulator,
+	})
+	battle_simulation_step_count += int(post_state.get("step_count_increment", steps))
+	battle_simulation_last_frame_steps = int(post_state.get("last_frame_steps", steps))
+	_render_battle_frame(frame_delta, float(post_state.get("render_alpha", plan.get("render_alpha", 0.0))))
 
 
 func _tick_battle_simulation(delta: float, _input_frame: Dictionary = {}) -> void:
 	if battle_controller != null:
 		battle_controller.note_tick()
-	if identity_transfer_active:
-		identity_freeze_timer = maxf(0.0, identity_freeze_timer - delta)
-		return
-	if hitstop_timer > 0.0:
-		hitstop_timer = maxf(0.0, hitstop_timer - delta)
-		_update_units(0.0, false)
-		return
-
-	runtime_resource[1] = float(runtime_resource[1]) + RESOURCE_GAIN_PER_SECOND * delta
-	if battle_mode != MODE_TRAINING:
-		runtime_resource[2] = float(runtime_resource[2]) + RESOURCE_GAIN_PER_SECOND * delta
-	_tick_sortie_price_discounts(delta)
-	_apply_lease_costs(delta)
-	_apply_annuity_income(delta)
-	match_time_remaining = maxf(0.0, match_time_remaining - delta)
-	if match_time_remaining <= 0.0:
-		_resolve_timeout()
-		return
-
-	if battle_message_timer > 0.0:
-		battle_message_timer -= delta
-		if battle_message_timer <= 0.0:
-			battle_message = ""
-
-	_tick_deploys(delta)
-	_update_blind_zones(delta)
-	_update_retreat_repairs(delta)
-	_update_served_balls(delta)
-	_apply_signal_jammers(delta)
-	_apply_homing_launchers(delta)
-	_apply_barrage_emitters(delta)
-	_apply_support_components(delta)
-	_apply_speed_lanes(delta)
-	_apply_coin_generators(delta)
-	_update_field_coins(delta)
-	_update_one_way_shields(delta)
-	_update_escape_pods(delta)
-	_update_laser_telegraphs(delta)
-	_update_true_bullet_locks(delta)
-	_update_chemical_projectiles(delta)
-	_update_missile_projectiles(delta)
-	_update_web_tethers(delta)
-	_update_web_swings(delta)
-	_handle_battle_input(delta)
-	if battle_mode == MODE_AI:
-		if ai_battle_seat != 1:
-			_update_ai_player(1, delta)
-		if ai_battle_seat != 2:
-			_update_ai_player(2, delta)
-	elif battle_mode == MODE_TRAINING:
-		_update_training_dummy(delta)
-
-	_update_anti_stall_summons(delta)
-	_update_puppets(delta)
-	_update_barriers(delta)
-	_update_units(delta, false)
-	_update_camera_center(delta)
-	_tick_mobius_visual_twist(delta)
+	var plan := _battle_frame_orchestrator_service().simulation_phase_plan({
+		"identity_transfer_active": identity_transfer_active,
+		"hitstop_timer": hitstop_timer,
+		"match_time_remaining": match_time_remaining - delta,
+		"battle_mode": battle_mode,
+	})
+	for raw_phase in Array(plan.get("phases", [])):
+		match String(raw_phase):
+			BattleFrameOrchestratorService.PHASE_IDENTITY_FREEZE:
+				identity_freeze_timer = maxf(0.0, identity_freeze_timer - delta)
+				return
+			BattleFrameOrchestratorService.PHASE_HITSTOP:
+				hitstop_timer = maxf(0.0, hitstop_timer - delta)
+				_update_units(0.0, false)
+				return
+			BattleFrameOrchestratorService.PHASE_RESOURCE_ECONOMY:
+				runtime_resource[1] = float(runtime_resource[1]) + RESOURCE_GAIN_PER_SECOND * delta
+				if battle_mode != MODE_TRAINING:
+					runtime_resource[2] = float(runtime_resource[2]) + RESOURCE_GAIN_PER_SECOND * delta
+				_tick_sortie_price_discounts(delta)
+				_apply_lease_costs(delta)
+				_apply_annuity_income(delta)
+			BattleFrameOrchestratorService.PHASE_MATCH_TIMER:
+				match_time_remaining = maxf(0.0, match_time_remaining - delta)
+				if match_time_remaining <= 0.0:
+					_resolve_timeout()
+					return
+			BattleFrameOrchestratorService.PHASE_MESSAGE_TIMER:
+				if battle_message_timer > 0.0:
+					battle_message_timer -= delta
+					if battle_message_timer <= 0.0:
+						battle_message = ""
+			BattleFrameOrchestratorService.PHASE_DEPLOYS:
+				_tick_deploys(delta)
+			BattleFrameOrchestratorService.PHASE_FIELD_SYSTEMS:
+				_update_blind_zones(delta)
+				_update_retreat_repairs(delta)
+				_update_served_balls(delta)
+				_apply_signal_jammers(delta)
+				_apply_homing_launchers(delta)
+				_apply_barrage_emitters(delta)
+				_apply_support_components(delta)
+				_apply_speed_lanes(delta)
+				_apply_coin_generators(delta)
+				_update_field_coins(delta)
+				_update_one_way_shields(delta)
+				_update_escape_pods(delta)
+				_update_laser_telegraphs(delta)
+				_update_true_bullet_locks(delta)
+			BattleFrameOrchestratorService.PHASE_PROJECTILES_WEB:
+				_update_chemical_projectiles(delta)
+				_update_missile_projectiles(delta)
+				_update_web_tethers(delta)
+				_update_web_swings(delta)
+			BattleFrameOrchestratorService.PHASE_INPUT:
+				_handle_battle_input(delta)
+			BattleFrameOrchestratorService.PHASE_AI_TRAINING:
+				if battle_mode == MODE_AI:
+					if ai_battle_seat != 1:
+						_update_ai_player(1, delta)
+					if ai_battle_seat != 2:
+						_update_ai_player(2, delta)
+				elif battle_mode == MODE_TRAINING:
+					_update_training_dummy(delta)
+			BattleFrameOrchestratorService.PHASE_SUMMONS_PUPPETS_BARRIERS:
+				_update_anti_stall_summons(delta)
+				_update_puppets(delta)
+				_update_barriers(delta)
+			BattleFrameOrchestratorService.PHASE_UNIT_PHYSICS:
+				_update_units(delta, false)
+			BattleFrameOrchestratorService.PHASE_CAMERA_MOBIUS:
+				_update_camera_center(delta)
+				_tick_mobius_visual_twist(delta)
 
 
 func _render_battle_frame(frame_delta: float, interpolation_alpha: float) -> void:
@@ -29376,6 +30193,8 @@ func _render_battle_frame(frame_delta: float, interpolation_alpha: float) -> voi
 	_refresh_unit_screen_positions(interpolation_alpha, frame_delta)
 	_update_aim_lines(frame_delta)
 	_update_combat_geometry_debug_overlay()
+	if battle_action_diagnostics_overlay_enabled:
+		_update_battle_action_diagnostics_overlay()
 	_update_battle_ui()
 	battle_presentation_active = false
 
@@ -29397,18 +30216,20 @@ func _apply_lease_costs(delta: float) -> void:
 		if lease_rate <= 0.0:
 			continue
 		var owner := int(unit.owner_id)
-		var owed := lease_rate * delta
-		var available := maxf(0.0, float(runtime_resource.get(owner, 0.0)))
-		var paid := minf(available, owed)
-		runtime_resource[owner] = available - paid
-		if paid < owed:
-			_add_unit_heat_event(unit, float(unit.stats.get("lease_heat_penalty", 4.0)) * delta, ["external"], "lease_heat_penalty")
-		var warn_timer := maxf(0.0, float(unit.get_meta("lease_warn_timer", 0.0)) - delta)
-		if warn_timer <= 0.0:
-			unit.set_meta("lease_warn_timer", 2.4)
+		var intent := _battle_field_runtime_service().lease_intent({
+			"delta": delta,
+			"lease_rate": lease_rate,
+			"lease_heat_penalty": float(unit.stats.get("lease_heat_penalty", 4.0)),
+			"resource": float(runtime_resource.get(owner, 0.0)),
+			"warn_timer": float(unit.get_meta("lease_warn_timer", 0.0)),
+		})
+		runtime_resource[owner] = float(intent.get("resource_after", runtime_resource.get(owner, 0.0)))
+		var heat_penalty := float(intent.get("heat_penalty", 0.0))
+		if heat_penalty > 0.0:
+			_add_unit_heat_event(unit, heat_penalty, ["external"], "lease_heat_penalty")
+		unit.set_meta("lease_warn_timer", float(intent.get("warn_timer", 0.0)))
+		if bool(intent.get("show_warning", false)):
 			_show_battle_message("P%d YOKE lease drains %.0f/sec" % [owner, lease_rate], 0.55)
-		else:
-			unit.set_meta("lease_warn_timer", warn_timer)
 
 
 func _apply_annuity_income(delta: float) -> void:
@@ -29419,13 +30240,15 @@ func _apply_annuity_income(delta: float) -> void:
 		if rate <= 0.0:
 			continue
 		var owner := int(unit.owner_id)
-		runtime_resource[owner] = float(runtime_resource.get(owner, 0.0)) + rate * delta
-		var timer := maxf(0.0, float(unit.get_meta("annuity_tick", 0.0)) - delta)
-		if timer <= 0.0:
-			unit.set_meta("annuity_tick", 3.0)
+		var intent := _battle_field_runtime_service().annuity_intent({
+			"delta": delta,
+			"annuity_rate": rate,
+			"timer": float(unit.get_meta("annuity_tick", 0.0)),
+		})
+		runtime_resource[owner] = float(runtime_resource.get(owner, 0.0)) + float(intent.get("resource_gain", 0.0))
+		unit.set_meta("annuity_tick", float(intent.get("timer", 0.0)))
+		if bool(intent.get("spawn_tick_vfx", false)):
 			_spawn_hit_effect(unit, 1, "laser", false, "shield")
-		else:
-			unit.set_meta("annuity_tick", timer)
 
 
 func _apply_support_components(delta: float) -> void:
@@ -29437,8 +30260,12 @@ func _apply_support_components(delta: float) -> void:
 		var kind := String(support.stats.get("support_kind", ""))
 		if kind == "":
 			continue
-		var radius := _support_effect_radius(support)
-		_update_field_aura_visual(support, _support_aura_kind(kind), radius, _support_visual_strength(support), delta)
+		var aura := _battle_field_runtime_service().support_aura_model({
+			"kind": kind,
+			"stats": support.stats,
+		})
+		var radius := float(aura.get("radius", _support_effect_radius(support)))
+		_update_field_aura_visual(support, String(aura.get("aura_kind", _support_aura_kind(kind))), radius, float(aura.get("visual_strength", _support_visual_strength(support))), delta)
 		var owner := int(support.owner_id)
 		for target in _field_targets_for(owner, String(support.stats.get("support_affects", "ally"))):
 			if not _support_can_affect_target(support, target):
@@ -29449,33 +30276,26 @@ func _apply_support_components(delta: float) -> void:
 
 
 func _support_effect_radius(support) -> float:
-	if bool(support.stats.get("is_support_platform", false)):
-		return maxf(0.1, maxf(float(support.stats.get("platform_pair_range", 0.0)), float(support.stats.get("support_radius", 0.0))))
-	return maxf(0.1, float(support.stats.get("support_radius", 0.6)))
+	return float(_battle_field_runtime_service().support_aura_model({
+		"kind": String(support.stats.get("support_kind", "support")),
+		"stats": support.stats,
+	}).get("radius", 0.1))
 
 
 func _support_aura_kind(kind: String) -> String:
-	match kind:
-		"ammo":
-			return "support_ammo"
-		"repair":
-			return "support_repair"
-		"cooling":
-			return "coolant"
-		"damage_buff":
-			return "support_buff"
-		"armor":
-			return "support_armor"
-	return "support"
+	return String(_battle_field_runtime_service().support_aura_model({"kind": kind, "stats": {}}).get("aura_kind", "support"))
 
 
 func _support_can_affect_target(support, target) -> bool:
 	if not _is_live_unit(target):
 		return false
 	var kind := String(support.stats.get("support_kind", ""))
-	if kind in ["ammo", "repair", "cooling", "damage_buff", "armor"]:
-		return String(target.role) in ["hero", "puppet", "barrier"]
-	return _unit_is_mech_physics_subject(target)
+	return bool(_battle_field_runtime_service().support_target_intent({
+		"check_only": true,
+		"kind": kind,
+		"target_role": String(target.role),
+		"target_is_mech": _unit_is_mech_physics_subject(target),
+	}).get("can_affect", false))
 
 
 func _apply_speed_lanes(delta: float) -> void:
@@ -29503,23 +30323,18 @@ func _unit_in_speed_lane(lane_node, unit) -> bool:
 
 
 func _apply_speed_lane_to_unit(lane_node, unit, delta: float) -> void:
-	var base_mult := float(lane_node.stats.get("speed_lane_mult", 1.5))
-	var affinity := float(unit.stats.get("speed_lane_affinity", 0.0))
-	var mult := clampf(base_mult + affinity, 1.0, 3.5)
-	var pull := maxf(0.02, float(lane_node.stats.get("speed_lane_pull", 0.32)))
-	var dir_sign := float(lane_node.facing)
-	if bool(lane_node.stats.get("speed_lane_bidirectional", true)) and absf(unit.velocity.x) > 0.03:
-		dir_sign = signf(unit.velocity.x)
-	if dir_sign == 0.0:
-		dir_sign = 1.0
-	var unit_speed := maxf(0.12, float(unit.stats.get("speed", 0.8)))
-	var base_speed := maxf(absf(unit.velocity.x), unit_speed * 0.55)
-	var desired := clampf(base_speed * mult, 0.0, unit_speed * mult + 1.2)
-	unit.velocity.x = move_toward(unit.velocity.x, dir_sign * desired, (pull + desired) * delta * 2.2)
-	unit.velocity.y = move_toward(unit.velocity.y, 0.0, pull * delta * 0.45)
-	unit.set_meta("speed_lane_timer", 0.18)
-	unit.set_meta("speed_lane_mult", mult)
-	if randf() < delta * 3.5:
+	var intent := _battle_field_runtime_service().speed_lane_intent({
+		"delta": delta,
+		"stats": lane_node.stats,
+		"velocity": unit.velocity,
+		"facing": float(lane_node.facing),
+		"speed_lane_affinity": float(unit.stats.get("speed_lane_affinity", 0.0)),
+		"unit_speed": float(unit.stats.get("speed", 0.8)),
+	})
+	unit.velocity = intent.get("velocity", unit.velocity)
+	unit.set_meta("speed_lane_timer", float(intent.get("timer", 0.18)))
+	unit.set_meta("speed_lane_mult", float(intent.get("mult", 1.0)))
+	if randf() < delta * float(intent.get("vfx_rate", 3.5)):
 		_spawn_hit_effect(unit, 0, "laser", false, "guided")
 
 
@@ -29531,11 +30346,14 @@ func _apply_coin_generators(delta: float) -> void:
 			continue
 		var radius := maxf(0.12, float(generator.stats.get("coin_spawn_radius", 0.48)))
 		_update_field_aura_visual(generator, "siphon", radius, 1.0, delta)
-		var timer := maxf(0.0, float(generator.get_meta("coin_timer", float(generator.stats.get("coin_interval", 6.0)))) - delta)
-		if timer > 0.0:
-			generator.set_meta("coin_timer", timer)
+		var intent := _battle_field_runtime_service().coin_generator_intent({
+			"delta": delta,
+			"interval": float(generator.stats.get("coin_interval", 6.0)),
+			"timer": float(generator.get_meta("coin_timer", float(generator.stats.get("coin_interval", 6.0)))),
+		})
+		generator.set_meta("coin_timer", float(intent.get("timer", 0.0)))
+		if not bool(intent.get("spawn", false)):
 			continue
-		generator.set_meta("coin_timer", maxf(0.6, float(generator.stats.get("coin_interval", 6.0))))
 		_spawn_field_coin(generator)
 
 
@@ -29579,19 +30397,27 @@ func _update_field_coins(delta: float) -> void:
 		var lane_value := float(coin.get("lane", 0.0))
 		var screen := _screen_from_ring(ring_value, lane_value)
 		visual.update_screen(screen["position"], bool(screen["visible"]), delta)
-		if visual.expired():
-			field_coins.erase(coin)
-			continue
 		var collector = _coin_collector(coin)
-		if collector == null:
-			continue
-		var value := int(coin.get("value", 100))
-		var owner := int(collector.owner_id)
-		runtime_resource[owner] = float(runtime_resource.get(owner, 0.0)) + float(value)
-		visual.collect()
-		field_coins.erase(coin)
-		_spawn_hit_effect(collector, 1, "laser", false, "shield")
-		_show_battle_message("%s picked +%d resource coin" % [collector.unit_name, value], 0.55)
+		var intent := _battle_field_runtime_service().field_coin_update_intent({
+			"valid": true,
+			"expired": visual.expired(),
+			"collector_present": collector != null,
+			"collector_owner": int(collector.owner_id) if collector != null else 0,
+			"value": int(coin.get("value", 100)),
+		})
+		match String(intent.get("action", "")):
+			"erase":
+				field_coins.erase(coin)
+				continue
+			"collect":
+				var value := int(intent.get("value", 100))
+				var owner := int(intent.get("owner", 0))
+				runtime_resource[owner] = float(runtime_resource.get(owner, 0.0)) + float(intent.get("resource_gain", value))
+				visual.collect()
+				field_coins.erase(coin)
+				_spawn_hit_effect(collector, 1, "laser", false, "shield")
+				_show_battle_message("%s picked +%d resource coin" % [collector.unit_name, value], 0.55)
+				continue
 
 
 func _coin_collector(coin: Dictionary):
@@ -29623,18 +30449,7 @@ func _update_one_way_shields(delta: float) -> void:
 
 func _support_visual_strength(support) -> float:
 	var kind := String(support.stats.get("support_kind", ""))
-	match kind:
-		"ammo":
-			return maxf(0.5, float(support.stats.get("support_amount", 1)) * 0.22)
-		"repair":
-			return maxf(0.5, float(support.stats.get("support_rate", 1.0)) / 12.0)
-		"cooling":
-			return maxf(0.5, float(support.stats.get("support_rate", support.stats.get("coolant_boost", 12.0))) / 18.0)
-		"damage_buff":
-			return maxf(0.5, float(support.stats.get("support_buff_mult", 1.0)))
-		"armor":
-			return maxf(0.5, float(support.stats.get("platform_armor_hp", 0.0)) / 18.0)
-	return 1.0
+	return float(_battle_field_runtime_service().support_aura_model({"kind": kind, "stats": support.stats}).get("visual_strength", 1.0))
 
 
 func _unit_in_support_area(support, target) -> bool:
@@ -29650,15 +30465,30 @@ func _unit_in_support_area(support, target) -> bool:
 
 func _apply_support_to_target(support, target, delta: float) -> void:
 	var kind := String(support.stats.get("support_kind", ""))
+	var intent := _battle_field_runtime_service().support_target_intent({
+		"kind": kind,
+		"stats": support.stats,
+		"delta": delta,
+		"target_role": String(target.role),
+		"target_is_mech": _unit_is_mech_physics_subject(target),
+		"target_health": float(target.health),
+		"target_max_health": float(target.max_health),
+		"overheat_clear_ratio": float(target.stats.get("overheat_clear_ratio", 0.42)),
+	})
 	match kind:
 		"ammo":
-			var ammo_type := String(support.stats.get("support_ammo_type", "bullet"))
+			var ammo_type := String(intent.get("ammo_type", support.stats.get("support_ammo_type", "bullet")))
 			var key := "support_ammo_time_%d_%s" % [int(support.get_instance_id()), ammo_type]
-			var progress := float(target.get_meta(key, 0.0)) + delta
-			var needed := maxf(0.1, float(support.stats.get("support_refill_seconds", 1.0)))
-			if progress >= needed:
-				progress = 0.0
-				var refill_result := _paid_refill_ammo(target, ammo_type, maxi(1, int(support.stats.get("support_amount", 1))))
+			intent = _battle_field_runtime_service().support_target_intent({
+				"kind": kind,
+				"stats": support.stats,
+				"delta": delta,
+				"target_role": String(target.role),
+				"target_is_mech": _unit_is_mech_physics_subject(target),
+				"progress": float(target.get_meta(key, 0.0)),
+			})
+			if bool(intent.get("ready", false)):
+				var refill_result := _paid_refill_ammo(target, ammo_type, int(intent.get("amount", 1)))
 				var refilled := int(refill_result.get("refilled", 0))
 				if refilled > 0:
 					_spawn_hit_effect(target, 0, ammo_type, false, _projectile_style_for_damage(ammo_type))
@@ -29673,22 +30503,22 @@ func _apply_support_to_target(support, target, delta: float) -> void:
 						_show_battle_message("%s 补给%s失败：资源不足" % [target.unit_name, _damage_name(ammo_type)], 0.48)
 					else:
 						_show_battle_message("%s %s refill failed: resource short" % [target.unit_name, ammo_type.to_upper()], 0.48)
-			target.set_meta(key, progress)
+			target.set_meta(key, float(intent.get("progress", 0.0)))
 		"repair":
-			if target.health < target.max_health:
-				target.health = mini(target.max_health, target.health + int(ceilf(float(support.stats.get("support_rate", 8.0)) * delta)))
-				if randf() < delta * 1.8:
+			var repair_amount := int(intent.get("amount", 0))
+			if target.health < target.max_health and repair_amount > 0:
+				target.health = mini(target.max_health, target.health + repair_amount)
+				if randf() < delta * float(intent.get("vfx_rate", 1.8)):
 					_spawn_hit_effect(target, 0, "chemical", false, "shield")
 		"cooling":
-			var cooling_rate := float(support.stats.get("support_rate", support.stats.get("coolant_boost", 16.0)))
-			_cool_unit_heat(target, cooling_rate * delta, float(target.stats.get("overheat_clear_ratio", 0.42)))
+			_cool_unit_heat(target, float(intent.get("heat_delta", 0.0)), float(intent.get("clear_ratio", 0.42)))
 		"damage_buff":
-			target.set_meta("field_damage_boost_type", String(support.stats.get("support_buff_type", "tear")))
-			target.set_meta("field_damage_boost_mult", maxf(1.0, float(support.stats.get("support_buff_mult", 1.12))))
-			target.set_meta("field_damage_boost_timer", maxf(0.12, float(support.stats.get("support_duration", 0.28))))
+			target.set_meta("field_damage_boost_type", String(intent.get("damage_type", "tear")))
+			target.set_meta("field_damage_boost_mult", float(intent.get("mult", 1.0)))
+			target.set_meta("field_damage_boost_timer", float(intent.get("timer", 0.12)))
 		"armor":
-			var armor_hp := maxf(1.0, float(support.stats.get("platform_armor_hp", 16.0)))
-			target.set_meta("support_armor_timer", 0.18)
+			var armor_hp := float(intent.get("armor_hp", 1.0))
+			target.set_meta("support_armor_timer", float(intent.get("timer", 0.18)))
 			target.set_meta("support_armor_source", int(support.get_instance_id()))
 			target.set_meta("support_armor_hp", maxf(float(target.get_meta("support_armor_hp", 0.0)), armor_hp))
 
@@ -29709,15 +30539,19 @@ func _apply_signal_jammers(delta: float) -> void:
 			if not _unit_in_barrier_aura(jammer, target, radius, "jammer"):
 				continue
 			var key := "jam_time_%d" % int(jammer.get_instance_id())
-			var progress := float(target.get_meta(key, 0.0)) + delta
-			target.set_meta(key, progress)
-			target.set_meta("jam_warning_timer", 0.35)
 			var target_required := _security_adjusted_seconds(required, target, jam_power, 0.25)
-			if progress >= target_required:
-				target.set_meta(key, 0.0)
-				target.set_meta("jammed_timer", maxf(float(target.get_meta("jammed_timer", 0.0)), duration))
+			var intent := _battle_field_runtime_service().signal_jammer_intent({
+				"delta": delta,
+				"progress": float(target.get_meta(key, 0.0)),
+				"required": target_required,
+				"duration": duration,
+			})
+			target.set_meta(key, float(intent.get("progress", 0.0)))
+			target.set_meta("jam_warning_timer", float(intent.get("warning_timer", 0.35)))
+			if bool(intent.get("jammed", false)):
+				target.set_meta("jammed_timer", maxf(float(target.get_meta("jammed_timer", 0.0)), float(intent.get("duration", duration))))
 				if bool(target.stats.get("is_trap_field", false)):
-					target.set_meta("trap_cooldown_timer", maxf(float(target.get_meta("trap_cooldown_timer", 0.0)), duration + 0.6))
+					target.set_meta("trap_cooldown_timer", maxf(float(target.get_meta("trap_cooldown_timer", 0.0)), float(intent.get("trap_cooldown", duration + 0.6))))
 				_spawn_hit_effect(target, 2, "laser", false, "blind")
 				_show_battle_message("%s JAMMED %s / SEC %.2f" % [jammer.unit_name, target.unit_name, _data_security_value(target)], 0.65)
 
@@ -29845,20 +30679,30 @@ func _update_escape_pods(delta: float) -> void:
 		var target_ring := float(pod.get_meta("escape_target_ring", pod.ring_pos))
 		var target_lane := float(pod.get_meta("escape_target_lane", pod.lane))
 		var delta_vec := _mobius_delta_unit_to_point(pod, target_ring, target_lane, 1.25)
-		if delta_vec.length() <= 0.06:
-			var carried := int(pod.get_meta("carried_modules", 0))
-			_detach_unit(pod)
-			pod.queue_free()
-			_show_battle_message("Escape pod secured %d action modules" % carried, 0.75)
-			continue
-		var speed := maxf(0.12, float(pod.stats.get("speed", pod.get_meta("escape_speed", 1.0))))
-		var dir := delta_vec.normalized()
-		pod.velocity = Vector2(dir.x, dir.y * 0.7) * speed
-		if pod.has_method("request_facing"):
-			pod.request_facing(1 if dir.x >= 0.0 else -1)
-		else:
-			pod.facing = 1 if dir.x >= 0.0 else -1
-		_spawn_escape_pod_trail(pod, delta)
+		var intent := _battle_runtime_lifecycle_service().escape_pod_tick_intent({
+			"pod_live": true,
+			"delta_vec": delta_vec,
+			"carried_modules": int(pod.get_meta("carried_modules", 0)),
+			"speed": float(pod.stats.get("speed", pod.get_meta("escape_speed", 1.0))),
+			"secure_distance": 0.06,
+		})
+		match String(intent.get("action", "skip")):
+			"secure":
+				var carried := int(intent.get("carried_modules", pod.get_meta("carried_modules", 0)))
+				_detach_unit(pod)
+				pod.queue_free()
+				_show_battle_message("Escape pod secured %d action modules" % carried, float(intent.get("duration", 0.75)))
+				continue
+			"move":
+				pod.velocity = intent.get("velocity", Vector2.ZERO)
+				var facing := int(intent.get("facing", 1))
+				if pod.has_method("request_facing"):
+					pod.request_facing(facing)
+				else:
+					pod.facing = facing
+				_spawn_escape_pod_trail(pod, delta)
+			_:
+				continue
 
 
 func _spawn_escape_pod_trail(pod, delta: float) -> void:
@@ -29892,47 +30736,88 @@ func _handle_battle_input(delta: float) -> void:
 		else:
 			_toggle_battle_runtime_menu()
 		return
-	if battle_runtime_menu_panel != null and battle_runtime_menu_panel.visible:
+	var runtime_menu_visible := battle_runtime_menu_panel != null and battle_runtime_menu_panel.visible
+	var route := battle_input_service.battle_control_routes(battle_mode, ai_battle_seat, runtime_menu_visible) if battle_input_service != null else _legacy_battle_control_routes(runtime_menu_visible)
+	var action := String(route.get("action", "none"))
+	if action == "menu_open":
 		return
+	if action == "spectator":
+		_handle_spectator_battle_input(delta, String(route.get("prefix", "p1")))
+		return
+	if action == "players":
+		for raw_player_route in Array(route.get("routes", [])):
+			if raw_player_route is Dictionary:
+				var player_route: Dictionary = raw_player_route
+				_handle_player_battle_input(int(player_route.get("player_id", 1)), delta, String(player_route.get("prefix", "p1")))
+
+
+func _legacy_battle_control_routes(runtime_menu_visible: bool) -> Dictionary:
+	if runtime_menu_visible:
+		return {"action": "menu_open"}
 	if battle_mode == MODE_AI:
 		if ai_battle_seat == 1:
-			_handle_player_battle_input(1, delta, "p1")
-		elif ai_battle_seat == 2:
-			_handle_player_battle_input(2, delta, "p1")
-		else:
-			_handle_spectator_battle_input(delta)
-		return
-	if battle_mode == MODE_PVP:
-		_handle_player_battle_input(1, delta, "p1")
-		_handle_player_battle_input(2, delta, "p2")
-	else:
+			return {"action": "players", "routes": [{"player_id": 1, "prefix": "p1"}]}
 		if ai_battle_seat == 2:
-			_handle_player_battle_input(2, delta, "p1")
-		elif ai_battle_seat == 3:
-			_handle_spectator_battle_input(delta)
-		else:
-			_handle_player_battle_input(1, delta, "p1")
+			return {"action": "players", "routes": [{"player_id": 2, "prefix": "p1"}]}
+		return {"action": "spectator", "prefix": "p1"}
+	if battle_mode == MODE_PVP:
+		return {
+			"action": "players",
+			"routes": [
+				{"player_id": 1, "prefix": "p1"},
+				{"player_id": 2, "prefix": "p2"},
+			],
+		}
+	if ai_battle_seat == 2:
+		return {"action": "players", "routes": [{"player_id": 2, "prefix": "p1"}]}
+	if ai_battle_seat == 3:
+		return {"action": "spectator", "prefix": "p1"}
+	return {"action": "players", "routes": [{"player_id": 1, "prefix": "p1"}]}
 
 
-func _handle_spectator_battle_input(delta: float) -> void:
-	var input_vector := _input_vector_for("p1")
-	if input_vector.length() > 0.12:
+func _handle_spectator_battle_input(delta: float, prefix: String = "p1") -> void:
+	var input_vector := _input_vector_for(prefix)
+	var intent := battle_input_service.spectator_input_intent(prefix, input_vector, Callable(self, "_battle_action_just_pressed")) if battle_input_service != null else _legacy_spectator_input_intent(prefix, input_vector)
+	input_vector = intent.get("input_vector", input_vector)
+	if bool(intent.get("free_pan", false)):
 		spectator_view_mode = SPECTATOR_VIEW_FREE
 		var pan_speed := VIEW_WIDTH * 0.62
 		spectator_camera_center = wrapf(spectator_camera_center + input_vector.x * pan_speed * delta, 0.0, RING_LENGTH)
 		spectator_camera_lane = clampf(spectator_camera_lane + input_vector.y * pan_speed * delta, -BATTLE_HALF_HEIGHT, BATTLE_HALF_HEIGHT)
-	if _battle_action_just_pressed("p1_face_left"):
-		_cycle_spectator_view(-1)
-	if _battle_action_just_pressed("p1_face_right"):
-		_cycle_spectator_view(1)
-	if _battle_action_just_pressed("p1_attack_1"):
-		_set_spectator_view_mode(SPECTATOR_VIEW_P1)
-	elif _battle_action_just_pressed("p1_attack_2"):
-		_set_spectator_view_mode(SPECTATOR_VIEW_P2)
-	elif _battle_action_just_pressed("p1_attack_3"):
-		_set_spectator_view_mode(SPECTATOR_VIEW_MID)
-	elif _battle_action_just_pressed("p1_attack_4"):
-		_set_spectator_view_mode(SPECTATOR_VIEW_FREE)
+	var cycle_direction := int(intent.get("cycle", 0))
+	if cycle_direction != 0:
+		_cycle_spectator_view(cycle_direction)
+	match String(intent.get("view_mode", "")):
+		"p1":
+			_set_spectator_view_mode(SPECTATOR_VIEW_P1)
+		"p2":
+			_set_spectator_view_mode(SPECTATOR_VIEW_P2)
+		"mid":
+			_set_spectator_view_mode(SPECTATOR_VIEW_MID)
+		"free":
+			_set_spectator_view_mode(SPECTATOR_VIEW_FREE)
+
+
+func _legacy_spectator_input_intent(prefix: String, input_vector: Vector2) -> Dictionary:
+	var intent := {
+		"input_vector": input_vector,
+		"free_pan": input_vector.length() > 0.12,
+		"cycle": 0,
+		"view_mode": "",
+	}
+	if _battle_action_just_pressed("%s_face_left" % prefix):
+		intent["cycle"] = -1
+	elif _battle_action_just_pressed("%s_face_right" % prefix):
+		intent["cycle"] = 1
+	if _battle_action_just_pressed("%s_attack_1" % prefix):
+		intent["view_mode"] = "p1"
+	elif _battle_action_just_pressed("%s_attack_2" % prefix):
+		intent["view_mode"] = "p2"
+	elif _battle_action_just_pressed("%s_attack_3" % prefix):
+		intent["view_mode"] = "mid"
+	elif _battle_action_just_pressed("%s_attack_4" % prefix):
+		intent["view_mode"] = "free"
+	return intent
 
 
 func _cycle_spectator_view(direction: int) -> void:
@@ -30091,6 +30976,15 @@ func _battle_movement_vector_for_unit(unit, raw_input: Vector2) -> Dictionary:
 	}
 
 
+func _legacy_movement_input_state(raw_input: Vector2, previous_input: Vector2, direction_just_pressed: bool) -> Dictionary:
+	var has_move_input := raw_input.length() > 0.04
+	return {
+		"input_vector": raw_input,
+		"has_move_input": has_move_input,
+		"movement_just_pressed": has_move_input and (previous_input.length() <= 0.04 or direction_just_pressed),
+	}
+
+
 func _handle_player_battle_input(player_id: int, delta: float, prefix: String) -> void:
 	var facing_unit = active_units[player_id]["hero"]
 	var face_left_held := Input.is_action_pressed("%s_face_left" % prefix)
@@ -30114,8 +31008,9 @@ func _handle_player_battle_input(player_id: int, delta: float, prefix: String) -
 
 	var input_vector := _input_vector_for(prefix)
 	var previous_input: Vector2 = battle_last_move_input_vectors.get(player_id, Vector2.ZERO)
-	var has_move_input := input_vector.length() > 0.04
-	var movement_just_pressed := has_move_input and (previous_input.length() <= 0.04 or _battle_direction_just_pressed(prefix))
+	var movement_state := battle_input_service.movement_input_state(input_vector, previous_input, _battle_direction_just_pressed(prefix)) if battle_input_service != null else _legacy_movement_input_state(input_vector, previous_input, _battle_direction_just_pressed(prefix))
+	var has_move_input := bool(movement_state.get("has_move_input", input_vector.length() > 0.04))
+	var movement_just_pressed := bool(movement_state.get("movement_just_pressed", false))
 	battle_last_move_input_vectors[player_id] = input_vector
 	battle_last_move_just_pressed[player_id] = movement_just_pressed
 	var hero_for_chord = active_units[player_id]["hero"]
@@ -30124,7 +31019,7 @@ func _handle_player_battle_input(player_id: int, delta: float, prefix: String) -
 			return
 		if _try_romance_cancel_chord(player_id, prefix):
 			return
-	if not _attack_windows_any_open(player_id) and not _runtime_gun_activation_active(player_id) and _try_attack_pair_summon(player_id, prefix, input_vector):
+	if not _attack_windows_any_open(player_id) and not _runtime_gun_activation_active(player_id) and not _runtime_held_melee_activation_active(player_id) and _try_attack_pair_summon(player_id, prefix, input_vector):
 		return
 
 	var hero = active_units[player_id]["hero"]
@@ -30156,10 +31051,12 @@ func _handle_player_battle_input(player_id: int, delta: float, prefix: String) -
 		hero.set_meta("move_input_just_pressed", movement_just_pressed)
 
 	_tick_runtime_gun_activation(player_id, prefix, delta)
+	_tick_runtime_held_melee_activation(player_id, prefix, delta)
 	_tick_attack_command_windows(player_id, prefix, delta)
 	var attack_window_active := _attack_windows_any_open(player_id)
 	var gun_activation_active := _runtime_gun_activation_active(player_id)
-	if attack_window_active or gun_activation_active:
+	var held_melee_active := _runtime_held_melee_activation_active(player_id)
+	if attack_window_active or gun_activation_active or held_melee_active:
 		_handle_direction_taps(player_id, prefix, delta)
 	else:
 		_handle_face_chord_boost(player_id, prefix, input_vector)
@@ -30170,12 +31067,12 @@ func _handle_player_battle_input(player_id: int, delta: float, prefix: String) -
 		hero.move_by_gameplay(movement_input_vector, delta, RING_LENGTH)
 	else:
 		hero.move_by(movement_input_vector, delta, RING_LENGTH)
-	if not attack_window_active and not gun_activation_active:
+	if not attack_window_active and not gun_activation_active and not held_melee_active:
 		hero.try_cancel(movement_input_vector, delta)
 
 	var requested_attack_state := "normal" if _unit_uses_direct_runtime_topology(hero) else _melee_command_attack_kind(player_id, hero, false, input_vector)
 	var handled_attack := false
-	if not bool(aim_holding[player_id]):
+	if not bool(aim_holding[player_id]) and not held_melee_active:
 		for attack_index in range(ATTACK_GROUP_COUNT):
 			var action_name := "%s_attack_%d" % [prefix, attack_index + 1]
 			if _battle_action_just_pressed(action_name):
@@ -30204,6 +31101,19 @@ func _handle_player_battle_input(player_id: int, delta: float, prefix: String) -
 
 
 func _held_aim_uses_turn_keys(player_id: int, prefix: String = "") -> bool:
+	if _runtime_held_melee_activation_active(player_id):
+		var state: Dictionary = held_melee_activation_state[player_id]
+		if bool(state.get("turn_keys_steer_joint", true)):
+			return true
+	if prefix != "":
+		var runtime_hero = active_units[player_id]["hero"]
+		if _is_live_unit(runtime_hero) and _unit_uses_direct_runtime_topology(runtime_hero):
+			for attack_index in range(ATTACK_GROUP_COUNT):
+				var action_name := "%s_attack_%d" % [prefix, attack_index + 1]
+				if _battle_action_just_pressed(action_name):
+					var binding := _runtime_binding_for_attack_index(runtime_hero, attack_index)
+					if _runtime_binding_is_held_melee_activation(binding):
+						return true
 	return _active_gun_aim_input_mode(player_id, prefix) == "turn_keys"
 
 
@@ -30359,6 +31269,9 @@ func _start_or_fire_attack_button(player_id: int, prefix: String, input_vector: 
 		var binding := _runtime_binding_for_attack_index(hero, attack_index)
 		if _runtime_binding_is_gun_activation(binding):
 			_start_runtime_gun_activation(player_id, prefix, attack_index, action_name, binding)
+			return
+		if _runtime_binding_is_held_melee_activation(binding):
+			_start_runtime_held_melee_activation(player_id, prefix, attack_index, action_name, binding, input_vector)
 			return
 		if _attack_windows_any_open(player_id) and _ensure_attack_command_windows(player_id).has(_attack_window_key(attack_index)):
 			_resolve_attack_command_window(player_id, prefix, input_vector, attack_index, "normal")
@@ -30556,11 +31469,16 @@ func _record_command_input(player_id: int, prefix: String, delta: float = BATTLE
 
 
 func _begin_unit_module_action(unit, action_kind: String, group: Dictionary, attack_index: int) -> Dictionary:
-	if unit == null or not is_instance_valid(unit):
+	var intent := _battle_action_event_service().begin_module_action_intent({
+		"unit_live": unit != null and is_instance_valid(unit),
+		"module_key": _melee_module_heat_key(group, attack_index),
+		"attack_index": attack_index,
+		"requires_joint_pair": bool(group.get("requires_joint_pair", false)),
+	})
+	if String(intent.get("action", "")) != "begin":
 		return {}
-	var module_key := _melee_module_heat_key(group, attack_index)
 	if unit.has_method("begin_module_action"):
-		return unit.begin_module_action(action_kind, module_key, attack_index, bool(group.get("requires_joint_pair", false)))
+		return unit.begin_module_action(action_kind, String(intent.get("module_key", "")), int(intent.get("attack_index", attack_index)), bool(intent.get("requires_joint_pair", false)))
 	return unit.begin_action(action_kind)
 
 
@@ -30649,6 +31567,16 @@ func _active_gun_allows_direction_boost(player_id: int) -> bool:
 
 func _runtime_binding_is_gun_activation(binding: Dictionary) -> bool:
 	return _gun_activation_profiles().has(_runtime_binding_profile(binding))
+
+
+func _runtime_binding_is_held_melee_activation(binding: Dictionary) -> bool:
+	if binding.is_empty():
+		return false
+	var profile := _runtime_binding_profile(binding)
+	if profile != BOOT_ACTION_DRIVER_PROFILE:
+		return false
+	var module_part: Dictionary = binding.get("module_part", {}) if binding.get("module_part", {}) is Dictionary else {}
+	return bool(binding.get("hold_to_activate", module_part.get("hold_to_activate", true)))
 
 
 func _gun_activation_profile_for_kind(gun_kind: String) -> String:
@@ -30778,12 +31706,19 @@ func _gun_drive_projectile_momentum_mult(gun_drive_ratio: float) -> float:
 
 
 func _projectile_drive_momentum_mult_for_event(event: Dictionary) -> float:
+	if projectile_runtime_service != null:
+		return projectile_runtime_service.projectile_drive_momentum_mult_for_event(event)
 	if not event.has("gun_drive_ratio"):
 		return 1.0
 	return _gun_drive_projectile_momentum_mult(float(event.get("gun_drive_ratio", 1.0)))
 
 
 func _sync_projectile_drive_momentum_fields(event: Dictionary) -> void:
+	if projectile_runtime_service != null:
+		var fields: Dictionary = projectile_runtime_service.projectile_drive_momentum_fields(event)
+		for key in fields.keys():
+			event[key] = fields[key]
+		return
 	if not bool(event.get("projectile", false)):
 		return
 	var base_momentum := maxf(0.0, float(event.get("projectile_base_momentum", event.get("projectile_momentum", 0.0))))
@@ -30933,10 +31868,6 @@ func _runtime_gun_activation_event_for(player_id: int) -> Dictionary:
 	var spec := _gun_activation_spec(gun_kind, effective_profile)
 	if spec.is_empty():
 		return {}
-	var projectile_damage_type := String(spec.get("projectile_damage_type", group.get("projectile_damage_type", group.get("damage_type", "bullet"))))
-	var projectile_style := String(spec.get("projectile_style", group.get("projectile_style", "true_bullet")))
-	var projectile_behavior := String(spec.get("projectile_behavior", group.get("projectile_behavior", projectile_style)))
-	var default_width := float(spec.get("default_width", STANDARD_SNIPER_PROJECTILE_WIDTH_M))
 	var event := _true_bullet_event_for_aim(unit, direction, group, node_index, {
 		"runtime_target_nodes": target_nodes.duplicate(true),
 		"source_gun_node": node_index,
@@ -30951,91 +31882,20 @@ func _runtime_gun_activation_event_for(player_id: int) -> Dictionary:
 		"ammo_kind": ammo_kind,
 	})
 	_copy_module_variant_fields(event, module_part)
-	event["gun_kind"] = gun_kind
-	event["ammo_kind"] = ammo_kind
-	event["projectile_momentum"] = maxf(float(group.get("projectile_momentum", 0.0)), float(event.get("projectile_momentum", 0.0)))
-	if float(event.get("projectile_momentum", 0.0)) <= 0.0:
-		event["projectile_momentum"] = maxf(1.0, float(group.get("normal_damage", 8.0)) * 3.5)
-	event["projectile_damage_type"] = projectile_damage_type
-	event["damage_type"] = String(event.get("projectile_damage_type", "bullet"))
-	event["projectile_style"] = projectile_style
-	event["projectile_behavior"] = projectile_behavior
-	event["travel_path"] = String(spec.get("travel_path", group.get("travel_path", "instant_line")))
-	event["projectile_width_m"] = float(group.get("projectile_width_m", default_width))
-	event["projectile_break_coeff"] = float(group.get("projectile_break_coeff", 0.0))
-	event["projectile_consumes_on_fire"] = bool(group.get("projectile_consumes_on_fire", true))
-	event["gun_drive_allocated"] = float(group.get("gun_drive_allocated", 0.0))
-	event["gun_drive_min"] = float(group.get("gun_drive_min", 0.0))
-	event["gun_drive_max"] = float(group.get("gun_drive_max", 0.0))
-	event["gun_drive_ratio"] = float(group.get("gun_drive_ratio", 1.0))
-	event["gun_drive_ratio_to_max"] = float(group.get("gun_drive_ratio_to_max", 1.0))
-	event["gun_projectile_damage_mult"] = _gun_projectile_damage_mult_max_for_data(group)
-	event["gun_projectile_damage_mult_current"] = _gun_projectile_damage_mult_for_event(event)
-	event["normal_heat"] = float(group.get("normal_heat", 0.0))
-	event["sniper_fire_delay"] = float(group.get("sniper_fire_delay", group.get("bullet_lock_time", TRUE_BULLET_DEFAULT_LOCK_SECONDS)))
-	event["bullet_lock_time"] = event["sniper_fire_delay"]
-	event["fire_interval"] = maxf(0.04, float(group.get("laser_tick_interval", group.get("fire_interval", spec.get("default_fire_interval", 0.24)))))
-	match String(spec.get("semantic", "")):
-		"hold_stream":
-			event["range"] = maxf(0.1, float(group.get("projectile_range", group.get("range", spec.get("default_range", STANDARD_CHEMICAL_SPRAYER_RANGE_M)))))
-			event["lane_range"] = maxf(0.01, float(event.get("projectile_width_m", default_width)) * 0.5)
-			event["chemical_dot_duration"] = float(group.get("chemical_dot_duration", STANDARD_CHEMICAL_SPRAYER_DOT_SECONDS))
-			event["chemical_dot_mult"] = float(group.get("chemical_dot_mult", 1.0))
-			event["chemical_frontload"] = float(group.get("chemical_frontload", 1.0 / 3.0))
-			event["chemical_dot_tick_seconds"] = float(group.get("chemical_dot_tick_seconds", STANDARD_CHEMICAL_SPRAYER_TICK_SECONDS))
-			event["chemical_dot_no_stack"] = bool(group.get("chemical_dot_no_stack", true))
-			event["projectile_speed_mult"] = float(group.get("projectile_speed_mult", CHEMICAL_PROJECTILE_DEFAULT_SPEED_MULT))
-		"hold_beam":
-			event["range"] = maxf(float(group.get("projectile_range", STANDARD_LASER_RANGE_M)), _laser_visible_world_range(unit, direction))
-			event["lane_range"] = maxf(0.01, float(event.get("projectile_width_m", STANDARD_LASER_WIDTH_M)) * 0.5)
-			event["laser_telegraph_ready"] = true
-			event["laser_charge_time"] = float(group.get("laser_charge_time", 0.0))
-		"hold_burst":
-			event["range"] = maxf(0.1, float(group.get("projectile_range", group.get("range", 2.8))))
-			event["lane_range"] = maxf(0.01, float(event.get("projectile_width_m", default_width)) * 0.5)
-			event["projectile_speed_mult"] = float(group.get("projectile_speed_mult", BULLET_HELL_DEFAULT_SPEED_MULT))
-		"hold_grenade_arc":
-			event["range"] = maxf(0.1, float(group.get("projectile_range", group.get("range", spec.get("default_range", 2.65)))))
-			if String(event.get("module_variant_key", "")) == "explosive_arc_salvo":
-				var hold_seconds := maxf(0.05, float(event.get("salvo_hold_range_seconds", 0.75)))
-				var hold_t := clampf(float(state.get("hold_time", 0.0)) / hold_seconds, 0.0, 1.0)
-				var min_range := maxf(0.1, float(event.get("salvo_arc_min_range", 1.35)))
-				var max_range := maxf(min_range, float(event.get("salvo_arc_max_range", 3.8)))
-				event["range"] = lerpf(min_range, max_range, hold_t)
-				event["salvo_hold_ratio"] = hold_t
-				event["salvo_landing_marker"] = true
-				event["salvo_landing_distance"] = float(event["range"])
-			event["lane_range"] = maxf(0.01, float(event.get("projectile_width_m", default_width)) * 0.5)
-			event["projectile_speed_mult"] = float(group.get("projectile_speed_mult", 1.35))
-			event["projectile_momentum"] = maxf(float(group.get("projectile_momentum", 72.0)), float(event.get("projectile_momentum", 0.0)))
-			event["explosion_radius"] = maxf(0.01, float(group.get("explosion_radius", 0.56)))
-			event["explosion_style"] = String(group.get("explosion_style", "grenade"))
-		"release_web":
-			event["range"] = maxf(0.1, float(group.get("projectile_range", group.get("range", spec.get("default_range", STANDARD_WEB_TETHER_RANGE_M)))))
-			event["lane_range"] = maxf(0.01, float(event.get("projectile_width_m", default_width)) * 0.5)
-			event["non_damage"] = true
-			event["web_strength"] = maxf(0.01, float(group.get("web_strength", STANDARD_WEB_TETHER_STRENGTH)))
-			event["web_break_force"] = maxf(0.08, float(group.get("web_break_force", STANDARD_WEB_TETHER_BREAK_FORCE)))
-			event["web_duration"] = maxf(0.1, float(group.get("web_duration", STANDARD_WEB_TETHER_DURATION)))
-			event["web_pull_mode"] = String(group.get("web_pull_mode", "mass_duel"))
-			event["web_target_filter"] = String(group.get("web_target_filter", "all"))
-			event["web_anchor_swing"] = bool(group.get("web_anchor_swing", true))
-			event["web_swing_uses_melee_collision"] = bool(group.get("web_swing_uses_melee_collision", true))
-		"release_missile_lock":
-			event["range"] = maxf(0.1, float(group.get("projectile_range", group.get("range", spec.get("default_range", STANDARD_MISSILE_RANGE_M)))))
-			event["lane_range"] = maxf(0.01, float(event.get("projectile_width_m", default_width)) * 0.5)
-			event["projectile_speed_mult"] = float(group.get("projectile_speed_mult", STANDARD_MISSILE_SPEED_MULT))
-			event["projectile_momentum"] = maxf(float(group.get("projectile_momentum", STANDARD_MISSILE_PROJECTILE_MOMENTUM)), float(event.get("projectile_momentum", 0.0)))
-			event["explosion_radius"] = maxf(0.01, float(group.get("explosion_radius", STANDARD_MISSILE_EXPLOSION_RADIUS)))
-			event["explosion_style"] = String(group.get("explosion_style", "missile"))
-			event["missile_lock_priority"] = String(module_part.get("missile_lock_priority", group.get("missile_lock_priority", "screen_hero_first")))
-			event["missile_lock_cone_degrees"] = float(module_part.get("missile_lock_cone_degrees", group.get("missile_lock_cone_degrees", 52.0)))
-			event["missile_lock_range"] = maxf(0.1, float(group.get("missile_lock_range", event.get("range", STANDARD_MISSILE_RANGE_M))))
-			event["missile_lock_target_classes"] = Array(group.get("missile_lock_target_classes", ["hero", "puppet", "barrier_support", "barrier_attack", "barrier_other"])).duplicate(true)
-			event["missile_occlusion_grace"] = maxf(0.0, float(module_part.get("missile_occlusion_grace", group.get("missile_occlusion_grace", STANDARD_MISSILE_OCCLUSION_GRACE))))
-		_:
-			event["range"] = maxf(float(group.get("projectile_range", 0.0)), _laser_visible_world_range(unit, direction))
-			event["lane_range"] = maxf(STANDARD_SNIPER_PROJECTILE_WIDTH_M * 0.5, float(event.get("projectile_width_m", STANDARD_SNIPER_PROJECTILE_WIDTH_M)) * 0.5)
+	var service_intent := _battle_action_event_service().gun_activation_event_patch({
+		"event": event,
+		"group": group,
+		"spec": spec,
+		"module_part": module_part,
+		"state": state,
+		"gun_kind": gun_kind,
+		"ammo_kind": ammo_kind,
+		"gun_projectile_damage_mult": _gun_projectile_damage_mult_max_for_data(group),
+		"gun_projectile_damage_mult_current": _gun_projectile_damage_mult_for_event(event),
+		"laser_visible_range": _laser_visible_world_range(unit, direction),
+		"constants": _battle_action_event_constants(),
+	})
+	event = Dictionary(service_intent.get("event", event))
 	_sync_projectile_drive_momentum_fields(event)
 	return event
 
@@ -31111,6 +31971,109 @@ func _runtime_gun_activation_fire_once(unit, event: Dictionary) -> bool:
 	if unit != null and is_instance_valid(unit) and event.has("normal_heat"):
 		_add_unit_heat_event(unit, float(event.get("normal_heat", 0.0)), _heat_tags_for_projectile_event(event), "projectile")
 	return true
+
+
+func _runtime_held_melee_activation_active(player_id: int) -> bool:
+	return held_melee_activation_state.has(player_id) and held_melee_activation_state[player_id] is Dictionary and not Dictionary(held_melee_activation_state[player_id]).is_empty()
+
+
+func _boot_driver_initial_state_for_input(unit, input_vector: Vector2) -> String:
+	if input_vector.length() < 0.18:
+		return "normal"
+	var forward := _unit_forward_vector(unit)
+	if forward.length() < 0.01:
+		return "normal"
+	var dot := input_vector.normalized().dot(forward.normalized())
+	if dot >= 0.38:
+		return "armor"
+	if dot <= -0.38:
+		return "active"
+	return "normal"
+
+
+func _start_runtime_held_melee_activation(player_id: int, prefix: String, attack_index: int, action_name: String, binding: Dictionary, input_vector: Vector2) -> void:
+	var unit = active_units[player_id]["hero"]
+	if not _is_live_unit(unit):
+		return
+	if not _runtime_binding_is_held_melee_activation(binding):
+		return
+	var module_part: Dictionary = binding.get("module_part", {}) if binding.get("module_part", {}) is Dictionary else {}
+	var profile := _runtime_binding_profile(binding)
+	var action_state := _boot_driver_initial_state_for_input(unit, input_vector)
+	var direction := _unit_forward_vector(unit)
+	var target_nodes: Array = Array(binding.get("target_nodes", []))
+	if target_nodes.size() >= 2 and unit.has_method("runtime_world_segment_for_node"):
+		var rotating_segment: Dictionary = unit.runtime_world_segment_for_node(int(target_nodes[0]), true)
+		if not rotating_segment.is_empty():
+			var a: Vector2 = rotating_segment.get("a", Vector2(unit.ring_pos, unit.lane))
+			var b: Vector2 = rotating_segment.get("b", a)
+			var segment_dir := b - a
+			if segment_dir.length() > 0.01:
+				direction = segment_dir.normalized()
+	if direction.length() <= 0.01:
+		direction = input_vector.normalized() if input_vector.length() >= 0.18 else _unit_forward_vector(unit)
+	var event: Dictionary = {}
+	if unit.has_method("begin_runtime_module_action"):
+		event = unit.begin_runtime_module_action(action_state, binding.duplicate(true), direction)
+	if event.is_empty():
+		_play_module_fail_sfx()
+		var reason := String(unit.get_meta("last_module_gate_reason", "locked"))
+		_show_battle_message("Boot Driver 无法启动：%s" % reason if _ui_is_zh() else "Boot Driver blocked: %s" % reason, 0.45)
+		return
+	held_melee_activation_state[player_id] = {
+		"prefix": prefix,
+		"attack_index": attack_index,
+		"action_name": action_name,
+		"binding": binding.duplicate(true),
+		"module_action_profile": profile,
+		"action_state": action_state,
+		"turn_keys_steer_joint": bool(binding.get("turn_keys_steer_joint", module_part.get("turn_keys_steer_joint", true))),
+		"hold_time": 0.0,
+	}
+	_clear_attack_command_windows(player_id)
+	event["projectile"] = false
+	event["projectile_only"] = false
+	event["runtime_melee_contact"] = true
+	event["boot_driver_held_activation"] = true
+	event["damage_type"] = String(event.get("damage_type", "blunt"))
+	var service_intent := _battle_action_event_service().runtime_direct_module_event_patch({
+		"event": event,
+		"module_part": module_part,
+		"action_state": action_state,
+		"direction": direction,
+		"weapon_damage_coeff": _weapon_damage_coefficient(float(event.get("damage", 1.0)), module_part, String(event.get("state", action_state))),
+	})
+	event = Dictionary(service_intent.get("event", event))
+	_copy_module_variant_fields(event, module_part)
+	var state_label := String(service_intent.get("state_label", String(event.get("state", action_state)).to_upper()))
+	_show_battle_message("P%d BOOT DRIVER %s" % [player_id, state_label], 0.45)
+	_resolve_attack(unit, event)
+
+
+func _tick_runtime_held_melee_activation(player_id: int, prefix: String, delta: float) -> void:
+	if not _runtime_held_melee_activation_active(player_id):
+		return
+	var state: Dictionary = held_melee_activation_state[player_id]
+	var action_name := String(state.get("action_name", ""))
+	var unit = active_units[player_id]["hero"]
+	if not _is_live_unit(unit):
+		held_melee_activation_state[player_id] = {}
+		return
+	if action_name == "" or _battle_action_just_released(action_name) or not Input.is_action_pressed(action_name):
+		if unit.has_method("release_boot_action_driver_hold"):
+			unit.release_boot_action_driver_hold(action_name)
+		held_melee_activation_state[player_id] = {}
+		return
+	var turn_input := Input.get_action_strength("%s_face_right" % prefix) - Input.get_action_strength("%s_face_left" % prefix)
+	if absf(turn_input) <= 0.08:
+		turn_input = 0.0
+	else:
+		turn_input = clampf(turn_input, -1.0, 1.0)
+	if unit.has_method("update_boot_action_driver_hold"):
+		unit.update_boot_action_driver_hold(action_name, turn_input, delta)
+	state["hold_time"] = float(state.get("hold_time", 0.0)) + delta
+	state["turn_input"] = turn_input
+	held_melee_activation_state[player_id] = state
 
 
 func _salvo_preview_points(unit, event: Dictionary) -> Dictionary:
@@ -31352,6 +32315,8 @@ func _tick_attack_command_windows(player_id: int, prefix: String, delta: float) 
 
 
 func _battle_direction_just_pressed(prefix: String) -> bool:
+	if battle_input_service != null:
+		return battle_input_service.direction_just_pressed(prefix, Callable(self, "_battle_action_just_pressed"))
 	return _battle_action_just_pressed("%s_left" % prefix) or _battle_action_just_pressed("%s_right" % prefix) or _battle_action_just_pressed("%s_up" % prefix) or _battle_action_just_pressed("%s_down" % prefix)
 
 
@@ -31495,10 +32460,16 @@ func _gauntlet_command_variant_for_binding(player_id: int, hero, binding: Dictio
 
 func _resolve_attack_command_window(player_id: int, prefix: String, input_vector: Vector2, attack_index: int, action_state: String) -> bool:
 	var windows := _ensure_attack_command_windows(player_id)
-	if not windows.has(_attack_window_key(attack_index)):
+	var intent := _battle_action_event_service().command_window_route_intent({
+		"has_window": windows.has(_attack_window_key(attack_index)),
+		"attack_index": attack_index,
+		"action_state": action_state,
+	})
+	if String(intent.get("action", "")) != "fire":
 		return false
-	_close_attack_command_window(player_id, attack_index)
-	_hero_runtime_module_attack(player_id, prefix, input_vector, attack_index, action_state)
+	if bool(intent.get("close_window", true)):
+		_close_attack_command_window(player_id, int(intent.get("attack_index", attack_index)))
+	_hero_runtime_module_attack(player_id, prefix, input_vector, int(intent.get("attack_index", attack_index)), String(intent.get("action_state", action_state)))
 	return true
 
 
@@ -31602,18 +32573,19 @@ func _hero_runtime_module_attack(player_id: int, prefix: String, input_vector: V
 		_show_battle_message("行动模块无法触发：%s" % reason if _ui_is_zh() else "Module trigger blocked: %s" % reason, 0.45)
 		return
 	var module_part: Dictionary = binding.get("module_part", {}) if binding.get("module_part", {}) is Dictionary else {}
-	event["direction"] = direction
-	event["group_name"] = String(module_part.get("name", "ACTION MODULE"))
-	event["damage_type"] = String(module_part.get("damage_type", event.get("damage_type", "blunt")))
-	event["material_class"] = String(module_part.get("material_class", event.get("material_class", "weapon")))
-	event["weapon_damage_coeff"] = _weapon_damage_coefficient(float(event.get("damage", 1.0)), module_part, String(event.get("state", action_state)))
-	event["fixed_output_momentum"] = float(module_part.get("fixed_output_momentum", module_part.get("joint_output_momentum", 0.0)))
-	event["runtime_direct_module"] = true
+	var service_intent := _battle_action_event_service().runtime_direct_module_event_patch({
+		"event": event,
+		"module_part": module_part,
+		"action_state": action_state,
+		"direction": direction,
+		"weapon_damage_coeff": _weapon_damage_coefficient(float(event.get("damage", 1.0)), module_part, String(event.get("state", action_state))),
+	})
+	event = Dictionary(service_intent.get("event", event))
 	_copy_module_variant_fields(event, module_part)
 	event["recoil_countered"] = _is_recoil_countered(player_id, prefix, direction)
 	if not bool(event.get("projectile", false)):
 		hero.apply_recoil(direction, float(event.get("recoil", 0.04)), bool(event["recoil_countered"]))
-	var state_label := String(event.get("state", action_state)).to_upper()
+	var state_label := String(service_intent.get("state_label", String(event.get("state", action_state)).to_upper()))
 	_show_battle_message("P%d %s %s" % [player_id, _short_part_name(String(event["group_name"])), state_label], 0.45)
 	_resolve_attack(hero, event)
 
@@ -31661,43 +32633,25 @@ func _hero_normal_attack(player_id: int, prefix: String, input_vector: Vector2, 
 	var direction := _attack_direction_for_group(hero, input_vector, group)
 	if String(group.get("module_action_profile", "")) == "two_link_forward_snap":
 		direction = _unit_forward_vector(hero)
-	event["direction"] = direction
 	if _is_live_unit(prelocked_target):
 		event["locked_target"] = prelocked_target
-	event["muscle_node"] = attack_index
-	event["collision_group"] = group.duplicate(true)
-	event["group_name"] = String(group.get("name", ATTACK_GROUP_FALLBACK[attack_index]))
-	event["damage_type"] = String(group.get("damage_type", event.get("damage_type", "blunt")))
-	event["material_class"] = String(group.get("melee_contact_class", group.get("material_class", "weapon")))
-	var state_key := String(event.get("state", "normal"))
-	var override_key := "%s_damage_override" % state_key
-	var base_damage := float(event.get("damage", 1))
-	if group.has(override_key):
-		base_damage = float(group[override_key])
-	event["damage"] = int(roundf(base_damage * float(group.get("damage_mult", 1.0))))
-	event["range"] = float(event.get("range", 0.3)) * float(group.get("range_mult", 1.0))
-	event["range"] = float(event["range"]) + _damage_type_range_bonus(hero.stats, String(event.get("damage_type", "blunt")))
-	event["lane_range"] = float(event.get("lane_range", 0.2)) * float(group.get("lane_mult", 1.0))
-	event["recoil"] = float(event.get("recoil", 0.06)) * float(group.get("recoil_mult", 1.0))
-	if group_projectile:
-		event["projectile"] = true
-		event["material_class"] = "projectile"
-		event["damage_type"] = String(group.get("projectile_damage_type", event.get("damage_type", "bullet")))
-		event["projectile_style"] = String(group.get("projectile_style", _projectile_style_for_damage(String(event["damage_type"]))))
-		event["projectile_behavior"] = _projectile_behavior_for_data(group)
-		if String(event["projectile_behavior"]) == "bullet_hell":
-			event["projectile_style"] = "bullet_hell"
-			event["projectile_speed_mult"] = float(group.get("projectile_speed_mult", BULLET_HELL_DEFAULT_SPEED_MULT))
-		event["travel_path"] = String(group.get("travel_path", "straight"))
-		event["range"] = maxf(float(event["range"]), float(group.get("projectile_range", 2.25)))
-		if String(event["projectile_behavior"]) == "true_bullet":
-			event["projectile_style"] = "true_bullet"
-			event["travel_path"] = "instant_line"
-			event["range"] = maxf(float(event["range"]), _laser_visible_world_range(hero, direction))
-		if event["projectile_style"] == "missile":
-			event["range"] = maxf(float(event["range"]), 3.2)
-			event["lane_range"] = float(event["lane_range"]) + 0.18
-			event["damage"] = int(roundf(float(event["damage"]) * 1.18))
+	var service_intent := _battle_action_event_service().module_event_patch({
+		"event": event,
+		"group": group,
+		"stats": hero.stats,
+		"direction": direction,
+		"attack_index": attack_index,
+		"attack_group_fallback": ATTACK_GROUP_FALLBACK,
+		"locked_target": prelocked_target if _is_live_unit(prelocked_target) else null,
+		"projectile": group_projectile,
+		"projectile_style": _projectile_style_for_damage(String(group.get("projectile_damage_type", event.get("damage_type", "bullet")))),
+		"projectile_behavior": _projectile_behavior_for_data(group),
+		"laser_visible_range": _laser_visible_world_range(hero, direction),
+		"constants": _battle_action_event_constants(),
+	})
+	event = Dictionary(service_intent.get("event", event))
+	var state_key := String(service_intent.get("state_key", event.get("state", "normal")))
+	var base_damage := float(service_intent.get("base_damage", event.get("damage", 1.0)))
 	_copy_control_event_fields(event, group)
 	if String(group.get("module_effect", "")) != "":
 		_apply_module_event_fields(event, group)
@@ -31723,74 +32677,29 @@ func _hero_normal_attack(player_id: int, prefix: String, input_vector: Vector2, 
 
 
 func _apply_module_event_fields(event: Dictionary, group: Dictionary) -> void:
-	var module_effect := String(group.get("module_effect", ""))
-	event["module_effect"] = module_effect
-	event["travel_path"] = String(group.get("travel_path", event.get("travel_path", "straight")))
-	if module_effect in ["eject", "chain_recall", "capture", "tether", "entangle", "barrier_break", "boomerang_recall", "guided_eject", "group_throw", "throw_guidance", "web_anchor", "web_reel", "web_tether", "light_sink"]:
-		event["projectile"] = true
-		event["range"] = maxf(float(event.get("range", 0.5)), float(group.get("module_range", 1.4)))
-		event["lane_range"] = maxf(float(event.get("lane_range", 0.24)), float(group.get("module_lane_range", 0.34)))
-		event["projectile_style"] = String(group.get("projectile_style", module_effect))
-		event["state"] = String(group.get("module_state", event.get("state", "normal")))
-		event["damage"] = int(roundf(float(event.get("damage", 1)) * float(group.get("module_damage_mult", 1.0))))
-	_copy_control_event_fields(event, group)
-	if module_effect in ["web_anchor", "web_reel", "web_tether", "light_sink"] or bool(event.get("non_damage", false)):
-		event["non_damage"] = true
-		event["damage"] = 0
-	if module_effect == "chaos_shot":
-		event["projectile"] = true
-		event["projectile_style"] = "chaos"
-		event["travel_path"] = "instant_line"
-		event["range"] = maxf(float(event.get("range", 0.5)), 4.15)
-		event["lane_range"] = maxf(float(event.get("lane_range", 0.24)), 0.18)
-		event["damage"] = int(roundf(float(event.get("damage", 1)) * 0.82))
+	var patched: Dictionary = _battle_action_event_service().module_effect_event_patch(event, group)
+	event.clear()
+	for key in patched.keys():
+		event[key] = patched[key]
 
 
 func _copy_module_variant_fields(event: Dictionary, module_part: Dictionary) -> void:
-	var variant_key := String(module_part.get("module_variant_key", "")).to_lower()
-	if variant_key == "":
-		return
-	event["module_variant_key"] = variant_key
-	event["module_visual_family"] = String(module_part.get("module_visual_family", variant_key))
-	event["module_variant_label"] = String(module_part.get("module_variant_label", ""))
-	match variant_key:
-		"balance_string":
-			event["combo_balance_window"] = float(module_part.get("combo_balance_window", 1.2))
-			event["combo_balance_cooldown_mult"] = float(module_part.get("combo_balance_cooldown_mult", 0.62))
-		"vise_close":
-			event["clamp_pin_seconds"] = float(module_part.get("clamp_pin_seconds", 0.38))
-			event["clamp_velocity_mult"] = float(module_part.get("clamp_velocity_mult", 0.35))
-			event["clamp_knock_mult"] = float(module_part.get("clamp_knock_mult", 0.38))
-			event["knock"] = float(event.get("knock", 0.12)) * clampf(float(module_part.get("clamp_knock_mult", 0.38)), 0.05, 1.0)
-		"pickup_dash":
-			event["pickup_dash_impulse"] = float(module_part.get("pickup_dash_impulse", 0.65))
-			event["pickup_dash_on_hit_impulse"] = float(module_part.get("pickup_dash_on_hit_impulse", 0.35))
-			event["route_lane_pull"] = float(module_part.get("route_lane_pull", 0.1))
-		"crush_windup":
-			event["contact_momentum_mult"] = float(module_part.get("crush_contact_momentum_mult", 1.45))
-			event["crush_stagger_mult"] = float(module_part.get("crush_stagger_mult", 1.35))
-			event["whiff_recovery_mult"] = float(module_part.get("whiff_recovery_mult", 1.25))
-			event["runtime_contact_damage_mult"] = float(module_part.get("runtime_contact_damage_mult", 1.24))
-		"feint_thrust":
-			event["feint_retarget_degrees"] = float(module_part.get("feint_retarget_degrees", 18.0))
-			event["feint_ghost_phase"] = float(module_part.get("feint_ghost_phase", 0.42))
-			event["feint_final_width_mult"] = float(module_part.get("feint_final_width_mult", 0.65))
-		"explosive_arc_salvo":
-			event["salvo_arc_min_range"] = float(module_part.get("salvo_arc_min_range", 1.35))
-			event["salvo_arc_max_range"] = float(module_part.get("salvo_arc_max_range", 3.8))
-			event["salvo_hold_range_seconds"] = float(module_part.get("salvo_hold_range_seconds", 0.75))
-			event["salvo_landing_marker"] = bool(module_part.get("salvo_landing_marker", true))
+	var patched: Dictionary = _battle_action_event_service().module_variant_event_patch(event, module_part)
+	event.clear()
+	for key in patched.keys():
+		event[key] = patched[key]
 
 
 func _copy_control_event_fields(event: Dictionary, group: Dictionary) -> void:
-	for event_key in ["non_damage", "web_strength", "web_break_force", "web_pull_mode", "blind_radius", "blind_duration", "blind_strength", "takeover_on_hit", "takeover_seconds", "takeover_power", "takeover_damage_rate", "takeover_damage_type", "explosion_radius", "explosion_damage_type", "explosion_style", "back_hit_heat_bonus", "back_hit_heat_mult", "laser_aim_time", "projectile_behavior", "projectile_momentum", "projectile_base_momentum", "projectile_effective_momentum", "projectile_drive_momentum_mult", "projectile_mass", "projectile_collision_speed", "projectile_speed_mult", "gun_projectile_damage_mult", "gun_projectile_damage_mult_current", "gun_drive_allocated", "gun_drive_min", "gun_drive_max", "gun_drive_ratio", "gun_drive_ratio_to_max", "fire_rate", "fire_interval", "carried_ammo", "ammo_capacity", "bullet_lock_time", "bullet_lock_radius", "chemical_dot_duration", "chemical_dot_mult", "chemical_frontload", "chemical_pellets", "chemical_spread", "missile_lock_priority", "missile_lock_cone_degrees", "missile_lock_range", "missile_lock_target_classes", "missile_occlusion_grace"]:
-		if group.has(event_key):
-			event[event_key] = group[event_key]
-	if bool(event.get("non_damage", false)):
-		event["damage"] = 0
+	var patched: Dictionary = _battle_action_event_service().control_event_fields_patch(event, group)
+	event.clear()
+	for key in patched.keys():
+		event[key] = patched[key]
 
 
 func _projectile_style_for_damage(damage_type: String) -> String:
+	if projectile_runtime_service != null:
+		return projectile_runtime_service.projectile_style_for_damage(damage_type)
 	match damage_type:
 		"chemical":
 			return "spray"
@@ -31916,24 +32825,28 @@ func _try_consume_command_heat(hero, requested_state: String) -> bool:
 func _try_morph_unit(unit) -> bool:
 	if not _is_live_unit(unit):
 		return false
-	var timer := maxf(0.0, float(unit.get_meta("morph_timer", 0.0)))
-	if timer > 0.0:
-		_show_battle_message("%s morph cooling %.1fs" % [unit.unit_name, timer], 0.45)
+	var intent := _battle_identity_runtime_service().morph_intent({
+		"unit_live": true,
+		"timer": maxf(0.0, float(unit.get_meta("morph_timer", 0.0))),
+		"modes": unit.stats.get("morph_modes", ["combat", "travel"]),
+		"index": int(unit.get_meta("morph_index", 0)),
+		"current_shape": String(unit.stats.get("shape", "core")),
+		"cooldown": float(unit.stats.get("morph_cooldown", 2.6)),
+	})
+	if not bool(intent.get("accepted", false)):
+		if String(intent.get("reason", "")) == "cooldown":
+			_show_battle_message("%s morph cooling %.1fs" % [unit.unit_name, float(intent.get("timer", 0.0))], 0.45)
 		_play_module_fail_sfx()
 		return false
-	var modes: Array = unit.stats.get("morph_modes", ["combat", "travel"])
-	if modes.is_empty():
-		modes = ["combat", "travel"]
-	var index := (int(unit.get_meta("morph_index", 0)) + 1) % modes.size()
-	unit.set_meta("morph_index", index)
-	unit.set_meta("morph_timer", float(unit.stats.get("morph_cooldown", 2.6)))
-	unit.stats["shape"] = _morph_shape_for(String(unit.stats.get("shape", "core")), String(modes[index]))
+	unit.set_meta("morph_index", int(intent.get("index", 0)))
+	unit.set_meta("morph_timer", float(intent.get("timer", 2.6)))
+	unit.stats["shape"] = String(intent.get("shape", unit.stats.get("shape", "core")))
 	if unit.has_method("_apply_topology_visuals"):
 		unit._apply_topology_visuals()
 	if unit.has_method("_refresh_visuals"):
 		unit._refresh_visuals()
 	_spawn_hit_effect(unit, 2, "laser", false, "guided")
-	_show_battle_message("%s MORPH: %s" % [unit.unit_name, String(modes[index]).to_upper()], 0.75)
+	_show_battle_message("%s MORPH: %s" % [unit.unit_name, String(intent.get("mode", "")).to_upper()], 0.75)
 	return true
 
 
@@ -31942,10 +32855,16 @@ func _try_combine_or_separate(unit) -> bool:
 		return false
 	if bool(unit.get_meta("combined", false)):
 		var stored: Dictionary = unit.get_meta("combine_store", {})
-		var partner_snapshots: Array = stored.get("partners", [])
-		unit.stats = stored.get("stats", unit.stats).duplicate(true)
-		unit.max_health = int(stored.get("max_health", unit.max_health))
-		unit.health = mini(unit.health, unit.max_health)
+		var separate_intent := _battle_identity_runtime_service().separate_intent({
+			"store": stored,
+			"fallback_stats": unit.stats,
+			"max_health": unit.max_health,
+			"health": unit.health,
+		})
+		var partner_snapshots: Array = Array(separate_intent.get("partner_snapshots", []))
+		unit.stats = Dictionary(separate_intent.get("stats", unit.stats)).duplicate(true)
+		unit.max_health = int(separate_intent.get("max_health", unit.max_health))
+		unit.health = int(separate_intent.get("health", mini(unit.health, unit.max_health)))
 		unit.set_meta("combined", false)
 		unit.set_meta("combine_store", {})
 		for i in range(partner_snapshots.size()):
@@ -31971,22 +32890,29 @@ func _try_combine_or_separate(unit) -> bool:
 			continue
 		var delta := _mobius_delta_vec_between(unit, ally)
 		var distance := absf(delta.x) + absf(delta.y) * 0.72
-		if absf(delta.x) <= range and absf(delta.y) <= range * 0.72:
-			candidates.append({"unit": ally, "distance": distance})
-	candidates.sort_custom(func(a, b): return float(a["distance"]) < float(b["distance"]))
+		candidates.append({
+			"unit": ally,
+			"candidate_index": candidates.size(),
+			"distance": distance,
+			"delta_x": delta.x,
+			"delta_y": delta.y,
+			"can_combine": true,
+			"combined": false,
+		})
 	var partners: Array = []
-	for item in candidates:
-		if partners.size() >= max_partners:
-			break
-		partners.append(item["unit"])
-	if partners.size() < required_partners:
+	var selection := _battle_identity_runtime_service().combine_partner_selection(candidates, required_partners, max_partners, range)
+	for raw_index in Array(selection.get("selected_indices", [])):
+		var candidate_index := int(raw_index)
+		if candidate_index >= 0 and candidate_index < candidates.size():
+			var partner = Dictionary(candidates[candidate_index]).get("unit", null)
+			if partner != null:
+				partners.append(partner)
+	if not bool(selection.get("accepted", false)):
 		_show_battle_message("%s needs %d nearby combine partner(s)" % [unit.unit_name, required_partners], 0.65)
 		_play_module_fail_sfx()
 		return false
 	var partner_snapshots: Array = []
 	var total_partner_health := 0
-	var total_partner_radius := 0.0
-	var total_partner_length := 0.0
 	for partner in partners:
 		partner_snapshots.append({
 			"stats": partner.stats.duplicate(true),
@@ -31996,15 +32922,17 @@ func _try_combine_or_separate(unit) -> bool:
 			"name": String(partner.unit_name),
 		})
 		total_partner_health += int(partner.health)
-		total_partner_radius += float(partner.stats.get("radius", 0.2))
-		total_partner_length += float(partner.stats.get("length", 0.4))
-	unit.set_meta("combine_store", {"stats": unit.stats.duplicate(true), "max_health": unit.max_health, "partners": partner_snapshots})
+	var combine_intent := _battle_identity_runtime_service().combine_intent({
+		"stats": unit.stats,
+		"max_health": unit.max_health,
+		"health": unit.health,
+		"partner_snapshots": partner_snapshots,
+	})
+	unit.set_meta("combine_store", Dictionary(combine_intent.get("combine_store", {})))
 	unit.set_meta("combined", true)
-	unit.stats["shape"] = String(unit.stats.get("combine_shape", "tank")) if String(unit.stats.get("combine_shape", "")) != "" else "tank"
-	unit.stats["radius"] = float(unit.stats.get("radius", 0.3)) + total_partner_radius * 0.72
-	unit.stats["length"] = minf(4.5, float(unit.stats.get("length", 1.0)) + total_partner_length * 0.64)
-	unit.max_health += total_partner_health + int(unit.stats.get("combine_bonus_hp", 24))
-	unit.health = mini(unit.max_health, unit.health + total_partner_health)
+	unit.stats = Dictionary(combine_intent.get("stats", unit.stats)).duplicate(true)
+	unit.max_health = int(combine_intent.get("max_health", unit.max_health + total_partner_health))
+	unit.health = int(combine_intent.get("health", mini(unit.max_health, unit.health + total_partner_health)))
 	for partner in partners:
 		_detach_unit(partner)
 		partner.queue_free()
@@ -32021,20 +32949,24 @@ func _try_combine_or_separate(unit) -> bool:
 func _restore_combine_partner_snapshot(owner: int, lead_unit, snapshot: Dictionary, index: int, count: int) -> void:
 	if not _is_live_unit(lead_unit):
 		return
-	var stats: Dictionary = snapshot.get("stats", {}).duplicate(true)
-	if stats.is_empty():
+	var intent := _battle_identity_runtime_service().separated_partner_spawn_intent({
+		"snapshot": snapshot,
+		"index": index,
+		"count": count,
+		"owner": owner,
+		"lead_ring": lead_unit.ring_pos,
+		"lead_lane": lead_unit.lane,
+		"ring_length": RING_LENGTH,
+		"battle_half_height": BATTLE_HALF_HEIGHT,
+		"hero_occupied": _is_live_unit(active_units[owner]["hero"]),
+		"barrier_occupied": _is_live_unit(active_units[owner]["barrier"]),
+	})
+	if not bool(intent.get("spawn", false)):
 		return
-	var role_key := String(snapshot.get("role", "puppet"))
-	if role_key == "hero" and _is_live_unit(active_units[owner]["hero"]):
-		role_key = "puppet"
-	if role_key == "barrier" and _is_live_unit(active_units[owner]["barrier"]):
-		role_key = "puppet"
-	var angle := TAU * float(index + 1) / float(maxi(2, count + 1))
-	var spawn_ring := wrapf(lead_unit.ring_pos + cos(angle) * 0.32, 0.0, RING_LENGTH)
-	var spawn_lane := clampf(lead_unit.lane + sin(angle) * 0.28, -BATTLE_HALF_HEIGHT, BATTLE_HALF_HEIGHT)
-	var restored = _create_unit(owner, role_key, stats, String(snapshot.get("name", "P%d SEPARATED" % owner)), spawn_ring, spawn_lane)
-	restored.max_health = int(snapshot.get("max_health", restored.max_health))
-	restored.health = clampi(int(snapshot.get("health", restored.max_health)), 1, restored.max_health)
+	var role_key := String(intent.get("role", "puppet"))
+	var restored = _create_unit(owner, role_key, Dictionary(intent.get("stats", {})).duplicate(true), String(intent.get("name", "P%d SEPARATED" % owner)), float(intent.get("ring", lead_unit.ring_pos)), float(intent.get("lane", lead_unit.lane)))
+	restored.max_health = int(intent.get("max_health", restored.max_health))
+	restored.health = int(intent.get("health", clampi(restored.health, 1, restored.max_health)))
 	_assign_unit_role(restored, role_key)
 	_spawn_hit_effect(restored, 1, "laser", false, "guided")
 
@@ -32175,14 +33107,7 @@ func _update_served_balls(delta: float) -> void:
 
 
 func _morph_shape_for(current_shape: String, mode: String) -> String:
-	match mode:
-		"travel":
-			return "snake"
-		"siege":
-			return "tank"
-		"combat":
-			return "crab" if current_shape in ["snake", "tank", "core"] else current_shape
-	return current_shape
+	return _battle_identity_runtime_service().morph_shape_for_mode(current_shape, mode)
 
 
 func _is_recoil_countered(player_id: int, prefix: String, attack_direction: Vector2) -> bool:
@@ -32604,20 +33529,32 @@ func _ai_try_summon_from_sortie(player_id: int) -> bool:
 
 func _update_anti_stall_summons(delta: float) -> void:
 	for player_id in [1, 2]:
-		auto_mech_summon_timers[player_id] = maxf(0.0, float(auto_mech_summon_timers.get(player_id, 0.0)) - delta)
-		hero_idle_puppet_summon_timers[player_id] = maxf(0.0, float(hero_idle_puppet_summon_timers.get(player_id, 0.0)) - delta)
-		if not _player_has_live_mech(player_id) and not _player_has_pending_mech(player_id):
-			if float(auto_mech_summon_timers[player_id]) <= 0.0:
-				if _auto_summon_first_affordable_sortie_role(player_id, ["hero", "puppet"], "no_mech"):
-					auto_mech_summon_timers[player_id] = AUTO_MECH_SUMMON_COOLDOWN
-				else:
-					auto_mech_summon_timers[player_id] = AUTO_MECH_SUMMON_COOLDOWN
 		var hero = active_units[player_id]["hero"] if active_units.has(player_id) else null
-		if _is_live_unit(hero) and bool(hero.stats.get("has_soul", false)):
-			var now := Time.get_ticks_msec() * 0.001
-			var last_attack := float(hero.get_meta("last_attack_time", now))
-			if now - last_attack >= HERO_IDLE_PUPPET_SUMMON_SECONDS and float(hero_idle_puppet_summon_timers[player_id]) <= 0.0:
-				if _auto_summon_first_affordable_sortie_role(player_id, ["puppet"], "soul_idle"):
+		var now := Time.get_ticks_msec() * 0.001
+		var intent := _battle_actor_command_service().auto_summon_intent({
+			"delta": delta,
+			"auto_timer": float(auto_mech_summon_timers.get(player_id, 0.0)),
+			"idle_timer": float(hero_idle_puppet_summon_timers.get(player_id, 0.0)),
+			"has_live_mech": _player_has_live_mech(player_id),
+			"has_pending_mech": _player_has_pending_mech(player_id),
+			"hero_live": _is_live_unit(hero),
+			"hero_has_soul": _is_live_unit(hero) and bool(hero.stats.get("has_soul", false)),
+			"last_attack_time": float(hero.get_meta("last_attack_time", now)) if _is_live_unit(hero) else now,
+			"now": now,
+			"idle_seconds": HERO_IDLE_PUPPET_SUMMON_SECONDS,
+		})
+		auto_mech_summon_timers[player_id] = float(intent.get("auto_timer", 0.0))
+		hero_idle_puppet_summon_timers[player_id] = float(intent.get("idle_timer", 0.0))
+		for raw_auto_intent in Array(intent.get("intents", [])):
+			if not (raw_auto_intent is Dictionary):
+				continue
+			var auto_intent: Dictionary = raw_auto_intent
+			var reason := String(auto_intent.get("reason", ""))
+			var success := _auto_summon_first_affordable_sortie_role(player_id, Array(auto_intent.get("role_filter", [])), reason)
+			if String(auto_intent.get("reset_timer", "")) == "auto":
+				auto_mech_summon_timers[player_id] = AUTO_MECH_SUMMON_COOLDOWN
+			elif String(auto_intent.get("reset_timer", "")) == "idle":
+				if success and bool(auto_intent.get("touch_last_attack_on_success", false)) and _is_live_unit(hero):
 					hero.set_meta("last_attack_time", now)
 				hero_idle_puppet_summon_timers[player_id] = HERO_IDLE_PUPPET_SUMMON_COOLDOWN
 
@@ -32645,23 +33582,34 @@ func _role_available_for_auto_summon(player_id: int, role_key: String) -> bool:
 
 
 func _auto_summon_first_affordable_sortie_role(player_id: int, role_filter: Array, reason: String = "") -> bool:
+	var candidates: Array = []
 	for raw_entry in _team_sortie_order(player_id):
 		if not (raw_entry is Dictionary):
 			continue
 		var entry: Dictionary = Dictionary(raw_entry)
-		if not _valid_roster_entry(player_id, entry):
-			continue
 		var role_key := String(entry.get("role", "hero"))
-		if not role_filter.has(role_key):
-			continue
-		if not _role_available_for_auto_summon(player_id, role_key):
-			continue
 		var unit_index := int(entry.get("index", 0))
-		var stats := _compute_unit_stats(player_id, role_key, unit_index)
-		var base_cost := int(stats.get("deploy_cost", stats.get("cost", 0)))
-		var deploy_cost := _discounted_deploy_cost(player_id, role_key, unit_index, base_cost)
-		if float(runtime_resource.get(player_id, 0.0)) < float(deploy_cost):
-			continue
+		var valid := _valid_roster_entry(player_id, entry)
+		var role_allowed := role_filter.has(role_key)
+		var available := valid and role_allowed and _role_available_for_auto_summon(player_id, role_key)
+		var deploy_cost := 0
+		if available:
+			var stats := _compute_unit_stats(player_id, role_key, unit_index)
+			var base_cost := int(stats.get("deploy_cost", stats.get("cost", 0)))
+			deploy_cost = _discounted_deploy_cost(player_id, role_key, unit_index, base_cost)
+		candidates.append({
+			"valid": valid,
+			"role_allowed": role_allowed,
+			"available": available,
+			"affordable": available and float(runtime_resource.get(player_id, 0.0)) >= float(deploy_cost),
+			"role": role_key,
+			"index": unit_index,
+			"deploy_cost": deploy_cost,
+		})
+	var intent := _battle_actor_command_service().auto_summon_intent({"candidates": candidates})
+	if bool(intent.get("found", false)):
+		var role_key := String(intent.get("role_key", "hero"))
+		var unit_index := int(intent.get("unit_index", 0))
 		var previous_index := int(active_roster_indices[player_id].get(role_key, 0))
 		active_roster_indices[player_id][role_key] = unit_index
 		var accepted := _summon_role(player_id, role_key, false, false, false)
@@ -32718,18 +33666,19 @@ func _apply_training_dummy_auto_brake(dummy, delta: float) -> void:
 
 func _summon_role(player_id: int, role_key: String, free: bool, immediate: bool = false, alarm: bool = true) -> bool:
 	var existing = active_units[player_id][role_key]
-	if role_key == "puppet":
-		if _live_primary_puppet_count(player_id) > 0:
-			if alarm:
-				_illegal_summon_feedback(player_id, "P%d 已有傀儡组在场" % player_id if _ui_is_zh() else "P%d already has a puppet group online" % player_id)
-			return false
-	elif _is_live_unit(existing):
-		if alarm:
-			_illegal_summon_feedback(player_id, "P%d %s 已在场" % [player_id, _role_name(role_key)] if _ui_is_zh() else "P%d %s already online" % [player_id, _role_name(role_key)])
-		return false
-	if _role_pending(player_id, role_key):
-		if alarm:
-			_illegal_summon_feedback(player_id, "P%d %s 正在等待入场" % [player_id, _role_name(role_key)] if _ui_is_zh() else "P%d %s deploy is already pending" % [player_id, _role_name(role_key)])
+	var pre_gate := _battle_actor_command_service().summon_gate_intent({
+		"role_key": role_key,
+		"puppet_group_live": role_key == "puppet" and _live_primary_puppet_count(player_id) > 0,
+		"existing_live": _is_live_unit(existing),
+		"pending": _role_pending(player_id, role_key),
+		"free": free,
+		"resource": float(runtime_resource.get(player_id, 0.0)),
+		"deploy_cost": 0.0,
+		"barrier_blocked": false,
+		"alarm": alarm,
+	})
+	if not bool(pre_gate.get("accepted", false)):
+		_apply_summon_gate_rejection(pre_gate, player_id, role_key, 0, alarm)
 		return false
 
 	var stats := _compute_unit_stats(player_id, role_key)
@@ -32737,14 +33686,19 @@ func _summon_role(player_id: int, role_key: String, free: bool, immediate: bool 
 	var base_deploy_cost: int = int(stats["deploy_cost"])
 	var deploy_cost: int = _discounted_deploy_cost(player_id, role_key, unit_index, base_deploy_cost)
 	var summon_spawn := _spawn_for_selected_portal(player_id, role_key, stats)
-	if role_key == "barrier" and not _barrier_entry_legal(player_id, stats, summon_spawn) and int(stats.get("entry_breach_damage", 0)) <= 0:
-		if alarm:
-			_illegal_summon_feedback(player_id, "结界入场受阻：先摧毁重叠的敌方结界组件" if _ui_is_zh() else "BARRIER ENTRY BLOCKED: destroy overlapping enemy barrier pieces")
-		return false
-	if not free and float(runtime_resource[player_id]) < float(deploy_cost):
-		_show_battle_message("P%d 需要 %d 资源" % [player_id, deploy_cost] if _ui_is_zh() else "P%d needs %d resource" % [player_id, deploy_cost], 0.9)
-		if alarm:
-			_play_illegal_summon_sfx()
+	var final_gate := _battle_actor_command_service().summon_gate_intent({
+		"role_key": role_key,
+		"puppet_group_live": false,
+		"existing_live": false,
+		"pending": false,
+		"free": free,
+		"resource": float(runtime_resource.get(player_id, 0.0)),
+		"deploy_cost": deploy_cost,
+		"barrier_blocked": role_key == "barrier" and not _barrier_entry_legal(player_id, stats, summon_spawn) and int(stats.get("entry_breach_damage", 0)) <= 0,
+		"alarm": alarm,
+	})
+	if not bool(final_gate.get("accepted", false)):
+		_apply_summon_gate_rejection(final_gate, player_id, role_key, deploy_cost, alarm)
 		return false
 	if not free:
 		runtime_resource[player_id] = float(runtime_resource[player_id]) - float(deploy_cost)
@@ -32761,6 +33715,26 @@ func _summon_role(player_id: int, role_key: String, free: bool, immediate: bool 
 		return true
 
 	return _finish_summon_role(player_id, role_key)
+
+
+func _apply_summon_gate_rejection(intent: Dictionary, player_id: int, role_key: String, deploy_cost: int, alarm: bool) -> void:
+	match String(intent.get("reason", "")):
+		"puppet_online":
+			if alarm:
+				_illegal_summon_feedback(player_id, "P%d 已有傀儡组在场" % player_id if _ui_is_zh() else "P%d already has a puppet group online" % player_id)
+		"already_online":
+			if alarm:
+				_illegal_summon_feedback(player_id, "P%d %s 已在场" % [player_id, _role_name(role_key)] if _ui_is_zh() else "P%d %s already online" % [player_id, _role_name(role_key)])
+		"already_pending":
+			if alarm:
+				_illegal_summon_feedback(player_id, "P%d %s 正在等待入场" % [player_id, _role_name(role_key)] if _ui_is_zh() else "P%d %s deploy is already pending" % [player_id, _role_name(role_key)])
+		"barrier_blocked":
+			if alarm:
+				_illegal_summon_feedback(player_id, "结界入场受阻：先摧毁重叠的敌方结界组件" if _ui_is_zh() else "BARRIER ENTRY BLOCKED: destroy overlapping enemy barrier pieces")
+		"resource_short":
+			_show_battle_message("P%d 需要 %d 资源" % [player_id, deploy_cost] if _ui_is_zh() else "P%d needs %d resource" % [player_id, deploy_cost], 0.9)
+			if bool(intent.get("illegal_sfx", alarm)):
+				_play_illegal_summon_sfx()
 
 
 func _finish_summon_role(player_id: int, role_key: String) -> bool:
@@ -32785,13 +33759,19 @@ func _finish_summon_role(player_id: int, role_key: String) -> bool:
 	var spawn_lane: float = float(spawn["lane"])
 
 	if role_key == "puppet":
-		var count: int = int(stats.get("group_count", 2))
+		var runtime_group_blueprints := _puppet_group_blueprints_from_blueprint(_blueprint_for(player_id, "puppet", int(stats.get("unit_index", active_roster_indices[player_id].get("puppet", 0)))))
+		var count: int = runtime_group_blueprints.size() if not runtime_group_blueprints.is_empty() else int(stats.get("group_count", 2))
 		var group: Array = []
 		var exception_group := _live_temporary_fracture_puppets(player_id)
 		for i in range(count):
 			var offset: float = (float(i) - float(count - 1) * 0.5) * 0.12
+			var member_stats := stats
+			if not runtime_group_blueprints.is_empty() and runtime_group_blueprints[i] is Dictionary:
+				member_stats = _compute_unit_stats(player_id, "puppet", -1, Dictionary(runtime_group_blueprints[i]))
+			member_stats["puppet_group_size"] = count
+			member_stats["puppet_group_slot"] = i
 			var puppet_name := "P%d 傀儡 %d" % [player_id, i + 1] if _ui_is_zh() else "P%d PUPPET %d" % [player_id, i + 1]
-			var unit = _create_unit(player_id, role_key, stats, puppet_name, wrapf(spawn_ring + offset, 0.0, RING_LENGTH), clampf(spawn_lane + offset * 0.7, -BATTLE_HALF_HEIGHT, BATTLE_HALF_HEIGHT))
+			var unit = _create_unit(player_id, role_key, member_stats, puppet_name, wrapf(spawn_ring + offset, 0.0, RING_LENGTH), clampf(spawn_lane + offset * 0.7, -BATTLE_HALF_HEIGHT, BATTLE_HALF_HEIGHT))
 			unit.set_meta("puppet_group_size", count)
 			unit.set_meta("puppet_group_slot", i)
 			group.append(unit)
@@ -32832,10 +33812,14 @@ func _initialize_sortie_price_state() -> void:
 	for player_id in [1, 2]:
 		var player_state := {}
 		for entry in _team_sortie_order(player_id):
+			var role_key := String(entry.get("role", "hero"))
+			var unit_index := int(entry.get("index", 0))
+			var stats := _compute_unit_stats(player_id, role_key, unit_index)
 			player_state[_entry_ref(entry)] = {
 				"timer": 0.0,
 				"deployed": false,
 				"mult": 1.0,
+				"base_deploy_cost": int(stats.get("deploy_cost", stats.get("cost", 0))),
 			}
 		sortie_price_state[player_id] = player_state
 
@@ -32975,28 +33959,50 @@ func _sortie_discount_status(player_id: int, max_items: int = 3) -> String:
 	var limit := mini(max_items, order.size())
 	for i in range(limit):
 		var entry: Dictionary = order[i]
-		pieces.append("%d:%s" % [i + 1, _sortie_entry_label(player_id, entry, true)])
+		pieces.append("%d:%s" % [i + 1, _sortie_entry_runtime_discount_label(player_id, entry)])
 	return " ".join(pieces)
 
 
+func _sortie_entry_runtime_discount_label(player_id: int, entry: Dictionary) -> String:
+	if game_state != STATE_BATTLE or not sortie_price_state.has(player_id):
+		return _sortie_entry_label(player_id, entry, true)
+	var model := _battle_hud_sortie_discount_entry(player_id, entry)
+	if battle_hud_state_service != null:
+		return battle_hud_state_service.sortie_entry_runtime_discount_label(model)
+	var label := "%s#%d" % [String(model.get("role_name", "")), int(model.get("unit_index", 0)) + 1]
+	var base_cost := int(model.get("base_deploy_cost", 0))
+	var live_cost := int(model.get("live_deploy_cost", base_cost))
+	label += " $%d" % live_cost
+	if live_cost < base_cost:
+		label += "<%d" % base_cost
+	return label
+
+
 func _tick_deploys(delta: float) -> void:
+	var pending_roles: Array = []
 	for player_id in [1, 2]:
 		for role_key in ROLE_ORDER:
-			var timer: float = float(pending_deploys[player_id][role_key])
-			if timer <= 0.0:
-				continue
+			pending_roles.append({"player_id": player_id, "role_key": role_key, "timer": float(pending_deploys[player_id][role_key])})
+	for raw_plan in _battle_actor_command_service().deploy_tick_plan(pending_roles, delta):
+		if not (raw_plan is Dictionary):
+			continue
+		var plan: Dictionary = raw_plan
+		var player_id := int(plan.get("player_id", 0))
+		var role_key := String(plan.get("role_key", ""))
+		if player_id <= 0 or role_key == "":
+			continue
+		if bool(plan.get("update_preview", false)):
 			_update_pending_deploy_preview(player_id, role_key, delta)
-			timer -= delta
-			if timer <= 0.0:
-				pending_deploys[player_id][role_key] = 0.0
-				var finished := _finish_summon_role(player_id, role_key)
-				if finished:
-					_show_battle_message("P%d %s online" % [player_id, _role_name(role_key)], 0.8)
-				else:
-					_clear_pending_deploy_preview(player_id, role_key)
-					_clear_pending_deploy_snapshot(player_id, role_key)
+		if bool(plan.get("finish", false)):
+			pending_deploys[player_id][role_key] = 0.0
+			var finished := _finish_summon_role(player_id, role_key)
+			if finished:
+				_show_battle_message("P%d %s online" % [player_id, _role_name(role_key)], 0.8)
 			else:
-				pending_deploys[player_id][role_key] = timer
+				_clear_pending_deploy_preview(player_id, role_key)
+				_clear_pending_deploy_snapshot(player_id, role_key)
+		else:
+			pending_deploys[player_id][role_key] = float(plan.get("timer_after", 0.0))
 
 
 func _barrier_entry_legal(player_id: int, stats: Dictionary, spawn: Dictionary = {}) -> bool:
@@ -33473,17 +34479,29 @@ func _refill_ammo(unit, ammo_type: String, amount: int) -> bool:
 func _try_role_switch_module(unit) -> bool:
 	if not _is_live_unit(unit):
 		return false
-	if identity_transfer_active or bool(unit.get_meta("identity_transfering", false)):
-		return false
 	var switch_timer := maxf(0.0, float(unit.get_meta("switch_timer", 0.0)))
-	if switch_timer > 0.0:
-		_show_battle_message("%s shift cooling %.1fs" % [unit.unit_name, switch_timer], 0.5)
-		return false
 	var target_role := _switch_target_role(unit)
-	if target_role == "":
+	var gate := _battle_identity_runtime_service().role_switch_gate_intent({
+		"unit_live": true,
+		"identity_active": identity_transfer_active,
+		"transfering": bool(unit.get_meta("identity_transfering", false)),
+		"switch_timer": switch_timer,
+		"target_role": target_role,
+	})
+	if not bool(gate.get("accepted", false)):
+		if String(gate.get("reason", "")) == "cooldown":
+			_show_battle_message("%s shift cooling %.1fs" % [unit.unit_name, float(gate.get("timer", 0.0))], 0.5)
 		return false
 	var plan := _role_switch_plan(unit, target_role)
-	if plan.is_empty():
+	var plan_gate := _battle_identity_runtime_service().role_switch_gate_intent({
+		"unit_live": true,
+		"identity_active": false,
+		"transfering": false,
+		"switch_timer": 0.0,
+		"target_role": target_role,
+		"plan_found": not plan.is_empty(),
+	})
+	if not bool(plan_gate.get("accepted", false)):
 		_show_battle_message("%s needs a live %s to exchange identity" % [unit.unit_name, ROLE_NAMES.get(target_role, target_role)], 0.75)
 		return false
 	_start_identity_transfer(plan)
@@ -33493,76 +34511,105 @@ func _try_role_switch_module(unit) -> bool:
 func _try_soul_cast_transfer(unit) -> bool:
 	if not _is_live_unit(unit):
 		return false
-	if identity_transfer_active or bool(unit.get_meta("identity_transfering", false)):
-		return false
-	if String(unit.role) != "hero":
-		_show_battle_message("%s needs the soul before casting it" % unit.unit_name, 0.65)
-		_play_module_fail_sfx()
-		return false
 	var switch_timer := maxf(0.0, float(unit.get_meta("switch_timer", 0.0)))
-	if switch_timer > 0.0:
-		_show_battle_message("%s soul cast cooling %.1fs" % [unit.unit_name, switch_timer], 0.5)
+	var gate := _battle_identity_runtime_service().soul_cast_gate_intent({
+		"unit_live": true,
+		"identity_active": identity_transfer_active,
+		"transfering": bool(unit.get_meta("identity_transfering", false)),
+		"role": String(unit.role),
+		"switch_timer": switch_timer,
+	})
+	if not bool(gate.get("accepted", false)):
+		var reason := String(gate.get("reason", ""))
+		if reason == "not_hero":
+			_show_battle_message("%s needs the soul before casting it" % unit.unit_name, 0.65)
+			_play_module_fail_sfx()
+		elif reason == "cooldown":
+			_show_battle_message("%s soul cast cooling %.1fs" % [unit.unit_name, float(gate.get("timer", 0.0))], 0.5)
 		return false
 	var receiver_role := String(unit.stats.get("identity_receiver_role", "puppet"))
 	if receiver_role == "":
 		receiver_role = "puppet"
 	var receiver_order := maxi(0, int(unit.stats.get("identity_receiver_order", 0)))
 	var target = _select_identity_receiver(int(unit.owner_id), unit, receiver_role, receiver_order)
-	if not _is_live_unit(target):
+	var receiver_gate := _battle_identity_runtime_service().soul_cast_gate_intent({
+		"unit_live": true,
+		"identity_active": false,
+		"transfering": false,
+		"role": String(unit.role),
+		"switch_timer": 0.0,
+		"target_found": _is_live_unit(target),
+	})
+	if not bool(receiver_gate.get("accepted", false)):
 		_show_battle_message("%s has no live %s receiver" % [unit.unit_name, _role_name(receiver_role)], 0.72)
 		_play_module_fail_sfx()
 		return false
-	var plan := {
+	var plan_result := _battle_identity_runtime_service().identity_transfer_plan({
+		"kind": "soul_cast",
+		"source_role": String(unit.role),
+		"target_old_role": String(target.role),
+	})
+	var plan: Dictionary = Dictionary(plan_result.get("plan", {}))
+	plan.merge({
 		"source": unit,
 		"target": target,
-		"source_old_role": "hero",
-		"target_old_role": String(target.role),
-		"source_new_role": String(target.role),
-		"target_new_role": "hero",
-	}
+	}, true)
 	_start_identity_transfer(plan)
 	return true
 
 
 func _select_identity_receiver(owner: int, source, receiver_role: String, receiver_order: int):
 	if receiver_role == "any":
-		var best = null
-		var best_distance := INF
+		var candidates: Array = []
 		for candidate in _friendly_units(owner):
 			if candidate == source or not _is_live_unit(candidate):
 				continue
 			var distance := absf(_ring_delta(source.ring_pos, candidate.ring_pos)) + absf(source.lane - candidate.lane) * 0.72
-			if distance < best_distance:
-				best_distance = distance
-				best = candidate
-		return best
+			candidates.append({"unit": candidate, "candidate_index": candidates.size(), "role": String(candidate.role), "distance": distance})
+		var any_selection := _battle_identity_runtime_service().identity_receiver_selection(candidates, receiver_role, receiver_order)
+		var any_index := int(any_selection.get("candidate_index", -1))
+		return Dictionary(candidates[any_index]).get("unit", null) if bool(any_selection.get("found", false)) and any_index >= 0 and any_index < candidates.size() else null
+	var role_candidates: Array = []
 	if receiver_role == "hero":
 		var hero = active_units[owner]["hero"]
-		return hero if _is_live_unit(hero) and hero != source else null
+		if _is_live_unit(hero) and hero != source:
+			role_candidates.append({"unit": hero, "candidate_index": role_candidates.size(), "role": "hero", "distance": 0.0})
 	if receiver_role == "barrier":
 		var barrier = active_units[owner]["barrier"]
-		return barrier if _is_live_unit(barrier) and barrier != source else null
+		if _is_live_unit(barrier) and barrier != source:
+			role_candidates.append({"unit": barrier, "candidate_index": role_candidates.size(), "role": "barrier", "distance": 0.0})
 	if receiver_role == "puppet":
-		var receivers: Array = []
 		for candidate in active_units[owner]["puppet"]:
 			if _is_live_unit(candidate) and candidate != source:
-				receivers.append(candidate)
-		if receivers.is_empty():
-			return null
-		return receivers[clampi(receiver_order, 0, receivers.size() - 1)]
-	return null
+				role_candidates.append({"unit": candidate, "candidate_index": role_candidates.size(), "role": "puppet", "order": role_candidates.size()})
+	var selection := _battle_identity_runtime_service().identity_receiver_selection(role_candidates, receiver_role, receiver_order)
+	var selected_index := int(selection.get("candidate_index", -1))
+	return Dictionary(role_candidates[selected_index]).get("unit", null) if bool(selection.get("found", false)) and selected_index >= 0 and selected_index < role_candidates.size() else null
 
 
 func _try_role_form_shift(unit) -> bool:
 	if not _is_live_unit(unit):
 		return false
 	var switch_timer := maxf(0.0, float(unit.get_meta("switch_timer", 0.0)))
-	if switch_timer > 0.0:
-		_show_battle_message("%s form gate cooling %.1fs" % [unit.unit_name, switch_timer], 0.5)
-		return false
 	var target_role := _role_form_target(unit)
-	if target_role == "" or target_role == String(unit.role):
-		_play_module_fail_sfx()
+	var gate := _battle_identity_runtime_service().role_form_gate_intent({
+		"unit_live": true,
+		"switch_timer": switch_timer,
+		"target_role": target_role,
+		"current_role": String(unit.role),
+		"hero_occupied": _is_live_unit(active_units[int(unit.owner_id)]["hero"]) and active_units[int(unit.owner_id)]["hero"] != unit,
+		"barrier_occupied": _is_live_unit(active_units[int(unit.owner_id)]["barrier"]) and active_units[int(unit.owner_id)]["barrier"] != unit,
+		"other_puppet_live": _other_live_puppet_exists(int(unit.owner_id), unit),
+	})
+	if not bool(gate.get("accepted", false)):
+		var reason := String(gate.get("reason", ""))
+		if reason == "cooldown":
+			_show_battle_message("%s form gate cooling %.1fs" % [unit.unit_name, float(gate.get("timer", 0.0))], 0.5)
+		elif reason == "role_occupied":
+			_show_battle_message("%s cannot become %s now" % [unit.unit_name, _role_name(target_role)], 0.72)
+			_play_module_fail_sfx()
+		else:
+			_play_module_fail_sfx()
 		return false
 	if not _can_self_form_shift(unit, target_role):
 		_show_battle_message("%s cannot become %s now" % [unit.unit_name, _role_name(target_role)], 0.72)
@@ -33581,28 +34628,29 @@ func _try_role_form_shift(unit) -> bool:
 
 
 func _role_form_target(unit) -> String:
-	var target := String(unit.stats.get("role_form_target_role", ""))
-	if target == "cycle_mech_barrier" or target == "":
-		if String(unit.role) == "barrier":
-			return String(unit.stats.get("role_form_mech_role", "puppet"))
-		return "barrier"
-	if target in ROLE_ORDER:
-		return target
-	return ""
+	return _battle_identity_runtime_service().role_form_target(unit.stats, String(unit.role), ROLE_ORDER)
 
 
 func _can_self_form_shift(unit, target_role: String) -> bool:
 	var owner := int(unit.owner_id)
-	if target_role == "hero" and _is_live_unit(active_units[owner]["hero"]) and active_units[owner]["hero"] != unit:
-		return false
-	if target_role == "barrier" and _is_live_unit(active_units[owner]["barrier"]) and active_units[owner]["barrier"] != unit:
-		return false
-	if target_role == "puppet" and String(unit.role) != "puppet":
-		var group: Array = active_units[owner]["puppet"]
-		for candidate in group:
-			if _is_live_unit(candidate) and candidate != unit:
-				return false
-	return true
+	var gate := _battle_identity_runtime_service().role_form_gate_intent({
+		"unit_live": _is_live_unit(unit),
+		"switch_timer": 0.0,
+		"target_role": target_role,
+		"current_role": String(unit.role),
+		"hero_occupied": _is_live_unit(active_units[owner]["hero"]) and active_units[owner]["hero"] != unit,
+		"barrier_occupied": _is_live_unit(active_units[owner]["barrier"]) and active_units[owner]["barrier"] != unit,
+		"other_puppet_live": _other_live_puppet_exists(owner, unit),
+	})
+	return bool(gate.get("accepted", false))
+
+
+func _other_live_puppet_exists(owner: int, source) -> bool:
+	var group: Array = active_units[owner]["puppet"]
+	for candidate in group:
+		if _is_live_unit(candidate) and candidate != source:
+			return true
+	return false
 
 
 func _identity_switch_cooldown(unit) -> float:
@@ -33615,16 +34663,18 @@ func _finish_role_form_shift(unit, target_role: String) -> void:
 	if not _is_live_unit(unit):
 		_clear_identity_transfer_lock(unit, null)
 		return
+	var finish_intent := _battle_identity_runtime_service().role_form_finish_intent({
+		"stats": unit.stats,
+		"target_role": target_role,
+		"puppet_shape": _morph_shape_for(String(unit.stats.get("shape", "core")), "travel"),
+		"switch_cooldown": _identity_switch_cooldown(unit),
+	})
 	_detach_unit_reference(unit)
 	_assign_unit_role(unit, target_role)
-	var shape_hint := String(unit.stats.get("role_form_shape", ""))
+	var shape_hint := String(finish_intent.get("shape", ""))
 	if shape_hint != "":
 		unit.stats["shape"] = shape_hint
-	elif target_role == "barrier":
-		unit.stats["shape"] = "barrier"
-	elif target_role == "puppet":
-		unit.stats["shape"] = _morph_shape_for(String(unit.stats.get("shape", "core")), "travel")
-	unit.set_meta("switch_timer", _identity_switch_cooldown(unit))
+	unit.set_meta("switch_timer", float(finish_intent.get("switch_timer", _identity_switch_cooldown(unit))))
 	_clear_identity_transfer_lock(unit, null)
 	if unit.has_method("_apply_topology_visuals"):
 		unit._apply_topology_visuals()
@@ -33645,35 +34695,42 @@ func _role_switch_plan(source, target_role: String) -> Dictionary:
 	var target = _select_role_switch_target(owner, target_role, source)
 	if not _is_live_unit(target):
 		return {}
-	return {
+	var plan_result := _battle_identity_runtime_service().identity_transfer_plan({
+		"kind": "role_switch",
+		"source_role": source_role,
+		"target_role": target_role,
+		"target_old_role": String(target.role),
+		"role_order": ROLE_ORDER,
+	})
+	if not bool(plan_result.get("accepted", false)):
+		return {}
+	var plan: Dictionary = Dictionary(plan_result.get("plan", {}))
+	plan.merge({
 		"source": source,
 		"target": target,
-		"source_old_role": source_role,
-		"target_old_role": String(target.role),
-		"source_new_role": target_role,
-		"target_new_role": source_role,
-	}
+	}, true)
+	return plan
 
 
 func _select_role_switch_target(owner: int, target_role: String, source):
+	var candidates: Array = []
 	if target_role == "hero":
 		var hero = active_units[owner]["hero"]
-		return hero if _is_live_unit(hero) and hero != source else null
-	if target_role == "barrier":
+		if _is_live_unit(hero) and hero != source:
+			candidates.append({"unit": hero, "candidate_index": candidates.size(), "role": "hero", "distance": 0.0})
+	elif target_role == "barrier":
 		var barrier = active_units[owner]["barrier"]
-		return barrier if _is_live_unit(barrier) and barrier != source else null
-	if target_role == "puppet":
-		var best = null
-		var best_distance := 999.0
+		if _is_live_unit(barrier) and barrier != source:
+			candidates.append({"unit": barrier, "candidate_index": candidates.size(), "role": "barrier", "distance": 0.0})
+	elif target_role == "puppet":
 		for candidate in active_units[owner]["puppet"]:
 			if not _is_live_unit(candidate) or candidate == source:
 				continue
 			var distance: float = absf(_ring_delta(source.ring_pos, candidate.ring_pos)) + absf(source.lane - candidate.lane) * 0.72
-			if distance < best_distance:
-				best_distance = distance
-				best = candidate
-		return best
-	return null
+			candidates.append({"unit": candidate, "candidate_index": candidates.size(), "role": "puppet", "distance": distance})
+	var selection := _battle_identity_runtime_service().role_switch_target_selection(candidates, target_role)
+	var selected_index := int(selection.get("candidate_index", -1))
+	return Dictionary(candidates[selected_index]).get("unit", null) if bool(selection.get("found", false)) and selected_index >= 0 and selected_index < candidates.size() else null
 
 
 func _start_identity_transfer(plan: Dictionary) -> void:
@@ -33835,6 +34892,45 @@ func _detach_unit_reference(unit) -> void:
 	active_units[owner]["puppet"] = group
 
 
+func _battle_actor_unit_snapshot(unit) -> Dictionary:
+	if not _is_live_unit(unit):
+		return {"live": false}
+	return {
+		"live": true,
+		"id": int(unit.get_instance_id()),
+		"owner": int(unit.owner_id),
+		"role": String(unit.role),
+		"ring": float(unit.ring_pos),
+		"lane": float(unit.lane),
+		"facing": float(unit.facing),
+		"velocity": unit.velocity if unit.get("velocity") != null else Vector2.ZERO,
+		"stats": unit.stats,
+		"phase": float(unit.get_meta("phase", 0.0)),
+	}
+
+
+func _battle_actor_disabled_modules(unit) -> Array:
+	var disabled: Array = []
+	for attack_index in range(ATTACK_GROUP_COUNT):
+		if _part_disabled(unit, attack_index):
+			disabled.append(attack_index)
+	return disabled
+
+
+func _battle_actor_attack_group_summaries(unit, action_states: Array) -> Array:
+	var summaries: Array = []
+	for attack_index in range(ATTACK_GROUP_COUNT):
+		var group := _attack_group(unit, attack_index).duplicate(true)
+		group["_attack_index"] = attack_index
+		var reach_by_action := {}
+		for raw_state in action_states:
+			var state_key := String(raw_state)
+			reach_by_action[state_key] = _ai_group_attack_reach(unit, group, state_key)
+		group["_reach_by_action"] = reach_by_action
+		summaries.append(group)
+	return summaries
+
+
 func _update_puppets(delta: float) -> void:
 	for player_id in [1, 2]:
 		var group: Array = active_units[player_id]["puppet"]
@@ -33862,142 +34958,46 @@ func _update_puppets(delta: float) -> void:
 
 func _puppet_move_vector(unit, target, player_id: int, unit_index: int, group_size: int, delta: float, condition: String = "default") -> Vector2:
 	var target_delta := _mobius_delta_vec_between(unit, target)
-	var delta_ring: float = target_delta.x
-	var delta_lane: float = target_delta.y
-	var target_vec := Vector2(delta_ring, delta_lane)
-	var move := target_vec.normalized() if target_vec.length() > 0.01 else Vector2(float(unit.facing), 0.0)
 	var ai_kind := String(unit.stats.get("ai", "line"))
-	var phase: float = float(unit.get_meta("phase", 0.0)) + delta * (1.8 + float(unit_index) * 0.17)
-	unit.set_meta("phase", phase)
-	var blind_strength := _unit_blind_strength(unit)
-	if blind_strength > 0.08:
-		return (_blind_escape_vector(unit) + Vector2(-signf(delta_ring) * 0.22, 0.0)).limit_length(1.0)
-	if ai_kind == "drone_cloud":
-		var orbit := float(unit.stats.get("orbit_radius", 1.02))
-		var angle := phase * 1.55 + TAU * float(unit_index) / maxf(1.0, float(group_size))
-		var anchor = active_units[player_id]["hero"]
-		var anchor_ring: float = target.ring_pos
-		var anchor_lane: float = target.lane
-		if _is_live_unit(anchor):
-			anchor_ring = anchor.ring_pos
-			anchor_lane = anchor.lane
-		var desired_ring := wrapf(anchor_ring + cos(angle) * orbit, 0.0, RING_LENGTH)
-		var desired_lane := clampf(anchor_lane + sin(angle) * orbit * 0.72, -BATTLE_HALF_HEIGHT, BATTLE_HALF_HEIGHT)
-		move = Vector2(signf(_ring_delta(unit.ring_pos, desired_ring)), clampf((desired_lane - unit.lane) * 2.4, -1.0, 1.0))
-		if absf(delta_ring) < float(unit.stats.get("hold_range", 1.2)):
-			move += Vector2(signf(delta_ring) * 0.35, clampf(delta_lane * 0.8, -0.5, 0.5))
-	elif ai_kind == "figure8":
-		move = Vector2(sin(phase), sin(phase * 2.0))
-		if absf(delta_ring) > 1.4:
-			move.x += signf(delta_ring) * 0.8
-	elif ai_kind == "volley":
-		move.y = clampf(delta_lane * 1.4, -0.8, 0.8)
-		if absf(delta_ring) < float(unit.stats.get("hold_range", 0.9)):
-			move.x = -signf(delta_ring) * 0.45
-	elif ai_kind == "ranged_pack" or ai_kind == "siege_battery":
-		var keep_range := float(unit.stats.get("source_keep_range", unit.stats.get("hold_range", 1.2)))
-		var side := -1.0 if unit_index % 2 == 0 else 1.0
-		if absf(delta_ring) < keep_range * 0.72:
-			move = Vector2(-signf(delta_ring), clampf(-delta_lane * 1.2 + side * 0.34, -1.0, 1.0))
-		elif absf(delta_ring) > keep_range * 1.18:
-			move = Vector2(signf(delta_ring), clampf(delta_lane * 1.1 + side * 0.22, -1.0, 1.0))
-		else:
-			move = Vector2(side * 0.18, clampf(delta_lane * 1.3 + sin(phase + float(unit_index)) * 0.35, -1.0, 1.0))
-	elif ai_kind == "execution_swarm":
-		var side := -1.0 if unit_index % 2 == 0 else 1.0
-		move = Vector2(signf(delta_ring), clampf(delta_lane * 1.75 + side * 0.45, -1.0, 1.0))
-		if absf(delta_ring) < 0.48:
-			move.x = side * 0.28
-	elif ai_kind == "interceptor_screen":
-		var own_hero = active_units[player_id]["hero"]
-		if _is_live_unit(own_hero):
-			var hero_to_target := _ring_delta(own_hero.ring_pos, target.ring_pos)
-			var screen_offset := (float(unit_index) - float(group_size - 1) * 0.5) * 0.24
-			var desired_ring := wrapf(own_hero.ring_pos + hero_to_target * 0.38, 0.0, RING_LENGTH)
-			var desired_lane := clampf(lerpf(own_hero.lane, target.lane, 0.46) + screen_offset, -BATTLE_HALF_HEIGHT, BATTLE_HALF_HEIGHT)
-			move = Vector2(signf(_ring_delta(unit.ring_pos, desired_ring)), clampf((desired_lane - unit.lane) * 2.4, -1.0, 1.0))
-		else:
-			move = Vector2(signf(delta_ring), clampf(delta_lane * 1.2, -1.0, 1.0))
-	elif ai_kind == "vanguard_cover":
-		var guard_anchor = _source_guard_anchor_for(unit, target, player_id)
-		if _is_live_unit(guard_anchor):
-			var anchor_to_target := _ring_delta(guard_anchor.ring_pos, target.ring_pos)
-			var screen_offset := (float(unit_index) - float(group_size - 1) * 0.5) * 0.2
-			var desired_ring := wrapf(guard_anchor.ring_pos + anchor_to_target * 0.48, 0.0, RING_LENGTH)
-			var desired_lane := clampf(lerpf(guard_anchor.lane, target.lane, 0.5) + screen_offset, -BATTLE_HALF_HEIGHT, BATTLE_HALF_HEIGHT)
-			move = Vector2(signf(_ring_delta(unit.ring_pos, desired_ring)), clampf((desired_lane - unit.lane) * 2.6, -1.0, 1.0))
-			if absf(delta_ring) < float(unit.stats.get("hold_range", 0.74)):
-				move += Vector2(signf(delta_ring) * 0.28, clampf(delta_lane * 0.9, -0.45, 0.45))
-		else:
-			move = Vector2(signf(delta_ring), clampf(delta_lane * 1.45, -1.0, 1.0))
-	elif ai_kind == "guard_orbit":
-		var guard_hero = active_units[player_id]["hero"]
-		var anchor_ring: float = unit.ring_pos
-		var anchor_lane: float = unit.lane
-		if _is_live_unit(guard_hero):
-			var orbit: float = float(unit.stats.get("orbit_radius", 0.42))
-			var angle := phase + TAU * float(unit_index) / maxf(1.0, float(group_size))
-			anchor_ring = wrapf(guard_hero.ring_pos + cos(angle) * orbit, 0.0, RING_LENGTH)
-			anchor_lane = clampf(guard_hero.lane + sin(angle) * orbit * 0.8, -BATTLE_HALF_HEIGHT, BATTLE_HALF_HEIGHT)
-		move = Vector2(signf(_ring_delta(unit.ring_pos, anchor_ring)), clampf((anchor_lane - unit.lane) * 2.4, -1.0, 1.0))
-		if absf(delta_ring) < 0.72:
-			move += Vector2(signf(delta_ring) * 0.45, clampf(delta_lane * 1.2, -0.5, 0.5))
-	elif ai_kind == "pincer":
-		var side := -1.0 if unit_index % 2 == 0 else 1.0
-		var flank := float(unit.stats.get("flank_width", 0.66)) * side
-		move = Vector2(signf(delta_ring), clampf((target.lane + flank - unit.lane) * 2.0, -1.0, 1.0))
-		if absf(delta_ring) < 0.72:
-			move.x = -side * 0.35
-	elif ai_kind == "screen_wall":
-		var screen_hero = active_units[player_id]["hero"]
-		var anchor_ring: float = unit.ring_pos
-		var anchor_lane: float = unit.lane
-		if _is_live_unit(screen_hero):
-			anchor_ring = wrapf(screen_hero.ring_pos + _ring_delta(screen_hero.ring_pos, target.ring_pos) * 0.42, 0.0, RING_LENGTH)
-			var spread := (float(unit_index) - float(group_size - 1) * 0.5) * 0.28
-			anchor_lane = clampf(lerpf(screen_hero.lane, target.lane, 0.5) + spread, -BATTLE_HALF_HEIGHT, BATTLE_HALF_HEIGHT)
-		move = Vector2(signf(_ring_delta(unit.ring_pos, anchor_ring)), clampf((anchor_lane - unit.lane) * 2.3, -1.0, 1.0))
-	elif ai_kind == "formation_xi":
-		var formation_hero = active_units[player_id]["hero"]
-		var rows := [-0.72, -0.42, -0.14, 0.14, 0.42, 0.72]
-		var columns := [-0.82, -0.46, 0.0, 0.46, 0.82]
-		var col := unit_index % columns.size()
-		var row := int(floor(float(unit_index) / float(columns.size()))) % rows.size()
-		var anchor_ring: float = target.ring_pos - signf(delta_ring) * float(unit.stats.get("hold_range", 1.2))
-		var anchor_lane: float = target.lane
-		if _is_live_unit(formation_hero):
-			anchor_ring = lerpf(formation_hero.ring_pos, target.ring_pos, 0.55)
-			anchor_lane = formation_hero.lane * 0.42 + target.lane * 0.58
-		var desired_ring := wrapf(anchor_ring + columns[col] * float(unit.stats.get("flank_width", 0.86)), 0.0, RING_LENGTH)
-		var desired_lane := clampf(anchor_lane + rows[row] * 0.54, -BATTLE_HALF_HEIGHT, BATTLE_HALF_HEIGHT)
-		move = Vector2(signf(_ring_delta(unit.ring_pos, desired_ring)), clampf((desired_lane - unit.lane) * 2.15, -1.0, 1.0))
-		if absf(delta_ring) < 0.44:
-			move += Vector2(-signf(delta_ring) * 0.22, clampf(delta_lane * 0.52, -0.4, 0.4))
-	elif ai_kind == "mine_dance":
-		var orbit := float(unit.stats.get("orbit_radius", 0.62))
-		var angle := phase + TAU * float(unit_index) / maxf(1.0, float(group_size))
-		var desired_ring := wrapf(target.ring_pos + cos(angle) * orbit, 0.0, RING_LENGTH)
-		var desired_lane := clampf(target.lane + sin(angle) * orbit, -BATTLE_HALF_HEIGHT, BATTLE_HALF_HEIGHT)
-		move = Vector2(signf(_ring_delta(unit.ring_pos, desired_ring)), clampf((desired_lane - unit.lane) * 2.1, -1.0, 1.0))
 	var source_rule := _source_rule_for_condition(unit, condition)
-	if not source_rule.is_empty():
-		move = _source_move_vector(unit, target, player_id, unit_index, group_size, phase, String(source_rule.get("move", "approach")))
-	return move.limit_length(1.0)
+	var source_move_kind := String(source_rule.get("move", ""))
+	var guard_anchor = null
+	if ai_kind == "vanguard_cover" or source_move_kind in ["intercept", "cover_group", "cover_retreat"]:
+		guard_anchor = _source_guard_anchor_for(unit, target, player_id)
+	var blind_strength := _unit_blind_strength(unit)
+	var intent := _battle_actor_command_service().puppet_move_intent({
+		"unit": _battle_actor_unit_snapshot(unit),
+		"target": _battle_actor_unit_snapshot(target),
+		"hero": _battle_actor_unit_snapshot(active_units[player_id]["hero"] if active_units.has(player_id) else null),
+		"guard_anchor": _battle_actor_unit_snapshot(guard_anchor),
+		"unit_index": unit_index,
+		"group_size": group_size,
+		"delta": delta,
+		"delta_ring": float(target_delta.x),
+		"delta_lane": float(target_delta.y),
+		"ring_length": RING_LENGTH,
+		"battle_half_height": BATTLE_HALF_HEIGHT,
+		"blind_strength": blind_strength,
+		"blind_escape_vector": _blind_escape_vector(unit) if blind_strength > 0.08 else Vector2.ZERO,
+		"source_rule": source_rule,
+	})
+	unit.set_meta("phase", float(intent.get("phase", unit.get_meta("phase", 0.0))))
+	return intent.get("move", Vector2.ZERO) if intent.get("move", Vector2.ZERO) is Vector2 else Vector2.ZERO
 
 
 func _puppet_condition(unit, target, player_id: int) -> String:
-	if _unit_uses_heat(unit) and (unit.overheated or unit.heat >= maxf(1.0, float(unit.stats.get("heat_capacity", 100.0))) * 0.78):
-		return "self_overheat"
-	if not _is_live_unit(active_units[player_id]["hero"]):
-		return "hero_absent"
-	if _is_live_unit(target) and float(target.get_meta("projectile_signal", 0.0)) > 0.0:
-		return "enemy_shooting"
-	var delta_ring: float = absf(_ring_delta(unit.ring_pos, target.ring_pos))
-	if delta_ring > float(unit.stats.get("hold_range", 0.82)) + 0.38:
-		return "enemy_far"
-	if delta_ring < 0.36 + float(target.stats.get("radius", 0.2)) * 0.4:
-		return "enemy_close"
-	return "default"
+	return _battle_actor_command_service().puppet_condition({
+		"uses_heat": _unit_uses_heat(unit),
+		"overheated": bool(unit.overheated) if _is_live_unit(unit) and unit.get("overheated") != null else false,
+		"heat": float(unit.heat) if _is_live_unit(unit) and unit.get("heat") != null else 0.0,
+		"heat_capacity": float(unit.stats.get("heat_capacity", 100.0)) if _is_live_unit(unit) else 100.0,
+		"hero_live": _is_live_unit(active_units[player_id]["hero"] if active_units.has(player_id) else null),
+		"target_live": _is_live_unit(target),
+		"target_projectile_signal": float(target.get_meta("projectile_signal", 0.0)) if _is_live_unit(target) else 0.0,
+		"delta_ring": _ring_delta(unit.ring_pos, target.ring_pos) if _is_live_unit(unit) and _is_live_unit(target) else 0.0,
+		"hold_range": float(unit.stats.get("hold_range", 0.82)) if _is_live_unit(unit) else 0.82,
+		"target_radius": float(target.stats.get("radius", 0.2)) if _is_live_unit(target) else 0.2,
+	})
 
 
 func _source_rule_for_condition(unit, condition: String) -> Dictionary:
@@ -34142,23 +35142,6 @@ func _try_puppet_action(unit, target, player_id: int, unit_index: int, delta: fl
 	var delta_ring: float = _ring_delta(unit.ring_pos, target.ring_pos)
 	var delta_lane: float = target.lane - unit.lane
 	var ai_kind := String(unit.stats.get("ai", "line"))
-	if String(unit.stats.get("role_switch", "")) != "" and (not _is_live_unit(active_units[player_id]["hero"]) or absf(delta_ring) <= float(unit.stats.get("switch_trigger_range", 0.62))):
-		if _try_role_switch_module(unit):
-			return
-	if float(unit.get_meta("jammed_timer", 0.0)) > 0.0:
-		unit.set_meta("fire_timer", 0.28)
-		return
-	var cadence: float = 0.0
-	if ai_kind == "volley":
-		cadence = 0.18 * float(unit_index)
-	elif ai_kind == "pincer":
-		cadence = 0.08 if unit_index % 2 == 0 else 0.0
-	elif ai_kind == "mine_dance":
-		cadence = 0.32
-	var fire_timer := maxf(0.0, float(unit.get_meta("fire_timer", cadence)) - delta)
-	unit.set_meta("fire_timer", fire_timer)
-	if fire_timer > 0.0:
-		return
 	var source_rule := _source_rule_for_condition(unit, condition)
 	var sequence: Array = source_rule.get("states", unit.stats.get("sequence", ["normal"]))
 	var default_modules := _default_puppet_attack_modules(unit, unit_index)
@@ -34167,75 +35150,106 @@ func _try_puppet_action(unit, target, player_id: int, unit_index: int, delta: fl
 		sequence = ["normal"]
 	if modules.is_empty():
 		modules = default_modules
-	if modules.is_empty():
-		unit.set_meta("fire_timer", 0.36 + cadence)
+	var intent := _battle_actor_command_service().puppet_attack_intent({
+		"delta": delta,
+		"delta_ring": delta_ring,
+		"delta_lane": delta_lane,
+		"ai_kind": ai_kind,
+		"unit_index": unit_index,
+		"role_switch": String(unit.stats.get("role_switch", "")) != "",
+		"hero_live": _is_live_unit(active_units[player_id]["hero"] if active_units.has(player_id) else null),
+		"switch_trigger_range": float(unit.stats.get("switch_trigger_range", 0.62)),
+		"jammed_timer": float(unit.get_meta("jammed_timer", 0.0)),
+		"has_fire_timer": unit.has_meta("fire_timer"),
+		"fire_timer": float(unit.get_meta("fire_timer", 0.0)),
+		"source_rule": source_rule,
+		"sequence": sequence,
+		"default_modules": default_modules,
+		"modules": modules,
+		"sequence_step": int(unit.get_meta("sequence_step", 0)),
+		"groups": _battle_actor_attack_group_summaries(unit, sequence),
+		"disabled_modules": _battle_actor_disabled_modules(unit),
+		"source_attack_preference": String(unit.stats.get("source_attack_preference", "")),
+		"attack_group_count": ATTACK_GROUP_COUNT,
+		"battle_half_height": BATTLE_HALF_HEIGHT,
+	})
+	if String(intent.get("action", "")) == "role_switch":
+		if _try_role_switch_module(unit):
+			return
+		intent = _battle_actor_command_service().puppet_attack_intent({
+			"delta": delta,
+			"delta_ring": delta_ring,
+			"delta_lane": delta_lane,
+			"ai_kind": ai_kind,
+			"unit_index": unit_index,
+			"role_switch": false,
+			"hero_live": _is_live_unit(active_units[player_id]["hero"] if active_units.has(player_id) else null),
+			"switch_trigger_range": float(unit.stats.get("switch_trigger_range", 0.62)),
+			"jammed_timer": float(unit.get_meta("jammed_timer", 0.0)),
+			"has_fire_timer": unit.has_meta("fire_timer"),
+			"fire_timer": float(unit.get_meta("fire_timer", 0.0)),
+			"source_rule": source_rule,
+			"sequence": sequence,
+			"default_modules": default_modules,
+			"modules": modules,
+			"sequence_step": int(unit.get_meta("sequence_step", 0)),
+			"groups": _battle_actor_attack_group_summaries(unit, sequence),
+			"disabled_modules": _battle_actor_disabled_modules(unit),
+			"source_attack_preference": String(unit.stats.get("source_attack_preference", "")),
+			"attack_group_count": ATTACK_GROUP_COUNT,
+			"battle_half_height": BATTLE_HALF_HEIGHT,
+		})
+	var action := String(intent.get("action", "none"))
+	if action in ["set_timer", "cooldown"]:
+		unit.set_meta("fire_timer", float(intent.get("fire_timer", 0.0)))
 		return
-	var step := int(unit.get_meta("sequence_step", 0))
-	var action_kind := String(sequence[step % sequence.size()])
-	var attack_index := _source_attack_index_for_step(unit, modules, step)
+	if action == "advance_step":
+		unit.set_meta("sequence_step", int(intent.get("sequence_step", int(unit.get_meta("sequence_step", 0)) + 1)))
+		unit.set_meta("fire_timer", float(intent.get("fire_timer", 0.36)))
+		return
+	if action == "none":
+		unit.set_meta("fire_timer", float(intent.get("fire_timer", 0.0)))
+		return
+	if action != "fire":
+		return
+	var attack_index := int(intent.get("attack_index", 0))
+	var action_kind := String(intent.get("action_kind", "normal"))
 	var group := _attack_group(unit, attack_index)
-	if _part_disabled(unit, attack_index):
-		unit.set_meta("sequence_step", step + 1)
-		unit.set_meta("fire_timer", 0.36 + cadence)
+	var event: Dictionary = _begin_unit_module_action(unit, action_kind, group, attack_index)
+	if event.is_empty():
 		return
-	if not _puppet_attack_reaches(unit, group, action_kind, ai_kind, delta_ring, delta_lane):
-		for candidate in modules:
-			var candidate_index := clampi(int(candidate), 0, ATTACK_GROUP_COUNT - 1)
-			if _part_disabled(unit, candidate_index):
-				continue
-			var candidate_group := _attack_group(unit, candidate_index)
-			if _puppet_attack_reaches(unit, candidate_group, action_kind, ai_kind, delta_ring, delta_lane):
-				attack_index = candidate_index
-				group = candidate_group
-				break
-	if _puppet_attack_reaches(unit, group, action_kind, ai_kind, delta_ring, delta_lane):
-		var event: Dictionary = _begin_unit_module_action(unit, action_kind, group, attack_index)
-		if not event.is_empty():
-			event["direction"] = Vector2(delta_ring, delta_lane * 1.2).normalized() if absf(delta_ring) + absf(delta_lane) > 0.01 else Vector2(float(unit.facing), 0.0)
-			event["muscle_node"] = attack_index
-			event["collision_group"] = group.duplicate(true)
-			event["group_name"] = String(group.get("name", ATTACK_GROUP_FALLBACK[attack_index]))
-			event["damage_type"] = String(group.get("damage_type", event.get("damage_type", "blunt")))
-			event["material_class"] = String(group.get("melee_contact_class", group.get("material_class", "weapon")))
-			var state_key := String(event.get("state", "normal"))
-			var override_key := "%s_damage_override" % state_key
-			var base_damage := float(event.get("damage", 1))
-			if group.has(override_key):
-				base_damage = float(group[override_key])
-			event["damage"] = int(roundf(base_damage * float(group.get("damage_mult", 1.0))))
-			event["range"] = float(event.get("range", 0.3)) * float(group.get("range_mult", 1.0))
-			event["range"] = float(event["range"]) + _damage_type_range_bonus(unit.stats, String(event.get("damage_type", "blunt")))
-			event["lane_range"] = float(event.get("lane_range", 0.2)) * float(group.get("lane_mult", 1.0))
-			event["recoil"] = float(event.get("recoil", 0.06)) * float(group.get("recoil_mult", 1.0))
-			if bool(group.get("projectile", unit.stats.get("projectile", false))):
-				event["projectile"] = true
-				event["material_class"] = "projectile"
-				event["damage_type"] = String(group.get("projectile_damage_type", event.get("damage_type", "bullet")))
-				event["projectile_style"] = String(group.get("projectile_style", _projectile_style_for_damage(String(event["damage_type"]))))
-				event["projectile_behavior"] = _projectile_behavior_for_data(group)
-				if String(event["projectile_behavior"]) == "bullet_hell":
-					event["projectile_style"] = "bullet_hell"
-					event["projectile_speed_mult"] = float(group.get("projectile_speed_mult", BULLET_HELL_DEFAULT_SPEED_MULT))
-				event["travel_path"] = String(group.get("travel_path", "straight"))
-				event["range"] = maxf(float(event["range"]), float(group.get("projectile_range", 2.25)))
-				if String(event["projectile_behavior"]) == "true_bullet":
-					event["projectile_style"] = "true_bullet"
-					event["travel_path"] = "instant_line"
-					event["range"] = maxf(float(event["range"]), _laser_visible_world_range(unit, event["direction"]))
-				_copy_control_event_fields(event, group)
-				if _map_line_occluded(unit, target, event):
-					unit.set_meta("fire_timer", 0.22 + cadence)
-					return
-			if String(group.get("module_effect", "")) != "":
-				_apply_module_event_fields(event, group)
-			if ai_kind == "mine_dance":
-				event["range"] = float(event.get("range", 0.4)) + 0.24
-				event["lane_range"] = float(event.get("lane_range", 0.2)) + 0.18
-			if unit.has_method("mark_part_action"):
-				unit.mark_part_action(attack_index, event["direction"], String(event.get("state", action_kind)), float(unit.state_timer))
-			unit.set_meta("sequence_step", step + 1)
-			unit.set_meta("fire_timer", 0.42 + cadence)
-			_resolve_attack(unit, event)
+	var direction := Vector2(delta_ring, delta_lane * 1.2).normalized() if absf(delta_ring) + absf(delta_lane) > 0.01 else Vector2(float(unit.facing), 0.0)
+	var service_intent := _battle_action_event_service().module_event_patch({
+		"event": event,
+		"group": group,
+		"stats": unit.stats,
+		"direction": direction,
+		"attack_index": attack_index,
+		"attack_group_fallback": ATTACK_GROUP_FALLBACK,
+		"projectile": bool(group.get("projectile", unit.stats.get("projectile", false))),
+		"projectile_style": _projectile_style_for_damage(String(group.get("projectile_damage_type", event.get("damage_type", "bullet")))),
+		"projectile_behavior": _projectile_behavior_for_data(group),
+		"laser_visible_range": _laser_visible_world_range(unit, direction),
+		"constants": _battle_action_event_constants(),
+	})
+	event = Dictionary(service_intent.get("event", event))
+	var state_key := String(service_intent.get("state_key", event.get("state", "normal")))
+	var base_damage := float(service_intent.get("base_damage", event.get("damage", 1.0)))
+	if bool(group.get("projectile", unit.stats.get("projectile", false))):
+		_copy_control_event_fields(event, group)
+		if _map_line_occluded(unit, target, event):
+			unit.set_meta("fire_timer", 0.22 + float(intent.get("cadence", 0.0)))
+			return
+	if String(group.get("module_effect", "")) != "":
+		_apply_module_event_fields(event, group)
+	if ai_kind == "mine_dance":
+		event["range"] = float(event.get("range", 0.4)) + 0.24
+		event["lane_range"] = float(event.get("lane_range", 0.2)) + 0.18
+	if unit.has_method("mark_part_action"):
+		unit.mark_part_action(attack_index, event["direction"], String(event.get("state", action_kind)), float(unit.state_timer))
+	unit.set_meta("sequence_step", int(intent.get("sequence_step", int(unit.get_meta("sequence_step", 0)) + 1)))
+	unit.set_meta("fire_timer", float(intent.get("fire_timer", 0.42)))
+	_resolve_attack(unit, event)
 
 
 func _update_barriers(delta: float) -> void:
@@ -34248,99 +35262,95 @@ func _update_barriers(delta: float) -> void:
 func _apply_barrier_logic(barrier, player_id: int, delta: float) -> void:
 	var logic := String(barrier.stats.get("barrier_logic", "pulse"))
 	var aura_range := float(barrier.stats.get("space_size", barrier.stats.get("aura_range", barrier.stats.get("active_range", 0.54))))
+	var enemies := _enemy_units(player_id)
+	var allies := _friendly_units(player_id)
 	if String(barrier.stats.get("role_switch", "")) != "":
-		for target in _enemy_units(player_id):
+		for target in enemies:
 			if _unit_in_barrier_aura(barrier, target, aura_range) and _try_role_switch_module(barrier):
 				return
-	if logic == "heat_well":
-		for target in _enemy_units(player_id):
-			if _unit_in_barrier_aura(barrier, target, aura_range):
-				_add_unit_heat_event(target, float(barrier.stats.get("aura_heat", 12.0)) * delta, ["external", "laser"], "heat_well_aura")
-				if randf() < delta * 2.2:
-					_spawn_hit_effect(target, 1, "laser", false)
-	elif logic == "caustic_field":
-		for target in _enemy_units(player_id):
-			if _unit_in_barrier_aura(barrier, target, aura_range):
-				_add_unit_heat_event(target, float(barrier.stats.get("aura_heat", 7.0)) * delta, ["external", "chemical"], "caustic_field_aura")
-				_apply_barrier_field_damage(barrier, target, player_id, String(barrier.stats.get("barrier_damage_type", "chemical")), 3, 0.55, delta)
-	elif logic == "coolant_veil":
-		for ally in _friendly_units(player_id):
-			if _unit_in_barrier_aura(barrier, ally, aura_range):
-				_cool_unit_heat(ally, float(barrier.stats.get("ally_cooling", 16.0)) * delta)
-	elif logic == "drag_net":
-		for target in _enemy_units(player_id):
-			if _unit_in_barrier_aura(barrier, target, aura_range):
-				target.velocity = target.velocity.move_toward(Vector2.ZERO, float(barrier.stats.get("slow_power", 0.35)) * 5.0 * delta)
-				if randf() < delta * 1.6:
-					_spawn_hit_effect(target, 0, "blunt", false)
-	elif logic == "damage_amp":
-		for ally in _friendly_units(player_id):
-			if _unit_in_barrier_aura(barrier, ally, aura_range):
-				ally.set_meta("field_damage_boost_type", String(barrier.stats.get("damage_boost_type", "tear")))
-				ally.set_meta("field_damage_boost_mult", float(barrier.stats.get("damage_boost_mult", 1.2)))
-				ally.set_meta("field_damage_boost_timer", 0.22)
-	elif logic == "riposte_mirror":
-		var timer := maxf(0.0, float(barrier.get_meta("pulse_timer", 0.0)) - delta)
-		var enemy_inside := false
-		for target in _enemy_units(player_id):
-			if _unit_in_barrier_aura(barrier, target, aura_range):
-				enemy_inside = true
-				break
-		if enemy_inside and timer <= 0.0:
-			barrier.set_meta("pulse_timer", float(barrier.stats.get("pulse_interval", 1.05)))
-			_resolve_attack(barrier, barrier.barrier_pulse())
-		else:
-			barrier.set_meta("pulse_timer", timer)
-	elif logic == "galaxy_castle":
-		for ally in _friendly_units(player_id):
-			if _unit_in_barrier_aura(barrier, ally, aura_range):
-				ally.set_meta("field_damage_boost_type", String(barrier.stats.get("damage_boost_type", "tear")))
-				ally.set_meta("field_damage_boost_mult", float(barrier.stats.get("damage_boost_mult", 1.12)))
-				ally.set_meta("field_damage_boost_timer", 0.22)
-		for target in _enemy_units(player_id):
-			if _unit_in_barrier_aura(barrier, target, aura_range):
-				target.velocity = target.velocity.move_toward(Vector2.ZERO, float(barrier.stats.get("slow_power", 0.22)) * 4.0 * delta)
-				_apply_barrier_field_damage(barrier, target, player_id, String(barrier.stats.get("barrier_damage_type", "chemical")), 2, 0.72, delta)
-		var castle_timer := maxf(0.0, float(barrier.get_meta("pulse_timer", 0.0)) - delta)
-		if castle_timer <= 0.0:
-			barrier.set_meta("pulse_timer", float(barrier.stats.get("pulse_interval", 0.8)))
-			_resolve_attack(barrier, barrier.barrier_pulse())
-		else:
-			barrier.set_meta("pulse_timer", castle_timer)
-	elif logic == "gravity_vector":
-		pass
-	elif logic == "structure_only":
-		pass
-	else:
-		_resolve_attack(barrier, barrier.barrier_pulse())
+	var enemy_inside := false
+	for target in enemies:
+		if _unit_in_barrier_aura(barrier, target, aura_range):
+			enemy_inside = true
+			break
+	for raw_intent in _battle_actor_command_service().barrier_logic_intents({
+		"logic": logic,
+		"delta": delta,
+		"pulse_timer": float(barrier.get_meta("pulse_timer", 0.0)),
+		"pulse_interval": float(barrier.stats.get("pulse_interval", 1.05 if logic == "riposte_mirror" else 0.8)),
+		"enemy_inside": enemy_inside,
+	}):
+		if not (raw_intent is Dictionary):
+			continue
+		var intent: Dictionary = raw_intent
+		match String(intent.get("action", "")):
+			"heat_well_enemies":
+				for target in enemies:
+					if _unit_in_barrier_aura(barrier, target, aura_range):
+						_add_unit_heat_event(target, float(barrier.stats.get("aura_heat", 12.0)) * delta, ["external", "laser"], "heat_well_aura")
+						if randf() < delta * 2.2:
+							_spawn_hit_effect(target, 1, "laser", false)
+			"caustic_field_enemies":
+				for target in enemies:
+					if _unit_in_barrier_aura(barrier, target, aura_range):
+						_add_unit_heat_event(target, float(barrier.stats.get("aura_heat", 7.0)) * delta, ["external", "chemical"], "caustic_field_aura")
+						_apply_barrier_field_damage(barrier, target, player_id, String(barrier.stats.get("barrier_damage_type", "chemical")), 3, 0.55, delta)
+			"coolant_veil_allies":
+				for ally in allies:
+					if _unit_in_barrier_aura(barrier, ally, aura_range):
+						_cool_unit_heat(ally, float(barrier.stats.get("ally_cooling", 16.0)) * delta)
+			"drag_net_enemies":
+				for target in enemies:
+					if _unit_in_barrier_aura(barrier, target, aura_range):
+						target.velocity = target.velocity.move_toward(Vector2.ZERO, float(barrier.stats.get("slow_power", 0.35)) * 5.0 * delta)
+						if randf() < delta * 1.6:
+							_spawn_hit_effect(target, 0, "blunt", false)
+			"damage_amp_allies":
+				var mult_default := float(intent.get("mult_default", 1.2))
+				for ally in allies:
+					if _unit_in_barrier_aura(barrier, ally, aura_range):
+						ally.set_meta("field_damage_boost_type", String(barrier.stats.get("damage_boost_type", "tear")))
+						ally.set_meta("field_damage_boost_mult", float(barrier.stats.get("damage_boost_mult", mult_default)))
+						ally.set_meta("field_damage_boost_timer", 0.22)
+			"galaxy_castle_enemies":
+				for target in enemies:
+					if _unit_in_barrier_aura(barrier, target, aura_range):
+						target.velocity = target.velocity.move_toward(Vector2.ZERO, float(barrier.stats.get("slow_power", 0.22)) * 4.0 * delta)
+						_apply_barrier_field_damage(barrier, target, player_id, String(barrier.stats.get("barrier_damage_type", "chemical")), 2, 0.72, delta)
+			"set_pulse_timer":
+				barrier.set_meta("pulse_timer", float(intent.get("timer", 0.0)))
+			"pulse":
+				_resolve_attack(barrier, barrier.barrier_pulse())
 	_apply_barrier_utility_components(barrier, player_id, delta)
 
 
 func _apply_barrier_utility_components(barrier, player_id: int, delta: float) -> void:
-	if bool(barrier.stats.get("is_gravity_field", false)):
-		_apply_gravity_field(barrier, player_id, delta)
-	if bool(barrier.stats.get("is_coolant_field", false)):
-		_apply_coolant_field(barrier, player_id, delta)
-	if bool(barrier.stats.get("is_heat_field", false)):
-		_apply_heat_field(barrier, player_id, delta)
-	if bool(barrier.stats.get("is_repulsion_field", false)):
-		_apply_repulsion_field(barrier, player_id, delta)
-	if bool(barrier.stats.get("is_resource_siphon", false)):
-		_apply_resource_siphon(barrier, player_id, delta)
-	if bool(barrier.stats.get("is_hack_field", false)):
-		_apply_hack_field(barrier, player_id, delta)
-	if bool(barrier.stats.get("is_hatchery", false)):
-		_apply_hatchery(barrier, player_id, delta)
-	if bool(barrier.stats.get("is_cage_wall", false)):
-		_apply_cage_wall(barrier, player_id, delta)
+	for raw_intent in _battle_field_runtime_service().barrier_utility_intents({"stats": barrier.stats}):
+		if not (raw_intent is Dictionary):
+			continue
+		match String(Dictionary(raw_intent).get("action", "")):
+			"gravity":
+				_apply_gravity_field(barrier, player_id, delta)
+			"coolant":
+				_apply_coolant_field(barrier, player_id, delta)
+			"heat":
+				_apply_heat_field(barrier, player_id, delta)
+			"repulsion":
+				_apply_repulsion_field(barrier, player_id, delta)
+			"resource_siphon":
+				_apply_resource_siphon(barrier, player_id, delta)
+			"hack":
+				_apply_hack_field(barrier, player_id, delta)
+			"hatchery":
+				_apply_hatchery(barrier, player_id, delta)
+			"cage":
+				_apply_cage_wall(barrier, player_id, delta)
 
 
 func _apply_cage_wall(barrier, player_id: int, delta: float) -> void:
-	var radius := maxf(0.1, float(barrier.stats.get("cage_radius", barrier.stats.get("radius", 0.4))))
-	var repel := float(barrier.stats.get("cage_repel", 0.36))
-	var damage := int(barrier.stats.get("cage_damage", 0))
-	var damage_type := String(barrier.stats.get("cage_damage_type", "blunt"))
-	_update_field_aura_visual(barrier, "cage", radius, maxf(0.5, repel * 2.0), delta)
+	var base_intent := _battle_field_runtime_service().field_effect_intent({"kind": "cage", "stats": barrier.stats, "delta": delta})
+	var radius := float(base_intent.get("radius", maxf(0.1, float(barrier.stats.get("cage_radius", barrier.stats.get("radius", 0.4))))))
+	_update_field_aura_visual(barrier, "cage", radius, float(base_intent.get("aura_strength", 1.0)), delta)
 	for target in _field_targets_for(player_id, String(barrier.stats.get("cage_affects", "enemy"))):
 		if target == barrier or not _is_live_unit(target) or not _unit_is_mech_physics_subject(target):
 			continue
@@ -34352,17 +35362,22 @@ func _apply_cage_wall(barrier, player_id: int, delta: float) -> void:
 		var edge_distance := absf(edge_metric - radius)
 		if edge_distance > target_radius + 0.08 or not _unit_in_barrier_aura(barrier, target, radius, "cage"):
 			continue
-		var push := Vector2(ring_delta, lane_delta * 1.2)
-		if push.length() <= 0.01:
-			push = Vector2(float(target.facing), 0.0)
-		target.velocity += Vector2(push.normalized().x, push.normalized().y * 0.62) * repel
 		var key := "cage_hit_%d" % int(barrier.get_instance_id())
-		var timer := maxf(0.0, float(target.get_meta(key, 0.0)) - delta)
-		if timer > 0.0:
-			target.set_meta(key, timer)
+		var intent := _battle_field_runtime_service().field_effect_intent({
+			"kind": "cage",
+			"stats": barrier.stats,
+			"delta": delta,
+			"direction": cage_delta,
+			"fallback_direction": Vector2(float(target.facing), 0.0),
+			"hit_timer": float(target.get_meta(key, 0.0)),
+		})
+		target.velocity += intent.get("velocity_delta", Vector2.ZERO)
+		target.set_meta(key, float(intent.get("hit_timer", 0.0)))
+		if not bool(intent.get("can_hit", false)):
 			continue
-		target.set_meta(key, maxf(0.12, float(barrier.stats.get("cage_hit_interval", 0.6))))
+		var damage := int(intent.get("damage", 0))
 		if damage > 0:
+			var damage_type := String(intent.get("damage_type", "blunt"))
 			var event := {"damage_type": damage_type, "projectile": damage_type in PROJECTILE_DAMAGE_TYPES}
 			var final_damage := _projectile_material_adjusted_damage(target, event, damage)
 			var blocked := final_damage <= 0 or bool(event.get("contact_gate_blocked", false))
@@ -34389,13 +35404,11 @@ func _apply_gravity_field(barrier, player_id: int, delta: float) -> void:
 		var effect: Dictionary = raw_effect
 		if String(effect.get("kind", "gravity")) != "gravity":
 			continue
-		var radius := maxf(0.1, float(effect.get("radius", barrier.stats.get("gravity_radius", 0.7))))
-		var force := float(effect.get("force", barrier.stats.get("gravity_force", 0.32)))
-		var mode := String(effect.get("direction", barrier.stats.get("gravity_direction", "forward")))
-		var aura_kind := "gravity"
-		if mode != "":
-			aura_kind = "gravity_%s" % mode
-		_update_field_aura_visual(barrier, aura_kind, radius, force * 2.0, delta)
+		var intent := _battle_field_runtime_service().field_effect_intent({"kind": "gravity", "stats": barrier.stats, "effect": effect, "delta": delta})
+		var radius := float(intent.get("radius", 0.7))
+		var mode := String(intent.get("mode", "forward"))
+		var force := float(intent.get("force", 0.32))
+		_update_field_aura_visual(barrier, String(intent.get("aura_kind", "gravity")), radius, float(intent.get("aura_strength", force * 2.0)), delta)
 		for unit in all_units:
 			if not _is_live_unit(unit) or unit == barrier or not _unit_is_mech_physics_subject(unit) or not _unit_in_barrier_aura(barrier, unit, radius, "gravity"):
 				continue
@@ -34433,74 +35446,74 @@ func _gravity_direction_vector(mode: String, barrier, unit) -> Vector2:
 
 func _apply_coolant_field(barrier, player_id: int, delta: float) -> void:
 	var targets := _friendly_units(player_id) if String(barrier.stats.get("coolant_affects", "ally")) == "ally" else all_units
-	var radius := maxf(0.1, float(barrier.stats.get("coolant_radius", 0.68)))
-	_update_field_aura_visual(barrier, "coolant", radius, float(barrier.stats.get("coolant_boost", 18.0)) / 18.0, delta)
+	var intent := _battle_field_runtime_service().field_effect_intent({"kind": "coolant", "stats": barrier.stats, "delta": delta})
+	var radius := float(intent.get("radius", 0.68))
+	_update_field_aura_visual(barrier, String(intent.get("aura_kind", "coolant")), radius, float(intent.get("aura_strength", 1.0)), delta)
 	for unit in targets:
 		if _is_live_unit(unit) and _unit_in_barrier_aura(barrier, unit, radius, "coolant"):
-			_cool_unit_heat(unit, float(barrier.stats.get("coolant_boost", 18.0)) * delta, float(unit.stats.get("overheat_clear_ratio", 0.42)))
+			_cool_unit_heat(unit, float(intent.get("heat_delta", 0.0)), float(unit.stats.get("overheat_clear_ratio", 0.42)))
 
 
 func _apply_heat_field(barrier, player_id: int, delta: float) -> void:
-	var radius := maxf(0.1, float(barrier.stats.get("heat_field_radius", 0.62)))
-	var heat_rate := float(barrier.stats.get("heat_field_rate", 18.0))
-	_update_field_aura_visual(barrier, "heat", radius, heat_rate / 18.0, delta)
+	var base_intent := _battle_field_runtime_service().field_effect_intent({"kind": "heat", "stats": barrier.stats, "delta": delta})
+	var radius := float(base_intent.get("radius", 0.62))
+	_update_field_aura_visual(barrier, String(base_intent.get("aura_kind", "heat")), radius, float(base_intent.get("aura_strength", 1.0)), delta)
 	for unit in _field_targets_for(player_id, String(barrier.stats.get("heat_field_affects", "all"))):
 		if not _is_live_unit(unit) or unit == barrier or not _unit_is_mech_physics_subject(unit) or not _unit_in_barrier_aura(barrier, unit, radius, "heat"):
 			continue
-		var cooling_factor := clampf(1.18 - float(unit.stats.get("cooling", 0.0)) / 90.0, 0.42, 1.18)
-		_add_unit_heat_event(unit, heat_rate * cooling_factor * delta, ["external", "laser"], "heat_field")
-		if randf() < delta * 1.2:
+		var intent := _battle_field_runtime_service().field_effect_intent({"kind": "heat", "stats": barrier.stats, "delta": delta, "target_cooling": float(unit.stats.get("cooling", 0.0))})
+		_add_unit_heat_event(unit, float(intent.get("heat_delta", 0.0)), ["external", "laser"], "heat_field")
+		if randf() < delta * float(intent.get("vfx_rate", 1.2)):
 			_spawn_hit_effect(unit, 1, "laser", false, "field")
 
 
 func _apply_repulsion_field(barrier, player_id: int, delta: float) -> void:
-	var radius := maxf(0.1, float(barrier.stats.get("repulsion_radius", 0.68)))
-	var force := float(barrier.stats.get("repulsion_force", 0.46))
-	_update_field_aura_visual(barrier, "repulsion", radius, force * 2.0, delta)
+	var base_intent := _battle_field_runtime_service().field_effect_intent({"kind": "repulsion", "stats": barrier.stats, "delta": delta})
+	var radius := float(base_intent.get("radius", 0.68))
+	_update_field_aura_visual(barrier, String(base_intent.get("aura_kind", "repulsion")), radius, float(base_intent.get("aura_strength", 1.0)), delta)
 	for unit in all_units:
 		if not _is_live_unit(unit) or unit == barrier or not _unit_is_mech_physics_subject(unit) or not _unit_in_barrier_aura(barrier, unit, radius, "repulsion"):
 			continue
 		var dir := _mobius_delta_vec_between(barrier, unit, 1.25)
-		if dir.length() <= 0.01:
-			dir = Vector2(float(unit.facing), 0.0)
-		var falloff := clampf(1.0 - dir.length() / maxf(0.1, radius * 1.4), 0.18, 1.0)
-		unit.velocity += Vector2(dir.normalized().x, dir.normalized().y * 0.62) * force * falloff * delta
+		var intent := _battle_field_runtime_service().field_effect_intent({"kind": "repulsion", "stats": barrier.stats, "delta": delta, "direction": dir, "fallback_direction": Vector2(float(unit.facing), 0.0)})
+		unit.velocity += intent.get("velocity_delta", Vector2.ZERO)
 
 
 func _apply_resource_siphon(barrier, player_id: int, delta: float) -> void:
 	var enemy_id := 2 if player_id == 1 else 1
-	var radius := maxf(0.1, float(barrier.stats.get("siphon_radius", 0.72)))
-	var rate := float(barrier.stats.get("siphon_rate", 60.0))
-	_update_field_aura_visual(barrier, "siphon", radius, rate / 60.0, delta)
+	var base_intent := _battle_field_runtime_service().field_effect_intent({"kind": "resource_siphon", "stats": barrier.stats, "delta": delta, "enemy_resource": float(runtime_resource[enemy_id])})
+	var radius := float(base_intent.get("radius", 0.72))
+	_update_field_aura_visual(barrier, String(base_intent.get("aura_kind", "siphon")), radius, float(base_intent.get("aura_strength", 1.0)), delta)
 	for target in _enemy_units(player_id):
 		if not _is_live_unit(target) or not _unit_is_mech_physics_subject(target) or not _unit_in_barrier_aura(barrier, target, radius, "siphon"):
 			continue
-		var amount := minf(float(runtime_resource[enemy_id]), rate * delta)
+		var intent := _battle_field_runtime_service().field_effect_intent({"kind": "resource_siphon", "stats": barrier.stats, "delta": delta, "enemy_resource": float(runtime_resource[enemy_id])})
+		var amount := float(intent.get("amount", 0.0))
 		if amount <= 0.0:
 			continue
 		runtime_resource[enemy_id] = float(runtime_resource[enemy_id]) - amount
 		runtime_resource[player_id] = float(runtime_resource[player_id]) + amount
-		if randf() < delta * 2.0:
+		if randf() < delta * float(intent.get("vfx_rate", 2.0)):
 			_spawn_hit_effect(target, 1, "laser", false, "field")
 
 
 func _apply_hack_field(barrier, player_id: int, delta: float) -> void:
-	var radius := maxf(0.1, float(barrier.stats.get("hack_radius", 0.68)))
 	var required := maxf(0.5, float(barrier.stats.get("hack_seconds", 4.6)))
 	var hack_power := maxf(0.1, float(barrier.stats.get("hack_power", 1.0)))
-	_update_field_aura_visual(barrier, "hack", radius, required, delta)
+	var base_intent := _battle_field_runtime_service().field_effect_intent({"kind": "hack", "stats": barrier.stats, "delta": delta, "required": required})
+	var radius := float(base_intent.get("radius", 0.68))
+	_update_field_aura_visual(barrier, String(base_intent.get("aura_kind", "hack")), radius, float(base_intent.get("aura_strength", required)), delta)
 	for target in _enemy_units(player_id):
 		if not _is_live_unit(target) or not _unit_is_mech_physics_subject(target) or not _unit_in_barrier_aura(barrier, target, radius, "hack"):
 			continue
 		var key := "hack_time_p%d_%d" % [player_id, int(barrier.get_instance_id())]
-		var total := float(target.get_meta(key, 0.0)) + delta
-		target.set_meta(key, total)
-		target.set_meta("hack_warning_timer", 0.45)
-		if randf() < delta * 1.6:
-			_spawn_hit_effect(target, 1, "laser", false, "field")
 		var target_required := _security_adjusted_seconds(required, target, hack_power, 0.5)
-		if total >= target_required:
-			target.set_meta(key, 0.0)
+		var intent := _battle_field_runtime_service().field_effect_intent({"kind": "hack", "stats": barrier.stats, "delta": delta, "required": target_required, "progress": float(target.get_meta(key, 0.0))})
+		target.set_meta(key, float(intent.get("progress", 0.0)))
+		target.set_meta("hack_warning_timer", float(intent.get("warning_timer", 0.45)))
+		if randf() < delta * float(intent.get("vfx_rate", 1.6)):
+			_spawn_hit_effect(target, 1, "laser", false, "field")
+		if bool(intent.get("complete", false)):
 			_defect_unit_to_owner(target, player_id, "HACK FIELD")
 
 
@@ -34508,18 +35521,23 @@ func _try_trigger_trap_fields(player_id: int, link_filter: String = "", input_ve
 	for trap in _friendly_units(player_id):
 		if not _is_live_unit(trap) or not bool(trap.stats.get("is_trap_field", false)):
 			continue
-		if float(trap.get_meta("jammed_timer", 0.0)) > 0.0:
-			continue
-		if float(trap.get_meta("trap_cooldown_timer", 0.0)) > 0.0:
-			continue
 		var trap_link := String(trap.stats.get("trap_link", ""))
-		if link_filter != "" and link_filter != "all" and trap_link != link_filter:
-			continue
 		var targets := _trap_targets(trap, player_id)
-		if targets.is_empty():
-			continue
 		var command := String(trap.stats.get("trap_command", "236"))
-		if not command_already_matched and not _command_matches(player_id, command):
+		var jammed := float(trap.get_meta("jammed_timer", 0.0)) > 0.0
+		var cooldown := float(trap.get_meta("trap_cooldown_timer", 0.0))
+		var link_matches := link_filter == "" or link_filter == "all" or trap_link == link_filter
+		var command_matched := command_already_matched
+		if not jammed and cooldown <= 0.0 and link_matches and not targets.is_empty() and not command_matched:
+			command_matched = _command_matches(player_id, command)
+		var intent := _battle_field_runtime_service().trap_trigger_intent({
+			"jammed": jammed,
+			"cooldown": cooldown,
+			"link_matches": link_matches,
+			"targets_count": targets.size(),
+			"command_matched": command_matched,
+		})
+		if not bool(intent.get("trigger", false)):
 			continue
 		_fire_trap_field(trap, player_id, targets, input_vector)
 		return true
@@ -34538,47 +35556,47 @@ func _trap_targets(trap, player_id: int) -> Array:
 
 
 func _fire_trap_field(trap, player_id: int, targets: Array, input_vector: Vector2 = Vector2.ZERO) -> void:
-	var effect := String(trap.stats.get("trap_effect", "acid_rain"))
-	var radius := maxf(0.1, float(trap.stats.get("trap_radius", 0.7)))
-	var power := float(trap.stats.get("trap_power", 0.45))
-	var damage_type := String(trap.stats.get("trap_damage_type", trap.stats.get("damage_type", "chemical")))
-	var damage := int(trap.stats.get("trap_damage", 0))
 	var launch_direction := _trap_launch_direction(trap, player_id, input_vector)
-	trap.set_meta("trap_cooldown_timer", maxf(0.4, float(trap.stats.get("trap_cooldown", 5.0))))
-	_update_field_aura_visual(trap, "trap", radius, 2.0, 0.0)
+	var target_deltas: Array = []
 	for target in targets:
+		target_deltas.append(_mobius_delta_vec_between(trap, target, 1.2) if _is_live_unit(target) else Vector2.ZERO)
+	var intent := _battle_field_runtime_service().trap_fire_intents({
+		"stats": trap.stats,
+		"targets_count": targets.size(),
+		"target_deltas": target_deltas,
+		"launch_direction": launch_direction,
+	})
+	var effect := String(intent.get("effect", trap.stats.get("trap_effect", "acid_rain")))
+	trap.set_meta("trap_cooldown_timer", float(intent.get("cooldown", maxf(0.4, float(trap.stats.get("trap_cooldown", 5.0))))))
+	_update_field_aura_visual(trap, "trap", float(intent.get("radius", maxf(0.1, float(trap.stats.get("trap_radius", 0.7))))), 2.0, 0.0)
+	for raw_target_intent in Array(intent.get("target_intents", [])):
+		if not (raw_target_intent is Dictionary):
+			continue
+		var target_index := int(Dictionary(raw_target_intent).get("target_index", -1))
+		if target_index < 0 or target_index >= targets.size():
+			continue
+		var target = targets[target_index]
 		if not _is_live_unit(target):
 			continue
-		match effect:
-			"acid_rain":
-				_apply_trap_damage(trap, target, player_id, damage_type, damage, "spray")
-				_add_unit_heat_event(target, 10.0, ["external", "chemical"], "acid_rain_trap")
-			"heat_burst":
-				_add_unit_heat_event(target, power, ["external"], "heat_burst_trap")
-				_apply_trap_damage(trap, target, player_id, damage_type, damage, "field")
-			"laser_fan":
-				_apply_trap_damage(trap, target, player_id, "laser", maxi(damage, 18), "beam")
-			"gravity_burst":
-				var dir := -_mobius_delta_vec_between(trap, target, 1.2)
-				if dir.length() > 0.01:
-					target.velocity += Vector2(dir.normalized().x, dir.normalized().y * 0.62) * power
-				_apply_trap_damage(trap, target, player_id, damage_type, damage, "field")
-			"repulse_burst":
-				var away := _mobius_delta_vec_between(trap, target, 1.2)
-				if away.length() > 0.01:
-					target.velocity += Vector2(away.normalized().x, away.normalized().y * 0.62) * power
-				_apply_trap_damage(trap, target, player_id, damage_type, damage, "field")
-			"web_snare":
-				target.set_meta("slow_timer", maxf(float(target.get_meta("slow_timer", 0.0)), float(trap.stats.get("trap_slow_duration", 2.2))))
-				target.set_meta("slow_mult", clampf(1.0 - power, 0.25, 0.82))
-				_spawn_hit_effect(target, 1, "blunt", false, "web")
-			"spring_launch":
-				target.velocity += Vector2(launch_direction.x, launch_direction.y * 0.62) * power
-				var launch_offset := Vector2(launch_direction.x * 0.06, launch_direction.y * 0.05) * power
-				_apply_unit_displacement(target, launch_offset, launch_offset.length())
-				_apply_trap_damage(trap, target, player_id, damage_type, damage, "field")
-			_:
-				_apply_trap_damage(trap, target, player_id, damage_type, damage, "field")
+		for raw_action in Array(Dictionary(raw_target_intent).get("actions", [])):
+			if not (raw_action is Dictionary):
+				continue
+			var action: Dictionary = raw_action
+			match String(action.get("action", "")):
+				"damage":
+					_apply_trap_damage(trap, target, player_id, String(action.get("damage_type", "chemical")), int(action.get("damage", 0)), String(action.get("style", "field")))
+				"heat":
+					_add_unit_heat_event(target, float(action.get("amount", 0.0)), Array(action.get("tags", ["external"])), String(action.get("reason", "trap")))
+				"velocity":
+					target.velocity += action.get("delta", Vector2.ZERO)
+				"slow":
+					target.set_meta("slow_timer", maxf(float(target.get_meta("slow_timer", 0.0)), float(action.get("timer", 0.0))))
+					target.set_meta("slow_mult", float(action.get("mult", 1.0)))
+				"vfx":
+					_spawn_hit_effect(target, 1, String(action.get("damage_type", "blunt")), false, String(action.get("style", "web")))
+				"displace":
+					var launch_offset: Vector2 = action.get("offset", Vector2.ZERO)
+					_apply_unit_displacement(target, launch_offset, launch_offset.length())
 	_show_battle_message("%s TRAP %s" % [trap.unit_name, effect.to_upper()], 0.8)
 	_play_sfx_wave("alarm", 260.0, 0.12, -11.0)
 
@@ -34668,20 +35686,23 @@ func _update_field_aura_visual_at(barrier, aura_key_suffix: String, field_kind: 
 
 func _apply_hatchery(barrier, player_id: int, delta: float) -> void:
 	var limit := int(barrier.stats.get("hatch_limit", 0))
-	if limit <= 0:
-		return
 	var group: Array = active_units[player_id]["puppet"]
 	var hatchlings := 0
 	for unit in group:
 		if _is_live_unit(unit) and String(unit.get_meta("hatched_from", "")) == str(barrier.get_instance_id()):
 			hatchlings += 1
-	if hatchlings >= limit:
+	var intent := _battle_field_runtime_service().hatchery_intent({
+		"limit": limit,
+		"hatchlings": hatchlings,
+		"interval": float(barrier.stats.get("hatch_interval", 6.0)),
+		"timer": float(barrier.get_meta("hatch_timer", float(barrier.stats.get("hatch_interval", 6.0)))),
+		"delta": delta,
+	})
+	if String(intent.get("action", "")) != "spawn":
+		if intent.has("timer"):
+			barrier.set_meta("hatch_timer", float(intent.get("timer", 0.0)))
 		return
-	var timer := maxf(0.0, float(barrier.get_meta("hatch_timer", float(barrier.stats.get("hatch_interval", 6.0)))) - delta)
-	if timer > 0.0:
-		barrier.set_meta("hatch_timer", timer)
-		return
-	barrier.set_meta("hatch_timer", float(barrier.stats.get("hatch_interval", 6.0)))
+	barrier.set_meta("hatch_timer", float(intent.get("timer", float(barrier.stats.get("hatch_interval", 6.0)))))
 	var stats := _hatchling_stats(barrier, player_id)
 	var unit = _create_unit(player_id, "puppet", stats, "P%d HATCHLING %d" % [player_id, hatchlings + 1], wrapf(barrier.ring_pos + 0.16 * float(barrier.facing), 0.0, RING_LENGTH), clampf(barrier.lane + sin(float(hatchlings)) * 0.18, -BATTLE_HALF_HEIGHT, BATTLE_HALF_HEIGHT))
 	unit.set_meta("hatched_from", str(barrier.get_instance_id()))
@@ -34691,41 +35712,11 @@ func _apply_hatchery(barrier, player_id: int, delta: float) -> void:
 
 
 func _hatchling_stats(barrier, player_id: int) -> Dictionary:
-	var profile := String(barrier.stats.get("hatch_profile", "snake"))
-	var stats := {
-		"name": "Snake Hatchling" if profile == "snake" else "Rifle Bit",
-		"role": "puppet",
-		"health": 28 if profile == "snake" else 18,
-		"mass": 5.0 if profile == "snake" else 2.0,
-		"power": 18.0,
-		"energy": 8.0,
-		"length": 0.46 if profile == "snake" else 0.22,
-		"radius": 0.09 if profile == "snake" else 0.045,
-		"speed": 0.94 if profile == "snake" else 1.24,
-		"acceleration": 3.4,
-		"drag": 3.7,
-		"cooling": 12.0,
-		"heat_capacity": 42.0,
-		"normal_damage": 7 if profile == "snake" else 5,
-		"normal_range": 0.44 if profile == "snake" else 1.45,
-		"normal_lane_range": 0.28,
-		"normal_heat": 8.0,
-		"damage_type": "tear" if profile == "snake" else "bullet",
-		"projectile": profile != "snake",
-		"projectile_damage_type": "bullet",
-		"projectile_style": "bullet_hell",
-		"projectile_behavior": "bullet_hell",
-		"projectile_range": 1.75,
-		"projectile_speed_mult": 2.4,
-		"material_class": "weapon",
-		"shape": "snake" if profile == "snake" else "drone_core",
-		"ai": String(barrier.stats.get("hatch_ai", "figure8")),
-		"group_count": 1,
-		"sequence": ["normal"],
+	return _battle_field_runtime_service().hatchling_stats_intent({
+		"stats": barrier.stats,
 		"primary_color": _team_primary_color(player_id),
 		"accent_color": _team_accent_color(player_id),
-	}
-	return stats
+	})
 
 
 func _apply_barrier_field_damage(barrier, target, player_id: int, damage_type: String, damage: int, interval: float, delta: float) -> void:
@@ -34774,6 +35765,12 @@ func _unit_in_barrier_aura(barrier, unit, aura_range: float, field_tag: String =
 
 
 func _friendly_units(player_id: int) -> Array:
+	if battle_awareness_service != null:
+		var data := _battle_awareness_active_unit_data()
+		return _battle_awareness_units_for_ids(
+			battle_awareness_service.friendly_ids(player_id, Array(data.get("snapshots", []))),
+			Dictionary(data.get("refs", {}))
+		)
 	var units: Array = []
 	var hero = active_units[player_id]["hero"]
 	if _is_live_unit(hero):
@@ -34788,15 +35785,23 @@ func _friendly_units(player_id: int) -> Array:
 
 
 func _resolve_unit_body_spacing(delta: float) -> void:
-	if delta <= 0.0:
+	var initial_plan := _battle_frame_orchestrator_service().contact_pass_plan({
+		"delta": delta,
+		"live_subject_count": 0,
+		"has_runtime_subject": false,
+		"gpu_available": false,
+	})
+	if not bool(initial_plan.get("should_process", false)):
 		return
-	runtime_contact_pairs_seen = {}
-	gpu_collision_pair_dispatch_count = 0
-	gpu_collision_candidate_count = 0
-	gpu_collision_contact_count = 0
-	gpu_collision_skipped_runtime_pairs = 0
-	gpu_collision_readback_bytes = 0
-	_cleanup_active_melee_contact_suppression()
+	if bool(initial_plan.get("reset_counters", false)):
+		runtime_contact_pairs_seen = {}
+		gpu_collision_pair_dispatch_count = 0
+		gpu_collision_candidate_count = 0
+		gpu_collision_contact_count = 0
+		gpu_collision_skipped_runtime_pairs = 0
+		gpu_collision_readback_bytes = 0
+	if bool(initial_plan.get("cleanup_suppression", false)):
+		_cleanup_active_melee_contact_suppression()
 	var live_subjects: Array = []
 	var has_runtime_subject := false
 	for unit in all_units:
@@ -34804,24 +35809,31 @@ func _resolve_unit_body_spacing(delta: float) -> void:
 			live_subjects.append(unit)
 			if _unit_uses_direct_runtime_topology(unit):
 				has_runtime_subject = true
-	if has_runtime_subject:
-		if _gpu_collision_available():
-			_gpu_collision_and_response_step(live_subjects, delta)
-		else:
-			gpu_collision_skipped_runtime_pairs += 1
-			_warn_gpu_collision_unavailable()
-	for i in range(live_subjects.size()):
-		var a = live_subjects[i]
-		if not _is_live_unit(a):
-			continue
-		for j in range(i + 1, live_subjects.size()):
-			var b = live_subjects[j]
-			if not _is_live_unit(b):
+	var plan := _battle_frame_orchestrator_service().contact_pass_plan({
+		"delta": delta,
+		"live_subject_count": live_subjects.size(),
+		"has_runtime_subject": has_runtime_subject,
+		"gpu_available": _gpu_collision_available() if has_runtime_subject else false,
+	})
+	if bool(plan.get("gpu_runtime_contact", false)):
+		_gpu_collision_and_response_step(live_subjects, delta)
+	elif bool(plan.get("warn_gpu_unavailable", false)):
+		gpu_collision_skipped_runtime_pairs += 1
+		_warn_gpu_collision_unavailable()
+	if bool(plan.get("cpu_pair_spacing", false)):
+		for i in range(live_subjects.size()):
+			var a = live_subjects[i]
+			if not _is_live_unit(a):
 				continue
-			_separate_unit_pair(a, b, delta)
-	for key in runtime_contact_pairs_active.keys():
-		if not runtime_contact_pairs_seen.has(key):
-			runtime_contact_pairs_active.erase(key)
+			for j in range(i + 1, live_subjects.size()):
+				var b = live_subjects[j]
+				if not _is_live_unit(b):
+					continue
+				_separate_unit_pair(a, b, delta)
+	if bool(plan.get("cleanup_active_pairs", false)):
+		for key in runtime_contact_pairs_active.keys():
+			if not runtime_contact_pairs_seen.has(key):
+				runtime_contact_pairs_active.erase(key)
 
 
 func _separate_unit_pair(a, b, delta: float) -> void:
@@ -35014,42 +36026,82 @@ func _resolve_runtime_gpu_contact_once(a, raw_collider_a: Dictionary, collider_a
 		return
 	normal = normal.normalized()
 	var penetration := maxf(0.0, float(response.get("penetration", 0.0)))
-	if penetration <= RUNTIME_CONTACT_REQUIRED_OVERLAP:
-		return
 	var key := _runtime_contact_pair_key(a, raw_collider_a, b, raw_collider_b)
+	var source_a := _runtime_contact_source_for_collider(raw_collider_a)
+	var source_b := _runtime_contact_source_for_collider(raw_collider_b)
+	var intent := runtime_contact_service.gpu_contact_intent({
+		"normal": normal,
+		"penetration": penetration,
+		"position_delta_a": response.get("position_delta_a", Vector2.ZERO),
+		"position_delta_b": response.get("position_delta_b", Vector2.ZERO),
+		"pair_active": runtime_contact_pairs_active.has(key),
+		"recovery_a": bool(response.get("recovery_a", false)),
+		"recovery_b": bool(response.get("recovery_b", false)),
+		"raw_contact_momentum": response.get("raw_contact_momentum", response.get("usable_contact_momentum", 0.0)),
+		"usable_contact_momentum": response.get("usable_contact_momentum", 0.0),
+		"relative_normal_velocity": response.get("relative_normal_velocity", 0.0),
+		"vfx_strength": response.get("vfx_strength", 0.0),
+		"vfx_kind": response.get("vfx_kind", 0),
+		"source_a": source_a,
+		"source_b": source_b,
+		"owner_a_id": int(a.owner_id),
+		"owner_b_id": int(b.owner_id),
+		"suppressed_a": _active_melee_contact_damage_suppressed(a, raw_collider_a, b, raw_collider_b),
+		"suppressed_b": _active_melee_contact_damage_suppressed(b, raw_collider_b, a, raw_collider_a),
+		"velocity_delta_a": response.get("velocity_delta_a", Vector2.ZERO),
+		"velocity_delta_b": response.get("velocity_delta_b", Vector2.ZERO),
+		"constants": _runtime_contact_constants(),
+	}) if runtime_contact_service != null else {}
+	if runtime_contact_service == null:
+		if penetration <= RUNTIME_CONTACT_REQUIRED_OVERLAP:
+			return
+		intent = {
+			"should_process": not runtime_contact_pairs_active.has(key),
+			"mark_seen": true,
+			"mark_active": not runtime_contact_pairs_active.has(key),
+			"normal": normal,
+			"position_delta_a": response.get("position_delta_a", Vector2.ZERO),
+			"position_delta_b": response.get("position_delta_b", Vector2.ZERO),
+			"recovery_a": bool(response.get("recovery_a", false)),
+			"recovery_b": bool(response.get("recovery_b", false)),
+			"contact_momentum": maxf(0.0, float(response.get("raw_contact_momentum", response.get("usable_contact_momentum", 0.0)))),
+			"response_momentum": maxf(0.0, float(response.get("usable_contact_momentum", 0.0))),
+			"closing_speed": maxf(0.0, float(response.get("relative_normal_velocity", 0.0))),
+			"vfx_strength": maxf(0.0, float(response.get("vfx_strength", 0.0))),
+			"vfx_kind": int(response.get("vfx_kind", 0)),
+			"source_a": source_a,
+			"source_b": source_b,
+			"damage_a": int(a.owner_id) != int(b.owner_id) and maxf(0.0, float(response.get("relative_normal_velocity", 0.0))) >= PASSIVE_CONTACT_MIN_SPEED and not _active_melee_contact_damage_suppressed(a, raw_collider_a, b, raw_collider_b),
+			"damage_b": int(a.owner_id) != int(b.owner_id) and maxf(0.0, float(response.get("relative_normal_velocity", 0.0))) >= PASSIVE_CONTACT_MIN_SPEED and not _active_melee_contact_damage_suppressed(b, raw_collider_b, a, raw_collider_a),
+			"velocity_delta_a": response.get("velocity_delta_a", Vector2.ZERO),
+			"velocity_delta_b": response.get("velocity_delta_b", Vector2.ZERO),
+			"apply_velocity_delta": maxf(0.0, float(response.get("usable_contact_momentum", 0.0))) > 0.001,
+		}
+	if not bool(intent.get("mark_seen", false)):
+		return
 	runtime_contact_pairs_seen[key] = true
-	var position_delta_a: Vector2 = response.get("position_delta_a", Vector2.ZERO)
-	var position_delta_b: Vector2 = response.get("position_delta_b", Vector2.ZERO)
+	var position_delta_a: Vector2 = intent.get("position_delta_a", Vector2.ZERO)
+	var position_delta_b: Vector2 = intent.get("position_delta_b", Vector2.ZERO)
 	_apply_gpu_position_delta(a, position_delta_a)
 	_apply_gpu_position_delta(b, position_delta_b)
-	if runtime_contact_pairs_active.has(key):
+	if not bool(intent.get("should_process", false)):
 		return
 	runtime_contact_pairs_active[key] = true
-	if bool(response.get("recovery_a", false)):
+	if bool(intent.get("recovery_a", false)):
 		_force_runtime_collision_recovery_from_gpu(a, raw_collider_a)
-	if bool(response.get("recovery_b", false)):
+	if bool(intent.get("recovery_b", false)):
 		_force_runtime_collision_recovery_from_gpu(b, raw_collider_b)
-	var contact_momentum := maxf(0.0, float(response.get("raw_contact_momentum", response.get("usable_contact_momentum", 0.0))))
-	var response_momentum := maxf(0.0, float(response.get("usable_contact_momentum", 0.0)))
-	var closing_speed := maxf(0.0, float(response.get("relative_normal_velocity", 0.0)))
+	var contact_momentum := maxf(0.0, float(intent.get("contact_momentum", 0.0)))
 	var hit_position: Vector2 = response.get("contact_point", _collider_hit_position(collider_a, collider_b))
-	_emit_gpu_contact_vfx_descriptor(hit_position, normal, maxf(0.0, float(response.get("vfx_strength", 0.0))), int(response.get("vfx_kind", 0)))
-	if int(a.owner_id) != int(b.owner_id) and closing_speed >= PASSIVE_CONTACT_MIN_SPEED:
-		var source_a := _runtime_contact_source_for_collider(raw_collider_a)
-		var source_b := _runtime_contact_source_for_collider(raw_collider_b)
-		var allow_a_damage := true
-		var allow_b_damage := true
-		if source_a == "active_module_contact" and source_b != "active_module_contact":
-			allow_b_damage = false
-		elif source_b == "active_module_contact" and source_a != "active_module_contact":
-			allow_a_damage = false
-		if allow_a_damage and not _active_melee_contact_damage_suppressed(a, raw_collider_a, b, raw_collider_b):
-			_apply_runtime_contact_damage(a, raw_collider_a, b, raw_collider_b, normal, contact_momentum, hit_position, source_a)
-		if _is_live_unit(a) and _is_live_unit(b):
-			if allow_b_damage and not _active_melee_contact_damage_suppressed(b, raw_collider_b, a, raw_collider_a):
-				_apply_runtime_contact_damage(b, raw_collider_b, a, raw_collider_a, -normal, contact_momentum, hit_position, source_b)
-	if _is_live_unit(a) and _is_live_unit(b) and response_momentum > 0.001:
-		_apply_runtime_contact_velocity_delta(a, b, response.get("velocity_delta_a", Vector2.ZERO), response.get("velocity_delta_b", Vector2.ZERO))
+	_emit_gpu_contact_vfx_descriptor(hit_position, normal, maxf(0.0, float(intent.get("vfx_strength", 0.0))), int(intent.get("vfx_kind", 0)))
+	if bool(intent.get("damage_a", false)):
+		_apply_runtime_contact_damage(a, raw_collider_a, b, raw_collider_b, normal, contact_momentum, hit_position, source_a)
+	if _is_live_unit(a) and _is_live_unit(b):
+		if bool(intent.get("damage_b", false)):
+			_apply_runtime_contact_damage(b, raw_collider_b, a, raw_collider_a, -normal, contact_momentum, hit_position, source_b)
+	if _is_live_unit(a) and _is_live_unit(b):
+		if bool(intent.get("apply_velocity_delta", false)):
+			_apply_runtime_contact_velocity_delta(a, b, intent.get("velocity_delta_a", Vector2.ZERO), intent.get("velocity_delta_b", Vector2.ZERO))
 
 
 func _emit_gpu_contact_vfx_descriptor(hit_position: Vector2, normal: Vector2, strength: float, kind: int) -> void:
@@ -35167,13 +36219,37 @@ func _runtime_node_array_has_for_gpu(raw_nodes: Array, node_index: int) -> bool:
 	return false
 
 
+func _runtime_contact_constants() -> Dictionary:
+	return {
+		"contact_damage_scale": CONTACT_DAMAGE_SCALE,
+		"break_stiffness_scale": BREAK_STIFFNESS_SCALE,
+		"part_stiffness_base_momentum": PART_STIFFNESS_BASE_MOMENTUM,
+		"part_damage_coeff_torso": PART_DAMAGE_COEFF_TORSO,
+		"part_damage_coeff_limb": PART_DAMAGE_COEFF_LIMB,
+		"part_damage_coeff_terminal_melee": PART_DAMAGE_COEFF_TERMINAL_MELEE,
+		"part_damage_coeff_terminal_ranged": PART_DAMAGE_COEFF_TERMINAL_RANGED,
+		"part_damage_coeff_barrier": PART_DAMAGE_COEFF_BARRIER,
+		"part_break_coeff_torso": PART_BREAK_COEFF_TORSO,
+		"part_break_coeff_limb": PART_BREAK_COEFF_LIMB,
+		"part_break_coeff_terminal_melee": PART_BREAK_COEFF_TERMINAL_MELEE,
+		"part_break_coeff_terminal_ranged": PART_BREAK_COEFF_TERMINAL_RANGED,
+		"part_break_coeff_barrier": PART_BREAK_COEFF_BARRIER,
+		"passive_contact_min_speed": PASSIVE_CONTACT_MIN_SPEED,
+		"runtime_contact_required_overlap": RUNTIME_CONTACT_REQUIRED_OVERLAP,
+	}
+
+
 func _runtime_contact_socket_key(collider: Dictionary) -> String:
+	if runtime_contact_service != null:
+		return runtime_contact_service.socket_key(collider)
 	if _runtime_collider_uses_torso_damage(collider):
 		return "torso:%d:proxy" % int(collider.get("damage_proxy_torso_unit_index", collider.get("torso_unit_index", 0)))
 	return "%s:%s:%d" % [String(collider.get("part_kind", "")), str(collider.get("node_index", collider.get("part_index", ""))), int(collider.get("torso_unit_index", -1))]
 
 
 func _runtime_contact_sorted_colliders(colliders: Array) -> Array:
+	if runtime_contact_service != null:
+		return runtime_contact_service.sorted_colliders(colliders)
 	var sorted := colliders.duplicate()
 	sorted.sort_custom(Callable(self, "_runtime_contact_collider_sort"))
 	return sorted
@@ -35184,6 +36260,8 @@ func _runtime_contact_collider_sort(a, b) -> bool:
 
 
 func _runtime_contact_collider_priority(raw_collider) -> int:
+	if runtime_contact_service != null:
+		return runtime_contact_service.collider_priority(raw_collider)
 	if not (raw_collider is Dictionary):
 		return 999
 	var collider: Dictionary = raw_collider
@@ -35203,6 +36281,8 @@ func _runtime_contact_collider_priority(raw_collider) -> int:
 func _runtime_contact_pair_key(a, collider_a: Dictionary, b, collider_b: Dictionary) -> String:
 	var aid := int(a.get_instance_id()) if a != null and is_instance_valid(a) else 0
 	var bid := int(b.get_instance_id()) if b != null and is_instance_valid(b) else 0
+	if runtime_contact_service != null:
+		return runtime_contact_service.pair_key(aid, collider_a, bid, collider_b)
 	var a_socket := _runtime_contact_socket_key(collider_a)
 	var b_socket := _runtime_contact_socket_key(collider_b)
 	if aid > bid:
@@ -35218,6 +36298,8 @@ func _runtime_contact_pair_key(a, collider_a: Dictionary, b, collider_b: Diction
 func _runtime_directed_contact_key(a, collider_a: Dictionary, b, collider_b: Dictionary) -> String:
 	var aid := int(a.get_instance_id()) if a != null and is_instance_valid(a) else 0
 	var bid := int(b.get_instance_id()) if b != null and is_instance_valid(b) else 0
+	if runtime_contact_service != null:
+		return runtime_contact_service.directed_contact_key(aid, collider_a, bid, collider_b)
 	var a_socket := _runtime_contact_socket_key(collider_a)
 	var b_socket := _runtime_contact_socket_key(collider_b)
 	return "%d|%s->%d|%s" % [aid, a_socket, bid, b_socket]
@@ -35260,10 +36342,14 @@ func _cleanup_active_melee_contact_suppression() -> void:
 
 
 func _runtime_collider_uses_torso_damage(collider: Dictionary) -> bool:
+	if runtime_contact_service != null:
+		return runtime_contact_service.collider_uses_torso_damage(collider)
 	return String(collider.get("damage_proxy", "")).to_lower() == "torso" or (collider.has("independent_damage") and not bool(collider.get("independent_damage", true)))
 
 
 func _runtime_contact_part_damage_coeff(collider: Dictionary) -> float:
+	if runtime_contact_service != null:
+		return runtime_contact_service.damage_coeff(collider, _runtime_contact_constants())
 	if _runtime_collider_uses_torso_damage(collider):
 		return PART_DAMAGE_COEFF_TORSO
 	if collider.has("damage_coeff"):
@@ -35280,6 +36366,8 @@ func _runtime_contact_part_damage_coeff(collider: Dictionary) -> float:
 
 
 func _runtime_contact_part_break_coeff(collider: Dictionary) -> float:
+	if runtime_contact_service != null:
+		return runtime_contact_service.break_coeff(collider, _runtime_contact_constants())
 	if _runtime_collider_uses_torso_damage(collider):
 		return PART_BREAK_COEFF_TORSO
 	if collider.has("break_coeff"):
@@ -35296,6 +36384,8 @@ func _runtime_contact_part_break_coeff(collider: Dictionary) -> float:
 
 
 func _runtime_contact_part_stiffness(unit, collider: Dictionary) -> float:
+	if runtime_contact_service != null:
+		return runtime_contact_service.part_stiffness(collider, _collider_stiffness_size_multiplier(collider, unit), _runtime_contact_constants())
 	if _runtime_collider_uses_torso_damage(collider):
 		var mult_proxy := _collider_stiffness_size_multiplier(collider, unit)
 		return PART_STIFFNESS_BASE_MOMENTUM * 2.0 * mult_proxy
@@ -35315,6 +36405,8 @@ func _runtime_contact_part_stiffness(unit, collider: Dictionary) -> float:
 
 
 func _runtime_contact_path_stiffness(unit, collider: Dictionary) -> float:
+	if runtime_contact_service != null:
+		return runtime_contact_service.path_stiffness(collider, _collider_stiffness_size_multiplier(collider, unit), _runtime_contact_constants())
 	if _runtime_collider_uses_torso_damage(collider):
 		var mult_proxy := _collider_stiffness_size_multiplier(collider, unit)
 		return PART_STIFFNESS_BASE_MOMENTUM * 2.0 * mult_proxy
@@ -35336,10 +36428,14 @@ func _runtime_contact_path_stiffness(unit, collider: Dictionary) -> float:
 
 
 func _runtime_contact_break_threshold(unit, collider: Dictionary) -> float:
+	if runtime_contact_service != null:
+		return runtime_contact_service.break_threshold(collider, _collider_stiffness_size_multiplier(collider, unit), _runtime_contact_constants())
 	return maxf(0.5, _runtime_contact_path_stiffness(unit, collider) * _runtime_contact_part_break_coeff(collider) * BREAK_STIFFNESS_SCALE)
 
 
 func _runtime_contact_damage_type(collider: Dictionary) -> String:
+	if runtime_contact_service != null:
+		return runtime_contact_service.damage_type(collider, MELEE_DAMAGE_TYPES)
 	if _runtime_collider_uses_torso_damage(collider):
 		return "blunt"
 	var damage_type := String(collider.get("damage_type", "blunt"))
@@ -35349,6 +36445,8 @@ func _runtime_contact_damage_type(collider: Dictionary) -> String:
 
 
 func _runtime_contact_material_class(collider: Dictionary) -> String:
+	if runtime_contact_service != null:
+		return runtime_contact_service.material_class(collider)
 	if _runtime_collider_uses_torso_damage(collider):
 		return "body"
 	var material_class := String(collider.get("material_class", "body"))
@@ -35363,49 +36461,78 @@ func _apply_runtime_contact_damage(attacker, attacker_collider: Dictionary, targ
 	var damage_type := _runtime_contact_damage_type(attacker_collider)
 	var material_class := _runtime_contact_material_class(attacker_collider)
 	var attacker_path_stiffness := _runtime_contact_path_stiffness(attacker, attacker_collider)
-	var usable_momentum := minf(contact_momentum, attacker_path_stiffness)
-	var damage_float := usable_momentum * _runtime_contact_part_damage_coeff(attacker_collider) * CONTACT_DAMAGE_SCALE
-	damage_float *= _vulnerability_multiplier(target, {
+	var vulnerability_event := {
 		"damage_type": damage_type,
 		"passive_contact": true,
 		"runtime_contact": true,
-	})
-	if damage_float <= 0.001:
-		return
-	var threshold := _runtime_contact_break_threshold(target, target_collider)
-	var event := {
-		"state": "normal",
-		"projectile": false,
-		"passive_contact": true,
-		"runtime_contact": true,
+	}
+	var intent := runtime_contact_service.damage_intent({
+		"attacker_id": int(attacker.get_instance_id()) if attacker != null and is_instance_valid(attacker) else 0,
+		"target_id": int(target.get_instance_id()) if target != null and is_instance_valid(target) else 0,
+		"attacker_collider": attacker_collider,
+		"target_collider": target_collider,
+		"normal": normal,
+		"contact_momentum": contact_momentum,
+		"hit_position": hit_position,
 		"contact_source": contact_source,
-		"contact_node_key": _runtime_contact_socket_key(attacker_collider),
-		"contact_segment_key": "%s:%s" % [String(attacker_collider.get("part_kind", "")), str(attacker_collider.get("node_index", attacker_collider.get("part_index", "")))],
-		"contact_pair_key": _runtime_directed_contact_key(attacker, attacker_collider, target, target_collider),
-		"damage_resolution_part": _runtime_contact_socket_key(target_collider),
-		"damage_type": damage_type,
-		"material_class": material_class,
-		"direction": normal,
-		"momentum": usable_momentum,
-		"momentum_vector": normal * usable_momentum,
-		"momentum_magnitude": usable_momentum,
-		"raw_momentum": contact_momentum,
-		"usable_contact_momentum": usable_momentum,
 		"attacker_path_stiffness": attacker_path_stiffness,
 		"target_path_stiffness": _runtime_contact_path_stiffness(target, target_collider),
-		"break_threshold": threshold,
-		"damage_after_break": damage_float,
-		"contact_damage": damage_float,
-		"target_part_index": int(target_collider.get("part_index", -1)),
-		"target_part_kind": String(target_collider.get("part_kind", "core")),
-		"target_part_name": String(target_collider.get("name", "CORE")),
-		"target_torso_unit_index": int(target_collider.get("torso_unit_index", -1)),
-		"attacker_part_index": int(attacker_collider.get("part_index", -1)),
-		"attacker_part_kind": String(attacker_collider.get("part_kind", "")),
-		"attacker_terminal_weapon_kind": String(attacker_collider.get("terminal_weapon_kind", "")),
-		"hit_position_combat": hit_position,
-	}
-	if damage_float < threshold:
+		"damage_coeff": _runtime_contact_part_damage_coeff(attacker_collider),
+		"contact_damage_scale": CONTACT_DAMAGE_SCALE,
+		"break_threshold": _runtime_contact_break_threshold(target, target_collider),
+		"damage_type": damage_type,
+		"material_class": material_class,
+		"vulnerability_multiplier": _vulnerability_multiplier(target, vulnerability_event),
+	}) if runtime_contact_service != null else {}
+	if runtime_contact_service == null:
+		var fallback_usable_momentum := minf(contact_momentum, attacker_path_stiffness)
+		var fallback_damage_float := fallback_usable_momentum * _runtime_contact_part_damage_coeff(attacker_collider) * CONTACT_DAMAGE_SCALE
+		fallback_damage_float *= _vulnerability_multiplier(target, vulnerability_event)
+		if fallback_damage_float <= 0.001:
+			return
+		var fallback_threshold := _runtime_contact_break_threshold(target, target_collider)
+		intent = {
+			"should_apply": true,
+			"threshold_blocked": fallback_damage_float < fallback_threshold,
+			"damage_float": fallback_damage_float,
+			"event": {
+				"state": "normal",
+				"projectile": false,
+				"passive_contact": true,
+				"runtime_contact": true,
+				"contact_source": contact_source,
+				"contact_node_key": _runtime_contact_socket_key(attacker_collider),
+				"contact_segment_key": "%s:%s" % [String(attacker_collider.get("part_kind", "")), str(attacker_collider.get("node_index", attacker_collider.get("part_index", "")))],
+				"contact_pair_key": _runtime_directed_contact_key(attacker, attacker_collider, target, target_collider),
+				"damage_resolution_part": _runtime_contact_socket_key(target_collider),
+				"damage_type": damage_type,
+				"material_class": material_class,
+				"direction": normal,
+				"momentum": fallback_usable_momentum,
+				"momentum_vector": normal * fallback_usable_momentum,
+				"momentum_magnitude": fallback_usable_momentum,
+				"raw_momentum": contact_momentum,
+				"usable_contact_momentum": fallback_usable_momentum,
+				"attacker_path_stiffness": attacker_path_stiffness,
+				"target_path_stiffness": _runtime_contact_path_stiffness(target, target_collider),
+				"break_threshold": fallback_threshold,
+				"damage_after_break": fallback_damage_float,
+				"contact_damage": fallback_damage_float,
+				"target_part_index": int(target_collider.get("part_index", -1)),
+				"target_part_kind": String(target_collider.get("part_kind", "core")),
+				"target_part_name": String(target_collider.get("name", "CORE")),
+				"target_torso_unit_index": int(target_collider.get("torso_unit_index", -1)),
+				"attacker_part_index": int(attacker_collider.get("part_index", -1)),
+				"attacker_part_kind": String(attacker_collider.get("part_kind", "")),
+				"attacker_terminal_weapon_kind": String(attacker_collider.get("terminal_weapon_kind", "")),
+				"hit_position_combat": hit_position,
+			},
+		}
+	if not bool(intent.get("should_apply", false)):
+		return
+	var event: Dictionary = Dictionary(intent.get("event", {}))
+	var damage_float := float(intent.get("damage_float", 0.0))
+	if bool(intent.get("threshold_blocked", false)):
 		_spawn_hit_effect(target, 1, damage_type, true, "threshold", hit_position)
 		return
 	var damage: int = max(1, int(roundf(damage_float)))
@@ -35454,37 +36581,62 @@ func _resolve_runtime_contact_pair_once(a, raw_collider_a: Dictionary, collider_
 	if normal_a_to_b.length() <= 0.001 or not _is_live_unit(a) or not _is_live_unit(b):
 		return
 	var key := _runtime_contact_pair_key(a, raw_collider_a, b, raw_collider_b)
-	runtime_contact_pairs_seen[key] = true
-	if runtime_contact_pairs_active.has(key):
-		return
-	var normal := normal_a_to_b.normalized()
-	var velocity_a := _contact_collider_velocity(a, raw_collider_a)
-	var velocity_b := _contact_collider_velocity(b, raw_collider_b)
-	var closing_speed := maxf(0.0, (velocity_a - velocity_b).dot(normal))
-	if closing_speed < PASSIVE_CONTACT_MIN_SPEED:
-		return
-	var mass_a := maxf(1.0, _unit_effective_mass(a))
-	var mass_b := maxf(1.0, _unit_effective_mass(b))
-	var contact_momentum := closing_speed * (mass_a + mass_b)
-	if contact_momentum <= 0.001:
-		return
-	runtime_contact_pairs_active[key] = true
-	var hit_position := _collider_hit_position(collider_a, collider_b)
-	var response_momentum := minf(contact_momentum, minf(_runtime_contact_path_stiffness(a, raw_collider_a), _runtime_contact_path_stiffness(b, raw_collider_b)))
-	_force_runtime_collision_recovery(a, raw_collider_a)
-	_force_runtime_collision_recovery(b, raw_collider_b)
 	var source_a := _runtime_contact_source_for_collider(raw_collider_a)
 	var source_b := _runtime_contact_source_for_collider(raw_collider_b)
-	var allow_a_damage := true
-	var allow_b_damage := true
-	if source_a == "active_module_contact" and source_b != "active_module_contact":
-		allow_b_damage = false
-	elif source_b == "active_module_contact" and source_a != "active_module_contact":
-		allow_a_damage = false
-	if allow_a_damage and not _active_melee_contact_damage_suppressed(a, raw_collider_a, b, raw_collider_b):
+	var intent := runtime_contact_service.runtime_pair_intent({
+		"normal": normal_a_to_b,
+		"pair_active": runtime_contact_pairs_active.has(key),
+		"velocity_a": _contact_collider_velocity(a, raw_collider_a),
+		"velocity_b": _contact_collider_velocity(b, raw_collider_b),
+		"mass_a": _unit_effective_mass(a),
+		"mass_b": _unit_effective_mass(b),
+		"path_stiffness_a": _runtime_contact_path_stiffness(a, raw_collider_a),
+		"path_stiffness_b": _runtime_contact_path_stiffness(b, raw_collider_b),
+		"source_a": source_a,
+		"source_b": source_b,
+		"suppressed_a": _active_melee_contact_damage_suppressed(a, raw_collider_a, b, raw_collider_b),
+		"suppressed_b": _active_melee_contact_damage_suppressed(b, raw_collider_b, a, raw_collider_a),
+		"constants": _runtime_contact_constants(),
+	}) if runtime_contact_service != null else {}
+	if runtime_contact_service == null:
+		var fallback_normal := normal_a_to_b.normalized()
+		var fallback_velocity_a := _contact_collider_velocity(a, raw_collider_a)
+		var fallback_velocity_b := _contact_collider_velocity(b, raw_collider_b)
+		var fallback_closing_speed := maxf(0.0, (fallback_velocity_a - fallback_velocity_b).dot(fallback_normal))
+		var fallback_contact_momentum := fallback_closing_speed * (maxf(1.0, _unit_effective_mass(a)) + maxf(1.0, _unit_effective_mass(b)))
+		var fallback_allow_a_damage := true
+		var fallback_allow_b_damage := true
+		if source_a == "active_module_contact" and source_b != "active_module_contact":
+			fallback_allow_b_damage = false
+		elif source_b == "active_module_contact" and source_a != "active_module_contact":
+			fallback_allow_a_damage = false
+		intent = {
+			"should_process": not runtime_contact_pairs_active.has(key) and fallback_closing_speed >= PASSIVE_CONTACT_MIN_SPEED and fallback_contact_momentum > 0.001,
+			"mark_seen": true,
+			"mark_active": not runtime_contact_pairs_active.has(key) and fallback_closing_speed >= PASSIVE_CONTACT_MIN_SPEED and fallback_contact_momentum > 0.001,
+			"normal": fallback_normal,
+			"closing_speed": fallback_closing_speed,
+			"contact_momentum": fallback_contact_momentum,
+			"response_momentum": minf(fallback_contact_momentum, minf(_runtime_contact_path_stiffness(a, raw_collider_a), _runtime_contact_path_stiffness(b, raw_collider_b))),
+			"source_a": source_a,
+			"source_b": source_b,
+			"damage_a": fallback_allow_a_damage and not _active_melee_contact_damage_suppressed(a, raw_collider_a, b, raw_collider_b),
+			"damage_b": fallback_allow_b_damage and not _active_melee_contact_damage_suppressed(b, raw_collider_b, a, raw_collider_a),
+		}
+	runtime_contact_pairs_seen[key] = true
+	if not bool(intent.get("should_process", false)):
+		return
+	var normal: Vector2 = intent.get("normal", normal_a_to_b.normalized())
+	var contact_momentum := maxf(0.0, float(intent.get("contact_momentum", 0.0)))
+	runtime_contact_pairs_active[key] = true
+	var hit_position := _collider_hit_position(collider_a, collider_b)
+	var response_momentum := maxf(0.0, float(intent.get("response_momentum", 0.0)))
+	_force_runtime_collision_recovery(a, raw_collider_a)
+	_force_runtime_collision_recovery(b, raw_collider_b)
+	if bool(intent.get("damage_a", false)):
 		_apply_runtime_contact_damage(a, raw_collider_a, b, raw_collider_b, normal, contact_momentum, hit_position, source_a)
 	if _is_live_unit(a) and _is_live_unit(b):
-		if allow_b_damage and not _active_melee_contact_damage_suppressed(b, raw_collider_b, a, raw_collider_a):
+		if bool(intent.get("damage_b", false)):
 			_apply_runtime_contact_damage(b, raw_collider_b, a, raw_collider_a, -normal, contact_momentum, hit_position, source_b)
 	if _is_live_unit(a) and _is_live_unit(b):
 		if deferred_velocity_responses is Array:
@@ -35516,6 +36668,8 @@ func _flush_runtime_contact_velocity_responses(responses: Array) -> void:
 
 
 func _runtime_contact_source_for_collider(collider: Dictionary) -> String:
+	if runtime_contact_service != null:
+		return runtime_contact_service.contact_source(collider)
 	if bool(collider.get("independent_damage", false)) and String(collider.get("part_kind", "")) != "torso":
 		return "active_module_contact"
 	return "default_body_contact"
@@ -35686,22 +36840,32 @@ func _apply_combo_hit_scaling(attacker, target, event: Dictionary, damage: int) 
 	var attacker_count := int(attacker_hits.get(attacker_key, 0))
 	event["combo_unscaled_damage"] = damage
 	event["combo_opening_momentum"] = float(target.get_meta("stagger_combo_opening_momentum", 0.0))
-	var total_hits := int(target.get_meta("stagger_combo_total_hits", 0)) + 1
-	attacker_hits[attacker_key] = attacker_count + 1
+	var intent := _battle_hit_resolution_service().combo_scaling_intent({
+		"damage": damage,
+		"combo_active": true,
+		"total_hits": int(target.get_meta("stagger_combo_total_hits", 0)),
+		"attacker_hits": attacker_count,
+		"max_hits": COMBO_SCALING_MAX_HITS,
+		"damage_min_mult": COMBO_DAMAGE_MIN_MULT,
+		"damage_curve_power": COMBO_DAMAGE_CURVE_POWER,
+		"knock_max_mult": COMBO_KNOCK_MAX_MULT,
+		"knock_curve_power": COMBO_KNOCK_CURVE_POWER,
+	})
+	var total_hits := int(intent.get("total_hits", int(target.get_meta("stagger_combo_total_hits", 0)) + 1))
+	attacker_hits[attacker_key] = int(intent.get("attacker_hits", attacker_count + 1))
 	target.set_meta("stagger_combo_total_hits", total_hits)
 	target.set_meta("stagger_combo_attacker_hits", attacker_hits)
 	_refresh_stagger_combo(target)
-	var scaled_index := clampi(total_hits, 1, COMBO_SCALING_MAX_HITS)
-	var damage_mult := _combo_damage_multiplier(scaled_index)
-	var knock_mult := _combo_knock_multiplier(scaled_index)
+	var damage_mult := float(intent.get("damage_mult", 1.0))
+	var knock_mult := float(intent.get("knock_mult", 1.0))
 	event["combo_active"] = true
 	event["combo_hit_index"] = total_hits
-	event["combo_attacker_hits"] = attacker_count + 1
+	event["combo_attacker_hits"] = int(intent.get("attacker_hits", attacker_count + 1))
 	event["combo_damage_mult"] = damage_mult
 	event["combo_knock_mult"] = knock_mult
-	if total_hits >= 2:
+	if bool(intent.get("show_message", total_hits >= 2)):
 		_show_battle_message("%s COMBO x%d DMG %.0f%% KB %.0f%%" % [target.unit_name, total_hits, damage_mult * 100.0, knock_mult * 100.0], 0.34)
-	return maxi(1, int(roundf(float(damage) * damage_mult)))
+	return int(intent.get("damage", maxi(1, int(roundf(float(damage) * damage_mult)))))
 
 
 func _combo_knock_multiplier_for_event(event: Dictionary) -> float:
@@ -35755,18 +36919,26 @@ func _event_momentum_magnitude(event: Dictionary, fallback: float = 0.0) -> floa
 
 
 func _apply_active_melee_momentum_stagger(attacker, target, event: Dictionary) -> void:
-	if bool(event.get("projectile", false)) or not _unit_role_is_mech(attacker) or not _unit_role_is_mech(target):
-		return
-	if _combo_opportunity_active(target):
-		return
 	var direction := _event_direction_vector(attacker, target, event, Vector2(float(attacker.facing), 0.0))
 	var attacker_momentum := _event_momentum_magnitude(event, maxf(0.0, float(event.get("momentum", 0.0))))
 	var target_momentum := _unit_effective_mass(target) * maxf(0.0, -target.velocity.dot(direction))
 	var target_collider := _target_collider_for_stagger(target, event, attacker.ring_pos)
 	if not target_collider.is_empty():
 		target_momentum = maxf(target_momentum, _contact_momentum_for_stagger(target, target_collider, -direction))
-	attacker_momentum *= maxf(0.1, float(event.get("crush_stagger_mult", 1.0)))
-	_apply_melee_momentum_stagger_pair(attacker, attacker_momentum, target, target_momentum, direction, "attack")
+	var intent := _battle_hit_resolution_service().momentum_response_intent({
+		"kind": "active_melee_stagger",
+		"projectile": bool(event.get("projectile", false)),
+		"attacker_mech": _unit_role_is_mech(attacker),
+		"target_mech": _unit_role_is_mech(target),
+		"combo_active": _combo_opportunity_active(target),
+		"attacker_momentum": attacker_momentum,
+		"target_momentum": target_momentum,
+		"crush_stagger_mult": float(event.get("crush_stagger_mult", 1.0)),
+		"source": "attack",
+	})
+	if String(intent.get("action", "")) != "apply_melee_pair":
+		return
+	_apply_melee_momentum_stagger_pair(attacker, float(intent.get("attacker_momentum", attacker_momentum)), target, float(intent.get("target_momentum", target_momentum)), direction, String(intent.get("source", "attack")))
 
 
 func _mark_module_variant_hit(attacker, event: Dictionary) -> void:
@@ -35808,6 +36980,8 @@ func _apply_module_variant_hit_effect(attacker, target, event: Dictionary) -> vo
 
 
 func _projectile_behavior_key(event: Dictionary) -> String:
+	if projectile_runtime_service != null:
+		return projectile_runtime_service.projectile_behavior_key(event)
 	var behavior := _projectile_behavior_for_data(event)
 	var style := String(event.get("projectile_style", ""))
 	var damage_type := String(event.get("damage_type", event.get("projectile_damage_type", "bullet")))
@@ -35826,7 +37000,41 @@ func _projectile_behavior_key(event: Dictionary) -> String:
 	return ""
 
 
+func _projectile_runtime_constants() -> Dictionary:
+	return {
+		"bullet_hell_default_speed_mult": BULLET_HELL_DEFAULT_SPEED_MULT,
+		"projectile_momentum_true_bullet": PROJECTILE_MOMENTUM_TRUE_BULLET,
+		"projectile_momentum_bullet_hell": PROJECTILE_MOMENTUM_BULLET_HELL,
+		"projectile_momentum_laser": PROJECTILE_MOMENTUM_LASER,
+		"projectile_momentum_chemical": PROJECTILE_MOMENTUM_CHEMICAL,
+		"projectile_momentum_explosive": PROJECTILE_MOMENTUM_EXPLOSIVE,
+		"projectile_speed_unit": PROJECTILE_SPEED_UNIT,
+		"projectile_speed_true_bullet": PROJECTILE_SPEED_TRUE_BULLET,
+		"projectile_speed_laser": PROJECTILE_SPEED_LASER,
+		"projectile_mass_true_bullet": PROJECTILE_MASS_TRUE_BULLET,
+		"projectile_mass_bullet_hell": PROJECTILE_MASS_BULLET_HELL,
+		"projectile_mass_laser": PROJECTILE_MASS_LASER,
+		"projectile_mass_chemical": PROJECTILE_MASS_CHEMICAL,
+		"projectile_mass_explosive": PROJECTILE_MASS_EXPLOSIVE,
+		"standard_sniper_gun_damage_coeff": STANDARD_SNIPER_GUN_DAMAGE_COEFF,
+		"standard_missile_range_m": STANDARD_MISSILE_RANGE_M,
+		"standard_missile_speed_mult": STANDARD_MISSILE_SPEED_MULT,
+		"chemical_projectile_default_speed_mult": CHEMICAL_PROJECTILE_DEFAULT_SPEED_MULT,
+		"chemical_projectile_min_travel": CHEMICAL_PROJECTILE_MIN_TRAVEL,
+		"chemical_projectile_max_travel": CHEMICAL_PROJECTILE_MAX_TRAVEL,
+		"chemical_dot_default_duration": CHEMICAL_DOT_DEFAULT_DURATION,
+		"chemical_dot_default_mult": CHEMICAL_DOT_DEFAULT_MULT,
+		"chemical_dot_default_frontload": CHEMICAL_DOT_DEFAULT_FRONTLOAD,
+	}
+
+
+func _gun_current_multiplier_for_projectile_service(max_multiplier: float, allocated: float, maximum: float, non_damage: bool = false) -> float:
+	return data_rule_service.gun_current_multiplier(max_multiplier, allocated, maximum, non_damage) if data_rule_service != null else DataRuleService.new().gun_current_multiplier(max_multiplier, allocated, maximum, non_damage)
+
+
 func _projectile_default_momentum_for_event(event: Dictionary) -> float:
+	if projectile_runtime_service != null:
+		return projectile_runtime_service.projectile_default_momentum_for_event(event, _projectile_runtime_constants())
 	match _projectile_behavior_key(event):
 		"true_bullet":
 			return PROJECTILE_MOMENTUM_TRUE_BULLET
@@ -35842,6 +37050,8 @@ func _projectile_default_momentum_for_event(event: Dictionary) -> float:
 
 
 func _projectile_collision_speed_for_event(event: Dictionary) -> float:
+	if projectile_runtime_service != null:
+		return projectile_runtime_service.projectile_collision_speed_for_event(event, _projectile_runtime_constants())
 	if not bool(event.get("projectile", false)):
 		return 0.0
 	if float(event.get("projectile_collision_speed", 0.0)) > 0.0:
@@ -35861,6 +37071,8 @@ func _projectile_collision_speed_for_event(event: Dictionary) -> float:
 
 
 func _projectile_mass_for_event(event: Dictionary, collision_speed: float = -1.0) -> float:
+	if projectile_runtime_service != null:
+		return projectile_runtime_service.projectile_mass_for_event(event, _projectile_runtime_constants(), collision_speed)
 	if not bool(event.get("projectile", false)):
 		return 0.0
 	if float(event.get("projectile_mass", 0.0)) > 0.0:
@@ -35922,6 +37134,12 @@ func _projectile_collision_momentum(attacker, target, event: Dictionary, momentu
 
 
 func _projectile_momentum_for_event(event: Dictionary) -> float:
+	if projectile_runtime_service != null:
+		var state: Dictionary = projectile_runtime_service.projectile_momentum_state_for_event(event, _projectile_runtime_constants())
+		var fields: Dictionary = Dictionary(state.get("fields", {}))
+		for key in fields.keys():
+			event[key] = fields[key]
+		return float(state.get("momentum", 0.0))
 	if not bool(event.get("projectile", false)):
 		return 0.0
 	if float(event.get("projectile_momentum", 0.0)) > 0.0:
@@ -35940,6 +37158,8 @@ func _ammo_damage_coeff_for_data(_data: Dictionary) -> float:
 
 
 func _gun_projectile_damage_mult_max_for_data(data: Dictionary) -> float:
+	if projectile_runtime_service != null:
+		return projectile_runtime_service.gun_projectile_damage_mult_max_for_data(data, _gun_kind_for_data(data), _ammo_kind_for_data(data), _projectile_runtime_constants())
 	if bool(data.get("non_damage", false)):
 		return 0.0
 	if data.has("gun_projectile_damage_mult"):
@@ -35974,6 +37194,8 @@ func _gun_projectile_damage_mult_max_for_data(data: Dictionary) -> float:
 
 
 func _gun_projectile_damage_mult_for_event(event: Dictionary) -> float:
+	if projectile_runtime_service != null:
+		return projectile_runtime_service.gun_projectile_damage_mult_for_event(event, _gun_kind_for_data(event), _ammo_kind_for_data(event), _projectile_runtime_constants(), Callable(self, "_gun_current_multiplier_for_projectile_service"))
 	if bool(event.get("non_damage", false)):
 		return 0.0
 	if event.has("gun_projectile_damage_mult_current") and not event.has("gun_drive_allocated") and not event.has("gun_drive_max"):
@@ -35989,6 +37211,12 @@ func _gun_damage_coeff_for_data(data: Dictionary) -> float:
 
 
 func _projectile_damage_coeffs_for_event(event: Dictionary) -> Dictionary:
+	if projectile_runtime_service != null:
+		var coeffs: Dictionary = projectile_runtime_service.projectile_damage_coeffs_for_event(event, _gun_kind_for_data(event), _ammo_kind_for_data(event), _projectile_runtime_constants(), Callable(self, "_gun_current_multiplier_for_projectile_service"))
+		var fields: Dictionary = Dictionary(coeffs.get("fields", {}))
+		for key in fields.keys():
+			event[key] = fields[key]
+		return {"ammo": float(coeffs.get("ammo", 1.0)), "gun": float(coeffs.get("gun", 1.0))}
 	var gun_mult := _gun_projectile_damage_mult_for_event(event)
 	event["gun_projectile_damage_mult_current"] = gun_mult
 	event["gun_projectile_damage_mult"] = _gun_projectile_damage_mult_max_for_data(event)
@@ -35999,11 +37227,15 @@ func _projectile_raw_damage_for_event(attacker, target, event: Dictionary) -> fl
 	var projectile_momentum := _projectile_collision_momentum(attacker, target, event)
 	if projectile_momentum <= 0.0:
 		return 0.0
+	if projectile_runtime_service != null:
+		return projectile_runtime_service.projectile_raw_damage_for_momentum(event, projectile_momentum, _gun_kind_for_data(event), _ammo_kind_for_data(event), _projectile_runtime_constants(), Callable(self, "_gun_current_multiplier_for_projectile_service"))
 	var coeffs := _projectile_damage_coeffs_for_event(event)
 	return projectile_momentum * float(coeffs.get("gun", 1.0))
 
 
 func _default_recoil_transfer_for_projectile(event: Dictionary) -> float:
+	if projectile_runtime_service != null:
+		return projectile_runtime_service.default_recoil_transfer_for_projectile(event)
 	match _projectile_behavior_key(event):
 		"true_bullet":
 			return 0.85
@@ -36045,26 +37277,34 @@ func _apply_weapon_recoil_from_momentum(shooter, event: Dictionary) -> void:
 
 
 func _apply_projectile_momentum_stagger(attacker, target, event: Dictionary, momentum_scale: float = 1.0) -> void:
-	if not bool(event.get("projectile", false)) or not _unit_role_is_mech(target):
-		return
-	if _combo_opportunity_active(target):
+	var target_is_mech := _unit_role_is_mech(target)
+	if not bool(event.get("projectile", false)) or not target_is_mech:
 		return
 	var projectile_momentum := _projectile_collision_momentum(attacker, target, event, momentum_scale)
 	var direction := _event_direction_vector(attacker, target, event, Vector2(float(target.facing), 0.0))
-	if projectile_momentum < MELEE_STAGGER_MIN_MOMENTUM:
-		return
 	var threshold := _unit_melee_stability_threshold(target)
-	var gap := projectile_momentum - threshold
-	if gap <= 0.0:
-		return
 	var now := Time.get_ticks_msec() * 0.001
-	if now < float(target.get_meta("melee_stagger_gate_until", 0.0)):
+	var intent := _battle_hit_resolution_service().momentum_response_intent({
+		"kind": "projectile_stagger",
+		"projectile": bool(event.get("projectile", false)),
+		"target_mech": target_is_mech,
+		"combo_active": _combo_opportunity_active(target),
+		"projectile_momentum": projectile_momentum,
+		"min_momentum": MELEE_STAGGER_MIN_MOMENTUM,
+		"threshold": threshold,
+		"threshold_floor": MELEE_STABILITY_THRESHOLD_FLOOR,
+		"base_seconds": MELEE_STAGGER_BASE_SECONDS,
+		"ratio_seconds": PROJECTILE_STAGGER_RATIO_SECONDS,
+		"max_seconds": PROJECTILE_STAGGER_MAX_SECONDS,
+		"gate_seconds": MELEE_STAGGER_GATE_SECONDS,
+		"gate_until": float(target.get_meta("melee_stagger_gate_until", 0.0)),
+		"now": now,
+	})
+	if String(intent.get("action", "")) != "apply_projectile_stagger":
 		return
-	var ratio := gap / maxf(MELEE_STABILITY_THRESHOLD_FLOOR, threshold)
-	var duration := clampf(MELEE_STAGGER_BASE_SECONDS + ratio * PROJECTILE_STAGGER_RATIO_SECONDS, 0.0, PROJECTILE_STAGGER_MAX_SECONDS)
-	if duration <= 0.025:
-		return
-	target.set_meta("melee_stagger_gate_until", now + MELEE_STAGGER_GATE_SECONDS)
+	var duration := float(intent.get("duration", 0.0))
+	var gap := float(intent.get("gap", 0.0))
+	target.set_meta("melee_stagger_gate_until", float(intent.get("gate_until", now + MELEE_STAGGER_GATE_SECONDS)))
 	if target.has_method("apply_melee_stagger"):
 		target.apply_melee_stagger(duration, gap, threshold)
 	else:
@@ -36078,8 +37318,8 @@ func _apply_projectile_momentum_stagger(attacker, target, event: Dictionary, mom
 	elif event.has("projectile_impact_position") and event["projectile_impact_position"] is Vector2:
 		impact_combat = event["projectile_impact_position"]
 	_apply_local_hitstop(attacker, target, MELEE_STAGGER_HITSTOP_SECONDS)
-	_spawn_combo_ripple(impact_combat, int(target.owner_id), clampf(actual_duration / maxf(0.1, PROJECTILE_STAGGER_MAX_SECONDS), 0.75, 1.35))
-	var impulse := clampf((projectile_momentum - threshold) * 0.0028, 0.025, 0.42)
+	_spawn_combo_ripple(impact_combat, int(target.owner_id), float(intent.get("ripple_scale", clampf(actual_duration / maxf(0.1, PROJECTILE_STAGGER_MAX_SECONDS), 0.75, 1.35))))
+	var impulse := float(intent.get("impulse", clampf((projectile_momentum - threshold) * 0.0028, 0.025, 0.42)))
 	target.velocity += direction * impulse * _unit_impulse_motion_mult(target)
 	if target.has_method("apply_physics_impulse"):
 		target.apply_physics_impulse(direction, impulse, int(event.get("target_part_index", -1)), 0.0)
@@ -36358,6 +37598,8 @@ func _apply_unit_displacement(unit, direction: Vector2, distance: float) -> void
 
 
 func _heat_tags_for_projectile_event(event: Dictionary) -> Array:
+	if projectile_runtime_service != null:
+		return projectile_runtime_service.heat_tags_for_projectile_event(event)
 	var tags: Array = ["projectile"]
 	var tag_source := ""
 	for key in ["gun_kind", "ammo_kind", "projectile_style", "projectile_behavior", "module_action_profile"]:
@@ -36374,6 +37616,8 @@ func _heat_tags_for_projectile_event(event: Dictionary) -> Array:
 
 
 func _heat_reason_for_tags(tags: Array, source: String = "") -> String:
+	if projectile_runtime_service != null:
+		return projectile_runtime_service.heat_reason_for_tags(tags, source)
 	var reason_tags: Array = []
 	for raw_tag in tags:
 		var tag := String(raw_tag).strip_edges().to_lower()
@@ -36392,6 +37636,8 @@ func _heat_reason_for_tags(tags: Array, source: String = "") -> String:
 
 
 func _heat_reason_for_projectile_event(event: Dictionary) -> String:
+	if projectile_runtime_service != null:
+		return projectile_runtime_service.heat_reason_for_projectile_event(event)
 	return _heat_reason_for_tags(_heat_tags_for_projectile_event(event), "projectile")
 
 
@@ -36444,68 +37690,92 @@ func _apply_hit_displacement(attacker, target, event: Dictionary, damage: int, n
 		)
 		if event_momentum <= 0.001:
 			event_momentum = maxf(base_knock * direct_attacker_mass, float(damage_for_knock) * 0.42)
-		var direct_transfer := event_momentum * (0.82 if bool(event.get("projectile", false)) else 0.58)
-		if nullified:
-			direct_transfer *= 0.35
-		direct_transfer *= clampf(combo_knock_mult, 1.0, minf(COMBO_KNOCK_MAX_MULT, 1.65))
-		if direct_transfer <= 0.001:
+		var direct_intent := _battle_hit_resolution_service().momentum_response_intent({
+			"kind": "hit_displacement_direct",
+			"event_momentum": event_momentum,
+			"fallback_momentum": maxf(base_knock * direct_attacker_mass, float(damage_for_knock) * 0.42),
+			"projectile": bool(event.get("projectile", false)),
+			"nullified": nullified,
+			"combo_knock_mult": combo_knock_mult,
+			"combo_knock_max_mult": COMBO_KNOCK_MAX_MULT,
+			"attacker_mass": direct_attacker_mass,
+			"target_mass": direct_target_mass,
+		})
+		if String(direct_intent.get("action", "")) != "apply_direct_displacement":
 			return
-		var target_velocity_impulse := direct_transfer / maxf(1.0, direct_target_mass)
+		var target_velocity_impulse := float(direct_intent.get("target_velocity_impulse", 0.0))
 		target.velocity += direction * target_velocity_impulse
 		if not bool(event.get("projectile", false)):
 			var direct_attacker_part_index := int(event.get("muscle_node", -1))
-			var attacker_velocity_impulse := direct_transfer / maxf(1.0, direct_attacker_mass)
+			var attacker_velocity_impulse := float(direct_intent.get("attacker_velocity_impulse", 0.0))
 			if attacker.has_method("apply_attack_reaction"):
 				attacker.apply_attack_reaction(-direction, attacker_velocity_impulse, direct_attacker_part_index, bool(event.get("recoil_countered", false)))
 			elif not _unit_is_anchored_barrier(attacker):
 				attacker.velocity -= direction * attacker_velocity_impulse
 		return
 	if bool(event.get("projectile", false)):
-		var projectile_push := base_knock * PROJECTILE_SPACE_IMPULSE_MULT * (0.82 if nullified else 1.0) * (1.0 + clampf(float(damage_for_knock) / 80.0, 0.0, 0.45))
-		projectile_push *= combo_knock_mult
-		var target_mass := _unit_effective_mass(target)
 		var target_anchor := _unit_posture_anchor(target, maxf(1.0, float(event.get("momentum", damage))))
-		_apply_unit_displacement(target, direction, projectile_push * (1.0 - target_anchor * 0.28))
-		target.velocity += direction * projectile_push * 1.65 * _unit_impulse_motion_mult(target)
+		var projectile_intent := _battle_hit_resolution_service().momentum_response_intent({
+			"kind": "hit_displacement_projectile",
+			"base_knock": base_knock,
+			"projectile_space_impulse_mult": PROJECTILE_SPACE_IMPULSE_MULT,
+			"nullified": nullified,
+			"damage_for_knock": damage_for_knock,
+			"combo_knock_mult": combo_knock_mult,
+			"target_anchor": target_anchor,
+			"target_impulse_mult": _unit_impulse_motion_mult(target),
+		})
+		var projectile_push := float(projectile_intent.get("projectile_push", 0.0))
+		_apply_unit_displacement(target, direction, float(projectile_intent.get("target_displacement", 0.0)))
+		target.velocity += direction * float(projectile_intent.get("target_velocity_impulse", 0.0))
 		if target.has_method("apply_physics_impulse"):
 			target.apply_physics_impulse(direction, projectile_push, int(event.get("target_part_index", -1)), 0.0)
 		return
 
 	var attacker_mass := _unit_effective_mass(attacker)
 	var target_mass := _unit_effective_mass(target)
-	var total_mass := attacker_mass + target_mass
-	var attacker_share := clampf(target_mass / total_mass, 0.1, 0.9)
-	var target_share := clampf(attacker_mass / total_mass, 0.1, 0.9)
 	var attacker_anchor := _unit_posture_anchor(attacker, target_mass)
 	var target_anchor := _unit_posture_anchor(target, attacker_mass)
-	var impact_scale := 0.38 if nullified else 1.0
 	var part_radius := _unit_contact_radius(target) * 0.08
 	var damage_type := String(event.get("damage_type", "blunt"))
-	var blunt_launch_mult := 2.0 if damage_type == "blunt" else 1.0
-	var space_impulse := maxf(0.22, base_knock * 2.8 + float(damage_for_knock) * 0.006 + part_radius) * MELEE_SPACE_IMPULSE_MULT * blunt_launch_mult * impact_scale
-	space_impulse *= combo_knock_mult
-	var attacker_move := space_impulse * attacker_share * (1.0 - attacker_anchor)
-	var target_move := space_impulse * target_share * (1.0 - target_anchor * 0.36)
+	var melee_intent := _battle_hit_resolution_service().momentum_response_intent({
+		"kind": "hit_displacement_melee",
+		"attacker_mass": attacker_mass,
+		"target_mass": target_mass,
+		"attacker_anchor": attacker_anchor,
+		"target_anchor": target_anchor,
+		"nullified": nullified,
+		"part_radius": part_radius,
+		"damage_type": damage_type,
+		"base_knock": base_knock,
+		"damage_for_knock": damage_for_knock,
+		"melee_space_impulse_mult": MELEE_SPACE_IMPULSE_MULT,
+		"combo_knock_mult": combo_knock_mult,
+		"attacker_impulse_mult": _unit_impulse_motion_mult(attacker),
+		"target_impulse_mult": _unit_impulse_motion_mult(target),
+	})
+	var attacker_move := float(melee_intent.get("attacker_move", 0.0))
+	var target_move := float(melee_intent.get("target_move", 0.0))
 	var attacker_residual_move := attacker_move
 	var attacker_part_index := int(event.get("muscle_node", -1))
 	if attacker.has_method("apply_attack_reaction"):
-		var requested_velocity_impulse := attacker_move * 2.2 * _unit_impulse_motion_mult(attacker)
+		var requested_velocity_impulse := float(melee_intent.get("requested_attacker_velocity_impulse", attacker_move * 2.2 * _unit_impulse_motion_mult(attacker)))
 		var residual_velocity: float = attacker.apply_attack_reaction(-direction, requested_velocity_impulse, attacker_part_index, bool(event.get("recoil_countered", false)))
 		var residual_ratio := 0.0 if requested_velocity_impulse <= 0.001 else clampf(residual_velocity / requested_velocity_impulse, 0.0, 1.0)
 		attacker_residual_move = attacker_move * residual_ratio
 	else:
-		attacker.velocity -= direction * attacker_move * 2.2 * _unit_impulse_motion_mult(attacker)
+		attacker.velocity -= direction * float(melee_intent.get("requested_attacker_velocity_impulse", attacker_move * 2.2 * _unit_impulse_motion_mult(attacker)))
 	_apply_unit_displacement(attacker, -direction, attacker_residual_move)
 	_apply_unit_displacement(target, direction, target_move)
-	target.velocity += direction * target_move * 2.55 * _unit_impulse_motion_mult(target)
+	target.velocity += direction * float(melee_intent.get("target_velocity_impulse", target_move * 2.55 * _unit_impulse_motion_mult(target)))
 	var target_part_index := int(event.get("target_part_index", -1))
 	if attacker.has_method("apply_physics_impulse") and not attacker.has_method("apply_attack_reaction"):
 		attacker.apply_physics_impulse(-direction, attacker_move, attacker_part_index, 0.0)
 	if target.has_method("apply_physics_impulse"):
 		target.apply_physics_impulse(direction, target_move, target_part_index, 0.0)
-	attacker.boost_flash_timer = maxf(float(attacker.boost_flash_timer), 0.13 + attacker_anchor * 0.1)
+	attacker.boost_flash_timer = maxf(float(attacker.boost_flash_timer), float(melee_intent.get("attacker_flash", 0.13 + attacker_anchor * 0.1)))
 	if target_anchor > 0.08:
-		target.boost_flash_timer = maxf(float(target.boost_flash_timer), 0.06 + target_anchor * 0.04)
+		target.boost_flash_timer = maxf(float(target.boost_flash_timer), float(melee_intent.get("target_flash", 0.06 + target_anchor * 0.04)))
 
 
 func _update_units(delta: float, refresh_screen_positions: bool = true) -> void:
@@ -37073,6 +38343,8 @@ func _update_laser_telegraphs(delta: float) -> void:
 
 
 func _projectile_behavior_for_data(data: Dictionary) -> String:
+	if projectile_runtime_service != null:
+		return projectile_runtime_service.projectile_behavior_for_data(data)
 	var behavior := String(data.get("projectile_behavior", ""))
 	if behavior != "":
 		return behavior
@@ -37185,12 +38457,14 @@ func _true_bullet_lock_color(attacker) -> Color:
 
 
 func _true_bullet_direction_to_target(attacker, target) -> Vector2:
-	if not _is_live_unit(attacker) or not _is_live_unit(target):
-		return _unit_forward_vector(attacker)
-	var delta := _mobius_delta_vec_between(attacker, target)
-	if delta.length() <= 0.01:
-		return _unit_forward_vector(attacker)
-	return delta.normalized()
+	var subjects_live := _is_live_unit(attacker) and _is_live_unit(target)
+	var delta := _mobius_delta_vec_between(attacker, target) if subjects_live else Vector2.ZERO
+	var intent := _battle_target_acquisition_service().normalized_target_direction({
+		"target_live": subjects_live,
+		"delta": delta,
+		"fallback_direction": _unit_forward_vector(attacker),
+	})
+	return intent.get("direction", _unit_forward_vector(attacker))
 
 
 func _true_bullet_event_for_aim(attacker, direction: Vector2, group: Dictionary, attack_index: int, base_event: Dictionary = {}) -> Dictionary:
@@ -37213,10 +38487,15 @@ func _true_bullet_event_for_aim(attacker, direction: Vector2, group: Dictionary,
 func _acquire_true_bullet_target(attacker, event: Dictionary):
 	if not _is_live_unit(attacker):
 		return null
-	var direction: Vector2 = event.get("direction", _unit_forward_vector(attacker))
-	if direction.length() <= 0.01:
-		direction = _unit_forward_vector(attacker)
-	direction = direction.normalized()
+	var raw_direction := _unit_forward_vector(attacker)
+	if event.has("direction") and event["direction"] is Vector2 and Vector2(event["direction"]).length() > 0.01:
+		raw_direction = event["direction"]
+	var direction_intent := _battle_target_acquisition_service().normalized_target_direction({
+		"target_live": false,
+		"delta": Vector2.ZERO,
+		"fallback_direction": raw_direction,
+	})
+	var direction: Vector2 = direction_intent.get("direction", _unit_forward_vector(attacker))
 	var test_event := event.duplicate(true)
 	test_event["direction"] = direction
 	test_event["range"] = _laser_visible_world_range(attacker, direction)
@@ -37225,8 +38504,8 @@ func _acquire_true_bullet_target(attacker, event: Dictionary):
 	if collider.is_empty():
 		return null
 	var start: Vector2 = collider.get("a", Vector2(attacker.ring_pos, attacker.lane))
-	var best = null
-	var best_distance := 999999.0
+	var candidates: Array = []
+	var candidate_targets: Array = []
 	for target in _enemy_units(int(attacker.owner_id)):
 		if not _is_live_unit(target):
 			continue
@@ -37236,14 +38515,35 @@ func _acquire_true_bullet_target(attacker, event: Dictionary):
 		var hit_position: Vector2 = hit.get("position", Vector2(target.ring_pos, target.lane))
 		var delta := _mobius_delta_points(start.x, start.y, hit_position.x, hit_position.y)
 		var distance := delta.dot(direction)
-		if distance >= 0.0 and distance < best_distance:
-			best_distance = distance
-			best = target
-	if best == null:
+		var target_index := candidate_targets.size()
+		candidate_targets.append(target)
+		candidates.append(_battle_target_acquisition_service().true_bullet_candidate_intent({
+			"candidate_live": true,
+			"has_hit": true,
+			"target_index": target_index,
+			"distance": distance,
+			"position": hit_position,
+			"hit": hit,
+		}))
+	var selection := _battle_target_acquisition_service().true_bullet_target_selection(candidates)
+	if not bool(selection.get("found", false)):
 		var wrapped_hit := _sniper_wrapped_aim_query(attacker, start, direction)
 		if not wrapped_hit.is_empty() and _is_live_unit(wrapped_hit.get("target", null)):
-			best = wrapped_hit.get("target", null)
-	return best
+			var wrapped_target = wrapped_hit.get("target", null)
+			var wrapped_index := candidate_targets.size()
+			candidate_targets.append(wrapped_target)
+			selection = _battle_target_acquisition_service().true_bullet_target_selection([], {
+				"candidate_live": true,
+				"target_index": wrapped_index,
+				"distance": float(wrapped_hit.get("distance", 999999.0)),
+				"position": wrapped_hit.get("position", Vector2(wrapped_target.ring_pos, wrapped_target.lane)),
+				"hit": Dictionary(wrapped_hit.get("hit", {})),
+			})
+	var selected_index := int(selection.get("target_index", -1))
+	if selected_index < 0 or selected_index >= candidate_targets.size():
+		return null
+	var selected_target = candidate_targets[selected_index]
+	return selected_target if _is_live_unit(selected_target) else null
 
 
 func _missile_target_class(target) -> String:
@@ -37262,23 +38562,16 @@ func _missile_target_class(target) -> String:
 			if Array(roster.get("puppet", [])).has(target):
 				role_key = "puppet"
 				break
-	if role_key == "hero" or role_key == "puppet":
-		return role_key
-	if role_key != "barrier":
-		return "barrier_other"
-	if bool(target.stats.get("is_repair_station", false)) or bool(target.stats.get("is_coolant_field", false)) or bool(target.stats.get("is_coin_generator", false)) or bool(target.stats.get("is_resource_siphon", false)):
-		return "barrier_support"
-	var support_kind := String(target.stats.get("support_kind", ""))
-	if support_kind in ["ammo", "repair", "cooling", "damage_buff", "armor", "resource"]:
-		return "barrier_support"
-	if bool(target.stats.get("is_barrage_emitter", false)) or bool(target.stats.get("is_trap_field", false)) or bool(target.stats.get("is_homing_launcher", false)) or bool(target.stats.get("is_hatchery", false)) or bool(target.stats.get("is_signal_jammer", false)) or bool(target.stats.get("is_hack_field", false)) or bool(target.stats.get("is_cage_wall", false)) or bool(target.stats.get("reflect_projectiles", false)):
-		return "barrier_attack"
-	return "barrier_other"
+	return _battle_target_acquisition_service().target_class({
+		"live": true,
+		"role": role_key,
+		"stats": target.stats,
+	})
 
 
 func _missile_target_class_allowed(target_class: String, event: Dictionary) -> bool:
 	var classes: Array = Array(event.get("missile_lock_target_classes", ["hero", "puppet", "barrier_support", "barrier_attack", "barrier_other"]))
-	return classes.is_empty() or classes.has(target_class)
+	return _battle_target_acquisition_service().target_class_allowed(target_class, classes)
 
 
 func _missile_target_visible_same_screen(target) -> bool:
@@ -37292,85 +38585,88 @@ func _missile_lock_score(attacker, target, event: Dictionary, direction: Vector2
 	var target_delta := _mobius_delta_vec_between(attacker, target)
 	var distance := target_delta.length()
 	var target_dir := target_delta.normalized() if distance > 0.001 else direction
-	var aim_error := acos(clampf(direction.normalized().dot(target_dir), -1.0, 1.0))
-	var target_class := _missile_target_class(target)
-	var priority := String(event.get("missile_lock_priority", "screen_hero_first"))
-	if priority == "near_first":
-		return distance * 1000.0 + aim_error * 10.0
-	if priority == "far_first":
-		return -distance * 1000.0 + aim_error * 10.0
-	var role_rank := 4.0
-	match target_class:
-		"hero":
-			role_rank = 0.0
-		"puppet":
-			role_rank = 1.0
-		"barrier_support":
-			role_rank = 2.0
-		"barrier_attack":
-			role_rank = 3.0
-	var screen_rank := 0.0 if _missile_target_visible_same_screen(target) else 1.0
-	return role_rank * 1000000.0 + screen_rank * 100000.0 + aim_error * 1000.0 + distance
+	return _battle_target_acquisition_service().missile_lock_score({
+		"delta": target_delta,
+		"distance": distance,
+		"direction": direction,
+		"target_direction": target_dir,
+		"target_class": _missile_target_class(target),
+		"priority": String(event.get("missile_lock_priority", "screen_hero_first")),
+		"screen_visible": _missile_target_visible_same_screen(target),
+	})
 
 
 func _acquire_missile_lock_target(attacker, event: Dictionary):
 	if not _is_live_unit(attacker):
 		return null
-	var direction: Vector2 = event.get("direction", _unit_forward_vector(attacker))
-	if direction.length() <= 0.01:
-		direction = _unit_forward_vector(attacker)
-	direction = direction.normalized()
+	var raw_direction := _unit_forward_vector(attacker)
+	if event.has("direction") and event["direction"] is Vector2 and Vector2(event["direction"]).length() > 0.01:
+		raw_direction = event["direction"]
+	var direction_intent := _battle_target_acquisition_service().normalized_target_direction({
+		"target_live": false,
+		"delta": Vector2.ZERO,
+		"fallback_direction": raw_direction,
+	})
+	var direction: Vector2 = direction_intent.get("direction", _unit_forward_vector(attacker))
 	var max_range := maxf(0.1, float(event.get("missile_lock_range", event.get("range", STANDARD_MISSILE_RANGE_M))))
 	var cone_cos := cos(deg_to_rad(clampf(float(event.get("missile_lock_cone_degrees", 52.0)), 1.0, 178.0)) * 0.5)
-	var best = null
-	var best_score := 1.0e20
+	var candidates: Array = []
+	var candidate_targets: Array = []
 	for target in _enemy_units(int(attacker.owner_id)):
 		if not _is_live_unit(target):
 			continue
 		var target_class := _missile_target_class(target)
-		if not _missile_target_class_allowed(target_class, event):
-			continue
 		var delta := _mobius_delta_vec_between(attacker, target)
 		var distance := delta.length()
-		if distance <= 0.001 or distance > max_range:
+		var target_dir := delta / distance if distance > 0.001 else direction
+		var target_index := candidate_targets.size()
+		candidate_targets.append(target)
+		var candidate := _battle_target_acquisition_service().missile_candidate_intent({
+			"candidate_live": true,
+			"target_index": target_index,
+			"target_class": target_class,
+			"allowed_classes": Array(event.get("missile_lock_target_classes", ["hero", "puppet", "barrier_support", "barrier_attack", "barrier_other"])),
+			"distance": distance,
+			"max_range": max_range,
+			"direction": direction,
+			"target_direction": target_dir,
+			"cone_cos": cone_cos,
+			"occluded": _map_line_occluded(attacker, target, event),
+		})
+		if String(candidate.get("action", "accept")) == "reject":
 			continue
-		var target_dir := delta / distance
-		if direction.dot(target_dir) < cone_cos:
-			continue
-		if _map_line_occluded(attacker, target, event):
-			continue
-		var score := _missile_lock_score(attacker, target, event, direction)
-		if score < best_score:
-			best_score = score
-			best = target
-	return best
+		candidate["score"] = _battle_target_acquisition_service().missile_lock_score({
+			"delta": delta,
+			"distance": distance,
+			"direction": direction,
+			"target_direction": target_dir,
+			"target_class": target_class,
+			"priority": String(event.get("missile_lock_priority", "screen_hero_first")),
+			"screen_visible": _missile_target_visible_same_screen(target),
+		})
+		candidates.append(candidate)
+	var selection := _battle_target_acquisition_service().missile_target_selection(candidates)
+	var selected_index := int(selection.get("target_index", -1))
+	if selected_index < 0 or selected_index >= candidate_targets.size():
+		return null
+	var selected_target = candidate_targets[selected_index]
+	return selected_target if _is_live_unit(selected_target) else null
 
 
 func _missile_direction_to_target(attacker, target, fallback: Vector2 = Vector2.ZERO) -> Vector2:
-	if _is_live_unit(attacker) and _is_live_unit(target):
-		var delta := _mobius_delta_vec_between(attacker, target)
-		if delta.length() > 0.01:
-			return delta.normalized()
-	if fallback.length() > 0.01:
-		return fallback.normalized()
-	return _unit_forward_vector(attacker)
+	var subjects_live := _is_live_unit(attacker) and _is_live_unit(target)
+	var delta := _mobius_delta_vec_between(attacker, target) if subjects_live else Vector2.ZERO
+	var fallback_direction := fallback if fallback.length() > 0.01 else _unit_forward_vector(attacker)
+	var intent := _battle_target_acquisition_service().normalized_target_direction({
+		"target_live": subjects_live,
+		"delta": delta,
+		"fallback_direction": fallback_direction,
+	})
+	return intent.get("direction", fallback_direction)
 
 
 func _map_occlusion_kind_for_data(data: Dictionary, fallback: Dictionary = {}) -> String:
-	var material_class := String(data.get("material_class", fallback.get("material_class", ""))).to_lower()
-	var shape := String(data.get("shape", fallback.get("shape", ""))).to_lower()
-	var family := String(data.get("panel_family", fallback.get("panel_family", ""))).to_lower()
-	if bool(data.get("is_one_way_shield", fallback.get("is_one_way_shield", false))) or material_class == "one_way_shield":
-		return MAP_OCCLUSION_ONE_WAY
-	if bool(data.get("is_cage_wall", fallback.get("is_cage_wall", false))):
-		return MAP_OCCLUSION_CAGE
-	if bool(data.get("reflect_projectiles", fallback.get("reflect_projectiles", false))) or material_class == "reflector" or family == "reflector":
-		return MAP_OCCLUSION_REFLECTOR
-	if material_class in ["barrier_wall", "signal_jammer"] or material_class.contains("wall_joint") or material_class.contains("corner_joint"):
-		return MAP_OCCLUSION_SOLID
-	if family == "wall" or shape.contains("wall") or shape.contains("bulkhead") or shape.contains("cage") or shape.contains("corner"):
-		return MAP_OCCLUSION_SOLID
-	return MAP_OCCLUSION_NONE
+	return _battle_map_occlusion_service().occlusion_kind_for_data(data, fallback)
 
 
 func _map_occlusion_kind_for_collider(unit, collider: Dictionary) -> String:
@@ -37386,34 +38682,31 @@ func _map_occlusion_collider_for_event(attacker, event: Dictionary) -> Dictionar
 	if not _is_live_unit(attacker):
 		return {}
 	var direction: Vector2 = event.get("direction", _unit_forward_vector(attacker))
-	if direction.length() <= 0.01:
-		direction = _unit_forward_vector(attacker)
-	direction = direction.normalized()
-	var start := _combat_patch_origin_for_unit(attacker)
-	var path_range := maxf(0.04, float(event.get("range", event.get("projectile_range", VIEW_WIDTH))))
-	var width := maxf(float(event.get("projectile_width_m", 0.0)), float(event.get("lane_range", 0.08)))
-	return {
-		"shape": "capsule",
-		"a": start,
-		"b": start + direction * path_range,
-		"radius": maxf(0.018, width * 0.5),
-	}
+	return _battle_map_occlusion_service().path_collider_for_event({
+		"attacker_live": true,
+		"start": _combat_patch_origin_for_unit(attacker),
+		"direction": direction,
+		"fallback_direction": _unit_forward_vector(attacker),
+		"range": float(event.get("range", event.get("projectile_range", VIEW_WIDTH))),
+		"projectile_range": float(event.get("projectile_range", VIEW_WIDTH)),
+		"default_range": VIEW_WIDTH,
+		"projectile_width_m": float(event.get("projectile_width_m", 0.0)),
+		"lane_range": float(event.get("lane_range", 0.08)),
+	})
 
 
 func _map_occlusion_collider_between(attacker, target, event: Dictionary) -> Dictionary:
 	if not _is_live_unit(attacker) or not _is_live_unit(target):
 		return {}
-	var start := _combat_patch_origin_for_unit(attacker)
 	var delta := _mobius_delta_vec_between(attacker, target)
-	if delta.length() <= 0.01:
-		return {}
-	var width := maxf(float(event.get("projectile_width_m", 0.0)), float(event.get("lane_range", 0.08)))
-	return {
-		"shape": "capsule",
-		"a": start,
-		"b": start + delta,
-		"radius": maxf(0.018, width * 0.5),
-	}
+	return _battle_map_occlusion_service().path_collider_between({
+		"attacker_live": true,
+		"target_live": true,
+		"start": _combat_patch_origin_for_unit(attacker),
+		"delta": delta,
+		"projectile_width_m": float(event.get("projectile_width_m", 0.0)),
+		"lane_range": float(event.get("lane_range", 0.08)),
+	})
 
 
 func _map_occlusion_query_for_path(attacker, path_collider: Dictionary, event: Dictionary, skip_units: Array = []) -> Dictionary:
@@ -37426,8 +38719,8 @@ func _map_occlusion_query_for_path(attacker, path_collider: Dictionary, event: D
 	if path_length <= 0.01:
 		return {}
 	direction = direction / path_length
-	var best: Dictionary = {}
-	var best_distance := 999999.0
+	var candidates: Array = []
+	var candidate_blockers: Array = []
 	for blocker in all_units:
 		if blocker == attacker or skip_units.has(blocker) or not _is_live_unit(blocker):
 			continue
@@ -37439,28 +38732,27 @@ func _map_occlusion_query_for_path(attacker, path_collider: Dictionary, event: D
 			if kind == MAP_OCCLUSION_NONE:
 				continue
 			var blocker_collider := _shift_collider_to_origin(raw_blocker_collider, start.x, start.y)
-			if _collider_gap(path_collider, blocker_collider) > 0.0:
-				continue
-			if kind == MAP_OCCLUSION_ONE_WAY and _one_way_shield_allows_projectile(blocker, attacker, direction):
-				continue
-			var center := _collider_center(blocker_collider)
-			var projection := (center - start).dot(direction)
-			var extent := _collider_extent_radius(blocker_collider)
-			if projection < -extent or projection > path_length + extent:
-				continue
-			var distance := clampf(projection, 0.0, path_length)
-			if distance >= best_distance:
-				continue
-			best_distance = distance
-			best = {
+			var candidate_index := candidate_blockers.size()
+			candidate_blockers.append(blocker)
+			var candidate := _battle_map_occlusion_service().blocker_candidate_intent({
 				"kind": kind,
-				"blocker": blocker,
 				"blocker_name": String(blocker.unit_name),
-				"position": start + direction * distance,
-				"distance": distance,
-				"collider": blocker_collider.duplicate(true),
-			}
-	return best
+				"start": start,
+				"direction": direction,
+				"path_length": path_length,
+				"gap": _collider_gap(path_collider, blocker_collider),
+				"one_way_pass": kind == MAP_OCCLUSION_ONE_WAY and _one_way_shield_allows_projectile(blocker, attacker, direction),
+				"center": _collider_center(blocker_collider),
+				"extent": _collider_extent_radius(blocker_collider),
+				"candidate_index": candidate_index,
+				"collider": blocker_collider,
+			})
+			candidates.append(candidate)
+	var query := _battle_map_occlusion_service().occlusion_query_from_candidates({"candidates": candidates})
+	var index := int(query.get("candidate_index", -1))
+	if index >= 0 and index < candidate_blockers.size():
+		query["blocker"] = candidate_blockers[index]
+	return query
 
 
 func _map_occlusion_query_for_event(attacker, event: Dictionary, skip_units: Array = []) -> Dictionary:
@@ -37473,15 +38765,15 @@ func _map_occlusion_query_between(attacker, target, event: Dictionary = {}) -> D
 
 func _map_occlusion_kind_between(attacker, target, event: Dictionary = {}) -> String:
 	var query := _map_occlusion_query_between(attacker, target, event)
-	return String(query.get("kind", MAP_OCCLUSION_NONE))
+	return _battle_map_occlusion_service().occlusion_kind_from_query(query)
 
 
 func _map_line_occluded(attacker, target, event: Dictionary = {}) -> bool:
-	return _map_occlusion_kind_between(attacker, target, event) != MAP_OCCLUSION_NONE
+	return _battle_map_occlusion_service().line_occluded(_map_occlusion_query_between(attacker, target, event))
 
 
 func _map_line_of_sight_clear(attacker, target, event: Dictionary = {}) -> bool:
-	return not _map_line_occluded(attacker, target, event)
+	return _battle_map_occlusion_service().line_of_sight_clear(_map_occlusion_query_between(attacker, target, event))
 
 
 func _missile_target_occluded(attacker, target, event: Dictionary) -> bool:
@@ -37590,6 +38882,8 @@ func _update_true_bullet_locks(delta: float) -> void:
 
 
 func _is_chemical_projectile_event(event: Dictionary) -> bool:
+	if projectile_runtime_service != null:
+		return projectile_runtime_service.is_chemical_projectile_event(event)
 	if bool(event.get("non_damage", false)):
 		return false
 	if not bool(event.get("projectile", false)):
@@ -37599,6 +38893,12 @@ func _is_chemical_projectile_event(event: Dictionary) -> bool:
 
 
 func _prepare_chemical_projectile_event(event: Dictionary) -> void:
+	if projectile_runtime_service != null:
+		var prepared := projectile_runtime_service.prepared_chemical_projectile_event(event, _projectile_runtime_constants())
+		event.clear()
+		for key in prepared.keys():
+			event[key] = prepared[key]
+		return
 	event["damage_type"] = "chemical"
 	event["projectile_damage_type"] = "chemical"
 	if String(event.get("projectile_style", "")) == "":
@@ -37621,6 +38921,8 @@ func _prepare_chemical_projectile_event(event: Dictionary) -> void:
 
 
 func _chemical_firework_event(event: Dictionary) -> bool:
+	if projectile_runtime_service != null:
+		return projectile_runtime_service.chemical_firework_event(event)
 	var behavior := String(event.get("projectile_behavior", ""))
 	if behavior == "chemical_firework":
 		return true
@@ -37631,15 +38933,10 @@ func _chemical_firework_event(event: Dictionary) -> bool:
 func _queue_chemical_projectile(attacker, event: Dictionary) -> bool:
 	if not _is_live_unit(attacker):
 		return false
-	var shot_event := event.duplicate(true)
-	_prepare_chemical_projectile_event(shot_event)
-	var direction: Vector2 = shot_event.get("direction", _unit_forward_vector(attacker))
-	if direction.length() <= 0.01:
-		direction = _unit_forward_vector(attacker)
-	shot_event["direction"] = direction.normalized()
-	shot_event["chemical_projectile_ready"] = true
+	var queue_intent := projectile_runtime_service.chemical_queue_intent(event, event.get("direction", _unit_forward_vector(attacker)), _unit_forward_vector(attacker), _projectile_runtime_constants()) if projectile_runtime_service != null else _legacy_chemical_queue_intent(attacker, event)
+	var shot_event: Dictionary = Dictionary(queue_intent.get("event", event.duplicate(true)))
 	_apply_weapon_recoil_from_momentum(attacker, shot_event)
-	var travel_time := _chemical_projectile_travel_time(shot_event)
+	var travel_time := float(queue_intent.get("timer", _chemical_projectile_travel_time(shot_event)))
 	_spawn_projectile_trace(attacker, shot_event)
 	shot_event["projectile_trace_spawned"] = true
 	pending_chemical_projectiles.append({
@@ -37647,12 +38944,30 @@ func _queue_chemical_projectile(attacker, event: Dictionary) -> bool:
 		"event": shot_event,
 		"timer": travel_time,
 	})
-	attacker.set_meta("projectile_signal", travel_time + 0.12)
+	attacker.set_meta("projectile_signal", float(queue_intent.get("signal_time", travel_time + 0.12)))
 	_show_battle_message("%s CHEM SPLASH %.1fs" % [String(attacker.unit_name), travel_time], 0.48)
 	return true
 
 
+func _legacy_chemical_queue_intent(attacker, event: Dictionary) -> Dictionary:
+	var shot_event := event.duplicate(true)
+	_prepare_chemical_projectile_event(shot_event)
+	var direction: Vector2 = shot_event.get("direction", _unit_forward_vector(attacker))
+	if direction.length() <= 0.01:
+		direction = _unit_forward_vector(attacker)
+	shot_event["direction"] = direction.normalized()
+	shot_event["chemical_projectile_ready"] = true
+	var travel_time := _chemical_projectile_travel_time(shot_event)
+	return {
+		"event": shot_event,
+		"timer": travel_time,
+		"signal_time": travel_time + 0.12,
+	}
+
+
 func _chemical_projectile_travel_time(event: Dictionary) -> float:
+	if projectile_runtime_service != null:
+		return projectile_runtime_service.chemical_projectile_travel_time(event, _projectile_runtime_constants())
 	var travel_range := maxf(0.4, float(event.get("range", event.get("projectile_range", 1.2))))
 	var speed_mult := clampf(float(event.get("projectile_speed_mult", CHEMICAL_PROJECTILE_DEFAULT_SPEED_MULT)), 0.35, 1.45)
 	return clampf(travel_range / (2.15 * speed_mult), CHEMICAL_PROJECTILE_MIN_TRAVEL, CHEMICAL_PROJECTILE_MAX_TRAVEL)
@@ -37662,21 +38977,30 @@ func _update_chemical_projectiles(delta: float) -> void:
 	for index in range(pending_chemical_projectiles.size() - 1, -1, -1):
 		var shot: Dictionary = pending_chemical_projectiles[index]
 		var attacker = shot.get("attacker", null)
-		if not _is_live_unit(attacker):
-			pending_chemical_projectiles.remove_at(index)
-			continue
-		var timer := float(shot.get("timer", 0.0)) - delta
-		if timer <= 0.0:
-			pending_chemical_projectiles.remove_at(index)
-			var event: Dictionary = shot.get("event", {})
-			event["chemical_projectile_ready"] = true
-			_resolve_attack(attacker, event)
-			continue
-		shot["timer"] = timer
+		var intent := _battle_projectile_lifecycle_service().chemical_projectile_tick_intent({
+			"attacker_live": _is_live_unit(attacker),
+			"timer": float(shot.get("timer", 0.0)),
+			"delta": delta,
+		})
+		match String(intent.get("action", "")):
+			"remove":
+				pending_chemical_projectiles.remove_at(index)
+				continue
+			"resolve":
+				pending_chemical_projectiles.remove_at(index)
+				var event: Dictionary = shot.get("event", {})
+				var event_patch: Dictionary = Dictionary(intent.get("event_patch", {}))
+				for key in event_patch.keys():
+					event[key] = event_patch[key]
+				_resolve_attack(attacker, event)
+				continue
+		shot["timer"] = float(intent.get("timer", shot.get("timer", 0.0)))
 		pending_chemical_projectiles[index] = shot
 
 
 func _is_missile_projectile_event(event: Dictionary) -> bool:
+	if projectile_runtime_service != null:
+		return projectile_runtime_service.is_missile_projectile_event(event)
 	if bool(event.get("missile_flight_ready", false)):
 		return false
 	if bool(event.get("non_damage", false)):
@@ -37690,6 +39014,8 @@ func _missile_projectile_travel_time(attacker, target, event: Dictionary) -> flo
 	var range_hint := maxf(0.4, float(event.get("range", event.get("projectile_range", STANDARD_MISSILE_RANGE_M))))
 	if _is_live_unit(attacker) and _is_live_unit(target):
 		range_hint = maxf(0.2, _mobius_delta_vec_between(attacker, target).length())
+	if projectile_runtime_service != null:
+		return projectile_runtime_service.missile_projectile_travel_time(range_hint, event, _projectile_runtime_constants())
 	var speed_mult := clampf(float(event.get("projectile_speed_mult", STANDARD_MISSILE_SPEED_MULT)), 0.45, 1.45)
 	return clampf(range_hint / (2.05 * speed_mult), 0.38, 2.2)
 
@@ -37708,10 +39034,16 @@ func _queue_missile_projectile(attacker, event: Dictionary) -> bool:
 		_show_battle_message("%s MISSILE: no lock" % String(attacker.unit_name), 0.52)
 		return true
 	var direction := _missile_direction_to_target(attacker, target, Vector2(shot_event.get("direction", _unit_forward_vector(attacker))))
+	var target_distance := _mobius_delta_vec_between(attacker, target).length()
+	var queue_intent := projectile_runtime_service.missile_queue_intent(shot_event, direction, target_distance, _projectile_runtime_constants()) if projectile_runtime_service != null else {}
+	if not queue_intent.is_empty():
+		shot_event = Dictionary(queue_intent.get("event", shot_event))
+	else:
+		shot_event["aim_locked"] = true
+		shot_event["direction"] = direction
+		shot_event["range"] = maxf(float(shot_event.get("range", STANDARD_MISSILE_RANGE_M)), target_distance)
+		queue_intent = {"timer": _missile_projectile_travel_time(attacker, target, shot_event), "signal_time": _missile_projectile_travel_time(attacker, target, shot_event) + 0.12, "last_direction": direction}
 	shot_event["locked_target"] = target
-	shot_event["aim_locked"] = true
-	shot_event["direction"] = direction
-	shot_event["range"] = maxf(float(shot_event.get("range", STANDARD_MISSILE_RANGE_M)), _mobius_delta_vec_between(attacker, target).length())
 	_apply_weapon_recoil_from_momentum(attacker, shot_event)
 	_spawn_projectile_trace(attacker, shot_event)
 	shot_event["projectile_trace_spawned"] = true
@@ -37719,11 +39051,11 @@ func _queue_missile_projectile(attacker, event: Dictionary) -> bool:
 		"attacker": attacker,
 		"target": target,
 		"event": shot_event,
-		"timer": _missile_projectile_travel_time(attacker, target, shot_event),
+		"timer": float(queue_intent.get("timer", _missile_projectile_travel_time(attacker, target, shot_event))),
 		"occluded_for": 0.0,
-		"last_direction": direction,
+		"last_direction": queue_intent.get("last_direction", direction),
 	})
-	attacker.set_meta("projectile_signal", float(pending_missile_projectiles[pending_missile_projectiles.size() - 1].get("timer", 0.5)) + 0.12)
+	attacker.set_meta("projectile_signal", float(queue_intent.get("signal_time", float(pending_missile_projectiles[pending_missile_projectiles.size() - 1].get("timer", 0.5)) + 0.12)))
 	_show_battle_message("%s MISSILE LOCK" % String(attacker.unit_name), 0.5)
 	return true
 
@@ -37732,63 +39064,69 @@ func _update_missile_projectiles(delta: float) -> void:
 	for index in range(pending_missile_projectiles.size() - 1, -1, -1):
 		var shot: Dictionary = pending_missile_projectiles[index]
 		var attacker = shot.get("attacker", null)
-		if not _is_live_unit(attacker):
-			pending_missile_projectiles.remove_at(index)
-			continue
 		var event: Dictionary = shot.get("event", {})
 		var target = shot.get("target", null)
-		var last_direction: Vector2 = shot.get("last_direction", Vector2(event.get("direction", _unit_forward_vector(attacker))))
-		if _is_live_unit(target):
-			var current_direction := _missile_direction_to_target(attacker, target, last_direction)
-			if _missile_target_occluded(attacker, target, event):
-				shot["occluded_for"] = float(shot.get("occluded_for", 0.0)) + delta
-			else:
-				shot["occluded_for"] = 0.0
-				last_direction = current_direction
-			if float(shot.get("occluded_for", 0.0)) > float(event.get("missile_occlusion_grace", STANDARD_MISSILE_OCCLUSION_GRACE)):
-				target = null
-				shot["target"] = null
-				event.erase("locked_target")
-				event["aim_locked"] = false
-			else:
-				event["locked_target"] = target
-				event["direction"] = current_direction
-		event["direction"] = last_direction.normalized() if last_direction.length() > 0.01 else _unit_forward_vector(attacker)
-		shot["last_direction"] = event["direction"]
-		var timer := float(shot.get("timer", 0.0)) - delta
-		if timer <= 0.0:
+		var last_direction: Vector2 = shot.get("last_direction", Vector2(event.get("direction", _unit_forward_vector(attacker) if _is_live_unit(attacker) else Vector2.RIGHT)))
+		var target_live := _is_live_unit(target)
+		var current_direction := last_direction
+		var target_occluded := false
+		if _is_live_unit(attacker) and target_live:
+			current_direction = _missile_direction_to_target(attacker, target, last_direction)
+			target_occluded = _missile_target_occluded(attacker, target, event)
+		var intent := _battle_projectile_lifecycle_service().missile_projectile_tick_intent({
+			"attacker_live": _is_live_unit(attacker),
+			"target_live": target_live,
+			"target_occluded": target_occluded,
+			"current_direction": current_direction,
+			"last_direction": last_direction,
+			"fallback_direction": _unit_forward_vector(attacker) if _is_live_unit(attacker) else Vector2.RIGHT,
+			"timer": float(shot.get("timer", 0.0)),
+			"delta": delta,
+			"occluded_for": float(shot.get("occluded_for", 0.0)),
+			"occlusion_grace": float(event.get("missile_occlusion_grace", STANDARD_MISSILE_OCCLUSION_GRACE)),
+		})
+		if String(intent.get("action", "")) == "remove":
 			pending_missile_projectiles.remove_at(index)
-			event["missile_flight_ready"] = true
-			event["projectile_trace_spawned"] = true
+			continue
+		if bool(intent.get("target_lost", false)):
+			target = null
+			shot["target"] = null
+			event.erase("locked_target")
+			event["aim_locked"] = false
+		var event_patch: Dictionary = Dictionary(intent.get("event_patch", {}))
+		for key in event_patch.keys():
+			if key == "erase_locked_target":
+				event.erase("locked_target")
+			else:
+				event[key] = event_patch[key]
+		shot["occluded_for"] = float(intent.get("occluded_for", shot.get("occluded_for", 0.0)))
+		shot["last_direction"] = intent.get("last_direction", event.get("direction", last_direction))
+		if String(intent.get("action", "")) == "resolve":
+			pending_missile_projectiles.remove_at(index)
 			if _is_live_unit(target):
 				event["direction"] = _missile_direction_to_target(attacker, target, event["direction"])
 				event["locked_target"] = target
 				event["aim_locked"] = true
 			_resolve_attack(attacker, event)
 			continue
-		shot["timer"] = timer
+		shot["timer"] = float(intent.get("timer", shot.get("timer", 0.0)))
 		shot["event"] = event
 		pending_missile_projectiles[index] = shot
 
 
 func _resolve_chemical_firework(attacker, event: Dictionary) -> void:
-	var pellets := clampi(int(event.get("chemical_pellets", 7)), 3, 11)
-	var spread := clampf(float(event.get("chemical_spread", 0.54)), 0.12, 1.1)
 	var base_dir: Vector2 = event.get("direction", _unit_forward_vector(attacker))
 	if base_dir.length() <= 0.01:
 		base_dir = _unit_forward_vector(attacker)
 	base_dir = base_dir.normalized()
-	for i in range(pellets):
-		var t := 0.0 if pellets <= 1 else float(i) / float(pellets - 1)
-		var angle := lerpf(-spread * 0.5, spread * 0.5, t)
-		var pellet := event.duplicate(true)
-		pellet["chemical_firework_expanded"] = true
-		pellet["direction"] = base_dir.rotated(angle).normalized()
-		pellet["range"] = float(event.get("range", 1.0)) * (0.82 + 0.06 * float(i % 3))
-		pellet["lane_range"] = maxf(0.04, float(event.get("lane_range", 0.2)) * 0.62)
-		pellet["damage"] = maxi(1, int(roundf(float(event.get("damage", 1)) * 0.46)))
-		pellet["travel_path"] = "straight"
-		_resolve_attack(attacker, pellet)
+	for intent in _battle_projectile_lifecycle_service().chemical_firework_pellet_intents({
+		"event": event,
+		"pellets": int(event.get("chemical_pellets", 7)),
+		"spread": float(event.get("chemical_spread", 0.54)),
+		"base_direction": base_dir,
+	}):
+		if intent is Dictionary and String(Dictionary(intent).get("action", "")) == "resolve_pellet":
+			_resolve_attack(attacker, Dictionary(intent).get("event", event.duplicate(true)))
 
 
 func _projection_to_target(attacker, target, direction: Vector2) -> float:
@@ -37843,41 +39181,75 @@ func _first_projectile_impact(attacker, event: Dictionary) -> Dictionary:
 		return {}
 	if _unit_uses_direct_runtime_topology(attacker):
 		return _first_projectile_impact_gpu(attacker, event)
-	var direction: Vector2 = event.get("direction", _unit_forward_vector(attacker))
-	if direction.length() <= 0.01:
-		direction = _unit_forward_vector(attacker)
-	direction = direction.normalized()
-	var best: Dictionary = {}
-	var best_distance := 999999.0
+	var direction_intent := _battle_impact_query_service().projectile_direction_intent({
+		"direction": event.get("direction", Vector2.ZERO),
+		"fallback_direction": _unit_forward_vector(attacker),
+	})
+	var direction: Vector2 = direction_intent.get("direction", _unit_forward_vector(attacker))
+	var candidates: Array = []
+	var candidate_targets: Array = []
 	for target in _enemy_units(int(attacker.owner_id)):
 		if not _is_live_unit(target):
 			continue
+		var locked_target = event.get("locked_target", null)
+		var locked_target_live := _is_true_bullet_fired_event(event) and _is_live_unit(locked_target)
+		var is_locked_target: bool = locked_target_live and target == locked_target
+		var blocked_before_locked := false
+		var candidate_before_locked := true
 		if _is_true_bullet_fired_event(event):
-			var locked_target = event.get("locked_target", null)
-			if _is_live_unit(locked_target):
-				if target == locked_target and _true_bullet_target_blocked(attacker, locked_target, event):
-					continue
-				if target != locked_target and not _true_bullet_unit_before_locked_target(attacker, target, locked_target, event):
-					continue
+			if locked_target_live:
+				if is_locked_target:
+					blocked_before_locked = _true_bullet_target_blocked(attacker, locked_target, event)
+				else:
+					candidate_before_locked = _true_bullet_unit_before_locked_target(attacker, target, locked_target, event)
+		var candidate_gate := _battle_impact_query_service().projectile_candidate_intent({
+			"candidate_live": true,
+			"true_bullet": _is_true_bullet_fired_event(event),
+			"locked_target_live": locked_target_live,
+			"is_locked_target": is_locked_target,
+			"blocked_before_locked": blocked_before_locked,
+			"candidate_before_locked": candidate_before_locked,
+			"projection": 0.0,
+		})
+		if String(candidate_gate.get("action", "accept")) == "reject":
+			continue
 		var hit := _attack_part_hit(attacker, target, event)
 		if hit.is_empty():
 			continue
 		var hit_position: Vector2 = hit.get("position", Vector2(target.ring_pos, target.lane))
 		var projection := _projectile_projection_from(attacker, hit_position, direction)
-		if projection < -0.001:
+		var projection_gate := _battle_impact_query_service().projectile_candidate_intent({
+			"candidate_live": true,
+			"projection": projection,
+		})
+		if String(projection_gate.get("action", "accept")) == "reject":
 			continue
-		if projection < best_distance:
-			best_distance = projection
-			best = {
-				"target": target,
-				"hit": hit,
-				"position": hit_position,
-				"distance": best_distance,
-			}
-	return best
+		var target_index := candidate_targets.size()
+		candidate_targets.append(target)
+		candidates.append({
+			"target_index": target_index,
+			"hit": hit,
+			"position": hit_position,
+			"distance": projection,
+		})
+	var selection := _battle_impact_query_service().first_impact_selection(candidates)
+	if selection.is_empty():
+		return {}
+	var selected_index := int(selection.get("target_index", -1))
+	if selected_index < 0 or selected_index >= candidate_targets.size():
+		return {}
+	var selected_target = candidate_targets[selected_index]
+	if not _is_live_unit(selected_target):
+		return {}
+	return {
+		"target": selected_target,
+		"hit": Dictionary(selection.get("hit", {})),
+		"position": selection.get("position", Vector2(selected_target.ring_pos, selected_target.lane)),
+		"distance": float(selection.get("distance", 999999.0)),
+	}
 
 
-func _first_projectile_impact_gpu(attacker, event: Dictionary) -> Dictionary:
+func _first_projectile_impact_gpu(attacker, event: Dictionary, candidate_targets: Array = [], include_friendly: bool = false, immediate_query: bool = false) -> Dictionary:
 	if not _is_live_unit(attacker) or not _gpu_collision_available():
 		return {}
 	var attack_collider: Dictionary = _attack_collider_for_event(attacker, event)
@@ -37894,66 +39266,62 @@ func _first_projectile_impact_gpu(attacker, event: Dictionary) -> Dictionary:
 	var gpu_colliders: Array = []
 	var entries: Array = []
 	var unit_key := 2
-	for target in _enemy_units(int(attacker.owner_id)):
+	var targets := candidate_targets if not candidate_targets.is_empty() else _enemy_units(int(attacker.owner_id))
+	for target in targets:
 		if not _is_live_unit(target):
 			continue
 		_append_gpu_collision_unit_colliders(target, _unit_part_colliders(target), start.x, unit_key, entries, gpu_colliders, start.y, event)
 		unit_key += 1
 	if gpu_colliders.is_empty():
 		return {}
-	var hits := _submit_gpu_geometry_queries_deferred(gpu_colliders, [{
+	var query := [{
 		"start": start,
 		"end": end,
 		"radius": maxf(0.0, float(attack_collider.get("radius", event.get("lane_range", 0.0)))),
 		"owner_unit_key": 1,
 		"owner_team_key": int(attacker.owner_id),
 		"query_id": 0,
-		"include_friendly": false,
-	}], get_physics_process_delta_time())
+		"include_friendly": include_friendly,
+	}]
+	var hits := _submit_gpu_geometry_queries(gpu_colliders, query, get_physics_process_delta_time()) if immediate_query else _submit_gpu_geometry_queries_deferred(gpu_colliders, query, get_physics_process_delta_time())
 	if hits.is_empty():
 		return {}
-	var best: Dictionary = {}
-	var best_distance := 999999.0
-	for raw_hit in hits:
-		if not (raw_hit is Dictionary):
-			continue
-		var hit_record: Dictionary = raw_hit
-		var collider_index := int(hit_record.get("collider_index", -1))
-		if collider_index < 0 or collider_index >= entries.size():
-			continue
-		var entry: Dictionary = Dictionary(entries[collider_index])
+	var service_entries: Array = []
+	var entry_targets: Array = []
+	for raw_entry in entries:
+		var entry: Dictionary = Dictionary(raw_entry)
 		var target = entry.get("unit", null)
-		if not _is_live_unit(target):
-			continue
-		if _map_line_occluded(attacker, target, event):
-			continue
-		var distance := float(hit_record.get("distance", 999999.0))
-		if distance >= best_distance:
-			continue
-		var target_collider: Dictionary = Dictionary(entry.get("query", entry.get("raw", {})))
-		best_distance = distance
-		best = {
-			"target": target,
-			"hit": {
-				"part_index": int(target_collider.get("part_index", -1)),
-				"part_kind": String(target_collider.get("part_kind", "core")),
-				"part_name": String(target_collider.get("name", "CORE")),
-				"torso_unit_index": int(target_collider.get("torso_unit_index", -1)),
-				"target_terminal_weapon_kind": String(target_collider.get("terminal_weapon_kind", "")),
-				"attacker_part_kind": String(attack_collider.get("part_kind", "")),
-				"attacker_terminal_weapon_kind": String(attack_collider.get("terminal_weapon_kind", "")),
-				"attacker_runtime_topology": true,
-				"position": hit_record.get("position", _collider_center(target_collider)),
-				"gap": -RUNTIME_CONTACT_REQUIRED_OVERLAP,
-				"attacker_collider": attack_collider.duplicate(true),
-				"target_collider": target_collider.duplicate(true),
-				"contact_normal": hit_record.get("normal", Vector2.ZERO),
-				"gpu_query_hit": true,
-			},
-			"position": hit_record.get("position", Vector2(target.ring_pos, target.lane)),
-			"distance": best_distance,
-		}
-	return best
+		var target_live := _is_live_unit(target)
+		entry_targets.append(target)
+		entry.erase("unit")
+		entry["target_index"] = entry_targets.size() - 1
+		entry["target_live"] = target_live
+		entry["occluded"] = _map_line_occluded(attacker, target, event) if target_live else false
+		if target_live:
+			entry["target_position"] = Vector2(target.ring_pos, target.lane)
+		service_entries.append(entry)
+	var selection := _battle_impact_query_service().gpu_hit_selection({
+		"hits": hits,
+		"entries": service_entries,
+		"attack_collider": attack_collider,
+		"gpu_gap": -RUNTIME_CONTACT_REQUIRED_OVERLAP,
+		"fallback_position": start,
+	})
+	if selection.is_empty():
+		return {}
+	var selected_entry: Dictionary = Dictionary(selection.get("entry", {}))
+	var selected_index := int(selected_entry.get("target_index", -1))
+	if selected_index < 0 or selected_index >= entry_targets.size():
+		return {}
+	var selected_target = entry_targets[selected_index]
+	if not _is_live_unit(selected_target):
+		return {}
+	return {
+		"target": selected_target,
+		"hit": Dictionary(selection.get("hit", {})),
+		"position": selection.get("position", Vector2(selected_target.ring_pos, selected_target.lane)),
+		"distance": float(selection.get("distance", 999999.0)),
+	}
 
 
 func _sniper_wrapped_aim_query(unit, muzzle: Vector2, aim_dir: Vector2) -> Dictionary:
@@ -38083,18 +39451,56 @@ func _resolve_runtime_melee_attack(attacker, event: Dictionary) -> void:
 
 
 func _resolve_attack(attacker, event: Dictionary) -> void:
+	var entry_intent := _battle_hit_resolution_service().attack_entry_intent({
+		"attacker_live": _is_live_unit(attacker),
+		"event_empty": event.is_empty(),
+		"projectile": bool(event.get("projectile", false)),
+		"runtime_topology": _is_live_unit(attacker) and _unit_uses_direct_runtime_topology(attacker),
+		"explicit_gun_activation": _event_is_explicit_gun_activation(event),
+		"has_gun_source": _projectile_event_has_gun_source(event),
+	})
+	match String(entry_intent.get("action", "")):
+		"return":
+			return
+		"mark_executed_return":
+			_mark_unit_attack_executed(attacker)
+			return
+		"fail_missing_gun_source":
+			_play_module_fail_sfx()
+			_show_battle_message("投射物必须由枪械末端肌肉发射" if _ui_is_zh() else "Projectile requires a gun terminal muscle", 0.62)
+			return
+		"clear_projectile_mark_return":
+			_clear_projectile_fields_for_runtime_melee(event)
+			_mark_unit_attack_executed(attacker)
+			return
 	if not _is_live_unit(attacker) or event.is_empty():
 		return
 	event = _normalize_runtime_attack_event(attacker, event)
 
+	entry_intent = _battle_hit_resolution_service().attack_entry_intent({
+		"attacker_live": _is_live_unit(attacker),
+		"event_empty": event.is_empty(),
+		"projectile": bool(event.get("projectile", false)),
+		"runtime_topology": _unit_uses_direct_runtime_topology(attacker),
+		"explicit_gun_activation": _event_is_explicit_gun_activation(event),
+		"has_gun_source": _projectile_event_has_gun_source(event),
+	})
+	match String(entry_intent.get("action", "")):
+		"mark_executed_return":
+			_mark_unit_attack_executed(attacker)
+			return
+		"fail_missing_gun_source":
+			_play_module_fail_sfx()
+			_show_battle_message("投射物必须由枪械末端肌肉发射" if _ui_is_zh() else "Projectile requires a gun terminal muscle", 0.62)
+			return
+		"clear_projectile_mark_return":
+			_clear_projectile_fields_for_runtime_melee(event)
+			_mark_unit_attack_executed(attacker)
+			return
 	if not bool(event.get("projectile", false)) and _unit_uses_direct_runtime_topology(attacker):
 		_mark_unit_attack_executed(attacker)
 		return
 
-	if bool(event.get("projectile", false)) and _event_is_explicit_gun_activation(event) and not _projectile_event_has_gun_source(event):
-		_play_module_fail_sfx()
-		_show_battle_message("投射物必须由枪械末端肌肉发射" if _ui_is_zh() else "Projectile requires a gun terminal muscle", 0.62)
-		return
 	if _is_missile_projectile_event(event):
 		var missile_target = event.get("locked_target", null)
 		if not _is_live_unit(missile_target) or _map_line_occluded(attacker, missile_target, event):
@@ -38127,24 +39533,48 @@ func _resolve_attack(attacker, event: Dictionary) -> void:
 	if event.has("direction") and attacker_blind > 0.01 and not bool(event.get("aim_locked", false)):
 		var original_direction: Vector2 = event["direction"]
 		event["direction"] = original_direction.rotated(randf_range(-0.72, 0.72) * attacker_blind).normalized()
-	if bool(event.get("projectile", false)) and _projectile_behavior_for_data(event) == "bullet_hell":
-		event["projectile_behavior"] = "bullet_hell"
-		if String(event.get("projectile_style", "bullet")) in ["", "bullet"]:
-			event["projectile_style"] = "bullet_hell"
-		event["projectile_speed_mult"] = float(event.get("projectile_speed_mult", BULLET_HELL_DEFAULT_SPEED_MULT))
-	if bool(event.get("projectile", false)) and _projectile_behavior_for_data(event) == "explosive":
-		event["projectile_behavior"] = "explosive"
-		if String(event.get("projectile_style", "")) in ["", "bullet"]:
-			event["projectile_style"] = "explosive"
-		event["projectile_speed_mult"] = clampf(float(event.get("projectile_speed_mult", 1.6)), 0.45, 2.4)
-		event["explosion_radius"] = maxf(float(event.get("explosion_radius", 0.0)), STANDARD_MISSILE_EXPLOSION_RADIUS if String(event.get("projectile_style", "")) == "missile" else 0.58)
+	var preflight := _battle_hit_resolution_service().projectile_preflight_intent({
+		"event": event,
+		"behavior": _projectile_behavior_for_data(event),
+		"bullet_hell_default_speed_mult": BULLET_HELL_DEFAULT_SPEED_MULT,
+		"standard_missile_explosion_radius": STANDARD_MISSILE_EXPLOSION_RADIUS,
+		"laser_telegraph": _is_laser_telegraph_event(event),
+		"true_bullet": _is_true_bullet_event(event),
+		"chemical_projectile": _is_chemical_projectile_event(event),
+		"chemical_ready": bool(event.get("chemical_projectile_ready", false)),
+		"chemical_firework": _chemical_firework_event(event),
+		"chemical_firework_expanded": bool(event.get("chemical_firework_expanded", false)),
+		"missile_projectile": _is_missile_projectile_event(event),
+		"consumes_on_first_hit": _projectile_consumes_on_first_hit(event),
+		"projectile_trace_spawned": bool(event.get("projectile_trace_spawned", false)),
+	})
+	var event_patch: Dictionary = Dictionary(preflight.get("event_patch", {}))
+	for key in event_patch.keys():
+		if String(key).begins_with("erase_"):
+			continue
+		event[key] = event_patch[key]
+	if bool(event_patch.get("erase_explosion_damage", false)):
 		event.erase("explosion_damage")
+	if bool(event_patch.get("erase_explosion_damage_type", false)):
 		event.erase("explosion_damage_type")
-		if String(event.get("explosion_style", "")) == "":
-			event["explosion_style"] = String(event.get("projectile_style", "explosive"))
-	if _is_laser_telegraph_event(event):
-		_queue_laser_telegraph(attacker, event)
-		return
+	match String(preflight.get("action", "continue")):
+		"queue_laser_telegraph":
+			_queue_laser_telegraph(attacker, event)
+			return
+		"queue_true_bullet":
+			_queue_true_bullet_lock(attacker, event)
+			return
+		"queue_chemical":
+			_prepare_chemical_projectile_event(event)
+			_queue_chemical_projectile(attacker, event)
+			return
+		"resolve_chemical_firework":
+			_prepare_chemical_projectile_event(event)
+			_resolve_chemical_firework(attacker, event)
+			return
+		"queue_missile":
+			_queue_missile_projectile(attacker, event)
+			return
 	if _is_true_bullet_event(event):
 		_queue_true_bullet_lock(attacker, event)
 		return
@@ -38189,23 +39619,21 @@ func _resolve_attack(attacker, event: Dictionary) -> void:
 		var hit: Dictionary = Dictionary(first_projectile_impact.get("hit", {})) if (_unit_uses_direct_runtime_topology(attacker) and bool(event.get("projectile", false)) and not first_projectile_impact.is_empty()) else _attack_part_hit(attacker, target, event)
 		if hit.is_empty():
 			continue
-		event["target_part_index"] = int(hit.get("part_index", -1))
-		event["target_part_kind"] = String(hit.get("part_kind", "core"))
-		event["target_part_name"] = String(hit.get("part_name", "CORE"))
-		event["target_torso_unit_index"] = int(hit.get("torso_unit_index", -1))
-		event["target_terminal_weapon_kind"] = String(hit.get("target_terminal_weapon_kind", ""))
-		event["attacker_part_kind"] = String(hit.get("attacker_part_kind", event.get("attacker_part_kind", "")))
-		event["attacker_terminal_weapon_kind"] = String(hit.get("attacker_terminal_weapon_kind", event.get("attacker_terminal_weapon_kind", "")))
-		event["attacker_runtime_topology"] = bool(hit.get("attacker_runtime_topology", event.get("attacker_runtime_topology", false)))
-		event["hit_position_combat"] = hit.get("position", Vector2(target.ring_pos, target.lane))
+		var hit_context := _battle_hit_resolution_service().target_hit_context(event, hit, {
+			"position": Vector2(target.ring_pos, target.lane),
+			"state": String(target.current_state),
+		})
+		var hit_patch: Dictionary = Dictionary(hit_context.get("event_patch", {}))
+		for key in hit_patch.keys():
+			event[key] = hit_patch[key]
 
-		var damage_type := String(event.get("damage_type", "blunt"))
+		var damage_type := String(hit_context.get("damage_type", event.get("damage_type", "blunt")))
 		if bool(event.get("projectile", false)) and _one_way_shield_intercept(attacker, target, event):
 			continue
 		if bool(event.get("projectile", false)) and _target_projectile_shield_reflects(target, event):
 			_reflect_projectile_from_target_shield(target, attacker, event)
 			continue
-		var material_class := String(event.get("material_class", "weapon"))
+		var material_class := String(hit_context.get("material_class", event.get("material_class", "weapon")))
 		var counter_tier := _counter_tier_for_hit(target, damage_type)
 		var nullified := false
 		var multiplier: float = _rps_multiplier(String(event.get("state", "normal")), target.current_state)
@@ -38223,21 +39651,42 @@ func _resolve_attack(attacker, event: Dictionary) -> void:
 		if _maybe_detach_barrier_tile_from_momentum(attacker, target, event, impact_direction, _event_momentum_magnitude(event, maxf(0.0, float(event.get("momentum", 0.0))))):
 			continue
 		var damage: int = 0 if non_damage else max(1, int(roundf(raw_damage * multiplier)))
-		damage = _melee_damage_adjusted(event, damage)
+		var melee_adjusted_damage := _melee_damage_adjusted(event, damage)
+		damage = melee_adjusted_damage
 		var projectile_style := String(event.get("projectile_style", ""))
 		var contact_gate_blocked := false
+		var material_adjusted_damage := damage
 		if not non_damage and not nullified:
-			damage = _projectile_material_adjusted_damage(target, event, damage)
+			material_adjusted_damage = _projectile_material_adjusted_damage(target, event, damage)
+			damage = material_adjusted_damage
 			contact_gate_blocked = bool(event.get("contact_gate_blocked", false))
+		var combo_damage := damage
 		if not non_damage and not nullified and not contact_gate_blocked:
-			damage = _apply_combo_hit_scaling(attacker, target, event, damage)
-			if damage < 0:
+			combo_damage = _apply_combo_hit_scaling(attacker, target, event, damage)
+			damage = combo_damage
+			if combo_damage < 0:
 				continue
-		var chemical_dot_total := 0
-		if not non_damage and not nullified and not contact_gate_blocked and _chemical_dot_applies(event):
-			chemical_dot_total = maxi(1, int(roundf(float(damage) * float(event.get("chemical_dot_mult", CHEMICAL_DOT_DEFAULT_MULT)))))
-			damage = maxi(1, int(roundf(float(damage) * clampf(float(event.get("chemical_frontload", CHEMICAL_DOT_DEFAULT_FRONTLOAD)), 0.18, 0.82))))
-		var effect_style := "threshold" if contact_gate_blocked else projectile_style
+		var damage_result := _battle_hit_resolution_service().damage_stack_intent({
+			"raw_damage": raw_damage,
+			"multiplier": multiplier,
+			"projectile": bool(event.get("projectile", false)),
+			"non_damage": non_damage,
+			"nullified": nullified,
+			"melee_adjusted_damage": melee_adjusted_damage,
+			"material_adjusted_damage": material_adjusted_damage,
+			"contact_gate_blocked": contact_gate_blocked,
+			"combo_applies": bool(event.get("combo_active", false)),
+			"combo_damage": combo_damage,
+			"chemical_dot_applies": _chemical_dot_applies(event),
+			"chemical_dot_mult": float(event.get("chemical_dot_mult", CHEMICAL_DOT_DEFAULT_MULT)),
+			"chemical_frontload": float(event.get("chemical_frontload", CHEMICAL_DOT_DEFAULT_FRONTLOAD)),
+			"projectile_style": projectile_style,
+		})
+		if not bool(damage_result.get("continue_hit", true)):
+			continue
+		damage = int(damage_result.get("damage", damage))
+		var chemical_dot_total := int(damage_result.get("chemical_dot_total", 0))
+		var effect_style := String(damage_result.get("effect_style", "threshold" if contact_gate_blocked else projectile_style))
 		var hit_vfx_position := Vector2(event.get("hit_position_combat", Vector2(target.ring_pos, target.lane)))
 		if bool(event.get("projectile", false)):
 			_spawn_projectile_hit_vfx_on_target({
@@ -38257,33 +39706,62 @@ func _resolve_attack(attacker, event: Dictionary) -> void:
 				_apply_active_melee_momentum_stagger(attacker, target, event)
 			_apply_hitstop(damage_type, counter_tier, 0)
 			continue
-		_apply_module_hit_effect(attacker, target, event)
-		_apply_module_variant_hit_effect(attacker, target, event)
-		_apply_takeover_status(attacker, target, event)
-		if not nullified and float(event.get("explosion_radius", 0.0)) > 0.0:
-			for blasted in _apply_explosion_damage(attacker, target, event):
-				if not killed_units.has(blasted):
-					killed_units.append(blasted)
-		if non_damage:
+		var post_hit_intents := _battle_hit_resolution_service().post_hit_intents({
+			"projectile": bool(event.get("projectile", false)),
+			"blocked": contact_gate_blocked,
+			"non_damage": non_damage,
+			"nullified": nullified,
+			"explosion_radius": float(event.get("explosion_radius", 0.0)),
+			"suicide_on_hit": bool(attacker.stats.get("suicide_on_hit", false)),
+			"damage": damage,
+			"chemical_dot_total": chemical_dot_total,
+			"back_hit": _is_back_hit(attacker, target, event),
+		})
+		var killed := false
+		var continue_target := false
+		for raw_intent in post_hit_intents:
+			if not (raw_intent is Dictionary):
+				continue
+			var post_intent: Dictionary = raw_intent
+			match String(post_intent.get("action", "")):
+				"module_hit_effect":
+					_apply_module_hit_effect(attacker, target, event)
+				"module_variant_hit_effect":
+					_apply_module_variant_hit_effect(attacker, target, event)
+				"takeover_status":
+					_apply_takeover_status(attacker, target, event)
+				"explosion":
+					for blasted in _apply_explosion_damage(attacker, target, event):
+						if not killed_units.has(blasted):
+							killed_units.append(blasted)
+				"suicide":
+					_detonate_suicide_puppet(attacker, target)
+					return
+				"part_damage":
+					_register_part_damage(target, event, damage, counter_tier)
+				"hitstop":
+					_apply_hitstop(damage_type, counter_tier, int(post_intent.get("damage", damage)))
+				"take_hit":
+					var unit_damage := _unit_damage_after_part_absorption(event, damage)
+					killed = target.take_hit(unit_damage, String(event.get("state", "normal")), int(attacker.owner_id), damage_type, material_class)
+				"chemical_dot":
+					if not killed:
+						_apply_chemical_dot_status(attacker, target, event, chemical_dot_total)
+				"back_hit_heat":
+					if not killed:
+						_apply_back_hit_heat(attacker, target, event, damage)
+				"projectile_stagger":
+					if not killed:
+						_apply_projectile_momentum_stagger(attacker, target, event)
+				"active_melee_stagger":
+					if not killed:
+						_apply_active_melee_momentum_stagger(attacker, target, event)
+				"hit_displacement":
+					_apply_hit_displacement(attacker, target, event, damage, nullified)
+				"continue_target":
+					continue_target = true
+		if continue_target:
 			continue
-		if bool(attacker.stats.get("suicide_on_hit", false)):
-			_detonate_suicide_puppet(attacker, target)
-			return
-		if not nullified:
-			_register_part_damage(target, event, damage, counter_tier)
-		_apply_hitstop(damage_type, counter_tier, damage)
-		var unit_damage := _unit_damage_after_part_absorption(event, damage)
-		var killed: bool = target.take_hit(unit_damage, String(event.get("state", "normal")), int(attacker.owner_id), damage_type, material_class)
-		if not killed and chemical_dot_total > 0:
-			_apply_chemical_dot_status(attacker, target, event, chemical_dot_total)
-		if not killed and not nullified and _is_back_hit(attacker, target, event):
-			_apply_back_hit_heat(attacker, target, event, damage)
-		if not killed:
-			if bool(event.get("projectile", false)):
-				_apply_projectile_momentum_stagger(attacker, target, event)
-			else:
-				_apply_active_melee_momentum_stagger(attacker, target, event)
-		_apply_hit_displacement(attacker, target, event, damage, nullified)
 		if killed:
 			killed_units.append(target)
 
@@ -38314,55 +39792,66 @@ func _attack_part_hit(attacker, target, event: Dictionary) -> Dictionary:
 			event["map_occlusion_blocker"] = String(occlusion.get("blocker_name", ""))
 			return {}
 	var direct_runtime_hit := _unit_uses_direct_runtime_topology(attacker) or _unit_uses_direct_runtime_topology(target)
-	var hit_slop := 0.0 if is_projectile else 0.16
-	if direct_runtime_hit:
-		hit_slop = 0.0 if is_projectile else -RUNTIME_CONTACT_REQUIRED_OVERLAP
-	if is_projectile:
-		var projectile_style := String(event.get("projectile_style", ""))
-		var projectile_damage_type := String(event.get("projectile_damage_type", event.get("damage_type", "")))
-		if direct_runtime_hit:
-			hit_slop = 0.0
-		else:
-			hit_slop = maxf(hit_slop, float(event.get("lane_range", 0.0)) * (0.22 if projectile_damage_type == "chemical" or projectile_style == "spray" else 0.08))
+	var slop_intent := _battle_impact_query_service().hit_slop_intent({
+		"projectile": is_projectile,
+		"direct_runtime_hit": direct_runtime_hit,
+		"runtime_required_overlap": RUNTIME_CONTACT_REQUIRED_OVERLAP,
+		"projectile_style": String(event.get("projectile_style", "")),
+		"projectile_damage_type": String(event.get("projectile_damage_type", event.get("damage_type", ""))),
+		"damage_type": String(event.get("damage_type", "")),
+		"lane_range": float(event.get("lane_range", 0.0)),
+	})
+	var hit_slop := float(slop_intent.get("hit_slop", 0.0))
 	for raw_collider in target_colliders:
 		if not (raw_collider is Dictionary):
 			continue
 		var target_collider: Dictionary = _shift_collider_to_origin(raw_collider, origin_x, _collider_center(attack_collider).y)
 		if is_projectile:
 			target_collider = _target_collider_for_projectile_query(target, target_collider, event)
-		if is_projectile and event.has("direction") and event["direction"] is Vector2:
-			var attack_direction: Vector2 = event["direction"]
-			if attack_direction.length() > 0.01:
-				var projectile_origin: Vector2 = attack_collider.get("a", _collider_center(attack_collider)) if String(attack_collider.get("shape", "circle")) == "capsule" else _collider_center(attack_collider)
-				var to_part: Vector2 = _collider_center(target_collider) - projectile_origin
-				if to_part.length() > 0.001 and attack_direction.normalized().dot(to_part.normalized()) < 0.02:
-					continue
+		var projectile_origin: Vector2 = attack_collider.get("a", _collider_center(attack_collider)) if String(attack_collider.get("shape", "circle")) == "capsule" else _collider_center(attack_collider)
+		var attack_direction := Vector2.ZERO
+		if event.has("direction") and event["direction"] is Vector2:
+			attack_direction = event["direction"]
+		var direction_candidate := _battle_impact_query_service().part_hit_candidate_intent({
+			"target_collider_valid": true,
+			"projectile": is_projectile,
+			"has_direction": is_projectile and attack_direction.length() > 0.01,
+			"direction": attack_direction,
+			"to_part": _collider_center(target_collider) - projectile_origin,
+			"direction_dot_min": 0.02,
+			"gap": -INF,
+			"hit_slop": 0.0,
+			"best_gap": INF,
+		})
+		if String(direction_candidate.get("action", "accept")) == "reject":
+			continue
 		var gap: float = _collider_gap(attack_collider, target_collider)
-		if gap <= hit_slop and gap < best_gap:
-			best_gap = gap
-			var attack_center := _collider_center(attack_collider)
-			var target_center := _collider_center(target_collider)
-			var contact_normal := target_center - attack_center
-			if contact_normal.length() <= 0.001:
-				contact_normal = _event_direction_vector(attacker, target, event)
-			if contact_normal.length() <= 0.001:
-				contact_normal = Vector2(float(attacker.facing), 0.0)
-			contact_normal = contact_normal.normalized()
-			best_hit = {
-				"part_index": int(target_collider.get("part_index", -1)),
-				"part_kind": String(target_collider.get("part_kind", "core")),
-				"part_name": String(target_collider.get("name", "CORE")),
-				"torso_unit_index": int(target_collider.get("torso_unit_index", -1)),
-				"target_terminal_weapon_kind": String(target_collider.get("terminal_weapon_kind", "")),
-				"attacker_part_kind": String(attack_collider.get("part_kind", "")),
-				"attacker_terminal_weapon_kind": String(attack_collider.get("terminal_weapon_kind", "")),
-				"attacker_runtime_topology": bool(attack_collider.get("runtime_topology", false)),
-				"position": _collider_hit_position(attack_collider, target_collider),
-				"gap": gap,
-				"attacker_collider": attack_collider.duplicate(true),
-				"target_collider": target_collider.duplicate(true),
-				"contact_normal": contact_normal,
-			}
+		var gap_candidate := _battle_impact_query_service().part_hit_candidate_intent({
+			"target_collider_valid": true,
+			"projectile": false,
+			"gap": gap,
+			"hit_slop": hit_slop,
+			"best_gap": best_gap,
+		})
+		if String(gap_candidate.get("action", "accept")) != "accept":
+			continue
+		best_gap = gap
+		var attack_center := _collider_center(attack_collider)
+		var target_center := _collider_center(target_collider)
+		var contact_normal := target_center - attack_center
+		if contact_normal.length() <= 0.001:
+			contact_normal = _event_direction_vector(attacker, target, event)
+		if contact_normal.length() <= 0.001:
+			contact_normal = Vector2(float(attacker.facing), 0.0)
+		contact_normal = contact_normal.normalized()
+		best_hit = _battle_impact_query_service().part_hit_payload({
+			"attack_collider": attack_collider,
+			"target_collider": target_collider,
+			"attacker_runtime_topology": bool(attack_collider.get("runtime_topology", false)),
+			"position": _collider_hit_position(attack_collider, target_collider),
+			"gap": gap,
+			"contact_normal": contact_normal,
+		})
 	return best_hit
 
 
@@ -38430,39 +39919,14 @@ func _projectile_target_hitbox_scale(unit, event: Dictionary) -> float:
 	return _visual_hitbox_scale_for_unit(unit)
 
 
+func _runtime_collider_geometry_service() -> RuntimeColliderGeometryService:
+	if runtime_collider_geometry_service == null:
+		runtime_collider_geometry_service = RuntimeColliderGeometryService.new()
+	return runtime_collider_geometry_service
+
+
 func _scale_collider_around_center(collider: Dictionary, scale_value: float) -> Dictionary:
-	var scale := maxf(0.001, scale_value)
-	if absf(scale - 1.0) <= 0.001:
-		return collider
-	var scaled := collider.duplicate(true)
-	var center := _collider_center(collider)
-	scaled["visual_hitbox_scale"] = scale
-	if scaled.has("radius"):
-		scaled["radius"] = maxf(0.0, float(scaled.get("radius", 0.0)) * scale)
-	if scaled.has("center") and scaled["center"] is Vector2:
-		var center_value: Vector2 = scaled["center"]
-		scaled["center"] = center + (center_value - center) * scale
-	if scaled.has("a") and scaled["a"] is Vector2:
-		var a_value: Vector2 = scaled["a"]
-		scaled["a"] = center + (a_value - center) * scale
-	if scaled.has("b") and scaled["b"] is Vector2:
-		var b_value: Vector2 = scaled["b"]
-		scaled["b"] = center + (b_value - center) * scale
-	if scaled.has("pivot") and scaled["pivot"] is Vector2:
-		var pivot_value: Vector2 = scaled["pivot"]
-		scaled["pivot"] = center + (pivot_value - center) * scale
-	if scaled.has("local_joint_center") and scaled["local_joint_center"] is Vector2:
-		var joint_value: Vector2 = scaled["local_joint_center"]
-		scaled["local_joint_center"] = center + (joint_value - center) * scale
-	if scaled.has("polygon"):
-		var scaled_polygon: Array = []
-		for raw_point in Array(scaled.get("polygon", [])):
-			if raw_point is Vector2:
-				var point: Vector2 = raw_point
-				scaled_polygon.append(center + (point - center) * scale)
-		if scaled_polygon.size() >= 3:
-			scaled["polygon"] = scaled_polygon
-	return scaled
+	return _runtime_collider_geometry_service().scale_collider_around_center(collider, scale_value)
 
 
 func _target_collider_for_projectile_query(unit, collider: Dictionary, event: Dictionary) -> Dictionary:
@@ -38470,260 +39934,65 @@ func _target_collider_for_projectile_query(unit, collider: Dictionary, event: Di
 
 
 func _shift_collider_to_origin(collider: Dictionary, origin_x: float, origin_lane: float = 1.0e20) -> Dictionary:
-	var shifted := collider.duplicate(true)
 	var center: Vector2 = _collider_center(collider)
 	var shifted_center := Vector2(origin_x + _ring_delta(origin_x, center.x), center.y)
 	if mobius_enabled and absf(origin_lane) < 1.0e10:
 		var delta := _mobius_delta_points(origin_x, origin_lane, center.x, center.y)
 		shifted_center = Vector2(origin_x, origin_lane) + delta
 	var offset := shifted_center - center
-	if shifted.has("center") and shifted["center"] is Vector2:
-		var center_value: Vector2 = shifted["center"]
-		center_value += offset
-		shifted["center"] = center_value
-	if shifted.has("a") and shifted["a"] is Vector2:
-		var a_value: Vector2 = shifted["a"]
-		a_value += offset
-		shifted["a"] = a_value
-	if shifted.has("b") and shifted["b"] is Vector2:
-		var b_value: Vector2 = shifted["b"]
-		b_value += offset
-		shifted["b"] = b_value
-	if shifted.has("pivot") and shifted["pivot"] is Vector2:
-		var pivot_value: Vector2 = shifted["pivot"]
-		pivot_value += offset
-		shifted["pivot"] = pivot_value
-	if shifted.has("local_joint_center") and shifted["local_joint_center"] is Vector2:
-		var joint_value: Vector2 = shifted["local_joint_center"]
-		joint_value += offset
-		shifted["local_joint_center"] = joint_value
-	if shifted.has("polygon"):
-		var shifted_polygon: Array = []
-		for raw_point in Array(shifted.get("polygon", [])):
-			if raw_point is Vector2:
-				var point: Vector2 = raw_point
-				point += offset
-				shifted_polygon.append(point)
-		if shifted_polygon.size() >= 3:
-			shifted["polygon"] = shifted_polygon
-	return shifted
+	return _runtime_collider_geometry_service().shift_collider_by_offset(collider, offset)
 
 
 func _collider_center(collider: Dictionary) -> Vector2:
-	if String(collider.get("shape", "circle")) == "polygon":
-		var polygon := Array(collider.get("polygon", []))
-		if polygon.is_empty():
-			return Vector2.ZERO
-		var sum := Vector2.ZERO
-		var count := 0
-		for raw_point in polygon:
-			if raw_point is Vector2:
-				sum += raw_point
-				count += 1
-		return sum / maxf(1.0, float(count))
-	if String(collider.get("shape", "circle")) == "capsule":
-		var a: Vector2 = collider.get("a", Vector2.ZERO)
-		var b: Vector2 = collider.get("b", a)
-		return (a + b) * 0.5
-	return collider.get("center", Vector2.ZERO)
+	return _runtime_collider_geometry_service().collider_center(collider)
 
 
 func _collider_extent_radius(collider: Dictionary) -> float:
-	var center := _collider_center(collider)
-	var result := 0.0
-	if String(collider.get("shape", "circle")) == "polygon":
-		for raw_point in Array(collider.get("polygon", [])):
-			if raw_point is Vector2:
-				result = maxf(result, center.distance_to(Vector2(raw_point)))
-	elif String(collider.get("shape", "circle")) == "capsule":
-		result = maxf(center.distance_to(Vector2(collider.get("a", center))), center.distance_to(Vector2(collider.get("b", center)))) + maxf(0.0, float(collider.get("radius", 0.0)))
-	else:
-		result = maxf(0.0, float(collider.get("radius", 0.0)))
-	return maxf(result, 0.001)
+	return _runtime_collider_geometry_service().collider_extent_radius(collider)
 
 
 func _collider_gap(a: Dictionary, b: Dictionary) -> float:
-	var a_radius: float = float(a.get("radius", 0.0))
-	var b_radius: float = float(b.get("radius", 0.0))
-	var a_shape := String(a.get("shape", "circle"))
-	var b_shape := String(b.get("shape", "circle"))
-	var distance := 0.0
-	if a_shape == "polygon" or b_shape == "polygon":
-		distance = _polygon_collider_distance(a, b)
-		if distance <= 0.0:
-			return -_collider_overlap_depth_estimate(a, b)
-	elif a_shape == "capsule" and b_shape == "capsule":
-		var a0: Vector2 = a.get("a", Vector2.ZERO)
-		var a1: Vector2 = a.get("b", Vector2.ZERO)
-		var b0: Vector2 = b.get("a", Vector2.ZERO)
-		var b1: Vector2 = b.get("b", Vector2.ZERO)
-		distance = _segment_segment_distance(a0, a1, b0, b1)
-	elif a_shape == "capsule":
-		var point_b: Vector2 = b.get("center", Vector2.ZERO)
-		var capsule_a0: Vector2 = a.get("a", Vector2.ZERO)
-		var capsule_a1: Vector2 = a.get("b", Vector2.ZERO)
-		distance = _point_segment_distance(point_b, capsule_a0, capsule_a1)
-	elif b_shape == "capsule":
-		var point_a: Vector2 = a.get("center", Vector2.ZERO)
-		var capsule_b0: Vector2 = b.get("a", Vector2.ZERO)
-		var capsule_b1: Vector2 = b.get("b", Vector2.ZERO)
-		distance = _point_segment_distance(point_a, capsule_b0, capsule_b1)
-	else:
-		var center_a: Vector2 = a.get("center", Vector2.ZERO)
-		var center_b: Vector2 = b.get("center", Vector2.ZERO)
-		distance = center_a.distance_to(center_b)
-	return distance - a_radius - b_radius
+	return _runtime_collider_geometry_service().collider_gap(a, b)
 
 
 func _collider_bounding_radius(collider: Dictionary) -> float:
-	if collider.has("bounding_radius"):
-		return maxf(0.001, float(collider.get("bounding_radius", 0.0)))
-	var center := _collider_center(collider)
-	var shape := String(collider.get("shape", "circle"))
-	if shape == "polygon":
-		var radius := 0.0
-		for raw_point in Array(collider.get("polygon", [])):
-			if raw_point is Vector2:
-				radius = maxf(radius, center.distance_to(Vector2(raw_point)))
-		return radius
-	if shape == "capsule":
-		var a: Vector2 = collider.get("a", center)
-		var b: Vector2 = collider.get("b", a)
-		return maxf(center.distance_to(a), center.distance_to(b)) + maxf(0.0, float(collider.get("radius", 0.0)))
-	return maxf(0.0, float(collider.get("radius", 0.0)))
+	return _runtime_collider_geometry_service().collider_bounding_radius(collider)
 
 
 func _collider_broadphase_gap(a: Dictionary, b: Dictionary) -> float:
-	return _collider_center(a).distance_to(_collider_center(b)) - _collider_bounding_radius(a) - _collider_bounding_radius(b)
+	return _runtime_collider_geometry_service().collider_broadphase_gap(a, b)
 
 
 func _collider_overlap_depth_estimate(a: Dictionary, b: Dictionary) -> float:
-	var center_distance := _collider_center(a).distance_to(_collider_center(b))
-	var raw_depth := _collider_bounding_radius(a) + _collider_bounding_radius(b) - center_distance
-	return clampf(raw_depth, 0.001, 0.12)
+	return _runtime_collider_geometry_service().collider_overlap_depth_estimate(a, b)
 
 
 func _collider_hit_position(a: Dictionary, b: Dictionary) -> Vector2:
-	return (_collider_center(a) + _collider_center(b)) * 0.5
+	return _runtime_collider_geometry_service().collider_hit_position(a, b)
 
 
 func _collider_segments(collider: Dictionary) -> Array:
-	var shape := String(collider.get("shape", "circle"))
-	if shape == "polygon":
-		var polygon := Array(collider.get("polygon", []))
-		var segments: Array = []
-		for i in range(polygon.size()):
-			if not (polygon[i] is Vector2):
-				continue
-			var next_index := (i + 1) % polygon.size()
-			if not (polygon[next_index] is Vector2):
-				continue
-			segments.append([polygon[i], polygon[next_index]])
-		return segments
-	if shape == "capsule":
-		return [[collider.get("a", Vector2.ZERO), collider.get("b", Vector2.ZERO)]]
-	return []
+	return _runtime_collider_geometry_service().collider_segments(collider)
 
 
 func _point_in_polygon(point: Vector2, polygon: Array) -> bool:
-	var inside := false
-	var count := polygon.size()
-	if count < 3:
-		return false
-	var j := count - 1
-	for i in range(count):
-		if not (polygon[i] is Vector2) or not (polygon[j] is Vector2):
-			j = i
-			continue
-		var pi: Vector2 = polygon[i]
-		var pj: Vector2 = polygon[j]
-		if ((pi.y > point.y) != (pj.y > point.y)) and (point.x < (pj.x - pi.x) * (point.y - pi.y) / maxf(0.000001, pj.y - pi.y) + pi.x):
-			inside = not inside
-		j = i
-	return inside
+	return _runtime_collider_geometry_service().point_in_polygon(point, polygon)
 
 
 func _polygon_collider_distance(a: Dictionary, b: Dictionary) -> float:
-	var a_shape := String(a.get("shape", "circle"))
-	var b_shape := String(b.get("shape", "circle"))
-	var a_polygon := Array(a.get("polygon", []))
-	var b_polygon := Array(b.get("polygon", []))
-	if a_shape == "polygon" and b_shape == "polygon":
-		for point in a_polygon:
-			if point is Vector2 and _point_in_polygon(point, b_polygon):
-				return 0.0
-		for point in b_polygon:
-			if point is Vector2 and _point_in_polygon(point, a_polygon):
-				return 0.0
-	elif a_shape == "polygon":
-		var center_b: Vector2 = _collider_center(b)
-		if _point_in_polygon(center_b, a_polygon):
-			return 0.0
-	elif b_shape == "polygon":
-		var center_a: Vector2 = _collider_center(a)
-		if _point_in_polygon(center_a, b_polygon):
-			return 0.0
-	var a_segments := _collider_segments(a)
-	var b_segments := _collider_segments(b)
-	for raw_a in a_segments:
-		var seg_a: Array = raw_a
-		for raw_b in b_segments:
-			var seg_b: Array = raw_b
-			if _segments_intersect(seg_a[0], seg_a[1], seg_b[0], seg_b[1]):
-				return 0.0
-	var best := 999999.0
-	if a_shape == "polygon":
-		for point in a_polygon:
-			if not (point is Vector2):
-				continue
-			if b_shape == "capsule":
-				best = minf(best, _point_segment_distance(point, b.get("a", Vector2.ZERO), b.get("b", Vector2.ZERO)))
-			else:
-				best = minf(best, point.distance_to(_collider_center(b)))
-	if b_shape == "polygon":
-		for point in b_polygon:
-			if not (point is Vector2):
-				continue
-			if a_shape == "capsule":
-				best = minf(best, _point_segment_distance(point, a.get("a", Vector2.ZERO), a.get("b", Vector2.ZERO)))
-			else:
-				best = minf(best, point.distance_to(_collider_center(a)))
-	for raw_a in a_segments:
-		var seg_a: Array = raw_a
-		for raw_b in b_segments:
-			var seg_b: Array = raw_b
-			best = minf(best, _segment_segment_distance(seg_a[0], seg_a[1], seg_b[0], seg_b[1]))
-	return best if best < 999998.0 else _collider_center(a).distance_to(_collider_center(b))
+	return _runtime_collider_geometry_service().polygon_collider_distance(a, b)
 
 
 func _point_segment_distance(point: Vector2, a: Vector2, b: Vector2) -> float:
-	var ab := b - a
-	var denom := ab.length_squared()
-	if denom <= 0.000001:
-		return point.distance_to(a)
-	var t := clampf((point - a).dot(ab) / denom, 0.0, 1.0)
-	return point.distance_to(a + ab * t)
+	return _runtime_collider_geometry_service().point_segment_distance(point, a, b)
 
 
 func _segment_segment_distance(a: Vector2, b: Vector2, c: Vector2, d: Vector2) -> float:
-	if _segments_intersect(a, b, c, d):
-		return 0.0
-	return minf(
-		minf(_point_segment_distance(a, c, d), _point_segment_distance(b, c, d)),
-		minf(_point_segment_distance(c, a, b), _point_segment_distance(d, a, b))
-	)
+	return _runtime_collider_geometry_service().segment_segment_distance(a, b, c, d)
 
 
 func _segments_intersect(a: Vector2, b: Vector2, c: Vector2, d: Vector2) -> bool:
-	var r := b - a
-	var s := d - c
-	var denom := r.cross(s)
-	var qmp := c - a
-	if absf(denom) <= 0.000001:
-		return _point_segment_distance(a, c, d) <= 0.0001 or _point_segment_distance(c, a, b) <= 0.0001
-	var t := qmp.cross(s) / denom
-	var u := qmp.cross(r) / denom
-	return t >= 0.0 and t <= 1.0 and u >= 0.0 and u <= 1.0
+	return _runtime_collider_geometry_service().segments_intersect(a, b, c, d)
 
 
 func _is_back_hit(attacker, target, event: Dictionary) -> bool:
@@ -38819,17 +40088,28 @@ func _cleanup_fracture_puppets_for_parent(parent) -> int:
 		return 0
 	var parent_id := str(parent.get_instance_id())
 	var group: Array = active_units[owner]["puppet"]
+	var candidates: Array = []
+	for child in group:
+		candidates.append({
+			"valid": child != null and is_instance_valid(child),
+			"temporary_fracture": _is_temporary_fracture_puppet(child) if child != null and is_instance_valid(child) else false,
+			"fracture_parent_id": String(child.get_meta("fracture_parent_id", "")) if child != null and is_instance_valid(child) else "",
+		})
+	var intent := _battle_runtime_lifecycle_service().fracture_cleanup_intent({
+		"parent_id": parent_id,
+		"candidates": candidates,
+	})
+	var remove_indices: Array = Array(intent.get("remove_indices", []))
 	var kept: Array = []
 	var removed := 0
-	for child in group:
-		if child != null and is_instance_valid(child) and _is_temporary_fracture_puppet(child) and String(child.get_meta("fracture_parent_id", "")) == parent_id:
+	for i in range(group.size()):
+		var child = group[i]
+		if remove_indices.has(i):
 			if _is_live_unit(child):
 				child.retire()
 			_detach_unit(child)
 			child.queue_free()
 			removed += 1
-		elif child != parent:
-			kept.append(child)
 		else:
 			kept.append(child)
 	active_units[owner]["puppet"] = kept
@@ -38844,48 +40124,79 @@ func _handle_unit_killed(unit, killer_id: int) -> void:
 	var killed_role: String = String(unit.role)
 	var killed_name: String = String(unit.unit_name)
 	var temporary_fracture := _is_temporary_fracture_puppet(unit)
-	if temporary_fracture:
+	var victim_live_count_after_death := maxi(0, _live_units_for(victim_id) - (1 if _is_live_unit(unit) else 0))
+	var initial_intent := _battle_runtime_lifecycle_service().kill_flow_intent({
+		"unit_valid": true,
+		"victim_id": victim_id,
+		"killer_id": killer_id,
+		"killed_role": killed_role,
+		"temporary_fracture": temporary_fracture,
+		"battle_mode": battle_mode,
+		"training_mode": battle_mode == MODE_TRAINING,
+		"game_over": game_over,
+		"victim_live_count": victim_live_count_after_death,
+		"can_betray": String(unit.role) == "puppet",
+		"can_retreat": bool(unit.stats.get("retreat_on_defeat", false)) and _unit_role_is_mech(unit) and not bool(unit.get_meta("retreating", false)),
+		"is_repair_station": bool(unit.stats.get("is_repair_station", false)),
+		"is_escape_pod": bool(unit.get_meta("escape_pod", false)),
+		"has_escape_pod": bool(unit.stats.get("has_escape_pod", false)),
+	})
+	if String(initial_intent.get("action", "")) == "temporary_fracture_death":
 		_detach_unit(unit)
 		_show_battle_message("%s fracture puppet destroyed" % killed_name, 0.75)
-		if not game_over and _live_units_for(victim_id) == 0 and battle_mode != MODE_TRAINING and [1, 2].has(killer_id):
-			_end_battle(killer_id)
+		if bool(initial_intent.get("end_battle", false)):
+			_end_battle(int(initial_intent.get("winner_id", killer_id)))
 		unit.queue_free()
 		return
-	if _try_pirate_betrayal(unit, killer_id):
+	if Array(initial_intent.get("actions", [])).has("try_betrayal") and _try_pirate_betrayal(unit, killer_id):
 		return
-	if _try_start_retreat(unit, killer_id):
+	if Array(initial_intent.get("actions", [])).has("try_retreat") and _try_start_retreat(unit, killer_id):
 		return
-	if bool(unit.stats.get("is_repair_station", false)):
+	if bool(initial_intent.get("destroy_docked", false)):
 		_destroy_docked_units(unit)
-	if bool(unit.get_meta("escape_pod", false)):
-		_show_battle_message("逃生舱被击毁：携带的行动模块丢失" if _ui_is_zh() else "Escape pod shot down: carried action modules lost", 0.85)
-	elif bool(unit.stats.get("has_escape_pod", false)):
-		_launch_escape_pod(unit)
-	_apply_destroy_economy(unit, killer_id)
-	var cleaned_fragments := _cleanup_fracture_puppets_for_parent(unit)
+	match String(initial_intent.get("escape_action", "none")):
+		"destroyed":
+			_show_battle_message("逃生舱被击毁：携带的行动模块丢失" if _ui_is_zh() else "Escape pod shot down: carried action modules lost", 0.85)
+		"launch":
+			_launch_escape_pod(unit)
+	if bool(initial_intent.get("apply_economy", true)):
+		_apply_destroy_economy(unit, killer_id)
+	var cleaned_fragments := _cleanup_fracture_puppets_for_parent(unit) if bool(initial_intent.get("cleanup_fracture", true)) else 0
 	_detach_unit(unit)
 	if cleaned_fragments > 0:
 		_show_battle_message("%s 被摧毁：%d 个断裂临时傀儡同步崩溃" % [killed_name, cleaned_fragments] if _ui_is_zh() else "%s destroyed: %d fracture puppets collapsed" % [killed_name, cleaned_fragments], 0.95)
-	if battle_mode == MODE_TRAINING and victim_id == 2 and unit.role == "hero":
-		training_respawn_timer = 1.1
-		_show_battle_message("靶机被摧毁，正在重生。" if _ui_is_zh() else "Dummy destroyed. Respawning.", 1.0)
-	elif killed_role == "hero":
-		victory_points[killer_id] = int(victory_points[killer_id]) + 1
-		runtime_resource[victim_id] = float(runtime_resource[victim_id]) + HERO_KILL_REWARD
-		_show_battle_message("P%d 英雄击破。P%d +1 胜利点，P%d +100 资源" % [victim_id, killer_id, victim_id] if _ui_is_zh() else "P%d HERO DOWN. P%d +1 VP, P%d +100 RESOURCE" % [victim_id, killer_id, victim_id], 1.6)
-		if int(victory_points[killer_id]) >= WIN_POINTS:
-			_end_battle(killer_id)
-	else:
-		if not _is_live_unit(active_units[victim_id]["hero"]):
-			victory_points[killer_id] = int(victory_points[killer_id]) + 1
-			_show_battle_message("%s 被摧毁，且英雄不在场。P%d +1 胜利点" % [killed_name, killer_id] if _ui_is_zh() else "%s destroyed while hero absent. P%d +1 VP" % [killed_name, killer_id], 1.1)
-			if int(victory_points[killer_id]) >= WIN_POINTS:
-				_end_battle(killer_id)
-		else:
-			_show_battle_message("%s 被摧毁" % killed_name if _ui_is_zh() else "%s destroyed" % killed_name, 0.8)
-
-	if not game_over and _live_units_for(victim_id) == 0 and battle_mode != MODE_TRAINING:
-		_end_battle(killer_id)
+	var post_intent := _battle_runtime_lifecycle_service().kill_flow_intent({
+		"unit_valid": true,
+		"stage": "post_detach",
+		"victim_id": victim_id,
+		"killer_id": killer_id,
+		"killed_role": killed_role,
+		"killed_name": killed_name,
+		"battle_mode": battle_mode,
+		"training_mode": battle_mode == MODE_TRAINING,
+		"game_over": game_over,
+		"victim_live_count": _live_units_for(victim_id),
+		"hero_live": _is_live_unit(active_units[victim_id]["hero"]),
+		"killer_victory_points": int(victory_points.get(killer_id, 0)),
+		"win_points": WIN_POINTS,
+		"hero_kill_reward": HERO_KILL_REWARD,
+		"training_respawn_timer": 1.1,
+	})
+	var vp_delta := int(post_intent.get("victory_point_delta", 0))
+	if vp_delta != 0 and [1, 2].has(killer_id):
+		victory_points[killer_id] = int(victory_points[killer_id]) + vp_delta
+	for resource_delta in Array(post_intent.get("resource_deltas", [])):
+		if resource_delta is Dictionary:
+			var player_id := int(resource_delta.get("player_id", 0))
+			if [1, 2].has(player_id):
+				runtime_resource[player_id] = float(runtime_resource.get(player_id, 0.0)) + float(resource_delta.get("delta", 0.0))
+	if float(post_intent.get("training_respawn_timer", 0.0)) > 0.0:
+		training_respawn_timer = float(post_intent.get("training_respawn_timer", 0.0))
+	for message_intent in Array(post_intent.get("messages", [])):
+		if message_intent is Dictionary:
+			_show_kill_flow_message(killed_name, victim_id, killer_id, String(message_intent.get("key", "")), float(message_intent.get("duration", 0.8)))
+	if bool(post_intent.get("end_battle", false)):
+		_end_battle(int(post_intent.get("winner_id", killer_id)))
 	unit.queue_free()
 
 
@@ -38893,107 +40204,105 @@ func _apply_destroy_economy(unit, killer_id: int) -> void:
 	if unit == null or not is_instance_valid(unit):
 		return
 	var victim_id := int(unit.owner_id)
-	var bounty := int(unit.stats.get("bounty_reward", 0))
-	if bounty > 0 and [1, 2].has(killer_id) and killer_id != victim_id:
-		runtime_resource[killer_id] = float(runtime_resource.get(killer_id, 0.0)) + float(bounty)
-		_show_battle_message("CROWN BOUNTY: P%d +%d" % [killer_id, bounty], 0.72)
-	var refund := int(unit.stats.get("insured_refund", 0))
-	if refund > 0 and [1, 2].has(victim_id):
-		runtime_resource[victim_id] = float(runtime_resource.get(victim_id, 0.0)) + float(refund)
-		_show_battle_message("PARACHUTE CLAIM: P%d +%d" % [victim_id, refund], 0.72)
-	var penalty := int(unit.stats.get("owner_destroy_penalty", 0))
-	if penalty > 0 and [1, 2].has(victim_id):
-		var paid := minf(float(runtime_resource.get(victim_id, 0.0)), float(penalty))
-		runtime_resource[victim_id] = float(runtime_resource.get(victim_id, 0.0)) - paid
-		_show_battle_message("ADVANCE CLAWBACK: P%d -%d" % [victim_id, int(paid)], 0.72)
+	var intents := _battle_runtime_lifecycle_service().destroy_economy_intents({
+		"victim_id": victim_id,
+		"killer_id": killer_id,
+		"bounty_reward": int(unit.stats.get("bounty_reward", 0)),
+		"insured_refund": int(unit.stats.get("insured_refund", 0)),
+		"owner_destroy_penalty": int(unit.stats.get("owner_destroy_penalty", 0)),
+		"victim_resource": float(runtime_resource.get(victim_id, 0.0)),
+	})
+	for intent in intents:
+		if not (intent is Dictionary):
+			continue
+		var player_id := int(intent.get("player_id", 0))
+		if not [1, 2].has(player_id):
+			continue
+		runtime_resource[player_id] = float(runtime_resource.get(player_id, 0.0)) + float(intent.get("delta", 0.0))
+		_show_destroy_economy_message(player_id, String(intent.get("message_key", "")), int(intent.get("message_value", 0)), float(intent.get("duration", 0.72)))
 
 
 func _launch_escape_pod(unit) -> void:
 	if unit == null or not is_instance_valid(unit):
 		return
-	var owner := int(unit.owner_id)
-	var carried := clampi(int(unit.stats.get("escape_module_slots", 1)), 1, 6)
-	var speed := maxf(0.22, float(unit.stats.get("escape_speed", 0.95)))
-	var target_ring := wrapf(unit.ring_pos + float(unit.stats.get("escape_target_ring_delta", 2.8)) * float(unit.facing), 0.0, RING_LENGTH)
-	var target_lane := clampf(float(unit.stats.get("escape_target_lane", unit.lane)), -BATTLE_HALF_HEIGHT, BATTLE_HALF_HEIGHT)
-	var pod_stats := {
-		"role": "puppet",
-		"name": "Escape Pod",
-		"health": 10 + carried * 5,
-		"mass": 2.0 + float(carried),
-		"power": 8.0 + speed * 6.0,
-		"energy": 4.0,
-		"length": 0.18,
-		"radius": 0.045 + float(carried) * 0.012,
-		"speed": speed,
-		"acceleration": 4.4 + speed,
-		"drag": 1.6,
-		"heat_capacity": 24.0,
-		"cooling": 6.0,
-		"shape": "drone_core",
-		"damage_type": "blunt",
-		"material_class": "escape_pod",
-		"resistances": {"bullet": 1.1, "chemical": 1.12, "laser": 1.08, "blunt": 1.16, "pierce": 1.08, "tear": 1.1},
-		"counter_tiers": {"bullet": 0, "chemical": 0, "laser": 0, "blunt": 0, "pierce": 0, "tear": 0},
+	var intent := _battle_runtime_lifecycle_service().escape_pod_spawn_intent({
+		"unit_valid": true,
+		"owner": int(unit.owner_id),
+		"stats": unit.stats,
+		"ring_pos": unit.ring_pos,
+		"lane": unit.lane,
+		"facing": float(unit.facing),
 		"primary_color": unit.primary_color,
-		"accent_color": Color(1.0, 0.88, 0.28, 1.0),
-	}
-	var pod = _create_unit(owner, "puppet", pod_stats, "P%d ESCAPE POD" % owner, unit.ring_pos, unit.lane)
+		"ring_length": RING_LENGTH,
+		"battle_half_height": BATTLE_HALF_HEIGHT,
+	})
+	if not bool(intent.get("spawn", false)):
+		return
+	var owner := int(intent.get("owner", unit.owner_id))
+	var pod_stats: Dictionary = Dictionary(intent.get("stats", {}))
+	var pod = _create_unit(owner, String(intent.get("role", "puppet")), pod_stats, String(intent.get("name", "P%d ESCAPE POD" % owner)), float(intent.get("ring_pos", unit.ring_pos)), float(intent.get("lane", unit.lane)))
 	var pod_group: Array = active_units[owner]["puppet"]
 	pod_group.append(pod)
 	active_units[owner]["puppet"] = pod_group
-	pod.set_meta("escape_pod", true)
-	pod.set_meta("carried_modules", carried)
-	pod.set_meta("escape_speed", speed)
-	pod.set_meta("escape_target_ring", target_ring)
-	pod.set_meta("escape_target_lane", target_lane)
-	_show_battle_message("%s launches escape pod carrying %d modules" % [unit.unit_name, carried], 0.95)
+	for key in Dictionary(intent.get("meta", {})).keys():
+		pod.set_meta(key, intent["meta"][key])
+	var carried := int(Dictionary(intent.get("meta", {})).get("carried_modules", 0))
+	_show_battle_message("%s launches escape pod carrying %d modules" % [unit.unit_name, carried], float(intent.get("duration", 0.95)))
 	_play_sfx_wave("boost", 620.0, 0.22, -10.0)
 
 
 func _try_pirate_betrayal(unit, killer_id: int) -> bool:
 	if unit == null or not is_instance_valid(unit):
 		return false
-	if String(unit.role) != "puppet":
+	var intent := _battle_runtime_lifecycle_service().pirate_betrayal_intent({
+		"role": String(unit.role),
+		"killer_id": killer_id,
+		"betrayal_chance": float(unit.stats.get("betrayal_chance", 0.0)),
+		"data_security": _data_security_value(unit),
+		"betrayal_roll": randf(),
+	})
+	if not bool(intent.get("betray", false)):
 		return false
-	var chance := clampf(float(unit.stats.get("betrayal_chance", 0.0)), 0.0, 1.0)
-	chance = clampf(chance / _data_security_value(unit), 0.0, 1.0)
-	if chance <= 0.0 or randf() > chance:
-		return false
-	_defect_unit_to_owner(unit, killer_id, "BOOTLEG REBOOT", true)
+	_defect_unit_to_owner(unit, int(intent.get("new_owner", killer_id)), String(intent.get("reason", "BOOTLEG REBOOT")), bool(intent.get("full_restore", true)))
 	return true
 
 
 func _try_start_retreat(unit, killer_id: int) -> bool:
 	if unit == null or not is_instance_valid(unit):
 		return false
-	if not bool(unit.stats.get("retreat_on_defeat", false)):
-		return false
-	if not _unit_role_is_mech(unit):
-		return false
-	if bool(unit.get_meta("retreating", false)):
-		return false
 	var owner := int(unit.owner_id)
 	var dock = _nearest_repair_station(unit, owner)
-	var base_rate := maxf(1.0, float(unit.stats.get("retreat_repair_rate", 5.0)))
 	var dock_rate := 0.0
 	if dock != null:
 		dock_rate = float(dock.stats.get("repair_rate", 0.0)) * float(dock.stats.get("station_repair_mult", 1.0))
-	var missing := maxf(1.0, float(unit.max_health))
-	var repair_time := clampf(missing / maxf(1.0, base_rate + dock_rate) * float(unit.stats.get("repair_time_mult", 1.0)), 2.2, 22.0)
-	_detach_unit(unit)
-	unit.active = false
-	unit.visible = false
-	unit.health = 1
-	unit.set_meta("retreating", true)
-	retreating_units.append({
-		"unit": unit,
+	var intent := _battle_runtime_lifecycle_service().retreat_start_intent({
+		"unit_valid": true,
+		"retreat_on_defeat": bool(unit.stats.get("retreat_on_defeat", false)),
+		"is_mech": _unit_role_is_mech(unit),
+		"already_retreating": bool(unit.get_meta("retreating", false)),
 		"owner": owner,
 		"role": String(unit.role),
-		"timer": repair_time,
+		"max_health": float(unit.max_health),
+		"retreat_repair_rate": float(unit.stats.get("retreat_repair_rate", 5.0)),
+		"repair_time_mult": float(unit.stats.get("repair_time_mult", 1.0)),
+		"dock_rate": dock_rate,
+	})
+	if not bool(intent.get("start", false)):
+		return false
+	_detach_unit(unit)
+	unit.active = bool(intent.get("active", false))
+	unit.visible = bool(intent.get("visible", false))
+	unit.health = int(intent.get("health", 1))
+	for key in Dictionary(intent.get("meta", {})).keys():
+		unit.set_meta(key, intent["meta"][key])
+	retreating_units.append({
+		"unit": unit,
+		"owner": int(intent.get("owner", owner)),
+		"role": String(intent.get("role", unit.role)),
+		"timer": float(intent.get("timer", 2.2)),
 		"dock": dock,
 	})
-	_show_battle_message("%s retreats for repair %.1fs" % [unit.unit_name, repair_time], 1.0)
+	_show_battle_message("%s retreats for repair %.1fs" % [unit.unit_name, float(intent.get("timer", 2.2))], float(intent.get("duration", 1.0)))
 	_play_sfx_wave("web", 300.0, 0.22, -11.0)
 	return true
 
@@ -39015,21 +40324,37 @@ func _nearest_repair_station(unit, owner: int):
 func _update_retreat_repairs(delta: float) -> void:
 	for entry in retreating_units.duplicate():
 		var unit = entry.get("unit", null)
-		if unit == null or not is_instance_valid(unit):
-			retreating_units.erase(entry)
-			continue
 		var dock = entry.get("dock", null)
-		if dock != null and not is_instance_valid(dock):
-			unit.queue_free()
-			retreating_units.erase(entry)
-			continue
-		entry["timer"] = maxf(0.0, float(entry.get("timer", 0.0)) - delta)
-		if float(entry["timer"]) > 0.0:
-			continue
-		if _restore_retreating_unit(entry):
-			retreating_units.erase(entry)
-		else:
-			entry["timer"] = 0.45
+		var restore_available := false
+		if unit != null and is_instance_valid(unit):
+			var owner := int(entry.get("owner", unit.owner_id))
+			var role_key := String(entry.get("role", unit.role))
+			restore_available = not ((role_key == "hero" and _is_live_unit(active_units[owner]["hero"])) or (role_key == "barrier" and _is_live_unit(active_units[owner]["barrier"])))
+		var intent := _battle_runtime_lifecycle_service().retreat_repair_tick_intent({
+			"unit_valid": unit != null and is_instance_valid(unit),
+			"has_dock": dock != null,
+			"dock_valid": dock == null or is_instance_valid(dock),
+			"timer": float(entry.get("timer", 0.0)),
+			"delta": delta,
+			"restore_available": restore_available,
+			"retry_timer": 0.45,
+		})
+		match String(intent.get("action", "")):
+			"remove":
+				retreating_units.erase(entry)
+			"destroy":
+				if unit != null and is_instance_valid(unit):
+					unit.queue_free()
+				retreating_units.erase(entry)
+			"update":
+				entry["timer"] = float(intent.get("timer", entry.get("timer", 0.0)))
+			"restore":
+				if _restore_retreating_unit(entry):
+					retreating_units.erase(entry)
+				else:
+					entry["timer"] = 0.45
+			"retry":
+				entry["timer"] = float(intent.get("timer", 0.45))
 
 
 func _restore_retreating_unit(entry: Dictionary) -> bool:
@@ -39080,6 +40405,28 @@ func _destroy_docked_units(station) -> void:
 			unit.queue_free()
 		retreating_units.erase(entry)
 	_show_battle_message("Repair dock destroyed with its occupants", 0.8)
+
+
+func _show_destroy_economy_message(player_id: int, message_key: String, value: int, duration: float) -> void:
+	match message_key:
+		"crown_bounty":
+			_show_battle_message("CROWN BOUNTY: P%d +%d" % [player_id, value], duration)
+		"insured_refund":
+			_show_battle_message("PARACHUTE CLAIM: P%d +%d" % [player_id, value], duration)
+		"owner_destroy_penalty":
+			_show_battle_message("ADVANCE CLAWBACK: P%d -%d" % [player_id, value], duration)
+
+
+func _show_kill_flow_message(killed_name: String, victim_id: int, killer_id: int, message_key: String, duration: float) -> void:
+	match message_key:
+		"training_dummy_respawn":
+			_show_battle_message("靶机被摧毁，正在重生。" if _ui_is_zh() else "Dummy destroyed. Respawning.", duration)
+		"hero_down":
+			_show_battle_message("P%d 英雄击破。P%d +1 胜利点，P%d +100 资源" % [victim_id, killer_id, victim_id] if _ui_is_zh() else "P%d HERO DOWN. P%d +1 VP, P%d +100 RESOURCE" % [victim_id, killer_id, victim_id], duration)
+		"hero_absent_destroyed":
+			_show_battle_message("%s 被摧毁，且英雄不在场。P%d +1 胜利点" % [killed_name, killer_id] if _ui_is_zh() else "%s destroyed while hero absent. P%d +1 VP" % [killed_name, killer_id], duration)
+		"destroyed":
+			_show_battle_message("%s 被摧毁" % killed_name if _ui_is_zh() else "%s destroyed" % killed_name, duration)
 
 
 func _detonate_suicide_puppet(attacker, primary_target) -> void:
@@ -39277,23 +40624,24 @@ func _apply_thruster_momentum_stats(stats: Dictionary, role_key: String) -> void
 		stats["boost_duration"] = 0.0
 		stats["speedometer_max_speed"] = 0.0
 		stats["speed_limit"] = 0.0
-		if drive_system_service != null:
-			drive_system_service.apply_drive_contract(stats, role_key)
-		return
 	var mass := maxf(1.0, float(stats.get("mass", 1.0)))
-	var drive_demand := maxf(0.0, float(stats.get("thruster_drive_demand", 0.0)))
-	var drive_chain_ratio := clampf(float(stats.get("engine_drive_chain_ratio", 0.0)), 0.0, 1.0)
-	var allocated_momentum := maxf(0.0, float(stats.get("thruster_effective_drive_demand", drive_demand * drive_chain_ratio)))
+	var legacy_allocated_momentum := maxf(0.0, float(stats.get("thruster_allocated_momentum", 0.0)))
+	var legacy_direct_stats := not stats.has("thruster_drive_demand") and legacy_allocated_momentum > 0.0
+	var drive_demand := maxf(0.0, float(stats.get("thruster_drive_demand", legacy_allocated_momentum)))
+	var drive_chain_default := 1.0 if legacy_direct_stats else 0.0
+	var drive_chain_ratio := clampf(float(stats.get("engine_drive_chain_ratio", drive_chain_default)), 0.0, 1.0)
+	var allocated_momentum := maxf(0.0, float(stats.get("thruster_effective_drive_demand", legacy_allocated_momentum if legacy_direct_stats else drive_demand * drive_chain_ratio)))
 	var efficiency_weight := maxf(0.0, float(stats.get("thruster_efficiency_weight", 0.0)))
 	var move_efficiency := clampf(float(stats.get("move_efficiency", 1.0)), 0.2, 3.0)
 	var boost_efficiency := clampf(float(stats.get("boost_efficiency", ECONOMY_BOOST_MOMENTUM_MULT)), 0.2, 4.0)
 	var turn_efficiency := clampf(float(stats.get("turn_efficiency", 1.0)), 0.2, 3.0)
+	var brake_efficiency := clampf(float(stats.get("brake_efficiency", 1.0)), 0.2, 3.0)
 	if efficiency_weight > 0.001:
 		move_efficiency = clampf(float(stats.get("move_efficiency_sum", 0.0)) / efficiency_weight, 0.2, 3.0)
 		boost_efficiency = clampf(float(stats.get("boost_efficiency_sum", 0.0)) / efficiency_weight, 0.2, 4.0)
 		turn_efficiency = clampf(float(stats.get("turn_efficiency_sum", 0.0)) / efficiency_weight, 0.2, 3.0)
 	var thruster_momentum := allocated_momentum * move_efficiency
-	var boost_extra_demand := maxf(0.0, float(stats.get("thruster_boost_extra_demand", 0.0)))
+	var boost_extra_demand := maxf(0.0, float(stats.get("thruster_boost_extra_demand", stats.get("boost_momentum", 0.0))))
 	var boost_peak_demand := maxf(0.0, float(stats.get("thruster_boost_peak_demand", drive_demand + boost_extra_demand)))
 	if boost_peak_demand <= 0.0:
 		boost_peak_demand = drive_demand + boost_extra_demand
@@ -39322,14 +40670,17 @@ func _apply_thruster_momentum_stats(stats: Dictionary, role_key: String) -> void
 	stats["engine_boost_chain_ratio"] = boost_chain_ratio
 	stats["move_speed"] = body_move_speed
 	stats["move_acceleration"] = thruster_acceleration
+	stats["body_move_speed"] = body_move_speed
+	stats["thruster_acceleration"] = thruster_acceleration
 	stats["boost_speed"] = boost_speed
 	stats["move_efficiency"] = move_efficiency
 	stats["boost_efficiency"] = boost_efficiency
 	stats["turn_efficiency"] = turn_efficiency
+	stats["brake_efficiency"] = brake_efficiency
 	stats["speedometer_max_speed"] = speedometer_max_speed
 	stats["speed_limit"] = speedometer_max_speed
 	stats["boost_duration"] = boost_duration
-	stats["brake_power"] = maxf(0.0, effective_boost_peak / mass)
+	stats["brake_power"] = maxf(0.0, (allocated_momentum * brake_efficiency) / mass) if legacy_direct_stats else maxf(0.0, effective_boost_peak / mass)
 	if body_move_speed > 0.0:
 		stats["speed"] = body_move_speed / MOMENTUM_MOVE_SPEED_MULT
 	if drive_system_service != null:
@@ -39536,44 +40887,59 @@ func _melee_damage_adjusted(event: Dictionary, damage: int) -> int:
 
 
 func _register_part_damage(target, event: Dictionary, damage: int, counter_tier: int) -> void:
-	if target == null or not is_instance_valid(target) or not _unit_is_mech_physics_subject(target):
-		return
-	if bool(event.get("projectile", false)) or String(event.get("damage_type", "")) != "tear":
-		return
-	var raw_index := int(event.get("target_part_index", event.get("muscle_node", -1)))
-	var part_kind := String(event.get("target_part_kind", "core"))
-	if part_kind == "torso":
-		_register_torso_unit_damage(target, event, damage, counter_tier)
-		return
-	if raw_index < 0:
-		return
-	var attack_index := clampi(raw_index, 0, ATTACK_GROUP_COUNT - 1)
-	if part_kind == "terminal":
-		_register_terminal_part_damage(target, event, attack_index, damage, counter_tier)
+	var route := _battle_hit_resolution_service().part_damage_intent({
+		"mode": "route",
+		"target_valid": target != null and is_instance_valid(target),
+		"target_mech": _unit_is_mech_physics_subject(target) if target != null and is_instance_valid(target) else false,
+		"projectile": bool(event.get("projectile", false)),
+		"damage_type": String(event.get("damage_type", "")),
+		"raw_index": int(event.get("target_part_index", event.get("muscle_node", -1))),
+		"part_kind": String(event.get("target_part_kind", "core")),
+		"torso_index": int(event.get("target_torso_unit_index", -1)),
+		"attack_group_count": ATTACK_GROUP_COUNT,
+	})
+	match String(route.get("action", "none")):
+		"route_torso":
+			_register_torso_unit_damage(target, event, damage, counter_tier)
+		"route_terminal":
+			_register_terminal_part_damage(target, event, int(route.get("attack_index", 0)), damage, counter_tier)
+		"route_limb":
+			_register_limb_part_damage(target, event, int(route.get("attack_index", 0)), damage, counter_tier)
+
+
+func _register_limb_part_damage(target, event: Dictionary, attack_index: int, damage: int, counter_tier: int) -> void:
+	if target == null or not is_instance_valid(target):
 		return
 	var severed: Dictionary = {}
 	if target.has_meta("severed_limbs") and target.get_meta("severed_limbs") is Dictionary:
 		severed = target.get_meta("severed_limbs")
-	if bool(severed.get(str(attack_index), false)):
-		return
+	var limb_key := str(attack_index)
 	var max_limb_hp := _target_limb_max_hp(target, attack_index)
-	if max_limb_hp <= 0.0:
-		return
 	var limb_hp: Dictionary = {}
 	if target.has_meta("limb_hp") and target.get_meta("limb_hp") is Dictionary:
 		limb_hp = target.get_meta("limb_hp")
-	var limb_key := str(attack_index)
-	var current_hp := float(limb_hp.get(limb_key, max_limb_hp))
-	current_hp -= maxf(1.0, float(damage) * (1.0 + float(counter_tier) * 0.08))
-	limb_hp[limb_key] = current_hp
+	var intent := _battle_hit_resolution_service().part_damage_intent({
+		"mode": "hp",
+		"part_kind": "limb",
+		"part_key": limb_key,
+		"max_hp": max_limb_hp,
+		"current_hp": float(limb_hp.get(limb_key, max_limb_hp)),
+		"already_broken": bool(severed.get(limb_key, false)),
+		"damage": damage,
+		"counter_tier": counter_tier,
+	})
+	var action := String(intent.get("action", "none"))
+	if action == "none":
+		return
+	limb_hp[limb_key] = float(intent.get("next_hp", limb_hp.get(limb_key, max_limb_hp)))
 	target.set_meta("limb_hp", limb_hp)
-	if current_hp > 0.0:
-		if float(damage) >= maxf(10.0, max_limb_hp * 0.24):
-			target.set_meta("part_fail_flash", 0.2)
+	if String(intent.get("action", "")) == "update":
+		if float(intent.get("flash_timer", 0.0)) > 0.0:
+			target.set_meta("part_fail_flash", float(intent.get("flash_timer", 0.0)))
 		return
 	severed[limb_key] = true
 	target.set_meta("severed_limbs", severed)
-	target.set_meta("part_fail_flash", 0.55)
+	target.set_meta("part_fail_flash", float(intent.get("flash_timer", 0.55)))
 	_play_module_fail_sfx()
 	_spawn_hit_effect(target, 2, "tear", false, "slash")
 	_show_battle_message("%s limb %d severed by tearing strike" % [target.unit_name, attack_index + 1], 0.8)
@@ -39587,22 +40953,30 @@ func _register_terminal_part_damage(target, event: Dictionary, attack_index: int
 	var broken: Dictionary = {}
 	if target.has_meta("broken_part_segments") and target.get_meta("broken_part_segments") is Dictionary:
 		broken = target.get_meta("broken_part_segments")
-	if bool(broken.get(key, false)):
-		return
 	var part_hp: Dictionary = {}
 	if target.has_meta("part_hp") and target.get_meta("part_hp") is Dictionary:
 		part_hp = target.get_meta("part_hp")
-	var current_hp := float(part_hp.get(key, max_part_hp))
-	current_hp -= maxf(1.0, float(damage) * (1.0 + float(counter_tier) * 0.08))
-	part_hp[key] = current_hp
+	var intent := _battle_hit_resolution_service().part_damage_intent({
+		"mode": "hp",
+		"part_kind": "terminal",
+		"part_key": key,
+		"max_hp": max_part_hp,
+		"current_hp": float(part_hp.get(key, max_part_hp)),
+		"already_broken": bool(broken.get(key, false)),
+		"damage": damage,
+		"counter_tier": counter_tier,
+	})
+	if String(intent.get("action", "none")) == "none":
+		return
+	part_hp[key] = float(intent.get("next_hp", part_hp.get(key, max_part_hp)))
 	target.set_meta("part_hp", part_hp)
-	if current_hp > 0.0:
-		if float(damage) >= maxf(8.0, max_part_hp * 0.28):
-			target.set_meta("part_fail_flash", 0.18)
+	if String(intent.get("action", "")) == "update":
+		if float(intent.get("flash_timer", 0.0)) > 0.0:
+			target.set_meta("part_fail_flash", float(intent.get("flash_timer", 0.0)))
 		return
 	broken[key] = true
 	target.set_meta("broken_part_segments", broken)
-	target.set_meta("part_fail_flash", 0.48)
+	target.set_meta("part_fail_flash", float(intent.get("flash_timer", 0.48)))
 	_play_module_fail_sfx()
 	_spawn_hit_effect(target, 2, "tear", false, "slash")
 	_show_battle_message("%s terminal %d cut off" % [target.unit_name, attack_index + 1], 0.75)
@@ -39617,22 +40991,30 @@ func _register_torso_unit_damage(target, event: Dictionary, damage: int, counter
 	var broken: Dictionary = {}
 	if target.has_meta("broken_torso_units") and target.get_meta("broken_torso_units") is Dictionary:
 		broken = target.get_meta("broken_torso_units")
-	if bool(broken.get(key, false)):
-		return
 	var torso_hp: Dictionary = {}
 	if target.has_meta("torso_unit_hp") and target.get_meta("torso_unit_hp") is Dictionary:
 		torso_hp = target.get_meta("torso_unit_hp")
-	var current_hp := float(torso_hp.get(key, max_part_hp))
-	current_hp -= maxf(1.0, float(damage) * (1.0 + float(counter_tier) * 0.08))
-	torso_hp[key] = current_hp
+	var intent := _battle_hit_resolution_service().part_damage_intent({
+		"mode": "hp",
+		"part_kind": "torso",
+		"part_key": key,
+		"max_hp": max_part_hp,
+		"current_hp": float(torso_hp.get(key, max_part_hp)),
+		"already_broken": bool(broken.get(key, false)),
+		"damage": damage,
+		"counter_tier": counter_tier,
+	})
+	if String(intent.get("action", "none")) == "none":
+		return
+	torso_hp[key] = float(intent.get("next_hp", torso_hp.get(key, max_part_hp)))
 	target.set_meta("torso_unit_hp", torso_hp)
-	if current_hp > 0.0:
-		if float(damage) >= maxf(10.0, max_part_hp * 0.24):
-			target.set_meta("part_fail_flash", 0.22)
+	if String(intent.get("action", "")) == "update":
+		if float(intent.get("flash_timer", 0.0)) > 0.0:
+			target.set_meta("part_fail_flash", float(intent.get("flash_timer", 0.0)))
 		return
 	broken[key] = true
 	target.set_meta("broken_torso_units", broken)
-	target.set_meta("part_fail_flash", 0.55)
+	target.set_meta("part_fail_flash", float(intent.get("flash_timer", 0.55)))
 	_play_module_fail_sfx()
 	_spawn_hit_effect(target, 2, "tear", false, "slash")
 	_show_battle_message("%s torso unit %d structurally cut" % [target.unit_name, maxi(0, torso_index) + 1], 0.8)
@@ -39823,32 +41205,35 @@ func _handle_torso_fracture_brood(target, torso_index: int, broken: Dictionary, 
 	if target == null or not is_instance_valid(target):
 		return
 	var torso_units: Array = Array(target.stats.get("torso_stiffness_segments", []))
-	if torso_units.size() < 2:
-		return
-	if not _unit_has_fracture_brood_module(target):
-		return
-	var spawned_count := 0
 	var anchor := _soul_anchor_torso_index(target)
-	var target_is_soul_hero := String(target.role) == "hero" and bool(target.stats.get("has_soul", false)) and torso_index == anchor
-	if target_is_soul_hero:
-		broken.erase(str(anchor))
-		torso_hp[str(anchor)] = maxf(CONTACT_UNIT_HP_MIN, max_part_hp * 0.35)
-		target.set_meta("torso_unit_hp", torso_hp)
-		target.set_meta("soul_anchor_torso_unit_index", anchor)
-		for i in range(torso_units.size()):
-			if i == anchor:
-				continue
-			var key := str(i)
-			if bool(broken.get(key, false)):
-				continue
-			broken[key] = true
-			if _spawn_torso_fragment_puppet(target, i):
-				spawned_count += 1
-		target.set_meta("broken_torso_units", broken)
-	else:
-		if _spawn_torso_fragment_puppet(target, torso_index):
+	var intent := _battle_runtime_lifecycle_service().torso_fracture_brood_intent({
+		"torso_count": torso_units.size(),
+		"has_fracture_brood_module": _unit_has_fracture_brood_module(target),
+		"torso_index": torso_index,
+		"broken": broken,
+		"torso_hp": torso_hp,
+		"anchor": anchor,
+		"max_part_hp": max_part_hp,
+		"contact_unit_hp_min": CONTACT_UNIT_HP_MIN,
+		"role": String(target.role),
+		"has_soul": bool(target.stats.get("has_soul", false)),
+	})
+	if String(intent.get("action", "none")) == "none":
+		return
+	var next_broken: Dictionary = Dictionary(intent.get("broken", broken))
+	var next_torso_hp: Dictionary = Dictionary(intent.get("torso_hp", torso_hp))
+	if bool(intent.get("soul_anchor_protected", false)):
+		target.set_meta("torso_unit_hp", next_torso_hp)
+		target.set_meta("broken_torso_units", next_broken)
+		target.set_meta("soul_anchor_torso_unit_index", int(intent.get("soul_anchor", anchor)))
+	var spawned_count := 0
+	for raw_index in Array(intent.get("spawn_indices", [])):
+		if _spawn_torso_fragment_puppet(target, int(raw_index)):
 			spawned_count += 1
 	if spawned_count > 0:
+		target.set_meta("broken_torso_units", next_broken)
+		if bool(intent.get("soul_anchor_protected", false)):
+			target.set_meta("torso_unit_hp", next_torso_hp)
 		target.set_meta("part_fail_flash", 0.75)
 		_show_battle_message("%s torso fracture: temporary puppet brood online" % target.unit_name, 1.05)
 
@@ -39996,8 +41381,8 @@ func _apply_projectile_reflection(attacker, event: Dictionary) -> void:
 		return
 	var damage_type := String(event.get("damage_type", "bullet"))
 	var owner := int(attacker.owner_id)
-	var best = null
-	var best_score := 999.0
+	var reflectors: Array = []
+	var candidates: Array = []
 	for reflector in _friendly_units(owner):
 		if reflector == attacker or not _is_live_unit(reflector) or not bool(reflector.stats.get("reflect_projectiles", false)):
 			continue
@@ -40005,32 +41390,39 @@ func _apply_projectile_reflection(attacker, event: Dictionary) -> void:
 		if not reflect_types.is_empty() and not reflect_types.has(damage_type):
 			continue
 		var delta_vec := _mobius_delta_vec_between(attacker, reflector, 1.25)
-		var distance := delta_vec.length()
-		if distance <= 0.01 or distance > float(event.get("range", 1.0)) + float(reflector.stats.get("radius", 0.2)):
-			continue
-		var direction: Vector2 = event["direction"]
-		var angle_score := 1.0 - direction.normalized().dot(delta_vec.normalized())
-		var lane_score := absf(reflector.lane - attacker.lane) * 0.35
-		var score := angle_score + lane_score + distance * 0.08
-		if score < best_score:
-			best_score = score
-			best = reflector
-	if best == null:
+		reflectors.append(reflector)
+		candidates.append({
+			"delta_vec": delta_vec,
+			"distance": delta_vec.length(),
+			"radius": float(reflector.stats.get("radius", 0.2)),
+			"lane_delta": float(reflector.lane - attacker.lane),
+			"reflect_bonus_range": float(reflector.stats.get("reflect_bonus_range", 0.35)),
+			"reflect_power": float(reflector.stats.get("reflect_power", 0.25)),
+		})
+	var intent := _battle_projectile_lifecycle_service().projectile_reflection_intent({
+		"direction": event.get("direction", Vector2.ZERO),
+		"candidates": candidates,
+		"range": float(event.get("range", 1.0)),
+		"lane_range": float(event.get("lane_range", 0.2)),
+		"attacker_facing": float(attacker.facing),
+		"reflections": int(event.get("reflections", 0)),
+	})
+	if String(intent.get("action", "")) != "reflect":
 		return
-	var direction: Vector2 = event["direction"]
-	var normal := Vector2(0.0, -1.0 if best.lane < attacker.lane else 1.0)
-	if absf(best.lane - attacker.lane) < 0.08:
-		normal = Vector2(-float(attacker.facing), 0.0)
-	var reflected := direction.bounce(normal).normalized()
-	if reflected.length() <= 0.01:
+	var candidate_index := int(intent.get("candidate_index", -1))
+	if candidate_index < 0 or candidate_index >= reflectors.size():
+		return
+	var best = reflectors[candidate_index]
+	var reflected: Vector2 = intent.get("direction", Vector2.ZERO)
+	if bool(intent.get("needs_fallback", false)) or reflected.length() <= 0.01:
 		reflected = Vector2(float(attacker.facing), randf_range(-0.45, 0.45)).normalized()
 	event["direction"] = reflected
 	var existing_momentum := _event_momentum_magnitude(event, float(event.get("momentum", 0.0)))
 	if existing_momentum > 0.0:
 		_set_event_momentum_vector(event, reflected * existing_momentum, existing_momentum)
-	event["range"] = float(event.get("range", 1.0)) + float(best.stats.get("reflect_bonus_range", 0.35))
-	event["lane_range"] = float(event.get("lane_range", 0.2)) + float(best.stats.get("reflect_power", 0.25)) * 0.18
-	event["reflections"] = int(event.get("reflections", 0)) + 1
+	var event_patch: Dictionary = Dictionary(intent.get("event_patch", {}))
+	for key in event_patch.keys():
+		event[key] = event_patch[key]
 	_update_field_aura_visual(best, "repulsion", maxf(0.24, float(best.stats.get("radius", 0.16)) * 2.4), 1.5, 0.0)
 	_spawn_hit_effect(best, 1, damage_type, false, String(event.get("projectile_style", "beam")))
 	_show_battle_message("%s RICOCHET %s" % [best.unit_name, damage_type.to_upper()], 0.45)
@@ -40052,16 +41444,26 @@ func _reflect_projectile_from_target_shield(target, attacker, event: Dictionary)
 	var damage_type := String(event.get("damage_type", "bullet"))
 	var power := maxf(0.1, float(target.get_meta("projectile_shield_power", target.stats.get("reflect_power", 0.55))))
 	var event_copy := event.duplicate(true)
-	event_copy["owner_id"] = int(target.owner_id)
-	event_copy["source_name"] = "%s shield" % target.unit_name
-	event_copy["range"] = float(event.get("range", 1.0)) + float(target.get_meta("projectile_shield_bonus_range", target.stats.get("reflect_bonus_range", 0.4)))
-	event_copy["lane_range"] = float(event.get("lane_range", 0.2)) + power * 0.16
-	event_copy["damage"] = maxi(1, int(roundf(float(event.get("damage", 1)) * (0.58 + power * 0.34))))
-	var reflected_dir := Vector2(float(target.facing), randf_range(-0.38, 0.38)).normalized()
+	var fallback_dir := Vector2(float(target.facing), randf_range(-0.38, 0.38)).normalized()
+	var attacker_delta := Vector2.ZERO
 	if attacker != null and is_instance_valid(attacker):
-		var delta_vec := _mobius_delta_vec_between(target, attacker, 1.25)
-		if delta_vec.length() > 0.01:
-			reflected_dir = delta_vec.normalized()
+		attacker_delta = _mobius_delta_vec_between(target, attacker, 1.25)
+	var intent := _battle_projectile_lifecycle_service().target_shield_reflection_intent({
+		"target_live": true,
+		"event": event,
+		"power": power,
+		"owner_id": int(target.owner_id),
+		"source_name": "%s shield" % target.unit_name,
+		"bonus_range": float(target.get_meta("projectile_shield_bonus_range", target.stats.get("reflect_bonus_range", 0.4))),
+		"fallback_direction": fallback_dir,
+		"attacker_delta": attacker_delta,
+	})
+	if String(intent.get("action", "")) != "reflect":
+		return
+	var event_patch: Dictionary = Dictionary(intent.get("event_patch", {}))
+	for key in event_patch.keys():
+		event_copy[key] = event_patch[key]
+	var reflected_dir: Vector2 = intent.get("direction", event_copy.get("direction", fallback_dir))
 	event_copy["direction"] = reflected_dir
 	var reflected_momentum := _projectile_momentum_for_event(event_copy)
 	if reflected_momentum > 0.0:
@@ -40113,21 +41515,27 @@ func _apply_explosion_damage(attacker, primary_target, event: Dictionary) -> Arr
 		if not _is_live_unit(target) or target == primary_target:
 			continue
 		var blast_delta := _mobius_delta_points(center_ring, center_lane, target.ring_pos, target.lane)
-		var distance := absf(blast_delta.x)
-		var lane_distance := absf(blast_delta.y)
 		var target_radius := float(target.stats.get("radius", 0.2))
-		if distance > radius + target_radius or lane_distance > radius * 0.72 + target_radius * 0.6:
+		var intent := _battle_projectile_lifecycle_service().explosion_damage_intent({
+			"radius": radius,
+			"target_radius": target_radius,
+			"blast_delta": blast_delta,
+			"fallback_direction": _event_direction_vector(attacker, target, event, Vector2.RIGHT),
+			"projectile_momentum": _projectile_momentum_for_event(event),
+			"damage_type": damage_type,
+			"explosion_style": String(event.get("explosion_style", "explosive")),
+			"target_position": Vector2(target.ring_pos, target.lane),
+		})
+		if not bool(intent.get("applies", false)):
 			continue
-		var falloff := clampf(1.0 - (distance + lane_distance * 0.7) / maxf(0.1, radius * 1.6), 0.35, 1.0)
 		var event_copy := event.duplicate(true)
-		event_copy["damage_type"] = damage_type
-		event_copy["projectile"] = false
-		var blast_direction := blast_delta
-		if blast_direction.length() <= 0.001:
-			blast_direction = _event_direction_vector(attacker, target, event, Vector2.RIGHT)
-		var blast_momentum := _projectile_momentum_for_event(event) * falloff
-		_set_event_momentum_vector(event_copy, blast_direction.normalized() * blast_momentum, blast_momentum)
-		event_copy["hit_position_combat"] = Vector2(target.ring_pos, target.lane)
+		var event_patch: Dictionary = Dictionary(intent.get("event_patch", {}))
+		for key in event_patch.keys():
+			event_copy[key] = event_patch[key]
+		var falloff := float(intent.get("falloff", 1.0))
+		var blast_direction: Vector2 = intent.get("blast_direction", Vector2.RIGHT)
+		var blast_momentum := float(intent.get("blast_momentum", 0.0))
+		_set_event_momentum_vector(event_copy, blast_direction * blast_momentum, blast_momentum)
 		var final_damage := maxi(1, int(roundf(float(damage) * falloff * _vulnerability_multiplier(target, event_copy))))
 		final_damage = _projectile_material_adjusted_damage(target, event_copy, final_damage)
 		var blocked := final_damage <= 0 or bool(event_copy.get("contact_gate_blocked", false))
@@ -40137,10 +41545,10 @@ func _apply_explosion_damage(attacker, primary_target, event: Dictionary) -> Arr
 				continue
 		_spawn_hit_effect(target, _counter_tier_for_hit(target, damage_type), damage_type, blocked, String(event.get("explosion_style", "blast")))
 		var stagger_event := event.duplicate(true)
-		stagger_event["projectile"] = true
-		stagger_event["projectile_behavior"] = "explosive"
-		stagger_event["projectile_style"] = String(event.get("explosion_style", "explosive"))
-		_set_event_momentum_vector(stagger_event, blast_direction.normalized() * blast_momentum, blast_momentum)
+		var stagger_patch: Dictionary = Dictionary(intent.get("stagger_patch", {}))
+		for key in stagger_patch.keys():
+			stagger_event[key] = stagger_patch[key]
+		_set_event_momentum_vector(stagger_event, blast_direction * blast_momentum, blast_momentum)
 		stagger_event["target_part_index"] = int(event_copy.get("target_part_index", -1))
 		_apply_projectile_momentum_stagger(attacker, target, stagger_event, falloff)
 		if blocked:
@@ -40161,12 +41569,20 @@ func _apply_takeover_status(attacker, target, event: Dictionary) -> void:
 	var takeover_power := maxf(0.12, float(event.get("takeover_power", attacker.stats.get("takeover_power", 1.0))))
 	var required := _security_adjusted_seconds(base_required, target, takeover_power, 0.75)
 	var dps := maxf(0.0, float(event.get("takeover_damage_rate", attacker.stats.get("takeover_damage_rate", 4.0))))
-	target.set_meta("takeover_owner", owner)
-	target.set_meta("takeover_required", required)
-	target.set_meta("takeover_dps", dps)
-	target.set_meta("takeover_damage_type", String(event.get("takeover_damage_type", attacker.stats.get("takeover_damage_type", "laser"))))
-	target.set_meta("takeover_timer", maxf(float(target.get_meta("takeover_timer", 0.0)), 0.12))
-	target.set_meta("takeover_warning_timer", 0.55)
+	var intent := _battle_hit_resolution_service().status_tick_intent({
+		"kind": "apply_takeover",
+		"owner": owner,
+		"required": required,
+		"dps": dps,
+		"damage_type": String(event.get("takeover_damage_type", attacker.stats.get("takeover_damage_type", "laser"))),
+		"current_timer": float(target.get_meta("takeover_timer", 0.0)),
+	})
+	target.set_meta("takeover_owner", int(intent.get("owner", owner)))
+	target.set_meta("takeover_required", float(intent.get("required", required)))
+	target.set_meta("takeover_dps", float(intent.get("dps", dps)))
+	target.set_meta("takeover_damage_type", String(intent.get("damage_type", "laser")))
+	target.set_meta("takeover_timer", float(intent.get("timer", 0.12)))
+	target.set_meta("takeover_warning_timer", float(intent.get("warning_timer", 0.55)))
 	_show_battle_message("NTR LINK %.1fs / SEC %.2f: %s" % [required, _data_security_value(target), target.unit_name], 0.55)
 
 
@@ -40179,45 +41595,52 @@ func _chemical_dot_applies(event: Dictionary) -> bool:
 func _apply_chemical_dot_status(attacker, target, event: Dictionary, total_damage: int) -> void:
 	if not _is_live_unit(target) or total_damage <= 0:
 		return
-	var duration := clampf(float(event.get("chemical_dot_duration", CHEMICAL_DOT_DEFAULT_DURATION)), 0.6, 6.0)
-	var dps := float(total_damage) / duration
-	var no_stack := bool(event.get("chemical_dot_no_stack", false))
+	var intent := _battle_hit_resolution_service().status_tick_intent({
+		"kind": "apply_chemical_dot",
+		"duration": float(event.get("chemical_dot_duration", CHEMICAL_DOT_DEFAULT_DURATION)),
+		"total_damage": total_damage,
+		"no_stack": bool(event.get("chemical_dot_no_stack", false)),
+		"current_dps": float(target.get_meta("chemical_dot_dps", 0.0)),
+		"current_timer": float(target.get_meta("chemical_dot_timer", 0.0)),
+		"bank": float(target.get_meta("chemical_dot_bank", 0.0)),
+	})
+	var duration := float(intent.get("duration", clampf(float(event.get("chemical_dot_duration", CHEMICAL_DOT_DEFAULT_DURATION)), 0.6, 6.0)))
 	target.set_meta("chemical_dot_owner", int(attacker.owner_id))
-	target.set_meta("chemical_dot_timer", maxf(float(target.get_meta("chemical_dot_timer", 0.0)), duration))
-	if no_stack:
-		target.set_meta("chemical_dot_dps", maxf(float(target.get_meta("chemical_dot_dps", 0.0)), dps))
-	else:
-		target.set_meta("chemical_dot_dps", float(target.get_meta("chemical_dot_dps", 0.0)) + dps)
-	target.set_meta("chemical_dot_bank", float(target.get_meta("chemical_dot_bank", 0.0)))
-	target.set_meta("chemical_dot_fx_timer", 0.05)
+	target.set_meta("chemical_dot_timer", float(intent.get("timer", maxf(float(target.get_meta("chemical_dot_timer", 0.0)), duration))))
+	target.set_meta("chemical_dot_dps", float(intent.get("dps", 0.0)))
+	target.set_meta("chemical_dot_bank", float(intent.get("bank", 0.0)))
+	target.set_meta("chemical_dot_fx_timer", float(intent.get("fx_timer", 0.05)))
 	_show_battle_message("%s CORRODING %.1fs" % [target.unit_name, duration], 0.45)
 
 
 func _update_chemical_dot_status(unit, delta: float) -> void:
 	if not unit.has_meta("chemical_dot_timer"):
 		return
-	var timer := maxf(0.0, float(unit.get_meta("chemical_dot_timer", 0.0)) - delta)
-	unit.set_meta("chemical_dot_timer", timer)
-	if timer <= 0.0:
+	var intent := _battle_hit_resolution_service().status_tick_intent({
+		"kind": "chemical_dot",
+		"timer": float(unit.get_meta("chemical_dot_timer", 0.0)),
+		"dps": float(unit.get_meta("chemical_dot_dps", 0.0)),
+		"bank": float(unit.get_meta("chemical_dot_bank", 0.0)),
+		"fx_timer": float(unit.get_meta("chemical_dot_fx_timer", 0.0)),
+		"delta": delta,
+	})
+	unit.set_meta("chemical_dot_timer", float(intent.get("timer", 0.0)))
+	if not bool(intent.get("active", false)):
 		unit.set_meta("chemical_dot_dps", 0.0)
 		unit.set_meta("chemical_dot_bank", 0.0)
 		return
 	var owner := int(unit.get_meta("chemical_dot_owner", int(unit.owner_id)))
-	var dps := maxf(0.0, float(unit.get_meta("chemical_dot_dps", 0.0)))
+	var dps := float(intent.get("dps", 0.0))
+	unit.set_meta("chemical_dot_dps", dps)
 	if dps <= 0.0:
 		return
-	var bank := float(unit.get_meta("chemical_dot_bank", 0.0)) + dps * delta
-	if bank < 1.0:
-		unit.set_meta("chemical_dot_bank", bank)
+	var damage := int(intent.get("damage", 0))
+	unit.set_meta("chemical_dot_bank", float(intent.get("bank", 0.0)))
+	if damage <= 0:
 		return
-	var damage := int(floorf(bank))
-	unit.set_meta("chemical_dot_bank", bank - float(damage))
-	var fx_timer := maxf(0.0, float(unit.get_meta("chemical_dot_fx_timer", 0.0)) - delta)
-	if fx_timer <= 0.0:
+	if bool(intent.get("spawn_fx", false)):
 		_spawn_hit_effect(unit, 1, "chemical", false, "spray")
-		unit.set_meta("chemical_dot_fx_timer", 0.24)
-	else:
-		unit.set_meta("chemical_dot_fx_timer", fx_timer)
+	unit.set_meta("chemical_dot_fx_timer", float(intent.get("fx_timer", 0.0)))
 	if unit.take_hit(damage, "active", owner, "chemical", "projectile"):
 		_handle_unit_killed(unit, owner)
 
@@ -40226,30 +41649,35 @@ func _update_takeover_status(unit, delta: float) -> void:
 	if not unit.has_meta("takeover_owner"):
 		return
 	var owner := int(unit.get_meta("takeover_owner", int(unit.owner_id)))
-	if owner == int(unit.owner_id):
-		unit.set_meta("takeover_timer", 0.0)
+	var intent := _battle_hit_resolution_service().status_tick_intent({
+		"kind": "takeover",
+		"owner": owner,
+		"unit_owner": int(unit.owner_id),
+		"required": float(unit.get_meta("takeover_required", 4.0)),
+		"timer": float(unit.get_meta("takeover_timer", 0.0)),
+		"warning_timer": float(unit.get_meta("takeover_warning_timer", 0.0)),
+		"dps": float(unit.get_meta("takeover_dps", 0.0)),
+		"bank": float(unit.get_meta("takeover_damage_bank", 0.0)),
+		"damage_type": String(unit.get_meta("takeover_damage_type", "laser")),
+		"delta": delta,
+	})
+	if not bool(intent.get("active", false)):
+		unit.set_meta("takeover_timer", float(intent.get("timer", 0.0)))
 		return
-	var required := maxf(0.75, float(unit.get_meta("takeover_required", 4.0)))
-	var progress := maxf(0.0, float(unit.get_meta("takeover_timer", 0.0))) + delta
-	unit.set_meta("takeover_timer", progress)
-	unit.set_meta("takeover_warning_timer", maxf(float(unit.get_meta("takeover_warning_timer", 0.0)), 0.12))
-	var dps := float(unit.get_meta("takeover_dps", 0.0))
-	if dps > 0.0:
-		var bank := float(unit.get_meta("takeover_damage_bank", 0.0)) + dps * delta
-		if bank >= 1.0:
-			var damage := int(floor(bank))
-			unit.set_meta("takeover_damage_bank", bank - float(damage))
-			var damage_type := String(unit.get_meta("takeover_damage_type", "laser"))
-			var event := {"damage_type": damage_type, "projectile": damage_type in PROJECTILE_DAMAGE_TYPES}
-			var final_damage := _projectile_material_adjusted_damage(unit, event, damage)
-			var blocked := final_damage <= 0 or bool(event.get("contact_gate_blocked", false))
-			_spawn_hit_effect(unit, 1, damage_type, blocked, "hack")
-			if not blocked and unit.take_hit(final_damage, "active", owner, damage_type, "field"):
-				_handle_unit_killed(unit, owner)
-				return
-		else:
-			unit.set_meta("takeover_damage_bank", bank)
-	if progress >= required:
+	unit.set_meta("takeover_timer", float(intent.get("timer", 0.0)))
+	unit.set_meta("takeover_warning_timer", float(intent.get("warning_timer", 0.12)))
+	unit.set_meta("takeover_damage_bank", float(intent.get("bank", 0.0)))
+	var damage := int(intent.get("damage", 0))
+	if damage > 0:
+		var damage_type := String(intent.get("damage_type", unit.get_meta("takeover_damage_type", "laser")))
+		var event := {"damage_type": damage_type, "projectile": damage_type in PROJECTILE_DAMAGE_TYPES}
+		var final_damage := _projectile_material_adjusted_damage(unit, event, damage)
+		var blocked := final_damage <= 0 or bool(event.get("contact_gate_blocked", false))
+		_spawn_hit_effect(unit, 1, damage_type, blocked, "hack")
+		if not blocked and unit.take_hit(final_damage, "active", owner, damage_type, "field"):
+			_handle_unit_killed(unit, owner)
+			return
+	if bool(intent.get("complete", false)):
 		_defect_unit_to_owner(unit, owner, "NEURAL TAKEOVER", false)
 
 
@@ -40415,7 +41843,12 @@ func _web_targets_for(attacker, event: Dictionary) -> Array:
 	var candidates := _field_targets_for(int(attacker.owner_id), filter)
 	var result: Array = []
 	for target in candidates:
-		if not _is_live_unit(target) or target == attacker:
+		var intent := _battle_projectile_lifecycle_service().web_target_candidate_intent({
+			"attacker_live": true,
+			"target_live": _is_live_unit(target),
+			"is_self": target == attacker,
+		})
+		if not bool(intent.get("include", false)):
 			continue
 		result.append(target)
 	return result
@@ -40430,47 +41863,70 @@ func _first_web_tether_impact(attacker, event: Dictionary) -> Dictionary:
 	direction = direction.normalized()
 	var best: Dictionary = {}
 	var best_distance := 999999.0
-	for target in _web_targets_for(attacker, event):
-		var hit := _attack_part_hit(attacker, target, event)
-		if hit.is_empty():
-			continue
-		var hit_position: Vector2 = hit.get("position", Vector2(target.ring_pos, target.lane))
-		var projection := _projectile_projection_from(attacker, hit_position, direction)
-		if projection < -0.001:
-			continue
-		if projection < best_distance:
-			best_distance = projection
-			best = {
+	var targets := _web_targets_for(attacker, event)
+	if _unit_uses_direct_runtime_topology(attacker) and _event_is_explicit_gun_activation(event):
+		var gpu_impact := _first_projectile_impact_gpu(attacker, event, targets, true, true)
+		if not gpu_impact.is_empty():
+			return gpu_impact
+	else:
+		var hit_candidates: Array = []
+		var hit_payloads: Array = []
+		for target_index in range(targets.size()):
+			var target = targets[target_index]
+			var hit := _attack_part_hit(attacker, target, event)
+			var hit_position: Vector2 = hit.get("position", Vector2(target.ring_pos, target.lane)) if not hit.is_empty() else Vector2(target.ring_pos, target.lane)
+			var intent := _battle_projectile_lifecycle_service().web_impact_candidate_intent({
+				"has_hit": not hit.is_empty(),
+				"candidate_index": hit_payloads.size(),
+				"target_index": target_index,
+				"position": hit_position,
+				"projection": _projectile_projection_from(attacker, hit_position, direction) if not hit.is_empty() else 0.0,
+			})
+			if not bool(intent.get("include", false)):
+				continue
+			hit_payloads.append({
 				"target": target,
 				"hit": hit,
 				"position": hit_position,
+			})
+			hit_candidates.append(intent)
+		var selection := _battle_projectile_lifecycle_service().web_impact_selection(hit_candidates)
+		var selected_index := int(selection.get("candidate_index", -1))
+		if bool(selection.get("has_hit", false)) and selected_index >= 0 and selected_index < hit_payloads.size():
+			var payload: Dictionary = hit_payloads[selected_index]
+			best_distance = float(selection.get("distance", 999999.0))
+			best = {
+				"target": payload.get("target", null),
+				"hit": payload.get("hit", {}),
+				"position": payload.get("position", Vector2.ZERO),
 				"distance": best_distance,
 			}
 	return best
 
 
 func _web_boundary_anchor_for_event(attacker, event: Dictionary) -> Dictionary:
-	if not _is_live_unit(attacker) or not bool(event.get("web_anchor_swing", true)):
-		return {}
 	var direction: Vector2 = event.get("direction", _unit_forward_vector(attacker))
-	if direction.length() <= 0.01:
+	var intent := _battle_projectile_lifecycle_service().web_boundary_anchor_intent({
+		"attacker_live": _is_live_unit(attacker),
+		"anchor_enabled": bool(event.get("web_anchor_swing", true)),
+		"direction": direction,
+		"attacker_position": Vector2(attacker.ring_pos, attacker.lane) if _is_live_unit(attacker) else Vector2.ZERO,
+		"range": float(event.get("range", event.get("projectile_range", STANDARD_WEB_TETHER_RANGE_M))),
+		"ring_length": RING_LENGTH,
+		"half_height": BATTLE_HALF_HEIGHT,
+	})
+	if String(intent.get("action", "")) != "anchor":
 		return {}
-	direction = direction.normalized()
-	if absf(direction.y) <= 0.01:
-		return {}
-	var start := Vector2(attacker.ring_pos, attacker.lane)
-	var boundary_y := BATTLE_HALF_HEIGHT if direction.y > 0.0 else -BATTLE_HALF_HEIGHT
-	var t := (boundary_y - start.y) / direction.y
-	if t <= 0.0:
-		return {}
-	var max_range := maxf(0.1, float(event.get("range", event.get("projectile_range", STANDARD_WEB_TETHER_RANGE_M))))
-	if t > max_range:
-		return {}
-	var anchor := Vector2(wrapf(start.x + direction.x * t, 0.0, RING_LENGTH), boundary_y)
-	return {"position": anchor, "distance": t, "boundary": "top" if boundary_y > 0.0 else "bottom"}
+	return {
+		"position": intent.get("position", Vector2.ZERO),
+		"distance": float(intent.get("distance", 0.0)),
+		"boundary": String(intent.get("boundary", "")),
+	}
 
 
 func _web_trace_event(base_event: Dictionary, impact_position: Vector2) -> Dictionary:
+	if projectile_runtime_service != null:
+		return projectile_runtime_service.web_trace_event(base_event, impact_position)
 	var event := base_event.duplicate(true)
 	event["projectile_impact_position"] = impact_position
 	event["projectile_style"] = "web"
@@ -40528,21 +41984,32 @@ func _fire_runtime_web_tether(attacker, event: Dictionary) -> bool:
 		return false
 	event["ammo_consumed"] = true
 	var hit := _first_web_tether_impact(attacker, event)
-	if not hit.is_empty():
-		var target = hit.get("target", null)
-		if _is_live_unit(target):
-			_start_web_tether(attacker, target, event, hit.get("position", Vector2(target.ring_pos, target.lane)))
-			return true
 	var anchor := _web_boundary_anchor_for_event(attacker, event)
-	if not anchor.is_empty():
-		_start_web_boundary_swing(attacker, event, anchor.get("position", Vector2(attacker.ring_pos, attacker.lane)))
-		return true
 	var direction: Vector2 = event.get("direction", _unit_forward_vector(attacker))
 	if direction.length() <= 0.01:
 		direction = _unit_forward_vector(attacker)
-	var miss_position := Vector2(wrapf(attacker.ring_pos + direction.normalized().x * float(event.get("range", STANDARD_WEB_TETHER_RANGE_M)), 0.0, RING_LENGTH), clampf(attacker.lane + direction.normalized().y * float(event.get("range", STANDARD_WEB_TETHER_RANGE_M)), -BATTLE_HALF_HEIGHT, BATTLE_HALF_HEIGHT))
-	_spawn_projectile_trace(attacker, _web_trace_event(event, miss_position))
-	_show_battle_message("WEB MISS" if not _ui_is_zh() else "蛛丝落空", 0.35)
+	var target = hit.get("target", null) if not hit.is_empty() else null
+	var fire_intent := _battle_projectile_lifecycle_service().web_fire_intent({
+		"target_hit": not hit.is_empty() and _is_live_unit(target),
+		"boundary_anchor": not anchor.is_empty(),
+		"anchor_position": anchor.get("position", Vector2(attacker.ring_pos, attacker.lane)),
+		"direction": direction,
+		"fallback_direction": _unit_forward_vector(attacker),
+		"attacker_position": Vector2(attacker.ring_pos, attacker.lane),
+		"range": float(event.get("range", STANDARD_WEB_TETHER_RANGE_M)),
+		"ring_length": RING_LENGTH,
+		"half_height": BATTLE_HALF_HEIGHT,
+	})
+	match String(fire_intent.get("action", "")):
+		"target_tether":
+			_start_web_tether(attacker, target, event, hit.get("position", Vector2(target.ring_pos, target.lane)))
+			return true
+		"boundary_swing":
+			_start_web_boundary_swing(attacker, event, fire_intent.get("anchor", anchor.get("position", Vector2(attacker.ring_pos, attacker.lane))))
+			return true
+		_:
+			_spawn_projectile_trace(attacker, _web_trace_event(event, fire_intent.get("miss_position", Vector2(attacker.ring_pos, attacker.lane))))
+			_show_battle_message("WEB MISS" if not _ui_is_zh() else "蛛丝落空", 0.35)
 	return true
 
 
@@ -40551,40 +42018,36 @@ func _update_web_tethers(delta: float) -> void:
 		var tether: Dictionary = active_web_tethers[index]
 		var attacker = tether.get("attacker", null)
 		var target = tether.get("target", null)
-		if not _is_live_unit(attacker) or not _is_live_unit(target):
-			active_web_tethers.remove_at(index)
-			continue
-		var timer := float(tether.get("timer", 0.0)) - delta
-		if timer <= 0.0:
-			active_web_tethers.remove_at(index)
-			continue
-		var delta_vec := Vector2(_ring_delta(attacker.ring_pos, target.ring_pos), target.lane - attacker.lane)
-		if delta_vec.length() <= 0.01:
-			tether["timer"] = timer
-			active_web_tethers[index] = tether
-			continue
-		var strength := maxf(0.01, float(tether.get("strength", STANDARD_WEB_TETHER_STRENGTH)))
-		var break_force := maxf(0.08, float(tether.get("break_force", STANDARD_WEB_TETHER_BREAK_FORCE)))
-		var attacker_mass := maxf(1.0, float(attacker.stats.get("mass", 1.0)))
-		var target_mass := maxf(1.0, float(target.stats.get("mass", 1.0)))
-		var tension := strength * (0.72 + delta_vec.length() * 0.55 + absf(attacker_mass - target_mass) / maxf(1.0, attacker_mass + target_mass) * 0.42)
-		if tension > break_force:
-			_spawn_hit_effect(target, 1, "blunt", false, "web_snap", Vector2(target.ring_pos, target.lane))
-			active_web_tethers.remove_at(index)
-			continue
-		var direction := delta_vec.normalized()
-		var mode := String(tether.get("mode", "mass_duel"))
-		var accel := strength * STANDARD_WEB_TETHER_ACCEL_MULT
-		if mode == "self_to_anchor":
-			attacker.velocity += direction * accel * delta
-		elif mode == "target_to_self":
-			target.velocity -= direction * accel * delta
-		else:
-			var attacker_share := clampf(target_mass / (attacker_mass + target_mass), 0.1, 0.9)
-			var target_share := clampf(attacker_mass / (attacker_mass + target_mass), 0.1, 0.9)
-			attacker.velocity += direction * accel * attacker_share * delta
-			target.velocity -= direction * accel * target_share * delta
-		tether["timer"] = timer
+		var attacker_live := _is_live_unit(attacker)
+		var target_live := _is_live_unit(target)
+		var delta_vec := Vector2(_ring_delta(attacker.ring_pos, target.ring_pos), target.lane - attacker.lane) if attacker_live and target_live else Vector2.ZERO
+		var intent := _battle_projectile_lifecycle_service().web_tether_tick_intent({
+			"attacker_live": attacker_live,
+			"target_live": target_live,
+			"timer": float(tether.get("timer", 0.0)),
+			"delta": delta,
+			"delta_vec": delta_vec,
+			"strength": float(tether.get("strength", STANDARD_WEB_TETHER_STRENGTH)),
+			"break_force": float(tether.get("break_force", STANDARD_WEB_TETHER_BREAK_FORCE)),
+			"attacker_mass": maxf(1.0, float(attacker.stats.get("mass", 1.0))) if attacker_live else 1.0,
+			"target_mass": maxf(1.0, float(target.stats.get("mass", 1.0))) if target_live else 1.0,
+			"mode": String(tether.get("mode", "mass_duel")),
+			"accel_mult": STANDARD_WEB_TETHER_ACCEL_MULT,
+		})
+		match String(intent.get("action", "")):
+			"remove":
+				active_web_tethers.remove_at(index)
+				continue
+			"snap":
+				if target_live:
+					_spawn_hit_effect(target, 1, "blunt", false, "web_snap", Vector2(target.ring_pos, target.lane))
+				active_web_tethers.remove_at(index)
+				continue
+		if attacker_live:
+			attacker.velocity += intent.get("attacker_velocity_delta", Vector2.ZERO)
+		if target_live:
+			target.velocity += intent.get("target_velocity_delta", Vector2.ZERO)
+		tether["timer"] = float(intent.get("timer", tether.get("timer", 0.0)))
 		active_web_tethers[index] = tether
 
 
@@ -40592,32 +42055,32 @@ func _update_web_swings(delta: float) -> void:
 	for index in range(active_web_swings.size() - 1, -1, -1):
 		var swing: Dictionary = active_web_swings[index]
 		var attacker = swing.get("attacker", null)
-		if not _is_live_unit(attacker):
-			active_web_swings.remove_at(index)
-			continue
-		var timer := float(swing.get("timer", 0.0)) - delta
-		if timer <= 0.0:
-			active_web_swings.remove_at(index)
-			continue
-		var anchor: Vector2 = swing.get("anchor", Vector2(attacker.ring_pos, attacker.lane))
-		var to_anchor := Vector2(_ring_delta(attacker.ring_pos, anchor.x), anchor.y - attacker.lane)
-		if to_anchor.length() <= 0.03:
-			active_web_swings.remove_at(index)
-			continue
-		var strength := maxf(0.01, float(swing.get("strength", STANDARD_WEB_TETHER_STRENGTH)))
-		var break_force := maxf(0.08, float(swing.get("break_force", STANDARD_WEB_TETHER_BREAK_FORCE)))
-		var tension: float = strength * (0.72 + to_anchor.length() * 0.62 + attacker.velocity.length() * 0.1)
-		if tension > break_force:
-			_spawn_hit_effect(attacker, 1, "blunt", false, "web_snap", Vector2(attacker.ring_pos, attacker.lane))
-			active_web_swings.remove_at(index)
-			continue
-		var radial: Vector2 = to_anchor.normalized()
-		var tangent := Vector2(-radial.y, radial.x)
-		if tangent.dot(_unit_forward_vector(attacker)) < 0.0:
-			tangent = -tangent
-		var accel: float = strength * STANDARD_WEB_SWING_ACCEL_MULT
-		attacker.velocity += (radial * accel + tangent * accel * 0.42) * delta
-		swing["timer"] = timer
+		var attacker_live := _is_live_unit(attacker)
+		var anchor: Vector2 = swing.get("anchor", Vector2(attacker.ring_pos, attacker.lane)) if attacker_live else Vector2.ZERO
+		var to_anchor := Vector2(_ring_delta(attacker.ring_pos, anchor.x), anchor.y - attacker.lane) if attacker_live else Vector2.ZERO
+		var intent := _battle_projectile_lifecycle_service().web_swing_tick_intent({
+			"attacker_live": attacker_live,
+			"timer": float(swing.get("timer", 0.0)),
+			"delta": delta,
+			"to_anchor": to_anchor,
+			"strength": float(swing.get("strength", STANDARD_WEB_TETHER_STRENGTH)),
+			"break_force": float(swing.get("break_force", STANDARD_WEB_TETHER_BREAK_FORCE)),
+			"attacker_velocity": attacker.velocity if attacker_live else Vector2.ZERO,
+			"forward": _unit_forward_vector(attacker) if attacker_live else Vector2.RIGHT,
+			"accel_mult": STANDARD_WEB_SWING_ACCEL_MULT,
+		})
+		match String(intent.get("action", "")):
+			"remove":
+				active_web_swings.remove_at(index)
+				continue
+			"snap":
+				if attacker_live:
+					_spawn_hit_effect(attacker, 1, "blunt", false, "web_snap", Vector2(attacker.ring_pos, attacker.lane))
+				active_web_swings.remove_at(index)
+				continue
+		if attacker_live:
+			attacker.velocity += intent.get("attacker_velocity_delta", Vector2.ZERO)
+		swing["timer"] = float(intent.get("timer", swing.get("timer", 0.0)))
 		active_web_swings[index] = swing
 
 
@@ -40629,18 +42092,30 @@ func _spawn_projectile_trace(attacker, event: Dictionary) -> void:
 	var segment := _projected_projectile_screen_segment(attacker, event, 92.0)
 	if segment.is_empty():
 		return
+	var payload := projectile_runtime_service.trace_payload(event, segment, attacker.position, _projectile_runtime_constants()) if projectile_runtime_service != null else _legacy_projectile_trace_payload(attacker, event, segment)
 	var trace := ProjectileTraceEffect.new()
 	trace.setup(
-		segment.get("start", attacker.position),
-		segment.get("end", attacker.position),
-		String(event.get("damage_type", "bullet")),
-		String(event.get("projectile_style", _projectile_style_for_damage(String(event.get("damage_type", "bullet"))))),
-		String(event.get("travel_path", "straight")),
+		payload.get("start", attacker.position),
+		payload.get("end", attacker.position),
+		String(payload.get("damage_type", "bullet")),
+		String(payload.get("projectile_style", _projectile_style_for_damage(String(event.get("damage_type", "bullet"))))),
+		String(payload.get("travel_path", "straight")),
 		combat_vfx_texture,
-		float(event.get("projectile_speed_mult", BULLET_HELL_DEFAULT_SPEED_MULT))
+		float(payload.get("projectile_speed_mult", BULLET_HELL_DEFAULT_SPEED_MULT))
 	)
 	effects_root.add_child(trace)
 	_play_projectile_launch_sfx(event)
+
+
+func _legacy_projectile_trace_payload(attacker, event: Dictionary, segment: Dictionary) -> Dictionary:
+	return {
+		"start": segment.get("start", attacker.position),
+		"end": segment.get("end", attacker.position),
+		"damage_type": String(event.get("damage_type", "bullet")),
+		"projectile_style": String(event.get("projectile_style", _projectile_style_for_damage(String(event.get("damage_type", "bullet"))))),
+		"travel_path": String(event.get("travel_path", "straight")),
+		"projectile_speed_mult": float(event.get("projectile_speed_mult", BULLET_HELL_DEFAULT_SPEED_MULT)),
+	}
 
 
 func _spawn_hit_effect(target, counter_tier: int, damage_type: String, nullified: bool, projectile_style: String = "", hit_position_combat: Vector2 = Vector2(1.0e20, 1.0e20)) -> void:
@@ -40846,6 +42321,7 @@ func _clear_all_units() -> void:
 	active_web_tethers.clear()
 	active_web_swings.clear()
 	gun_activation_state = {1: {}, 2: {}}
+	held_melee_activation_state = {1: {}, 2: {}}
 	salvo_landing_preview_effects.clear()
 	active_units = {
 		1: {"hero": null, "puppet": [], "barrier": null},
@@ -42576,12 +44052,119 @@ func _projectile_terminal_backfill(part: Dictionary) -> Dictionary:
 	return adjusted
 
 
+func _safe_philosophy_barrier_muscle(part: Dictionary) -> bool:
+	if not (bool(part.get("barrier_tile_component", false)) or bool(part.get("barrier_panel", false))):
+		return false
+	if _part_has_frozen_special_projectile_marker(part):
+		return false
+	if String(part.get("barrier_logic", "")).strip_edges() != "":
+		return true
+	for key in [
+		"is_gravity_field",
+		"is_coolant_field",
+		"is_heat_field",
+		"is_repulsion_field",
+		"is_hack_field",
+		"is_signal_jammer",
+		"is_trap_field",
+		"reflect_projectiles",
+		"is_support_node",
+		"is_repair_station",
+		"is_speed_lane",
+		"is_coin_generator",
+		"is_one_way_shield",
+		"is_cage_wall",
+	]:
+		if bool(part.get(String(key), false)):
+			return true
+	return int(part.get("entry_breach_damage", 0)) > 0
+
+
+func _philosophy_limb_muscle_backfill(part: Dictionary) -> Dictionary:
+	if part.is_empty() or part.has("attack_groups") or part.has("action_groups"):
+		return part
+	var adjusted := part.duplicate(true)
+	if String(adjusted.get("catalog_lifecycle", "")).to_lower() != "frozen":
+		_clear_catalog_lifecycle_metadata(adjusted)
+	if String(adjusted.get("material_class", "")).strip_edges() == "":
+		adjusted["material_class"] = "limb_muscle"
+	if String(adjusted.get("damage_type", "")).strip_edges() == "":
+		adjusted["damage_type"] = "blunt"
+	adjusted["limb_segment"] = true
+	adjusted["terminal_weapon"] = false
+	adjusted["connection_ends"] = 2
+	if not adjusted.has("embedded_joint_kind"):
+		var shape := String(adjusted.get("shape", "")).to_lower()
+		adjusted["embedded_joint_kind"] = "linear" if (shape.contains("linear") or shape.contains("telescopic") or shape.contains("strut")) else "ball"
+	var drive_defaults := _limb_drive_component_with_defaults(adjusted, "limb_muscle")
+	for key in ["joint_drive_kind", "joint_output_momentum_base", "joint_engine_demand", "joint_speed_cap", "limb_idle_heat_coeff", "momentum_min", "momentum_max_raw", "momentum_max", "allocated_limb_momentum", "joint_angle_range", "joint_extension_m"]:
+		if drive_defaults.has(String(key)):
+			adjusted[String(key)] = drive_defaults[String(key)]
+	adjusted["philosophy_muscle_backfilled_live"] = true
+	return adjusted
+
+
+func _philosophy_muscle_backfill(part: Dictionary) -> Dictionary:
+	if part.is_empty() or part.has("attack_groups") or part.has("action_groups"):
+		return part
+	if _part_has_frozen_special_projectile_marker(part):
+		return part
+	if bool(part.get("projectile", false)) or _component_is_gun_muscle(part, "muscle"):
+		return part
+	var adjusted := part.duplicate(true)
+	var changed := false
+	if _component_is_torso(adjusted) or String(adjusted.get("material_class", "")).to_lower() == "torso":
+		_clear_catalog_lifecycle_metadata(adjusted)
+		adjusted["is_torso"] = true
+		if String(adjusted.get("material_class", "")).strip_edges() == "":
+			adjusted["material_class"] = "torso"
+		if not adjusted.has("connection_ends"):
+			adjusted["connection_ends"] = int(adjusted.get("joint_ports", 4))
+		if not adjusted.has("joint_ports"):
+			adjusted["joint_ports"] = int(adjusted.get("connection_ends", 4))
+		if not adjusted.has("module_slots"):
+			adjusted["module_slots"] = 4
+		if not adjusted.has("torso_slots"):
+			adjusted["torso_slots"] = 3
+		if not adjusted.has("heat_capacity"):
+			adjusted["heat_capacity"] = 18
+		changed = true
+	elif _safe_philosophy_barrier_muscle(adjusted):
+		_clear_catalog_lifecycle_metadata(adjusted)
+		adjusted["barrier_panel"] = true
+		adjusted["barrier_tile_component"] = true
+		if not adjusted.has("connection_ends"):
+			adjusted["connection_ends"] = 2
+		changed = true
+	elif _terminal_weapon_kind_for_part(adjusted, "muscle") == "melee" and String(adjusted.get("damage_type", "")).to_lower() in MELEE_DAMAGE_TYPES:
+		_clear_catalog_lifecycle_metadata(adjusted)
+		adjusted["terminal_weapon"] = true
+		adjusted["terminal_weapon_kind"] = "melee"
+		var family := ""
+		if _component_is_blade_weapon(adjusted):
+			family = _blade_weapon_family_for_part(adjusted)
+		elif _component_is_blunt_weapon(adjusted):
+			family = _blunt_weapon_family_for_part(adjusted)
+		elif _component_is_pierce_weapon(adjusted):
+			family = _pierce_weapon_family_for_part(adjusted)
+		if family != "":
+			adjusted["weapon_family"] = family
+		if not adjusted.has("embedded_joint_kind"):
+			adjusted["embedded_joint_kind"] = _embedded_joint_kind_for_part(adjusted, "muscle")
+		changed = true
+	if changed:
+		adjusted["philosophy_muscle_backfilled_live"] = true
+	return adjusted if changed else part
+
+
 func _catalog_backfilled_part(slot_key: String, part: Dictionary) -> Dictionary:
 	match slot_key:
 		"module":
 			return _module_with_gun_aim_input_defaults(_module_profile_backfill(part))
+		"limb_muscle":
+			return _philosophy_limb_muscle_backfill(part)
 		"muscle":
-			return _projectile_terminal_backfill(part)
+			return _philosophy_muscle_backfill(_projectile_terminal_backfill(part))
 	return part
 
 
@@ -42651,7 +44234,7 @@ func _normalized_catalog_part(slot_key: String, raw_part: Dictionary, context: S
 					part = _combat_model_normalized_component(part, slot_key)
 				_:
 					part = _combat_model_normalized_component(part, slot_key)
-			part = _without_legacy_power_fields(part)
+			part = _without_legacy_power_fields(part, slot_key)
 			part = _scrub_nonphysical_catalog_part(part, slot_key)
 			if slot_key == "cooling":
 				part.erase("cooling")
@@ -42667,7 +44250,7 @@ func _normalized_catalog_part(slot_key: String, raw_part: Dictionary, context: S
 				part = _ammo_payload_variant(part, editor_ammo_size_rank)
 			if slot_key == "muscle" and _part_counts_as_terminal_weapon(part, "muscle"):
 				part = _part_with_effective_terminal_geometry(part, "muscle")
-			return _catalog_part_with_metadata(slot_key, _scrub_nonphysical_catalog_part(_without_legacy_power_fields(part), slot_key))
+			return _catalog_part_with_metadata(slot_key, _scrub_nonphysical_catalog_part(_without_legacy_power_fields(part, slot_key), slot_key))
 		_:
 			part = _component_with_size_design(part, slot_key)
 			part = _economy_priced_component(part)
@@ -42685,11 +44268,11 @@ func _normalized_catalog_part(slot_key: String, raw_part: Dictionary, context: S
 				part = shortened_limb
 			part = _limb_drive_component_with_defaults(part, slot_key)
 			part = _combat_model_normalized_component(part, slot_key)
-			part = _without_legacy_power_fields(part)
+			part = _without_legacy_power_fields(part, slot_key)
 			part = _scrub_nonphysical_catalog_part(part, slot_key)
 			if slot_key == "booster":
 				part["torso_slot_payload"] = true
-				part = _scrub_nonphysical_catalog_part(_without_legacy_power_fields(part), slot_key)
+				part = _scrub_nonphysical_catalog_part(_without_legacy_power_fields(part, slot_key), slot_key)
 			return _catalog_part_with_metadata(slot_key, part)
 
 
@@ -42791,6 +44374,11 @@ func _catalog_lifecycle_for_part(slot_key: String, part: Dictionary) -> Dictiona
 	if slot_key == "muscle":
 		var material_class := String(checked_part.get("material_class", "")).to_lower()
 		var is_projectile_terminal := bool(checked_part.get("projectile", false)) or material_class in ["gun", "missile_launcher", "web_gun"]
+		if _part_has_frozen_special_projectile_marker(checked_part) and not bool(checked_part.get("catalog_backfilled_live", false)):
+			result["catalog_lifecycle"] = "frozen"
+			result["reason"] = "特殊投射物弹道/场效果尚未进入当前发射 profile"
+			result["future_dev_tag"] = "future_projectile_family"
+			return result
 		if is_projectile_terminal:
 			var live_gun_names := [
 				STANDARD_SNIPER_NAME,
@@ -42920,11 +44508,7 @@ func _legacy_mass_limit_to_volume_rank(mass_limit: float) -> float:
 func _part_slot_volume_rank(part: Dictionary, slot_key: String) -> float:
 	if part.has("slot_volume_tier"):
 		return float(_volume_tier_rank(String(part["slot_volume_tier"])))
-	if part.has("size_tier") or part.has("size_class") or part.has("ammo_size_tier"):
-		return float(_size_tier_rank(_part_size_tier_label(part, slot_key)))
 	var material_class := String(part.get("material_class", "")).to_lower()
-	if bool(part.get("ammo_slot_payload", false)) or material_class == "ammo_payload":
-		return 1.0
 	if bool(part.get("electronic_armor", false)) or bool(part.get("shield_payload", false)) or material_class == "shield_payload":
 		var shield_hp := float(part.get("shield_hp", part.get("electronic_armor_hp", 0.0)))
 		var coverage := float(part.get("shield_coverage", part.get("electronic_armor_coverage", 0.0)))
@@ -42937,6 +44521,10 @@ func _part_slot_volume_rank(part: Dictionary, slot_key: String) -> float:
 			return 3.0
 		if shield_hp >= 45.0 or coverage >= 0.45 or mass >= 2.0:
 			return 2.0
+		return 1.0
+	if part.has("size_tier") or part.has("size_class") or part.has("ammo_size_tier"):
+		return float(_size_tier_rank(_part_size_tier_label(part, slot_key)))
+	if bool(part.get("ammo_slot_payload", false)) or material_class == "ammo_payload":
 		return 1.0
 	if slot_key == "engine":
 		var power := float(part.get("engine_momentum_output", 0.0))
@@ -45582,11 +47170,14 @@ func _apply_barrier_tile_stats(stats: Dictionary, role_key: String, unit_bp: Dic
 			continue
 		var tile_slot := "joint" if tile.has("joint") else "muscle"
 		var tile_part := _selected_component(role_key, tile_slot, int(tile.get(tile_slot, unit_bp.get(tile_slot, unit_bp.get("muscle", 0)))))
-		var cell_index := clampi(int(tile.get("index", runtime_tiles.size())), 0, columns * rows - 1)
-		var col := cell_index % columns
-		var row := int(floori(float(cell_index) / float(columns)))
-		var local_ring := (float(col) + 0.5) * cell_width - BARRIER_BLUEPRINT_WIDTH * 0.5
-		var local_lane := (float(row) + 0.5) * cell_height - BARRIER_BLUEPRINT_HEIGHT * 0.5
+		var screen_pos := _barrier_tile_screen_pos(tile)
+		var cell_index := int(tile.get("index", _barrier_pos_to_legacy_cell_index(screen_pos)))
+		if cell_index < 0:
+			cell_index = runtime_tiles.size()
+		var col := clampi(int(floor(screen_pos.x * float(columns))), 0, columns - 1)
+		var row := clampi(int(floor(screen_pos.y * float(rows))), 0, rows - 1)
+		var local_ring := screen_pos.x * BARRIER_BLUEPRINT_WIDTH - BARRIER_BLUEPRINT_WIDTH * 0.5
+		var local_lane := screen_pos.y * BARRIER_BLUEPRINT_HEIGHT - BARRIER_BLUEPRINT_HEIGHT * 0.5
 		var shape := String(tile_part.get("shape", "barrier_tile"))
 		var material_class := String(tile_part.get("material_class", "barrier_wall"))
 		var orientation := String(tile.get("orientation", ""))
@@ -45610,6 +47201,7 @@ func _apply_barrier_tile_stats(stats: Dictionary, role_key: String, unit_bp: Dic
 		var tile_threshold_coeff := maxf(0.08, float(tile_part.get("barrier_momentum_threshold_coeff", 1.0)) * ether_threshold_coeff)
 		runtime_tiles.append({
 			"index": cell_index,
+			"pos": screen_pos,
 			"col": col,
 			"row": row,
 			"local_ring": local_ring,
@@ -46515,6 +48107,24 @@ func _component_topology_attack_nodes(role_key: String, unit_bp: Dictionary, lim
 		if modules.is_empty():
 			continue
 		var primary_module := int(modules[0])
+		var boot_driver_module := -1
+		var boot_driver_nodes: Array = []
+		var boot_driver_extension := 0.0
+		for module_index in modules:
+			var module_part := _selected_component(role_key, "module", int(module_index))
+			if String(module_part.get("module_action_profile", "")) != BOOT_ACTION_DRIVER_PROFILE:
+				continue
+			var resolved := _boot_driver_binding_nodes_for_selection(role_key, unit_bp, nodes, edges, [driven_node_index], module_part)
+			if resolved.size() == 2:
+				boot_driver_module = int(module_index)
+				boot_driver_nodes = resolved
+				var weapon_part := _topology_node_part(role_key, nodes[int(resolved[1])], unit_bp)
+				boot_driver_extension = _boot_driver_weapon_extension_m(weapon_part, module_part)
+				break
+		if boot_driver_module >= 0:
+			primary_module = boot_driver_module
+			terminal_node_index = int(boot_driver_nodes[1])
+			terminal_index = _topology_node_part_index(nodes[terminal_node_index], unit_bp)
 		var label := String(driven_node.get("label", "LIMB")).replace("L%02d " % [driven_node_index + 1], "")
 		var terminal_part_for_label := _selected_component(role_key, "muscle", terminal_index)
 		label = "%s -> %s" % [_short_part_name(label), _short_part_name(String(terminal_part_for_label.get("name", "TIP")))]
@@ -46541,6 +48151,10 @@ func _component_topology_attack_nodes(role_key: String, unit_bp: Dictionary, lim
 		synthetic["source_module_nodes"] = [driven_node_index]
 		if terminal_node_index >= 0:
 			synthetic["source_module_nodes"].append(terminal_node_index)
+		if boot_driver_module >= 0 and boot_driver_nodes.size() == 2:
+			synthetic["boot_driver_rotating_node"] = int(boot_driver_nodes[0])
+			synthetic["boot_driver_weapon_node"] = int(boot_driver_nodes[1])
+			synthetic["boot_driver_extension_m"] = boot_driver_extension
 		synthetic_nodes.append(synthetic)
 	return synthetic_nodes
 
@@ -46677,6 +48291,8 @@ func _runtime_topology_segments_for_blueprint(role_key: String, unit_bp: Diction
 			"name": String(part.get("name", node.get("label", "PART"))),
 			"mass": maxf(0.0, float(part.get("mass", 0.0))),
 			"catalog_length": maxf(0.0, float(part.get("length", 0.0))),
+			"catalog_role": _catalog_role_for_part(slot_key, part),
+			"part_category": _catalog_part_category_for_part(slot_key, part),
 			"axis_local": axis,
 			"size_tier": _part_size_tier_label(part, slot_key),
 			"size_rank": _component_size_rank(part),
@@ -46685,6 +48301,10 @@ func _runtime_topology_segments_for_blueprint(role_key: String, unit_bp: Diction
 			"shape": String(part.get("shape", "")),
 			"source_shape": String(part.get("shape", "")),
 			"weapon_family": String(part.get("weapon_family", "")),
+			"barrier_panel": bool(part.get("barrier_panel", false)),
+			"barrier_tile_component": bool(part.get("barrier_tile_component", false)),
+			"panel_family": String(part.get("panel_family", "")),
+			"barrier_effect_tags": _barrier_tile_effect_tags(part) if (bool(part.get("barrier_panel", false)) or bool(part.get("barrier_tile_component", false))) else [],
 			"orientation_category": String(part.get("orientation_category", "orthogonal_side_mount")) if _part_supports_visual_handedness(part, slot_key) else "",
 			"orientation_basis": String(part.get("orientation_basis", "parent_normal")) if _part_supports_visual_handedness(part, slot_key) else "",
 			"visual_mount_side": _topology_node_visual_handedness(node) if _topology_node_supports_visual_handedness(role_key, unit_bp, node) else "",
@@ -46843,6 +48463,21 @@ func _runtime_module_bindings_for_blueprint(role_key: String, unit_bp: Dictionar
 		binding["attack_key"] = clampi(int(binding.get("attack_key", 1)), 1, ATTACK_GROUP_COUNT)
 		var root_index := int(binding.get("root_index", -1))
 		var target_nodes: Array = Array(binding.get("target_nodes", []))
+		if String(binding.get("module_action_profile", "")) == BOOT_ACTION_DRIVER_PROFILE or String(binding.get("target_kind", "")) == BOOT_ACTION_DRIVER_TARGET_KIND:
+			var resolved_boot_nodes: Array = []
+			if target_nodes.size() == 2 and _boot_driver_invalid_reason_for_nodes(role_key, unit_bp, nodes, Array(topology.get("edges", [])), target_nodes, module_part) == "":
+				resolved_boot_nodes = [int(target_nodes[0]), int(target_nodes[1])]
+			else:
+				resolved_boot_nodes = _boot_driver_binding_nodes_for_selection(role_key, unit_bp, nodes, Array(topology.get("edges", [])), [root_index], module_part)
+			if resolved_boot_nodes.size() == 2:
+				target_nodes = resolved_boot_nodes
+				binding["target_nodes"] = target_nodes.duplicate(true)
+				binding["target_kind"] = BOOT_ACTION_DRIVER_TARGET_KIND
+				binding["root_index"] = int(target_nodes[0])
+				var weapon_part := _topology_node_part(role_key, nodes[int(target_nodes[1])], unit_bp)
+				binding["boot_driver_rotating_node"] = int(target_nodes[0])
+				binding["boot_driver_weapon_node"] = int(target_nodes[1])
+				binding["boot_driver_extension_m"] = _boot_driver_weapon_extension_m(weapon_part, module_part)
 		if _module_binding_side_mount_action_required(role_key, unit_bp, nodes, root_index, target_nodes):
 			var side := _normalize_side_mount_action_side(binding.get("side_mount_action_side", _module_binding_default_side_mount_action_side(role_key, unit_bp, nodes, root_index, target_nodes)))
 			binding["side_mount_action_side"] = side
@@ -48209,33 +49844,26 @@ func _update_parallax_background() -> void:
 		return
 	var screen_scale := _battle_world_to_screen_scale()
 	var camera_world := Vector2(camera_center, camera_lane_center)
-	var center_screen := Vector2((ARENA_LEFT + ARENA_RIGHT) * 0.5, (ARENA_TOP + ARENA_BOTTOM) * 0.5)
-	var twist_phase := float(mobius_rotation_state.get("twist_phase", mobius_rotation_state.get("angle", 0.0)))
-	var mobius_depth := 0.5 + sin(twist_phase * 0.67) * 0.08
-	if mobius_enabled:
-		var center_projection := _mobius_project_coord(_mobius_camera_coord())
-		mobius_depth = float(center_projection.get("depth01", mobius_depth))
 	for entry in parallax_nodes:
 		var layer_info: Dictionary = entry
 		var node: Node2D = layer_info.get("node", null)
 		if node == null or not is_instance_valid(node):
 			continue
+		if mobius_enabled:
+			if node is CanvasItem:
+				(node as CanvasItem).visible = false
+			continue
+		if node is CanvasItem:
+			(node as CanvasItem).visible = true
 		var base_position: Vector2 = layer_info.get("base", Vector2.ZERO)
 		var parallax := float(layer_info.get("parallax", 0.0))
 		var offset := Vector2(camera_world.x * screen_scale * parallax, camera_world.y * screen_scale * parallax)
 		var base_scale: Vector2 = layer_info.get("base_scale", node.scale)
 		var base_rotation := float(layer_info.get("base_rotation", 0.0))
 		var shifted := base_position - offset
-		if mobius_enabled:
-			var drift := Vector2(sin(twist_phase * 0.31 + parallax * 11.0), cos(twist_phase * 0.27 + parallax * 7.0)) * parallax * 22.0
-			node.position = shifted + drift
-			node.rotation = base_rotation
-			var depth_pulse := 1.0 + ((mobius_depth - 0.5) * 1.2 + sin(twist_phase + parallax * 9.0) * 0.28) * MOBIUS_PARALLAX_STRENGTH * parallax
-			node.scale = base_scale * clampf(depth_pulse, 0.84, 1.24)
-		else:
-			node.position = shifted
-			node.rotation = base_rotation
-			node.scale = base_scale
+		node.position = shifted
+		node.rotation = base_rotation
+		node.scale = base_scale
 	_update_world_coordinate_background()
 	_update_near_cosmic_dust()
 
@@ -48296,6 +49924,14 @@ func _update_near_cosmic_dust() -> void:
 					node.visible = false
 		return
 	if world_near_dust_nodes.is_empty():
+		return
+	if mobius_enabled:
+		for raw_entry in world_near_dust_nodes:
+			if raw_entry is Dictionary:
+				var node: Node = Dictionary(raw_entry).get("node", null)
+				if node != null and is_instance_valid(node):
+					if node is CanvasItem:
+						(node as CanvasItem).visible = false
 		return
 	var center_screen := Vector2((ARENA_LEFT + ARENA_RIGHT) * 0.5, (ARENA_TOP + ARENA_BOTTOM) * 0.5)
 	var twist_phase := float(mobius_rotation_state.get("twist_phase", mobius_rotation_state.get("angle", 0.0)))
@@ -48615,8 +50251,31 @@ func _build_saved_units_ui() -> void:
 		thumb.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		root.add_child(thumb)
 		saved_unit_thumb_views.append(thumb)
+		var card_scroll := ScrollContainer.new()
+		card_scroll.name = "SavedUnitCardTextScroll%d" % i
+		card_scroll.position = card.position + Vector2(70.0, 10.0)
+		card_scroll.size = Vector2(134.0, 66.0)
+		card_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+		card_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+		card_scroll.mouse_filter = Control.MOUSE_FILTER_STOP
+		card_scroll.mouse_entered.connect(_hover_saved_unit_card.bind(i))
+		card_scroll.gui_input.connect(_handle_saved_unit_card_text_input.bind(i))
+		root.add_child(card_scroll)
+		saved_unit_card_text_scrolls.append(card_scroll)
+		var card_label := _make_label(card_scroll, "SavedUnitCardText%d" % i, "", Vector2.ZERO, Vector2(120.0, 66.0), 11, Color(0.94, 0.98, 1.0, 1.0), HORIZONTAL_ALIGNMENT_LEFT)
+		card_label.vertical_alignment = VERTICAL_ALIGNMENT_TOP
+		card_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		saved_unit_card_text_labels.append(card_label)
 	saved_unit_page_label = _make_label(root, "SavedUnitsPage", "", Vector2(56.0, 556.0), Vector2(230.0, 26.0), 14, Color(0.84, 0.92, 1.0, 1.0), HORIZONTAL_ALIGNMENT_LEFT)
-	saved_unit_selection_label = _make_label(root, "SavedUnitsSelection", "", Vector2(300.0, 556.0), Vector2(470.0, 52.0), 13, Color(1.0, 0.9, 0.42, 1.0), HORIZONTAL_ALIGNMENT_LEFT)
+	saved_unit_selection_scroll = ScrollContainer.new()
+	saved_unit_selection_scroll.name = "SavedUnitsSelectionScroll"
+	saved_unit_selection_scroll.position = Vector2(300.0, 552.0)
+	saved_unit_selection_scroll.size = Vector2(500.0, 58.0)
+	saved_unit_selection_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	saved_unit_selection_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+	root.add_child(saved_unit_selection_scroll)
+	saved_unit_selection_label = _make_label(saved_unit_selection_scroll, "SavedUnitsSelection", "", Vector2.ZERO, Vector2(480.0, 58.0), 11, Color(1.0, 0.9, 0.42, 1.0), HORIZONTAL_ALIGNMENT_LEFT)
+	saved_unit_selection_label.vertical_alignment = VERTICAL_ALIGNMENT_TOP
 	saved_unit_selection_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	var actions := [
 		["prev", "上一页", "PREV"],
@@ -48627,6 +50286,7 @@ func _build_saved_units_ui() -> void:
 		["train_one", "单独训练", "TRAIN ONE"],
 		["train_selected", "训练所选", "TRAIN SEL"],
 		["delete_selected", "删除选中", "DELETE"],
+		["save_puppet_group", "保存傀儡组", "SAVE P-GRP"],
 		["save_team", "保存队伍", "SAVE TEAM"],
 		["team_prev", "队伍<", "TEAM <"],
 		["team_next", "队伍>", "TEAM >"],
@@ -48962,29 +50622,42 @@ func _build_editor_ui() -> void:
 	editor_perf_overlay_label.z_index = 330
 	editor_perf_overlay_label.visible = false
 	editor_perf_overlay_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	editor_save_unit_feedback_label = _make_label(root, "SaveUnitFeedback", "", Vector2(28.0, 70.0), Vector2(868.0, 22.0), 12, Color(0.45, 1.0, 0.62, 1.0), HORIZONTAL_ALIGNMENT_CENTER)
+	editor_save_unit_feedback_label = _make_label(root, "SaveUnitFeedback", "", Vector2(270.0, 654.0), Vector2(622.0, 26.0), 11, Color(0.45, 1.0, 0.62, 1.0), HORIZONTAL_ALIGNMENT_CENTER)
 	editor_save_unit_feedback_label.z_index = 300
 	editor_save_unit_feedback_label.visible = false
+	_layout_editor_save_unit_feedback()
 	editor_save_unit_name_panel = ColorRect.new()
 	editor_save_unit_name_panel.name = "SaveUnitNamePanel"
-	editor_save_unit_name_panel.position = Vector2(408.0, 206.0)
-	editor_save_unit_name_panel.size = Vector2(438.0, 176.0)
+	editor_save_unit_name_panel.position = Vector2(390.0, 188.0)
+	editor_save_unit_name_panel.size = Vector2(474.0, 236.0)
 	editor_save_unit_name_panel.color = Color(0.01, 0.018, 0.026, 0.96)
 	editor_save_unit_name_panel.z_index = 295
 	editor_save_unit_name_panel.visible = false
 	root.add_child(editor_save_unit_name_panel)
-	editor_save_unit_name_label = _make_label(editor_save_unit_name_panel, "SaveUnitNameLabel", "保存为单位", Vector2(18.0, 14.0), Vector2(402.0, 24.0), 15, Color(1.0, 0.88, 0.28, 1.0), HORIZONTAL_ALIGNMENT_LEFT)
+	editor_save_unit_name_label = _make_label(editor_save_unit_name_panel, "SaveUnitNameLabel", "保存为单位", Vector2(18.0, 14.0), Vector2(438.0, 24.0), 15, Color(1.0, 0.88, 0.28, 1.0), HORIZONTAL_ALIGNMENT_LEFT)
 	editor_save_unit_name_edit = LineEdit.new()
 	editor_save_unit_name_edit.name = "SaveUnitNameEdit"
 	editor_save_unit_name_edit.position = Vector2(18.0, 48.0)
-	editor_save_unit_name_edit.size = Vector2(402.0, 30.0)
+	editor_save_unit_name_edit.size = Vector2(438.0, 30.0)
 	editor_save_unit_name_edit.placeholder_text = "单位名称" if _ui_is_zh() else "Unit name"
 	editor_save_unit_name_edit.text_submitted.connect(_confirm_save_unit_name_dialog.bind("save"))
 	editor_save_unit_name_panel.add_child(editor_save_unit_name_edit)
+	_make_label(editor_save_unit_name_panel, "SaveUnitRoleLabel", "单位类型", Vector2(18.0, 92.0), Vector2(438.0, 18.0), 11, Color(0.76, 0.9, 1.0, 0.86), HORIZONTAL_ALIGNMENT_LEFT)
+	for i in range(ROLE_ORDER.size()):
+		var role_key: String = ROLE_ORDER[i]
+		var role_button := Button.new()
+		role_button.name = "SaveUnitRole%s" % role_key
+		role_button.text = _role_name(role_key)
+		role_button.position = Vector2(18.0 + float(i) * 148.0, 114.0)
+		role_button.size = Vector2(136.0, 28.0)
+		role_button.focus_mode = Control.FOCUS_NONE
+		role_button.disabled = true
+		editor_save_unit_name_panel.add_child(role_button)
+		editor_save_unit_role_buttons[role_key] = role_button
 	var save_name_buttons := [
-		["save_name_stay", "保存", "save", Vector2(18.0, 102.0), Vector2(124.0, 30.0)],
-		["save_name_save_as", "另存为", "save_as", Vector2(156.0, 102.0), Vector2(124.0, 30.0)],
-		["save_name_cancel", "取消", "cancel", Vector2(294.0, 102.0), Vector2(124.0, 30.0)],
+		["save_name_stay", "保存", "save", Vector2(18.0, 170.0), Vector2(136.0, 30.0)],
+		["save_name_save_as", "另存为", "save_as", Vector2(168.0, 170.0), Vector2(136.0, 30.0)],
+		["save_name_cancel", "取消", "cancel", Vector2(318.0, 170.0), Vector2(136.0, 30.0)],
 	]
 	for spec in save_name_buttons:
 		var button := Button.new()
@@ -48998,30 +50671,34 @@ func _build_editor_ui() -> void:
 		else:
 			button.pressed.connect(_confirm_save_unit_name_dialog.bind(String(spec[2])))
 		editor_save_unit_name_panel.add_child(button)
-	editor_section_labels["roster_overview"] = _make_label(root, "RosterOverviewTitle", "队伍总览", Vector2(236.0, 82.0), Vector2(112.0, 22.0), 13, Color(1.0, 0.86, 0.28, 1.0), HORIZONTAL_ALIGNMENT_LEFT)
+	editor_section_labels["roster_overview"] = _make_label(root, "RosterOverviewTitle", "队伍总览", Vector2(236.0, 46.0), Vector2(112.0, 22.0), 13, Color(1.0, 0.86, 0.28, 1.0), HORIZONTAL_ALIGNMENT_LEFT)
 	editor_section_labels["roster_overview"].visible = false
-	editor_section_labels["roster_page"] = _make_label(root, "RosterOverviewPage", "", Vector2(792.0, 82.0), Vector2(52.0, 22.0), 11, Color(0.82, 0.9, 0.96, 1.0), HORIZONTAL_ALIGNMENT_CENTER)
+	editor_section_labels["roster_page"] = _make_label(root, "RosterOverviewPage", "", Vector2(792.0, 46.0), Vector2(52.0, 22.0), 11, Color(0.82, 0.9, 0.96, 1.0), HORIZONTAL_ALIGNMENT_CENTER)
 	editor_section_labels["roster_page"].visible = false
 	var roster_prev_button := Button.new()
+	roster_prev_button.name = "EditorRosterPrev"
 	roster_prev_button.text = "<"
-	roster_prev_button.position = Vector2(846.0, 80.0)
+	roster_prev_button.position = Vector2(846.0, 44.0)
 	roster_prev_button.size = Vector2(22.0, 24.0)
 	roster_prev_button.focus_mode = Control.FOCUS_NONE
 	roster_prev_button.visible = false
 	roster_prev_button.pressed.connect(_change_editor_roster_page.bind(-1))
 	root.add_child(roster_prev_button)
+	editor_roster_prev_button = roster_prev_button
 	var roster_next_button := Button.new()
+	roster_next_button.name = "EditorRosterNext"
 	roster_next_button.text = ">"
-	roster_next_button.position = Vector2(870.0, 80.0)
+	roster_next_button.position = Vector2(870.0, 44.0)
 	roster_next_button.size = Vector2(22.0, 24.0)
 	roster_next_button.focus_mode = Control.FOCUS_NONE
 	roster_next_button.visible = false
 	roster_next_button.pressed.connect(_change_editor_roster_page.bind(1))
 	root.add_child(roster_next_button)
+	editor_roster_next_button = roster_next_button
 	for i in range(5):
 		var roster_button := Button.new()
 		roster_button.name = "EditorRosterSlot%d" % i
-		roster_button.position = Vector2(350.0 + float(i) * 86.0, 80.0)
+		roster_button.position = Vector2(350.0 + float(i) * 86.0, 44.0)
 		roster_button.size = Vector2(82.0, 26.0)
 		roster_button.focus_mode = Control.FOCUS_NONE
 		roster_button.pressed.connect(_select_editor_roster_overview_slot.bind(i))
@@ -49128,18 +50805,22 @@ func _build_editor_ui() -> void:
 		["board_tool_pose", "姿态"],
 		["add_node", "+ 节点"],
 		["link_node", "连接上个"],
+		["copy_selection", "复制"],
+		["cut_selection", "剪切"],
+		["paste_selection", "粘贴"],
 		["delete_selected_part", "删选中"],
 		["undo_canvas", "退一步"],
 		["clear_canvas", "全部删除"],
-	["set_handedness_left", "左挂刃"],
-	["set_handedness_right", "右挂刃"],
-	["flip_handedness", "翻侧刃"],
+		["toggle_barrier_grid", "辅助线"],
+		["set_handedness_left", "左挂刃"],
+		["set_handedness_right", "右挂刃"],
+		["flip_handedness", "翻侧刃"],
 	]
 	for i in range(canvas_tools.size()):
 		var canvas_button := Button.new()
 		canvas_button.text = String(canvas_tools[i][1])
-		canvas_button.position = Vector2(24.0 + float(i) * 94.0, 688.0)
-		canvas_button.size = Vector2(90.0, 24.0)
+		canvas_button.position = Vector2(20.0 + float(i) * 76.0, 688.0)
+		canvas_button.size = Vector2(72.0, 24.0)
 		canvas_button.focus_mode = Control.FOCUS_NONE
 		canvas_button.pressed.connect(_editor_action.bind(String(canvas_tools[i][0])))
 		root.add_child(canvas_button)
@@ -49682,6 +51363,14 @@ func _build_battle_ui() -> void:
 	battle_instrument_gauge.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	battle_instrument_gauge.visible = false
 	hud.add_child(battle_instrument_gauge)
+	battle_action_diagnostics_view = BattleActionDiagnosticsView.new()
+	battle_action_diagnostics_view.name = "BattleActionDiagnostics"
+	battle_action_diagnostics_view.position = Vector2(454.0, 108.0)
+	battle_action_diagnostics_view.size = Vector2(372.0, 192.0)
+	battle_action_diagnostics_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	battle_action_diagnostics_view.visible = false
+	battle_action_diagnostics_view.z_index = 90
+	hud.add_child(battle_action_diagnostics_view)
 	var bar_width := 330.0
 	for player_id in [1, 2]:
 		var x_base: float = 34.0 if player_id == 1 else 886.0
@@ -50290,6 +51979,12 @@ func _update_scout_ui() -> void:
 	_set_named_label(scout_layer, "ScoutPlayerTitle", ("P%d 出战" if _ui_is_zh() else "P%d SORTIE") % scout_sortie_player_id)
 	for i in range(scout_color_buttons.size()):
 		var color_button: Button = scout_color_buttons[i]
+		if i >= TEAM_COLOR_PRESETS.size():
+			color_button.visible = false
+			color_button.disabled = true
+			continue
+		color_button.visible = true
+		color_button.disabled = false
 		var preset: Dictionary = TEAM_COLOR_PRESETS[i]
 		var primary: Color = preset.get("primary", Color.WHITE)
 		var accent: Color = preset.get("accent", Color.WHITE)
@@ -50582,7 +52277,7 @@ func _scout_unit_detail(player_id: int, entry: Dictionary) -> String:
 	var part_lines: Array = []
 	for slot_key in BUILD_SLOTS:
 		var part := _selected_component(role_key, slot_key, int(unit_bp.get(slot_key, 0)))
-		part_lines.append("%s: %s  cost %d  maker %s" % [_slot_name(slot_key), _short_part_name(String(part.get("name", ""))), int(part.get("cost", 0)), _manufacturer_for_part(part, slot_key)])
+		part_lines.append("%s: %s  cost %d  maker %s" % [_slot_name(slot_key), _short_part_display_name(part), int(part.get("cost", 0)), _manufacturer_for_part(part, slot_key)])
 	lines.append("\n".join(part_lines))
 
 	if unit_bp.has("custom_topology"):
@@ -50620,13 +52315,15 @@ func _update_editor_ui(force_now: bool = false) -> void:
 	if hot_path_profiler != null:
 		hot_path_profiler.scope_begin("teamedit.update_ui")
 	var current_frame := Engine.get_process_frames()
-	var ui_state_signature := "%s|%d|%d|%s|%s|%d|%d|%s|%d|%s" % [
+	var ui_state_signature := "%s|%s|%d|%d|%s|%s|%d|%d|%d|%s|%d|%s" % [
 		editor_panel_mode,
+		editor_load_mode,
 		editor_role_index,
 		editor_slot_index,
 		editor_part_group_mode,
 		editor_part_filter_mode,
 		editor_catalog_page,
+		editor_load_page,
 		editor_topology_node_index,
 		editor_board_tool,
 		editor_pending_orientation_node_index,
@@ -50675,7 +52372,7 @@ func _update_editor_ui(force_now: bool = false) -> void:
 	var module_rule_note := _module_material_rule_note(unit_bp) if _role_uses_body_board(role_key) else ""
 	var selected_slot_key: String = BUILD_SLOTS[editor_slot_index]
 	var selected_component_index := int(unit_bp.get(selected_slot_key, 0))
-	if _role_uses_body_board(role_key) and unit_bp.has("custom_topology") and _is_body_group_slot(selected_slot_key):
+	if _role_uses_body_board(role_key) and unit_bp.has("custom_topology") and not (role_key == "barrier" and _barrier_uses_screen_board(unit_bp)) and _is_body_group_slot(selected_slot_key):
 		var topology_for_selection: Dictionary = unit_bp.get("custom_topology", {})
 		var nodes_for_selection: Array = topology_for_selection.get("nodes", [])
 		if not nodes_for_selection.is_empty():
@@ -50837,7 +52534,7 @@ func _refresh_editor_module_binding_buttons() -> void:
 	if not pending:
 		var role_key: String = ROLE_ORDER[editor_role_index]
 		var unit_bp: Dictionary = _editor_current_blueprint()
-		if _role_uses_body_board(role_key) and unit_bp.has("custom_topology"):
+		if _role_uses_body_board(role_key) and unit_bp.has("custom_topology") and not (role_key == "barrier" and _barrier_uses_screen_board(unit_bp)):
 			for raw_binding in _runtime_module_bindings_for_blueprint(role_key, unit_bp):
 				if raw_binding is Dictionary and bool(Dictionary(raw_binding).get("runtime_valid", true)):
 					bound_keys[clampi(int(Dictionary(raw_binding).get("attack_key", 0)), 1, ATTACK_GROUP_COUNT)] = true
@@ -50935,28 +52632,28 @@ func _editor_load_entry_stats(player_id: int, fallback_role: String, entry: Dict
 func _update_editor_load_card_buttons(role_key: String) -> void:
 	var load_visible := editor_panel_mode == "load"
 	var page_size: int = maxi(1, editor_load_card_buttons.size())
+	var entries := _editor_load_entries() if load_visible else []
+	var max_page := maxi(0, int(ceilf(float(entries.size()) / float(page_size))) - 1)
+	editor_load_page = clampi(editor_load_page, 0, max_page)
+	if editor_action_buttons.has("prev_catalog") and load_visible:
+		var prev_button: Button = editor_action_buttons["prev_catalog"]
+		_set_button_disabled_if_changed(prev_button, editor_load_page <= 0 or max_page <= 0)
+		_set_control_text_if_changed(prev_button, "<")
+	if editor_action_buttons.has("next_catalog") and load_visible:
+		var next_button: Button = editor_action_buttons["next_catalog"]
+		_set_button_disabled_if_changed(next_button, editor_load_page >= max_page or max_page <= 0)
+		_set_control_text_if_changed(next_button, ">")
 	if not load_visible:
 		for hidden_button in editor_load_card_buttons:
 			var button: Button = hidden_button
 			_set_canvas_item_visible_if_changed(button, false)
 			_set_button_disabled_if_changed(button, true)
 		return
-	var entries := _editor_load_entries()
 	var player_id := _editor_player()
-	var max_page := maxi(0, int(ceilf(float(entries.size()) / float(page_size))) - 1)
-	editor_load_page = clampi(editor_load_page, 0, max_page)
 	if editor_catalog_page_label != null and load_visible:
 		_set_control_position_if_changed(editor_catalog_page_label, Vector2(966.0, 654.0))
 		_set_control_size_if_changed(editor_catalog_page_label, Vector2(210.0, 22.0))
 		_set_control_text_if_changed(editor_catalog_page_label, ("页 %d/%d  %d" if _ui_is_zh() else "P %d/%d  %d") % [editor_load_page + 1, max_page + 1, entries.size()])
-	if editor_action_buttons.has("prev_catalog") and load_visible:
-		var prev_button: Button = editor_action_buttons["prev_catalog"]
-		_set_button_disabled_if_changed(prev_button, editor_load_page <= 0)
-		_set_control_text_if_changed(prev_button, "<")
-	if editor_action_buttons.has("next_catalog") and load_visible:
-		var next_button: Button = editor_action_buttons["next_catalog"]
-		_set_button_disabled_if_changed(next_button, editor_load_page >= max_page)
-		_set_control_text_if_changed(next_button, ">")
 	for i in range(editor_load_card_buttons.size()):
 		var button: Button = editor_load_card_buttons[i]
 		var actual_index := editor_load_page * page_size + i
@@ -50997,7 +52694,8 @@ func _update_editor_load_card_buttons(role_key: String) -> void:
 
 func _apply_editor_panel_visibility(role_key: String, unit_bp: Dictionary) -> void:
 	var body_board_enabled := _role_uses_body_board(role_key)
-	var custom_board_enabled := body_board_enabled and unit_bp.has("custom_topology")
+	var barrier_screen_board := role_key == "barrier" and _barrier_uses_screen_board(unit_bp)
+	var custom_board_enabled := body_board_enabled and unit_bp.has("custom_topology") and not barrier_screen_board
 	if editor_load_mode == "team":
 		editor_load_mode = "unit"
 	var mode := String(editor_panel_mode)
@@ -51086,17 +52784,20 @@ func _apply_editor_panel_visibility(role_key: String, unit_bp: Dictionary) -> vo
 	if editor_load_mode == "unit":
 		unit_action_keys.append_array(["duplicate", "delete"])
 	var board_primary_action_keys := ["save_canvas", "training_import", "open_saved_units"]
-	var canvas_action_keys := ["blank_canvas", "board_tool_layout", "board_tool_pose", "add_node", "link_node", "delete_selected_part", "undo_canvas", "clear_canvas", "board_zoom_out", "board_zoom_in", "board_zoom_reset"]
+	var unit_page_action_keys := ["prev_unit", "next_unit"]
+	var canvas_action_keys := ["blank_canvas", "board_tool_layout", "board_tool_pose", "add_node", "link_node", "copy_selection", "cut_selection", "paste_selection", "delete_selected_part", "undo_canvas", "clear_canvas", "toggle_barrier_grid", "board_zoom_out", "board_zoom_in", "board_zoom_reset"]
 	var orientation_action_keys := ["set_handedness_left", "set_handedness_right", "flip_handedness"]
 	var orientation_choice_active := custom_board_enabled and _orientation_choice_is_active(unit_bp)
 	var selected_handedness_active := custom_board_enabled and _selected_node_supports_visual_handedness(unit_bp)
+	var current_roster: Array = Array(blueprints.get(_editor_player(), {}).get(role_key, []))
+	var unit_page_actions_enabled := current_roster.size() > 1
 	var visible_unit_action_index := 0
 	for action_key in editor_action_buttons.keys():
 		var action_button: Button = editor_action_buttons[action_key]
 		if board_primary_action_keys.has(String(action_key)):
 			_set_canvas_item_visible_if_changed(action_button, true)
 			_set_button_disabled_if_changed(action_button, false)
-			_set_control_position_if_changed(action_button, Vector2(352.0 + float(board_primary_action_keys.find(String(action_key))) * 156.0, 600.0))
+			_set_control_position_if_changed(action_button, Vector2(352.0 + float(board_primary_action_keys.find(String(action_key))) * 156.0, 596.0))
 			_set_control_size_if_changed(action_button, Vector2(146.0, 28.0))
 			if String(action_key) == "save_canvas":
 				_set_control_text_if_changed(action_button, "保存为单位" if _ui_is_zh() else "SAVE UNIT")
@@ -51107,14 +52808,54 @@ func _apply_editor_panel_visibility(role_key: String, unit_bp: Dictionary) -> vo
 			else:
 				_set_control_text_if_changed(action_button, "已保存单位" if _ui_is_zh() else "SAVED")
 				_set_canvas_item_modulate_if_changed(action_button, Color(0.74, 0.92, 1.0, 1.0))
-		elif canvas_action_keys.has(String(action_key)):
+		elif unit_page_action_keys.has(String(action_key)):
 			_set_canvas_item_visible_if_changed(action_button, true)
-			if String(action_key) == "board_tool_layout":
+			_set_button_disabled_if_changed(action_button, not unit_page_actions_enabled)
+			if String(action_key) == "prev_unit":
+				_set_control_position_if_changed(action_button, Vector2(270.0, 596.0))
+				_set_control_text_if_changed(action_button, "< 单位" if _ui_is_zh() else "< UNIT")
+			else:
+				_set_control_position_if_changed(action_button, Vector2(818.0, 596.0))
+				_set_control_text_if_changed(action_button, "单位 >" if _ui_is_zh() else "UNIT >")
+			_set_control_size_if_changed(action_button, Vector2(74.0, 28.0))
+			_set_canvas_item_modulate_if_changed(action_button, Color(0.78, 0.94, 1.0, 1.0) if unit_page_actions_enabled else Color(0.54, 0.62, 0.68, 0.7))
+		elif canvas_action_keys.has(String(action_key)):
+			var canvas_key := String(action_key)
+			var show_canvas_action := true
+			if canvas_key in ["board_tool_layout", "board_tool_pose", "add_node", "link_node", "copy_selection", "cut_selection", "paste_selection"]:
+				show_canvas_action = not barrier_screen_board
+			elif canvas_key == "toggle_barrier_grid":
+				show_canvas_action = barrier_screen_board
+			_set_canvas_item_visible_if_changed(action_button, show_canvas_action)
+			_set_button_disabled_if_changed(action_button, not show_canvas_action)
+			var canvas_index := canvas_action_keys.find(canvas_key)
+			if canvas_key in ["board_zoom_out", "board_zoom_in", "board_zoom_reset"]:
+				canvas_index = -1
+			if canvas_index >= 0:
+				_set_control_position_if_changed(action_button, Vector2(20.0 + float(canvas_index) * 76.0, 688.0))
+				_set_control_size_if_changed(action_button, Vector2(72.0, 24.0))
+			if canvas_key in ["copy_selection", "cut_selection", "paste_selection"]:
+				var has_selection := not editor_selected_topology_nodes.is_empty()
+				var has_clipboard := not editor_topology_clipboard.is_empty() and String(editor_topology_clipboard.get("kind", "")) == "topology_nodes"
+				var disabled := _unit_editor_clipboard_busy() or (canvas_key in ["copy_selection", "cut_selection"] and not has_selection) or (canvas_key == "paste_selection" and not has_clipboard)
+				_set_button_disabled_if_changed(action_button, disabled)
+				if canvas_key == "copy_selection":
+					_set_control_text_if_changed(action_button, "复制" if _ui_is_zh() else "COPY")
+				elif canvas_key == "cut_selection":
+					_set_control_text_if_changed(action_button, "剪切" if _ui_is_zh() else "CUT")
+				else:
+					_set_control_text_if_changed(action_button, "粘贴" if _ui_is_zh() else "PASTE")
+				_set_control_tooltip_if_changed(action_button, ("框选后可在单位页之间复制/剪切/粘贴" if _ui_is_zh() else "Box-select nodes, then copy/cut/paste across unit pages."))
+				_set_canvas_item_modulate_if_changed(action_button, Color(0.42, 1.0, 0.82, 1.0) if not disabled else Color(0.62, 0.7, 0.76, 0.72))
+			if canvas_key == "board_tool_layout":
 				_set_control_text_if_changed(action_button, "布局" if _ui_is_zh() else "LAYOUT")
 				_set_canvas_item_modulate_if_changed(action_button, Color(1.0, 0.86, 0.28, 1.0) if editor_board_tool == "layout" else Color(0.78, 0.9, 1.0, 0.82))
-			elif String(action_key) == "board_tool_pose":
+			elif canvas_key == "board_tool_pose":
 				_set_control_text_if_changed(action_button, "姿态" if _ui_is_zh() else "POSE")
 				_set_canvas_item_modulate_if_changed(action_button, Color(1.0, 0.86, 0.28, 1.0) if editor_board_tool == "pose" else Color(0.78, 0.9, 1.0, 0.82))
+			elif canvas_key == "toggle_barrier_grid":
+				_set_control_text_if_changed(action_button, "辅助线" if _ui_is_zh() else "GRID")
+				_set_canvas_item_modulate_if_changed(action_button, Color(1.0, 0.86, 0.28, 1.0) if editor_barrier_grid_guides_enabled else Color(0.78, 0.9, 1.0, 0.72))
 		elif orientation_action_keys.has(String(action_key)):
 			var action_name := String(action_key)
 			var show_orientation_action := false
@@ -51126,11 +52867,11 @@ func _apply_editor_panel_visibility(role_key: String, unit_bp: Dictionary) -> vo
 			_set_button_disabled_if_changed(action_button, not show_orientation_action)
 			var x_pos := 776.0
 			if action_name == "set_handedness_right":
-				x_pos = 870.0
+				x_pos = 846.0
 			elif action_name == "flip_handedness":
 				x_pos = 776.0
 			_set_control_position_if_changed(action_button, Vector2(x_pos, 688.0))
-			_set_control_size_if_changed(action_button, Vector2(90.0, 24.0))
+			_set_control_size_if_changed(action_button, Vector2(66.0, 24.0))
 			if action_name == "set_handedness_left":
 				_set_control_text_if_changed(action_button, "左挂刃" if _ui_is_zh() else "LEFT")
 			elif action_name == "set_handedness_right":
@@ -51249,6 +52990,7 @@ func _apply_editor_panel_visibility(role_key: String, unit_bp: Dictionary) -> vo
 		editor_structure_reference_label.visible = editor_structure_reference_label.visible and stats_visible
 	if editor_catalog_page_label != null:
 		_set_canvas_item_visible_if_changed(editor_catalog_page_label, (parts_visible and not editor_sort_menu_open) or load_visible)
+	_layout_editor_save_unit_feedback()
 	if editor_section_labels.has("catalog") and editor_section_labels["catalog"] is Label:
 		var catalog_title := editor_section_labels["catalog"] as Label
 		_set_canvas_item_visible_if_changed(catalog_title, parts_visible and not editor_sort_menu_open)
@@ -51335,12 +53077,13 @@ func _update_editor_board_ui(role_key: String, unit_bp: Dictionary, precomputed_
 	if hot_path_profiler != null:
 		hot_path_profiler.scope_begin("teamedit.board_ui")
 	var body_board_enabled := _role_uses_body_board(role_key)
-	var custom_board_enabled := body_board_enabled and unit_bp.has("custom_topology")
+	var barrier_screen_board := role_key == "barrier" and _barrier_uses_screen_board(unit_bp)
+	var custom_board_enabled := body_board_enabled and unit_bp.has("custom_topology") and not barrier_screen_board
 	var selected_handedness_active := custom_board_enabled and _selected_node_supports_visual_handedness(unit_bp)
 	var custom_board_cache_key := _editor_board_snapshot_cache_key(role_key, unit_bp) if custom_board_enabled else ""
 	var board_selected_slot: String = BUILD_SLOTS[editor_slot_index]
 	var board_selected_part_index := _editor_selected_part_index_for_slot(unit_bp, role_key, board_selected_slot)
-	var board_ui_revision_key := "%s|%s|%s|%d|%d|%d|%d|%s|%s|%s|%d|%d|%s|%s|%s|%d|%s" % [
+	var board_ui_revision_key := "%s|%s|%s|%d|%d|%d|%d|%s|%s|%s|%d|%d|%s|%s|%s|%d|%d|%s" % [
 		role_key,
 		editor_panel_mode,
 		str(body_board_enabled),
@@ -51357,6 +53100,7 @@ func _update_editor_board_ui(role_key: String, unit_bp: Dictionary, precomputed_
 		editor_part_filter_mode,
 		editor_pending_place_slot,
 		editor_pending_place_index,
+		1 if editor_barrier_grid_guides_enabled else 0,
 		ui_language,
 	]
 	if board_ui_revision_key == editor_board_ui_revision_key:
@@ -51397,20 +53141,21 @@ func _update_editor_board_ui(role_key: String, unit_bp: Dictionary, precomputed_
 			var selected_side := _topology_node_visual_handedness(Dictionary(nodes[editor_topology_node_index]))
 			pending_note += "  刃向:%s" % ("左" if selected_side == "left" else "右") if _ui_is_zh() else "  side:%s" % selected_side.to_upper()
 		_set_control_text_if_changed(editor_board_hint_label, "%s  %s %d/%d  %sx%d%s" % [rule_short, _short_part_name(node_label), clampi(editor_topology_node_index + 1, 1, maxi(1, nodes.size())), nodes.size(), "模块" if _ui_is_zh() else "MOD", module_count, pending_note])
+	elif barrier_screen_board:
+		var tile_count := Array(unit_bp.get("barrier_tiles", [])).size()
+		var stats := precomputed_stats if not precomputed_stats.is_empty() else _editor_current_stats()
+		var pending_note := "  待放置:%s" % _pending_canvas_part_name(role_key) if _has_pending_canvas_part() else ""
+		_set_control_text_if_changed(editor_board_hint_label, "以太屏幕蓝图 %d/%d  %.1fx%.1f%s" % [tile_count, maxi(1, int(stats.get("material_slots", 4))), BARRIER_BLUEPRINT_WIDTH, BARRIER_BLUEPRINT_HEIGHT, pending_note] if _ui_is_zh() else "Ether screen blueprint %d/%d  %.1fx%.1f%s" % [tile_count, maxi(1, int(stats.get("material_slots", 4))), BARRIER_BLUEPRINT_WIDTH, BARRIER_BLUEPRINT_HEIGHT, pending_note])
 	elif body_board_enabled:
 		_ensure_custom_topology(unit_bp)
 		_set_control_text_if_changed(editor_board_hint_label, "自由画布就绪：拖入构件；双击躯干打开详情，单击拖动。" if _ui_is_zh() else "FREE CANVAS READY: drag parts in; double-click torso for details, single-click to drag.")
-	elif role_key == "barrier":
-		var tile_count := Array(unit_bp.get("barrier_tiles", [])).size()
-		var stats := precomputed_stats if not precomputed_stats.is_empty() else _editor_current_stats()
-		_set_control_text_if_changed(editor_board_hint_label, "以太屏幕蓝图 %d/%d  最大一屏；左键放置 / 右键移除" % [tile_count, maxi(1, int(stats.get("material_slots", 4)))] if _ui_is_zh() else "Ether screen blueprint tiles %d/%d  max one viewport; left place / right remove" % [tile_count, maxi(1, int(stats.get("material_slots", 4)))])
 	else:
 		_set_control_text_if_changed(editor_board_hint_label, "机体画布未启用" if _ui_is_zh() else "Body board inactive")
 	var illegal_parts := _illegal_module_material_parts(unit_bp) if body_board_enabled else {}
 	for part_key in BODY_PART_ORDER:
 		var button: Button = editor_board_labels[part_key]
 		_set_button_disabled_if_changed(button, not body_board_enabled)
-		_set_canvas_item_visible_if_changed(button, body_board_enabled and not custom_board_enabled)
+		_set_canvas_item_visible_if_changed(button, body_board_enabled and not custom_board_enabled and not barrier_screen_board)
 		var marker := "> " if part_key == editor_selected_body_part and body_board_enabled else ""
 		var alarm := "! " if illegal_parts.has(part_key) else ""
 		_set_control_text_if_changed(button, "%s%s%s" % [marker, alarm, _body_part_label(part_key, unit_bp)])
@@ -51480,7 +53225,7 @@ func _update_editor_board_ui(role_key: String, unit_bp: Dictionary, precomputed_
 	if catalog_domain_key != editor_catalog_domain_revision_key:
 		editor_catalog_domain_revision_key = catalog_domain_key
 		_update_editor_catalog_buttons(role_key, unit_bp)
-	var visual_domain_key := "%s|%s|%s|%s|%d|%d|%s|%s|%s|%s" % [
+	var visual_domain_key := "%s|%s|%s|%s|%d|%d|%s|%s|%s|%s|%d" % [
 		role_key,
 		str(custom_board_enabled),
 		custom_board_cache_key,
@@ -51491,6 +53236,7 @@ func _update_editor_board_ui(role_key: String, unit_bp: Dictionary, precomputed_
 		editor_pending_place_slot,
 		str(editor_pending_place_index),
 		_editor_visual_stats_revision_key(precomputed_stats),
+		1 if editor_barrier_grid_guides_enabled else 0,
 	]
 	if visual_domain_key != editor_board_visual_domain_revision_key:
 		editor_board_visual_domain_revision_key = visual_domain_key
@@ -51501,7 +53247,7 @@ func _update_editor_board_ui(role_key: String, unit_bp: Dictionary, precomputed_
 
 
 func _shop_slot_button_text(slot_key: String, part: Dictionary, volume_note: String, pending_marker: String, selected_marker: String) -> String:
-	var part_name := _short_part_name(String(part.get("name", "")))
+	var part_name := _short_part_display_name(part)
 	var cost := int(part.get("cost", 0))
 	if _ui_is_zh():
 		var title := String({
@@ -51537,7 +53283,7 @@ func _catalog_card_title(slot_key: String, part: Dictionary, actual_index: int, 
 	if slot_key in ["joint", "limb_muscle", "muscle"]:
 		marker = "待选 " if _ui_is_zh() and selected and _has_pending_canvas_part() else marker
 	var size_suffix := " %s" % String(part.get("ammo_size_tier", "")) if slot_key == "muscle" and _part_is_ammo_payload(part) else ""
-	return "%s%02d %s%s" % [marker, actual_index + 1, _short_part_name(String(part.get("name", ""))), size_suffix]
+	return "%s%02d %s%s" % [marker, actual_index + 1, _short_part_display_name(part), size_suffix]
 
 
 func _catalog_card_cached_model(slot_key: String, part: Dictionary, actual_index: int) -> Dictionary:
@@ -51553,7 +53299,7 @@ func _catalog_card_cached_model(slot_key: String, part: Dictionary, actual_index
 		return editor_catalog_card_model_cache[cache_key]
 	var data_lines := _catalog_card_data_lines(slot_key, part)
 	var size_suffix := " %s" % String(part.get("ammo_size_tier", "")) if slot_key == "muscle" and _part_is_ammo_payload(part) else ""
-	var base_title := "%02d %s%s" % [actual_index + 1, _short_part_name(String(part.get("name", ""))), size_suffix]
+	var base_title := "%02d %s%s" % [actual_index + 1, _short_part_display_name(part), size_suffix]
 	var model := {
 		"title_base": base_title,
 		"line_a": String(data_lines[0]),
@@ -51783,13 +53529,17 @@ func _part_gradient_spec(slot_key: String, part: Dictionary) -> Dictionary:
 func _part_gradient_card_line(slot_key: String, part: Dictionary) -> String:
 	var spec := _part_gradient_spec(slot_key, part)
 	var role_label := String(spec.get("role_label", ""))
-	if role_label.length() > 6 and _ui_is_zh():
-		role_label = role_label.substr(0, 6)
+	if role_label.length() > 3 and _ui_is_zh():
+		role_label = role_label.substr(0, 3)
 	elif role_label.length() > 12:
 		role_label = role_label.substr(0, 12)
 	var tradeoff := String(spec.get("tradeoff_label", ""))
 	if tradeoff == "":
 		tradeoff = _part_gradient_tag_label("balanced")
+	if tradeoff.length() > 4 and _ui_is_zh():
+		tradeoff = tradeoff.replace("近战", "近").replace("投射", "射").replace("接触", "触")
+		if tradeoff.length() > 4:
+			tradeoff = tradeoff.substr(0, 4)
 	return "%s/%s/%s" % [String(spec.get("rank_label", "M")), role_label, tradeoff]
 
 
@@ -51937,6 +53687,12 @@ func _current_editor_catalog_sort_keys() -> Array:
 
 
 func _editor_catalog_cache_source_signature(role_key: String, slot_key: String) -> String:
+	if unit_editor_catalog_controller != null:
+		return unit_editor_catalog_controller.source_signature_for_slots(
+			_editor_catalog_slots_for_active_filter(slot_key),
+			role_key,
+			Callable(self, "_catalog_for")
+		)
 	var pieces: Array = []
 	for entry_slot in _editor_catalog_slots_for_active_filter(slot_key):
 		var catalog := _catalog_for(role_key, String(entry_slot))
@@ -51945,20 +53701,52 @@ func _editor_catalog_cache_source_signature(role_key: String, slot_key: String) 
 
 
 func _editor_catalog_raw_cache_key(role_key: String, slot_key: String) -> String:
+	if unit_editor_catalog_controller != null:
+		return unit_editor_catalog_controller.raw_cache_key(
+			role_key,
+			slot_key,
+			editor_part_group_mode,
+			editor_part_filter_mode,
+			editor_weapon_filter_group,
+			editor_weapon_filter_subtype,
+			_editor_catalog_cache_source_signature(role_key, slot_key)
+		)
 	return "%s|%s|%s|%s|%s|%s|%s" % [role_key, slot_key, editor_part_group_mode, editor_part_filter_mode, editor_weapon_filter_group, editor_weapon_filter_subtype, _editor_catalog_cache_source_signature(role_key, slot_key)]
 
 
 func _editor_catalog_entries_cache_key(role_key: String, slot_key: String) -> String:
+	if unit_editor_catalog_controller != null:
+		return unit_editor_catalog_controller.entries_cache_key(
+			role_key,
+			slot_key,
+			editor_part_group_mode,
+			editor_part_filter_mode,
+			editor_weapon_filter_group,
+			editor_weapon_filter_subtype,
+			editor_catalog_sort_key,
+			editor_catalog_sort_ascending,
+			_editor_catalog_cache_source_signature(role_key, slot_key)
+		)
 	return "%s|%s|%s|%s|%s|%s|%s|%s|%s" % [role_key, slot_key, editor_part_group_mode, editor_part_filter_mode, editor_weapon_filter_group, editor_weapon_filter_subtype, editor_catalog_sort_key, str(editor_catalog_sort_ascending), _editor_catalog_cache_source_signature(role_key, slot_key)]
 
 
 func _invalidate_editor_catalog_cache() -> void:
-	editor_catalog_raw_cache.clear()
-	editor_catalog_entries_cache.clear()
-	editor_catalog_sort_keys_cache.clear()
-	editor_catalog_card_model_cache.clear()
-	editor_catalog_page_model_cache.clear()
-	editor_load_entry_stats_cache.clear()
+	if unit_editor_catalog_controller != null:
+		unit_editor_catalog_controller.clear_catalog_caches(
+			editor_catalog_raw_cache,
+			editor_catalog_entries_cache,
+			editor_catalog_sort_keys_cache,
+			editor_catalog_card_model_cache,
+			editor_catalog_page_model_cache,
+			editor_load_entry_stats_cache
+		)
+	else:
+		editor_catalog_raw_cache.clear()
+		editor_catalog_entries_cache.clear()
+		editor_catalog_sort_keys_cache.clear()
+		editor_catalog_card_model_cache.clear()
+		editor_catalog_page_model_cache.clear()
+		editor_load_entry_stats_cache.clear()
 
 
 func _editor_catalog_raw_entries(role_key: String, slot_key: String) -> Array:
@@ -51968,17 +53756,27 @@ func _editor_catalog_raw_entries(role_key: String, slot_key: String) -> Array:
 		return editor_catalog_raw_cache[cache_key]
 	editor_catalog_cache_miss_count += 1
 	var entries: Array = []
-	for entry_slot in _editor_catalog_slots_for_active_filter(slot_key):
-		var catalog: Array = _catalog_for(role_key, String(entry_slot))
-		for i in range(catalog.size()):
-			var part := _selected_component(role_key, String(entry_slot), i)
-			if _editor_catalog_part_passes_filter(String(entry_slot), part):
-				entries.append({
-					"slot": String(entry_slot),
-					"index": i,
-					"part": part,
-					"display_part": _catalog_display_part(String(entry_slot), part),
-				})
+	if unit_editor_catalog_controller != null:
+		entries = unit_editor_catalog_controller.collect_raw_entries(
+			role_key,
+			_editor_catalog_slots_for_active_filter(slot_key),
+			Callable(self, "_catalog_for"),
+			Callable(self, "_selected_component"),
+			Callable(self, "_editor_catalog_part_passes_filter"),
+			Callable(self, "_catalog_display_part")
+		)
+	else:
+		for entry_slot in _editor_catalog_slots_for_active_filter(slot_key):
+			var catalog: Array = _catalog_for(role_key, String(entry_slot))
+			for i in range(catalog.size()):
+				var part := _selected_component(role_key, String(entry_slot), i)
+				if _editor_catalog_part_passes_filter(String(entry_slot), part):
+					entries.append({
+						"slot": String(entry_slot),
+						"index": i,
+						"part": part,
+						"display_part": _catalog_display_part(String(entry_slot), part),
+					})
 	editor_catalog_raw_cache[cache_key] = entries
 	_trim_dictionary_cache(editor_catalog_raw_cache, 48)
 	return entries
@@ -52017,6 +53815,8 @@ func _editor_available_sort_keys(role_key: String, slot_key: String) -> Array:
 
 
 func _editor_available_sort_keys_from_entries(entries: Array) -> Array:
+	if unit_editor_catalog_controller != null:
+		return unit_editor_catalog_controller.available_sort_keys_from_entries(entries, EDITOR_SORT_KEY_ORDER, Callable(self, "_editor_part_has_sort_property"))
 	var available: Array = []
 	for raw_key in EDITOR_SORT_KEY_ORDER:
 		var key := String(raw_key)
@@ -52077,6 +53877,8 @@ func _part_has_positive_numeric(part: Dictionary, property_names: Array) -> bool
 
 
 func _editor_catalog_slots_for_active_filter(slot_key: String) -> Array:
+	if unit_editor_catalog_controller != null:
+		return unit_editor_catalog_controller.catalog_slots_for_filter(slot_key, editor_part_group_mode, editor_part_filter_mode, editor_weapon_filter_group)
 	for option in _part_filter_options_for_group(editor_part_group_mode):
 		if option is Dictionary and String(Dictionary(option).get("key", "")) == editor_part_filter_mode:
 			var option_slots := _slot_keys_from_filter_option(Dictionary(option))
@@ -52218,16 +54020,18 @@ func _editor_catalog_page_selection_key(unit_bp: Dictionary, role_key: String, p
 		if raw_entry is Dictionary:
 			var entry: Dictionary = raw_entry
 			slots[String(entry.get("slot", ""))] = true
-	var pieces: Array = []
+	var selected_indices_by_slot := {}
 	for raw_slot in slots.keys():
 		var entry_slot := String(raw_slot)
-		pieces.append("%s:%d" % [entry_slot, _editor_selected_part_index_for_slot(unit_bp, role_key, entry_slot)])
+		selected_indices_by_slot[entry_slot] = _editor_selected_part_index_for_slot(unit_bp, role_key, entry_slot)
+	if unit_editor_catalog_controller != null:
+		return unit_editor_catalog_controller.page_selection_key(page_entries, selected_indices_by_slot, editor_pending_place_slot, editor_pending_place_index, _has_pending_canvas_part())
+	var pieces: Array = []
+	for raw_slot in selected_indices_by_slot.keys():
+		var entry_slot := String(raw_slot)
+		pieces.append("%s:%d" % [entry_slot, int(selected_indices_by_slot.get(entry_slot, -1))])
 	pieces.sort()
-	pieces.append("pending:%s:%d:%d" % [
-		editor_pending_place_slot,
-		editor_pending_place_index,
-		1 if _has_pending_canvas_part() else 0,
-	])
+	pieces.append("pending:%s:%d:%d" % [editor_pending_place_slot, editor_pending_place_index, 1 if _has_pending_canvas_part() else 0])
 	return ",".join(pieces)
 
 
@@ -52237,15 +54041,27 @@ func _editor_catalog_page_models(role_key: String, slot_key: String, unit_bp: Di
 	if start_index < 0 or start_index >= entries.size() or page_size <= 0:
 		return []
 	var page_entries := entries.slice(start_index, end_index)
-	var cache_key := "%s|page:%d|size:%d|lang:%s|sel:%s" % [
-		_editor_catalog_entries_cache_key(role_key, slot_key),
-		page,
-		page_size,
-		ui_language,
-		_editor_catalog_page_selection_key(unit_bp, role_key, page_entries),
-	]
+	var entries_cache_key := _editor_catalog_entries_cache_key(role_key, slot_key)
+	var selection_key := _editor_catalog_page_selection_key(unit_bp, role_key, page_entries)
+	var cache_key := unit_editor_catalog_controller.page_cache_key(entries_cache_key, page, page_size, ui_language, selection_key) if unit_editor_catalog_controller != null else "%s|page:%d|size:%d|lang:%s|sel:%s" % [entries_cache_key, page, page_size, ui_language, selection_key]
 	if editor_catalog_page_model_cache.has(cache_key):
 		return editor_catalog_page_model_cache[cache_key]
+	if unit_editor_catalog_controller != null:
+		var delegated_models := unit_editor_catalog_controller.build_page_models(
+			page_entries,
+			role_key,
+			unit_bp,
+			slot_key,
+			ui_language,
+			_has_pending_canvas_part(),
+			Callable(self, "_editor_selected_part_index_for_slot"),
+			Callable(self, "_catalog_display_part"),
+			Callable(self, "_selected_component"),
+			Callable(self, "_catalog_card_cached_model")
+		)
+		editor_catalog_page_model_cache[cache_key] = delegated_models
+		_trim_dictionary_cache(editor_catalog_page_model_cache, 48)
+		return delegated_models
 	var selected_by_slot := {}
 	for raw_entry in page_entries:
 		if raw_entry is Dictionary:
@@ -52297,6 +54113,9 @@ func _editor_catalog_page_models(role_key: String, slot_key: String, unit_bp: Di
 
 
 func _sort_editor_catalog_entries(entries: Array, slot_key: String) -> void:
+	if unit_editor_catalog_controller != null:
+		unit_editor_catalog_controller.sort_entries(entries, slot_key, Callable(self, "_editor_part_sort_value"), editor_catalog_sort_ascending)
+		return
 	for i in range(entries.size()):
 		var best := i
 		for j in range(i + 1, entries.size()):
@@ -52461,7 +54280,7 @@ func _update_editor_catalog_buttons(role_key: String, unit_bp: Dictionary) -> vo
 			var fallback_marker := ">> " if selected_card else ""
 			if hot_path_profiler != null:
 				hot_path_profiler.scope_begin("teamedit.catalog.card_set")
-			_set_control_text_if_changed(button, "%s%d %s" % [fallback_marker, part_index + 1, _short_part_name(String(part.get("name", "")))])
+			_set_control_text_if_changed(button, "%s%d %s" % [fallback_marker, part_index + 1, _short_part_display_name(part)])
 			if hot_path_profiler != null:
 				hot_path_profiler.scope_end("teamedit.catalog.card_set")
 			editor_catalog_card_update_count += 1
@@ -52604,7 +54423,7 @@ func _show_editor_part_hover(slot_key: String, part_index: int, part: Dictionary
 	editor_hover_part_index = part_index
 	editor_hover_pinned = pinned
 	var current_stats := _editor_current_stats()
-	var title := "%02d %s" % [part_index + 1, _zh_part_name(String(part.get("name", ""))) if _ui_is_zh() else String(part.get("name", ""))]
+	var title := "%02d %s" % [part_index + 1, _part_display_name(part)]
 	var subtitle := _hover_card_subtitle(slot_key, part)
 	var lines := _hover_card_player_detail_lines(slot_key, part, context)
 	var stat_entries := _hover_card_stat_entries(slot_key, part)
@@ -53031,8 +54850,8 @@ func _module_input_rows_for_part(part: Dictionary, profile: String, command_prof
 			rows.append("边界命中：建立摆荡锚点；本身不造成HP伤害。" if zh else "Boundary hit: creates swing anchor; no HP damage itself.")
 		"two_link_forward_snap":
 			rows.append("X：普通正锋折返。" if zh else "X: normal forward return snap.")
-			rows.append("前方向+X：护甲态正面击，动作更稳。" if zh else "Forward + X: armor-state front hit with steadier posture.")
-			rows.append("后方向+X：激活态折返击，折返更锐利。" if zh else "Back + X: active-state return hit with sharper foldback.")
+			rows.append("6X（前方向+X）：护甲态正面击，动作更稳。" if zh else "6X (Forward + X): armor-state front hit with steadier posture.")
+			rows.append("4X（后方向+X）：激活态折返击，折返更锐利。" if zh else "4X (Back + X): active-state return hit with sharper foldback.")
 		"blunt_gauntlet_extend_swing":
 			rows.append("X：伸出；4X外摆；6X内摆。" if zh else "X: extend; 4X outward; 6X inward.")
 			rows.append("236X必杀：护甲内摆伸击。" if zh else "236X special: armor inward extend-swing.")
@@ -53369,6 +55188,12 @@ func _module_action_timing_detail_line(part: Dictionary, profile: String, comman
 func _module_action_use_line(part: Dictionary, model: Dictionary, profile: String, target_kind: String, zh: bool) -> String:
 	if profile == "two_link_forward_snap":
 		return "用途：把一条相连的两段旋转肢体变成连杆式折返刺击，先正面伸直，再折回成稳定回收姿态。" if zh else "Use: turns one connected two-segment rotating limb into a linkage-style return thrust: straighten forward, then fold back into a stable recovery pose."
+	if profile == "blunt_gauntlet_extend_swing":
+		return "用途：把混合旋转+伸缩拳套末端变成真实出拳动作，启动伸出命中，恢复收拳回护手姿态。" if zh else "Use: turns a hybrid rotate+extend gauntlet terminal into a real punch: extend to strike during startup, then retract into a guard pose."
+	if profile == "blunt_shield_guard_bash":
+		return "用途：把带内置球形关节的盾牌末端变成架盾短撞、侧向盾击或推进盾撞。" if zh else "Use: turns a shield terminal with an embedded ball joint into a guard bash, side bash, or advancing shield hit."
+	if profile == "blunt_hammer_windup_slam":
+		return "用途：把带内置球形关节的大锤末端变成短挥、蓄挥或强化砸击。" if zh else "Use: turns a hammer terminal with an embedded ball joint into a short swing, windup, or committed slam."
 	if _gun_activation_profiles().has(profile) or target_kind.find("gun") >= 0:
 		return "用途：把绑定枪械交给攻击键控制；移动、瞄准、弹药和热量仍由枪械与机体状态决定。" if zh else "Use: lets the attack key control the bound firearm; movement, aim, ammo, and heat still come from the weapon and unit state."
 	var category := String(model.get("category", "melee"))
@@ -53380,6 +55205,12 @@ func _module_action_use_line(part: Dictionary, model: Dictionary, profile: Strin
 func _module_action_binding_line(part: Dictionary, model: Dictionary, profile: String, target_kind: String, requirement_text: String, zh: bool) -> String:
 	if profile == "two_link_forward_snap":
 		return "绑定：需要任意相连的两段非躯干组件，且两段都带旋转内置关节；第一段不必直接接躯干，第二段必须接在第一段之后。" if zh else "Can bind: any connected two-part non-torso chain where both parts have rotating embedded joints; the first part does not need to attach directly to the torso, and the second must follow the first."
+	if profile == "blunt_gauntlet_extend_swing":
+		return "绑定：需要钝击拳套终端，且拳套自身带混合旋转+伸缩内置关节；点击拳套或同肢体链相邻段都会解析到拳套末端。" if zh else "Can bind: a blunt gauntlet terminal with its own hybrid rotate+extend embedded joint; clicking the gauntlet or an adjacent link in the same chain resolves to the gauntlet terminal."
+	if profile == "blunt_shield_guard_bash":
+		return "绑定：需要钝击盾牌终端，且盾牌自身带内置球形关节；点击盾牌或同肢体链相邻段都会解析到盾牌末端。" if zh else "Can bind: a blunt shield terminal with its own embedded ball joint; clicking the shield or an adjacent link in the same chain resolves to the shield terminal."
+	if profile == "blunt_hammer_windup_slam":
+		return "绑定：需要钝击大锤或槌类终端，且大锤自身带内置球形关节；点击大锤或同肢体链相邻段都会解析到大锤末端。" if zh else "Can bind: a blunt hammer or maul terminal with its own embedded ball joint; clicking the hammer or an adjacent link in the same chain resolves to the hammer terminal."
 	return ("绑定：%s。" if zh else "Can bind: %s.") % requirement_text
 
 
@@ -53388,6 +55219,13 @@ func _module_action_motion_lines(profile: String, zh: bool) -> Array:
 	if profile == "two_link_forward_snap":
 		lines.append("动作：启动前 1/3，两段沿机体正面伸直，形成一条正锋攻击线。" if zh else "Motion: during startup 1/3, both segments straighten along the mech front into one forward line.")
 		lines.append("动作：恢复后 2/3，第一段折回，第二段保持前锋方向，像两节连杆一样回到折返姿态。" if zh else "Motion: during recovery 2/3, the first segment folds back while the second keeps the forward edge, returning like a two-bar linkage.")
+	elif profile == "blunt_gauntlet_extend_swing":
+		lines.append("动作：X 在启动段沿拳套内置伸缩关节出拳伸出，恢复段收拳并回到约 15° 护手角。" if zh else "Motion: X punches out along the gauntlet's embedded extension during startup, then retracts into an about 15 deg guard angle during recovery.")
+		lines.append("动作：4X/6X 走外摆/内摆拳路；236X/214X 把伸缩和摆击合成强化拳套动作。" if zh else "Motion: 4X/6X use outward/inward swing paths; 236X/214X combine extension and swing into special gauntlet hits.")
+	elif profile == "blunt_shield_guard_bash":
+		lines.append("动作：X 架盾短撞，4X/6X 侧向盾击；236X/214X 是护甲推进或激活肩撞。" if zh else "Motion: X braces into a guard bash, 4X/6X side-bash; 236X/214X become armored advance or active shoulder bash.")
+	elif profile == "blunt_hammer_windup_slam":
+		lines.append("动作：X 短挥，4X/6X 左右蓄挥；236X/214X 是护甲下砸或激活横砸。" if zh else "Motion: X short-swings, 4X/6X wind up to either side; 236X/214X become armored overhead slam or active side slam.")
 	return lines
 
 
@@ -53412,6 +55250,14 @@ func _module_action_consistency_lines(profile: String, target_kind: String, zh: 
 		lines.append("攻击范围：按可见零件轮廓结算，没有隐藏扩大范围，也不会生成投射物。" if zh else "Hit shape: resolves from the visible part outline, with no hidden expanded range and no projectile event.")
 		lines.append("一致性：画板、试用和战斗都遵守同一连接姿态。" if zh else "Consistency: board preview, tryout, and battle use the same connected pose.")
 		return lines
+	if profile == "blunt_gauntlet_extend_swing":
+		lines.append("动作合同：拳套模块只驱动绑定拳套终端自身的混合关节，不给普通肢体段凭空添加伸缩。" if zh else "Action contract: the gauntlet module drives only the bound gauntlet terminal's own hybrid joint; it does not invent extension on ordinary limb links.")
+		lines.append("攻击范围：拳套按可见伸缩/摆动姿态和真实接触结算，没有投射物、隐藏射线或额外弹体。" if zh else "Hit shape: the gauntlet resolves from visible extend/swing pose and real contact, with no projectile, hidden ray, or extra bullet body.")
+		return lines
+	if profile in ["blunt_shield_guard_bash", "blunt_hammer_windup_slam"]:
+		lines.append("动作合同：模块只驱动绑定盾牌/大锤终端的内置球形关节，姿态来自可见终端旋转。" if zh else "Action contract: the module drives only the bound shield/hammer terminal's embedded ball joint; pose comes from the visible terminal rotation.")
+		lines.append("攻击范围：钝击终端按可见轮廓和真实接触结算，没有投射物、隐藏射线或额外弹体。" if zh else "Hit shape: the blunt terminal resolves from visible outline and real contact, with no projectile, hidden ray, or extra bullet body.")
+		return lines
 	if _gun_activation_profiles().has(profile) or target_kind.find("gun") >= 0:
 		lines.append("规则保证：只有显式枪械模块会进入投射物规则；弹药、锁定和射线都来自绑定枪械。" if zh else "Rule guarantee: only explicit firearm modules enter the projectile gate; ammo, locks, and beams come from the bound firearm.")
 	else:
@@ -53432,7 +55278,7 @@ func _module_action_detail_model(part: Dictionary, context: Dictionary = {}) -> 
 	var command_profile := String(model.get("command_profile", ""))
 	var target_kind := String(model.get("target_kind", ""))
 	var lines: Array = []
-	lines.append("#%s" % ("适用范围" if zh else "Use Scope"))
+	lines.append("#%s" % ("行动模块适用范围" if zh else "Action Module Scope"))
 	lines.append(_module_action_use_line(part, model, profile, target_kind, zh))
 	var requirement_bits: Array = [String(model.get("target_label", "")), String(model.get("joint_label", "")), String(model.get("weapon_label", ""))]
 	if bool(part.get("requires_connected_gun", false)) or target_kind.find("gun") >= 0 or _gun_activation_profiles().has(profile):
@@ -53847,7 +55693,7 @@ func _empty_torso_software_entries(capacity: int) -> Array:
 func _build_torso_detail_template(part: Dictionary) -> Dictionary:
 	var plugin_capacity := _torso_plugin_capacity_for_part(part)
 	var software_capacity := _torso_software_capacity_for_part(part)
-	var title := _zh_part_name(String(part.get("name", "TORSO"))) if _ui_is_zh() else String(part.get("name", "TORSO"))
+	var title := _part_display_name(part, "TORSO")
 	var subtitle := ("接口 %d  机内插件槽 %d/%d  软件槽 %d/%d" if _ui_is_zh() else "Ports %d  Internal %d/%d  Software %d/%d") % [
 		int(part.get("joint_ports", part.get("connection_ends", 0))),
 		0,
@@ -53929,7 +55775,7 @@ func _refresh_torso_detail_view() -> void:
 			return
 	var plugin_display := _torso_detail_display_entries(unit_bp, editor_open_torso_node_index, "plugin", plugin_capacity, part)
 	var software_display := _torso_detail_display_entries(unit_bp, editor_open_torso_node_index, "software", software_capacity, part)
-	var title := _zh_part_name(String(part.get("name", "TORSO"))) if _ui_is_zh() else String(part.get("name", "TORSO"))
+	var title := _part_display_name(part, "TORSO")
 	var subtitle := ("接口 %d  机内插件槽 %d/%d  软件槽 %d/%d" if _ui_is_zh() else "Ports %d  Internal %d/%d  Software %d/%d") % [
 		int(part.get("joint_ports", part.get("connection_ends", 0))),
 		plugins.size(),
@@ -53965,7 +55811,7 @@ func _refresh_torso_detail_view() -> void:
 					if int(Dictionary(candidates[i]).get("root_index", -1)) == selected_root:
 						selected_index = i
 						break
-				var module_name := _zh_part_name(String(module_part.get("name", "行动模块"))) if _ui_is_zh() else String(module_part.get("name", "MODULE"))
+				var module_name := _part_display_name(module_part, "MODULE")
 				var bind_title := ("绑定行动模块：%s" if _ui_is_zh() else "Bind action module: %s") % module_name
 				var bind_subtitle := _pending_module_binding_hint()
 				var side_required := bool(editor_pending_module_binding.get("side_mount_action_required", false))
@@ -54013,7 +55859,7 @@ func _refresh_editor_selected_part_preview(slot_key: String, part: Dictionary, s
 
 
 func _editor_visual_revision_signature(role_key: String, unit_bp: Dictionary, stats: Dictionary, custom_board_cache_key: String, update_side_panels: bool) -> String:
-	return "%s|%s|%s|%d|%d|%s|%s|%s|%s|%s|%d|%s|%s|%s|%s|%s|%s|%s" % [
+	return "%s|%s|%s|%d|%d|%s|%s|%s|%s|%s|%d|%s|%s|%s|%s|%s|%s|%s|%d|%d|%d" % [
 		role_key,
 		custom_board_cache_key,
 		editor_selected_body_part,
@@ -54032,6 +55878,9 @@ func _editor_visual_revision_signature(role_key: String, unit_bp: Dictionary, st
 		str(editor_board_view_offset),
 		_editor_pending_binding_signature(),
 		_editor_tryout_signature(),
+		1 if _barrier_uses_screen_board(unit_bp) else 0,
+		Array(unit_bp.get("barrier_tiles", [])).hash(),
+		1 if editor_barrier_grid_guides_enabled else 0,
 	]
 
 
@@ -54062,6 +55911,7 @@ func _refresh_editor_visual_views(precomputed_stats: Dictionary = {}, update_sid
 	var snapshot := {}
 	var board_mode := role_key
 	var visual_stats := precomputed_stats
+	var barrier_screen_board := role_key == "barrier" and _barrier_uses_screen_board(unit_bp)
 	var custom_board_cache_key := _editor_board_snapshot_cache_key(role_key, unit_bp)
 	var visual_revision := _editor_visual_revision_signature(role_key, unit_bp, visual_stats, custom_board_cache_key, update_side_panels)
 	if visual_revision == editor_visual_revision_key:
@@ -54077,12 +55927,12 @@ func _refresh_editor_visual_views(precomputed_stats: Dictionary = {}, update_sid
 	editor_visual_revision_key = visual_revision
 	if update_side_panels:
 		_refresh_editor_selected_part_preview(BUILD_SLOTS[editor_slot_index], selected_component, clampf(editor_snap_timer / 0.28, 0.0, 1.0))
-	if custom_board_cache_key != "" and custom_board_cache_key == editor_board_base_snapshot_cache_key and not editor_board_base_snapshot_cache.is_empty():
+	if not barrier_screen_board and custom_board_cache_key != "" and custom_board_cache_key == editor_board_base_snapshot_cache_key and not editor_board_base_snapshot_cache.is_empty():
 		editor_board_base_snapshot_hit_count += 1
 		editor_board_snapshot_cache_hit_count += 1
 		snapshot = editor_board_base_snapshot_cache.duplicate(false)
 		board_mode = "custom"
-	elif _role_uses_body_board(role_key) and unit_bp.has("custom_topology"):
+	elif _role_uses_body_board(role_key) and unit_bp.has("custom_topology") and not barrier_screen_board:
 		var snapshot_build_start := Time.get_ticks_usec()
 		var topology: Dictionary = unit_bp.get("custom_topology", {})
 		var source_nodes_raw: Array = Array(topology.get("nodes", []))
@@ -54258,15 +56108,32 @@ func _refresh_editor_visual_views(precomputed_stats: Dictionary = {}, update_sid
 		editor_board_base_snapshot_rebuild_count += 1
 		editor_board_snapshot_rebuild_count += 1
 		board_mode = "custom"
-	elif role_key == "barrier":
+	elif barrier_screen_board:
+		board_mode = "barrier"
+		snapshot["barrier_columns"] = BARRIER_MAP_COLUMNS
+		snapshot["barrier_rows"] = BARRIER_MAP_ROWS
+		snapshot["barrier_width"] = BARRIER_BLUEPRINT_WIDTH
+		snapshot["barrier_height"] = BARRIER_BLUEPRINT_HEIGHT
+		snapshot["view_zoom"] = editor_board_zoom
+		snapshot["view_offset"] = editor_board_view_offset
+		snapshot["show_grid_guides"] = editor_barrier_grid_guides_enabled
+		snapshot["revision_key"] = "barrier|%s|z:%s|o:%s|g:%d" % [
+			str(Array(unit_bp.get("barrier_tiles", [])).hash()),
+			str(snappedf(editor_board_zoom, 0.001)),
+			str(editor_board_view_offset),
+			1 if editor_barrier_grid_guides_enabled else 0,
+		]
 		for i in range(Array(unit_bp.get("barrier_tiles", [])).size()):
 			var tile: Dictionary = Array(unit_bp.get("barrier_tiles", []))[i]
-			var muscle_part := _selected_component(role_key, "muscle", int(tile.get("muscle", unit_bp.get("muscle", 0))))
+			var tile_slot := "joint" if tile.has("joint") else "muscle"
+			var muscle_part := _selected_component(role_key, tile_slot, int(tile.get(tile_slot, unit_bp.get(tile_slot, unit_bp.get("muscle", 0)))))
+			var tile_pos := _barrier_tile_screen_pos(tile)
 			snapshot["tile_%d" % i] = {
-				"index": int(tile.get("index", i)),
+				"index": int(tile.get("index", _barrier_pos_to_legacy_cell_index(tile_pos))),
+				"pos": tile_pos,
 				"kind": String(muscle_part.get("shape", "ether_pin")),
 				"damage_type": String(muscle_part.get("projectile_damage_type", muscle_part.get("damage_type", "blunt"))),
-		}
+			}
 	if board_mode == "custom" and not snapshot.is_empty():
 		snapshot = _apply_editor_board_dynamic_fields(snapshot, role_key, unit_bp, custom_board_cache_key, visual_stats)
 	var board_revision_key := String(snapshot.get("revision_key", ""))
@@ -54294,6 +56161,31 @@ func _short_part_name(part_name: String) -> String:
 		if compact.length() > 12:
 			return compact.substr(0, 11) + "."
 		return compact
+	if compact.length() > 10:
+		return compact.substr(0, 9) + "."
+	return compact
+
+
+func _part_display_name(part: Dictionary, fallback_name: String = "") -> String:
+	var raw_name := String(part.get("name", fallback_name)).strip_edges()
+	if not _ui_is_zh():
+		return raw_name
+	var explicit := String(part.get("zh_name", "")).strip_edges()
+	if explicit != "":
+		return explicit
+	var mapped := PartZhNames.zh_name_for(raw_name)
+	if mapped != "":
+		return mapped
+	return _zh_part_name(raw_name)
+
+
+func _short_part_display_name(part: Dictionary, fallback_name: String = "") -> String:
+	var compact := _part_display_name(part, fallback_name)
+	if _ui_is_zh():
+		if compact.length() > 12:
+			return compact.substr(0, 11) + "."
+		return compact
+	compact = compact.replace(" MUSCLE", "").replace(" ACTION", "").replace("CHASSIS", "BODY")
 	if compact.length() > 10:
 		return compact.substr(0, 9) + "."
 	return compact
@@ -54572,7 +56464,7 @@ func _localized_component_summary(part: Dictionary, slot_key: String) -> String:
 	var raw := String(part.get("summary", ""))
 	if not _ui_is_zh():
 		return _combat_model_text(raw.replace("236X", "front+X").replace("214X", "rear+X"))
-	var name := _zh_part_name(String(part.get("name", "")))
+	var name := _part_display_name(part)
 	var maker := _zh_part_name(String(part.get("maker", "")))
 	var tags: Array = []
 	if maker != "":
@@ -54884,32 +56776,66 @@ func _live_unit_ammo_summary(unit) -> Dictionary:
 
 
 func _live_unit_ammo_breakdown(unit) -> Dictionary:
-	var breakdown := {}
+	var entries := {}
 	if unit != null and is_instance_valid(unit):
 		for ammo_type in AMMO_TYPES:
 			var capacity := _ammo_capacity_for(unit, ammo_type)
 			var current := _current_ammo(unit, ammo_type)
-			if capacity > 0 or current > 0:
-				breakdown[ammo_type] = {"current": current, "capacity": capacity}
+			entries[ammo_type] = {"current": current, "capacity": capacity}
+	if battle_hud_state_service != null:
+		return battle_hud_state_service.ammo_breakdown({"types": AMMO_TYPES, "entries": entries})
+	var breakdown := {}
+	for ammo_type in AMMO_TYPES:
+		var entry: Dictionary = Dictionary(entries.get(ammo_type, {}))
+		var capacity := int(entry.get("capacity", 0))
+		var current := int(entry.get("current", 0))
+		if capacity > 0 or current > 0:
+			breakdown[ammo_type] = {"current": current, "capacity": capacity}
 	return breakdown
 
 
 func _update_battle_instrument_gauge() -> void:
 	if battle_instrument_gauge == null:
 		return
-	var unit = _controlled_unit_for_battle_gauge()
-	if not _is_live_unit(unit):
+	var model := _battle_instrument_gauge_model()
+	if not bool(model.get("visible", false)):
 		battle_instrument_gauge.visible = false
 		return
-	var speed: float = unit.velocity.length()
-	var boost_speed := float(unit.stats.get("boost_speed", 0.0))
-	var body_speed := float(unit.stats.get("move_speed", 0.0))
-	var configured_limit := maxf(0.0, float(unit.stats.get("speedometer_max_speed", 0.0)))
-	var fallback_limit := maxf(1.0, maxf(boost_speed * 2.0, body_speed * 3.0) * 1.5)
-	var speed_max: float = maxf(speed, configured_limit if configured_limit > 0.001 else fallback_limit)
-	var ammo := _live_unit_ammo_breakdown(unit)
 	battle_instrument_gauge.visible = true
-	battle_instrument_gauge.set_values(speed, speed_max, ammo, ui_language)
+	battle_instrument_gauge.set_values(float(model.get("speed", 0.0)), float(model.get("speed_max", 1.0)), Dictionary(model.get("ammo", {})), ui_language)
+
+
+func _battle_instrument_gauge_model() -> Dictionary:
+	var snapshot := _battle_instrument_gauge_snapshot()
+	if battle_hud_state_service != null:
+		return battle_hud_state_service.instrument_gauge_model(snapshot)
+	if not bool(snapshot.get("live", false)):
+		return {"visible": false, "speed": 0.0, "speed_max": 1.0, "ammo": {}}
+	var speed := maxf(0.0, float(snapshot.get("speed", 0.0)))
+	var boost_speed := maxf(0.0, float(snapshot.get("boost_speed", 0.0)))
+	var body_speed := maxf(0.0, float(snapshot.get("move_speed", 0.0)))
+	var configured_limit := maxf(0.0, float(snapshot.get("speedometer_max_speed", 0.0)))
+	var fallback_limit := maxf(1.0, maxf(boost_speed * 2.0, body_speed * 3.0) * 1.5)
+	return {
+		"visible": true,
+		"speed": speed,
+		"speed_max": maxf(speed, configured_limit if configured_limit > 0.001 else fallback_limit),
+		"ammo": Dictionary(snapshot.get("ammo", {})),
+	}
+
+
+func _battle_instrument_gauge_snapshot() -> Dictionary:
+	var unit = _controlled_unit_for_battle_gauge()
+	if not _is_live_unit(unit):
+		return {"live": false}
+	return {
+		"live": true,
+		"speed": unit.velocity.length(),
+		"boost_speed": float(unit.stats.get("boost_speed", 0.0)),
+		"move_speed": float(unit.stats.get("move_speed", 0.0)),
+		"speedometer_max_speed": float(unit.stats.get("speedometer_max_speed", 0.0)),
+		"ammo": _live_unit_ammo_breakdown(unit),
+	}
 
 
 func _update_battle_ui() -> void:
@@ -54921,32 +56847,14 @@ func _update_battle_ui() -> void:
 	var heavy_update := now_msec - battle_ui_last_heavy_msec >= 160
 	if heavy_update:
 		battle_ui_last_heavy_msec = now_msec
-		var hud_controls := {}
-		var hud_state := {}
-		hud_controls["mode"] = battle_mode_label
-		hud_state["mode"] = _ui_text_state(_battle_mode_title())
-		var minutes := int(floorf(match_time_remaining / 60.0))
-		var seconds := int(floorf(fmod(match_time_remaining, 60.0)))
-		hud_controls["timer"] = match_timer_label
-		hud_state["timer"] = _ui_text_state("%02d:%02d" % [minutes, seconds])
+		var bar_state := _battle_hud_bar_state()
 		for player_id in [1, 2]:
-			hud_controls["p%d_resource" % player_id] = resource_labels[player_id]
-			hud_state["p%d_resource" % player_id] = _ui_text_state("P%d %s %d" % [player_id, _ui_term("resource"), int(runtime_resource[player_id])])
-			hud_controls["p%d_victory" % player_id] = victory_labels[player_id]
-			hud_state["p%d_victory" % player_id] = _ui_text_state("%s %d/%d" % [_ui_term("victory_points"), int(victory_points[player_id]), WIN_POINTS])
-			var portal: Dictionary = PORTALS[int(portal_index[player_id])]
-			hud_controls["p%d_portal" % player_id] = portal_labels[player_id]
-			hud_state["p%d_portal" % player_id] = _ui_text_state("%s %s  %s" % [_ui_term("portal"), String(portal["name"]), _sortie_discount_status(player_id, 3)])
-			var statuses := [
-				_role_status_text(player_id, "hero"),
-				_role_status_text(player_id, "puppet"),
-				_role_status_text(player_id, "barrier"),
-			]
 			for i in range(3):
 				var role_key: String = ROLE_ORDER[i]
-				var hp_ratio := _role_health_ratio(player_id, role_key)
-				var shield_ratio := _role_shield_ratio(player_id, role_key)
-				var heat_ratio := _role_heat_ratio(player_id, role_key) if heat_hud_enabled else 0.0
+				var role_model := _battle_hud_role_bar_model(bar_state, player_id, role_key)
+				var hp_ratio := float(role_model.get("health_ratio", 0.0))
+				var shield_ratio := float(role_model.get("shield_ratio", 0.0))
+				var heat_ratio := float(role_model.get("heat_ratio", 0.0))
 				if role_health_fills[player_id][role_key] != null:
 					role_health_fills[player_id][role_key].color = _team_primary_color(player_id).lerp(_team_accent_color(player_id), 0.18)
 				if role_shield_fills[player_id][role_key] != null:
@@ -54954,27 +56862,247 @@ func _update_battle_ui() -> void:
 				if role_key == "puppet":
 					_set_canvas_item_visible_if_changed(role_health_fills[player_id][role_key], false)
 					_set_canvas_item_visible_if_changed(role_shield_fills[player_id][role_key], false)
-					_set_puppet_segment_bar(player_id, 330.0)
+					_set_puppet_segment_bar(player_id, 330.0, Array(role_model.get("puppet_segments", [])))
 				else:
 					_set_corner_bar(role_health_fills[player_id][role_key], player_id, 330.0, hp_ratio)
 					_set_shield_corner_bar(role_shield_fills[player_id][role_key], player_id, 330.0, shield_ratio)
 					_set_canvas_item_visible_if_changed(role_shield_fills[player_id][role_key], shield_ratio > 0.001)
 				_set_corner_bar(role_heat_fills[player_id][role_key], player_id, 330.0, heat_ratio)
-				hud_controls["p%d_%s_bar" % [player_id, role_key]] = role_bar_labels[player_id][role_key]
-				hud_state["p%d_%s_bar" % [player_id, role_key]] = _ui_text_state(_role_bar_text(player_id, role_key))
-				hud_controls["p%d_status_%d" % [player_id, i]] = unit_status_labels[player_id][i]
-				hud_state["p%d_status_%d" % [player_id, i]] = _ui_text_state(statuses[i])
-			var hero = active_units[player_id]["hero"]
-			if hero_ammo_labels.get(player_id, null) != null:
-				var ammo_display := _unit_ammo_display_text(hero) if _is_live_unit(hero) else ""
-				hud_controls["p%d_hero_ammo" % player_id] = hero_ammo_labels[player_id]
-				hud_state["p%d_hero_ammo" % player_id] = _ui_text_state(ammo_display, Color(-1.0, -1.0, -1.0, -1.0), ammo_display != "")
-		_apply_ui_state(hud_controls, hud_state)
+		_apply_ui_state(_battle_hud_text_controls(), _battle_hud_text_ui_state())
 	if now_msec - battle_ui_last_sortie_msec >= 5000:
 		battle_ui_last_sortie_msec = now_msec
 		_update_sortie_thumbnails()
 	_apply_ui_state({"message": battle_message_label}, {"message": _ui_text_state(battle_message)})
 	_update_battle_instrument_gauge()
+
+
+func _battle_hud_text_controls() -> Dictionary:
+	var controls := {
+		"mode": battle_mode_label,
+		"timer": match_timer_label,
+	}
+	for player_id in [1, 2]:
+		controls["p%d_resource" % player_id] = resource_labels[player_id]
+		controls["p%d_victory" % player_id] = victory_labels[player_id]
+		controls["p%d_portal" % player_id] = portal_labels[player_id]
+		controls["p%d_hero_ammo" % player_id] = hero_ammo_labels.get(player_id, null)
+		for i in range(ROLE_ORDER.size()):
+			var role_key: String = ROLE_ORDER[i]
+			controls["p%d_%s_bar" % [player_id, role_key]] = role_bar_labels[player_id][role_key]
+			controls["p%d_status_%d" % [player_id, i]] = unit_status_labels[player_id][i]
+	return controls
+
+
+func _battle_hud_text_ui_state() -> Dictionary:
+	var model := battle_hud_state_service.heavy_hud_text_state(_battle_hud_text_snapshot()) if battle_hud_state_service != null else _legacy_battle_hud_text_model()
+	var state := {}
+	for raw_key in model.keys():
+		var key := String(raw_key)
+		var entry: Dictionary = Dictionary(model[raw_key])
+		state[key] = _ui_text_state(
+			String(entry.get("text", "")),
+			Color(-1.0, -1.0, -1.0, -1.0),
+			bool(entry.get("visible", true)) if entry.has("visible") else null
+		)
+	return state
+
+
+func _legacy_battle_hud_text_model() -> Dictionary:
+	var model := {
+		"mode": {"text": _battle_mode_title()},
+		"timer": {"text": battle_hud_state_service.timer_text(match_time_remaining) if battle_hud_state_service != null else "%02d:%02d" % [int(floorf(match_time_remaining / 60.0)), int(floorf(fmod(match_time_remaining, 60.0)))]},
+	}
+	for player_id in [1, 2]:
+		model["p%d_resource" % player_id] = {"text": "P%d %s %d" % [player_id, _ui_term("resource"), int(runtime_resource[player_id])]}
+		model["p%d_victory" % player_id] = {"text": "%s %d/%d" % [_ui_term("victory_points"), int(victory_points[player_id]), WIN_POINTS]}
+		var portal: Dictionary = PORTALS[int(portal_index[player_id])]
+		model["p%d_portal" % player_id] = {"text": "%s %s  %s" % [_ui_term("portal"), String(portal["name"]), _sortie_discount_status(player_id, 3)]}
+		for i in range(ROLE_ORDER.size()):
+			var role_key: String = ROLE_ORDER[i]
+			model["p%d_%s_bar" % [player_id, role_key]] = {"text": _legacy_role_bar_text(player_id, role_key)}
+			model["p%d_status_%d" % [player_id, i]] = {"text": _legacy_role_status_text(player_id, role_key)}
+		var hero = active_units[player_id]["hero"]
+		var ammo_display := _legacy_unit_ammo_display_text(hero) if _is_live_unit(hero) else ""
+		model["p%d_hero_ammo" % player_id] = {"text": ammo_display, "visible": ammo_display != ""}
+	return model
+
+
+func _battle_hud_text_snapshot() -> Dictionary:
+	return {
+		"mode_title": _battle_mode_title(),
+		"match_time_remaining": match_time_remaining,
+		"win_points": WIN_POINTS,
+		"role_order": ROLE_ORDER,
+		"terms": _battle_hud_terms(),
+		"hp_label": "生命" if _ui_is_zh() else "HP",
+		"sortie_discount_max_items": 3,
+		"players": {
+			1: _battle_hud_player_snapshot(1),
+			2: _battle_hud_player_snapshot(2),
+		},
+	}
+
+
+func _battle_hud_bar_snapshot() -> Dictionary:
+	var snapshot := _battle_hud_text_snapshot()
+	snapshot["heat_hud_enabled"] = heat_hud_enabled
+	snapshot["max_width"] = 330.0
+	return snapshot
+
+
+func _battle_hud_bar_state() -> Dictionary:
+	if battle_hud_state_service != null:
+		return battle_hud_state_service.heavy_hud_bar_state(_battle_hud_bar_snapshot())
+	return _legacy_battle_hud_bar_state()
+
+
+func _legacy_battle_hud_bar_state() -> Dictionary:
+	var players := {}
+	for player_id in [1, 2]:
+		var role_models := {}
+		for role_key in ROLE_ORDER:
+			var role_name := String(role_key)
+			role_models[role_name] = {
+				"health_ratio": _runtime_role_health_ratio(player_id, role_name),
+				"shield_ratio": _runtime_role_shield_ratio(player_id, role_name),
+				"heat_ratio": _runtime_role_heat_ratio(player_id, role_name) if heat_hud_enabled else 0.0,
+				"puppet_segments": battle_hud_state_service.puppet_segment_bar_model(player_id, 330.0, _puppet_slot_health_entries(player_id), maxi(0, ROLE_ORDER.find("puppet"))) if battle_hud_state_service != null and role_name == "puppet" else [],
+			}
+		players[player_id] = {"roles": role_models}
+	return {"players": players}
+
+
+func _battle_hud_role_bar_model(bar_state: Dictionary, player_id: int, role_key: String) -> Dictionary:
+	var players: Dictionary = Dictionary(bar_state.get("players", {}))
+	var player: Dictionary = Dictionary(players.get(player_id, players.get(str(player_id), {})))
+	var roles: Dictionary = Dictionary(player.get("roles", {}))
+	return Dictionary(roles.get(role_key, {}))
+
+
+func _battle_hud_terms() -> Dictionary:
+	return {
+		"resource": _ui_term("resource"),
+		"victory_points": _ui_term("victory_points"),
+		"portal": _ui_term("portal"),
+		"deploy": _ui_term("deploy"),
+		"offline": _ui_term("offline"),
+		"blind": _ui_term("blind"),
+		"overheat": _ui_term("overheat"),
+		"stagger": _ui_term("stagger"),
+		"support_armor": _ui_term("support_armor"),
+		"electronic_armor": _ui_term("electronic_armor"),
+		"heat": _ui_term("heat"),
+		"ammo": _ui_term("ammo"),
+		"shift": _ui_term("shift"),
+	}
+
+
+func _battle_hud_player_snapshot(player_id: int) -> Dictionary:
+	var portal: Dictionary = PORTALS[int(portal_index[player_id])]
+	var roles := {}
+	for role_key in ROLE_ORDER:
+		roles[String(role_key)] = _battle_hud_role_state(player_id, String(role_key))
+	var hero = active_units[player_id]["hero"]
+	return {
+		"resource": int(runtime_resource[player_id]),
+		"victory_points": int(victory_points[player_id]),
+		"portal_name": String(portal.get("name", "")),
+		"sortie_discount_entries": _battle_hud_sortie_discount_entries(player_id, 3),
+		"roles": roles,
+		"hero_ammo": _unit_ammo_hud_state(hero) if _is_live_unit(hero) else {"has_ammo": false},
+	}
+
+
+func _battle_hud_role_state(player_id: int, role_key: String) -> Dictionary:
+	var pending := _role_pending(player_id, role_key)
+	var unit = _first_live_puppet(player_id) if role_key == "puppet" else active_units[player_id][role_key]
+	return {
+		"role_key": role_key,
+		"role_name": _role_name(role_key),
+		"pending": pending,
+		"pending_time": float(pending_deploys[player_id][role_key]) if pending else 0.0,
+		"health_ratio": _runtime_role_health_ratio(player_id, role_key),
+		"shield_ratio": _runtime_role_shield_ratio(player_id, role_key),
+		"heat_ratio": _runtime_role_heat_ratio(player_id, role_key),
+		"unit": _unit_hud_state(unit),
+		"puppet_entries": _puppet_slot_health_entries(player_id) if role_key == "puppet" else [],
+	}
+
+
+func _unit_hud_state(unit) -> Dictionary:
+	if not _is_live_unit(unit):
+		return {"live": false}
+	return {
+		"live": true,
+		"health": int(unit.health),
+		"max_health": int(unit.max_health),
+		"health_ratio": unit.health_ratio(),
+		"shield_ratio": _unit_shield_ratio(unit),
+		"blind_strength": _unit_blind_strength(unit),
+		"overheated": bool(unit.overheated),
+		"stagger_timer": float(unit.get_meta("melee_stagger_timer", 0.0)),
+		"combat_state": _combat_state_name(String(unit.current_state)),
+		"support_armor_timer": float(unit.get_meta("support_armor_timer", 0.0)),
+		"support_armor_hp": float(unit.get_meta("support_armor_hp", 0.0)),
+		"electronic_armor_hp": float(unit.get_meta("electronic_armor_hp", 0.0)),
+		"electronic_armor_max": float(unit.get_meta("electronic_armor_max", unit.stats.get("electronic_armor_max", 0.0))),
+		"uses_heat": _unit_uses_heat(unit),
+		"heat_ratio": unit.heat_ratio() if _unit_uses_heat(unit) else 0.0,
+		"has_role_switch": String(unit.stats.get("role_switch", "")) != "",
+	}
+
+
+func _unit_ammo_hud_state(unit) -> Dictionary:
+	if unit == null or not is_instance_valid(unit):
+		return {"has_ammo": false}
+	var caps: Dictionary = unit.stats.get("ammo_capacity", {})
+	var has_ammo := false
+	for ammo_type in AMMO_TYPES:
+		if int(caps.get(ammo_type, 0)) > 0:
+			has_ammo = true
+			break
+	return {
+		"has_ammo": has_ammo,
+		"bullet_current": _current_ammo(unit, "bullet"),
+		"bullet_capacity": _ammo_capacity_for(unit, "bullet"),
+		"chemical_current": _current_ammo(unit, "chemical"),
+		"chemical_capacity": _ammo_capacity_for(unit, "chemical"),
+		"laser_current": _current_ammo(unit, "laser"),
+		"laser_capacity": _ammo_capacity_for(unit, "laser"),
+	}
+
+
+func _battle_hud_sortie_discount_entries(player_id: int, max_items: int) -> Array:
+	var result: Array = []
+	var order := _team_sortie_order(player_id)
+	var limit := mini(max_items, order.size())
+	for i in range(limit):
+		result.append(_battle_hud_sortie_discount_entry(player_id, Dictionary(order[i])))
+	return result
+
+
+func _battle_hud_sortie_discount_entry(player_id: int, entry: Dictionary) -> Dictionary:
+	var role_key := String(entry.get("role", "hero"))
+	var unit_index := int(entry.get("index", 0))
+	var ref := _entry_ref(entry)
+	var player_state: Dictionary = sortie_price_state.get(player_id, {})
+	var state: Dictionary = player_state.get(ref, {})
+	if state.is_empty() or not state.has("base_deploy_cost"):
+		var stats := _compute_unit_stats(player_id, role_key, unit_index)
+		state["base_deploy_cost"] = int(stats.get("deploy_cost", stats.get("cost", 0)))
+		state["timer"] = float(state.get("timer", 0.0))
+		state["deployed"] = bool(state.get("deployed", false))
+		state["mult"] = float(state.get("mult", 1.0))
+		player_state[ref] = state
+		sortie_price_state[player_id] = player_state
+	var base_cost := int(state.get("base_deploy_cost", 0))
+	return {
+		"role_key": role_key,
+		"role_name": _role_name(role_key),
+		"unit_index": unit_index,
+		"base_deploy_cost": base_cost,
+		"live_deploy_cost": _discounted_deploy_cost(player_id, role_key, unit_index, base_cost),
+	}
 
 
 func _update_sortie_thumbnails() -> void:
@@ -55031,35 +57159,174 @@ func _flash_sortie_thumbnail(player_id: int, role_key: String, unit_index: int) 
 			return
 
 
+func _battle_awareness_unit_snapshot(unit) -> Dictionary:
+	if not _is_live_unit(unit):
+		return {"live": false}
+	return {
+		"id": int(unit.get_instance_id()),
+		"live": true,
+		"owner": int(unit.owner_id),
+		"role": String(unit.role),
+		"ring": float(unit.ring_pos),
+		"lane": float(unit.lane),
+		"radius": float(unit.stats.get("radius", 0.18)),
+		"temporary": _is_temporary_fracture_puppet(unit),
+		"space_debris": bool(unit.get_meta("space_debris", false)),
+		"hp_ratio": float(unit.health_ratio()) if unit.has_method("health_ratio") else 1.0,
+		"heat_ratio": _source_target_heat_ratio(unit),
+		"overheated": bool(unit.overheated),
+		"projectile_signal": float(unit.get_meta("projectile_signal", 0.0)),
+		"retreating_timer": float(unit.get_meta("retreating_timer", 0.0)),
+		"support_barrier": _source_target_is_support_barrier(unit),
+	}
+
+
+func _append_battle_awareness_unit_snapshot(unit, snapshots: Array, refs: Dictionary, include_barrier_tiles: bool = false) -> void:
+	if not _is_live_unit(unit):
+		return
+	var snapshot := _battle_awareness_unit_snapshot(unit)
+	if include_barrier_tiles and _barrier_has_map_tiles(unit):
+		var tile_snapshots: Array = []
+		for raw_tile in Array(unit.stats.get("barrier_map_tiles", [])):
+			if not (raw_tile is Dictionary):
+				continue
+			var tile: Dictionary = raw_tile
+			var tile_pos := _barrier_tile_world_position(unit, tile, true)
+			tile_snapshots.append({
+				"ring": float(tile_pos.x),
+				"lane": float(tile_pos.y),
+				"radius": float(tile.get("radius", 0.12)),
+				"length": float(tile.get("length", 0.2)),
+			})
+		snapshot["barrier_tiles"] = tile_snapshots
+	snapshots.append(snapshot)
+	refs[int(snapshot.get("id", -1))] = unit
+
+
+func _battle_awareness_active_unit_data(include_barrier_tiles: bool = false) -> Dictionary:
+	var snapshots: Array = []
+	var refs: Dictionary = {}
+	for player_id in [1, 2]:
+		var player_units: Dictionary = active_units.get(player_id, {})
+		_append_battle_awareness_unit_snapshot(player_units.get("hero", null), snapshots, refs, include_barrier_tiles)
+		_append_battle_awareness_unit_snapshot(player_units.get("barrier", null), snapshots, refs, include_barrier_tiles)
+		for unit in Array(player_units.get("puppet", [])):
+			_append_battle_awareness_unit_snapshot(unit, snapshots, refs, include_barrier_tiles)
+	return {"snapshots": snapshots, "refs": refs}
+
+
+func _battle_awareness_all_unit_data(include_barrier_tiles: bool = false) -> Dictionary:
+	var snapshots: Array = []
+	var refs: Dictionary = {}
+	for unit in all_units:
+		_append_battle_awareness_unit_snapshot(unit, snapshots, refs, include_barrier_tiles)
+	return {"snapshots": snapshots, "refs": refs}
+
+
+func _battle_awareness_units_for_ids(ids: Array, refs: Dictionary) -> Array:
+	var units: Array = []
+	for raw_id in ids:
+		var id := int(raw_id)
+		if refs.has(id):
+			units.append(refs[id])
+	return units
+
+
+func _battle_runtime_action_telemetry_unit_snapshot(unit) -> Dictionary:
+	if not _is_live_unit(unit):
+		return {"live": false}
+	var telemetry: Dictionary = {}
+	if unit.has_method("runtime_action_telemetry_snapshot"):
+		var raw_telemetry = unit.runtime_action_telemetry_snapshot()
+		if raw_telemetry is Dictionary:
+			telemetry = raw_telemetry
+	return {
+		"id": int(unit.get_instance_id()),
+		"live": true,
+		"owner": int(unit.owner_id),
+		"role": String(unit.role),
+		"name": String(unit.unit_name),
+		"action_telemetry": telemetry,
+		"command_diagnostics": _battle_command_diagnostics_unit_snapshot(unit),
+	}
+
+
+func _battle_command_diagnostics_unit_snapshot(unit) -> Dictionary:
+	if not _is_live_unit(unit):
+		return {}
+	var stats: Dictionary = unit.stats if unit.stats is Dictionary else {}
+	var source_condition := String(unit.get_meta("source_condition", ""))
+	var source_rule := _battle_command_diagnostics_source_rule(stats, source_condition)
+	var sequence: Array = Array(source_rule.get("states", stats.get("sequence", [])))
+	var role_switch_target := String(stats.get("role_switch", ""))
+	return _battle_actor_command_service().command_diagnostics({
+		"ai_kind": String(stats.get("ai", "")),
+		"source_condition": source_condition,
+		"source_rule": source_rule,
+		"source_move_kind": String(source_rule.get("move", "")),
+		"source_attack_preference": String(stats.get("source_attack_preference", "")),
+		"fire_timer": float(unit.get_meta("fire_timer", 0.0)),
+		"sequence_step": int(unit.get_meta("sequence_step", 0)),
+		"sequence_size": sequence.size(),
+		"movement_mode": String(unit.get_meta("last_move_command_mode", "")),
+		"movement_gate_reason": String(unit.get_meta("movement_gate_reason", "")),
+		"role_switch_configured": role_switch_target != "",
+		"role_switch_target": role_switch_target,
+	})
+
+
+func _battle_command_diagnostics_source_rule(stats: Dictionary, source_condition: String) -> Dictionary:
+	var raw_rules = stats.get("source_rules", {})
+	if not (raw_rules is Dictionary):
+		return {}
+	var rules: Dictionary = raw_rules
+	if source_condition != "" and rules.get(source_condition, null) is Dictionary:
+		return Dictionary(rules.get(source_condition, {}))
+	if rules.get("default", null) is Dictionary:
+		return Dictionary(rules.get("default", {}))
+	return {}
+
+
+func _battle_runtime_action_telemetry_snapshot() -> Dictionary:
+	var snapshots: Array = []
+	for unit in all_units:
+		var snapshot := _battle_runtime_action_telemetry_unit_snapshot(unit)
+		if bool(snapshot.get("live", false)):
+			snapshots.append(snapshot)
+	if battle_runtime_action_telemetry_service != null:
+		return battle_runtime_action_telemetry_service.battle_action_telemetry(snapshots)
+	return {
+		"unit_count": snapshots.size(),
+		"active_action_unit_count": 0,
+		"active_action_count": 0,
+		"units": snapshots,
+		"profile_counts": {},
+		"phase_label_counts": {},
+		"gate_reason_counts": {},
+		"cancel_ready_unit_count": 0,
+		"cooldown_blocked_unit_count": 0,
+		"ai_kind_counts": {},
+		"source_condition_counts": {},
+		"movement_mode_counts": {},
+		"fire_cooling_unit_count": 0,
+		"role_switch_configured_unit_count": 0,
+		"earliest_timer": 0.0,
+		"latest_phase": 0.0,
+		"has_feint_retarget": false,
+		"has_runtime_contact_speed": false,
+	}
+
+
 func _update_battle_minimap() -> void:
 	if battle_minimap_view == null:
 		return
-	var unit_points: Array = []
-	for unit in all_units:
-		if not _is_live_unit(unit):
-			continue
-		if _barrier_has_map_tiles(unit):
-			for raw_tile in Array(unit.stats.get("barrier_map_tiles", [])):
-				if not (raw_tile is Dictionary):
-					continue
-				var tile: Dictionary = raw_tile
-				var tile_pos := _barrier_tile_world_position(unit, tile, true)
-				unit_points.append({
-					"ring": float(tile_pos.x),
-					"lane": float(tile_pos.y),
-					"owner": int(unit.owner_id),
-					"role": "space_debris" if bool(unit.get_meta("space_debris", false)) else "barrier_piece",
-					"radius": maxf(0.12, float(tile.get("radius", 0.12)) + float(tile.get("length", 0.2)) * 0.16),
-				})
-			continue
-		unit_points.append({
-			"ring": float(unit.ring_pos),
-			"lane": float(unit.lane),
-			"owner": int(unit.owner_id),
-			"role": String(unit.role),
-			"radius": float(unit.stats.get("radius", 0.18)),
-		})
-	battle_minimap_view.set_world(unit_points, camera_center, camera_lane_center)
+	var data := _battle_awareness_all_unit_data(true)
+	var model := battle_awareness_service.minimap_world_model(Array(data.get("snapshots", [])), camera_center, camera_lane_center) if battle_awareness_service != null else {
+		"unit_points": [],
+		"camera_ring": camera_center,
+		"camera_lane": camera_lane_center,
+	}
+	battle_minimap_view.set_world(Array(model.get("unit_points", [])), float(model.get("camera_ring", camera_center)), float(model.get("camera_lane", camera_lane_center)))
 
 
 func _update_arena_boundary_lines() -> void:
@@ -55122,10 +57389,10 @@ func _mobius_config() -> Dictionary:
 	config["ridge_depth_strength"] = 1.0
 	config["surface_span_multiplier"] = 1.5
 	config["surface_perspective_strength"] = 0.36
-	config["surface_twist_shear_strength"] = 0.075
-	config["surface_ridge_lift_strength"] = 0.20
-	config["surface_ridge_warp_amplitude"] = 0.125
-	config["surface_twist_warp_strength"] = 0.032
+	config["surface_twist_shear_strength"] = 0.0
+	config["surface_ridge_lift_strength"] = 0.0
+	config["surface_ridge_warp_amplitude"] = 0.0
+	config["surface_twist_warp_strength"] = 0.0
 	config["surface_far_brightness"] = 0.52
 	config["surface_near_brightness"] = 0.88
 	config["grid_far_brightness"] = 0.52
@@ -55144,6 +57411,8 @@ func _mobius_config() -> Dictionary:
 	config["surface_field_kind"] = "square_grid_field"
 	config["surface_grid_cell_px"] = 56.0
 	config["surface_lane_guides_enabled"] = false
+	config["surface_projection_mode"] = "world_grid"
+	config["surface_world_grid_stable"] = true
 	config["stardust_band_enabled"] = false
 	config["stardust_alpha_max"] = 0.28
 	config["stardust_width_min"] = 2.4
@@ -55184,24 +57453,26 @@ func _mobius_project_coord(coord: Vector2) -> Dictionary:
 
 
 func _project_combat_coord_to_screen(coord: Vector2) -> Dictionary:
-	if mobius_enabled:
+	var intent := _battle_spatial_runtime_service().screen_projection_intent({
+		"mobius_enabled": mobius_enabled,
+		"ring": coord.x,
+		"lane": coord.y,
+	})
+	if String(intent.get("mode", "")) == "mobius":
 		return _mobius_project_coord(coord)
 	return _screen_from_ring(coord.x, coord.y)
 
 
 func _mobius_surface_input_for_unit(unit, input_vector: Vector2) -> Vector2:
 	var readable_input := GameplayTransform.screen_input_to_gameplay_motion(input_vector)
-	if not mobius_enabled or readable_input.length() <= 0.04:
-		return readable_input
 	var coord := _unit_mobius_coord(unit) if _is_live_unit(unit) else _mobius_camera_coord()
-	var surface_input := MobiusWorld.screen_input_to_surface_motion(readable_input, coord, _mobius_camera_coord(), _mobius_config(), mobius_rotation_state)
-	if surface_input.length() <= 0.001:
-		return readable_input
-	if absf(readable_input.y) >= absf(readable_input.x) and absf(readable_input.y) > 0.04:
-		if absf(surface_input.y) <= 0.001 or signf(surface_input.y) != signf(readable_input.y):
-			surface_input.y = readable_input.y
-			surface_input = surface_input.normalized() * clampf(readable_input.length(), 0.0, 1.0)
-	return surface_input
+	var surface_input := MobiusWorld.screen_input_to_surface_motion(readable_input, coord, _mobius_camera_coord(), _mobius_config(), mobius_rotation_state) if mobius_enabled and readable_input.length() > 0.04 else Vector2.ZERO
+	var intent := _battle_spatial_runtime_service().surface_input_intent({
+		"mobius_enabled": mobius_enabled,
+		"readable_input": readable_input,
+		"surface_input": surface_input,
+	})
+	return intent.get("input", readable_input)
 
 
 func _mobius_boundary_points(lane_value: float) -> PackedVector2Array:
@@ -55297,20 +57568,25 @@ func _refresh_mobius_surface_view() -> void:
 	var surface_config := _mobius_config()
 	surface_config["stardust_band_enabled"] = false
 	surface_config["surface_field_kind"] = "square_grid_field"
-	surface_config["surface_projection_mode"] = "full_rect_inverse_sample"
+	surface_config["surface_projection_mode"] = "world_grid"
+	surface_config["surface_world_grid_stable"] = true
 	surface_config["surface_grid_cell_px"] = 56.0
-	surface_config["surface_lane_guides_enabled"] = false
-	surface_config["local_rectangular_projection"] = false
+	surface_config["surface_lane_guides_enabled"] = true
+	surface_config["local_rectangular_projection"] = true
 	surface_config["width_segments"] = max(11, int(surface_config.get("width_segments", 7)))
-	surface_config["near_alpha"] = 0.72
-	surface_config["far_alpha"] = 0.36
-	surface_config["depth_contrast"] = 1.16
-	surface_config["surface_detail_density"] = maxf(1.15, float(surface_config.get("surface_detail_density", 1.0)))
-	surface_config["surface_alpha_gain"] = 1.06
-	surface_config["surface_alpha_max"] = 0.18
-	surface_config["surface_color_gain"] = 1.22
-	surface_config["cosmic_mix"] = 0.035
-	mobius_strip_surface_view.set_surface_texture(mobius_surface_texture)
+	surface_config["near_alpha"] = 0.34
+	surface_config["far_alpha"] = 0.16
+	surface_config["depth_contrast"] = 1.08
+	surface_config["surface_detail_density"] = 1.0
+	surface_config["surface_alpha_gain"] = 0.92
+	surface_config["surface_alpha_max"] = 0.16
+	surface_config["surface_color_gain"] = 1.06
+	surface_config["surface_ridge_lift_strength"] = 0.0
+	surface_config["surface_ridge_warp_amplitude"] = 0.0
+	surface_config["surface_twist_shear_strength"] = 0.0
+	surface_config["surface_twist_warp_strength"] = 0.0
+	surface_config["cosmic_mix"] = 0.0
+	mobius_strip_surface_view.set_surface_texture(null)
 	mobius_strip_surface_view.set_world(surface_config, mobius_rotation_state, _presentation_camera_coord())
 	if mobius_stardust_band_view != null:
 		mobius_stardust_band_view.visible = false
@@ -55338,52 +57614,51 @@ func _battle_mode_title() -> String:
 
 
 func _camera_follow_alpha(delta: float) -> float:
-	return 1.0 - exp(-BATTLE_CAMERA_FOLLOW_RESPONSE_PER_SECOND * maxf(0.0, delta))
+	return _battle_spatial_runtime_service().camera_follow_alpha(delta, BATTLE_CAMERA_FOLLOW_RESPONSE_PER_SECOND)
 
 
 func _update_camera_center(delta: float = BATTLE_SIMULATION_DELTA) -> void:
 	var follow_alpha := _camera_follow_alpha(delta)
-	for player_id in [1, 2]:
-		var target_center := _camera_focus_for_player(player_id)
-		var target_lane := _camera_lane_focus_for_player(player_id)
-		if battle_mode in [MODE_TRAINING, MODE_AI, MODE_PVP] and ai_battle_seat in [1, 2]:
-			player_camera_centers[player_id] = target_center if mobius_enabled else wrapf(target_center, 0.0, RING_LENGTH)
-			player_camera_lanes[player_id] = _clamp_camera_lane_center(target_lane)
-		else:
-			var current := _camera_center_for_player(player_id)
-			var horizontal_delta := target_center - current if mobius_enabled else _ring_delta(current, target_center)
-			var next_center := current + horizontal_delta * follow_alpha
-			player_camera_centers[player_id] = next_center if mobius_enabled else wrapf(next_center, 0.0, RING_LENGTH)
-			var current_lane := _camera_lane_for_player(player_id)
-			player_camera_lanes[player_id] = _clamp_camera_lane_center(lerpf(current_lane, target_lane, follow_alpha))
-	if battle_mode in [MODE_AI, MODE_TRAINING, MODE_PVP] and ai_battle_seat == 2:
-		camera_center = _camera_center_for_player(2)
-		camera_lane_center = _camera_lane_for_player(2)
-	elif battle_mode in [MODE_AI, MODE_TRAINING, MODE_PVP] and ai_battle_seat == 3:
-		match spectator_view_mode:
-			SPECTATOR_VIEW_P1:
-				spectator_camera_center = _camera_center_for_player(1)
-				spectator_camera_lane = _camera_lane_for_player(1)
-			SPECTATOR_VIEW_P2:
-				spectator_camera_center = _camera_center_for_player(2)
-				spectator_camera_lane = _camera_lane_for_player(2)
-			SPECTATOR_VIEW_MID:
-				var spectator_target := _spectator_camera_focus()
-				if mobius_enabled:
-					var current_s := MobiusWorld.nearest_lifted_s(spectator_target, fposmod(spectator_camera_center, RING_LENGTH), RING_LENGTH)
-					spectator_camera_center = current_s + (spectator_target - current_s) * follow_alpha
-				else:
-					spectator_camera_center = wrapf(spectator_camera_center + _ring_delta(spectator_camera_center, spectator_target) * follow_alpha, 0.0, RING_LENGTH)
-				spectator_camera_lane = _clamp_camera_lane_center(lerpf(spectator_camera_lane, _spectator_lane_focus(), follow_alpha))
-		camera_center = spectator_camera_center
-		camera_lane_center = _clamp_camera_lane_center(spectator_camera_lane)
-	else:
-		camera_center = _camera_center_for_player(1)
-		camera_lane_center = _clamp_camera_lane_center(_camera_lane_for_player(1))
+	var p1_target := _player_camera_focus_intent(1)
+	var p2_target := _player_camera_focus_intent(2)
+	var spectator_focus := _spectator_camera_focus_intent()
+	var spectator_horizontal_delta := float(spectator_focus.get("center", spectator_camera_center)) - spectator_camera_center
+	var spectator_current_center_for_service := spectator_camera_center
 	if mobius_enabled:
-		camera_mobius_s = camera_center
-		camera_center = fposmod(camera_mobius_s, RING_LENGTH)
+		var current_s := MobiusWorld.nearest_lifted_s(float(spectator_focus.get("center", spectator_camera_center)), fposmod(spectator_camera_center, RING_LENGTH), RING_LENGTH)
+		spectator_current_center_for_service = current_s
+		spectator_horizontal_delta = float(spectator_focus.get("center", spectator_camera_center)) - current_s
 	else:
+		spectator_horizontal_delta = _ring_delta(spectator_camera_center, float(spectator_focus.get("center", spectator_camera_center)))
+	var intent := _battle_spatial_runtime_service().camera_update_intent({
+		"follow_alpha": follow_alpha,
+		"mobius_enabled": mobius_enabled,
+		"ring_length": RING_LENGTH,
+		"lane_limit": _camera_lane_center_limit(),
+		"snap_to_targets": battle_mode in [MODE_TRAINING, MODE_AI, MODE_PVP] and ai_battle_seat in [1, 2],
+		"seat": ai_battle_seat,
+		"spectator_view_mode": spectator_view_mode,
+		"p1_current": {"center": _camera_center_for_player(1), "lane": _camera_lane_for_player(1)},
+		"p2_current": {"center": _camera_center_for_player(2), "lane": _camera_lane_for_player(2)},
+		"p1_target": p1_target,
+		"p2_target": p2_target,
+		"spectator_current": {"center": spectator_current_center_for_service, "lane": spectator_camera_lane},
+		"spectator_focus": spectator_focus,
+		"spectator_horizontal_delta": spectator_horizontal_delta,
+		"camera_mobius_s": camera_mobius_s,
+	})
+	var centers: Dictionary = intent.get("player_camera_centers", {})
+	var lanes: Dictionary = intent.get("player_camera_lanes", {})
+	player_camera_centers[1] = float(centers.get(1, player_camera_centers.get(1, camera_center)))
+	player_camera_centers[2] = float(centers.get(2, player_camera_centers.get(2, camera_center)))
+	player_camera_lanes[1] = float(lanes.get(1, player_camera_lanes.get(1, camera_lane_center)))
+	player_camera_lanes[2] = float(lanes.get(2, player_camera_lanes.get(2, camera_lane_center)))
+	spectator_camera_center = float(intent.get("spectator_camera_center", spectator_camera_center))
+	spectator_camera_lane = float(intent.get("spectator_camera_lane", spectator_camera_lane))
+	camera_center = float(intent.get("camera_center", camera_center))
+	camera_lane_center = float(intent.get("camera_lane_center", camera_lane_center))
+	camera_mobius_s = float(intent.get("camera_mobius_s", camera_mobius_s))
+	if bool(intent.get("sync_camera_mobius_from_compat", false)):
 		_sync_camera_mobius_from_compat()
 
 
@@ -55396,34 +57671,39 @@ func _camera_lane_for_player(player_id: int) -> float:
 
 
 func _camera_focus_for_player(player_id: int) -> float:
-	var hero = active_units[player_id]["hero"]
-	if _is_live_unit(hero):
-		return _unit_combat_coord(hero).x
-	for unit in _friendly_units(player_id):
-		if _is_live_unit(unit):
-			return _unit_combat_coord(unit).x
-	var enemy_id := 2 if player_id == 1 else 1
-	var enemy_hero = active_units[enemy_id]["hero"]
-	if _is_live_unit(enemy_hero):
-		return _unit_combat_coord(enemy_hero).x
-	return _camera_center_for_player(player_id)
+	return float(_player_camera_focus_intent(player_id).get("center", _camera_center_for_player(player_id)))
 
 
 func _camera_lane_focus_for_player(player_id: int) -> float:
+	return float(_player_camera_focus_intent(player_id).get("lane", _camera_lane_for_player(player_id)))
+
+
+func _player_camera_focus_intent(player_id: int) -> Dictionary:
 	var hero = active_units[player_id]["hero"]
-	if _is_live_unit(hero):
-		return clampf(_unit_combat_coord(hero).y, -BATTLE_HALF_HEIGHT, BATTLE_HALF_HEIGHT)
+	var hero_snapshot := {"live": _is_live_unit(hero), "coord": _unit_combat_coord(hero) if _is_live_unit(hero) else Vector2.ZERO}
+	var friendly_snapshot := {"live": false}
 	for unit in _friendly_units(player_id):
 		if _is_live_unit(unit):
-			return clampf(_unit_combat_coord(unit).y, -BATTLE_HALF_HEIGHT, BATTLE_HALF_HEIGHT)
+			friendly_snapshot = {"live": true, "coord": _unit_combat_coord(unit)}
+			break
 	var enemy_id := 2 if player_id == 1 else 1
 	var enemy_hero = active_units[enemy_id]["hero"]
-	if _is_live_unit(enemy_hero):
-		return clampf(_unit_combat_coord(enemy_hero).y, -BATTLE_HALF_HEIGHT, BATTLE_HALF_HEIGHT)
-	return _camera_lane_for_player(player_id)
+	var enemy_snapshot := {"live": _is_live_unit(enemy_hero), "coord": _unit_combat_coord(enemy_hero) if _is_live_unit(enemy_hero) else Vector2.ZERO}
+	return _battle_spatial_runtime_service().player_camera_focus_intent({
+		"hero": hero_snapshot,
+		"friendly": friendly_snapshot,
+		"enemy_hero": enemy_snapshot,
+		"fallback_center": _camera_center_for_player(player_id),
+		"fallback_lane": _camera_lane_for_player(player_id),
+		"lane_limit": _camera_lane_center_limit(),
+	})
 
 
 func _spectator_camera_focus() -> float:
+	return float(_spectator_camera_focus_intent().get("center", spectator_camera_center))
+
+
+func _spectator_camera_focus_intent() -> Dictionary:
 	var left = active_units[1]["hero"]
 	var right = active_units[2]["hero"]
 	if not _is_live_unit(left):
@@ -55431,34 +57711,30 @@ func _spectator_camera_focus() -> float:
 	if not _is_live_unit(right):
 		right = _first_live_unit_any_role(2)
 	if _is_live_unit(left) and _is_live_unit(right):
-		if mobius_enabled:
-			var delta := _mobius_delta_vec_between(left, right)
-			return _unit_combat_coord(left).x + delta.x * 0.5
-		return wrapf(left.ring_pos + _ring_delta(left.ring_pos, right.ring_pos) * 0.5, 0.0, RING_LENGTH)
-	if _is_live_unit(left):
-		return _unit_combat_coord(left).x
-	if _is_live_unit(right):
-		return _unit_combat_coord(right).x
-	return spectator_camera_center
+		return _battle_spatial_runtime_service().spectator_camera_focus_intent({
+			"left": {"live": true, "coord": _unit_combat_coord(left), "ring": left.ring_pos, "lane": left.lane},
+			"right": {"live": true, "coord": _unit_combat_coord(right), "ring": right.ring_pos, "lane": right.lane},
+			"mobius_enabled": mobius_enabled,
+			"delta": _mobius_delta_vec_between(left, right) if mobius_enabled else Vector2.ZERO,
+			"ring_delta": _ring_delta(left.ring_pos, right.ring_pos),
+			"ring_length": RING_LENGTH,
+			"fallback_center": spectator_camera_center,
+			"fallback_lane": spectator_camera_lane,
+			"lane_limit": _camera_lane_center_limit(),
+		})
+	return _battle_spatial_runtime_service().spectator_camera_focus_intent({
+		"left": {"live": _is_live_unit(left), "coord": _unit_combat_coord(left) if _is_live_unit(left) else Vector2.ZERO, "ring": left.ring_pos if _is_live_unit(left) else 0.0, "lane": left.lane if _is_live_unit(left) else 0.0},
+		"right": {"live": _is_live_unit(right), "coord": _unit_combat_coord(right) if _is_live_unit(right) else Vector2.ZERO, "ring": right.ring_pos if _is_live_unit(right) else 0.0, "lane": right.lane if _is_live_unit(right) else 0.0},
+		"mobius_enabled": mobius_enabled,
+		"ring_length": RING_LENGTH,
+		"fallback_center": spectator_camera_center,
+		"fallback_lane": spectator_camera_lane,
+		"lane_limit": _camera_lane_center_limit(),
+	})
 
 
 func _spectator_lane_focus() -> float:
-	var left = active_units[1]["hero"]
-	var right = active_units[2]["hero"]
-	if not _is_live_unit(left):
-		left = _first_live_unit_any_role(1)
-	if not _is_live_unit(right):
-		right = _first_live_unit_any_role(2)
-	if _is_live_unit(left) and _is_live_unit(right):
-		if mobius_enabled:
-			var delta := _mobius_delta_vec_between(left, right)
-			return clampf(_unit_combat_coord(left).y + delta.y * 0.5, -BATTLE_HALF_HEIGHT, BATTLE_HALF_HEIGHT)
-		return clampf((left.lane + right.lane) * 0.5, -BATTLE_HALF_HEIGHT, BATTLE_HALF_HEIGHT)
-	if _is_live_unit(left):
-		return clampf(_unit_combat_coord(left).y, -BATTLE_HALF_HEIGHT, BATTLE_HALF_HEIGHT)
-	if _is_live_unit(right):
-		return clampf(_unit_combat_coord(right).y, -BATTLE_HALF_HEIGHT, BATTLE_HALF_HEIGHT)
-	return 0.0
+	return float(_spectator_camera_focus_intent().get("lane", 0.0))
 
 
 func _first_live_unit_any_role(player_id: int):
@@ -55475,18 +57751,27 @@ func _first_live_unit_any_role(player_id: int):
 
 
 func _screen_from_ring(ring_value: float, lane_value: float) -> Dictionary:
-	if mobius_enabled:
-		var coord := MobiusWorld.lift_ring_lane_near(camera_mobius_s, ring_value, lane_value, RING_LENGTH)
-		return _mobius_project_coord(coord)
-	var delta: float = _ring_delta(camera_center, ring_value)
-	var lane_delta := lane_value - camera_lane_center
 	var screen_scale := _battle_world_to_screen_scale()
-	var half_width_units := ARENA_WIDTH / screen_scale * 0.5
-	var half_height_units := VIEW_HEIGHT * 0.5
-	var visible := absf(delta) <= half_width_units * 1.08 and absf(lane_delta) <= half_height_units * 1.08
-	var x: float = (ARENA_LEFT + ARENA_RIGHT) * 0.5 + delta * screen_scale
-	var y: float = (ARENA_TOP + ARENA_BOTTOM) * 0.5 + lane_delta * screen_scale
-	return {"position": Vector2(x, y), "visible": visible}
+	var lifted_coord := Vector2(ring_value, lane_value)
+	if mobius_enabled:
+		lifted_coord = MobiusWorld.lift_ring_lane_near(camera_mobius_s, ring_value, lane_value, RING_LENGTH)
+	var intent := _battle_spatial_runtime_service().screen_projection_intent({
+		"mobius_enabled": mobius_enabled,
+		"ring": ring_value,
+		"lane": lane_value,
+		"lifted_s": lifted_coord.x,
+		"lifted_lane": lifted_coord.y,
+		"camera_center": camera_center,
+		"camera_lane": camera_lane_center,
+		"ring_delta": _ring_delta(camera_center, ring_value),
+		"screen_scale": screen_scale,
+		"arena_width": ARENA_WIDTH,
+		"view_height": VIEW_HEIGHT,
+		"arena_center": Vector2((ARENA_LEFT + ARENA_RIGHT) * 0.5, (ARENA_TOP + ARENA_BOTTOM) * 0.5),
+	})
+	if String(intent.get("mode", "")) == "mobius":
+		return _mobius_project_coord(intent.get("coord", lifted_coord))
+	return {"position": intent.get("position", Vector2.ZERO), "visible": bool(intent.get("visible", false))}
 
 
 func _battle_world_to_screen_scale() -> float:
@@ -55496,21 +57781,22 @@ func _battle_world_to_screen_scale() -> float:
 func _world_point_visible_for_player(ring_value: float, lane_value: float, player_id: int, margin_mult: float = 1.0) -> bool:
 	var center := _camera_center_for_player(player_id)
 	var lane_center := _camera_lane_for_player(player_id)
+	var delta_vec := Vector2.ZERO
 	if mobius_enabled:
 		var reference_s := MobiusWorld.nearest_lifted_s(camera_mobius_s, center, RING_LENGTH)
 		var from_coord := Vector2(reference_s, lane_center)
 		var to_coord := MobiusWorld.lift_ring_lane_near(reference_s, ring_value, lane_value, RING_LENGTH)
-		var delta_vec := MobiusWorld.delta_vec(from_coord, to_coord, RING_LENGTH)
-		var screen_scale_mobius := _battle_world_to_screen_scale()
-		var half_width_mobius := ARENA_WIDTH / screen_scale_mobius * 0.5
-		var half_height_mobius := VIEW_HEIGHT * 0.5
-		return absf(delta_vec.x) <= half_width_mobius * margin_mult and absf(delta_vec.y) <= half_height_mobius * margin_mult
-	var delta: float = _ring_delta(center, ring_value)
-	var lane_delta := lane_value - lane_center
-	var screen_scale := _battle_world_to_screen_scale()
-	var half_width_units := ARENA_WIDTH / screen_scale * 0.5
-	var half_height_units := VIEW_HEIGHT * 0.5
-	return absf(delta) <= half_width_units * margin_mult and absf(lane_delta) <= half_height_units * margin_mult
+		delta_vec = MobiusWorld.delta_vec(from_coord, to_coord, RING_LENGTH)
+	else:
+		delta_vec = Vector2(_ring_delta(center, ring_value), lane_value - lane_center)
+	var intent := _battle_spatial_runtime_service().world_point_visibility_intent({
+		"delta": delta_vec,
+		"screen_scale": _battle_world_to_screen_scale(),
+		"arena_width": ARENA_WIDTH,
+		"view_height": VIEW_HEIGHT,
+		"margin_mult": margin_mult,
+	})
+	return bool(intent.get("visible", false))
 
 
 func _space_debris_visible_to_any_player(unit) -> bool:
@@ -55535,43 +57821,46 @@ func _update_space_debris(unit, delta: float) -> bool:
 
 
 func _spawn_for_selected_portal(player_id: int, role_key: String, stats: Dictionary) -> Dictionary:
-	if role_key == "barrier":
-		return {"ring": _camera_center_for_player(player_id), "lane": _camera_lane_for_player(player_id)}
 	var portal: Dictionary = PORTALS[int(portal_index[player_id])]
-	var lane_value: float = clampf(_camera_lane_for_player(player_id) + float(portal["lane"]) * 1.35, -BATTLE_HALF_HEIGHT, BATTLE_HALF_HEIGHT)
-	var delta_value: float = float(portal["delta"])
-	if float(stats.get("radius", 0.2)) > 0.58 and absf(float(portal["lane"])) > 0.5:
-		lane_value = _camera_lane_for_player(player_id)
-		delta_value = -3.0 if delta_value < 0.0 else 3.0
-	return {"ring": wrapf(_camera_center_for_player(player_id) + delta_value, 0.0, RING_LENGTH), "lane": lane_value}
+	return _battle_spatial_runtime_service().portal_spawn_intent({
+		"role_key": role_key,
+		"portal": portal,
+		"radius": float(stats.get("radius", 0.2)),
+		"camera_center": _camera_center_for_player(player_id),
+		"camera_lane": _camera_lane_for_player(player_id),
+		"ring_length": RING_LENGTH,
+		"lane_limit": BATTLE_HALF_HEIGHT,
+	})
 
 
 func _enemy_units(player_id: int) -> Array:
+	var data := _battle_awareness_active_unit_data()
+	var snapshots: Array = Array(data.get("snapshots", []))
+	var refs: Dictionary = Dictionary(data.get("refs", {}))
+	if battle_awareness_service != null:
+		return _battle_awareness_units_for_ids(battle_awareness_service.enemy_ids(player_id, snapshots), refs)
 	var enemies: Array = []
 	var enemy_id := 2 if player_id == 1 else 1
-	var hero = active_units[enemy_id]["hero"]
-	if _is_live_unit(hero):
-		enemies.append(hero)
-	var barrier = active_units[enemy_id]["barrier"]
-	if _is_live_unit(barrier):
-		enemies.append(barrier)
-	var group: Array = active_units[enemy_id]["puppet"]
-	for unit in group:
-		if _is_live_unit(unit):
-			enemies.append(unit)
+	for raw_snapshot in snapshots:
+		if not (raw_snapshot is Dictionary):
+			continue
+		var snapshot: Dictionary = raw_snapshot
+		var id := int(snapshot.get("id", -1))
+		if bool(snapshot.get("live", false)) and int(snapshot.get("owner", 0)) == enemy_id and refs.has(id):
+			enemies.append(refs[id])
 	return enemies
 
 
 func _nearest_enemy(unit, player_id: int):
-	var best = null
-	var best_distance := 999.0
+	var candidates: Array = []
+	var refs: Dictionary = {}
 	for target in _enemy_units(player_id):
-		var delta := _mobius_delta_vec_between(unit, target, 0.65)
-		var distance: float = absf(delta.x) + absf(delta.y)
-		if distance < best_distance:
-			best_distance = distance
-			best = target
-	return best
+		var id := int(target.get_instance_id())
+		refs[id] = target
+		candidates.append({"id": id, "distance": _source_target_distance(unit, target)})
+	var intent := battle_awareness_service.nearest_candidate_id(candidates) if battle_awareness_service != null else {"id": -1, "found": false}
+	var id := int(intent.get("id", -1))
+	return refs[id] if refs.has(id) else null
 
 
 func _source_guard_anchor_for(unit, target, player_id: int):
@@ -55623,28 +57912,25 @@ func _source_target_for_puppet(unit, player_id: int):
 	var enemies := _enemy_units(player_id)
 	if enemies.is_empty():
 		return null
-	var threat_range := float(unit.stats.get("source_threat_override_range", 0.0))
-	if threat_range > 0.0 and String(unit.stats.get("source_close_response", "")) in ["kite", "retreat", "screen", "intercept"]:
-		var close_threat = null
-		var close_distance := 999.0
-		for target in enemies:
-			var distance := _source_target_distance(unit, target)
-			if distance < close_distance:
-				close_distance = distance
-				close_threat = target
-		if close_threat != null and close_distance <= threat_range:
-			return close_threat
 	var policy := String(unit.stats.get("source_target_policy", "nearest"))
-	if policy == "" or policy == "nearest":
-		return _nearest_enemy(unit, player_id)
-	var best = null
-	var best_score := -99999.0
+	var refs: Dictionary = {}
+	var candidates: Array = []
+	var needs_scored_candidates := not (policy == "" or policy == "nearest")
 	for target in enemies:
-		var score := _source_target_score(unit, target, player_id, policy)
-		if score > best_score:
-			best_score = score
-			best = target
-	return best if best != null else _nearest_enemy(unit, player_id)
+		var id := int(target.get_instance_id())
+		refs[id] = target
+		if needs_scored_candidates:
+			candidates.append(_source_target_candidate_facts(unit, target, player_id, policy))
+		else:
+			candidates.append({"id": id, "distance": _source_target_distance(unit, target)})
+	var intent := battle_awareness_service.source_target_intent({
+		"candidates": candidates,
+		"threat_range": float(unit.stats.get("source_threat_override_range", 0.0)),
+		"close_response": String(unit.stats.get("source_close_response", "")),
+		"policy": policy,
+	}) if battle_awareness_service != null else {"target_id": -1}
+	var target_id := int(intent.get("target_id", intent.get("id", -1)))
+	return refs[target_id] if refs.has(target_id) else _nearest_enemy(unit, player_id)
 
 
 func _source_target_distance(unit, target) -> float:
@@ -55652,25 +57938,54 @@ func _source_target_distance(unit, target) -> float:
 	return absf(delta.x) + absf(delta.y)
 
 
-func _source_target_score(unit, target, player_id: int, policy: String) -> float:
+func _source_target_candidate_facts(unit, target, player_id: int, policy: String) -> Dictionary:
 	var distance: float = _source_target_distance(unit, target)
 	var hp_ratio: float = float(target.health_ratio()) if target != null and target.has_method("health_ratio") else 1.0
-	var score: float = -distance * 8.0 + (1.0 - hp_ratio) * 18.0
 	var target_role := String(target.role)
 	var sight_delta := _mobius_delta_vec_between(unit, target, 0.65)
 	var sight_event := {"direction": sight_delta.normalized() if sight_delta.length() > 0.01 else _unit_forward_vector(unit), "range": maxf(0.1, sight_delta.length()), "lane_range": 0.08, "ai_line_of_sight": true}
 	var sight_blocked := _map_line_occluded(unit, target, sight_event)
+	var hero_distance := 999999.0
+	if policy == "protect_hero":
+		var own_hero = active_units[player_id]["hero"]
+		if _is_live_unit(own_hero):
+			hero_distance = absf(_ring_delta(own_hero.ring_pos, target.ring_pos)) + absf(own_hero.lane - target.lane) * 0.8
+	return {
+		"id": int(target.get_instance_id()) if target != null and is_instance_valid(target) else -1,
+		"distance": distance,
+		"hp_ratio": hp_ratio,
+		"role": target_role,
+		"sight_blocked": sight_blocked,
+		"heat_focus_ratio": clampf(float(unit.stats.get("source_heat_focus_ratio", 0.68)), 0.0, 1.0),
+		"heat_ratio": _source_target_heat_ratio(target),
+		"overheated": bool(target.overheated) if target != null and is_instance_valid(target) else false,
+		"support_barrier": _source_target_is_support_barrier(target),
+		"hero_distance": hero_distance,
+		"projectile_signal": float(target.get_meta("projectile_signal", 0.0)) if target != null and is_instance_valid(target) else 0.0,
+		"group_threat_score": _source_group_threat_score(unit, target, player_id) if policy == "protect_puppet_group" else 0.0,
+	}
+
+
+func _source_target_score(unit, target, player_id: int, policy: String) -> float:
+	var facts := _source_target_candidate_facts(unit, target, player_id, policy)
+	if battle_awareness_service != null:
+		return battle_awareness_service.source_target_score(facts, policy)
+	var distance: float = float(facts.get("distance", 0.0))
+	var hp_ratio: float = float(facts.get("hp_ratio", 1.0))
+	var score: float = -distance * 8.0 + (1.0 - hp_ratio) * 18.0
+	var target_role := String(facts.get("role", ""))
+	var sight_blocked := bool(facts.get("sight_blocked", false))
 	if sight_blocked:
 		score -= 30.0
 	match policy:
 		"heat_pressure_first":
-			var heat_focus_ratio := clampf(float(unit.stats.get("source_heat_focus_ratio", 0.68)), 0.0, 1.0)
-			var heat_ratio := _source_target_heat_ratio(target)
-			score += 240.0 if target.overheated else 0.0
+			var heat_focus_ratio := float(facts.get("heat_focus_ratio", 0.68))
+			var heat_ratio := float(facts.get("heat_ratio", 0.0))
+			score += 240.0 if bool(facts.get("overheated", false)) else 0.0
 			score += heat_ratio * (150.0 if heat_ratio >= heat_focus_ratio else 36.0)
 			score += 42.0 if target_role == "hero" else 0.0
 			score += 16.0 if target_role == "puppet" else 0.0
-			score += 12.0 if target_role == "barrier" and _source_target_is_support_barrier(target) else 0.0
+			score += 12.0 if target_role == "barrier" and bool(facts.get("support_barrier", false)) else 0.0
 			score += (1.0 - hp_ratio) * 16.0
 			score -= distance * 1.4
 			score -= 48.0 if sight_blocked else 0.0
@@ -55687,15 +58002,12 @@ func _source_target_score(unit, target, player_id: int, policy: String) -> float
 			score += 10.0 if target_role == "puppet" else 0.0
 			score -= distance * 1.7
 		"protect_hero":
-			var own_hero = active_units[player_id]["hero"]
-			if _is_live_unit(own_hero):
-				var hero_distance := absf(_ring_delta(own_hero.ring_pos, target.ring_pos)) + absf(own_hero.lane - target.lane) * 0.8
-				score += maxf(0.0, 80.0 - hero_distance * 32.0)
+			score += maxf(0.0, 80.0 - float(facts.get("hero_distance", 999999.0)) * 32.0)
 			score += 36.0 if target_role == "hero" else 0.0
-			score += 24.0 if float(target.get_meta("projectile_signal", 0.0)) > 0.0 else 0.0
+			score += 24.0 if float(facts.get("projectile_signal", 0.0)) > 0.0 else 0.0
 		"protect_puppet_group":
-			score += _source_group_threat_score(unit, target, player_id)
-			score += 18.0 if float(target.get_meta("projectile_signal", 0.0)) > 0.0 else 0.0
+			score += float(facts.get("group_threat_score", 0.0))
+			score += 18.0 if float(facts.get("projectile_signal", 0.0)) > 0.0 else 0.0
 			score += 10.0 if target_role == "puppet" else 0.0
 			score -= 34.0 if target_role == "barrier" else 0.0
 			score -= distance * 1.1
@@ -55726,9 +58038,13 @@ func _source_target_is_support_barrier(target) -> bool:
 
 
 func _first_live_puppet(player_id: int):
+	var snapshots: Array = []
+	var refs: Dictionary = {}
 	for unit in active_units[player_id]["puppet"]:
-		if _is_live_unit(unit) and not _is_temporary_fracture_puppet(unit):
-			return unit
+		_append_battle_awareness_unit_snapshot(unit, snapshots, refs, false)
+	var id := int(battle_awareness_service.first_live_id(snapshots, true) if battle_awareness_service != null else -1)
+	if refs.has(id):
+		return refs[id]
 	for unit in active_units[player_id]["puppet"]:
 		if _is_live_unit(unit):
 			return unit
@@ -55736,14 +58052,26 @@ func _first_live_puppet(player_id: int):
 
 
 func _role_status_text(player_id: int, role_key: String) -> String:
+	if battle_hud_state_service != null:
+		return battle_hud_state_service.role_status_text(_battle_hud_role_state(player_id, role_key), _battle_hud_terms(), "生命" if _ui_is_zh() else "HP")
+	return _legacy_role_status_text(player_id, role_key)
+
+
+func _legacy_role_status_text(player_id: int, role_key: String) -> String:
 	if _role_pending(player_id, role_key):
 		return "%s: %s %.1fs" % [_role_name(role_key), _ui_term("deploy"), float(pending_deploys[player_id][role_key])]
 	if role_key == "puppet":
-		return _unit_status_text(_first_live_puppet(player_id), _role_name(role_key))
-	return _unit_status_text(active_units[player_id][role_key], _role_name(role_key))
+		return _legacy_unit_status_text(_first_live_puppet(player_id), _role_name(role_key))
+	return _legacy_unit_status_text(active_units[player_id][role_key], _role_name(role_key))
 
 
 func _unit_status_text(unit, fallback: String) -> String:
+	if battle_hud_state_service != null:
+		return battle_hud_state_service.unit_status_text(_unit_hud_state(unit), fallback, _battle_hud_terms(), "生命" if _ui_is_zh() else "HP")
+	return _legacy_unit_status_text(unit, fallback)
+
+
+func _legacy_unit_status_text(unit, fallback: String) -> String:
 	if not _is_live_unit(unit):
 		return "%s: %s" % [fallback, _ui_term("offline")]
 	var state_text := _ui_term("blind") if _unit_blind_strength(unit) > 0.08 else (_ui_term("overheat") if unit.overheated else (_ui_term("stagger") if float(unit.get_meta("melee_stagger_timer", 0.0)) > 0.0 else _combat_state_name(String(unit.current_state))))
@@ -55769,6 +58097,12 @@ func _unit_ammo_text(unit) -> String:
 
 
 func _unit_ammo_display_text(unit) -> String:
+	if battle_hud_state_service != null:
+		return battle_hud_state_service.ammo_display_text(_unit_ammo_hud_state(unit), _battle_hud_terms())
+	return _legacy_unit_ammo_display_text(unit)
+
+
+func _legacy_unit_ammo_display_text(unit) -> String:
 	if unit == null or not is_instance_valid(unit):
 		return ""
 	var caps: Dictionary = unit.stats.get("ammo_capacity", {})
@@ -55798,25 +58132,20 @@ func _shield_bar_color(player_id: int) -> Color:
 func _set_corner_bar(rect: ColorRect, player_id: int, max_width: float, ratio: float) -> void:
 	if rect == null:
 		return
-	var fill_width := max_width * clampf(ratio, 0.0, 1.0)
-	var base_x := 34.0 if player_id == 1 else 886.0
-	rect.size.x = fill_width
-	rect.position.x = base_x if player_id == 1 else base_x + max_width - fill_width
+	var model := battle_hud_state_service.corner_bar_model(player_id, max_width, ratio) if battle_hud_state_service != null else {"width": max_width * clampf(ratio, 0.0, 1.0), "x": 34.0 if player_id == 1 else 886.0 + max_width - max_width * clampf(ratio, 0.0, 1.0)}
+	rect.size.x = float(model.get("width", 0.0))
+	rect.position.x = float(model.get("x", rect.position.x))
 
 
 func _set_shield_corner_bar(rect: ColorRect, player_id: int, max_width: float, ratio: float) -> void:
 	if rect == null:
 		return
-	var clamped := clampf(ratio, 0.0, 1.0)
-	var fill_width := max_width * clamped
-	if clamped > 0.001:
-		fill_width = maxf(fill_width, 10.0)
-	var base_x := 34.0 if player_id == 1 else 886.0
-	rect.size.x = fill_width
-	rect.position.x = base_x if player_id == 1 else base_x + max_width - fill_width
+	var model := battle_hud_state_service.shield_corner_bar_model(player_id, max_width, ratio) if battle_hud_state_service != null else {"width": maxf(max_width * clampf(ratio, 0.0, 1.0), 10.0) if ratio > 0.001 else 0.0, "x": 34.0 if player_id == 1 else 886.0 + max_width - (maxf(max_width * clampf(ratio, 0.0, 1.0), 10.0) if ratio > 0.001 else 0.0)}
+	rect.size.x = float(model.get("width", 0.0))
+	rect.position.x = float(model.get("x", rect.position.x))
 
 
-func _set_puppet_segment_bar(player_id: int, max_width: float) -> void:
+func _set_puppet_segment_bar(player_id: int, max_width: float, segment_model: Array = []) -> void:
 	var backs: Array = puppet_health_segment_backs.get(player_id, [])
 	var fills: Array = puppet_health_segments.get(player_id, [])
 	var shield_fills: Array = puppet_shield_segments.get(player_id, [])
@@ -55828,41 +58157,36 @@ func _set_puppet_segment_bar(player_id: int, max_width: float) -> void:
 		if i < shield_fills.size():
 			var shield_fill: ColorRect = shield_fills[i]
 			shield_fill.visible = false
-	var entries := _puppet_slot_health_entries(player_id)
-	var segment_count := entries.size()
-	if segment_count <= 0:
+	var segments := segment_model
+	if segments.is_empty():
+		var entries := _puppet_slot_health_entries(player_id)
+		segments = battle_hud_state_service.puppet_segment_bar_model(player_id, max_width, entries, maxi(0, ROLE_ORDER.find("puppet"))) if battle_hud_state_service != null else []
+	if segments.is_empty():
 		return
-	var gap := 4.0
-	var segment_width := maxf(2.0, (max_width - gap * float(segment_count - 1)) / float(segment_count))
-	var base_x := 34.0 if player_id == 1 else 886.0
-	var puppet_role_index := maxi(0, ROLE_ORDER.find("puppet"))
-	var base_y := 72.0 + float(puppet_role_index) * 23.0 + 15.0
 	var primary := _team_primary_color(player_id)
 	var accent := _team_accent_color(player_id)
-	for i in range(mini(segment_count, mini(backs.size(), fills.size()))):
-		var entry: Dictionary = entries[i]
-		var ratio := clampf(float(entry.get("ratio", 0.0)), 0.0, 1.0)
-		var shield_ratio := clampf(float(entry.get("shield_ratio", 0.0)), 0.0, 1.0)
-		var temporary := bool(entry.get("temporary", false))
-		var x := base_x + float(i) * (segment_width + gap)
+	for i in range(mini(segments.size(), mini(backs.size(), fills.size()))):
+		var segment: Dictionary = Dictionary(segments[i])
+		var back_model: Dictionary = Dictionary(segment.get("back", {}))
+		var fill_model: Dictionary = Dictionary(segment.get("fill", {}))
+		var shield_model: Dictionary = Dictionary(segment.get("shield", {}))
+		var temporary := bool(segment.get("temporary", false))
 		var back: ColorRect = backs[i]
 		var fill: ColorRect = fills[i]
-		back.position = Vector2(x, base_y)
-		back.size = Vector2(segment_width, 10.0)
+		back.position = Vector2(float(back_model.get("x", back.position.x)), float(back_model.get("y", back.position.y)))
+		back.size = Vector2(float(back_model.get("width", back.size.x)), float(back_model.get("height", back.size.y)))
 		back.color = Color(0.035, 0.046, 0.055, 0.9).lerp(primary, 0.16 if temporary else 0.08)
-		back.visible = true
-		if ratio <= 0.001:
+		back.visible = bool(back_model.get("visible", true))
+		if not bool(fill_model.get("visible", false)):
 			continue
-		var fill_width := segment_width * ratio
-		fill.position = Vector2(x if player_id == 1 else x + segment_width - fill_width, base_y)
-		fill.size = Vector2(fill_width, 10.0)
+		fill.position = Vector2(float(fill_model.get("x", fill.position.x)), float(fill_model.get("y", fill.position.y)))
+		fill.size = Vector2(float(fill_model.get("width", fill.size.x)), float(fill_model.get("height", fill.size.y)))
 		fill.color = primary.lerp(Color(0.92, 0.96, 1.0, 1.0), 0.48) if temporary else primary.lerp(accent, 0.18 + 0.12 * float(i % 2))
 		fill.visible = true
-		if i < shield_fills.size() and shield_ratio > 0.001:
+		if i < shield_fills.size() and bool(shield_model.get("visible", false)):
 			var shield_fill: ColorRect = shield_fills[i]
-			var shield_width := maxf(segment_width * shield_ratio, minf(7.0, segment_width))
-			shield_fill.position = Vector2(x if player_id == 1 else x + segment_width - shield_width, base_y)
-			shield_fill.size = Vector2(shield_width, 5.0)
+			shield_fill.position = Vector2(float(shield_model.get("x", shield_fill.position.x)), float(shield_model.get("y", shield_fill.position.y)))
+			shield_fill.size = Vector2(float(shield_model.get("width", shield_fill.size.x)), float(shield_model.get("height", shield_fill.size.y)))
 			shield_fill.color = _shield_bar_color(player_id).lerp(Color.WHITE, 0.18 if temporary else 0.0)
 			shield_fill.visible = true
 
@@ -55905,14 +58229,14 @@ func _puppet_slot_health_entries(player_id: int) -> Array:
 	return entries
 
 
-func _role_health_ratio(player_id: int, role_key: String) -> float:
+func _runtime_role_health_ratio(player_id: int, role_key: String) -> float:
 	if role_key == "puppet":
 		return _puppet_average_ratio(player_id, true)
 	var unit = active_units[player_id][role_key]
 	return unit.health_ratio() if _is_live_unit(unit) else 0.0
 
 
-func _role_shield_ratio(player_id: int, role_key: String) -> float:
+func _runtime_role_shield_ratio(player_id: int, role_key: String) -> float:
 	if role_key == "puppet":
 		var best := 0.0
 		for unit in active_units[player_id]["puppet"]:
@@ -55952,11 +58276,29 @@ func _unit_shield_ratio(unit) -> float:
 	return clampf(_unit_shield_hp(unit) / display_span, 0.0, 1.0)
 
 
-func _role_heat_ratio(player_id: int, role_key: String) -> float:
+func _runtime_role_heat_ratio(player_id: int, role_key: String) -> float:
 	if role_key != "hero":
 		return 0.0
 	var unit = active_units[player_id][role_key]
 	return unit.heat_ratio() if _is_live_unit(unit) and _unit_uses_heat(unit) else 0.0
+
+
+func _role_health_ratio(player_id: int, role_key: String) -> float:
+	if battle_hud_state_service != null:
+		return float(battle_hud_state_service.role_bar_ratios(_battle_hud_role_state(player_id, role_key), heat_hud_enabled).get("health_ratio", 0.0))
+	return _runtime_role_health_ratio(player_id, role_key)
+
+
+func _role_shield_ratio(player_id: int, role_key: String) -> float:
+	if battle_hud_state_service != null:
+		return float(battle_hud_state_service.role_bar_ratios(_battle_hud_role_state(player_id, role_key), heat_hud_enabled).get("shield_ratio", 0.0))
+	return _runtime_role_shield_ratio(player_id, role_key)
+
+
+func _role_heat_ratio(player_id: int, role_key: String) -> float:
+	if battle_hud_state_service != null:
+		return float(battle_hud_state_service.role_bar_ratios(_battle_hud_role_state(player_id, role_key), heat_hud_enabled).get("heat_ratio", 0.0))
+	return _runtime_role_heat_ratio(player_id, role_key)
 
 
 func _puppet_average_ratio(player_id: int, health_mode: bool) -> float:
@@ -55972,6 +58314,12 @@ func _puppet_average_ratio(player_id: int, health_mode: bool) -> float:
 
 
 func _role_bar_text(player_id: int, role_key: String) -> String:
+	if battle_hud_state_service != null:
+		return battle_hud_state_service.role_bar_text(_battle_hud_role_state(player_id, role_key), _battle_hud_terms())
+	return _legacy_role_bar_text(player_id, role_key)
+
+
+func _legacy_role_bar_text(player_id: int, role_key: String) -> String:
 	if _role_pending(player_id, role_key):
 		return "%s %.1fs" % [_ui_term("deploy"), float(pending_deploys[player_id][role_key])]
 	if role_key == "puppet":
@@ -56030,6 +58378,12 @@ func _is_temporary_fracture_puppet(unit) -> bool:
 
 
 func _live_unit_count(units: Array) -> int:
+	if battle_awareness_service != null:
+		var snapshots: Array = []
+		var refs := {}
+		for unit in units:
+			_append_battle_awareness_unit_snapshot(unit, snapshots, refs, false)
+		return battle_awareness_service.live_count(snapshots)
 	var count := 0
 	for unit in units:
 		if _is_live_unit(unit):
@@ -56054,6 +58408,15 @@ func _live_temporary_fracture_puppets(player_id: int) -> Array:
 
 
 func _live_units_for(player_id: int) -> int:
+	if battle_awareness_service != null:
+		var snapshots: Array = []
+		var refs := {}
+		var player_units: Dictionary = active_units.get(player_id, {})
+		_append_battle_awareness_unit_snapshot(player_units.get("hero", null), snapshots, refs, false)
+		_append_battle_awareness_unit_snapshot(player_units.get("barrier", null), snapshots, refs, false)
+		for unit in Array(player_units.get("puppet", [])):
+			_append_battle_awareness_unit_snapshot(unit, snapshots, refs, false)
+		return battle_awareness_service.live_count(snapshots)
 	var count := 0
 	if _is_live_unit(active_units[player_id]["hero"]):
 		count += 1
@@ -56289,6 +58652,39 @@ func _make_token_label(parent: Control, label_name: String, text: String, token_
 	return _make_layout_label(parent, label_name, text, UILayoutTokens.screen_region(token_id), font_size, color, alignment)
 
 
+func _set_scroll_label_text(label: Label, text: String) -> void:
+	if label == null:
+		return
+	label.text = text
+	_refresh_scroll_label_size(label)
+
+
+func _refresh_scroll_label_size(label: Label) -> void:
+	if label == null:
+		return
+	var parent := label.get_parent()
+	if not (parent is ScrollContainer):
+		return
+	var scroll := parent as ScrollContainer
+	var inset := 10.0
+	var available_w := maxf(8.0, scroll.size.x - inset)
+	var font_size := float(label.get_theme_font_size("font_size"))
+	var char_width := maxf(5.6, font_size * 0.56)
+	var line_height := font_size + 5.0
+	var visual_lines := 0
+	for raw_line in label.text.split("\n"):
+		var line := String(raw_line)
+		var estimated_w := float(line.length()) * char_width
+		var wraps := 1
+		if label.autowrap_mode != TextServer.AUTOWRAP_OFF:
+			wraps = maxi(1, int(ceilf(estimated_w / available_w)))
+		visual_lines += wraps
+	var content_h := maxf(scroll.size.y, float(maxi(1, visual_lines)) * line_height + 6.0)
+	label.position = Vector2.ZERO
+	label.size = Vector2(available_w, content_h)
+	label.custom_minimum_size = label.size
+
+
 func _make_label(parent: Control, label_name: String, text: String, label_position: Vector2, label_size: Vector2, font_size: int, color: Color, alignment: HorizontalAlignment) -> Label:
 	var label := Label.new()
 	label.name = label_name
@@ -56304,5 +58700,3 @@ func _make_label(parent: Control, label_name: String, text: String, label_positi
 	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	parent.add_child(label)
 	return label
-
-

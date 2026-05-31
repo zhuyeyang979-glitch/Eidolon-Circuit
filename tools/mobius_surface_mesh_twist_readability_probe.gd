@@ -138,25 +138,24 @@ func _run() -> void:
 	main._refresh_mobius_surface_view()
 	if main.mobius_stardust_band_view != null:
 		main.mobius_stardust_band_view.visible = false
-	var mesh_image := await _capture_viewport_image(main)
-	var texture_size: Vector2 = main.mobius_surface_texture.get_size()
-	main.mobius_strip_surface_view.set_surface_texture(_transparent_texture(Vector2i(int(texture_size.x), int(texture_size.y))))
-	main.mobius_strip_surface_view.queue_redraw()
-	var baseline_image := await _capture_viewport_image(main)
-	var delta: Dictionary = _image_delta(mesh_image, baseline_image) if mesh_image != null and baseline_image != null else _texture_delta_fallback()
-	var changed := int(delta.get("changed", 0))
-	var average_changed := float(delta.get("average_changed", 0.0))
-	var maximum := float(delta.get("maximum", 0.0))
+	var surface_snapshot: Dictionary = main.mobius_strip_surface_view.stardust_band_snapshot()
+	if String(surface_snapshot.get("surface_render_mode", "")) != "world_grid":
+		_fail("Mobius battlefield should use the world-grid surface, got %s." % String(surface_snapshot.get("surface_render_mode", "")))
+		return
+	if not bool(surface_snapshot.get("local_rectangular_projection", false)):
+		_fail("Mobius world-grid surface should share the gameplay camera projection.")
+		return
+	if main.mobius_strip_surface_view.surface_texture != null:
+		_fail("Mobius world-grid surface should not depend on the old screen-locked mesh texture.")
+		return
 	var variance: Dictionary = _surface_y_variance(main)
 	var y_range := float(variance.get("y_range", 0.0))
-	if bool(variance.get("rectangular", true)):
-		_fail("Mobius surface mesh readability probe requires visual Mobius projection.")
-		return
 	if y_range < 160.0:
-		_fail("Mobius surface mesh projection should show a curved/twisted band; y_range=%.2f." % y_range)
+		_fail("Mobius world-grid reference should span readable battlefield lanes; y_range=%.2f." % y_range)
 		return
-	if changed < 2800 or average_changed < 0.004 or maximum < 0.014:
-		_fail("Mobius surface mesh is not visibly readable in battle; changed=%d avg=%.5f max=%.5f y_range=%.2f." % [changed, average_changed, maximum, y_range])
+	var grid_cell_world := float(surface_snapshot.get("world_grid_cell_world", 0.0))
+	if grid_cell_world <= 0.0:
+		_fail("Mobius world-grid surface should expose a stable world cell size.")
 		return
-	print("MOBIUS_SURFACE_MESH_TWIST_READABILITY_PROBE ok changed=%d avg=%.5f max=%.5f y_range=%.2f" % [changed, average_changed, maximum, y_range])
+	print("MOBIUS_SURFACE_MESH_TWIST_READABILITY_PROBE ok mode=world_grid y_range=%.2f cell=%.3f" % [y_range, grid_cell_world])
 	quit()

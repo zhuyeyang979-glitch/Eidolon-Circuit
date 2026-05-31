@@ -12,6 +12,10 @@ func _snapshot_total(snapshot: Dictionary, key: String) -> int:
 	return int(snapshot.get(key, 0))
 
 
+func _snapshot_flag(snapshot: Dictionary, key: String) -> bool:
+	return bool(snapshot.get(key, false))
+
+
 func _settle_loading(main) -> void:
 	for _i in range(24):
 		if main.game_state != main.STATE_LOADING:
@@ -53,11 +57,16 @@ func _run() -> void:
 	var node_growth := _snapshot_total(after, "total_nodes") - _snapshot_total(baseline, "total_nodes")
 	if node_growth > 96:
 		_fail("Page cycle node growth too high: %d baseline=%s after=%s" % [node_growth, str(baseline), str(after)])
-	if _snapshot_total(after, "preview_texture_cache") > 256 or _snapshot_total(after, "catalog_body_cache") > 256:
-		_fail("Texture cache exceeded LRU cap after cycle: %s" % str(after))
-	print("PAGE_CYCLE_LIFECYCLE_LEAK_PROBE ok nodes=%d growth=%d idle=%d" % [
+	for key in ["preview_texture_cache", "preview_texture_pending", "catalog_body_cache", "catalog_body_pending", "editor_catalog_cache", "editor_load_stats_cache", "runtime_catalog_cache", "saved_filtered_cache", "saved_stats_cache", "saved_illegal_cache"]:
+		if _snapshot_total(after, key) != 0:
+			_fail("Page-local cache survived page cycle for %s: %s" % [key, str(after)])
+	if _snapshot_flag(after, "preview_renderer_alive") or _snapshot_flag(after, "catalog_renderer_alive"):
+		_fail("Preview renderer survived page cycle: %s" % str(after))
+	print("PAGE_CYCLE_LIFECYCLE_LEAK_PROBE ok nodes=%d growth=%d idle=%d preview=%d body=%d" % [
 		_snapshot_total(after, "total_nodes"),
 		node_growth,
 		_snapshot_total(after, "loading_idle_tasks"),
+		_snapshot_total(after, "preview_texture_cache"),
+		_snapshot_total(after, "catalog_body_cache"),
 	])
 	quit(0)

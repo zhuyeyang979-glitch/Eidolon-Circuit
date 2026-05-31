@@ -60,6 +60,7 @@ func _check_seat(seat: int) -> void:
 	var main = MainScene.new()
 	root.add_child(main)
 	main._ready()
+	main.loading_auto_transitions_enabled = false
 	_enter_training_with_seat(main, seat)
 	var player := 2 if seat == 2 else 1
 	var dummy_player := 1 if seat == 2 else 2
@@ -68,11 +69,11 @@ func _check_seat(seat: int) -> void:
 	if not main._is_live_unit(player_unit):
 		_fail("Seat %d player unit missing." % seat)
 	if not main._is_live_unit(dummy_unit):
-		_fail("Seat %d saved unit 2 dummy missing." % seat)
+		_fail("Seat %d training dummy missing." % seat)
 	if not bool(dummy_unit.get_meta("training_static_dummy", false)):
 		_fail("Seat %d dummy is not marked static." % seat)
-	if not bool(dummy_unit.stats.get("teamedit_runtime_topology", false)):
-		_fail("Seat %d dummy did not use saved TeamEdit runtime topology." % seat)
+	if not bool(dummy_unit.stats.get("training_ball_dummy", false)):
+		_fail("Seat %d dummy did not use the dedicated ball dummy." % seat)
 	if dummy_player == 2 and main._ring_delta(player_unit.ring_pos, dummy_unit.ring_pos) <= 0.0:
 		_fail("P1 seat should place unit 2 on the right/opposite side.")
 	if dummy_player == 1 and main._ring_delta(dummy_unit.ring_pos, player_unit.ring_pos) <= 0.0:

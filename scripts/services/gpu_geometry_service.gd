@@ -48,6 +48,20 @@ func compute_geometry_queries_deferred(colliders: Array, queries: Array, delta: 
 	return records
 
 
+func compute_geometry_queries(colliders: Array, queries: Array, delta: float = 0.0) -> Array:
+	if not is_available():
+		no_pipeline_count += 1
+		last_status = "unavailable"
+		return []
+	query_submit_count += 1
+	var records: Array = pipeline.compute_geometry_queries(colliders, queries, delta, false)
+	last_readback_bytes = int(pipeline.last_readback_bytes)
+	if not records.is_empty():
+		query_consume_count += 1
+	last_status = "query_now:%d" % records.size()
+	return records
+
+
 func summary_line() -> String:
 	return "gpu svc c:%d/%d q:%d/%d bytes:%d %s" % [
 		contact_consume_count,

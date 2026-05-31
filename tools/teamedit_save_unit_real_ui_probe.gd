@@ -34,6 +34,16 @@ func _init() -> void:
 	if main.editor_save_unit_name_panel == null or not main.editor_save_unit_name_panel.visible:
 		_fail("Save name panel did not open.")
 		return
+	for role_key in MainScene.ROLE_ORDER:
+		var role_button = main.editor_save_unit_role_buttons.get(role_key, null)
+		if not (role_button is Button):
+			_fail("Save dialog missing role confirmation button for %s." % role_key)
+			return
+		var button: Button = role_button
+		var should_be_current: bool = String(role_key) == "hero"
+		if button.disabled == should_be_current:
+			_fail("Save dialog role button enabled/disabled state mismatch for %s." % role_key)
+			return
 	main.editor_save_unit_name_edit.text = unit_name
 	var raw_save_button: Node = main.editor_save_unit_name_panel.get_node_or_null("save_name_stay")
 	if not (raw_save_button is Button):
@@ -44,6 +54,13 @@ func _init() -> void:
 	var saved_path := String(main.editor_source_saved_unit_path)
 	if saved_path == "" or not FileAccess.file_exists(saved_path):
 		_fail("Save confirm did not create a saved-unit file: %s." % saved_path)
+		return
+	var payload = JSON.parse_string(FileAccess.get_file_as_string(saved_path))
+	if not (payload is Dictionary):
+		_fail("Saved unit payload is damaged JSON.")
+		return
+	if String(Dictionary(payload).get("unit_role", "")) != "hero" or String(Dictionary(payload).get("save_kind", "")) != MainScene.SAVE_KIND_SINGLE_UNIT:
+		_fail("Saved unit payload should confirm current hero single-unit type: %s." % str(payload))
 		return
 	if main.editor_save_unit_feedback_label == null or String(main.editor_save_unit_feedback_label.text).find(unit_name) < 0:
 		_fail("Save feedback did not mention the saved unit.")

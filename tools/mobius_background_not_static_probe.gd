@@ -25,8 +25,12 @@ func _init() -> void:
 	if main.mobius_strip_surface_view == null or not main.mobius_strip_surface_view.visible:
 		_fail("Mobius strip surface should replace the static battle backdrop.")
 		return
-	if main.mobius_strip_surface_view.surface_texture == null:
-		_fail("Mobius strip surface should carry the generated surface art texture.")
+	var snapshot: Dictionary = main.mobius_strip_surface_view.stardust_band_snapshot()
+	if String(snapshot.get("surface_render_mode", "")) != "world_grid":
+		_fail("Mobius strip surface should use world-grid battlefield rendering.")
+		return
+	if main.mobius_strip_surface_view.surface_texture != null:
+		_fail("Mobius strip surface should not carry the old screen-locked generated texture as the main map.")
 		return
 	main.mobius_enabled = false
 	main._refresh_mobius_surface_view()
@@ -36,5 +40,5 @@ func _init() -> void:
 	if not backdrop.visible:
 		_fail("Static backdrop should remain available as a non-Mobius fallback.")
 		return
-	print("MOBIUS_BACKGROUND_NOT_STATIC_PROBE ok surface_texture=%s" % str(main.mobius_strip_surface_view.surface_texture.get_size()))
+	print("MOBIUS_BACKGROUND_NOT_STATIC_PROBE ok mode=world_grid fallback_visible=true")
 	quit()

@@ -64,7 +64,9 @@ func _init() -> void:
 	main.ui_language = "en"
 	_assert_module_card(main, "two_link_forward_snap", ["action module", "bind", "X:", "6X", "data:"])
 	_assert_module_card(main, "blade_arc_return", ["blade", "X: normal cut", "6X", "4X", "real contact"])
-	_assert_module_card(main, "blunt_gauntlet_extend_swing", ["gauntlet", "236X special", "214X special", "real contact"])
+	_assert_module_card(main, "blunt_gauntlet_extend_swing", ["gauntlet", "hybrid", "extend", "retract", "4X", "6X", "236X special", "214X special", "real contact", "no projectile"])
+	_assert_module_card(main, "blunt_shield_guard_bash", ["shield", "ball joint", "4X", "6X", "236X special", "214X special", "real contact", "no projectile"])
+	_assert_module_card(main, "blunt_hammer_windup_slam", ["hammer", "ball joint", "4X", "6X", "236X special", "214X special", "real contact", "no projectile"])
 	_assert_module_card(main, "laser_beam_activate", ["laser gun", "hold X", "release X", "explicit beam"])
 	_assert_module_card(main, "missile_lock_activate", ["missile pod", "hold X", "release X", "explicit missile"])
 	print("MODULE_DETAIL_ACTION_PAGE_PROBE ok")

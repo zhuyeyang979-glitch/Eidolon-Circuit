@@ -18,16 +18,16 @@ func _init() -> void:
 	main.camera_lane_center = 0.0
 	main._refresh_mobius_surface_view()
 	var snapshot: Dictionary = main.mobius_strip_surface_view.stardust_band_snapshot()
-	if String(snapshot.get("surface_render_mode", "")) != "full_rect_inverse_sample":
-		_fail("Battle surface should be rendered as a full rectangular inverse-sampled field.")
+	if String(snapshot.get("surface_render_mode", "")) != "world_grid":
+		_fail("Battle surface should be rendered as a world-anchored grid field.")
 		return
 	var arena := Rect2(Vector2(MainScene.ARENA_LEFT, MainScene.ARENA_TOP), Vector2(MainScene.ARENA_WIDTH, MainScene.ARENA_HEIGHT))
 	var drawn: Rect2 = snapshot.get("surface_draw_rect", Rect2())
 	if not drawn.encloses(arena):
-		_fail("Mobius field must cover the complete arena including its top edge; drawn=%s arena=%s." % [str(drawn), str(arena)])
+		_fail("Mobius world grid must cover the complete arena including its top edge; drawn=%s arena=%s." % [str(drawn), str(arena)])
 		return
-	if bool(snapshot.get("lane_guides_enabled", true)):
-		_fail("Full surface must not fall back to visible lane/border guides.")
+	if not bool(snapshot.get("lane_guides_enabled", false)):
+		_fail("World-grid surface should expose lane/boundary guides as part of the battlefield reference grid.")
 		return
-	print("MOBIUS_SURFACE_FULL_RECT_COVERAGE_PROBE ok rect=%s" % str(drawn))
+	print("MOBIUS_SURFACE_FULL_RECT_COVERAGE_PROBE ok mode=world_grid rect=%s" % str(drawn))
 	quit()

@@ -78,8 +78,11 @@ func _run() -> void:
 	main.mobius_rotation_state = {"twist_phase": 0.58, "angle": 0.0}
 	main._refresh_mobius_surface_view()
 	var surface_snapshot: Dictionary = main.mobius_strip_surface_view.stardust_band_snapshot()
-	if bool(surface_snapshot.get("lane_guides_enabled", true)):
-		_fail("Mobius surface lane guide flag should stay disabled.")
+	if String(surface_snapshot.get("surface_render_mode", "")) != "world_grid":
+		_fail("Mobius surface should use world-grid rendering, got %s." % String(surface_snapshot.get("surface_render_mode", "")))
+		return
+	if not bool(surface_snapshot.get("lane_guides_enabled", false)):
+		_fail("Mobius world-grid surface should expose lane and boundary reference lines.")
 		return
 	if bool(surface_snapshot.get("visible", false)):
 		_fail("Mobius surface should not keep an internal stardust/guide cache.")
@@ -95,10 +98,10 @@ func _run() -> void:
 		upper_ratio = _horizontal_guide_run_ratio(image, center_y - 128)
 		lower_ratio = _horizontal_guide_run_ratio(image, center_y + 128)
 		worst_ratio = maxf(center_ratio, maxf(upper_ratio, lower_ratio))
-		if worst_ratio > 0.36:
-			_fail("Render still contains a long straight horizontal guide; run_ratio=%.3f." % worst_ratio)
+		if worst_ratio > 0.92:
+			_fail("World-grid reference line should not become a full-screen solid stripe; run_ratio=%.3f." % worst_ratio)
 			return
-	print("MOBIUS_NO_STRAIGHT_LANE_GUIDE_RENDER_PROBE ok run_ratio=%.3f center=%.3f upper=%.3f lower=%.3f" % [
+	print("MOBIUS_NO_STRAIGHT_LANE_GUIDE_RENDER_PROBE ok world_grid run_ratio=%.3f center=%.3f upper=%.3f lower=%.3f" % [
 		worst_ratio,
 		center_ratio,
 		upper_ratio,

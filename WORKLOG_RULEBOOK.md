@@ -1,6 +1,6 @@
 # Eidolon Circuit Worklog Rulebook
 
-Last updated: 2026-05-27
+Last updated: 2026-05-30
 
 This document is a handoff log written like a tabletop rulebook. Use it to brief another AI agent or human collaborator before changing the Godot project.
 
@@ -11,6 +11,884 @@ Mirror note: `C:\Users\Administrator\Documents\New project` is a mirror/secondar
 Primary implementation file: `scripts/main.gd`
 
 Godot version in workspace: `tools/godot-4.6.2/Godot_v4.6.2-stable_win64_console.exe`
+
+## 2026-05-30 Philosophy Muscle Live Backfill
+
+Rules:
+- Philosophy muscle backfill may only reuse existing action/profile/barrier/runtime fields already consumed by unit edit, topology, Fighter runtime segments, projectile profiles, and barrier tiles.
+- Do not create new combat mechanisms, action profiles, projectile behaviors, AI, input bindings, save fields, or player-facing UI/filter modes to make old designs work.
+- Safe live backfill is limited to torso muscles, two-ended limb muscles, current melee terminal families, explicitly mapped projectile guns, and barrier panels that already carry runtime flags.
+- Future projectile/control entrances stay frozen: seeker, MIRV, rotary/barrage/starburst/eclipse/light-sink/homing/area projectile families plus `GUNNER WRIST`, `RECOIL LOCK`, `TETHER CAST`, and `HIJACK ROUTER`.
+- Catalog/runtime enrichment is observational data plumbing only: segment metadata may expose catalog role, part category, weapon family, and barrier flags/tags, but must not change collision, damage, action timing, or barrier field formulas.
+
+Implementation notes:
+- `limb_muscle` entries now use a philosophy backfill path that fills two-ended limb defaults, marks them non-terminal, and routes them through the existing limb-drive and combat normalization.
+- `muscle` entries now safely live-backfill torso fields, melee terminal identity, existing projectile profile mappings, and barrier panel flags without reviving legacy `attack_groups` or `action_groups`.
+- Runtime topology segments now retain read-only `catalog_role`, `part_category`, `weapon_family`, and barrier panel/tag metadata so editor/runtime probes can verify old philosophy parts survive into battle data.
+- Added `philosophy_muscle_live_catalog_probe` and `philosophy_muscle_editor_runtime_probe`; extended projectile, weapon-subcategory, and barrier-panel probes for the safe first batch.
+
+Verification:
+- Focused probes passed headless: `philosophy_muscle_live_catalog_probe`, `philosophy_muscle_editor_runtime_probe`, `weapon_subcategory_filter_probe`, and `barrier_panel_probe`.
+
+## 2026-05-30 Battle Action Diagnostics Overlay
+
+Rules:
+- `BattleRuntimeActionTelemetryService` now owns a pure diagnostics model on top of the existing action telemetry aggregate. It consumes only dictionaries, arrays, scalars, and options.
+- The diagnostics service must not read `Input`, files, JSON, time, UI nodes, `active_units`, `all_units`, or live `Fighter` nodes, and must not mutate battle state.
+- The overlay is developer-only, hidden by default, not persisted, and not bound to player settings or hotkeys. Disabled battle frames should pay only the existing boolean check.
+- `main.gd` remains the owner of live-unit traversal, overlay visibility, and view updates. Fighter action arrays, runtime geometry, topology segment mutation, socket anchoring, collider generation, scythe side-mount geometry, VFX/SFX, and battle rules remain unchanged.
+- Runtime action diagnostics may only observe facts already present in telemetry dictionaries. It must not infer new combat rules, read live Nodes, or write action/battle state while enriching rows.
+- Gate diagnostics are observational only: they must not call `_module_action_gate()`, must not call `_ensure_limb_index()`, must not write meta, and must not change module cancel state. They may read current cooldown/stagger/active-module scalars, bounded limb-drive arrays, and the existing `last_module_gate_reason`.
+- Command diagnostics are observational only: they must not call `puppet_condition()`, `puppet_move_intent()`, `puppet_attack_intent()`, `_try_*module()`, `_begin_unit_module_action()`, or `_module_action_gate()` for diagnosis, and must not write meta, command buffers, fire timers, sequence state, gate state, or cancel state.
+
+Implementation notes:
+- Added `BattleRuntimeActionTelemetryService.battle_action_diagnostics_model()` to produce stable rows for unit/action summaries, profile and phase counts, Feint/contact-speed flags, and malformed-row warnings.
+- Added `scripts/views/battle_action_diagnostics_view.gd` as a lightweight `Control` for text rendering only.
+- `main.gd` now preloads/builds the view and exposes `_set_battle_action_diagnostics_overlay_enabled()`, `_battle_action_diagnostics_overlay_text()`, `_update_battle_action_diagnostics_overlay()`, and `_battle_action_diagnostics_model()`.
+- Registered `battle_action_diagnostics_overlay_probe` in `tools/probe_manifest.json` and extended `main_controller_boundary_probe`, `view_extraction_contract_probe`, and `main_inline_class_guard_probe`.
+- Follow-up enrichment added stable action identity, target nodes, timing ratios, pose/target scalars, variant/command labels, contact/joint speed, hit-confirm, Soul Echo, Combo Balance, contact-damage, and whiff-recovery fields to the read-only diagnostic rows.
+- Diagnostics warnings now cover non-dictionary actions, active units without displayable actions, empty profiles, empty/invalid target-node lists, non-positive duration, timer overrun, and phase/timer mismatch.
+- `BattleActionDiagnosticsView.text()` now renders compact enriched action rows while remaining text-only and input-free.
+- Gate diagnostics now flow through `FighterActionModel.runtime_gate_diagnostics()`, `Fighter.runtime_action_telemetry_snapshot()`, the battle telemetry aggregate, and the diagnostics view. The overlay reports gate reason counts, cancel-ready unit count, cooldown-blocked unit count, and per-unit gate rows without moving gate ownership out of `Fighter`.
+- Command diagnostics now flow through `BattleActorCommandService.command_diagnostics()`, a main-owned read-only unit snapshot helper, the battle telemetry aggregate, and the diagnostics view. The overlay reports AI/source-condition/movement-mode counts, fire-cooling and role-switch-configured unit counts, and per-unit `cmd` rows from existing stats/meta only.
+
+Verification:
+- Focused probes passed headless: `fighter_action_model_contract_probe`, `battle_runtime_action_telemetry_service_contract_probe`, `fighter_action_telemetry_probe`, `battle_action_diagnostics_overlay_probe`, `crush_windup_whiff_recovery_probe`, `soul_echo_runtime_probe`, `main_controller_boundary_probe`, and `view_extraction_contract_probe`.
+- Broader verification passed headless: `battle_runtime_frame_budget_probe` (`avg_ms=1.385`, `max_ms=3.086`), `combat_probe`, `ui_layout_probe`, and `text_overflow_probe`.
+- `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120` passed headed. `git diff --check` passed with only the pre-existing `scripts/fighter.gd` CRLF normalization warning.
+
+## 2026-05-29 Battle Projectile Lifecycle Web Deepening
+
+Rules:
+- `BattleProjectileLifecycleService` now also owns pure Web acquisition and anchor decisions: target candidate gates, hit candidate gates, nearest Web impact selection, and boundary swing anchor math.
+- `main.gd` remains the side-effect and context owner for `_field_targets_for()`, live Node checks, `_attack_part_hit()`, GPU impact queries, Mobius projection, ammo consumption, active tether/swing arrays, VFX/SFX, messages, and trace spawning.
+- Web target hits still beat boundary swings, and boundary swings still beat miss traces. The service only decides from precomputed facts; it does not query targets or geometry.
+
+Implementation notes:
+- Extended `scripts/services/battle_projectile_lifecycle_service.gd` with `web_target_candidate_intent()`, `web_impact_candidate_intent()`, `web_impact_selection()`, and `web_boundary_anchor_intent()`.
+- `_web_targets_for()`, `_first_web_tether_impact()`, and `_web_boundary_anchor_for_event()` now delegate pure Web filtering, hit ranking, and anchor math to the service while preserving old wrapper names.
+- Extended `tools/battle_projectile_lifecycle_service_contract_probe.gd` and `tools/main_controller_boundary_probe.gd` for the deeper Web lifecycle seam.
+
+Verification:
+- Updated contract and boundary checks passed headed: `battle_projectile_lifecycle_service_contract_probe`, `main_controller_boundary_probe`.
+- Focused Web regressions passed headed: `web_tether_no_projectile_damage_probe`, `web_anchor_swing_velocity_probe`, `web_swing_melee_collision_probe`, `web_swing_idle_torso_proxy_probe`, `web_swing_active_limb_probe`, and `runtime_melee_never_projectile_gate_probe`.
+- Adjacent contracts passed headed: `battle_impact_query_service_contract_probe`, `battle_target_acquisition_service_contract_probe`.
+
+## 2026-05-29 Battle Target Acquisition Service Seam
+
+Rules:
+- `BattleTargetAcquisitionService` owns only pure weapon target-acquisition decisions: target direction fallback, missile target class classification, class allowlists, true-bullet candidate selection, missile gate checks, missile lock scoring, and final target-index selection.
+- `main.gd` remains the side-effect and context owner for live unit traversal, active-slot role fallback, Mobius deltas, hit tests, LOS/occlusion queries, screen visibility, pending true-bullet/missile state, effects, VFX/SFX, messages, and `_resolve_attack()`.
+- `BattleAwarenessService` continues to own minimap/source AI target scoring. This seam is only for weapon lock/acquisition rules.
+
+Implementation notes:
+- Added `scripts/services/battle_target_acquisition_service.gd`.
+- `_true_bullet_direction_to_target()`, `_missile_direction_to_target()`, `_acquire_true_bullet_target()`, `_missile_target_class()`, `_missile_target_class_allowed()`, `_missile_lock_score()`, and `_acquire_missile_lock_target()` now delegate pure decisions to the service while preserving old wrapper names.
+- `main.gd` maps service-selected target indices back to real target Nodes after collecting hit/projection/visibility/occlusion facts.
+- Added `tools/battle_target_acquisition_service_contract_probe.gd`, registered it in `tools/probe_manifest.json`, and extended `tools/main_controller_boundary_probe.gd`.
+
+Verification:
+- New contract and boundary checks passed headed: `battle_target_acquisition_service_contract_probe`, `main_controller_boundary_probe`.
+- Focused target-acquisition regressions passed headed: `missile_lock_priority_near_probe`, `missile_lock_priority_far_probe`, `missile_lock_priority_screen_role_probe`, `missile_lock_barrier_support_probe`, `missile_lock_runtime_fire_probe`, `missile_occlusion_break_lock_probe`, `missile_homing_speed_dodge_probe`, `sniper_edge_target_lock_probe`, `sniper_first_obstruction_probe`, `sniper_hit_vfx_on_target_probe`, `runtime_gun_event_source_nodes_probe`, `gun_activation_move_while_fire_all_profiles_probe`, and `gun_activation_training_move_fire_probe`.
+- Adjacent service/general checks passed headed: `battle_map_occlusion_service_contract_probe`, `battle_impact_query_service_contract_probe`, `battle_projectile_lifecycle_service_contract_probe`, `battle_action_event_service_contract_probe`, `battle_awareness_service_contract_probe`, `combat_probe`, `battle_runtime_frame_budget_probe`, `teamedit_probe`, `ui_layout_probe`, and `text_overflow_probe`.
+- Manifest/static checks passed headed: `headed_gate_manifest_alignment_probe`, `headed_gate_manifest_source_probe`, and `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120`.
+- `git diff --check` passed with only the pre-existing `scripts/fighter.gd` CRLF normalization warning.
+
+## 2026-05-29 Battle Map Occlusion Service Seam
+
+Rules:
+- `BattleMapOcclusionService` owns only pure map occlusion decisions: blocker kind classification, path-capsule intent, blocker candidate filtering/ranking, query payload shaping, and line-of-sight boolean helpers.
+- `main.gd` remains the side-effect and context owner for live unit traversal, Mobius deltas, collider construction/offsets, geometry gap/center/radius callbacks, one-way shield pass rules, blocker Node references, VFX/SFX, HP/heat, and battle mutation.
+- Map occlusion remains the shared combat line query for sniper, missile, laser, telegraph, and AI sight. One-way shield pass behavior still comes from `_one_way_shield_allows_projectile()`.
+
+Implementation notes:
+- Added `scripts/services/battle_map_occlusion_service.gd`.
+- `_map_occlusion_kind_for_data()`, `_map_occlusion_collider_for_event()`, `_map_occlusion_collider_between()`, `_map_occlusion_query_for_path()`, `_map_occlusion_kind_between()`, `_map_line_occluded()`, and `_map_line_of_sight_clear()` now delegate pure decisions to the service while preserving old wrapper names.
+- `main.gd` maps the service-selected candidate index back to the real blocker Node for one-way shield intercept and other side-effect consumers.
+- Added `tools/battle_map_occlusion_service_contract_probe.gd`, registered it in `tools/probe_manifest.json`, and extended `tools/main_controller_boundary_probe.gd`.
+
+Verification:
+- New contract and boundary checks passed headed: `battle_map_occlusion_service_contract_probe`, `main_controller_boundary_probe`.
+- Focused occlusion regressions passed headed: `map_occlusion_kind_probe`, `map_occlusion_projectile_integration_probe`, `map_occlusion_ai_sight_probe`, `missile_occlusion_break_lock_probe`, `sniper_first_obstruction_probe`, `sniper_hit_vfx_on_target_probe`, `missile_lock_runtime_fire_probe`, and `missile_homing_speed_dodge_probe`.
+- Adjacent service/general checks passed headed: `battle_spatial_runtime_service_contract_probe`, `battle_impact_query_service_contract_probe`, `battle_projectile_lifecycle_service_contract_probe`, `projectile_runtime_service_contract_probe`, `combat_probe`, `battle_runtime_frame_budget_probe`, `teamedit_probe`, `ui_layout_probe`, and `text_overflow_probe`.
+- Compile/static check passed headed: `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120`.
+- `git diff --check` passed with only the pre-existing `scripts/fighter.gd` CRLF normalization warning.
+
+## 2026-05-29 Battle Spatial Runtime Service Seam
+
+Rules:
+- `BattleSpatialRuntimeService` owns only pure battle-space decisions: camera follow alpha, P1/P2/spectator focus selection, camera state interpolation intent, screen projection intent, world-point visibility, portal spawn placement, and Mobius surface-input fallback/sign preservation.
+- `main.gd` remains the side-effect and context owner for live unit traversal, `active_units` reads, `MobiusWorld` projection calls, `GameplayTransform` conversion, camera state writes, Line2D/effect positioning, map occlusion, VFX/SFX, and all battle mutation.
+- Mobius gameplay anchors remain locally rectangular and screen-readable. The service preserves lifted Mobius lane values in projection intents so seam-adjacent projectile traces do not lose half-twist lane flips.
+- `_map_line_occluded()` / `_map_occlusion_query_*`, surface shader/view updates, minimap drawing, GPU/contact/projectile hit queries, and Mobius visual rendering stay outside this service.
+
+Implementation notes:
+- Added `scripts/services/battle_spatial_runtime_service.gd`.
+- `_camera_follow_alpha()`, `_update_camera_center()`, `_camera_focus_for_player()`, `_camera_lane_focus_for_player()`, `_spectator_camera_focus()`, `_spectator_lane_focus()`, `_screen_from_ring()`, `_project_combat_coord_to_screen()`, `_world_point_visible_for_player()`, `_spawn_for_selected_portal()`, and `_mobius_surface_input_for_unit()` now delegate pure decisions to the service while preserving old wrapper names.
+- `_screen_from_ring()` now passes both `lifted_s` and `lifted_lane` through the service intent before calling the existing `MobiusWorld.project_to_screen()` wrapper. This keeps the no-rewrap lane-flip projectile trace guard intact.
+- `battle_xy_isometric_probe` now guards the current split: Mobius gameplay projection stays locally rectangular, while Mobius visual projection still exposes depth/scale variation.
+- Added `tools/battle_spatial_runtime_service_contract_probe.gd`, registered it in `tools/probe_manifest.json`, and extended `tools/main_controller_boundary_probe.gd`.
+
+Verification:
+- New contract passed headed: `battle_spatial_runtime_service_contract_probe`.
+- Focused spatial regressions passed headed: `battle_camera_y_edge_clamp_probe`, `battle_player_input_uses_mobius_surface_probe`, `battle_screen_input_vertical_probe`, `battle_xy_isometric_probe`, `mobius_surface_movement_input_probe`, `mobius_projectile_trace_projection_probe`, `projectile_muzzle_screen_alignment_probe`, `projectile_trace_no_rewrap_lane_flip_probe`, `projectile_muzzle_complex_unit_real_screen_probe`, and `sniper_hit_vfx_on_target_probe`.
+- Adjacent service/general checks passed headed: `battle_identity_runtime_service_contract_probe`, `battle_impact_query_service_contract_probe`, `battle_projectile_lifecycle_service_contract_probe`, `combat_probe`, `battle_runtime_frame_budget_probe`, `teamedit_probe`, `ui_layout_probe`, `text_overflow_probe`, and `main_controller_boundary_probe`.
+- Godot still prints the known ObjectDB exit warning on several probe exits, with exit code `0`.
+
+## 2026-05-29 Battle Identity Runtime Service Seam
+
+Rules:
+- `BattleIdentityRuntimeService` owns only pure identity-runtime decisions: role-switch and soul-cast gates, receiver/target selection from prepared candidates, transfer role maps, role-form targets/gates/finish shape, morph mode/shape, combine partner selection, combine/separate stat payloads, and separated partner spawn placement.
+- `main.gd` remains the side-effect owner for live Node checks, `active_units` slot writes, `_assign_unit_role()`, `_create_unit()`, `_detach_unit()`, `queue_free()`, identity effects, VFX/SFX, messages, UI refresh, and identity-freeze timers.
+- The service consumes plain snapshots and candidate dictionaries only. It must not read global battle state, `active_units`/`all_units`, Nodes, `Fighter`, files, JSON, random/time, or perform spawn/free/role-assignment side effects.
+
+Implementation notes:
+- Added `scripts/services/battle_identity_runtime_service.gd`.
+- `_try_role_switch_module()`, `_try_soul_cast_transfer()`, `_select_identity_receiver()`, `_role_switch_plan()`, `_select_role_switch_target()`, `_try_role_form_shift()`, `_role_form_target()`, `_can_self_form_shift()`, `_finish_role_form_shift()`, `_try_morph_unit()`, `_morph_shape_for()`, `_try_combine_or_separate()`, and `_restore_combine_partner_snapshot()` now delegate pure decisions to the service while keeping the old wrapper names stable.
+- Added `tools/battle_identity_runtime_service_contract_probe.gd`, registered it in `tools/probe_manifest.json`, and extended `tools/main_controller_boundary_probe.gd`.
+
+Verification:
+- New contract and identity regression passed headed: `battle_identity_runtime_service_contract_probe`, `identity_module_probe`.
+- Neighboring runtime/core regressions passed headed: `battle_frame_orchestrator_service_contract_probe`, `battle_actor_command_service_contract_probe`, `battle_runtime_lifecycle_service_contract_probe`, `source_code_probe`, `resource_entry_probe`, and `combat_probe`.
+- Broad checks passed headed: `main_controller_boundary_probe`, `battle_runtime_frame_budget_probe`, `teamedit_probe`, `ui_layout_probe`, `text_overflow_probe`, and `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120`.
+- `git diff --check` passed with only the pre-existing `scripts/fighter.gd` CRLF normalization warning.
+
+## 2026-05-29 Battle Runtime Lifecycle Death/Exit Deepening
+
+Rules:
+- `BattleRuntimeLifecycleService` now owns pure death/exit lifecycle decisions: kill-flow action ordering, destroy-economy resource intents, pirate betrayal gates, retreat repair timers, escape-pod spawn/tick payloads, fracture-puppet cleanup, and torso fracture brood spawn planning.
+- `main.gd` remains the side-effect owner for live Node traversal, random betrayal rolls, nearest repair station queries, Mobius deltas, `_create_unit()`, `_detach_unit()`, `queue_free()`, resource/victory/meta writes, VFX/SFX, messages, and `_end_battle()`.
+- The service consumes plain snapshots and precomputed facts only; it must not read `active_units`/`all_units`, Nodes, `Fighter`, GPU state, files, JSON, random/time, or perform damage/spawn/free side effects.
+
+Implementation notes:
+- Extended `scripts/services/battle_runtime_lifecycle_service.gd` with `kill_flow_intent()`, `destroy_economy_intents()`, `pirate_betrayal_intent()`, `retreat_start_intent()`, `retreat_repair_tick_intent()`, `escape_pod_spawn_intent()`, `escape_pod_tick_intent()`, `fracture_cleanup_intent()`, and `torso_fracture_brood_intent()`.
+- `_handle_unit_killed()` now dispatches through service intents while preserving old helper names and side-effect order for betrayal, retreat, repair-dock destruction, escape pods, economy, fracture cleanup, victory points, training respawn, battle end, detach, and free.
+- `_apply_destroy_economy()`, `_try_pirate_betrayal()`, `_try_start_retreat()`, `_update_retreat_repairs()`, `_update_escape_pods()`, `_cleanup_fracture_puppets_for_parent()`, and `_handle_torso_fracture_brood()` now delegate their pure decisions to the service.
+- Extended `tools/battle_runtime_lifecycle_service_contract_probe.gd` and `tools/main_controller_boundary_probe.gd` for the deeper lifecycle seam.
+
+Verification:
+- New/updated contract and boundary checks passed headed: `battle_runtime_lifecycle_service_contract_probe`, `main_controller_boundary_probe`.
+- Focused regressions passed headed: `battle_hit_resolution_service_contract_probe`, `battle_projectile_lifecycle_service_contract_probe`, `runtime_contact_damage_probe`, `two_link_damage_balance_probe`, `unit2_static_two_link_damage_probe`, `resource_entry_probe`, `source_code_probe`, and `training_default_ball_dummy_probe`.
+- Some focused probes still report the pre-existing Godot ObjectDB leak warning on exit, with exit code `0`.
+
+## 2026-05-29 Battle Impact Query Service Seam
+
+Rules:
+- `BattleImpactQueryService` owns only pure impact-query decisions: projectile direction normalization, true-bullet candidate gates, first-impact ranking, GPU hit ranking, hit slop, directional rejection, and hit payload shaping.
+- `main.gd` remains the side-effect owner for live unit traversal, Node validation, collider construction, Mobius/map/GPU queries, geometry math callbacks, HP/heat/meta writes, VFX/SFX, messages, and kills.
+- The service consumes plain dictionaries, arrays, scalars, vectors, and precomputed facts only. Live Nodes may only pass through as opaque payload values and must not be read by the service.
+- The service must stay pure: no `Input`, file IO, JSON parsing, UI/Node ownership, `active_units`/`all_units`, GPU pipeline, `Fighter`, `_resolve_attack()`, `_attack_part_hit()`, `take_hit()`, `queue_free()`, random numbers, or time reads.
+
+Implementation notes:
+- Added `scripts/services/battle_impact_query_service.gd`.
+- `_first_projectile_impact()` now asks the service for projectile direction, true-bullet candidate gates, projection gates, and nearest impact selection while keeping target traversal and hit tests in `main.gd`.
+- `_first_projectile_impact_gpu()` keeps GPU submit/readback and map occlusion in `main.gd`, then delegates hit-record ranking and payload shaping to the service.
+- `_attack_part_hit()` keeps collider creation, target collider transforms, projectile target expansion, and actual gap/contact math in `main.gd`, then delegates hit slop, directional rejection, and final hit payload construction.
+- Added `tools/battle_impact_query_service_contract_probe.gd`, registered it in `tools/probe_manifest.json`, and extended `tools/main_controller_boundary_probe.gd`.
+
+Verification:
+- New contract and boundary checks passed headed: `battle_impact_query_service_contract_probe`, `main_controller_boundary_probe`, and `headed_gate_manifest_alignment_probe`.
+- Focused impact regressions passed headed: `sniper_first_obstruction_probe`, `sniper_hit_vfx_on_target_probe`, `runtime_gun_event_source_nodes_probe`, `projectile_muzzle_complex_unit_real_screen_probe`, `projectile_trace_aim_line_same_origin_probe`, `projectile_trace_no_rewrap_lane_flip_probe`, `gpu_cpu_parity_probe`, `collision_broadphase_skip_probe`, `runtime_no_precontact_damage_probe`, `runtime_no_precontact_fx_probe`, `chemical_sprayer_first_contact_probe`, and `web_tether_no_projectile_damage_probe`.
+- Adjacent service/general checks passed headed: `battle_hit_resolution_service_contract_probe`, `battle_projectile_lifecycle_service_contract_probe`, `battle_action_event_service_contract_probe`, `projectile_runtime_service_contract_probe`, `runtime_contact_service_contract_probe`, `combat_probe`, `battle_runtime_frame_budget_probe`, `teamedit_probe`, `ui_layout_probe`, and `text_overflow_probe`.
+- Compile/static check passed headed: `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120`.
+- `git diff --check` passed with only the pre-existing `scripts/fighter.gd` CRLF normalization warning.
+
+## 2026-05-29 Battle Hit Application Pipeline Deepening
+
+Rules:
+- `BattleHitResolutionService` now owns pure hit-application decisions after impact query: damage stack continuation, part-damage routing/HP intent, momentum response scalar intent, and canonical post-hit action order.
+- `main.gd` remains the side-effect owner for live unit checks, HP/heat/meta writes, VFX/SFX, hitstop, `take_hit()`, kill handling, shield/barrier effects, fracture brood, and all Node method calls.
+- The service consumes precomputed facts only. It must not read live units, `active_units`/`all_units`, GPU state, `Fighter`, time/random, files, JSON, UI nodes, or call `take_hit()` / `queue_free()`.
+
+Implementation notes:
+- Extended `scripts/services/battle_hit_resolution_service.gd` with `damage_stack_intent()`, `part_damage_intent()`, and `momentum_response_intent()` while keeping `damage_intent()` as a compatibility wrapper.
+- `_resolve_attack()` now consumes `damage_stack_intent()` and executes `post_hit_intents()` as the single dispatcher for module effects, explosion, suicide, part damage, hitstop, `take_hit()`, DOT, back-hit heat, stagger, displacement, and target continuation.
+- `_register_part_damage()` plus limb/terminal/torso helpers now collect current HP/broken facts and apply service part-damage intents; fracture brood and messages remain in `main.gd`.
+- `_apply_projectile_momentum_stagger()`, `_apply_active_melee_momentum_stagger()`, and `_apply_hit_displacement()` now delegate pure threshold/duration/impulse/transfer scalar decisions to the service while preserving all velocity/meta/method-call side effects in `main.gd`.
+- Extended `tools/battle_hit_resolution_service_contract_probe.gd` and `tools/main_controller_boundary_probe.gd` for the deeper service seam.
+
+Verification:
+- New/updated contract and boundary checks passed headed: `battle_hit_resolution_service_contract_probe`, `main_controller_boundary_probe`.
+- Focused hit/contact regressions passed headed: `chemical_heat_probe`, `chemical_dot_probe`, `sniper_hit_vfx_on_target_probe`, `web_tether_no_projectile_damage_probe`, `web_swing_melee_collision_probe`, `two_link_damage_balance_probe`, `unit2_static_two_link_damage_probe`, `runtime_melee_never_projectile_gate_probe`, `runtime_contact_damage_probe`, `active_limb_collision_only_during_module_probe`, and `boost_torso_collision_damage_probe`.
+- Adjacent service/general checks passed headed: `battle_impact_query_service_contract_probe`, `battle_projectile_lifecycle_service_contract_probe`, `battle_action_event_service_contract_probe`, `projectile_runtime_service_contract_probe`, `runtime_contact_service_contract_probe`, `combat_probe`, `battle_runtime_frame_budget_probe`, `teamedit_probe`, `ui_layout_probe`, and `text_overflow_probe`.
+- Compile/static check passed headed: `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120`.
+- `git diff --check` passed with only the pre-existing `scripts/fighter.gd` CRLF normalization warning.
+
+## 2026-05-29 Battle Action Event Service Seam
+
+Rules:
+- `BattleActionEventService` owns only pure attack-event shaping: module begin intent, command-window fire routing, normal/runtime module event normalization, and gun activation projectile defaults.
+- `main.gd` remains the side-effect owner for input reads, live unit/gun source queries, aim pose writes, heat/ammo/resource mutation, `Fighter` runtime action writes, VFX/SFX, messages, and `_resolve_attack()` calls.
+- The service consumes plain dictionaries, arrays, scalars, and vectors only. Do not pass live Nodes into it or let it query battle state.
+- The service must stay pure: no `Input`, file IO, JSON parsing, UI/Node ownership, `active_units`/`all_units`, GPU, `Fighter`, `_resolve_attack()`, `take_hit()`, `queue_free()`, random numbers, or time reads.
+
+Implementation notes:
+- Added `scripts/services/battle_action_event_service.gd`.
+- `_begin_unit_module_action()`, `_runtime_gun_activation_event_for()`, `_resolve_attack_command_window()`, `_hero_runtime_module_attack()`, `_hero_normal_attack()`, and puppet attack event patching now consume service intents while preserving existing side-effect order in `main.gd`.
+- `_apply_module_event_fields()`, `_copy_module_variant_fields()`, and `_copy_control_event_fields()` remain stable wrappers but now delegate their pure field patching to `BattleActionEventService`.
+- Added `tools/battle_action_event_service_contract_probe.gd`, registered it in `tools/probe_manifest.json`, and extended `tools/main_controller_boundary_probe.gd`.
+
+Verification:
+- New contract and boundary checks passed headed: `battle_action_event_service_contract_probe`, `main_controller_boundary_probe`, and `headed_gate_manifest_alignment_probe`.
+
+## 2026-05-29 Battle Projectile Lifecycle Service Seam
+
+Rules:
+- `BattleProjectileLifecycleService` owns only pure projectile lifecycle decisions: delayed chemical timer actions, missile homing/occlusion timer intent, chemical firework pellet event patches, web tether/swing velocity/snap intent, web fire route classification, explosion falloff payloads, and projectile reflection payloads.
+- `main.gd` remains the side-effect owner for live unit traversal, Mobius/GPU/map hit queries, pending array mutation, ammo, HP/heat/meta writes, VFX/SFX, hitstop, battle messages, random fallback directions, kills, and Node lifecycle.
+- The service consumes plain dictionaries, arrays, scalars, and vectors only. Do not pass live Nodes into it or let it query global battle state.
+- The service must stay pure: no `Input`, file IO, JSON parsing, UI/Node ownership, `active_units`/`all_units`, GPU, `Fighter`, `_resolve_attack()`, `take_hit()`, `queue_free()`, random numbers, or time reads.
+
+Implementation notes:
+- Added `scripts/services/battle_projectile_lifecycle_service.gd`.
+- `_update_chemical_projectiles()`, `_update_missile_projectiles()`, `_resolve_chemical_firework()`, `_fire_runtime_web_tether()`, `_update_web_tethers()`, `_update_web_swings()`, `_apply_projectile_reflection()`, `_reflect_projectile_from_target_shield()`, and `_apply_explosion_damage()` now consume service intents while keeping all real mutation and runtime queries in `main.gd`.
+- Added `tools/battle_projectile_lifecycle_service_contract_probe.gd`, registered it in `tools/probe_manifest.json`, and extended `tools/main_controller_boundary_probe.gd`.
+
+Verification:
+- Compile/static check passed headed: `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120`.
+
+## 2026-05-29 Battle Hit Resolution Service Seam
+
+Rules:
+- `BattleHitResolutionService` owns only pure hit-resolution decisions: attack entry gates, projectile preflight route classification, target hit context patches, combo multiplier math, damage/frontload/DOT intent, post-hit action ordering, and chemical/takeover status tick planning.
+- `main.gd` remains the side-effect owner for target traversal, hit/GPU/map queries, ammo, blind-fire randomness, HP/heat/meta writes, VFX/SFX, hitstop, displacement, kills, projectile reflection, explosion traversal, web runtime, and Node lifecycle.
+- The service consumes plain dictionaries, arrays, scalars, and precomputed facts only. Do not pass live Nodes into it or let it query battle state.
+- The service must stay pure: no `Input`, file IO, JSON parsing, UI/Node ownership, `active_units`/`all_units`, GPU, `Fighter`, `_resolve_attack()`, `take_hit()`, `queue_free()`, random numbers, or time reads.
+
+Implementation notes:
+- Added `scripts/services/battle_hit_resolution_service.gd`.
+- `_resolve_attack()` now asks the service for entry gates, projectile queue/preflight routes, target hit field patches, damage/DOT calculation, and post-hit action intent while preserving the existing side-effect order in `main.gd`.
+- `_apply_combo_hit_scaling()` delegates multiplier/damage math to the service while `main.gd` keeps combo meta and battle messages.
+- `_apply_chemical_dot_status()`, `_update_chemical_dot_status()`, `_apply_takeover_status()`, and `_update_takeover_status()` now consume service status intents while keeping all meta writes, damage application, defect handling, VFX, and messages in `main.gd`.
+- Added `tools/battle_hit_resolution_service_contract_probe.gd`, registered it in `tools/probe_manifest.json`, and extended `tools/main_controller_boundary_probe.gd`.
+
+Verification:
+- New contract and boundary checks passed headed: `battle_hit_resolution_service_contract_probe`, `main_controller_boundary_probe`, and `headed_gate_manifest_alignment_probe`.
+- Focused hit/projectile regressions passed headed: `chemical_heat_probe`, `chemical_dot_probe`, `chemical_sprayer_hold_release_probe`, `chemical_sprayer_first_contact_probe`, `sniper_first_obstruction_probe`, `sniper_hit_vfx_on_target_probe`, `web_tether_no_projectile_damage_probe`, `web_swing_melee_collision_probe`, `two_link_damage_balance_probe`, `unit2_static_two_link_damage_probe`, and `runtime_melee_never_projectile_gate_probe`.
+- Adjacent runtime/service checks passed headed: `projectile_runtime_service_contract_probe`, `runtime_contact_service_contract_probe`, `battle_field_runtime_service_contract_probe`, `combat_probe`, `battle_runtime_frame_budget_probe`, `teamedit_probe`, `ui_layout_probe`, and `text_overflow_probe`.
+- Compile/static check passed headed: `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120`.
+
+## 2026-05-29 Battle Field Runtime Service Seam
+
+Rules:
+- `BattleFieldRuntimeService` owns only pure field/support/barrier utility decisions: lease and annuity timers, support aura and target intents, speed-lane velocity targets, coin timers and collection classification, signal jammer progress, barrier utility action classification, field-effect payloads, trap gate/fire intents, and hatchery/hatchling stat plans.
+- `main.gd` remains the side-effect owner for live Node traversal, Mobius/map-tile hit tests, command-buffer consumption, random VFX rolls, resource writes, velocity/HP/heat/meta writes, `_create_unit()`, defect ownership changes, VFX/SFX, messages, and Node lifecycle.
+- The service consumes plain dictionaries, arrays, scalars, vectors, colors, and precomputed facts only. Do not pass live Nodes into it or let it query global battle state.
+- The service must stay pure: no `Input`, file IO, JSON parsing, UI/Node ownership, `active_units`/`all_units`, `UnitScene`, GPU, `Fighter`, `_create_unit()`, `_resolve_attack()`, `take_hit()`, `queue_free()`, random numbers, or time reads.
+
+Implementation notes:
+- Added `scripts/services/battle_field_runtime_service.gd`.
+- `_apply_lease_costs()` and `_apply_annuity_income()` now use service timer/resource intents while keeping resource/heat/message/VFX writes in `main.gd`.
+- `_apply_support_components()`, support helper wrappers, `_apply_speed_lane_to_unit()`, `_apply_coin_generators()`, `_update_field_coins()`, and `_apply_signal_jammers()` now delegate pure classification/timer/velocity payloads to the service.
+- `_apply_barrier_utility_components()` now delegates utility action selection to `barrier_utility_intents()`. Gravity, coolant, heat, repulsion, siphon, hack, cage, trap, and hatchery helpers consume `field_effect_intent()`/trap/hatchery intents while keeping aura visual updates, target selection, damage, heat, resource, defect, spawn, and random VFX in `main.gd`.
+- Added `tools/battle_field_runtime_service_contract_probe.gd`, registered it in `tools/probe_manifest.json`, and extended `tools/main_controller_boundary_probe.gd`.
+
+Verification:
+- Compile/static check passed headed: `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120`.
+
+## 2026-05-29 Battle Actor Command Service Seam
+
+Rules:
+- `BattleActorCommandService` owns only pure actor-command decisions for deploy timers, summon gates, auto-summon candidate choice, puppet movement/condition/action intents, and barrier logic classification.
+- `main.gd` remains the side-effect owner for `active_units`, `all_units`, `_create_unit()`, resource writes, pending deploy snapshots/previews, `_begin_unit_module_action()`, `_resolve_attack()`, HP/heat, VFX/SFX, battle messages, random/time reads, and Node lifecycle.
+- The service consumes plain dictionaries, arrays, scalars, and precomputed snapshots only. Do not pass live Nodes or make it query global battle state.
+- The service must stay pure: no `Input`, file IO, JSON parsing, UI/Node ownership, `active_units`/`all_units`, `UnitScene`, GPU, `Fighter`, `_create_unit()`, `_resolve_attack()`, `take_hit()`, `queue_free()`, random numbers, or time reads.
+
+Implementation notes:
+- Added `scripts/services/battle_actor_command_service.gd`.
+- `_tick_deploys()` now sends pending role/timer snapshots to `deploy_tick_plan()`, then applies preview updates, finish calls, messages, and pending-snapshot cleanup in `main.gd`.
+- `_summon_role()` now uses `summon_gate_intent()` for preflight and final resource/barrier-block checks while keeping stats computation, cost deduction, pending snapshots, barrier preview, and actual unit creation in `main.gd`.
+- `_update_anti_stall_summons()` and `_auto_summon_first_affordable_sortie_role()` now use `auto_summon_intent()` for timer triggers and candidate choice while preserving roster-index writes and summon side effects in `main.gd`.
+- `_puppet_move_vector()`, `_puppet_condition()`, and `_try_puppet_action()` now delegate pure movement/condition/action selection to the service. Unit movement, phase meta writes, role switching, module begin calls, projectile event patching, and attack resolution remain in `main.gd`.
+- `_apply_barrier_logic()` now delegates logic-to-action classification to `barrier_logic_intents()` and keeps aura target queries, heat/cool/slow/meta/pulse effects, VFX/SFX, and messages in `main.gd`.
+- Added `tools/battle_actor_command_service_contract_probe.gd`, registered it in `tools/probe_manifest.json`, and extended `tools/main_controller_boundary_probe.gd`.
+- `tools/resource_entry_probe.gd` now uses explicit barrier/hero/shield fixtures instead of assuming default roster slot zero is a deployable barrier, an ammo projectile hero, or a shop-installable shield target. This keeps the resource-entry regression aligned with the current blank-canvas default semantics.
+
+Verification:
+- New contract and boundary checks passed headed: `battle_actor_command_service_contract_probe` and `main_controller_boundary_probe`.
+- Focused actor/runtime regressions passed headed: `source_code_probe`, `source_heat_pressure_policy_probe`, `thermal_pit_crew_source_code_probe`, `resource_entry_probe`, `training_import_spawn_role_probe`, `training_seat_spawn_unit2_probe`, `combat_probe`, and `battle_runtime_frame_budget_probe`.
+- Adjacent service/general checks passed headed: `battle_frame_orchestrator_service_contract_probe`, `battle_awareness_service_contract_probe`, `battle_input_edge_single_consume_probe`, `runtime_contact_service_contract_probe`, `teamedit_probe`, `ui_layout_probe`, `text_overflow_probe`, and `headed_gate_manifest_alignment_probe`.
+- Compile/static check passed headed: `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120`.
+- `git diff --check` passed with only the pre-existing `scripts/fighter.gd` CRLF normalization warning.
+
+## 2026-05-29 Battle Frame Orchestrator Runtime Seam
+
+Rules:
+- `BattleFrameOrchestratorService` owns only pure battle-frame planning: fixed-step accumulator math, simulation phase order, early-exit phase selection, post-step render alpha, and contact/GPU pass intents.
+- `main.gd` remains the side-effect owner for input sampling, unit ticking, resources, deploys, AI/training, summons/puppets/barriers, camera/Mobius updates, GPU submit/readback, contact dictionaries, HP/heat, VFX/SFX, battle messages, and Node lifecycle.
+- Phase order in `_tick_battle_simulation()` must remain the authored order. The service may return phase labels, but it must not call game functions or read live Nodes.
+- The service must stay pure: no `Input`, file IO, JSON parsing, UI/Node ownership, `active_units`/`all_units`, GPU pipeline, `Fighter`, damage/heat, spawn/free, or battle mutation.
+
+Implementation notes:
+- Added `scripts/services/battle_frame_orchestrator_service.gd`.
+- `_tick_battle()` now consumes `frame_step_plan()` and `post_step_state()` for 120Hz step count, accumulator truncation, and render interpolation alpha. Input is still captured once per rendered frame, and edge consumption remains first-substep-only.
+- `_tick_battle_simulation()` now dispatches service phase labels while keeping all real simulation calls in `main.gd` and preserving identity-freeze, hitstop, and timeout early returns.
+- `_resolve_unit_body_spacing()` now consumes `contact_pass_plan()` for reset/cleanup, GPU runtime-contact dispatch, GPU-unavailable warning, CPU pair spacing, and stale active-pair cleanup. Live subject collection and all collision side effects remain in `main.gd`.
+- Added `tools/battle_frame_orchestrator_service_contract_probe.gd`, registered it in `tools/probe_manifest.json`, and extended `tools/main_controller_boundary_probe.gd` to guard the new service seam.
+
+Verification:
+- New contract and boundary checks passed headed: `battle_frame_orchestrator_service_contract_probe`, `main_controller_boundary_probe`, `headed_gate_manifest_alignment_probe`, and `headed_gate_manifest_source_probe`.
+- Compile/static check passed headed: `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120`.
+- Focused runtime regressions passed headed: `battle_input_edge_single_consume_probe`, `keyboard_escape_battle_pause_probe`, `battle_motion_120hz_tick_probe`, `runtime_contact_service_contract_probe`, `runtime_collider_geometry_service_contract_probe`, `runtime_collider_builder_service_contract_probe`, `gpu_cpu_parity_probe`, `collision_broadphase_skip_probe`, `runtime_no_precontact_damage_probe`, and `two_link_damage_balance_probe`.
+- Broad checks passed headed: `battle_input_service_contract_probe`, `projectile_runtime_service_contract_probe`, `combat_probe`, `battle_runtime_frame_budget_probe`, `training_default_ball_dummy_probe`, `teamedit_probe`, `ui_layout_probe`, and `text_overflow_probe`.
+- `git diff --check` passed with only the pre-existing `scripts/fighter.gd` CRLF normalization warning.
+
+## 2026-05-29 Runtime Collider Geometry Pure Kernel
+
+Rules:
+- Extract only pure runtime collider geometry math; keep Fighter pose, `TopologyPoseResolver`, GPU submission/readback, contact damage, projectile side effects, scythe/socket rules, and Mobius/ring wrapping out of the service.
+- `RuntimeColliderGeometryService` must stay pure: no `Input`, file IO, JSON parsing, UI/Node ownership, active/all unit lists, topology resolver, GPU pipeline, renderer, damage/heat, spawn/free, or runtime action arrays.
+- `RuntimeColliderBuilderService` may assemble collider payload dictionaries from precomputed facts only. It must not resolve topology, build polygons, read runtime action arrays, calculate contact groups, choose attack indices, or own stiffness/contact rules.
+- Preserve old `main.gd` and `fighter.gd` helper names so existing probes and runtime call sites keep their contract.
+
+Implementation notes:
+- Added `scripts/services/runtime_collider_geometry_service.gd`.
+- The service owns circle/capsule/polygon center, extent and bounding radii, broadphase gap, overlap-depth estimate, hit position, segments, precise gap, bounds, scale/offset transforms, polygon containment, polygon/collider distance, point/segment distance, segment/segment distance, and segment intersection.
+- `main.gd` now preloads and lazily initializes `RuntimeColliderGeometryService`; `_collider_center()`, `_collider_extent_radius()`, `_collider_gap()`, `_collider_bounding_radius()`, `_collider_broadphase_gap()`, `_collider_overlap_depth_estimate()`, `_collider_hit_position()`, `_collider_segments()`, `_point_in_polygon()`, `_polygon_collider_distance()`, `_point_segment_distance()`, `_segment_segment_distance()`, `_segments_intersect()`, and `_scale_collider_around_center()` delegate to the service.
+- `_shift_collider_to_origin()` still computes ring/Mobius-local offset in `main.gd`, then delegates the pure offset transform to `RuntimeColliderGeometryService.shift_collider_by_offset()`.
+- `Fighter._runtime_collider_with_bounds()` delegates to the same service through a lazy `_runtime_collider_geometry_service()` getter, preserving direct probe construction before `_ready()`.
+- Added `scripts/services/runtime_collider_builder_service.gd`.
+- `Fighter._runtime_cached_part_colliders()` now asks `_runtime_collider_payload_for_segment()` to collect resolved world segment facts, runtime polygon, active node snapshot, attack index, contact fields, and stiffness defaults, then delegates final runtime collider payload assembly to `RuntimeColliderBuilderService`.
+- `Fighter` still owns pose resolution, `TopologyPoseResolver` handoff, `AssemblyBoardRenderer` polygon generation, active-node extraction, attack-index lookup, contact field derivation, default stiffness/path stiffness derivation, bounds application, and cache ownership.
+- Added `tools/runtime_collider_geometry_service_contract_probe.gd` and `tools/runtime_collider_builder_service_contract_probe.gd`, then registered both in `tools/probe_manifest.json`.
+
+Verification:
+- New contract and boundary checks passed headed: `runtime_collider_geometry_service_contract_probe`, `main_controller_boundary_probe`, `headed_gate_manifest_alignment_probe`, `headed_gate_manifest_source_probe`, and `probe_manifest_no_legacy_fixture_probe`.
+- Builder service contract passed headed: `runtime_collider_builder_service_contract_probe`.
+- Compile/static check passed headed: `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120`.
+- Focused geometry/contact regressions passed headed: `gpu_cpu_parity_probe`, `collision_broadphase_skip_probe`, `mobius_collision_sheet_probe`, `visual_scale_does_not_move_collision_probe`, `runtime_no_precontact_damage_probe`, `runtime_no_precontact_fx_probe`, `two_link_damage_balance_probe`, `unit2_static_two_link_damage_probe`, `runtime_segment_renderer_socket_identity_probe`, and `module_override_uses_pose_resolver_probe`.
+- Service/battle/UI regressions passed headed: `runtime_contact_service_contract_probe`, `projectile_runtime_service_contract_probe`, `combat_probe`, `battle_runtime_frame_budget_probe`, `teamedit_probe`, `ui_layout_probe`, and `text_overflow_probe`.
+- `git diff --check` passed with only the pre-existing `scripts/fighter.gd` CRLF normalization warning.
+
+## 2026-05-29 Fighter Action Model Gate and Timing Intent Seam
+
+Rules:
+- Continue `EC-SLIM-006` by extracting only pure Fighter action gating and timing decisions; keep `Fighter` as the Node/runtime state owner.
+- `FighterActionModel` owns basic action gate/event intent, runtime module gate intent, module cancel gate intent, whole-body action state intent, generic cooldown derivation, runtime action phase/progress helpers, forced-recovery timer intent, and Two-Link authored-duration timing intent.
+- Keep real state writes, combat signal emission, meta writes, heat application, soul echo meta mutation, combo balance meta mutation, runtime module action arrays, velocity impulses, geometry overrides, contact damage, and VFX/SFX in `Fighter`.
+- `FighterActionModel` must stay pure: no `Input`, file IO, JSON parsing, UI nodes, time reads, active/all unit lists, spawn/free helpers, heat writes, damage application, or Node inheritance.
+
+Implementation notes:
+- Added `scripts/services/fighter_action_model.gd`.
+- `scripts/fighter.gd` now preloads the service and uses `_action_model()` lazy initialization alongside heat/movement/turn models.
+- `begin_action()`, `_module_action_gate()`, `_apply_whole_body_action_state()`, and the top runtime-module gate now consume action-model intents while preserving old wrapper names and side effects.
+- Two-Link runtime timing now asks `FighterActionModel.two_link_timing_intent()` for authored duration, cooldown, startup/recovery ratio, contact distance, and joint actuation speed; geometry pose overrides remain in `Fighter`.
+- Runtime action timer tick, phase/progress lookup, startup/recovery labeling, and CPU/GPU forced recovery timer clamping now go through `FighterActionModel`. `Fighter` still decides variant side effects and geometry, and variant callbacks intentionally see the substep-start phase before the action timer is written to the substep end.
+- Runtime action pose-progress scalars now also go through `FighterActionModel.runtime_action_curve_intent()` and `runtime_action_variant_pose_intent()`. Two-Link, gauntlet, blunt terminal, blade/scythe, and generic melee overrides still build their own segment endpoints in `Fighter`, but no longer hand-roll separate startup/recovery easing formulas.
+- `tools/runtime_action_geometry_boundary_probe.gd` guards the new ownership line: `FighterActionModel` may produce scalar curve/variant intents only, while `Fighter` keeps endpoint writes, socket-sensitive side-mount geometry, TopologyPoseResolver handoff, and runtime geometry ownership.
+- Runtime action telemetry now has a pure read-only seam: `FighterActionModel.runtime_action_summary()` and `runtime_action_telemetry()` summarize active runtime actions, phase labels, pose scalar values, target nodes, contact speed, and Feint flags without reading nodes or geometry. `Fighter.runtime_action_telemetry_snapshot()` only passes current action arrays and active-module scalar fields.
+- Battle-level runtime action telemetry now has a matching pure read-only service: `BattleRuntimeActionTelemetryService.battle_action_telemetry()` aggregates live-unit action summaries, profile counts, phase-label counts, timing extremes, contact-speed flags, and Feint flags from plain dictionaries. `main.gd` owns live unit traversal and only passes `Fighter.runtime_action_telemetry_snapshot()` results into the service.
+- Added `tools/fighter_action_model_contract_probe.gd` and registered it in `tools/probe_manifest.json`.
+
+Verification:
+- New contract passed headed: `fighter_action_model_contract_probe`.
+- Focused action/timing regressions passed headed: `action_module_execution_matrix_probe`, `module_binding_direct_trigger_probe`, `runtime_module_entry_pose_restore_probe`, `two_link_speed_probe`, `two_link_phase_timing_probe`, `two_link_forward_snap_combat_pose_probe`, `two_link_damage_balance_probe`, `unit2_static_two_link_damage_probe`, `blade_runtime_action_probe`, and `gauntlet_heat_cost_probe`.
+- Phase/progress extraction regressions passed headed: `two_link_recovery_pose_probe`, `gpu_recovery_event_probe`, `crush_windup_whiff_recovery_probe`, `feint_thrust_retarget_runtime_probe`, and `module_override_uses_pose_resolver_probe`.
+- Pose-progress helper regressions passed headed: `two_link_phase_timing_probe`, `two_link_recovery_pose_probe`, `two_link_forward_snap_combat_pose_probe`, `blade_runtime_action_probe`, `gauntlet_heat_cost_probe`, `crush_windup_whiff_recovery_probe`, `feint_thrust_retarget_runtime_probe`, and `runtime_module_entry_pose_restore_probe`.
+- Side-mount/pose-resolver regressions passed headed: `scythe_action_pose_socket_invariant_probe`, `scythe_action_group_limb_chain_not_side_rotated_probe`, `scythe_action_limb_matches_straight_weapon_probe`, and `module_override_uses_pose_resolver_probe`.
+- Broad post-extraction checks passed headed: `combat_probe`, `battle_runtime_frame_budget_probe`, `teamedit_probe`, `ui_layout_probe`, `text_overflow_probe`, `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120`, and full `tools/run_headed_gate.ps1 -TimeoutSec 120` (`passed=156 failed=0`). `git diff --check` only reports the pre-existing `scripts/fighter.gd` CRLF normalization warning.
+- Boundary guard checks passed headed: `runtime_action_geometry_boundary_probe`, `headed_gate_manifest_alignment_probe`, `headed_gate_manifest_source_probe`, `fighter_action_model_contract_probe`, and `module_override_uses_pose_resolver_probe`.
+- Telemetry seam checks passed headed: `fighter_action_telemetry_probe`, `fighter_action_model_contract_probe`, `runtime_action_geometry_boundary_probe`, `headed_gate_manifest_alignment_probe`, `headed_gate_manifest_source_probe`, `feint_thrust_retarget_runtime_probe`, and `runtime_module_entry_pose_restore_probe`.
+- Battle-level telemetry seam checks passed headed: `battle_runtime_action_telemetry_service_contract_probe`, `main_controller_boundary_probe`, `headed_gate_manifest_alignment_probe`, `headed_gate_manifest_source_probe`, `fighter_action_telemetry_probe`, `fighter_action_model_contract_probe`, `battle_awareness_service_contract_probe`, `combat_probe`, `battle_runtime_frame_budget_probe`, and `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120`. `git diff --check` only reports the pre-existing `scripts/fighter.gd` CRLF normalization warning.
+
+## 2026-05-29 Fighter Turn Model Command and Dynamics Intent Seam
+
+Rules:
+- Continue `EC-SLIM-006` by extracting only pure Fighter turn-command and turn-dynamics decisions; keep `Fighter` as the Node/runtime state owner.
+- `FighterTurnModel` owns shortest-arc angle delta, facing request intent, turn command intent, turn-input active/timer intent, turn brake acceleration, and fixed-step turn dynamics intent.
+- Keep real `facing`, `facing_angle`, `target_facing_angle`, `angular_velocity`, `turn_input_*`, visual refresh, runtime geometry invalidation, gun aim, module actions, contacts, and VFX/SFX ownership in `Fighter`.
+- `FighterTurnModel` must stay pure: no `Input`, file IO, JSON parsing, UI nodes, active/all unit lists, spawn/free helpers, heat writes, damage application, or Node inheritance.
+
+Implementation notes:
+- Added `scripts/services/fighter_turn_model.gd`.
+- `scripts/fighter.gd` now preloads the service and uses `_turn_model()` lazy initialization alongside `_heat_model()` and `_movement_model()`.
+- Existing wrapper names remain stable: `request_facing()`, `request_turn()`, `set_turn_input_active()`, `_tick_turn_dynamics()`, `_angle_delta()`, and `_turn_brake_acceleration()` now consume model intents while preserving public behavior.
+- Added `tools/fighter_turn_model_contract_probe.gd` and registered it in `tools/probe_manifest.json`.
+
+Verification:
+- New contract passed headed: `fighter_turn_model_contract_probe`.
+- Focused turn/motion regressions passed headed: `turn_auto_brake_probe`, `battle_motion_120hz_tick_probe`, `thruster_turn_momentum_probe`, `gun_activation_turn_keys_steer_muzzle_probe`, `turn_key_gun_aim_does_not_consume_movement_probe`, `chemical_sprayer_rotate_command_probe`, and `gun_activate_rotate_command_probe`.
+
+## 2026-05-29 Fighter Movement Model Command Intent Seam
+
+Rules:
+- Continue `EC-SLIM-006` by extracting only pure Fighter movement/Boost command decisions; keep `Fighter` as the Node/runtime state owner.
+- `FighterMovementModel` owns thruster cone filtering, bidirectional-thruster classification, speedometer limit math, brake delta/acceleration math, reverse-drive gates, Boost reverse-block classification, velocity-brake intent, movement command classification, movement drive intent, and Boost delta-v/timer/heat/cooldown intent.
+- Keep real `velocity` writes, Mobius position integration, visual timers, body sway/swing, meta writes, heat application, cooldown field writes, projection guard timestamps, runtime actions, contacts, and VFX/SFX in `Fighter`.
+- `FighterMovementModel` must stay pure: no `Input`, file IO, JSON parsing, UI nodes, active/all unit lists, spawn/free helpers, heat writes, damage application, or Node inheritance.
+
+Implementation notes:
+- Added `scripts/services/fighter_movement_model.gd`.
+- `scripts/fighter.gd` now preloads the service and uses `_movement_model()` lazy initialization alongside `_heat_model()`.
+- Existing wrapper names remain stable: `_thruster_drive_direction()`, `_thruster_boost_direction()`, `_direction_inside_thruster_cone()`, `_is_rear_brake_zone()`, `_speedometer_max_speed()`, `_brake_delta_velocity()`, `_boost_brake_acceleration()`, `_can_velocity_brake()`, `_reverse_drive_allowed()`, `_brake_reverse_waiting_for_repress()`, `_boost_request_is_reverse_only()`, `_input_should_velocity_brake()`, `_apply_velocity_brake()`, `_movement_command_mode()`, `_drive_direction_for_command()`, `move_by_gameplay()`, and `boost()` now consume model intents while preserving their public behavior.
+- Fixed `_apply_thruster_momentum_stats()` so `DriveSystemService` no longer short-circuits motion stat derivation. The function again derives move/Boost/brake stats first, then applies the drive contract. Direct legacy-style formula fixtures still compute `body_move_speed` and `thruster_acceleration` mirrors for diagnostics, while `Fighter` runtime continues to read canonical `move_speed`, `move_acceleration`, `boost_speed`, and `brake_power`.
+- Added `tools/fighter_movement_model_contract_probe.gd` and registered it in `tools/probe_manifest.json`.
+
+Verification:
+- New contract passed headed: `fighter_movement_model_contract_probe`.
+- Focused runtime movement/Boost regressions passed headed: `drive_runtime_movement_probe`, `eight_direction_boost_probe`, `boost_unusable_direction_brakes_probe`, `reverse_cannot_boost_probe`, `reverse_rear_boost_block_probe`, `boost_cooldown_probe`, `boost_heat_runtime_consumption_probe`, `boost_heat_relief_probe`, `boost_heat_independent_from_drive_allocation_probe`, `boost_heat_not_drive_or_idle_legality_probe`, `gun_activation_direction_boost_while_fire_probe`, `battle_real_training_movement_screen_direction_probe`, `battle_movement_no_double_transform_probe`, `turn_key_gun_aim_does_not_consume_movement_probe`, `gun_activation_movement_gate_reason_probe`, and `training_ball_dummy_auto_brake_probe`.
+- Adjacent drive/stat probes passed headed after the derivation fix: `boost_formula_v3_probe`, `boost_formula_allocation_plus_extra_probe`, `thruster_dual_motion_formula_probe`, `thruster_momentum_motion_probe`, `runtime_movement_power_chain_probe`, `power_chain_budget_v3_probe`, `runtime_no_legacy_drive_reads_probe`, and `drive_legacy_runtime_rejection_probe`.
+
+## 2026-05-29 Fighter Heat Model Pure Intent Seam
+
+Rules:
+- Start `EC-SLIM-006` by extracting only pure heat-resource decisions from `Fighter`; keep `Fighter` as the Node/runtime state owner.
+- `FighterHeatModel` owns heat capacity lookup, cooling-rate lookup, natural/manual cooling intents, overheat shutdown intent, heat-event tag canonicalization, and specialized heat-relief math.
+- Keep real velocity braking, visual refresh, state-field writes, boost success/failure gates, runtime actions, HP/shield, collision, VFX/SFX, and unit lifecycle mutation in `Fighter`.
+- `FighterHeatModel` must stay pure: no `Input`, file IO, JSON parsing, UI nodes, unit lists, Node inheritance, spawn/free helpers, velocity ownership, or damage application.
+
+Implementation notes:
+- Added `scripts/services/fighter_heat_model.gd`.
+- `scripts/fighter.gd` now preloads the service and uses `_heat_model()` lazy initialization so direct test construction paths that call `setup_unit()` / `boost()` before `_ready()` still get the same heat behavior.
+- `tick()`, `manual_cool()`, `trigger_overheat_shutdown()`, `add_heat_event()`, heat tag helpers, heat-relief helpers, heat-resource checks, and `heat_ratio()` now delegate pure calculations to the model while applying the returned state locally.
+- Added `tools/fighter_heat_model_contract_probe.gd` and registered it in `tools/probe_manifest.json`.
+
+Verification:
+- New contract passed headed: `fighter_heat_model_contract_probe`.
+- Focused heat/boost regressions passed headed: `manual_cooling_contract_probe`, `heat_event_tag_matrix_probe`, `heat_event_reason_compat_probe`, `cooling_runtime_heat_probe`, `thermal_idle_vs_event_heat_probe`, `boost_cooldown_probe`, `boost_heat_runtime_consumption_probe`, `boost_heat_relief_probe`, `boost_heat_not_drive_or_idle_legality_probe`, `boost_heat_independent_from_drive_allocation_probe`, and `gun_activation_move_while_fire_all_profiles_probe`.
+
+## 2026-05-29 Battle Awareness Service Minimap and Target Intent Seam
+
+Rules:
+- Continue `EC-SLIM-005` by extracting pure battle awareness decisions: minimap point normalization, live-unit counting, enemy/friendly id selection, nearest target, and source/puppet target scoring.
+- Keep real unit Nodes, `active_units` / `all_units` ownership, Mobius geometry, barrier tile world-position callbacks, map occlusion queries, AI action execution, damage, VFX/SFX, and `BattleMinimapView` drawing in `main.gd`.
+- `BattleAwarenessService` must remain pure: no `Input`, file IO, JSON parsing, UI nodes, unit node dictionaries, queue/free/spawn helpers, or damage application.
+
+Implementation notes:
+- Added `scripts/services/battle_awareness_service.gd`.
+- `main.gd` now preloads and instantiates `BattleAwarenessService`.
+- `_update_battle_minimap()` now builds unit/tile snapshots, asks the service for `minimap_world_model()`, then passes the resulting points/camera values to `BattleMinimapView.set_world()`.
+- `_enemy_units()`, `_nearest_enemy()`, `_source_target_for_puppet()`, `_source_target_score()`, `_first_live_puppet()`, `_live_unit_count()`, and `_live_units_for()` now delegate pure decisions to the service while preserving their old wrapper names and Node-returning behavior.
+- `main.gd` still precomputes expensive or stateful facts such as Mobius distance, line-of-sight occlusion, support-barrier classification, heat ratio, hero-distance, and puppet-group threat before sending scalar facts to the service.
+- Added `tools/battle_awareness_service_contract_probe.gd`, registered it in `tools/probe_manifest.json`, and extended `tools/main_controller_boundary_probe.gd`.
+
+Verification:
+- New/updated contracts passed headed: `battle_awareness_service_contract_probe` and `main_controller_boundary_probe`.
+- Focused awareness/minimap/source probes passed headed: `minimap_alpha_probe`, `view_extraction_contract_probe`, `source_code_probe`, `source_heat_pressure_policy_probe`, and `map_occlusion_ai_sight_probe`.
+- Battle/HUD regressions passed headed: `combat_probe`, `battle_hud_state_service_contract_probe`, and `battle_runtime_frame_budget_probe` (`avg_ms=1.745`, `max_ms=2.410`).
+- General probes passed headed: `teamedit_probe`, `ui_layout_probe`, and `text_overflow_probe`.
+- `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120` passed headed.
+- `git diff --check` passed with the existing CRLF-to-LF warning for `scripts/fighter.gd`.
+
+## 2026-05-29 Shield Payload Internal Slot Volume Contract
+
+Rules:
+- Electronic shield payloads are nonphysical equipment, not zero-volume plugins.
+- They must not expose part HP fields, runtime collision geometry, or combat volume, but they do consume torso internal slot volume.
+- The current slot-volume rule remains derived from `shield_hp` / `electronic_armor_hp`, shield coverage, and mass. Do not add a hard `slot_volume_tier` unless a future shield rebalance explicitly asks for it.
+
+Implementation notes:
+- Updated `SHIELD VEIL PATCH` catalog copy so it no longer claims zero slot volume.
+- `_part_slot_volume_rank()` now evaluates shield/electronic armor payloads before generic display `size_tier` fallback, so normalized catalog card sizing cannot collapse all shields to `XS`.
+- `_without_legacy_power_fields()` now preserves current booster catalog v3 fields `allocated_momentum` and `brake_efficiency` when cleaning booster catalog entries. Saved-payload legacy rejection remains unchanged.
+- Updated `shield_probe` to assert no HP/combat geometry/combat volume while requiring positive internal slot volume.
+- Added `tools/shield_payload_slot_volume_probe.gd` and registered it in `tools/probe_manifest.json` core and `unit_edit` headed groups.
+
+Verification:
+- Focused shield/catalog probes passed headed: `shield_probe`, `shield_payload_slot_volume_probe`, `equipment_no_hp_catalog_probe`, `catalog_ui_no_equipment_hp_damage_probe`, `data_rules_single_source_probe`, and `part_catalog_schema_v3_probe`.
+- Regression probes passed headed: `torso_detail_probe`, `internal_slot_size_probe`, `teamedit_probe`, `ui_layout_probe`, and `text_overflow_probe`.
+- `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120` passed headed.
+- `git diff --check` passed with the existing CRLF-to-LF warning for `scripts/fighter.gd`.
+
+## 2026-05-29 Battle HUD State Service Text and Bar/Gauge Model Seam
+
+Rules:
+- Continue `EC-SLIM-005` by extracting battle HUD text plus pure bar/gauge model assembly.
+- Keep real UI node writes, ColorRect color assignment, minimap drawing, gauge drawing, battle state mutation, GPU work, HP/heat writes, VFX/SFX, and `Fighter` action mutation in `main.gd`.
+- `BattleHudStateService` must remain pure: no `Input`, file IO, JSON parsing, UI node types, active-unit dictionaries, stat recomputation, spawn helpers, or damage application.
+
+Implementation notes:
+- Added `scripts/services/battle_hud_state_service.gd`.
+- `main.gd` now preloads and instantiates `BattleHudStateService`.
+- `_update_battle_ui()` still owns HUD refresh cadence and all bar/node side effects, but the heavy text model now comes from `BattleHudStateService.heavy_hud_text_state(_battle_hud_text_snapshot())`.
+- Added `_battle_hud_text_snapshot()`, `_battle_hud_player_snapshot()`, `_battle_hud_role_state()`, `_unit_hud_state()`, `_unit_ammo_hud_state()`, and sortie-discount entry snapshot helpers in `main.gd`.
+- Existing text helpers `_role_status_text()`, `_unit_status_text()`, `_unit_ammo_display_text()`, `_role_bar_text()`, and `_sortie_entry_runtime_discount_label()` now delegate to the service while preserving old wrapper names and legacy fallbacks.
+- Extended the service with pure HUD bar/gauge models: role health/shield/heat ratios, corner-bar fill geometry, shield minimum-width geometry, puppet segment layout, controlled-unit speedometer limits, and filtered ammo breakdown.
+- `_set_corner_bar()`, `_set_shield_corner_bar()`, `_set_puppet_segment_bar()`, `_live_unit_ammo_breakdown()`, and `_update_battle_instrument_gauge()` now consume service models while preserving their old wrapper names and node-side effects.
+- Added `tools/battle_hud_state_service_contract_probe.gd`, registered it in `tools/probe_manifest.json`, and extended `tools/main_controller_boundary_probe.gd`.
+
+Verification:
+- New/updated contracts passed headed: `battle_hud_state_service_contract_probe` and `main_controller_boundary_probe`.
+- Battle frame budget remains healthy after the extraction: `battle_runtime_frame_budget_probe` passed headed with latest run `avg_ms=1.717`, `max_ms=2.391`.
+- Focused HUD regression passed headed: `battle_instrument_gauge_probe`.
+- Focused battle/lifecycle probes passed headed: `combat_probe`, `battle_vfx_budget_probe`, `battle_exit_runtime_cleanup_probe`, and `page_cycle_lifecycle_leak_probe`.
+- Adjacent battle-service contracts passed headed: `battle_input_service_contract_probe`, `projectile_runtime_service_contract_probe`, `runtime_contact_service_contract_probe`, `battle_vfx_budget_service_contract_probe`, and `battle_runtime_lifecycle_service_contract_probe`.
+- General probes passed headed: `training_default_ball_dummy_probe`, `teamedit_probe`, `ui_layout_probe`, and `text_overflow_probe`.
+- `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120` passed headed.
+- `git diff --check` passed with the existing CRLF-to-LF warning for `scripts/fighter.gd`.
+
+## 2026-05-29 Battle Runtime Frame Budget HUD Discount Fix
+
+Rules:
+- Fix `battle_runtime_frame_budget_probe` without gameplay rebalance, VFX changes, GPU changes, contact formula changes, or `Fighter` action changes.
+- Keep sortie discount semantics unchanged: battle deploy price is still base deploy cost multiplied by the current runtime discount multiplier.
+- Do not call construction/stat recomputation from the battle HUD hot path when the needed price data is already known at battle start.
+
+Implementation notes:
+- Profiling showed `_tick_battle()` was not simulation-bound: simulation averaged about `1.4ms`, while `_update_battle_ui()` dominated due to HUD heavy updates.
+- The expensive leaf was `_sortie_discount_status()` -> `_sortie_entry_label(..., include_cost=true)` -> `_compute_unit_stats()` for each displayed sortie entry.
+- `_initialize_sortie_price_state()` now caches each sortie entry's `base_deploy_cost` when battle runtime starts.
+- `_sortie_discount_status()` now uses `_sortie_entry_runtime_discount_label()` during battle. That helper reads cached `base_deploy_cost` plus the existing `mult` from `sortie_price_state`; it only falls back to `_compute_unit_stats()` if a state entry was missing the cached field.
+
+Verification:
+- `battle_runtime_frame_budget_probe` now passes headed: latest run `avg_ms=1.715`, `max_ms=2.228`, down from the documented failing `avg_ms=22.04`.
+- Focused battle regressions passed headed: `combat_probe`, `battle_vfx_budget_probe`, `battle_exit_runtime_cleanup_probe`, `page_cycle_lifecycle_leak_probe`, and `training_default_ball_dummy_probe`.
+- Boundary/UI regressions passed headed: `main_controller_boundary_probe`, `teamedit_probe`, `ui_layout_probe`, and `text_overflow_probe`.
+- `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120` passed headed.
+- `git diff --check` passed with the existing CRLF-to-LF warning for `scripts/fighter.gd`.
+
+## 2026-05-29 Battle VFX Budget and Runtime Lifecycle Service Seams
+
+Rules:
+- Continue `EC-SLIM-005` with pure battle-frame budget and battle-runtime lifecycle decisions only.
+- Do not move GPU submission/readback, HP/heat writes, projectile/contact mutation, `Fighter` action mutation, `BattleContactVfxPool`, `SalvoLandingPreviewEffect`, or `TrueBulletTargetLockEffect`.
+- Keep existing `main.gd` wrapper names and public counters stable so probes and HUD state continue to read the same fields.
+
+Implementation notes:
+- Added `scripts/services/battle_vfx_budget_service.gd`.
+- `_reset_battle_vfx_frame_budget()` now delegates reset state to `BattleVfxBudgetService`.
+- `_consume_battle_vfx_budget()` now delegates the pure budget classification to `BattleVfxBudgetService.consume_code()` while keeping counter mutation in `main.gd`. The service also keeps `consume_intent()` for contract/probe use; the runtime wrapper uses the scalar code path to avoid per-VFX Dictionary allocation in the hot path.
+- Added `scripts/services/battle_runtime_lifecycle_service.gd`.
+- `_cleanup_battle_runtime()` now asks `BattleRuntimeLifecycleService.cleanup_intent()` whether this transition should preserve runtime state or clear it, then `main.gd` still performs the actual menu hiding, aim-line hiding, unit/effect cleanup, input-edge clearing, and gun/aim state resets.
+- `_ui_lifecycle_snapshot()` now uses `BattleRuntimeLifecycleService.snapshot_summary()` for battle runtime and effect counts.
+- Added `tools/battle_vfx_budget_service_contract_probe.gd` and `tools/battle_runtime_lifecycle_service_contract_probe.gd`, registered them in `tools/probe_manifest.json`, and extended `tools/main_controller_boundary_probe.gd`.
+
+Verification:
+- New/updated contracts passed headed: `battle_vfx_budget_service_contract_probe`, `battle_runtime_lifecycle_service_contract_probe`, and `main_controller_boundary_probe`.
+- Focused lifecycle/VFX probes passed headed: `battle_vfx_budget_probe`, `battle_exit_runtime_cleanup_probe`, `page_cycle_lifecycle_leak_probe`, `page_transition_frame_time_regression_probe`, `gpu_contact_vfx_pool_probe`, and `gpu_vfx_event_probe`.
+- Adjacent battle-service probes passed headed: `battle_input_service_contract_probe`, `projectile_runtime_service_contract_probe`, `runtime_contact_service_contract_probe`, `combat_probe`, and `projectile_trace_aim_line_same_origin_probe`.
+- General probes passed headed: `teamedit_probe`, `ui_layout_probe`, and `text_overflow_probe`.
+- `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120` passed headed.
+- `git diff --check` passed with the existing CRLF-to-LF warning for `scripts/fighter.gd`.
+- Non-gating observation: `battle_runtime_frame_budget_probe` still fails on the current local saved Unit2 fixture (`avg_ms=22.04`, threshold `18.0`). This was also above threshold before the scalar hot-path tweak in this batch (`avg_ms=23.12`) and should be treated as the next focused performance attack, not as a VFX/lifecycle contract failure.
+
+## 2026-05-29 Two-Link Runtime Contact Hardening
+
+Rules:
+- Fix Two-Link runtime action timing and contact proofing only; do not rebalance global contact damage, stiffness, break thresholds, projectile behavior, saved schema, or `RuntimeContactService`.
+- `two_link_forward_snap` is a fixed-tempo special module. It should use authored duration (`0.62s` default) even when motion-budget diagnostics estimate a longer physical travel time.
+- Two-Link damage probes should create deterministic real overlap and sync Mobius compatibility state before resolving contact.
+
+Implementation notes:
+- `Fighter.begin_runtime_module_action()` now keeps Two-Link `duration`, `runtime_action_duration`, and `runtime_action_base_duration` equal to the authored base duration.
+- Motion budget is still used for driven mass and contact-distance diagnostics, but Two-Link `runtime_contact_speed` now derives from startup effective contact distance over the authored duration instead of stretching the action to `MotionBudget.duration`.
+- `two_link_damage_balance_probe` and `unit2_static_two_link_damage_probe` now use a shared local helper shape: place the target torso center on the current active attack collider center, call `sync_mobius_from_compat()`, then measure the real collider gap.
+- Failure diagnostics for these probes now include gap, contact velocity, runtime contact speed, duration, and target node list.
+
+Verification:
+- Focused Two-Link probes passed headed: `two_link_speed_probe`, `two_link_damage_balance_probe`, `unit2_static_two_link_damage_probe`, `two_link_forward_snap_combat_pose_probe`, `two_link_phase_timing_probe`, and `runtime_module_entry_pose_restore_probe`.
+- Contact regressions passed headed: `runtime_contact_service_contract_probe`, `runtime_contact_damage_probe`, `contact_normal_momentum_probe`, `one_shot_contact_probe`, `idle_collision_one_torso_damage_probe`, `runtime_melee_never_projectile_gate_probe`, and `boost_torso_collision_damage_probe`.
+- Wider probes passed headed: `combat_probe`, `battle_vfx_budget_probe`, and `teamedit_probe`.
+- `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120` passed headed.
+- `git diff --check` passed; Git reported the existing CRLF-to-LF warning for `scripts/fighter.gd`.
+
+## 2026-05-29 Runtime Contact Service Pure Decision Seam
+
+Rules:
+- Continue `EC-SLIM-005` by moving runtime contact pure decisions only; do not move GPU submission/readback, position correction, velocity writes, HP/heat writes, VFX/SFX, battle messages, kill handling, `runtime_contact_pairs_*` ownership, or `Fighter` recovery/brake mutation.
+- `RuntimeContactService` must remain pure: no `Input`, file IO, JSON parsing, UI nodes, active-unit dictionaries, GPU pipeline calls, spawn helpers, or damage-application helpers.
+- Preserve all existing gameplay numbers and semantics: torso proxy contact keys, active-module reverse-damage suppression, passive minimum speed, one-shot active contact pairs, stiffness caps, break thresholds, material fallbacks, and runtime melee damage flow.
+
+Implementation notes:
+- Added `scripts/services/runtime_contact_service.gd`.
+- `main.gd` now preloads and instantiates `RuntimeContactService`.
+- `_runtime_contact_socket_key()`, `_runtime_contact_pair_key()`, `_runtime_directed_contact_key()`, collider sorting/priority, torso-proxy classification, material/damage type, contact source, part/path stiffness, and break threshold helpers now delegate to the service while preserving old wrapper names.
+- `_resolve_runtime_contact_pair_once()` now asks `RuntimeContactService.runtime_pair_intent()` for CPU contact closing speed, momentum, active/default damage permissions, suppression results, and response momentum; `main.gd` still marks seen/active pairs, forces recovery, applies damage, and applies/defer velocity response.
+- `_resolve_runtime_gpu_contact_once()` now asks `RuntimeContactService.gpu_contact_intent()` after readback for penetration gating, position deltas, active-pair decisions, recovery flags, damage permissions, VFX descriptor data, and velocity-delta intent; `main.gd` still applies all stateful effects.
+- `_apply_runtime_contact_damage()` now asks `RuntimeContactService.damage_intent()` for contact damage event payload, usable momentum, damage float, and threshold-block status; vulnerability callback, melee adjustment, hit effect, hitstop, `take_hit()`, back-hit heat, and kill handling remain in `main.gd`.
+- Added `tools/runtime_contact_service_contract_probe.gd` and registered it in `tools/probe_manifest.json` core governance.
+- Extended `tools/main_controller_boundary_probe.gd` so the runtime contact service remains part of the battle-service boundary contract.
+
+Verification:
+- `tools/run_godot_checked.ps1 -Probe runtime_contact_service_contract_probe -TimeoutSec 120` passed headed.
+- Focused contact probes passed headed: `runtime_contact_damage_probe`, `contact_normal_momentum_probe`, `transfer_path_min_stiffness_probe`, `runtime_penetration_no_velocity_kick_probe`, `runtime_collision_momentum_probe`, `one_shot_contact_probe`, `idle_collision_uses_torso_coeff_probe`, `idle_collision_one_torso_damage_probe`, `active_limb_collision_only_during_module_probe`, `same_shape_different_unit_collision_probe`, `runtime_no_precontact_damage_probe`, `runtime_no_precontact_fx_probe`, `runtime_melee_never_projectile_gate_probe`, and `boost_torso_collision_damage_probe`.
+- Wider probes passed headed: `main_controller_boundary_probe`, `battle_input_service_contract_probe`, `projectile_runtime_service_contract_probe`, `combat_probe`, `battle_vfx_budget_probe`, `teamedit_probe`, `ui_layout_probe`, and `text_overflow_probe`.
+- `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120` passed headed.
+- `git diff --check` passed.
+
+## 2026-05-28 Saved Unit Library Service Save Decision Seam
+
+Rules:
+- Continue `EC-SLIM-004` with saved-unit library pure decisions only; do not move file IO, JSON parsing, save/delete operations, schema validation, safe file naming, cache invalidation, UI feedback, or SFX in this batch.
+- `SavedUnitLibraryService` owns latest-name lookup, overwrite/save-as path resolution, save payload assembly from already-safe blueprint data, and readback status classification.
+- `main.gd` keeps the old save helpers and remains responsible for actual write/readback, failure feedback, focus path, editor source path, and visible UI state.
+
+Implementation notes:
+- Added `scripts/services/saved_unit_library_service.gd`.
+- `main.gd` now preloads and instantiates `SavedUnitLibraryService`.
+- `_latest_saved_unit_named_for_role()` and `_latest_saved_unit_named()` delegate latest entry selection to the service after `main.gd` refreshes the saved-unit cache.
+- `_save_editor_current_unit_to_library_named()` delegates path choice, payload shape, and readback success/failure classification to the service while retaining directory creation, `FileAccess.open()`, `JSON.stringify()`, preflight validation, cache invalidation, and UI feedback in `main.gd`.
+- Added `tools/saved_unit_library_service_contract_probe.gd` and registered it in `tools/probe_manifest.json` core governance.
+- Extended `tools/main_controller_boundary_probe.gd` so the saved-unit library service remains part of the service boundary contract.
+
+Verification:
+- `tools/run_godot_checked.ps1 -Probe saved_unit_library_service_contract_probe -TimeoutSec 120` passed headed.
+- `tools/run_godot_checked.ps1 -Probe saved_unit_overwrite_save_as_probe -TimeoutSec 120` passed headed.
+- `tools/run_godot_checked.ps1 -Probe saved_unit_postwrite_validation_probe -TimeoutSec 120` passed headed.
+- `tools/run_godot_checked.ps1 -Probe saved_unit_no_silent_delete_current_schema_probe -TimeoutSec 120` passed headed.
+- `tools/run_godot_checked.ps1 -Probe saved_unit_strict_rejection_probe -TimeoutSec 120` passed headed.
+- `tools/run_godot_checked.ps1 -Probe saved_units_file_invalidation_probe -TimeoutSec 120` passed headed.
+- `tools/run_godot_checked.ps1 -Probe saved_unit_load_to_unit_editor_probe -TimeoutSec 120` passed headed.
+- `tools/run_godot_checked.ps1 -Probe main_controller_boundary_probe -TimeoutSec 120` passed headed.
+- `tools/run_godot_checked.ps1 -Probe teamedit_probe -TimeoutSec 120` passed headed.
+- `tools/run_godot_checked.ps1 -Probe ui_layout_probe -TimeoutSec 120` passed headed.
+- `tools/run_godot_checked.ps1 -Probe text_overflow_probe -TimeoutSec 120` passed headed.
+- `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120` passed headed.
+- `git diff --check` passed.
+
+## 2026-05-28 Saved Unit Library Service Typed Loader Seam
+
+Rules:
+- Continue `EC-SLIM-004` by expanding `SavedUnitLibraryService` into typed saved-unit loading decisions, while keeping `FileAccess`, `DirAccess`, JSON parsing/stringifying, schema rejection rules, entry-pose application implementation, UI feedback, and SFX in `main.gd`.
+- `SavedUnitsController` remains the Saved Units page-state owner; library records, cache refresh decisions, payload-to-entry construction, rejected entry construction, and record traversal belong to `SavedUnitLibraryService`.
+- Old `main.gd` function names stay as wrappers so probes and existing callers keep stable anchors.
+
+Implementation notes:
+- `SavedUnitLibraryService` now owns `signature_from_records()`, `cache_refresh_intent()`, `entry_from_payload()`, `rejected_entry_from_payload()`, and `entries_from_records()`.
+- `_saved_unit_signature_from_records()`, `_ensure_saved_unit_library_cache()`, `_unit_library_entry_from_file()`, and `_rejected_unit_library_entry_from_payload()` delegate pure decisions to the service.
+- `_ensure_saved_unit_library_cache()` keeps the warm-cache no-disk-scan fast path before collecting file records, preserving the Saved Units cache performance contract.
+- `main.gd` provides `_saved_unit_library_context()` plus `_json_restore_value()` and `_apply_entry_pose_to_blueprint()` callbacks; the service consumes those callbacks but does not know file IO, schema validation, or UI.
+- `tools/saved_unit_library_service_contract_probe.gd` now guards cache refresh intent, record signatures, typed entry construction, rejected entry construction, record traversal, service purity, and wrapper delegation.
+- `tools/main_controller_boundary_probe.gd` now requires the typed-loader service calls. `tools/saved_units_controller_contract_probe.gd` no longer requires `SavedUnitsController` to own library record signatures.
+
+Verification:
+- `tools/run_godot_checked.ps1 -Probe saved_unit_library_service_contract_probe -TimeoutSec 120` passed headed.
+- `tools/run_godot_checked.ps1 -Probe saved_units_controller_contract_probe -TimeoutSec 120` passed headed.
+- `tools/run_godot_checked.ps1 -Probe saved_units_cache_probe -TimeoutSec 120` passed headed.
+- `tools/run_godot_checked.ps1 -Probe saved_units_file_invalidation_probe -TimeoutSec 120` passed headed.
+- `tools/run_godot_checked.ps1 -Probe saved_units_preview_cache_cap_probe -TimeoutSec 120` passed headed.
+- `tools/run_godot_checked.ps1 -Probe saved_unit_no_silent_delete_current_schema_probe -TimeoutSec 120` passed headed.
+- `tools/run_godot_checked.ps1 -Probe saved_unit_strict_rejection_probe -TimeoutSec 120` passed headed.
+- `tools/run_godot_checked.ps1 -Probe saved_unit_load_to_unit_editor_probe -TimeoutSec 120` passed headed.
+- `tools/run_godot_checked.ps1 -Probe saved_unit_overwrite_save_as_probe -TimeoutSec 120` passed headed.
+
+## 2026-05-28 Training Entry Service Ball Dummy Model Seam
+
+Rules:
+- Continue `EC-SLIM-004` with the training ball dummy pure model only; do not move training start, battle entry, spawn, saved-unit IO, Unit4 repair, training import, or legality validation in this batch.
+- `TrainingEntryService` should remain pure: no file IO, UI nodes, battle begin, or unit stat computation.
+- `main.gd` keeps the old function names as wrappers and remains the owner of UI language labels, slider writeback, spawn, loadout setup, and battle runtime side effects.
+
+Implementation notes:
+- Added `scripts/services/training_entry_service.gd`.
+- `TrainingEntryService` now owns training ball radius stepping/clamping, sphere volume, volume-scaled mass, dummy stats dictionary, dummy entry dictionary, and intro segment model.
+- `main.gd` now preloads and instantiates `TrainingEntryService`, then delegates `_training_ball_dummy_radius()`, `_training_ball_dummy_volume()`, `_training_ball_dummy_mass()`, `_training_ball_dummy_stats()`, `_training_ball_dummy_entry()`, and `_training_ball_dummy_intro_segments()`.
+- Explicit radius arguments keep the previous clamp-only behavior; UI radius writes still use stepped clamping through `_set_training_ball_dummy_radius()`.
+- Added `tools/training_entry_service_contract_probe.gd` and registered it in `tools/probe_manifest.json` core governance.
+- Extended `tools/main_controller_boundary_probe.gd` so the training entry service remains part of the service boundary contract.
+
+Verification:
+- `tools/run_godot_checked.ps1 -Probe training_entry_service_contract_probe -TimeoutSec 120` passed headed.
+- `tools/run_godot_checked.ps1 -Probe training_default_ball_dummy_probe -TimeoutSec 120` passed headed.
+- `tools/run_godot_checked.ps1 -Probe training_ball_dummy_radius_ui_probe -TimeoutSec 120` passed headed.
+- `tools/run_godot_checked.ps1 -Probe training_ball_dummy_collision_radius_probe -TimeoutSec 120` passed headed.
+- `tools/run_godot_checked.ps1 -Probe training_ball_dummy_auto_brake_probe -TimeoutSec 120` passed headed.
+- `tools/run_godot_checked.ps1 -Probe training_ball_dummy_state_modes_probe -TimeoutSec 120` passed headed.
+- `tools/run_godot_checked.ps1 -Probe training_default_dummy_unit4_probe -TimeoutSec 120` passed headed.
+- `tools/run_godot_checked.ps1 -Probe main_controller_boundary_probe -TimeoutSec 120` passed headed.
+- `tools/run_godot_checked.ps1 -Probe teamedit_probe -TimeoutSec 120` passed headed.
+- `tools/run_godot_checked.ps1 -Probe ui_layout_probe -TimeoutSec 120` passed headed.
+- `tools/run_godot_checked.ps1 -Probe text_overflow_probe -TimeoutSec 120` passed headed.
+- `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120` passed headed.
+- `git diff --check` passed.
+
+## 2026-05-28 Training Entry Service Loadout Planning Seam
+
+Rules:
+- Expand `TrainingEntryService` from ball-dummy model data into pure training-entry planning only; do not move battle start, UI/SFX, saved-unit IO, Unit4 repair, starter construction, legality rules, or entry-pose implementation.
+- `main.gd` remains the state owner for `blueprints`, `sortie_loadouts`, `initial_*`, training import fields, and real battle transitions.
+- Default training dummy remains the dedicated ball dummy; probes must not require saved Unit2/Unit4 as the default dummy path.
+
+Implementation notes:
+- `TrainingEntryService` now owns pending-import normalization, import loadout planning, active-first legal hero selection, starter fallback state shape, and training seat side assignment.
+- `_apply_training_import_loadout()`, `_first_training_hero_entry()`, `_prepare_training_battle_loadouts()`, and `_configure_training_sides_for_seat()` now consume service intents while keeping callbacks to `_training_blueprint_illegal_note()`, `_sortie_entry_is_battle_legal()`, and `_apply_entry_pose_to_blueprint()`.
+- Training Scout seat confirmation now calls `_begin_battle(..., true)` after loadout preparation, preserving the existing synchronous explicit-seat path instead of queuing a second battle loading transition.
+- `training_seat_spawn_unit2_probe` now validates the current dedicated ball dummy seat assignment contract instead of the old saved Unit2 dummy topology contract.
+
+Verification:
+- `tools/run_godot_checked.ps1 -Probe training_entry_service_contract_probe -TimeoutSec 120` passed headed.
+- `tools/run_godot_checked.ps1 -Probe training_default_ball_dummy_probe -TimeoutSec 120` passed headed.
+- `tools/run_godot_checked.ps1 -Probe training_start_missing_dummy_feedback_probe -TimeoutSec 120` passed headed.
+- `tools/run_godot_checked.ps1 -Probe training_all_entrypoints_require_seat_probe -TimeoutSec 120` passed headed.
+- `tools/run_godot_checked.ps1 -Probe training_import_spawn_role_probe -TimeoutSec 120` passed headed.
+- `tools/run_godot_checked.ps1 -Probe training_seat_spawn_unit2_probe -TimeoutSec 120` passed headed.
+- `tools/run_godot_checked.ps1 -Probe unit_editor_training_illegal_feedback_probe -TimeoutSec 120` passed headed.
+- `training_unit_import_probe` and `editor_training_test_direct_probe` remain blocked by local saved-data prerequisite: no saved unit named `4` exists in `user://saved_units`.
+
+## 2026-05-28 Saved Units Controller Pure State Seam
+
+Rules:
+- Start `EC-SLIM-004` with saved-unit pure state only; do not move file IO, JSON parsing, save/delete operations, unit legality, stat computation, UI construction, or training import in this batch.
+- Keep `main.gd` as the owner of cache dictionaries, cache capacity trimming, UI refresh, hover/detail side effects, and sound effects.
+- `SavedUnitsController` should remain pure: no `FileAccess`, `DirAccess`, UI nodes, or JSON parsing.
+
+Implementation notes:
+- Extended `scripts/controllers/saved_units_controller.gd` beyond dirty markers.
+- `SavedUnitsController` now owns saved-unit library signatures, filtered-cache key construction, role/invalid filtering traversal, saved-unit entry path fallback, focus-path page selection, card absolute-index math, and filter/card selection-state dictionaries.
+- `main.gd` keeps compatibility wrapper names and delegates `_saved_unit_signature_from_records()`, `_saved_unit_filtered_entries()`, `_select_saved_unit_focus_path()`, `_set_saved_unit_filter()`, and `_select_saved_unit_card()` to the controller.
+- `main.gd` still provides `_saved_unit_entry_illegal_note()` as the invalid-filter callback so legality rules remain in the existing rule pipeline.
+- Added `tools/saved_units_controller_contract_probe.gd` and registered it in `tools/probe_manifest.json` core governance.
+- Extended `tools/main_controller_boundary_probe.gd` so the Saved Units seam remains visible in the controller boundary contract.
+
+Verification:
+- `tools/run_godot_checked.ps1 -Probe saved_units_controller_contract_probe -TimeoutSec 120` passed headed.
+- `tools/run_godot_checked.ps1 -Probe saved_units_cache_probe -TimeoutSec 120` passed headed.
+- `tools/run_godot_checked.ps1 -Probe saved_units_preview_cache_cap_probe -TimeoutSec 120` passed headed.
+- `tools/run_godot_checked.ps1 -Probe saved_units_file_invalidation_probe -TimeoutSec 120` passed headed.
+- `tools/run_godot_checked.ps1 -Probe saved_unit_load_to_unit_editor_probe -TimeoutSec 120` passed headed.
+- `tools/run_godot_checked.ps1 -Probe saved_units_menu_probe -TimeoutSec 120` passed headed.
+- `tools/run_godot_checked.ps1 -Probe main_controller_boundary_probe -TimeoutSec 120` passed headed.
+- `tools/run_godot_checked.ps1 -Probe teamedit_probe -TimeoutSec 120` passed headed.
+- `tools/run_godot_checked.ps1 -Probe ui_layout_probe -TimeoutSec 120` passed headed.
+- `tools/run_godot_checked.ps1 -Probe text_overflow_probe -TimeoutSec 120` passed headed.
+- `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120` passed headed.
+- `git diff --check` passed.
+
+## 2026-05-28 Saved Units Page Intent Seam
+
+Rules:
+- Continue `EC-SLIM-004` with Saved Units page intent classification only; do not move file deletion, save/load IO, JSON parsing, training import, edit import, UI labels, detail panel rendering, or SFX.
+- `SavedUnitsController` can decide page actions, hover state, selected entries, delete candidates, delete request summaries, and selected-path toggles.
+- `main.gd` remains responsible for applying states, showing details/hints, confirming/removing files, and refreshing visible controls.
+
+Implementation notes:
+- Added pure `SavedUnitsController` helpers for hover-card state, selected-entry traversal, delete candidates, delete request intent, toggle-selection state, and `prev/next/clear/toggle` page action state.
+- `main.gd` now delegates `_saved_unit_selected_entries()`, `_saved_unit_delete_candidates()`, `_request_delete_saved_units()`, `_hover_saved_unit_card()`, `_toggle_saved_unit_selection()`, and pure branches of `_saved_units_action()` to controller intents.
+- Illegal saved-unit toggle feedback still routes through `main.gd` so localized rejection text and alarm SFX remain with the existing UI side-effect owner.
+- Extended `tools/saved_units_controller_contract_probe.gd` and `tools/main_controller_boundary_probe.gd` for the new seam.
+
+Verification:
+- `tools/run_godot_checked.ps1 -Probe saved_units_controller_contract_probe -TimeoutSec 120` passed headed.
+- `tools/run_godot_checked.ps1 -Probe saved_units_menu_probe -TimeoutSec 120` passed headed.
+- `tools/run_godot_checked.ps1 -Probe saved_unit_delete_probe -TimeoutSec 120` passed headed.
+- `tools/run_godot_checked.ps1 -Probe saved_units_cache_probe -TimeoutSec 120` passed headed.
+- `tools/run_godot_checked.ps1 -Probe saved_units_preview_cache_cap_probe -TimeoutSec 120` passed headed.
+- `tools/run_godot_checked.ps1 -Probe saved_units_file_invalidation_probe -TimeoutSec 120` passed headed.
+- `tools/run_godot_checked.ps1 -Probe saved_unit_load_to_unit_editor_probe -TimeoutSec 120` passed headed.
+- `tools/run_godot_checked.ps1 -Probe main_controller_boundary_probe -TimeoutSec 120` passed headed.
+- `tools/run_godot_checked.ps1 -Probe teamedit_probe -TimeoutSec 120` passed headed.
+- `tools/run_godot_checked.ps1 -Probe ui_layout_probe -TimeoutSec 120` passed headed.
+- `tools/run_godot_checked.ps1 -Probe text_overflow_probe -TimeoutSec 120` passed headed.
+- `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120` passed headed.
+- `git diff --check` passed.
+
+## 2026-05-28 Unit Editor Board Controller Input Route Seam
+
+Rules:
+- Continue `EC-SLIM-003` with a minimal board input router only; do not move topology rules, scythe/orientation logic, pose solving, `AssemblyBoardView`, or renderer code in this batch.
+- Keep `main.gd` as the owner of blueprint mutation, drag execution, magnetic linking, pose handling, UI refresh, and hint text.
+- `UnitEditorBoardController` should return route intents only so later board extraction can proceed without behavior drift.
+
+Implementation notes:
+- Added `scripts/controllers/unit_editor_board_controller.gd`.
+- `main.gd` now preloads, instantiates, and calls `UnitEditorBoardController`.
+- `_handle_editor_board_input()` now builds `_editor_board_input_context()`, asks `route_board_input_event()`, then dispatches through `_dispatch_editor_board_input_route()`.
+- Existing node-drag release, whole-unit release, and legacy body socket click behavior moved into helper wrappers in `main.gd` so the controller seam stays thin and testable.
+- Node drag release and whole-unit release now ask `UnitEditorBoardController` for pure release intents; `main.gd` still performs magnetic linking, detail opening, rigid drag finish, and all UI/stat refresh.
+- Selection-box release now asks `UnitEditorBoardController.selection_box_release_intent()` for pure classification intent. `main.gd` still computes selected nodes, pose root/downstream validity, connected-component expansion, torso membership, and module-binding facts, then performs the real UI/state side effects.
+- Custom topology click handling now asks `UnitEditorBoardController.custom_topology_click_intent()` for pure click classification. `main.gd` still computes hit-test, binding candidate, edge hit, pose candidate, selected-chain facts, then performs binding, unlinking, placement, torso detail, drag start, pose start, hints, SFX, and dirty refresh.
+- `_handle_editor_board_input()` is now controller-only. The old direct mouse-motion / mouse-button fallback was removed; a missing `UnitEditorBoardController` emits one development warning and ignores board input instead of running shadow logic.
+- Added `tools/unit_editor_board_controller_contract_probe.gd` and registered it in `tools/probe_manifest.json` core governance.
+
+Verification:
+- `tools/run_godot_checked.ps1 -Probe unit_editor_board_controller_contract_probe -TimeoutSec 120` passed headed.
+- `tools/run_godot_checked.ps1 -Probe module_binding_board_highlight_probe -TimeoutSec 120` passed headed.
+- `tools/run_godot_checked.ps1 -Probe board_unconnected_part_release_reclick_drag_matrix_probe -TimeoutSec 120` passed headed.
+- `tools/run_godot_checked.ps1 -Probe pose_mode_downstream_chain_rotation_probe -TimeoutSec 120` passed headed.
+- `tools/run_godot_checked.ps1 -Probe pose_mode_visible_polygon_drag_matrix_probe -TimeoutSec 120` passed headed.
+- `tools/run_godot_checked.ps1 -Probe board_connected_part_layout_protection_probe -TimeoutSec 120` passed headed.
+- `tools/run_godot_checked.ps1 -Probe scythe_drop_then_drag_adjust_probe -TimeoutSec 120` passed headed.
+- `tools/run_godot_checked.ps1 -Probe scythe_magnetic_link_orientation_popup_probe -TimeoutSec 120` passed headed.
+- `tools/run_godot_checked.ps1 -Probe unit_editor_torso_detail_button_probe -TimeoutSec 120` passed headed.
+- `tools/run_godot_checked.ps1 -Probe teamedit_probe -TimeoutSec 120` passed headed.
+- `tools/run_godot_checked.ps1 -Probe ui_layout_probe -TimeoutSec 120` passed headed.
+- `tools/run_godot_checked.ps1 -Probe text_overflow_probe -TimeoutSec 120` passed headed.
+- `tools/run_godot_checked.ps1 -Probe main_controller_boundary_probe -TimeoutSec 120` passed headed.
+- `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120` passed headed.
+
+## 2026-05-28 Unit Editor Catalog Controller Seam
+
+Rules:
+- Start `EC-SLIM-003` with pure catalog state glue only; do not move `AssemblyBoardView`, hover detail, torso detail, power allocation, or catalog card rendering in this batch.
+- Keep all old `main.gd` helper names as compatibility wrappers for probes and call sites.
+- Catalog cache keys, page-selection signatures, and cache invalidation should now delegate through `UnitEditorCatalogController`, making future filtering/card extraction incremental.
+
+Implementation notes:
+- Added `scripts/controllers/unit_editor_catalog_controller.gd`.
+- `main.gd` now preloads and binds `UnitEditorCatalogController`.
+- `_editor_catalog_raw_cache_key()`, `_editor_catalog_entries_cache_key()`, `_editor_catalog_page_selection_key()`, `_editor_catalog_page_models()` cache key construction/model traversal, and `_invalidate_editor_catalog_cache()` delegate to the controller.
+- `_part_group_for_slot()`, `_part_group_name()`, `_default_filter_for_slot()`, `_preferred_filter_for_part_group()`, `_visible_part_group_slots()`, `_part_filter_name()`, filter option generation, and slot resolution now delegate to the controller; `main.gd` keeps wrappers for existing probes and call sites.
+- `_select_editor_slot()`, `_select_editor_part_group()`, and `_select_editor_part_filter()` now ask the controller to compute the next catalog selection state; `main.gd` only applies the returned state, invalidates caches, and refreshes UI.
+- `_editor_catalog_cache_source_signature()` and `_editor_catalog_raw_entries()` now delegate slot traversal to the controller while keeping `_catalog_for()`, `_selected_component()`, `_editor_catalog_part_passes_filter()`, and `_catalog_display_part()` as rule/display callbacks in `main.gd`.
+- `_editor_catalog_page_models()` now delegates selected-slot collection and page model assembly to the controller while keeping `_catalog_card_cached_model()` as the card-content callback.
+- `_editor_available_sort_keys_from_entries()` and `_sort_editor_catalog_entries()` now delegate traversal/sorting loops to the controller while keeping `_editor_part_has_sort_property()` and `_editor_part_sort_value()` as the main-scene rule callbacks.
+- `_all_part_filter_options_for_group()` is the explicit rule-audit entry point for probes that need the full terminal weapon filter list; `_part_filter_options_for_group()` remains the live UI submenu model.
+- Added `tools/unit_editor_catalog_controller_contract_probe.gd` and registered it in core governance.
+- Extended `tools/main_controller_boundary_probe.gd` so the new controller remains part of the main-controller boundary contract.
+
+Verification:
+- `tools/run_godot_checked.ps1 -Probe unit_editor_catalog_controller_contract_probe -TimeoutSec 120` passed headed.
+- `tools/run_godot_checked.ps1 -Probe part_library_ui_probe -TimeoutSec 120` passed headed.
+- `tools/run_godot_checked.ps1 -Probe weapon_catalog_submenu_probe -TimeoutSec 120` passed headed.
+- `tools/run_godot_checked.ps1 -Probe teamedit_catalog_cache_probe -TimeoutSec 120` passed headed.
+- `tools/run_godot_checked.ps1 -Probe unit_edit_cache_lifecycle_probe -TimeoutSec 120` passed headed.
+- `tools/run_godot_checked.ps1 -Probe teamedit_probe -TimeoutSec 120` passed headed.
+- `tools/run_godot_checked.ps1 -Probe ui_layout_probe -TimeoutSec 120` passed headed.
+- `tools/run_godot_checked.ps1 -Probe text_overflow_probe -TimeoutSec 120` passed headed.
+- `tools/run_godot_checked.ps1 -Probe main_controller_boundary_probe -TimeoutSec 120` passed headed.
+- `tools/run_godot_checked.ps1 -Probe headed_gate_manifest_alignment_probe -TimeoutSec 120` passed headed.
+
+## 2026-05-28 Low-Risk Effect Extraction Batch 3
+
+Rules:
+- Continue `EC-SLIM-002` with pure display/runtime VFX only; do not pull battle state, cleanup logic, contact pooling, or aiming/lock-on effect classes into this batch.
+- Preserve legacy class names and `.new()` call sites through `main.gd` preload constants.
+- Guard each extracted effect with instantiation and setup-state probes before treating it as a new baseline.
+
+Implementation notes:
+- Created `scripts/effects/` for low-state battle effect scripts.
+- Extracted `HitEffect` into `scripts/effects/hit_effect.gd`.
+- Extracted `ComboRippleEffect` into `scripts/effects/combo_ripple_effect.gd`.
+- Extracted `ProjectileTraceEffect` into `scripts/effects/projectile_trace_effect.gd`.
+- Added `tools/effect_extraction_contract_probe.gd` and registered it in `tools/probe_manifest.json` core governance.
+- Left `BattleContactVfxPool`, `SalvoLandingPreviewEffect`, `LaserAimTelegraphEffect`, `TrueBulletTargetLockEffect`, `BlindZoneEffect`, `FieldAuraEffect`, `CoinPickupEffect`, and `IdentityTransferEffect` in `main.gd` for later, more contextual battle-runtime extraction.
+
+Verification:
+- `tools/run_godot_checked.ps1 -Probe effect_extraction_contract_probe -TimeoutSec 120` passed headed.
+- `tools/run_godot_checked.ps1 -Probe view_extraction_contract_probe -TimeoutSec 120` passed headed.
+- `tools/run_godot_checked.ps1 -Probe combat_probe -TimeoutSec 120` passed headed.
+- `tools/run_godot_checked.ps1 -Probe battle_vfx_budget_probe -TimeoutSec 120` passed headed.
+- `tools/run_godot_checked.ps1 -Probe performance_profile_4080s_probe -TimeoutSec 120` passed headed.
+- `tools/run_godot_checked.ps1 -Probe main_file_extraction_contract_probe -TimeoutSec 120` passed headed.
+- `tools/run_godot_checked.ps1 -Probe headed_gate_manifest_alignment_probe -TimeoutSec 120` passed headed.
+- `tools/run_godot_checked.ps1 -Probe headed_gate_manifest_source_probe -TimeoutSec 120` passed headed.
+- `tools/run_godot_checked.ps1 -Probe probe_manifest_no_legacy_fixture_probe -TimeoutSec 120` passed headed.
+- `tools/run_godot_checked.ps1 -Probe codebase_slimdown_backlog_probe -TimeoutSec 120` passed headed.
+- `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120` passed headed. Godot still reports known ObjectDB exit warnings on some runs; no functional assertions failed.
+
+## 2026-05-28 Low-Risk View Extraction Batch 2
+
+Rules:
+- Continue `EC-SLIM-002` by extracting low-state display controls only; do not pull high-coupling editor panels, board views, or catalog cache/card clusters into this batch.
+- Preserve legacy class names, public methods, and `main.gd` type annotations through preloaded script constants.
+- Keep `PartDragGhostView` lightweight and renderer-driven without forcing a premature catalog card cluster extraction.
+
+Implementation notes:
+- Extracted `BattlePartPreviewView` into `scripts/views/battle_part_preview_view.gd`.
+- Extracted `TrainingEntryIntroView` into `scripts/views/training_entry_intro_view.gd`.
+- Extracted `PartDragGhostView` into `scripts/views/part_drag_ghost_view.gd`; it remains a transient `Control` with `set_card()` / `set_art_sheets()` compatibility and uses `AssemblyBoardRenderer.draw_part_preview()` for same-source part art.
+- Extracted `ComponentArtView` into `scripts/views/component_art_view.gd`.
+- Expanded `tools/view_extraction_contract_probe.gd` to guard nine extracted views, preload references, inline class removal, and basic state contracts.
+- Updated thumbnail/preview sync probes so catalog cards still avoid full renderer work in `_draw()`, while the transient drag ghost may use the shared preview renderer.
+
+Verification:
+- `tools/run_godot_checked.ps1 -Probe view_extraction_contract_probe -TimeoutSec 120` passed headed.
+- `tools/run_godot_checked.ps1 -Probe main_file_extraction_contract_probe -TimeoutSec 120` passed headed.
+- `tools/run_godot_checked.ps1 -Probe ui_layout_probe -TimeoutSec 120` passed headed.
+- `tools/run_godot_checked.ps1 -Probe text_overflow_probe -TimeoutSec 120` passed headed.
+- `tools/run_godot_checked.ps1 -Probe part_catalog_thumbnail_renderer_probe -TimeoutSec 120` passed headed.
+- `tools/run_godot_checked.ps1 -Probe preview_sync_not_in_draw_probe -TimeoutSec 120` passed headed.
+- `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120` passed headed.
 
 ## 2026-05-27 Backdrop View Extraction
 
@@ -6762,6 +7640,80 @@ Verification:
 
 Sync:
 - Implemented in `E:\New project`; run `tools/sync_worklog.ps1` after this note to refresh the shared development log mirror.
+
+## 2026-05-28 Battle Input Service Pure Routing Seam
+
+Rules:
+- Battle input service code must stay pure: no direct `Input`, file IO, JSON parsing, UI node access, battle menu toggles, summon calls, or active-unit mutation.
+- `main.gd` owns real input reads, pause/menu side effects, player movement and attack execution, spectator camera writes, rebinding UI, projectile/contact/VFX runtime, and `Fighter` internals.
+- Battle fixed-step edge frames are captured once per render frame and consumed only on the first 120Hz substep. Later substeps must read the same frame with edges disabled.
+- Route decisions for AI/PVP/training seats, movement just-pressed state, direction taps, and spectator camera intents should go through `BattleInputService`.
+
+Implementation notes:
+- Added `scripts/services/battle_input_service.gd` with action-name generation, edge-frame capture/consume state, just-pressed/released lookup, battle control routes, direction-tap detection, movement state, and spectator input intent.
+- `main.gd` delegates the battle input wrappers and keeps all gameplay side effects in place.
+- Added `tools/battle_input_service_contract_probe.gd` and wired it into the core probe manifest plus the controller boundary guard.
+
+Verification:
+- Headed probes passed:
+  - `battle_input_service_contract_probe`
+  - `battle_input_edge_single_consume_probe`
+  - `keyboard_escape_battle_pause_probe`
+  - `battle_real_training_movement_screen_direction_probe`
+  - `battle_movement_no_double_transform_probe`
+  - `turn_key_gun_aim_does_not_consume_movement_probe`
+  - `gun_activation_move_while_fire_all_profiles_probe`
+  - `gun_activation_training_move_fire_probe`
+  - `gun_activation_movement_gate_reason_probe`
+  - `main_controller_boundary_probe`
+  - `combat_probe`
+  - `training_default_ball_dummy_probe`
+  - `teamedit_probe`
+  - `ui_layout_probe`
+  - `text_overflow_probe`
+- `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120` passed headed. Godot still reports the pre-existing ObjectDB leak warning on exit, but commands exit `0`.
+
+## 2026-05-29 Projectile Runtime Service Pure Rule Seam
+
+Rules:
+- Continue `EC-SLIM-005` with projectile pure rules and queue/trace intents only; do not move hit selection, GPU contact/query ownership, HP/heat writes, reflection/explosion/web target effects, pending projectile arrays, VFX/SFX, battle messages, or `Fighter` mutation into the service.
+- `ProjectileRuntimeService` must remain pure: no direct `Input`, file IO, JSON parsing, UI node access, battle units, pending projectile arrays, GPU pipeline calls, spawn helpers, or damage-application helpers.
+- Old `main.gd` projectile helper names stay as wrappers so probes and gameplay call sites keep stable anchors.
+
+Implementation notes:
+- Added `scripts/services/projectile_runtime_service.gd`.
+- `ProjectileRuntimeService` owns projectile style and behavior classification, speed/mass/momentum state, drive momentum fields, gun projectile damage multipliers, raw damage from momentum, default recoil transfer, heat tags/reasons, chemical and missile queue intents, web trace event shaping, and projectile trace payload shaping.
+- `main.gd` now preloads/instantiates the service and delegates the corresponding projectile math wrappers while retaining side effects.
+- `_queue_chemical_projectile()`, `_queue_missile_projectile()`, `_web_trace_event()`, and `_spawn_projectile_trace()` consume service intents/payloads but still own pending arrays, VFX nodes, SFX, and battle messages.
+- `GpuGeometryService` now exposes a synchronous `compute_geometry_queries()` wrapper. `main.gd` keeps deferred geometry queries as the default projectile path but uses synchronous candidate-target geometry query for web tether, because tether creation must be known on the firing frame and `web_target_filter=all` can include allies outside the enemy active roster.
+- Added `tools/projectile_runtime_service_contract_probe.gd` and wired it into the core probe manifest plus `main_controller_boundary_probe`.
+
+Verification:
+- Headed probes passed:
+  - `projectile_runtime_service_contract_probe`
+  - `sniper_projectile_momentum_probe`
+  - `sniper_first_obstruction_probe`
+  - `sniper_hit_vfx_on_target_probe`
+  - `chemical_heat_probe`
+  - `chemical_dot_probe`
+  - `chemical_sprayer_hold_release_probe`
+  - `chemical_sprayer_first_contact_probe`
+  - `web_tether_no_projectile_damage_probe`
+  - `web_swing_melee_collision_probe`
+  - `projectile_muzzle_complex_unit_real_screen_probe`
+  - `projectile_trace_aim_line_same_origin_probe`
+  - `projectile_trace_no_rewrap_lane_flip_probe`
+  - `runtime_melee_never_projectile_gate_probe`
+  - `battle_input_service_contract_probe`
+  - `main_controller_boundary_probe`
+  - `combat_probe`
+  - `battle_vfx_budget_probe`
+  - `gun_activation_move_while_fire_all_profiles_probe`
+  - `gun_activation_training_move_fire_probe`
+  - `teamedit_probe`
+  - `ui_layout_probe`
+  - `text_overflow_probe`
+- `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120` passed headed. Godot still reports the pre-existing ObjectDB leak warning on exit, but commands exit `0`.
 
 ## 2026-05-25 UI Layout Tokens
 

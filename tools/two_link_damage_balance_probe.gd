@@ -70,6 +70,20 @@ func _active_runtime_colliders(unit) -> Array:
 	return result
 
 
+func _place_target_torso_on_attack(main, target, attack_collider: Dictionary, target_collider: Dictionary) -> float:
+	var attack_center: Vector2 = main._collider_center(attack_collider)
+	var target_center: Vector2 = main._collider_center(target_collider)
+	target.ring_pos += attack_center.x - target_center.x
+	target.lane += attack_center.y - target_center.y
+	if target.has_method("sync_mobius_from_compat"):
+		target.sync_mobius_from_compat(MainScene.RING_LENGTH, true)
+	var gap := INF
+	for raw in target.part_colliders():
+		if raw is Dictionary:
+			gap = minf(gap, main._collider_gap(attack_collider, Dictionary(raw)))
+	return gap
+
+
 func _init() -> void:
 	var main = MainScene.new()
 	root.add_child(main)
@@ -103,22 +117,21 @@ func _init() -> void:
 		_fail("Two-Link has no active contact collider.")
 	var attack_collider: Dictionary = active_colliders[active_colliders.size() - 1]
 	var target_collider := Dictionary(target.part_colliders()[0])
-	var attack_center := main._collider_center(attack_collider)
-	var target_center := main._collider_center(target_collider)
-	target.ring_pos += attack_center.x - target_center.x + 0.02
-	target.lane += attack_center.y - target_center.y
+	var gap := _place_target_torso_on_attack(main, target, attack_collider, target_collider)
 	attacker.velocity = Vector2(0.0, 0.0)
 	target.velocity = Vector2(0.0, 0.0)
 	main.active_units = {
 		1: {"hero": attacker, "barrier": null, "puppet": []},
 		2: {"hero": target, "barrier": null, "puppet": []},
 	}
-	var gap := INF
-	for raw in target.part_colliders():
-		if raw is Dictionary:
-			gap = minf(gap, main._collider_gap(attack_collider, Dictionary(raw)))
 	if gap > 0.0:
-		_fail("Two-Link probe setup has no runtime contact; gap=%.4f" % gap)
+		_fail("Two-Link probe setup has no runtime contact; gap=%.4f contact_velocity=%.3f action_speed=%.3f duration=%.3f targets=%s" % [
+			gap,
+			attacker.contact_velocity_for_collider(attack_collider).length(),
+			float(action.get("runtime_contact_speed", 0.0)),
+			float(action.get("duration", 0.0)),
+			str(action.get("target_nodes", [])),
+		])
 	var before_hp := int(target.health)
 	main._resolve_attack(attacker, event)
 	main._separate_unit_part_pair(attacker, target, 1.0 / 60.0)
@@ -126,7 +139,13 @@ func _init() -> void:
 	var target_max := maxf(1.0, float(target.max_health))
 	var ratio := float(hp_delta) / target_max
 	if hp_delta <= 0:
-		_fail("Two-Link melee did no HP damage.")
+		_fail("Two-Link melee did no HP damage; gap=%.4f contact_velocity=%.3f action_speed=%.3f duration=%.3f targets=%s" % [
+			gap,
+			attacker.contact_velocity_for_collider(attack_collider).length(),
+			float(action.get("runtime_contact_speed", 0.0)),
+			float(action.get("duration", 0.0)),
+			str(action.get("target_nodes", [])),
+		])
 	if ratio < 0.018 or ratio > 0.04:
 		_fail("Two-Link damage ratio %.3f outside 1/40 balance band, hp_delta=%d max=%.1f" % [ratio, hp_delta, target_max])
 	print("TWO_LINK_DAMAGE_BALANCE_PROBE hp_delta=%d ratio=%.3f target=0.025" % [hp_delta, ratio])

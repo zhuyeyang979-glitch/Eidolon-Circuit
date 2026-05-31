@@ -21,8 +21,8 @@ func _assert_blade_module(part: Dictionary, label: String, required_family: Stri
 		_fail("Missing blade module: %s" % label)
 	if String(part.get("module_target_kind", "")) != "blade_ball_joint":
 		_fail("%s must target blade_ball_joint." % label)
-	if String(part.get("damage_type", "")) != "tear":
-		_fail("%s must stay in tear damage type." % label)
+	if part.has("damage_type"):
+		_fail("%s should not expose raw damage_type on the action module." % label)
 	if String(part.get("command_window_profile", "")) not in ["blade_simple_4_6", "blade_complex_236_214"]:
 		_fail("%s must expose a blade command window profile." % label)
 	if required_family != "" and String(part.get("required_blade_family", "")) != required_family:
@@ -49,10 +49,10 @@ func _init() -> void:
 		_fail("Gauntlet module must target hybrid blunt gauntlets and expose its command profile.")
 	if float(gauntlet.get("required_extension_m", 0.0)) < 2.0:
 		_fail("Gauntlet module must require the 2m extend-capable gauntlet.")
-	var thrust := _find_module(main, func(part): return String(part.get("motion", "")) == "thrust" and String(part.get("damage_type", "")) == "pierce")
+	var thrust := _find_module(main, func(part): return String(part.get("module_target_kind", "")) == "pierce_telescopic_joint")
 	if thrust.is_empty():
 		_fail("Missing pierce thrust module.")
-	if String(thrust.get("module_target_kind", "")) != "telescopic_joint" or float(thrust.get("required_extension_m", 0.0)) <= 0.0:
+	if float(thrust.get("required_extension_m", 0.0)) <= 0.0:
 		_fail("Pierce thrust module must target telescopic/extension limbs.")
 	print("MELEE_MODULE_COMPATIBILITY_PROBE ok")
 	quit()
