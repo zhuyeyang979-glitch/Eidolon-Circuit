@@ -1,0 +1,61 @@
+name: Godot Governance
+
+on:
+  push:
+    branches:
+      - master
+      - main
+      - "safety/**"
+  pull_request:
+
+jobs:
+  check:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install Godot 4.6.2
+        shell: pwsh
+        run: |
+          $godotDir = "tools\godot-4.6.2"
+          $godotExe = Join-Path $godotDir "Godot_v4.6.2-stable_win64_console.exe"
+          if (Test-Path -LiteralPath $godotExe) {
+            exit 0
+          }
+          New-Item -ItemType Directory -Force -Path $godotDir | Out-Null
+          $zip = Join-Path $env:RUNNER_TEMP "godot-4.6.2.zip"
+          Invoke-WebRequest -Uri "https://github.com/godotengine/godot/releases/download/4.6.2-stable/Godot_v4.6.2-stable_win64.exe.zip" -OutFile $zip
+          Expand-Archive -LiteralPath $zip -DestinationPath $godotDir -Force
+          if (-not (Test-Path -LiteralPath $godotExe)) {
+            throw "Godot console executable was not found after download: $godotExe"
+          }
+
+      - name: Godot check-only
+        shell: pwsh
+        run: tools\run_godot_checked.ps1 -Headless -CheckOnly -TimeoutSec 120
+
+      - name: Governance probes
+        shell: pwsh
+        run: |
+          $probes = @(
+            "action_profile_registry_completeness_probe",
+            "drive_service_contract_probe",
+            "unit_validator_single_source_probe",
+            "main_file_extraction_contract_probe",
+            "runtime_no_legacy_drive_reads_probe",
+            "probe_manifest_no_legacy_fixture_probe",
+            "drive_budget_teamedit_probe",
+            "drive_runtime_movement_probe",
+            "action_module_execution_matrix_probe",
+            "projectile_profile_whitelist_probe",
+            "teamedit_bound_module_tryout_probe",
+            "mobius_bullet_readability_probe",
+            "battle_controlled_unit_center_on_begin_probe",
+            "battle_vfx_budget_probe",
+            "ui_layout_probe",
+            "text_overflow_probe"
+          )
+          foreach ($probe in $probes) {
+            tools\run_godot_checked.ps1 -Headless -Probe $probe -TimeoutSec 120
+          }
