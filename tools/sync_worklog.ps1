@@ -18,6 +18,7 @@ function Get-WorklogEntry {
     $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $path).Hash
     [pscustomobject]@{ Root = $root; Path = $path; Exists = $true; Length = $item.Length; LastWriteTimeUtc = $item.LastWriteTimeUtc; Hash = $hash }
 }
+
 if (-not (Test-Path -LiteralPath $RegistryPath -PathType Leaf)) {
     throw "Missing worklog registry: $RegistryPath"
 }
