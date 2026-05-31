@@ -311,6 +311,7 @@
       "unit_editor_no_power_topbar_probe",
       "unit_editor_power_dock_moved_up_probe",
       "unit_editor_torso_detail_button_probe",
+      "payload_requires_torso_install_probe",
       "torso_detail_real_double_click_open_probe",
       "torso_detail_double_click_with_pinned_part_probe",
       "power_allocation_detail_open_close_probe",

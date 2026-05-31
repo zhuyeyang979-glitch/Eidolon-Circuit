@@ -8855,6 +8855,8 @@ var editor_load_drag_index := -1
 var editor_undo_stack: Array = []
 var editor_pending_place_slot := ""
 var editor_pending_place_index := -1
+var editor_pending_payload_slot := ""
+var editor_pending_payload_index := -1
 var editor_drag_catalog_active := false
 var editor_drag_catalog_started := false
 var editor_drag_catalog_slot := ""
@@ -10189,6 +10191,7 @@ func _reset_editor_working_canvas(role_key: String = "") -> void:
 	editor_selecting_topology_box = false
 	editor_pending_place_slot = ""
 	editor_pending_place_index = -1
+	_clear_pending_payload_part()
 	editor_undo_stack.clear()
 	_apply_editor_role_catalog_defaults(resolved_role)
 
@@ -10276,6 +10279,7 @@ func _reset_editor_unit_page_transient_state(clear_clipboard: bool = false) -> v
 	editor_pending_orientation_node_index = -1
 	editor_pending_place_slot = ""
 	editor_pending_place_index = -1
+	_clear_pending_payload_part()
 	editor_cached_socket_candidate = {}
 	editor_cached_socket_candidate_node = -1
 	editor_cached_socket_candidate_pos = Vector2.INF
@@ -15167,6 +15171,7 @@ func _cleanup_unit_edit_page_runtime() -> void:
 	editor_load_drag_index = -1
 	editor_pending_place_slot = ""
 	editor_pending_place_index = -1
+	_clear_pending_payload_part()
 	editor_cached_socket_candidate = {}
 	editor_cached_socket_candidate_node = -1
 	editor_cached_socket_candidate_pos = Vector2.INF
@@ -21960,6 +21965,45 @@ func _set_pending_canvas_part(unit_bp: Dictionary, slot_key: String, part_index:
 		return
 	editor_pending_place_slot = slot_key
 	editor_pending_place_index = part_index
+	_clear_pending_payload_part()
+
+
+func _set_pending_payload_part(slot_key: String, part_index: int) -> void:
+	editor_pending_payload_slot = slot_key
+	editor_pending_payload_index = part_index
+	editor_pending_place_slot = ""
+	editor_pending_place_index = -1
+	editor_pending_module_binding = {}
+
+
+func _clear_pending_payload_part() -> void:
+	editor_pending_payload_slot = ""
+	editor_pending_payload_index = -1
+
+
+func _has_pending_payload_part() -> bool:
+	if editor_pending_payload_slot == "" or editor_pending_payload_index < 0:
+		return false
+	var role_key: String = ROLE_ORDER[editor_role_index]
+	var catalog := _catalog_for(role_key, editor_pending_payload_slot)
+	if editor_pending_payload_index >= catalog.size():
+		return false
+	var part := _selected_component(role_key, editor_pending_payload_slot, editor_pending_payload_index)
+	return _part_installs_as_torso_payload(editor_pending_payload_slot, part)
+
+
+func _pending_payload_part_name(role_key: String) -> String:
+	if not _has_pending_payload_part():
+		return ""
+	var part := _selected_component(role_key, editor_pending_payload_slot, editor_pending_payload_index)
+	return "%s %s" % [_slot_name(editor_pending_payload_slot), _short_part_display_name(part)]
+
+
+func _pending_payload_install_hint(role_key: String) -> String:
+	var pending_name := _pending_payload_part_name(role_key)
+	if pending_name == "":
+		return ""
+	return "待安装：%s。拖到或点击画板上的具体躯干，也可拖进已打开的躯干详情槽。" % pending_name if _ui_is_zh() else "Pending install: %s. Drop or click a specific torso on the board, or drop into an open torso detail slot." % pending_name
 
 
 func _commit_pending_canvas_part_purchase(unit_bp: Dictionary, slot_key: String, part_index: int) -> Dictionary:
@@ -22392,6 +22436,7 @@ func _restore_editor_undo_state() -> void:
 		editor_working_blueprint = Dictionary(state.get("blueprint", _make_editor_blank_blueprint(role_key))).duplicate(true)
 		editor_pending_place_slot = ""
 		editor_pending_place_index = -1
+		_clear_pending_payload_part()
 		editor_selected_topology_nodes = []
 		editor_dragging_node_index = -1
 		editor_dragging_selected_nodes = false
@@ -22414,6 +22459,7 @@ func _restore_editor_undo_state() -> void:
 	active_roster_indices[player_id][role_key] = unit_index
 	editor_pending_place_slot = ""
 	editor_pending_place_index = -1
+	_clear_pending_payload_part()
 	editor_selected_topology_nodes = []
 	editor_open_torso_node_index = -1
 	editor_hovered_torso_node_index = -1
@@ -22443,7 +22489,7 @@ func _drop_catalog_part_on_board(slot_key: String, part_index: int, local_positi
 	var unit_bp: Dictionary = _editor_current_blueprint()
 	var part := _selected_component(role_key, slot_key, part_index)
 	if _part_installs_as_torso_payload(slot_key, part):
-		_add_torso_payload_component(slot_key, part_index, part)
+		_drop_payload_part_on_board_torso(slot_key, part_index, part, local_position)
 		if hot_path_profiler != null:
 			hot_path_profiler.scope_end("drop.place_node")
 		return
@@ -22885,6 +22931,21 @@ func _handle_custom_topology_click(mouse_event: InputEventMouseButton, unit_bp: 
 		hot_path_profiler.scope_begin("board_click")
 	_ensure_custom_topology(unit_bp)
 	var role_key: String = ROLE_ORDER[editor_role_index]
+	if _has_pending_payload_part():
+		if mouse_event.button_index == MOUSE_BUTTON_RIGHT:
+			_clear_pending_payload_part()
+			if editor_board_hint_label != null:
+				editor_board_hint_label.text = "已取消待安装软件/装备。" if _ui_is_zh() else "Cancelled pending software/equipment install."
+			_play_sfx_wave("clack", 420.0, 0.04, -18.0)
+			_mark_editor_board_model_dirty("board.cancel_pending_payload")
+			if hot_path_profiler != null:
+				hot_path_profiler.scope_end("board_click")
+			return
+		if mouse_event.button_index == MOUSE_BUTTON_LEFT:
+			_install_pending_payload_part_on_board(mouse_event.position)
+			if hot_path_profiler != null:
+				hot_path_profiler.scope_end("board_click")
+			return
 	var topology: Dictionary = unit_bp["custom_topology"]
 	var nodes: Array = topology.get("nodes", [])
 	var edges: Array = topology.get("edges", [])
@@ -25816,7 +25877,16 @@ func _select_catalog_component(component_index: int) -> void:
 	slot_key = String(entry.get("slot", slot_key))
 	var clicked_part: Dictionary = entry.get("part", _selected_component(role_key, slot_key, actual_index))
 	if _part_installs_as_torso_payload(slot_key, clicked_part):
-		_add_torso_payload_component(slot_key, actual_index, clicked_part)
+		_set_pending_payload_part(slot_key, actual_index)
+		var hint := _pending_payload_install_hint(role_key)
+		if editor_board_hint_label != null:
+			_set_control_text_if_changed(editor_board_hint_label, hint)
+		if editor_summary_label != null:
+			_set_control_text_if_changed(editor_summary_label, hint)
+		_play_sfx_wave("clack", 640.0, 0.04, -18.0)
+		ai_team_manual_lock[player_id] = true
+		mark_editor_dirty(EDITOR_DIRTY_ACTION_BUTTONS | EDITOR_DIRTY_BOARD_UI, "catalog.pending_payload_part")
+		flush_editor_dirty(600)
 		if hot_path_profiler != null:
 			hot_path_profiler.scope_end("install_part")
 		return
@@ -25890,6 +25960,38 @@ func _part_installs_as_torso_payload(slot_key: String, part: Dictionary) -> bool
 	return bool(part.get("torso_slot_payload", false)) or slot_key in ["engine", "booster", "cooling", "special", "module"]
 
 
+func _drop_payload_part_on_board_torso(slot_key: String, part_index: int, part: Dictionary, local_position: Vector2) -> bool:
+	var role_key: String = ROLE_ORDER[editor_role_index]
+	var unit_bp: Dictionary = _editor_current_blueprint()
+	if not _role_uses_body_board(role_key):
+		return _install_torso_payload_component(slot_key, part_index, part, -1)
+	_ensure_custom_topology(unit_bp)
+	var topology: Dictionary = unit_bp.get("custom_topology", {})
+	var nodes: Array = Array(topology.get("nodes", []))
+	var torso_node_index := _nearest_torso_node_index(role_key, unit_bp, nodes, local_position)
+	if torso_node_index < 0:
+		_set_pending_payload_part(slot_key, part_index)
+		var hint := _pending_payload_install_hint(role_key)
+		if editor_board_hint_label != null:
+			editor_board_hint_label.text = "警报：请选择画板上的具体躯干来安装。%s" % hint if _ui_is_zh() else "ALARM: choose a specific torso on the board to install. %s" % hint
+		if editor_summary_label != null:
+			editor_summary_label.text = editor_board_hint_label.text if editor_board_hint_label != null else hint
+		_play_sfx_wave("alarm", 170.0, 0.08, -16.0)
+		_mark_editor_board_model_dirty("drop.payload_no_torso")
+		return false
+	return _install_torso_payload_component(slot_key, part_index, part, torso_node_index)
+
+
+func _install_pending_payload_part_on_board(local_position: Vector2) -> bool:
+	if not _has_pending_payload_part():
+		return false
+	var role_key: String = ROLE_ORDER[editor_role_index]
+	var slot_key := editor_pending_payload_slot
+	var part_index := editor_pending_payload_index
+	var part := _selected_component(role_key, slot_key, part_index)
+	return _drop_payload_part_on_board_torso(slot_key, part_index, part, local_position)
+
+
 func _add_torso_payload_component(slot_key: String, part_index: int, part: Dictionary, requested_internal_slot_index: int = -1) -> void:
 	var player_id := _editor_player()
 	var role_key: String = ROLE_ORDER[editor_role_index]
@@ -25899,6 +26001,21 @@ func _add_torso_payload_component(slot_key: String, part_index: int, part: Dicti
 		editor_summary_label.text = "警报：请先在画布中放入一个躯干/大脑连接件，再安装机内插件或软件。" if _ui_is_zh() else "ALARM: place a torso/brain connector on the board before installing internal plugins or software."
 		_play_sfx_wave("alarm", 170.0, 0.08, -16.0)
 		return
+	_install_torso_payload_component(slot_key, part_index, part, torso_node_index, requested_internal_slot_index)
+
+
+func _install_torso_payload_component(slot_key: String, part_index: int, part: Dictionary, target_torso_node_index: int, requested_internal_slot_index: int = -1) -> bool:
+	var player_id := _editor_player()
+	var role_key: String = ROLE_ORDER[editor_role_index]
+	var unit_bp: Dictionary = _editor_current_blueprint()
+	var torso_node_index := target_torso_node_index
+	if _role_uses_body_board(role_key):
+		var topology_for_target: Dictionary = unit_bp.get("custom_topology", {})
+		var nodes_for_target: Array = Array(topology_for_target.get("nodes", []))
+		if torso_node_index < 0 or torso_node_index >= nodes_for_target.size() or not _topology_node_is_torso(role_key, nodes_for_target[torso_node_index], unit_bp):
+			editor_summary_label.text = "警报：请把该软件/装备安装到画板上的具体躯干。" if _ui_is_zh() else "ALARM: install this software/equipment on a specific torso on the board."
+			_play_sfx_wave("alarm", 170.0, 0.08, -16.0)
+			return false
 	var payload_kind := _torso_payload_kind_for_part(part, slot_key)
 	var payload := _make_torso_payload_for_part(payload_kind, slot_key, part_index, part)
 	var assigned_internal_slot := -1
@@ -25906,7 +26023,7 @@ func _add_torso_payload_component(slot_key: String, part_index: int, part: Dicti
 		if payload_kind == "booster" and _torso_booster_payload_count(unit_bp, torso_node_index) >= 1:
 			editor_summary_label.text = "警报：该躯体已有推进器。" if _ui_is_zh() else "ALARM: torso already has a booster."
 			_play_sfx_wave("alarm", 170.0, 0.08, -16.0)
-			return
+			return false
 		var plugin_count := _torso_plugin_slot_summary(unit_bp, torso_node_index).size()
 		var software_count := _torso_software_slot_summary(unit_bp, torso_node_index).size()
 		var topology: Dictionary = unit_bp.get("custom_topology", {})
@@ -25917,11 +26034,11 @@ func _add_torso_payload_component(slot_key: String, part_index: int, part: Dicti
 		if _torso_payload_slot_group(payload_kind) == "plugin" and plugin_count >= plugin_cap:
 			editor_summary_label.text = "警报：该躯干机内插件槽已满 %d/%d。" % [plugin_count, plugin_cap] if _ui_is_zh() else "ALARM: this torso's internal plugin slots are full %d/%d." % [plugin_count, plugin_cap]
 			_play_sfx_wave("alarm", 170.0, 0.08, -16.0)
-			return
+			return false
 		if _torso_payload_slot_group(payload_kind) == "software" and software_count >= software_cap:
 			editor_summary_label.text = "警报：该躯干软件槽已满 %d/%d。" % [software_count, software_cap] if _ui_is_zh() else "ALARM: this torso's software slots are full %d/%d." % [software_count, software_cap]
 			_play_sfx_wave("alarm", 170.0, 0.08, -16.0)
-			return
+			return false
 		if _torso_payload_slot_group(payload_kind) == "plugin":
 			var payload_part_for_fit := _payload_part_for_payload(role_key, payload)
 			var payload_rank := _volume_rank_from_value(_payload_slot_volume_rank(payload_kind, payload_part_for_fit, payload, slot_key), 1)
@@ -25934,7 +26051,7 @@ func _add_torso_payload_component(slot_key: String, part_index: int, part: Dicti
 					requested_text = "，目标槽上限%s" % slot_label if _ui_is_zh() else ", target slot <=%s" % slot_label
 				editor_summary_label.text = "警报：该插件尺寸%s无法装入当前机内槽%s。" % [_volume_rank_label(float(payload_rank)), requested_text] if _ui_is_zh() else "ALARM: plugin size %s cannot fit this torso's internal slots%s." % [_volume_rank_label(float(payload_rank)), requested_text]
 				_play_sfx_wave("alarm", 170.0, 0.08, -16.0)
-				return
+				return false
 	_record_editor_undo_state("安装躯干插件" if _ui_is_zh() else "install torso payload")
 	unit_bp["blank_canvas"] = false
 	if torso_node_index >= 0:
@@ -25956,7 +26073,9 @@ func _add_torso_payload_component(slot_key: String, part_index: int, part: Dicti
 		_start_editor_module_binding_flow(payload_index, installed_part)
 		started_module_binding = true
 	else:
-		editor_summary_label.text = "已购买并安装到躯干详情页%s：%s（%s）。" % [slot_text, part_name, label] if _ui_is_zh() else "Purchased and installed into torso detail%s: %s (%s)." % [slot_text, String(installed_part.get("name", "")), payload_kind]
+		var torso_label := "躯干 %02d" % (torso_node_index + 1) if torso_node_index >= 0 else "躯干详情页"
+		editor_summary_label.text = "已安装到%s%s：%s（%s）。" % [torso_label, slot_text, part_name, label] if _ui_is_zh() else "Installed on torso %02d%s: %s (%s)." % [torso_node_index + 1, slot_text, String(installed_part.get("name", "")), payload_kind]
+	_clear_pending_payload_part()
 	ai_team_manual_lock[player_id] = true
 	_update_editor_ui()
 	if started_module_binding:
@@ -25965,6 +26084,7 @@ func _add_torso_payload_component(slot_key: String, part_index: int, part: Dicti
 		if editor_board_hint_label != null:
 			editor_board_hint_label.text = _pending_module_binding_hint()
 		_refresh_editor_module_binding_buttons()
+	return true
 
 
 func _next_available_attack_key_for_binding(unit_bp: Dictionary) -> int:
@@ -27191,7 +27311,12 @@ func _drop_catalog_part_on_torso_detail(slot_key: String, part_index: int, slot_
 		editor_summary_label.text = "警报：请把该插件拖入%s。" % expected_label if _ui_is_zh() else "ALARM: drop this item into %s." % ("software slots" if expected_kind == "software" else "internal plugin slots")
 		_play_sfx_wave("alarm", 170.0, 0.08, -16.0)
 		return
-	_add_torso_payload_component(slot_key, part_index, part, slot_index if slot_kind == "plugin" else -1)
+	var target_torso := editor_open_torso_node_index
+	if target_torso < 0:
+		editor_summary_label.text = "警报：请先打开一个躯干详情页。" if _ui_is_zh() else "ALARM: open a torso detail page first."
+		_play_sfx_wave("alarm", 170.0, 0.08, -16.0)
+		return
+	_install_torso_payload_component(slot_key, part_index, part, target_torso, slot_index if slot_kind == "plugin" else -1)
 
 
 func _editor_load_max_page() -> int:
@@ -27511,6 +27636,7 @@ func _clear_editor_canvas() -> void:
 	editor_selecting_topology_box = false
 	editor_pending_place_slot = ""
 	editor_pending_place_index = -1
+	_clear_pending_payload_part()
 	editor_pending_orientation_node_index = -1
 	editor_board_hint_label.text = "画布已全部删除，当前单位造价为 0；未保存前不属于任何队伍。" if _ui_is_zh() else "Canvas cleared; current unit cost is 0. It belongs to no team until saved."
 	ai_team_manual_lock[player_id] = true
@@ -27618,6 +27744,7 @@ func _delete_selected_canvas_part() -> void:
 	editor_selecting_topology_box = false
 	editor_pending_place_slot = ""
 	editor_pending_place_index = -1
+	_clear_pending_payload_part()
 	editor_pending_orientation_node_index = -1
 	if editor_board_hint_label != null:
 		editor_board_hint_label.text = "已删除：%s。" % removed_name if _ui_is_zh() else "Deleted: %s." % removed_name
@@ -27969,6 +28096,7 @@ func _cut_selected_topology_nodes() -> bool:
 	editor_selected_torso_slot_kind = ""
 	editor_pending_module_binding = {}
 	editor_bound_module_tryout = {}
+	_clear_pending_payload_part()
 	editor_pending_orientation_node_index = -1
 	editor_dragging_node_index = -1
 	editor_dragging_selected_nodes = false
@@ -28088,6 +28216,7 @@ func _paste_topology_clipboard() -> bool:
 	editor_selected_torso_slot_kind = ""
 	editor_pending_module_binding = {}
 	editor_bound_module_tryout = {}
+	_clear_pending_payload_part()
 	editor_pending_orientation_node_index = -1
 	ai_team_manual_lock[_editor_player()] = true
 	if editor_board_hint_label != null:
@@ -28247,6 +28376,7 @@ func _add_topology_node_at(local_position: Vector2) -> int:
 		placed_name = String(new_node.get("label_short_name", "NODE"))
 	editor_pending_place_slot = ""
 	editor_pending_place_index = -1
+	_clear_pending_payload_part()
 	_trigger_editor_node_drop_snap(placed_name, true)
 	_start_visual_handedness_choice_if_needed(unit_bp, index, new_node)
 	if hot_path_profiler != null:
@@ -52999,7 +53129,10 @@ func _apply_editor_panel_visibility(role_key: String, unit_bp: Dictionary) -> vo
 		_set_control_text_if_changed(editor_shop_hint_label, "流程：1 选构件类型  2 拖卡片进画布  3 磁吸贴合；引擎/散热/行动模块点击安装。" if _ui_is_zh() else "Flow: 1 choose a part type  2 drag a card onto canvas  3 snap it. Engine/cooling/action modules install on click.")
 	if editor_shop_pending_label != null:
 		_set_canvas_item_visible_if_changed(editor_shop_pending_label, shop_visible)
-		if _has_pending_canvas_part():
+		if _has_pending_payload_part():
+			_set_control_text_if_changed(editor_shop_pending_label, _pending_payload_install_hint(role_key))
+			_set_canvas_item_modulate_if_changed(editor_shop_pending_label, Color(1.0, 0.78, 0.30, 1.0))
+		elif _has_pending_canvas_part():
 			_set_control_text_if_changed(editor_shop_pending_label, "待放置：%s" % _pending_canvas_part_name(role_key) if _ui_is_zh() else "PENDING PLACEMENT: %s" % _pending_canvas_part_name(role_key))
 			_set_canvas_item_modulate_if_changed(editor_shop_pending_label, Color(1.0, 0.86, 0.24, 1.0))
 		else:
@@ -53083,7 +53216,7 @@ func _update_editor_board_ui(role_key: String, unit_bp: Dictionary, precomputed_
 	var custom_board_cache_key := _editor_board_snapshot_cache_key(role_key, unit_bp) if custom_board_enabled else ""
 	var board_selected_slot: String = BUILD_SLOTS[editor_slot_index]
 	var board_selected_part_index := _editor_selected_part_index_for_slot(unit_bp, role_key, board_selected_slot)
-	var board_ui_revision_key := "%s|%s|%s|%d|%d|%d|%d|%s|%s|%s|%d|%d|%s|%s|%s|%d|%d|%s" % [
+	var board_ui_revision_key := "%s|%s|%s|%d|%d|%d|%d|%s|%s|%s|%d|%d|%s|%s|%s|%d|%s|%d|%d|%s" % [
 		role_key,
 		editor_panel_mode,
 		str(body_board_enabled),
@@ -53100,6 +53233,8 @@ func _update_editor_board_ui(role_key: String, unit_bp: Dictionary, precomputed_
 		editor_part_filter_mode,
 		editor_pending_place_slot,
 		editor_pending_place_index,
+		editor_pending_payload_slot,
+		editor_pending_payload_index,
 		1 if editor_barrier_grid_guides_enabled else 0,
 		ui_language,
 	]
@@ -53135,6 +53270,8 @@ func _update_editor_board_ui(role_key: String, unit_bp: Dictionary, precomputed_
 		elif action_note.begins_with("INVALID"):
 			rule_short = "行动绑定非法" if _ui_is_zh() else "INVALID ACTION BIND"
 		var pending_note := "  待放置: %s" % _pending_canvas_part_name(role_key) if _has_pending_canvas_part() else ""
+		if _has_pending_payload_part():
+			pending_note += "  待安装: %s" % _pending_payload_part_name(role_key) if _ui_is_zh() else "  pending install: %s" % _pending_payload_part_name(role_key)
 		if _orientation_choice_is_active(unit_bp):
 			pending_note += "  选侧挂刃: 左/右" if _ui_is_zh() else "  choose side mount: LEFT/RIGHT"
 		elif selected_handedness_active and not nodes.is_empty():
@@ -53145,6 +53282,8 @@ func _update_editor_board_ui(role_key: String, unit_bp: Dictionary, precomputed_
 		var tile_count := Array(unit_bp.get("barrier_tiles", [])).size()
 		var stats := precomputed_stats if not precomputed_stats.is_empty() else _editor_current_stats()
 		var pending_note := "  待放置:%s" % _pending_canvas_part_name(role_key) if _has_pending_canvas_part() else ""
+		if _has_pending_payload_part():
+			pending_note += "  待安装:%s" % _pending_payload_part_name(role_key) if _ui_is_zh() else "  pending install:%s" % _pending_payload_part_name(role_key)
 		_set_control_text_if_changed(editor_board_hint_label, "以太屏幕蓝图 %d/%d  %.1fx%.1f%s" % [tile_count, maxi(1, int(stats.get("material_slots", 4))), BARRIER_BLUEPRINT_WIDTH, BARRIER_BLUEPRINT_HEIGHT, pending_note] if _ui_is_zh() else "Ether screen blueprint %d/%d  %.1fx%.1f%s" % [tile_count, maxi(1, int(stats.get("material_slots", 4))), BARRIER_BLUEPRINT_WIDTH, BARRIER_BLUEPRINT_HEIGHT, pending_note])
 	elif body_board_enabled:
 		_ensure_custom_topology(unit_bp)
@@ -53225,7 +53364,7 @@ func _update_editor_board_ui(role_key: String, unit_bp: Dictionary, precomputed_
 	if catalog_domain_key != editor_catalog_domain_revision_key:
 		editor_catalog_domain_revision_key = catalog_domain_key
 		_update_editor_catalog_buttons(role_key, unit_bp)
-	var visual_domain_key := "%s|%s|%s|%s|%d|%d|%s|%s|%s|%s|%d" % [
+	var visual_domain_key := "%s|%s|%s|%s|%d|%d|%s|%s|%s|%s|%s|%s|%d" % [
 		role_key,
 		str(custom_board_enabled),
 		custom_board_cache_key,
@@ -53235,6 +53374,8 @@ func _update_editor_board_ui(role_key: String, unit_bp: Dictionary, precomputed_
 		editor_board_tool,
 		editor_pending_place_slot,
 		str(editor_pending_place_index),
+		editor_pending_payload_slot,
+		str(editor_pending_payload_index),
 		_editor_visual_stats_revision_key(precomputed_stats),
 		1 if editor_barrier_grid_guides_enabled else 0,
 	]
@@ -53282,6 +53423,8 @@ func _catalog_card_title(slot_key: String, part: Dictionary, actual_index: int, 
 	var marker := "已装 " if _ui_is_zh() and selected else ("IN " if selected else "")
 	if slot_key in ["joint", "limb_muscle", "muscle"]:
 		marker = "待选 " if _ui_is_zh() and selected and _has_pending_canvas_part() else marker
+	if _has_pending_payload_part() and slot_key == editor_pending_payload_slot and actual_index == editor_pending_payload_index:
+		marker = "待安装 " if _ui_is_zh() else "PENDING "
 	var size_suffix := " %s" % String(part.get("ammo_size_tier", "")) if slot_key == "muscle" and _part_is_ammo_payload(part) else ""
 	return "%s%02d %s%s" % [marker, actual_index + 1, _short_part_display_name(part), size_suffix]
 
@@ -54025,13 +54168,14 @@ func _editor_catalog_page_selection_key(unit_bp: Dictionary, role_key: String, p
 		var entry_slot := String(raw_slot)
 		selected_indices_by_slot[entry_slot] = _editor_selected_part_index_for_slot(unit_bp, role_key, entry_slot)
 	if unit_editor_catalog_controller != null:
-		return unit_editor_catalog_controller.page_selection_key(page_entries, selected_indices_by_slot, editor_pending_place_slot, editor_pending_place_index, _has_pending_canvas_part())
+		return unit_editor_catalog_controller.page_selection_key(page_entries, selected_indices_by_slot, editor_pending_place_slot, editor_pending_place_index, _has_pending_canvas_part(), editor_pending_payload_slot, editor_pending_payload_index, _has_pending_payload_part())
 	var pieces: Array = []
 	for raw_slot in selected_indices_by_slot.keys():
 		var entry_slot := String(raw_slot)
 		pieces.append("%s:%d" % [entry_slot, int(selected_indices_by_slot.get(entry_slot, -1))])
 	pieces.sort()
 	pieces.append("pending:%s:%d:%d" % [editor_pending_place_slot, editor_pending_place_index, 1 if _has_pending_canvas_part() else 0])
+	pieces.append("pending_payload:%s:%d:%d" % [editor_pending_payload_slot, editor_pending_payload_index, 1 if _has_pending_payload_part() else 0])
 	return ",".join(pieces)
 
 
@@ -54057,7 +54201,10 @@ func _editor_catalog_page_models(role_key: String, slot_key: String, unit_bp: Di
 			Callable(self, "_editor_selected_part_index_for_slot"),
 			Callable(self, "_catalog_display_part"),
 			Callable(self, "_selected_component"),
-			Callable(self, "_catalog_card_cached_model")
+			Callable(self, "_catalog_card_cached_model"),
+			editor_pending_payload_slot,
+			editor_pending_payload_index,
+			_has_pending_payload_part()
 		)
 		editor_catalog_page_model_cache[cache_key] = delegated_models
 		_trim_dictionary_cache(editor_catalog_page_model_cache, 48)
@@ -54079,11 +54226,14 @@ func _editor_catalog_page_models(role_key: String, slot_key: String, unit_bp: Di
 		var part: Dictionary = entry.get("display_part", {})
 		if part.is_empty():
 			part = _catalog_display_part(entry_slot, entry.get("part", _selected_component(role_key, entry_slot, part_index)))
-		var selected_card := part_index == int(selected_by_slot.get(entry_slot, -1))
+		var pending_payload_card := _has_pending_payload_part() and entry_slot == editor_pending_payload_slot and part_index == editor_pending_payload_index
+		var selected_card := part_index == int(selected_by_slot.get(entry_slot, -1)) or pending_payload_card
 		var card_model := _catalog_card_cached_model(entry_slot, part, part_index)
 		var marker := "已装 " if _ui_is_zh() and selected_card else ("IN " if selected_card else "")
 		if entry_slot in ["joint", "limb_muscle", "muscle"]:
 			marker = "待选 " if _ui_is_zh() and selected_card and _has_pending_canvas_part() else marker
+		if pending_payload_card:
+			marker = "待安装 " if _ui_is_zh() else "PENDING "
 		var title := "%s%s" % [marker, String(card_model.get("title_base", ""))]
 		var line_a := String(card_model.get("line_a", ""))
 		var line_b := String(card_model.get("line_b", ""))
@@ -54304,6 +54454,8 @@ func _update_editor_catalog_buttons(role_key: String, unit_bp: Dictionary) -> vo
 
 func _editor_selected_part_index_for_slot(unit_bp: Dictionary, role_key: String, slot_key: String) -> int:
 	var selected_index := int(unit_bp.get(slot_key, 0))
+	if _has_pending_payload_part() and editor_pending_payload_slot == slot_key:
+		return editor_pending_payload_index
 	if _role_uses_body_board(role_key) and unit_bp.has("custom_topology") and _is_body_group_slot(slot_key):
 		var topology: Dictionary = unit_bp.get("custom_topology", {})
 		var nodes: Array = topology.get("nodes", [])
