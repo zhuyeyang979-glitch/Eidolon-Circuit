@@ -162,7 +162,7 @@ func entries_cache_key(role_key: String, slot_key: String, part_group_mode: Stri
 	]
 
 
-func page_selection_key(page_entries: Array, selected_indices_by_slot: Dictionary, pending_place_slot: String, pending_place_index: int, has_pending_canvas_part: bool) -> String:
+func page_selection_key(page_entries: Array, selected_indices_by_slot: Dictionary, pending_place_slot: String, pending_place_index: int, has_pending_canvas_part: bool, pending_payload_slot: String = "", pending_payload_index: int = -1, has_pending_payload_part: bool = false) -> String:
 	var slots := {}
 	for raw_entry in page_entries:
 		if raw_entry is Dictionary:
@@ -177,6 +177,11 @@ func page_selection_key(page_entries: Array, selected_indices_by_slot: Dictionar
 		pending_place_slot,
 		pending_place_index,
 		1 if has_pending_canvas_part else 0,
+	])
+	pieces.append("pending_payload:%s:%d:%d" % [
+		pending_payload_slot,
+		pending_payload_index,
+		1 if has_pending_payload_part else 0,
 	])
 	return ",".join(pieces)
 
@@ -314,7 +319,7 @@ func collect_raw_entries(role_key: String, slot_keys: Array, catalog_for: Callab
 	return entries
 
 
-func build_page_models(page_entries: Array, role_key: String, unit_bp: Dictionary, fallback_slot_key: String, language: String, has_pending_canvas_part: bool, selected_part_index: Callable, catalog_display_part: Callable, selected_component: Callable, card_model_for_part: Callable) -> Array:
+func build_page_models(page_entries: Array, role_key: String, unit_bp: Dictionary, fallback_slot_key: String, language: String, has_pending_canvas_part: bool, selected_part_index: Callable, catalog_display_part: Callable, selected_component: Callable, card_model_for_part: Callable, pending_payload_slot: String = "", pending_payload_index: int = -1, has_pending_payload_part: bool = false) -> Array:
 	var selected_by_slot := selected_indices_for_entries(page_entries, role_key, unit_bp, fallback_slot_key, selected_part_index)
 	var zh := language == "zh"
 	var models: Array = []
@@ -339,7 +344,8 @@ func build_page_models(page_entries: Array, role_key: String, unit_bp: Dictionar
 					part = raw_display
 			if part.is_empty():
 				part = source_part
-		var selected_card := part_index == int(selected_by_slot.get(entry_slot, -1))
+		var pending_payload_card := has_pending_payload_part and entry_slot == pending_payload_slot and part_index == pending_payload_index
+		var selected_card := part_index == int(selected_by_slot.get(entry_slot, -1)) or pending_payload_card
 		var card_model: Dictionary = {}
 		if card_model_for_part.is_valid():
 			var raw_card_model = card_model_for_part.call(entry_slot, part, part_index)
@@ -348,6 +354,8 @@ func build_page_models(page_entries: Array, role_key: String, unit_bp: Dictionar
 		var marker := "已装 " if zh and selected_card else ("IN " if selected_card else "")
 		if entry_slot in ["joint", "limb_muscle", "muscle"]:
 			marker = "待选 " if zh and selected_card and has_pending_canvas_part else marker
+		if pending_payload_card:
+			marker = "待安装 " if zh else "PENDING "
 		var title := "%s%s" % [marker, String(card_model.get("title_base", ""))]
 		var line_a := String(card_model.get("line_a", ""))
 		var line_b := String(card_model.get("line_b", ""))

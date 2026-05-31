@@ -17,8 +17,7 @@ func _run() -> void:
 	root.add_child(main)
 	await process_frame
 	main._ready()
-	var generated_roster: Dictionary = main._ai_teamedit_generated_roster(1)
-	var hero_bp: Dictionary = Dictionary(Array(generated_roster.get("hero", []))[0]).duplicate(true)
+	var hero_bp: Dictionary = _minimal_hero(main, "Multi Training Hero")
 	hero_bp["unit_name"] = "Multi Training Hero"
 	var puppet_bp: Dictionary = _minimal_puppet(main, "Multi Training Puppet")
 	var puppet_bp_b: Dictionary = _minimal_puppet(main, "Multi Training Puppet B")
@@ -75,6 +74,37 @@ func _minimal_puppet(main, unit_name: String) -> Dictionary:
 		"name": unit_name,
 		"unit_name": unit_name,
 		"role": "puppet",
+		"archetype": "custom",
+		"special": 0,
+		"joint": 0,
+		"limb_muscle": 0,
+		"muscle": core_index,
+		"booster": 0,
+		"engine": 0,
+		"cooling": 0,
+		"module": 0,
+		"blank_canvas": false,
+		"custom_topology": {"nodes": [node], "edges": [], "edge_snap_version": MainScene.TOPOLOGY_SNAP_VERSION},
+		"slot_payloads": [],
+		"purchased_parts": {},
+	}
+
+
+func _minimal_hero(main, unit_name: String) -> Dictionary:
+	var core_index := -1
+	for i in range(main._catalog_for("hero", "muscle").size()):
+		var part: Dictionary = main._selected_component("hero", "muscle", i)
+		if main._component_is_torso(part):
+			core_index = i
+			break
+	if core_index < 0:
+		_fail("No hero torso fixture found.")
+		return {}
+	var node: Dictionary = main._topology_component_node(0, "CORE", Vector2(0.5, 0.5), "muscle", core_index)
+	return {
+		"name": unit_name,
+		"unit_name": unit_name,
+		"role": "hero",
 		"archetype": "custom",
 		"special": 0,
 		"joint": 0,

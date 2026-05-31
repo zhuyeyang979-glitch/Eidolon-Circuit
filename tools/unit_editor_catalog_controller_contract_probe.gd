@@ -87,8 +87,13 @@ func _init() -> void:
 		{"slot": "muscle"},
 		{"slot": "joint"},
 	], {"muscle": 4, "joint": 2}, "muscle", 7, true)
-	if selection_key != "joint:2,muscle:4,pending:muscle:7:1":
+	if selection_key != "joint:2,muscle:4,pending:muscle:7:1,pending_payload::-1:0":
 		_fail("page_selection_key returned unexpected key: %s" % selection_key)
+	var payload_selection_key := controller.page_selection_key([
+		{"slot": "engine"},
+	], {"engine": 0}, "", -1, false, "engine", 2, true)
+	if payload_selection_key != "engine:0,pending::-1:0,pending_payload:engine:2:1":
+		_fail("page_selection_key should include pending payload state: %s" % payload_selection_key)
 	var page_entries_for_selection := [
 		{"slot": "muscle", "index": 0},
 		{"slot": "module", "index": 1},
