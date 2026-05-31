@@ -67,4 +67,3 @@ func _init() -> void:
 		_fail("Laser fire should add normal heat.")
 	print("LASER_AMMO_HEAT_PROBE ok ammo=%d->%d heat=%.1f->%.1f" % [ammo_before, ammo_after, heat_before, heat_after])
 	quit()
-

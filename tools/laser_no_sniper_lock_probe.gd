@@ -63,4 +63,3 @@ func _init() -> void:
 		_fail("Releasing laser beam activation must not queue true-bullet locks.")
 	print("LASER_NO_SNIPER_LOCK_PROBE ok")
 	quit()
-

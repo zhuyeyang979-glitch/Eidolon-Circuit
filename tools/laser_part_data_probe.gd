@@ -50,4 +50,3 @@ func _init() -> void:
 		_fail("Prism Beam Activate should bind gun_terminal.")
 	print("LASER_PART_DATA_PROBE ok ammo=%d range=%.2f width=%.2f" % [int(laser.get("carried_ammo", 0)), float(laser.get("projectile_range", 0.0)), float(laser.get("projectile_width_m", 0.0))])
 	quit()
-

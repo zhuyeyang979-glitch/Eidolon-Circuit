@@ -78,4 +78,3 @@ func _init() -> void:
 		_fail("Laser fire should consume exactly one laser ammo: %d -> %d." % [ammo_before, ammo_after])
 	print("LASER_BEAM_RUNTIME_FIRE_PROBE ok ammo=%d->%d target_hp=%.1f" % [ammo_before, ammo_after, float(target.health)])
 	quit()
-

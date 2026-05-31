@@ -4,6 +4,7 @@ export.cfg
 export_presets.cfg
 *.translation
 logs/
+Godot/
 tools/downloads/
 tools/git-portable/
 tools/godot-*/

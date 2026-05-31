@@ -5279,5 +5279,3 @@ func _make_line(line_name: String, line_width: float, color: Color) -> Line2D:
 	line.default_color = color
 	add_child(line)
 	return line
-
-

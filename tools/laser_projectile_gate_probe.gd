@@ -80,4 +80,3 @@ func _init() -> void:
 		_fail("Non-gun runtime event should still lose projectile fields.")
 	print("LASER_PROJECTILE_GATE_PROBE ok")
 	quit()
-

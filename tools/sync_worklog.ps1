@@ -65,4 +65,3 @@ foreach ($entry in $entries) {
     $newHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $entry.Path).Hash
     Write-Host "SYNC $($entry.Path) $newHash"
 }
-
