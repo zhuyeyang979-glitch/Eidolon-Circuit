@@ -38,6 +38,8 @@ const BattleAwarenessService = preload("res://scripts/services/battle_awareness_
 const BattleRuntimeActionTelemetryService = preload("res://scripts/services/battle_runtime_action_telemetry_service.gd")
 const PowerAllocationService = preload("res://scripts/services/power_allocation_service.gd")
 const ActionProfileRegistry = preload("res://scripts/services/action_profile_registry.gd")
+const GunActivationService = preload("res://scripts/services/gun_activation_service.gd")
+const HeldMeleeActivationService = preload("res://scripts/services/held_melee_activation_service.gd")
 const DriveSystemService = preload("res://scripts/services/drive_system_service.gd")
 const UnitBlueprintValidator = preload("res://scripts/services/unit_blueprint_validator.gd")
 const DataRuleService = preload("res://scripts/services/data_rule_service.gd")
@@ -8996,6 +8998,8 @@ var battle_awareness_service: BattleAwarenessService
 var battle_runtime_action_telemetry_service: BattleRuntimeActionTelemetryService
 var power_allocation_service: PowerAllocationService
 var action_profile_registry: ActionProfileRegistry
+var gun_activation_service: GunActivationService
+var held_melee_activation_service: HeldMeleeActivationService
 var drive_system_service: DriveSystemService
 var unit_blueprint_validator: UnitBlueprintValidator
 var data_rule_service: DataRuleService
@@ -13433,57 +13437,28 @@ func _entry_ref(entry: Dictionary) -> String:
 
 
 func _all_roster_order(player_id: int) -> Array:
-	var order: Array = []
 	if not blueprints.has(player_id):
-		return order
-	var max_units := 0
-	for role_key in ROLE_ORDER:
-		var roster: Array = blueprints[player_id].get(role_key, [])
-		max_units = maxi(max_units, roster.size())
-	for unit_index in range(max_units):
-		for role_key in ROLE_ORDER:
-			var roster: Array = blueprints[player_id].get(role_key, [])
-			if unit_index < roster.size():
-				order.append({"role": role_key, "index": unit_index})
-	return order
+		return []
+	return _battle_actor_command_service().all_roster_order(_roster_sizes_for_player(player_id), ROLE_ORDER)
 
 
 func _default_sortie_loadout(player_id: int) -> Array:
 	var order := _all_roster_order(player_id)
-	var loadout: Array = []
-	var limit := mini(order.size(), _current_sortie_cap())
-	for i in range(limit):
-		loadout.append(Dictionary(order[i]).duplicate(true))
-	return loadout
+	return _battle_actor_command_service().default_sortie_loadout(order, _current_sortie_cap())
 
 
 func _default_summon_pair_bindings() -> Array:
-	var bindings: Array = []
-	var limit := mini(_current_sortie_cap(), DEFAULT_SUMMON_PAIR_SLOTS.size())
-	for i in range(limit):
-		bindings.append(Array(DEFAULT_SUMMON_PAIR_SLOTS[i]).duplicate(true))
-	return bindings
+	return _battle_actor_command_service().default_summon_pair_bindings(DEFAULT_SUMMON_PAIR_SLOTS, _current_sortie_cap())
 
 
 func _ensure_summon_pair_bindings(player_id: int) -> Array:
 	var raw: Array = summon_pair_bindings.get(player_id, [])
-	var fixed: Array = []
-	for i in range(_current_sortie_cap()):
-		var pair: Array = []
-		if i < raw.size() and raw[i] is Array:
-			pair = Array(raw[i]).duplicate(true)
-		elif i < DEFAULT_SUMMON_PAIR_SLOTS.size():
-			pair = Array(DEFAULT_SUMMON_PAIR_SLOTS[i]).duplicate(true)
-		if pair.size() >= 2:
-			var a := clampi(int(pair[0]), 1, ATTACK_GROUP_COUNT)
-			var b := clampi(int(pair[1]), 1, ATTACK_GROUP_COUNT)
-			if a == b:
-				pair = []
-			else:
-				pair = [mini(a, b), maxi(a, b)]
-		else:
-			pair = []
-		fixed.append(pair)
+	var fixed: Array = _battle_actor_command_service().summon_pair_bindings_plan(
+		raw,
+		DEFAULT_SUMMON_PAIR_SLOTS,
+		_current_sortie_cap(),
+		ATTACK_GROUP_COUNT
+	)
 	summon_pair_bindings[player_id] = fixed
 	return fixed
 
@@ -13492,24 +13467,6 @@ func _pair_label(pair: Array) -> String:
 	if pair.size() < 2:
 		return "--"
 	return "%d+%d" % [int(pair[0]), int(pair[1])]
-
-
-func _pair_key(pair: Array) -> String:
-	if pair.size() < 2:
-		return ""
-	return "%d:%d" % [int(pair[0]), int(pair[1])]
-
-
-func _pair_used_by_other(bindings: Array, pair: Array, slot_index: int) -> bool:
-	var key := _pair_key(pair)
-	if key == "":
-		return false
-	for i in range(bindings.size()):
-		if i == slot_index:
-			continue
-		if _pair_key(Array(bindings[i])) == key:
-			return true
-	return false
 
 
 func _binding_slot_for_current_unit() -> int:
@@ -13525,19 +13482,17 @@ func _cycle_current_sortie_binding(direction: int) -> void:
 	var player_id := _editor_player()
 	var slot_index := _binding_slot_for_current_unit()
 	var bindings := _ensure_summon_pair_bindings(player_id)
-	var current_key := _pair_key(Array(bindings[slot_index]))
-	var start := 0
-	for i in range(DEFAULT_SUMMON_PAIR_SLOTS.size()):
-		if _pair_key(Array(DEFAULT_SUMMON_PAIR_SLOTS[i])) == current_key:
-			start = i
-			break
-	for offset in range(1, DEFAULT_SUMMON_PAIR_SLOTS.size() + 1):
-		var candidate_index := _wrapped_index(start + direction * offset, DEFAULT_SUMMON_PAIR_SLOTS.size())
-		var candidate := Array(DEFAULT_SUMMON_PAIR_SLOTS[candidate_index]).duplicate(true)
-		if _pair_used_by_other(bindings, candidate, slot_index):
-			continue
-		bindings[slot_index] = candidate
-		summon_pair_bindings[player_id] = bindings
+	var cycle_intent := _battle_actor_command_service().summon_pair_cycle_intent(
+		bindings,
+		slot_index,
+		direction,
+		DEFAULT_SUMMON_PAIR_SLOTS,
+		ATTACK_GROUP_COUNT
+	)
+	if String(cycle_intent.get("action", "")) == "set":
+		var next_bindings: Array = Array(cycle_intent.get("bindings", bindings))
+		var candidate: Array = Array(cycle_intent.get("pair", []))
+		summon_pair_bindings[player_id] = next_bindings
 		editor_summary_label.text = "出战槽 %d 的召唤组合键设为 %s。" % [slot_index + 1, _pair_label(candidate)] if _ui_is_zh() else "Sortie slot %d summon binding set to %s." % [slot_index + 1, _pair_label(candidate)]
 		return
 	editor_summary_label.text = "没有空余的攻击键组合绑定。" if _ui_is_zh() else "No free attack-pair binding remains."
@@ -13547,40 +13502,38 @@ func _clear_current_sortie_binding() -> void:
 	var player_id := _editor_player()
 	var slot_index := _binding_slot_for_current_unit()
 	var bindings := _ensure_summon_pair_bindings(player_id)
-	bindings[slot_index] = []
-	summon_pair_bindings[player_id] = bindings
+	var clear_intent := _battle_actor_command_service().summon_pair_clear_intent(bindings, slot_index)
+	summon_pair_bindings[player_id] = Array(clear_intent.get("bindings", bindings))
 	editor_summary_label.text = "出战槽 %d 的召唤组合键已解除。" % [slot_index + 1] if _ui_is_zh() else "Sortie slot %d summon binding cleared." % [slot_index + 1]
 
 
 func _valid_roster_entry(player_id: int, entry: Dictionary) -> bool:
-	var role_key := String(entry.get("role", ""))
-	if not ROLE_ORDER.has(role_key) or not blueprints.has(player_id):
-		return false
-	var roster: Array = blueprints[player_id].get(role_key, [])
-	var unit_index := int(entry.get("index", -1))
-	return unit_index >= 0 and unit_index < roster.size()
+	return _battle_actor_command_service().valid_roster_entry(entry, _roster_sizes_for_player(player_id), ROLE_ORDER)
+
+
+func _roster_sizes_for_player(player_id: int) -> Dictionary:
+	var sizes := {}
+	if not blueprints.has(player_id):
+		return sizes
+	for role_key in ROLE_ORDER:
+		var roster: Array = blueprints[player_id].get(role_key, [])
+		sizes[role_key] = roster.size()
+	return sizes
 
 
 func _ensure_sortie_loadout(player_id: int) -> Array:
 	var raw: Array = sortie_loadouts.get(player_id, [])
-	var fixed: Array = []
-	var seen := {}
-	for item in raw:
-		if not (item is Dictionary):
-			continue
-		var entry: Dictionary = Dictionary(item).duplicate(true)
-		if not _valid_roster_entry(player_id, entry):
-			continue
-		var ref := _entry_ref(entry)
-		if seen.has(ref):
-			continue
-		seen[ref] = true
-		fixed.append(entry)
-		if fixed.size() >= _current_sortie_cap():
-			break
-	sortie_loadouts[player_id] = fixed
-	initial_sortie_slot[player_id] = 0 if fixed.is_empty() else clampi(int(initial_sortie_slot.get(player_id, 0)), 0, fixed.size() - 1)
-	return fixed
+	var plan := _battle_actor_command_service().sortie_loadout_plan(
+		raw,
+		_roster_sizes_for_player(player_id),
+		ROLE_ORDER,
+		_current_sortie_cap(),
+		int(initial_sortie_slot.get(player_id, 0))
+	)
+	var loadout: Array = Array(plan.get("loadout", []))
+	sortie_loadouts[player_id] = loadout
+	initial_sortie_slot[player_id] = int(plan.get("initial_slot", 0))
+	return loadout
 
 
 func _sortie_position_for_entry(player_id: int, entry: Dictionary) -> int:
@@ -13591,21 +13544,13 @@ func _sortie_position_for_entry(player_id: int, entry: Dictionary) -> int:
 
 func _sortie_position(player_id: int, role_key: String, unit_index: int) -> int:
 	var loadout := _ensure_sortie_loadout(player_id)
-	for i in range(loadout.size()):
-		var entry: Dictionary = loadout[i]
-		if String(entry.get("role", "")) == role_key and int(entry.get("index", -1)) == unit_index:
-			return i
-	return -1
+	return _battle_actor_command_service().sortie_position(loadout, role_key, unit_index)
 
 
 func _roster_unit_total(player_id: int) -> int:
 	if not blueprints.has(player_id):
 		return 0
-	var total := 0
-	for role_key in ROLE_ORDER:
-		var roster: Array = blueprints[player_id].get(role_key, [])
-		total += roster.size()
-	return total
+	return _battle_actor_command_service().roster_unit_total(_roster_sizes_for_player(player_id), ROLE_ORDER)
 
 
 func _current_roster_cap() -> int:
@@ -13636,10 +13581,12 @@ func _role_short(role_key: String) -> String:
 
 func _starter_sortie_entry(player_id: int) -> Dictionary:
 	var loadout := _team_sortie_order(player_id)
-	if not loadout.is_empty():
-		return Dictionary(loadout[clampi(int(initial_sortie_slot.get(player_id, 0)), 0, loadout.size() - 1)]).duplicate(true)
-	var role_key := String(initial_role.get(player_id, "hero"))
-	return {"role": role_key, "index": int(active_roster_indices[player_id].get(role_key, 0))}
+	return _battle_actor_command_service().starter_sortie_entry(
+		loadout,
+		int(initial_sortie_slot.get(player_id, 0)),
+		String(initial_role.get(player_id, "hero")),
+		Dictionary(active_roster_indices.get(player_id, {}))
+	)
 
 
 func _starter_cost_valid(player_id: int, entry: Dictionary) -> bool:
@@ -13660,47 +13607,50 @@ func _ai_cached_unit_stats(player_id: int, role_key: String, unit_index: int) ->
 
 func _normalize_initial_sortie_for_cost(player_id: int) -> bool:
 	var loadout := _ensure_sortie_loadout(player_id)
-	if loadout.is_empty():
+	var starter_cost_valid: Array = []
+	for raw_entry in loadout:
+		starter_cost_valid.append(_starter_cost_valid(player_id, raw_entry) if raw_entry is Dictionary else false)
+	var plan := _battle_actor_command_service().sortie_initial_cost_plan(
+		loadout,
+		int(initial_sortie_slot.get(player_id, 0)),
+		starter_cost_valid
+	)
+	if not bool(plan.get("found", false)):
 		return false
-	var starter_index := clampi(int(initial_sortie_slot.get(player_id, 0)), 0, loadout.size() - 1)
-	if _starter_cost_valid(player_id, loadout[starter_index]):
-		initial_sortie_slot[player_id] = starter_index
-		return true
-	for i in range(loadout.size()):
-		if _starter_cost_valid(player_id, loadout[i]):
-			initial_sortie_slot[player_id] = i
-			return true
-	return false
+	initial_sortie_slot[player_id] = int(plan.get("initial_slot", 0))
+	return true
 
 
 func _prepare_ai_battle_rosters() -> void:
 	for player_id in [1, 2]:
-		var ai_controlled := _ai_battle_original_player_is_ai(player_id)
-		var roster_empty := _roster_unit_total(player_id) <= 0
-		var manual_locked := bool(ai_team_manual_lock.get(player_id, false))
-		var auto_generate := (ai_controlled and not manual_locked) or (roster_empty and not manual_locked)
-		if auto_generate:
-			ai_team_template_choice[player_id] = "random"
-		if ai_controlled or auto_generate:
-			_legalize_ai_player_roster(player_id, auto_generate or roster_empty)
+		var intent := _battle_actor_command_service().ai_battle_roster_prepare_intent({
+			"ai_controlled": _ai_battle_original_player_is_ai(player_id),
+			"roster_empty": _roster_unit_total(player_id) <= 0,
+			"manual_locked": bool(ai_team_manual_lock.get(player_id, false)),
+		})
+		if bool(intent.get("auto_generate", false)):
+			ai_team_template_choice[player_id] = String(intent.get("template_choice", "random"))
+		if bool(intent.get("legalize", false)):
+			_legalize_ai_player_roster(player_id, bool(intent.get("force_generate", false)))
 
 
 func _ai_battle_original_player_is_ai(player_id: int) -> bool:
-	if ai_battle_seat == 3:
-		return true
-	return player_id == 2
+	return _battle_actor_command_service().ai_battle_original_player_is_ai(ai_battle_seat, player_id)
 
 
 func _repair_ai_battle_entry_if_needed(player_id: int, mode: String) -> Dictionary:
 	var summary := _team_battle_entry_summary(player_id)
-	if bool(summary.get("valid", false)):
-		return summary
-	if mode == MODE_AI:
-		var should_repair := _ai_battle_original_player_is_ai(player_id)
-		if should_repair:
-			ai_team_template_choice[player_id] = "random" if not bool(ai_team_manual_lock.get(player_id, false)) else String(ai_team_template_choice.get(player_id, "teamedit_generated"))
-			_legalize_ai_player_roster(player_id, true)
-			summary = _team_battle_entry_summary(player_id)
+	var intent := _battle_actor_command_service().ai_battle_entry_repair_intent({
+		"summary_valid": bool(summary.get("valid", false)),
+		"mode_is_ai": mode == MODE_AI,
+		"ai_controlled": _ai_battle_original_player_is_ai(player_id),
+		"manual_locked": bool(ai_team_manual_lock.get(player_id, false)),
+		"template_choice": String(ai_team_template_choice.get(player_id, "teamedit_generated")),
+	})
+	if bool(intent.get("repair", false)):
+		ai_team_template_choice[player_id] = String(intent.get("template_choice", "teamedit_generated"))
+		_legalize_ai_player_roster(player_id, bool(intent.get("force_generate", true)))
+		summary = _team_battle_entry_summary(player_id)
 	return summary
 
 
@@ -14248,22 +14198,11 @@ func _build_ai_sortie_loadout(player_id: int) -> Array:
 
 
 func _sortie_role_counts(loadout: Array) -> Dictionary:
-	var counts := {"hero": 0, "puppet": 0, "barrier": 0}
-	for entry in loadout:
-		if not (entry is Dictionary):
-			continue
-		var role_key := String(Dictionary(entry).get("role", ""))
-		if counts.has(role_key):
-			counts[role_key] = int(counts[role_key]) + 1
-	return counts
+	return _battle_actor_command_service().sortie_role_counts(loadout, ROLE_ORDER)
 
 
 func _sortie_has_required_roles(loadout: Array) -> bool:
-	var counts := _sortie_role_counts(loadout)
-	for role_key in ROLE_ORDER:
-		if int(counts.get(role_key, 0)) <= 0:
-			return false
-	return true
+	return _battle_actor_command_service().sortie_has_required_roles(loadout, ROLE_ORDER)
 
 
 func _install_ai_reserve_unit(player_id: int, role_key: String, seed: int) -> Dictionary:
@@ -14387,54 +14326,43 @@ func _pick_ai_sortie_entry(player_id: int, role_filter: String, selected: Array,
 
 
 func _sortie_entry_is_battle_legal(player_id: int, entry: Dictionary, require_starter_cost: bool = false) -> bool:
-	if not _valid_roster_entry(player_id, entry):
-		return false
-	if require_starter_cost and not _starter_cost_valid(player_id, entry):
-		return false
 	var role_key := String(entry.get("role", "hero"))
 	var unit_index := int(entry.get("index", 0))
-	var unit_bp := _blueprint_for(player_id, role_key, unit_index)
-	var stats := _ai_cached_unit_stats(player_id, role_key, unit_index)
-	if float(stats.get("length", 0.0)) > 4.5:
-		return false
-	if _role_uses_body_board(role_key) and not _module_material_rule_valid(unit_bp):
-		return false
-	var topology_note := _topology_rule_note(unit_bp, role_key, stats)
-	if topology_note.begins_with("INVALID"):
-		return false
-	for note_key in ["joint_momentum_note", "slot_payload_note", "drive_note", "stiffness_note"]:
-		if role_key == "barrier" and note_key in ["slot_payload_note", "drive_note"]:
-			continue
-		if String(stats.get(note_key, "")).begins_with("INVALID"):
-			return false
-	return true
+	var valid_roster := _valid_roster_entry(player_id, entry)
+	var starter_cost_valid := true
+	var stats := {}
+	var role_uses_body_board := false
+	var module_material_valid := true
+	var topology_note := ""
+	if valid_roster:
+		starter_cost_valid = _starter_cost_valid(player_id, entry) if require_starter_cost else true
+		if starter_cost_valid or not require_starter_cost:
+			var unit_bp := _blueprint_for(player_id, role_key, unit_index)
+			stats = _ai_cached_unit_stats(player_id, role_key, unit_index)
+			role_uses_body_board = _role_uses_body_board(role_key)
+			module_material_valid = _module_material_rule_valid(unit_bp) if role_uses_body_board else true
+			topology_note = _topology_rule_note(unit_bp, role_key, stats)
+	return _battle_actor_command_service().sortie_entry_battle_legality({
+		"valid_roster": valid_roster,
+		"require_starter_cost": require_starter_cost,
+		"starter_cost_valid": starter_cost_valid,
+		"role_key": role_key,
+		"stats": stats,
+		"role_uses_body_board": role_uses_body_board,
+		"module_material_valid": module_material_valid,
+		"topology_note": topology_note,
+	})
 
 
 func _entry_is_selected(entry: Dictionary, selected: Array) -> bool:
-	var ref := _entry_ref(entry)
-	for selected_entry in selected:
-		if selected_entry is Dictionary and _entry_ref(selected_entry) == ref:
-			return true
-	return false
+	return _battle_actor_command_service().entry_is_selected(entry, selected)
 
 
 func _ai_sortie_score(player_id: int, entry: Dictionary, starter_score: bool) -> float:
 	var role_key := String(entry.get("role", "hero"))
 	var unit_index := int(entry.get("index", 0))
 	var stats := _ai_cached_unit_stats(player_id, role_key, unit_index)
-	var score := float(stats.get("health", 0)) * 0.12
-	score += float(stats.get("normal_damage", 0)) * 3.6 + float(stats.get("active_damage", 0)) * 2.2 + float(stats.get("armor_damage", 0)) * 1.5
-	score += float(stats.get("speed", 0.0)) * 34.0 + float(stats.get("data_security", 1.0)) * 14.0
-	score -= float(stats.get("deploy_cost", stats.get("cost", 0))) * 0.1
-	if role_key == "hero":
-		score += 90.0
-	elif role_key == "puppet":
-		score += 64.0 + float(stats.get("group_count", 1)) * 8.0
-	else:
-		score += 54.0 + float(stats.get("aura_range", 0.0)) * 42.0 + float(stats.get("pulse_interval", 1.0)) * -8.0
-	if starter_score:
-		score += 260.0 - float(stats.get("cost", 999)) * 0.65
-	return score
+	return _battle_actor_command_service().ai_sortie_score(entry, stats, starter_score)
 
 
 func _toggle_sortie_entry(player_id: int, entry: Dictionary) -> String:
@@ -14442,18 +14370,28 @@ func _toggle_sortie_entry(player_id: int, entry: Dictionary) -> String:
 		return "无效队伍单位。" if _ui_is_zh() else "Invalid roster entry."
 	var loadout := _ensure_sortie_loadout(player_id)
 	var pos := _sortie_position_for_entry(player_id, entry)
-	if pos >= 0:
-		loadout.remove_at(pos)
-		sortie_loadouts[player_id] = loadout
-		initial_sortie_slot[player_id] = 0 if loadout.is_empty() else clampi(int(initial_sortie_slot.get(player_id, 0)), 0, loadout.size() - 1)
+	var plan := _battle_actor_command_service().sortie_toggle_plan(
+		loadout,
+		entry,
+		pos,
+		_current_sortie_cap(),
+		int(initial_sortie_slot.get(player_id, 0))
+	)
+	var action := String(plan.get("action", "none"))
+	if action == "remove":
+		sortie_loadouts[player_id] = Array(plan.get("loadout", []))
+		initial_sortie_slot[player_id] = int(plan.get("initial_slot", 0))
 		_normalize_initial_sortie_for_cost(player_id)
 		return "已从本场出战中移除 %s。" % _sortie_entry_label(player_id, entry) if _ui_is_zh() else "Removed %s from the match sortie." % _sortie_entry_label(player_id, entry)
-	if loadout.size() >= _current_sortie_cap():
+	if action == "full":
 		return "出战已满：%s 当前最多带入 %d 个单位。" % [_match_format_name(), _current_sortie_cap()] if _ui_is_zh() else "SORTIE FULL: %s brings at most %d units." % [_match_format_name(), _current_sortie_cap()]
-	loadout.append(Dictionary(entry).duplicate(true))
-	sortie_loadouts[player_id] = loadout
-	_normalize_initial_sortie_for_cost(player_id)
-	return "已将 %s 加入出战槽 %d。" % [_sortie_entry_label(player_id, entry), loadout.size()] if _ui_is_zh() else "Added %s to sortie slot %d." % [_sortie_entry_label(player_id, entry), loadout.size()]
+	if action == "add":
+		var next_loadout: Array = Array(plan.get("loadout", []))
+		sortie_loadouts[player_id] = next_loadout
+		initial_sortie_slot[player_id] = int(plan.get("initial_slot", 0))
+		_normalize_initial_sortie_for_cost(player_id)
+		return "已将 %s 加入出战槽 %d。" % [_sortie_entry_label(player_id, entry), next_loadout.size()] if _ui_is_zh() else "Added %s to sortie slot %d." % [_sortie_entry_label(player_id, entry), next_loadout.size()]
+	return ""
 
 
 func _set_sortie_starter_entry(player_id: int, entry: Dictionary) -> String:
@@ -14464,15 +14402,18 @@ func _set_sortie_starter_entry(player_id: int, entry: Dictionary) -> String:
 		return "首发非法：%s 入场价 %d，首发上限 %d。" % [_sortie_entry_label(player_id, entry), int(stats.get("deploy_cost", stats.get("cost", 0))), INITIAL_ENTRY_COST_CAP] if _ui_is_zh() else "INITIAL ILLEGAL: %s deploys for %d, starter cap is %d." % [_sortie_entry_label(player_id, entry), int(stats.get("deploy_cost", stats.get("cost", 0))), INITIAL_ENTRY_COST_CAP]
 	var loadout := _ensure_sortie_loadout(player_id)
 	var pos := _sortie_position_for_entry(player_id, entry)
-	if pos < 0:
-		if loadout.size() >= _current_sortie_cap():
-			return "出战已满：先移除一个单位，再设为首发。" if _ui_is_zh() else "SORTIE FULL: remove another unit before making this starter."
-		loadout.append(Dictionary(entry).duplicate(true))
-		sortie_loadouts[player_id] = loadout
-		pos = loadout.size() - 1
-	initial_sortie_slot[player_id] = pos
-	initial_role[player_id] = String(entry.get("role", "hero"))
-	return "首发设为槽位 %d：%s。" % [pos + 1, _sortie_entry_label(player_id, entry)] if _ui_is_zh() else "Starter set to slot %d: %s." % [pos + 1, _sortie_entry_label(player_id, entry)]
+	var plan := _battle_actor_command_service().sortie_starter_plan(loadout, entry, pos, _current_sortie_cap())
+	var action := String(plan.get("action", "none"))
+	if action == "full":
+		return "出战已满：先移除一个单位，再设为首发。" if _ui_is_zh() else "SORTIE FULL: remove another unit before making this starter."
+	if action == "append":
+		sortie_loadouts[player_id] = Array(plan.get("loadout", []))
+	if action in ["set", "append"]:
+		var next_slot := int(plan.get("initial_slot", 0))
+		initial_sortie_slot[player_id] = next_slot
+		initial_role[player_id] = String(plan.get("initial_role", entry.get("role", "hero")))
+		return "首发设为槽位 %d：%s。" % [next_slot + 1, _sortie_entry_label(player_id, entry)] if _ui_is_zh() else "Starter set to slot %d: %s." % [next_slot + 1, _sortie_entry_label(player_id, entry)]
+	return ""
 
 
 func _team_battle_entry_summary(player_id: int) -> Dictionary:
@@ -14543,11 +14484,12 @@ func _team_battle_entry_summary(player_id: int) -> Dictionary:
 
 
 func _set_active_index_from_sortie_entry(player_id: int, entry: Dictionary) -> void:
-	if not _valid_roster_entry(player_id, entry):
+	var plan := _battle_actor_command_service().sortie_active_index_plan(entry, _valid_roster_entry(player_id, entry))
+	if String(plan.get("action", "none")) != "set":
 		return
-	var role_key := String(entry.get("role", "hero"))
-	active_roster_indices[player_id][role_key] = int(entry.get("index", 0))
-	initial_role[player_id] = role_key
+	var role_key := String(plan.get("role_key", "hero"))
+	active_roster_indices[player_id][role_key] = int(plan.get("unit_index", 0))
+	initial_role[player_id] = String(plan.get("initial_role", role_key))
 
 
 func _sortie_entry_label(player_id: int, entry: Dictionary, include_cost: bool = false) -> String:
@@ -15026,29 +14968,18 @@ func _move_current_sortie(direction: int) -> void:
 
 func _update_sortie_after_delete(player_id: int, role_key: String, deleted_index: int) -> void:
 	var raw: Array = sortie_loadouts.get(player_id, [])
-	var fixed: Array = []
-	var seen := {}
-	for item in raw:
-		if not (item is Dictionary):
-			continue
-		var entry: Dictionary = Dictionary(item).duplicate(true)
-		if String(entry.get("role", "")) == role_key:
-			var idx := int(entry.get("index", -1))
-			if idx == deleted_index:
-				continue
-			if idx > deleted_index:
-				entry["index"] = idx - 1
-		if not _valid_roster_entry(player_id, entry):
-			continue
-		var ref := _entry_ref(entry)
-		if seen.has(ref):
-			continue
-		seen[ref] = true
-		fixed.append(entry)
-		if fixed.size() >= _current_sortie_cap():
-			break
+	var plan := _battle_actor_command_service().sortie_after_delete_plan(
+		raw,
+		_roster_sizes_for_player(player_id),
+		ROLE_ORDER,
+		_current_sortie_cap(),
+		int(initial_sortie_slot.get(player_id, 0)),
+		role_key,
+		deleted_index
+	)
+	var fixed: Array = Array(plan.get("loadout", []))
 	sortie_loadouts[player_id] = fixed
-	initial_sortie_slot[player_id] = 0 if fixed.is_empty() else clampi(int(initial_sortie_slot.get(player_id, 0)), 0, fixed.size() - 1)
+	initial_sortie_slot[player_id] = int(plan.get("initial_slot", 0))
 
 
 func _navigation_current_page() -> String:
@@ -15687,72 +15618,79 @@ func _player_sortie_is_ai_controlled(player_id: int, mode: String) -> bool:
 
 func _prepare_matchup_sortie_selection(mode: String) -> void:
 	for player_id in [1, 2]:
-		if _player_sortie_is_ai_controlled(player_id, mode):
+		var intent := _battle_actor_command_service().matchup_sortie_selection_intent({
+			"ai_controlled": _player_sortie_is_ai_controlled(player_id, mode),
+		})
+		if bool(intent.get("build_ai_loadout", false)):
 			sortie_loadouts[player_id] = _build_ai_sortie_loadout(player_id)
+		if bool(intent.get("normalize_initial", false)):
 			_normalize_initial_sortie_for_cost(player_id)
-		else:
+		if bool(intent.get("clear_loadout", false)):
 			sortie_loadouts[player_id] = []
-			initial_sortie_slot[player_id] = 0
-		_ensure_summon_pair_bindings(player_id)
+			initial_sortie_slot[player_id] = int(intent.get("initial_slot", 0))
+		if bool(intent.get("ensure_bindings", true)):
+			_ensure_summon_pair_bindings(player_id)
 
 
 func _select_ai_battle_seat(seat: int) -> void:
-	ai_battle_seat = clampi(seat, 1, 3)
-	if pending_battle_mode == MODE_TRAINING:
+	var intent := _battle_actor_command_service().ai_battle_seat_selection_intent({
+		"requested_seat": seat,
+		"mode_is_training": pending_battle_mode == MODE_TRAINING,
+		"p1_manual_locked": bool(ai_team_manual_lock.get(1, false)),
+	})
+	ai_battle_seat = int(intent.get("seat", 1))
+	if bool(intent.get("training_seat_confirmed", false)):
 		training_seat_confirmed = true
+	if bool(intent.get("configure_training_sides", false)):
 		_configure_training_sides_for_seat()
-	elif ai_battle_seat == 3 and not bool(ai_team_manual_lock.get(1, false)):
-		scout_sortie_player_id = 1
-	elif ai_battle_seat == 2:
-		scout_sortie_player_id = 1
+	if bool(intent.get("set_scout_sortie_player", false)):
+		scout_sortie_player_id = int(intent.get("scout_sortie_player_id", scout_sortie_player_id))
 	if scout_hint_label != null:
 		if pending_battle_mode == MODE_TRAINING:
 			scout_hint_label.text = "训练席位：%s。开始后球体靶机在对手侧待测。" % _battle_seat_label(ai_battle_seat) if _ui_is_zh() else "Training seat: %s. The ball dummy will wait on the opposite side." % _battle_seat_label(ai_battle_seat)
 		else:
 			scout_hint_label.text = _ai_battle_seat_hint()
-	_update_scout_ui()
+	if bool(intent.get("update_scout_ui", true)):
+		_update_scout_ui()
 
 
 func _select_scout_sortie_side(player_id: int) -> void:
-	scout_sortie_player_id = clampi(player_id, 1, 2)
-	scout_selected_player_id = scout_sortie_player_id
-	var own_order := _all_roster_order(scout_sortie_player_id)
-	if not own_order.is_empty():
-		scout_selected_entry = Dictionary(own_order[0]).duplicate(true)
+	var intent := _battle_actor_command_service().scout_sortie_side_selection_intent(player_id, _all_roster_order(clampi(player_id, 1, 2)))
+	scout_sortie_player_id = int(intent.get("scout_sortie_player_id", 1))
+	scout_selected_player_id = int(intent.get("scout_selected_player_id", scout_sortie_player_id))
+	if bool(intent.get("set_selected_entry", false)):
+		scout_selected_entry = Dictionary(intent.get("selected_entry", {})).duplicate(true)
 	scout_hint_label.text = "正在为 P%d 选择本场六个出战单位。左键加入/移除，右键设为首发。" % scout_sortie_player_id if _ui_is_zh() else "Choosing P%d six-unit sortie for this match. Left click add/remove; right click starter." % scout_sortie_player_id
-	_update_scout_ui()
+	if bool(intent.get("update_scout_ui", true)):
+		_update_scout_ui()
 
 
 func _handle_scout_ai_team_button(player_id: int, mode: String, lock_after: bool) -> void:
-	player_id = clampi(player_id, 1, 2)
-	match mode:
+	var clamped_player_id := clampi(player_id, 1, 2)
+	var intent := _battle_actor_command_service().scout_ai_team_button_intent(
+		player_id,
+		mode,
+		lock_after,
+		String(ai_team_template_choice.get(clamped_player_id, "teamedit_generated")),
+		AI_TEAM_TEMPLATE_ORDER
+	)
+	player_id = int(intent.get("player_id", clamped_player_id))
+	match String(intent.get("action", "")):
 		"edit":
 			_show_editor_for_player(player_id)
-		"cycle":
-			var current_key := String(ai_team_template_choice.get(player_id, "teamedit_generated"))
-			var index := AI_TEAM_TEMPLATE_ORDER.find(current_key)
-			if index < 0:
-				index = 0
-			var next_key := String(AI_TEAM_TEMPLATE_ORDER[_wrapped_index(index + 1, AI_TEAM_TEMPLATE_ORDER.size())])
-			_generate_ai_team_from_scout(player_id, next_key, true)
-		_:
-			ai_team_template_choice[player_id] = "random"
-			_generate_ai_team_from_scout(player_id, "random", lock_after)
+		"generate":
+			var template_key := String(intent.get("template_key", "random"))
+			if bool(intent.get("set_template_choice", false)):
+				ai_team_template_choice[player_id] = String(intent.get("template_choice", template_key))
+			_generate_ai_team_from_scout(player_id, template_key, bool(intent.get("lock_after", lock_after)))
 
 
 func _team_color_index(player_id: int) -> int:
-	var fallback := 0 if player_id == 1 else 1
-	var raw := int(team_color_indices.get(player_id, fallback))
-	if raw < 0:
-		return -1
-	return clampi(raw, 0, TEAM_COLOR_PRESETS.size() - 1)
+	return _battle_actor_command_service().team_color_index(player_id, team_color_indices, TEAM_COLOR_PRESETS.size())
 
 
 func _team_color_preset(player_id: int) -> Dictionary:
-	var color_index := _team_color_index(player_id)
-	if color_index < 0:
-		return Dictionary(team_custom_colors.get(player_id, team_custom_colors.get(1, {}))).duplicate(true)
-	return Dictionary(TEAM_COLOR_PRESETS[color_index])
+	return _battle_actor_command_service().team_color_preset(player_id, team_color_indices, team_custom_colors, TEAM_COLOR_PRESETS)
 
 
 func _team_primary_color(player_id: int) -> Color:
@@ -15769,9 +15707,7 @@ func _team_accent_color(player_id: int) -> Color:
 
 func _team_color_name(player_id: int) -> String:
 	var preset := _team_color_preset(player_id)
-	if _ui_is_zh():
-		return String(preset.get("name", preset.get("name_en", "自定义")))
-	return String(preset.get("name_en", preset.get("name", "CUSTOM")))
+	return _battle_actor_command_service().team_color_name(preset, _ui_is_zh())
 
 
 func _ui_is_zh() -> bool:
@@ -16174,11 +16110,13 @@ func _apply_language_to_existing_ui() -> void:
 
 
 func _select_scout_team_color(color_index: int) -> void:
-	var player_id := clampi(int(scout_sortie_player_id), 1, 2)
-	team_color_indices[player_id] = clampi(color_index, 0, TEAM_COLOR_PRESETS.size() - 1)
+	var intent := _battle_actor_command_service().team_color_select_intent(scout_sortie_player_id, color_index, TEAM_COLOR_PRESETS.size(), false)
+	var player_id := int(intent.get("player_id", 1))
+	team_color_indices[player_id] = int(intent.get("color_index", 0))
 	if scout_hint_label != null:
 		scout_hint_label.text = "P%d 出战颜色已切换为 %s。该颜色会跟随队伍进入战斗。" % [player_id, _team_color_name(player_id)] if _ui_is_zh() else "P%d sortie color is now %s. This color follows that selected team into battle." % [player_id, _team_color_name(player_id)]
-	_update_scout_ui()
+	if bool(intent.get("update_ui", true)):
+		_update_scout_ui()
 
 
 func _set_training_ball_dummy_radius_from_slider(value: float) -> void:
@@ -16239,13 +16177,16 @@ func _update_training_dummy_radius_ui() -> void:
 
 
 func _select_editor_team_color(color_index: int) -> void:
-	var player_id := _editor_player()
-	team_color_indices[player_id] = clampi(color_index, 0, TEAM_COLOR_PRESETS.size() - 1)
-	ai_team_manual_lock[player_id] = true
+	var intent := _battle_actor_command_service().team_color_select_intent(_editor_player(), color_index, TEAM_COLOR_PRESETS.size(), true)
+	var player_id := int(intent.get("player_id", _editor_player()))
+	team_color_indices[player_id] = int(intent.get("color_index", 0))
+	if bool(intent.get("set_manual_lock", false)):
+		ai_team_manual_lock[player_id] = bool(intent.get("manual_locked", true))
 	if editor_summary_label != null:
 		editor_summary_label.text = "P%d 队伍颜色：%s" % [player_id, _team_color_name(player_id)] if _ui_is_zh() else "P%d team color: %s" % [player_id, _team_color_name(player_id)]
 	_play_sfx_wave("clack", 560.0, 0.035, -21.0)
-	_update_editor_ui()
+	if bool(intent.get("update_ui", true)):
+		_update_editor_ui()
 
 
 func _set_editor_custom_primary_color(color: Color) -> void:
@@ -22592,11 +22533,15 @@ func _drop_catalog_part_on_board(slot_key: String, part_index: int, local_positi
 		hot_path_profiler.scope_end("drop.install_part")
 
 
-func _handle_editor_board_input(event: InputEvent) -> void:
+func _remember_editor_board_event_position(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
 		editor_last_board_mouse_position = (event as InputEventMouseButton).position
 	elif event is InputEventMouseMotion:
 		editor_last_board_mouse_position = (event as InputEventMouseMotion).position
+
+
+func _handle_editor_board_input(event: InputEvent) -> void:
+	_remember_editor_board_event_position(event)
 	var player_id := _editor_player()
 	var role_key: String = ROLE_ORDER[editor_role_index]
 	var unit_bp: Dictionary = _editor_current_blueprint()
@@ -30184,6 +30129,18 @@ func _battle_runtime_action_telemetry_service() -> BattleRuntimeActionTelemetryS
 	return battle_runtime_action_telemetry_service
 
 
+func _gun_activation_service() -> GunActivationService:
+	if gun_activation_service == null:
+		gun_activation_service = GunActivationService.new()
+	return gun_activation_service
+
+
+func _held_melee_activation_service() -> HeldMeleeActivationService:
+	if held_melee_activation_service == null:
+		held_melee_activation_service = HeldMeleeActivationService.new()
+	return held_melee_activation_service
+
+
 func _battle_action_event_constants() -> Dictionary:
 	return {
 		"standard_sniper_projectile_width_m": STANDARD_SNIPER_PROJECTILE_WIDTH_M,
@@ -30204,6 +30161,22 @@ func _battle_action_event_constants() -> Dictionary:
 		"standard_missile_projectile_momentum": STANDARD_MISSILE_PROJECTILE_MOMENTUM,
 		"standard_missile_explosion_radius": STANDARD_MISSILE_EXPLOSION_RADIUS,
 		"standard_missile_occlusion_grace": STANDARD_MISSILE_OCCLUSION_GRACE,
+	}
+
+
+func _gun_activation_constants() -> Dictionary:
+	return {
+		"standard_sniper_projectile_width_m": STANDARD_SNIPER_PROJECTILE_WIDTH_M,
+		"standard_chemical_sprayer_width_m": STANDARD_CHEMICAL_SPRAYER_WIDTH_M,
+		"standard_chemical_sprayer_range_m": STANDARD_CHEMICAL_SPRAYER_RANGE_M,
+		"standard_chemical_sprayer_fire_interval": STANDARD_CHEMICAL_SPRAYER_FIRE_INTERVAL,
+		"standard_laser_width_m": STANDARD_LASER_WIDTH_M,
+		"standard_laser_range_m": STANDARD_LASER_RANGE_M,
+		"standard_laser_fire_interval": STANDARD_LASER_FIRE_INTERVAL,
+		"standard_missile_width_m": STANDARD_MISSILE_WIDTH_M,
+		"standard_missile_range_m": STANDARD_MISSILE_RANGE_M,
+		"standard_web_tether_width_m": STANDARD_WEB_TETHER_WIDTH_M,
+		"standard_web_tether_range_m": STANDARD_WEB_TETHER_RANGE_M,
 	}
 
 
@@ -31202,7 +31175,7 @@ func _handle_player_battle_input(player_id: int, delta: float, prefix: String) -
 
 	var requested_attack_state := "normal" if _unit_uses_direct_runtime_topology(hero) else _melee_command_attack_kind(player_id, hero, false, input_vector)
 	var handled_attack := false
-	if not bool(aim_holding[player_id]) and not held_melee_active:
+	if not bool(aim_holding[player_id]) and not gun_activation_active and not held_melee_active:
 		for attack_index in range(ATTACK_GROUP_COUNT):
 			var action_name := "%s_attack_%d" % [prefix, attack_index + 1]
 			if _battle_action_just_pressed(action_name):
@@ -31219,9 +31192,9 @@ func _handle_player_battle_input(player_id: int, delta: float, prefix: String) -
 			var locked_direction: Vector2 = aim_locked_directions[player_id]
 			var fire_direction: Vector2 = locked_direction if locked_direction.length() > 0.01 else aim_directions[player_id]
 			var release_group := _attack_group(hero, int(aim_attack_index[player_id]))
-			var release_should_fire := bool(release_group.get("release_to_fire", false)) or (not bool(release_group.get("hold_to_activate", false))) or _group_uses_true_bullet(release_group)
+			var release_intent := _battle_action_event_service().held_aim_release_intent(bool(release_group.get("release_to_fire", false)), bool(release_group.get("hold_to_activate", false)), _group_uses_true_bullet(release_group))
 			aim_holding[player_id] = false
-			if release_should_fire:
+			if bool(release_intent.get("fire", false)):
 				_hero_normal_attack(player_id, prefix, fire_direction, int(aim_attack_index[player_id]), String(aim_action_state[player_id]), locked_target)
 			aim_action_name[player_id] = ""
 			aim_action_state[player_id] = "normal"
@@ -31233,7 +31206,7 @@ func _handle_player_battle_input(player_id: int, delta: float, prefix: String) -
 func _held_aim_uses_turn_keys(player_id: int, prefix: String = "") -> bool:
 	if _runtime_held_melee_activation_active(player_id):
 		var state: Dictionary = held_melee_activation_state[player_id]
-		if bool(state.get("turn_keys_steer_joint", true)):
+		if _held_melee_activation_service().held_turn_keys_reserved(state):
 			return true
 	if prefix != "":
 		var runtime_hero = active_units[player_id]["hero"]
@@ -31276,31 +31249,25 @@ func _active_gun_aim_input_mode(player_id: int, prefix: String = "") -> String:
 
 
 func _hold_activation_initial_delay(group: Dictionary) -> float:
-	if not bool(group.get("hold_to_activate", false)) or not bool(group.get("projectile", false)):
-		return 0.0
-	if bool(group.get("release_to_fire", false)):
-		return 9999.0
-	if _group_uses_true_bullet(group):
-		return 9999.0
-	var damage_type := String(group.get("projectile_damage_type", group.get("damage_type", "")))
-	if damage_type == "laser":
-		return 0.0
-	return 0.0
+	return _battle_action_event_service().hold_activation_initial_delay(
+		bool(group.get("hold_to_activate", false)),
+		bool(group.get("projectile", false)),
+		bool(group.get("release_to_fire", false)),
+		_group_uses_true_bullet(group)
+	)
 
 
 func _hold_activation_fire_interval(group: Dictionary) -> float:
-	if float(group.get("fire_rate", 0.0)) > 0.0:
-		return 1.0 / maxf(0.05, float(group.get("fire_rate", 0.0)))
-	if float(group.get("fire_interval", 0.0)) > 0.0:
-		return maxf(0.04, float(group.get("fire_interval", 0.0)))
-	var damage_type := String(group.get("projectile_damage_type", group.get("damage_type", "")))
-	if damage_type == "laser":
-		return clampf(float(group.get("laser_aim_time", LASER_DEFAULT_AIM_SECONDS)), LASER_MIN_AIM_SECONDS, LASER_MAX_AIM_SECONDS) + 0.32
-	if damage_type == "chemical":
-		return 0.2
-	if _projectile_behavior_for_data(group) == "bullet_hell":
-		return 0.16
-	return 0.24
+	return _battle_action_event_service().hold_activation_fire_interval({
+		"fire_rate": float(group.get("fire_rate", 0.0)),
+		"fire_interval": float(group.get("fire_interval", 0.0)),
+		"damage_type": String(group.get("projectile_damage_type", group.get("damage_type", ""))),
+		"laser_aim_time": float(group.get("laser_aim_time", LASER_DEFAULT_AIM_SECONDS)),
+		"projectile_behavior": _projectile_behavior_for_data(group),
+		"laser_default_aim_seconds": LASER_DEFAULT_AIM_SECONDS,
+		"laser_min_aim_seconds": LASER_MIN_AIM_SECONDS,
+		"laser_max_aim_seconds": LASER_MAX_AIM_SECONDS,
+	})
 
 
 func _try_attack_pair_summon(player_id: int, prefix: String, input_vector: Vector2) -> bool:
@@ -31344,13 +31311,12 @@ func _summon_sortie_slot(player_id: int, slot_index: int, input_vector: Vector2)
 
 func _team_sortie_order(player_id: int) -> Array:
 	var loadout := _ensure_sortie_loadout(player_id)
-	var order: Array = []
-	for entry in loadout:
-		if entry is Dictionary and _valid_roster_entry(player_id, entry):
-			order.append(Dictionary(entry).duplicate(true))
-		if order.size() >= _current_sortie_cap():
-			break
-	return order
+	return _battle_actor_command_service().team_sortie_order(
+		loadout,
+		_roster_sizes_for_player(player_id),
+		ROLE_ORDER,
+		_current_sortie_cap()
+	)
 
 
 func _sortie_pair_preview(player_id: int, max_items: int = SORTIE_UNIT_CAP) -> String:
@@ -31368,60 +31334,52 @@ func _sortie_pair_preview(player_id: int, max_items: int = SORTIE_UNIT_CAP) -> S
 
 
 func _portal_index_from_vector(input_vector: Vector2, fallback_index: int) -> int:
-	if input_vector.length() < 0.34:
-		return clampi(fallback_index, 0, PORTALS.size() - 1)
-	var x := input_vector.x
-	var y := input_vector.y
-	if y < -0.35:
-		if x < -0.35:
-			return 0
-		if x > 0.35:
-			return 2
-		return 1
-	if y > 0.35:
-		if x < -0.35:
-			return 5
-		if x > 0.35:
-			return 7
-		return 6
-	if x < -0.35:
-		return 3
-	if x > 0.35:
-		return 4
-	return clampi(fallback_index, 0, PORTALS.size() - 1)
+	return _battle_actor_command_service().portal_index_from_vector(input_vector, fallback_index, PORTALS.size())
 
 
 func _start_or_fire_attack_button(player_id: int, prefix: String, input_vector: Vector2, attack_index: int, action_name: String, requested_state: String = "normal") -> void:
 	var hero = active_units[player_id]["hero"]
 	if not _is_live_unit(hero):
 		return
-	if _unit_uses_direct_runtime_topology(hero):
+	var direct_runtime_topology := _unit_uses_direct_runtime_topology(hero)
+	if direct_runtime_topology:
 		var binding := _runtime_binding_for_attack_index(hero, attack_index)
-		if _runtime_binding_is_gun_activation(binding):
+		var windows := _ensure_attack_command_windows(player_id)
+		var route_intent := _battle_action_event_service().runtime_attack_button_intent({
+			"direct_runtime_topology": direct_runtime_topology,
+			"attack_index": attack_index,
+			"requested_state": requested_state,
+			"gun_activation": _runtime_binding_is_gun_activation(binding),
+			"held_melee_activation": _runtime_binding_is_held_melee_activation(binding),
+			"has_attack_window": (not windows.is_empty()) and windows.has(_attack_window_key(attack_index)),
+			"binding_empty": binding.is_empty(),
+		})
+		var route_action := String(route_intent.get("action", "legacy_attack"))
+		if route_action == "start_gun_activation":
 			_start_runtime_gun_activation(player_id, prefix, attack_index, action_name, binding)
 			return
-		if _runtime_binding_is_held_melee_activation(binding):
+		if route_action == "start_held_melee_activation":
 			_start_runtime_held_melee_activation(player_id, prefix, attack_index, action_name, binding, input_vector)
 			return
-		if _attack_windows_any_open(player_id) and _ensure_attack_command_windows(player_id).has(_attack_window_key(attack_index)):
-			_resolve_attack_command_window(player_id, prefix, input_vector, attack_index, "normal")
+		if route_action == "resolve_command_window":
+			_resolve_attack_command_window(player_id, prefix, input_vector, int(route_intent.get("attack_index", attack_index)), String(route_intent.get("action_state", "normal")))
 			return
-		if binding.is_empty():
+		if route_action == "fail_unbound":
 			_play_module_fail_sfx()
 			_show_battle_message("攻击键 %d 未绑定行动模块" % [attack_index + 1] if _ui_is_zh() else "Attack key %d has no module binding" % [attack_index + 1], 0.55)
 			return
-		_open_attack_command_window(player_id, prefix, attack_index, binding)
+		if route_action == "open_command_window":
+			_open_attack_command_window(player_id, prefix, int(route_intent.get("attack_index", attack_index)), binding)
+			return
 		return
 	var group := _attack_group(hero, attack_index)
 	requested_state = _attack_state_for_group(player_id, hero, group, input_vector, requested_state)
-	var aim_mode := String(group.get("aim_mode", hero.stats.get("aim_mode", "fixed")))
-	if _group_uses_true_bullet(group):
-		aim_mode = "manual"
-	if requested_state in ["active", "armor"]:
-		if String(group.get("module_action_profile", "")) == "two_link_forward_snap":
-			command_buffers[player_id] = []
-		else:
-			_consume_melee_state_command(player_id, hero, requested_state, input_vector)
+	var aim_mode := _battle_action_event_service().attack_button_aim_mode(String(group.get("aim_mode", hero.stats.get("aim_mode", "fixed"))), _group_uses_true_bullet(group))
+	var command_state_intent := _battle_action_event_service().attack_button_command_state_intent(requested_state, String(group.get("module_action_profile", "")))
+	if bool(command_state_intent.get("clear_buffer", false)):
+		command_buffers[player_id] = []
+	elif bool(command_state_intent.get("consume_melee_state", false)):
+		_consume_melee_state_command(player_id, hero, String(command_state_intent.get("requested_state", requested_state)), input_vector)
 	if aim_mode == "fixed":
 		_hero_normal_attack(player_id, prefix, input_vector, attack_index, requested_state)
 		return
@@ -31561,41 +31519,37 @@ func _update_held_aim(player_id: int, prefix: String, input_vector: Vector2, del
 
 
 func _update_hold_activation_fire(player_id: int, prefix: String, direction: Vector2, delta: float, group: Dictionary, true_bullet_aim: bool) -> void:
-	if true_bullet_aim:
+	var fire_intent := _battle_action_event_service().hold_activation_fire_intent(
+		true_bullet_aim,
+		bool(group.get("hold_to_activate", false)),
+		bool(group.get("projectile", false)),
+		float(aim_hold_fire_timers[player_id]),
+		delta,
+		_hold_activation_fire_interval(group)
+	)
+	var fire_action := String(fire_intent.get("action", "none"))
+	if fire_action == "none":
 		return
-	if not bool(group.get("hold_to_activate", false)) or not bool(group.get("projectile", false)):
+	aim_hold_fire_timers[player_id] = float(fire_intent.get("timer", aim_hold_fire_timers[player_id]))
+	if fire_action != "fire":
 		return
-	var timer := float(aim_hold_fire_timers[player_id]) - delta
-	if timer > 0.0:
-		aim_hold_fire_timers[player_id] = timer
-		return
-	aim_hold_fire_timers[player_id] = _hold_activation_fire_interval(group)
 	_hero_normal_attack(player_id, prefix, direction, int(aim_attack_index[player_id]), String(aim_action_state[player_id]), null, true)
 
 
 func _record_command_input(player_id: int, prefix: String, delta: float = BATTLE_SIMULATION_DELTA) -> void:
-	command_timers[player_id] = maxf(0.0, float(command_timers[player_id]) - delta)
-	if float(command_timers[player_id]) <= 0.0:
-		command_buffers[player_id] = []
-
-	var buffer: Array = command_buffers[player_id]
-	var added_input := false
-	if _battle_action_just_pressed("%s_down" % prefix):
-		buffer.append("2")
-		added_input = true
-	if _battle_action_just_pressed("%s_right" % prefix):
-		buffer.append("6")
-		added_input = true
-	if _battle_action_just_pressed("%s_left" % prefix):
-		buffer.append("4")
-		added_input = true
-	if _battle_action_just_pressed("%s_up" % prefix):
-		buffer.append("8")
-		added_input = true
-	if added_input:
-		command_timers[player_id] = 0.42
-	while buffer.size() > 8:
-		buffer.pop_front()
+	var intent := _battle_action_event_service().command_buffer_record_intent(
+		Array(command_buffers[player_id]),
+		float(command_timers[player_id]),
+		delta,
+		{
+			"down": _battle_action_just_pressed("%s_down" % prefix),
+			"right": _battle_action_just_pressed("%s_right" % prefix),
+			"left": _battle_action_just_pressed("%s_left" % prefix),
+			"up": _battle_action_just_pressed("%s_up" % prefix),
+		}
+	)
+	command_buffers[player_id] = Array(intent.get("buffer", []))
+	command_timers[player_id] = float(intent.get("timer", 0.0))
 
 
 func _begin_unit_module_action(unit, action_kind: String, group: Dictionary, attack_index: int) -> Dictionary:
@@ -31636,8 +31590,7 @@ func _runtime_binding_is_gun_activate(binding: Dictionary) -> bool:
 
 
 func _runtime_binding_profile(binding: Dictionary) -> String:
-	var module_part: Dictionary = binding.get("module_part", {}) if binding.get("module_part", {}) is Dictionary else {}
-	return String(binding.get("module_action_profile", module_part.get("module_action_profile", "")))
+	return _gun_activation_service().runtime_binding_profile(binding)
 
 
 func _gun_activation_profiles() -> Array:
@@ -31647,30 +31600,11 @@ func _gun_activation_profiles() -> Array:
 
 
 func _gun_aim_input_mode_for_data(data: Dictionary) -> String:
-	var explicit := String(data.get("gun_aim_input_mode", data.get("aim_input_mode", ""))).to_lower().strip_edges()
-	match explicit:
-		"turn_keys", "turn", "face_keys", "left_right", "qe":
-			return "turn_keys"
-		"direction_keys", "direction", "movement_keys", "move_keys":
-			return "direction_keys"
-	if bool(data.get("turn_keys_steer_joint", false)):
-		return "turn_keys"
-	var profile := String(data.get("module_action_profile", data.get("gun_activation", ""))).to_lower()
-	if _gun_activation_profiles().has(profile):
-		return "turn_keys"
-	if String(data.get("motion", "")).to_lower() == "gun_activate" or String(data.get("gun_activation", "")) != "":
-		return "turn_keys"
-	return "direction_keys"
+	return _gun_activation_service().gun_aim_input_mode_for_data(data, _gun_activation_profiles())
 
 
 func _runtime_binding_gun_aim_input_mode(binding: Dictionary) -> String:
-	var module_part: Dictionary = binding.get("module_part", {}) if binding.get("module_part", {}) is Dictionary else {}
-	var merged := module_part.duplicate(true)
-	for key in binding.keys():
-		merged[key] = binding[key]
-	if _runtime_binding_is_gun_activation(binding):
-		return _gun_aim_input_mode_for_data(merged)
-	return ""
+	return _gun_activation_service().runtime_binding_gun_aim_input_mode(binding, _gun_activation_profiles())
 
 
 func _gun_mobility_contract_for_profile(profile: String) -> Dictionary:
@@ -31680,33 +31614,22 @@ func _gun_mobility_contract_for_profile(profile: String) -> Dictionary:
 
 
 func _runtime_binding_gun_mobility_contract(binding: Dictionary) -> Dictionary:
-	if not _runtime_binding_is_gun_activation(binding):
-		return {}
-	return _gun_mobility_contract_for_profile(_runtime_binding_profile(binding))
+	var mobility_contract := _gun_mobility_contract_for_profile(_runtime_binding_profile(binding))
+	return _gun_activation_service().runtime_binding_gun_mobility_contract(binding, _gun_activation_profiles(), mobility_contract)
 
 
 func _active_gun_allows_direction_boost(player_id: int) -> bool:
-	if not _runtime_gun_activation_active(player_id):
-		return false
-	var state: Dictionary = gun_activation_state[player_id]
-	if state.has("direction_boost_while_firing"):
-		return bool(state.get("direction_boost_while_firing", false))
+	var state: Dictionary = gun_activation_state[player_id] if _runtime_gun_activation_active(player_id) else {}
 	var binding: Dictionary = state.get("binding", {}) if state.get("binding", {}) is Dictionary else {}
-	return bool(_runtime_binding_gun_mobility_contract(binding).get("direction_boost_while_firing", false))
+	return _gun_activation_service().active_direction_boost_allowed(state, _runtime_binding_gun_mobility_contract(binding))
 
 
 func _runtime_binding_is_gun_activation(binding: Dictionary) -> bool:
-	return _gun_activation_profiles().has(_runtime_binding_profile(binding))
+	return _gun_activation_service().runtime_binding_is_gun_activation(binding, _gun_activation_profiles())
 
 
 func _runtime_binding_is_held_melee_activation(binding: Dictionary) -> bool:
-	if binding.is_empty():
-		return false
-	var profile := _runtime_binding_profile(binding)
-	if profile != BOOT_ACTION_DRIVER_PROFILE:
-		return false
-	var module_part: Dictionary = binding.get("module_part", {}) if binding.get("module_part", {}) is Dictionary else {}
-	return bool(binding.get("hold_to_activate", module_part.get("hold_to_activate", true)))
+	return _held_melee_activation_service().runtime_binding_is_held_melee_activation(binding, BOOT_ACTION_DRIVER_PROFILE)
 
 
 func _gun_activation_profile_for_kind(gun_kind: String) -> String:
@@ -31728,58 +31651,18 @@ func _gun_activation_spec(gun_kind: String, profile: String = "") -> Dictionary:
 		profile = _gun_activation_profile_for_kind(gun_kind)
 	elif profile == "gun_activate" and not (gun_kind in ["sniper", "sprayer"]):
 		profile = _gun_activation_profile_for_kind(gun_kind)
-	match gun_kind:
-		"sniper":
-			if profile != "gun_activate":
-				return {}
-			return {"profile": "gun_activate", "semantic": "release_lock", "projectile_damage_type": "bullet", "projectile_style": "true_bullet", "projectile_behavior": "true_bullet", "travel_path": "instant_line", "default_width": STANDARD_SNIPER_PROJECTILE_WIDTH_M, "default_fire_interval": 9999.0}
-		"sprayer":
-			if profile != "gun_activate":
-				return {}
-			return {"profile": "gun_activate", "semantic": "hold_stream", "projectile_damage_type": "chemical", "projectile_style": "spray", "projectile_behavior": "chemical_line", "travel_path": "straight", "default_width": STANDARD_CHEMICAL_SPRAYER_WIDTH_M, "default_range": STANDARD_CHEMICAL_SPRAYER_RANGE_M, "default_fire_interval": STANDARD_CHEMICAL_SPRAYER_FIRE_INTERVAL}
-		"rifle":
-			if profile != "rifle_burst_activate":
-				return {}
-			return {"profile": "rifle_burst_activate", "semantic": "hold_burst", "projectile_damage_type": "bullet", "projectile_style": "bullet_hell", "projectile_behavior": "bullet_hell", "travel_path": "straight", "default_width": 0.12, "default_fire_interval": 0.18}
-		"grenade_launcher":
-			if profile != "grenade_arc_activate":
-				return {}
-			return {"profile": "grenade_arc_activate", "semantic": "hold_grenade_arc", "projectile_damage_type": "explosion", "projectile_style": "explosive", "projectile_behavior": "explosive", "travel_path": "arc_u", "default_width": 0.18, "default_range": 2.65, "default_fire_interval": 1.111111}
-		"laser_gun":
-			if profile != "laser_beam_activate":
-				return {}
-			return {"profile": "laser_beam_activate", "semantic": "hold_beam", "projectile_damage_type": "laser", "projectile_style": "beam", "projectile_behavior": "laser", "travel_path": "instant_line", "default_width": STANDARD_LASER_WIDTH_M, "default_range": STANDARD_LASER_RANGE_M, "default_fire_interval": STANDARD_LASER_FIRE_INTERVAL}
-		"missile_launcher":
-			if profile != "missile_lock_activate":
-				return {}
-			return {"profile": "missile_lock_activate", "semantic": "release_missile_lock", "projectile_damage_type": "bullet", "projectile_style": "missile", "projectile_behavior": "explosive", "travel_path": "homing", "default_width": STANDARD_MISSILE_WIDTH_M, "default_range": STANDARD_MISSILE_RANGE_M, "default_fire_interval": 9999.0}
-		"web_gun":
-			if profile != "web_tether_activate":
-				return {}
-			return {"profile": "web_tether_activate", "semantic": "release_web", "projectile_damage_type": "blunt", "projectile_style": "web", "projectile_behavior": "web_tether", "travel_path": "tether", "default_width": STANDARD_WEB_TETHER_WIDTH_M, "default_range": STANDARD_WEB_TETHER_RANGE_M, "default_fire_interval": 9999.0}
-	return {}
+	return _gun_activation_service().gun_activation_spec(gun_kind, profile, _gun_activation_constants())
 
 
 func _gun_activation_profile_supports_kind(profile: String, gun_kind: String, ammo_kind: String = "") -> bool:
+	var registry_supported := true
 	if action_profile_registry != null:
 		if not action_profile_registry.module_supports_gun(profile, gun_kind, ammo_kind):
-			return false
+			registry_supported = false
 	elif not ActionProfileRegistry.new().module_supports_gun(profile, gun_kind, ammo_kind):
-		return false
+		registry_supported = false
 	var spec := _gun_activation_spec(gun_kind, profile)
-	if spec.is_empty():
-		return false
-	if profile == "laser_beam_activate":
-		return gun_kind == "laser_gun" and ammo_kind == "laser"
-	if profile == "rifle_burst_activate":
-		return gun_kind == "rifle" and ammo_kind == "bullet"
-	if profile == "grenade_arc_activate":
-		return gun_kind == "grenade_launcher" and ammo_kind == "explosive"
-	if profile == "web_tether_activate":
-		return gun_kind == "web_gun" and ammo_kind == "web"
-	if profile == "missile_lock_activate":
-		return gun_kind == "missile_launcher" and ammo_kind == "explosive"
-	return true
+	return _gun_activation_service().gun_activation_profile_supports_kind(profile, gun_kind, ammo_kind, registry_supported, spec)
 
 
 func _gun_activate_supports_kind(gun_kind: String) -> bool:
@@ -31787,51 +31670,26 @@ func _gun_activate_supports_kind(gun_kind: String) -> bool:
 
 
 func _runtime_gun_activation_active(player_id: int) -> bool:
-	return gun_activation_state.has(player_id) and gun_activation_state[player_id] is Dictionary and not Dictionary(gun_activation_state[player_id]).is_empty()
+	var state: Dictionary = gun_activation_state[player_id] if gun_activation_state.has(player_id) and gun_activation_state[player_id] is Dictionary else {}
+	return _gun_activation_service().activation_state_active(state)
 
 
 func _binding_drive_allocation_for_node(binding: Dictionary, node_index: int, fallback: float = 0.0) -> float:
-	var by_node = binding.get("joint_drive_allocation_by_node", {})
-	if not (by_node is Dictionary) or Dictionary(by_node).is_empty():
-		by_node = binding.get("allocated_limb_momentum_by_node", {})
-	if by_node is Dictionary:
-		var node_key := str(node_index)
-		if Dictionary(by_node).has(node_key):
-			return maxf(0.0, float(Dictionary(by_node).get(node_key, fallback)))
-		if Dictionary(by_node).has(node_index):
-			return maxf(0.0, float(Dictionary(by_node).get(node_index, fallback)))
-	var target_count := maxi(1, Array(binding.get("target_nodes", [])).size())
-	if binding.has("joint_drive_allocation_total"):
-		return maxf(0.0, float(binding.get("joint_drive_allocation_total", 0.0)) / float(target_count))
-	if binding.has("allocated_limb_momentum"):
-		return maxf(0.0, float(binding.get("allocated_limb_momentum", 0.0)) / float(target_count))
-	return maxf(0.0, fallback)
+	return _gun_activation_service().binding_drive_allocation_for_node(binding, node_index, fallback)
 
 
 func _gun_drive_info_for_binding(unit, binding: Dictionary, node_index: int) -> Dictionary:
 	var segment := _runtime_gun_segment_for_binding(unit, binding)
-	var min_momentum := maxf(0.0, float(segment.get("momentum_min", 0.0)))
-	var max_momentum := maxf(min_momentum, float(segment.get("momentum_max", min_momentum)))
-	var fallback := maxf(0.0, float(segment.get("allocated_limb_momentum", segment.get("joint_output_momentum_base", 0.0))))
-	var allocated := clampf(_binding_drive_allocation_for_node(binding, node_index, fallback), min_momentum, max_momentum if max_momentum > min_momentum else maxf(min_momentum, fallback))
-	var ratio := allocated / maxf(1.0, min_momentum)
-	var ratio_to_max := allocated / maxf(1.0, max_momentum)
-	return {
-		"allocated": allocated,
-		"min": min_momentum,
-		"max": max_momentum,
-		"ratio": ratio,
-		"ratio_to_max": ratio_to_max,
-	}
+	return _gun_activation_service().gun_drive_info_for_segment(segment, binding, node_index)
 
 
 func _gun_drive_aim_speed_mult(gun_drive_ratio: float) -> float:
-	if gun_drive_ratio < 1.0:
-		return clampf(0.45 + gun_drive_ratio * 0.55, 0.28, 1.0)
-	return clampf(1.0 + sqrt(maxf(0.0, gun_drive_ratio - 1.0)) * 0.26, 1.0, 1.45)
+	return _gun_activation_service().gun_drive_aim_speed_mult(gun_drive_ratio)
 
 
 func _gun_drive_projectile_momentum_mult(gun_drive_ratio: float) -> float:
+	if projectile_runtime_service != null:
+		return projectile_runtime_service.gun_drive_projectile_momentum_mult(gun_drive_ratio)
 	return 1.0
 
 
@@ -31876,25 +31734,7 @@ func _runtime_gun_source_for_binding(unit, binding: Dictionary) -> Dictionary:
 	if segment.is_empty():
 		return {}
 	var group: Dictionary = unit.runtime_group_for_node(node_index) if unit.has_method("runtime_group_for_node") else {}
-	var terminal_kind := String(segment.get("terminal_weapon_kind", group.get("terminal_weapon_kind", ""))).to_lower()
-	var material_class := String(group.get("material_class", segment.get("material_class", ""))).to_lower()
-	var is_gun := terminal_kind == "ranged" or bool(segment.get("projectile", false)) or bool(group.get("projectile", false)) or material_class in ["gun", "missile_launcher", "web_gun"]
-	if not is_gun:
-		return {}
-	var root: Vector2 = segment.get("a", Vector2(unit.ring_pos, unit.lane))
-	var muzzle: Vector2 = segment.get("b", root)
-	var direction := muzzle - root
-	if direction.length() <= 0.01:
-		direction = _unit_forward_vector(unit)
-	return {
-		"source_gun_node": node_index,
-		"source_node_index": node_index,
-		"runtime_target_nodes": target_nodes.duplicate(true),
-		"segment": segment.duplicate(true),
-		"group": group.duplicate(true),
-		"muzzle_combat_position": muzzle,
-		"muzzle_direction": direction.normalized(),
-	}
+	return _gun_activation_service().runtime_gun_source_payload(segment, group, node_index, target_nodes, Vector2(unit.ring_pos, unit.lane), _unit_forward_vector(unit))
 
 
 func _runtime_gun_group_for_binding(unit, binding: Dictionary) -> Dictionary:
@@ -31906,33 +31746,15 @@ func _runtime_gun_group_for_binding(unit, binding: Dictionary) -> Dictionary:
 	var node_index := int(source.get("source_gun_node", -1))
 	var group: Dictionary = source.get("group", {}) if source.get("group", {}) is Dictionary else unit.runtime_group_for_node(node_index)
 	var drive_info := _gun_drive_info_for_binding(unit, binding, node_index)
-	group["gun_drive_allocated"] = float(drive_info.get("allocated", 0.0))
-	group["gun_drive_min"] = float(drive_info.get("min", 0.0))
-	group["gun_drive_max"] = float(drive_info.get("max", 0.0))
-	group["gun_drive_ratio"] = float(drive_info.get("ratio", 0.0))
-	group["gun_drive_ratio_to_max"] = float(drive_info.get("ratio_to_max", 0.0))
+	group = _gun_activation_service().runtime_gun_group_payload(group, drive_info)
 	group["gun_projectile_damage_mult"] = _gun_projectile_damage_mult_max_for_data(group)
 	group["gun_projectile_damage_mult_current"] = _gun_projectile_damage_mult_for_event(group)
-	group["projectile"] = true
-	group["projectile_only"] = true
-	var material_class := String(group.get("material_class", "")).to_lower()
-	if material_class == "" or not (material_class in ["gun", "missile_launcher", "web_gun"]):
-		group["material_class"] = "gun"
-	if String(group.get("shape", "")).to_lower() == "":
-		group["shape"] = "rifle"
 	return group
 
 
 func _runtime_gun_activation_direction(unit, binding: Dictionary) -> Vector2:
 	var segment := _runtime_gun_segment_for_binding(unit, binding)
-	if segment.is_empty():
-		return _unit_forward_vector(unit)
-	var a: Vector2 = segment.get("a", Vector2(unit.ring_pos, unit.lane))
-	var b: Vector2 = segment.get("b", a)
-	var direction := b - a
-	if direction.length() <= 0.01:
-		direction = _unit_forward_vector(unit)
-	return direction.normalized()
+	return _gun_activation_service().activation_direction(segment, _unit_forward_vector(unit))
 
 
 func _rotate_direction_toward(current_direction: Vector2, target_direction: Vector2, max_angle_delta: float) -> Vector2:
@@ -31944,20 +31766,11 @@ func _rotate_direction_toward(current_direction: Vector2, target_direction: Vect
 
 
 func _gun_activation_local_turn_sign(unit, input_vector: Vector2) -> int:
-	if input_vector.length() <= 0.18:
-		return 0
-	if absf(input_vector.x) < 0.18:
-		return 0
-	return -1 if input_vector.x < 0.0 else 1
+	return _gun_activation_service().local_turn_sign(input_vector)
 
 
 func _gun_activation_rotated_direction(unit, current_direction: Vector2, input_vector: Vector2, rotate_speed: float, delta: float) -> Vector2:
-	var current := current_direction.normalized() if current_direction.length() > 0.01 else _unit_forward_vector(unit)
-	var turn_sign := _gun_activation_local_turn_sign(unit, input_vector)
-	if turn_sign == 0:
-		return current
-	var step := float(turn_sign) * maxf(0.0, rotate_speed) * maxf(0.0, delta)
-	return current.rotated(step).normalized()
+	return _gun_activation_service().rotated_direction(current_direction, input_vector, rotate_speed, delta, _unit_forward_vector(unit))
 
 
 func _runtime_gun_activation_event_for(player_id: int) -> Dictionary:
@@ -31973,44 +31786,40 @@ func _runtime_gun_activation_event_for(player_id: int) -> Dictionary:
 	var group := _runtime_gun_group_for_binding(unit, binding)
 	if group.is_empty():
 		return {}
-	var direction := Vector2.ZERO
-	if state.get("aim_direction", Vector2.ZERO) is Vector2:
-		direction = state.get("aim_direction", Vector2.ZERO)
-	if direction.length() <= 0.01:
-		direction = _runtime_gun_activation_direction(unit, binding)
-	direction = direction.normalized() if direction.length() > 0.01 else _unit_forward_vector(unit)
-	var target_nodes: Array = Array(binding.get("target_nodes", []))
-	var node_index := int(target_nodes[target_nodes.size() - 1]) if not target_nodes.is_empty() else int(binding.get("attack_key", 1)) - 1
+	var direction := _gun_activation_service().activation_event_direction(state, _runtime_gun_activation_direction(unit, binding), _unit_forward_vector(unit))
+	var source_identity := _gun_activation_service().activation_event_source_identity(binding)
+	var target_nodes: Array = Array(source_identity.get("runtime_target_nodes", []))
+	var node_index := int(source_identity.get("source_gun_node", int(binding.get("attack_key", 1)) - 1))
 	if unit.has_method("set_aim_pose"):
 		unit.set_aim_pose(node_index, direction, 0.16)
 	var gun_source := _runtime_gun_source_for_binding(unit, binding)
 	if gun_source.is_empty():
 		return {}
-	target_nodes = Array(gun_source.get("runtime_target_nodes", target_nodes)).duplicate(true)
-	node_index = int(gun_source.get("source_gun_node", node_index))
+	source_identity = _gun_activation_service().activation_event_source_identity(binding, gun_source)
+	target_nodes = Array(source_identity.get("runtime_target_nodes", target_nodes)).duplicate(true)
+	node_index = int(source_identity.get("source_gun_node", node_index))
 	var gun_kind := String(group.get("gun_kind", _gun_kind_for_data(group)))
 	var ammo_kind := String(group.get("ammo_kind", _ammo_kind_for_data(group)))
 	var profile := _runtime_binding_profile(binding)
 	var effective_profile := _effective_gun_activation_profile(profile, gun_kind, ammo_kind)
-	if effective_profile == "":
-		return {}
 	var module_part: Dictionary = binding.get("module_part", {}) if binding.get("module_part", {}) is Dictionary else {}
 	var spec := _gun_activation_spec(gun_kind, effective_profile)
-	if spec.is_empty():
+	var profile_gate := _gun_activation_service().activation_profile_gate(effective_profile, spec, true)
+	if not bool(profile_gate.get("can_start", false)):
 		return {}
-	var event := _true_bullet_event_for_aim(unit, direction, group, node_index, {
-		"runtime_target_nodes": target_nodes.duplicate(true),
-		"source_gun_node": node_index,
-		"source_node_index": node_index,
-		"muzzle_combat_position": gun_source.get("muzzle_combat_position", Vector2(unit.ring_pos, unit.lane)),
-		"muzzle_direction": gun_source.get("muzzle_direction", direction),
-		"attack_key": int(binding.get("attack_key", 1)),
-		"module_action_profile": profile,
-		"effective_gun_activation_profile": effective_profile,
-		"gun_activation": true,
-		"gun_kind": gun_kind,
-		"ammo_kind": ammo_kind,
-	})
+	var event_options := _gun_activation_service().activation_event_options_payload(
+		binding,
+		gun_source,
+		profile,
+		effective_profile,
+		gun_kind,
+		ammo_kind,
+		target_nodes,
+		node_index,
+		Vector2(unit.ring_pos, unit.lane),
+		direction
+	)
+	var event := _true_bullet_event_for_aim(unit, direction, group, node_index, event_options)
 	_copy_module_variant_fields(event, module_part)
 	var service_intent := _battle_action_event_service().gun_activation_event_patch({
 		"event": event,
@@ -32035,7 +31844,8 @@ func _start_runtime_gun_activation(player_id: int, prefix: String, attack_index:
 	if not _is_live_unit(unit):
 		return
 	var segment := _runtime_gun_segment_for_binding(unit, binding)
-	if segment.is_empty() or String(segment.get("terminal_weapon_kind", "")) != "ranged" or not bool(segment.get("projectile", false)):
+	var source_gate := _gun_activation_service().activation_source_gate(segment)
+	if not bool(source_gate.get("can_start", false)):
 		_play_module_fail_sfx()
 		_show_battle_message("枪械启动需要绑定枪械末端肌肉" if _ui_is_zh() else "Gun Activate needs a gun terminal muscle", 0.62)
 		return
@@ -32045,35 +31855,28 @@ func _start_runtime_gun_activation(player_id: int, prefix: String, attack_index:
 	var ammo_kind := String(group.get("ammo_kind", _ammo_kind_for_data(group)))
 	var effective_profile := _effective_gun_activation_profile(profile, gun_kind, ammo_kind)
 	var spec := _gun_activation_spec(gun_kind, effective_profile)
-	if effective_profile == "" or spec.is_empty() or not _gun_activation_profile_supports_kind(profile, gun_kind, ammo_kind):
+	var profile_gate := _gun_activation_service().activation_profile_gate(effective_profile, spec, _gun_activation_profile_supports_kind(profile, gun_kind, ammo_kind))
+	if not bool(profile_gate.get("can_start", false)):
 		_show_battle_message("该行动模块不支持此枪械类型" if _ui_is_zh() else "This module does not support that gun kind", 0.55)
 		return
 	var aim_input_mode := _runtime_binding_gun_aim_input_mode(binding)
 	var mobility_contract := _runtime_binding_gun_mobility_contract(binding)
 	var module_part: Dictionary = binding.get("module_part", {}) if binding.get("module_part", {}) is Dictionary else {}
-	var rotate_speed := float(module_part.get("gun_rotate_speed", 0.0))
-	if rotate_speed <= 0.0:
-		rotate_speed = _unit2_turn_speed_reference()
-	rotate_speed *= _gun_drive_aim_speed_mult(float(group.get("gun_drive_ratio", 1.0)))
+	var rotate_speed := _gun_activation_service().activation_rotate_speed(module_part, _unit2_turn_speed_reference(), float(group.get("gun_drive_ratio", 1.0)))
 	var aim_direction := _runtime_gun_activation_direction(unit, binding)
-	gun_activation_state[player_id] = {
+	gun_activation_state[player_id] = _gun_activation_service().activation_state_payload({
 		"prefix": prefix,
 		"attack_index": attack_index,
 		"action_name": action_name,
-		"binding": binding.duplicate(true),
-		"locked_target": null,
-		"locked_direction": Vector2.ZERO,
+		"binding": binding,
 		"aim_direction": aim_direction,
 		"gun_rotate_speed": rotate_speed,
 		"gun_kind": gun_kind,
 		"effective_gun_activation_profile": effective_profile,
 		"activation_semantic": String(spec.get("semantic", "")),
 		"aim_input_mode": aim_input_mode,
-		"move_while_firing": bool(mobility_contract.get("move_while_firing", false)),
-		"direction_boost_while_firing": bool(mobility_contract.get("direction_boost_while_firing", false)),
-		"fire_timer": 0.0,
-		"hold_time": 0.0,
-	}
+		"mobility_contract": mobility_contract,
+	})
 	_clear_attack_command_windows(player_id)
 	match String(spec.get("semantic", "")):
 		"hold_stream":
@@ -32094,7 +31897,8 @@ func _start_runtime_gun_activation(player_id: int, prefix: String, attack_index:
 
 func _runtime_gun_activation_fire_once(unit, event: Dictionary) -> bool:
 	var ammo_kind := String(event.get("ammo_kind", _ammo_type_for_event(event)))
-	if ammo_kind != "" and _ammo_capacity_for(unit, ammo_kind) > 0 and _current_ammo(unit, ammo_kind) <= 0:
+	var ammo_gate := _gun_activation_service().fire_ammo_gate(ammo_kind, _ammo_capacity_for(unit, ammo_kind), _current_ammo(unit, ammo_kind))
+	if not bool(ammo_gate.get("can_fire", true)):
 		_show_battle_message("%s %s AMMO EMPTY" % [unit.unit_name, ammo_kind.to_upper()], 0.62)
 		return false
 	_resolve_attack(unit, event)
@@ -32104,21 +31908,12 @@ func _runtime_gun_activation_fire_once(unit, event: Dictionary) -> bool:
 
 
 func _runtime_held_melee_activation_active(player_id: int) -> bool:
-	return held_melee_activation_state.has(player_id) and held_melee_activation_state[player_id] is Dictionary and not Dictionary(held_melee_activation_state[player_id]).is_empty()
+	var state: Dictionary = held_melee_activation_state[player_id] if held_melee_activation_state.has(player_id) and held_melee_activation_state[player_id] is Dictionary else {}
+	return _held_melee_activation_service().activation_state_active(state)
 
 
 func _boot_driver_initial_state_for_input(unit, input_vector: Vector2) -> String:
-	if input_vector.length() < 0.18:
-		return "normal"
-	var forward := _unit_forward_vector(unit)
-	if forward.length() < 0.01:
-		return "normal"
-	var dot := input_vector.normalized().dot(forward.normalized())
-	if dot >= 0.38:
-		return "armor"
-	if dot <= -0.38:
-		return "active"
-	return "normal"
+	return _held_melee_activation_service().boot_driver_initial_state(input_vector, _unit_forward_vector(unit))
 
 
 func _start_runtime_held_melee_activation(player_id: int, prefix: String, attack_index: int, action_name: String, binding: Dictionary, input_vector: Vector2) -> void:
@@ -32130,18 +31925,11 @@ func _start_runtime_held_melee_activation(player_id: int, prefix: String, attack
 	var module_part: Dictionary = binding.get("module_part", {}) if binding.get("module_part", {}) is Dictionary else {}
 	var profile := _runtime_binding_profile(binding)
 	var action_state := _boot_driver_initial_state_for_input(unit, input_vector)
-	var direction := _unit_forward_vector(unit)
 	var target_nodes: Array = Array(binding.get("target_nodes", []))
+	var rotating_segment: Dictionary = {}
 	if target_nodes.size() >= 2 and unit.has_method("runtime_world_segment_for_node"):
-		var rotating_segment: Dictionary = unit.runtime_world_segment_for_node(int(target_nodes[0]), true)
-		if not rotating_segment.is_empty():
-			var a: Vector2 = rotating_segment.get("a", Vector2(unit.ring_pos, unit.lane))
-			var b: Vector2 = rotating_segment.get("b", a)
-			var segment_dir := b - a
-			if segment_dir.length() > 0.01:
-				direction = segment_dir.normalized()
-	if direction.length() <= 0.01:
-		direction = input_vector.normalized() if input_vector.length() >= 0.18 else _unit_forward_vector(unit)
+		rotating_segment = unit.runtime_world_segment_for_node(int(target_nodes[0]), true)
+	var direction := _held_melee_activation_service().activation_direction(binding, rotating_segment, _unit_forward_vector(unit), input_vector)
 	var event: Dictionary = {}
 	if unit.has_method("begin_runtime_module_action"):
 		event = unit.begin_runtime_module_action(action_state, binding.duplicate(true), direction)
@@ -32150,22 +31938,16 @@ func _start_runtime_held_melee_activation(player_id: int, prefix: String, attack
 		var reason := String(unit.get_meta("last_module_gate_reason", "locked"))
 		_show_battle_message("Boot Driver 无法启动：%s" % reason if _ui_is_zh() else "Boot Driver blocked: %s" % reason, 0.45)
 		return
-	held_melee_activation_state[player_id] = {
+	held_melee_activation_state[player_id] = _held_melee_activation_service().held_activation_state_payload({
 		"prefix": prefix,
 		"attack_index": attack_index,
 		"action_name": action_name,
-		"binding": binding.duplicate(true),
-		"module_action_profile": profile,
+		"binding": binding,
+		"profile": profile,
 		"action_state": action_state,
-		"turn_keys_steer_joint": bool(binding.get("turn_keys_steer_joint", module_part.get("turn_keys_steer_joint", true))),
-		"hold_time": 0.0,
-	}
+	})
 	_clear_attack_command_windows(player_id)
-	event["projectile"] = false
-	event["projectile_only"] = false
-	event["runtime_melee_contact"] = true
-	event["boot_driver_held_activation"] = true
-	event["damage_type"] = String(event.get("damage_type", "blunt"))
+	event = _held_melee_activation_service().held_activation_event_payload(event)
 	var service_intent := _battle_action_event_service().runtime_direct_module_event_patch({
 		"event": event,
 		"module_part": module_part,
@@ -32189,21 +31971,18 @@ func _tick_runtime_held_melee_activation(player_id: int, prefix: String, delta: 
 	if not _is_live_unit(unit):
 		held_melee_activation_state[player_id] = {}
 		return
-	if action_name == "" or _battle_action_just_released(action_name) or not Input.is_action_pressed(action_name):
+	if _held_melee_activation_service().should_release_hold(action_name, _battle_action_just_released(action_name), Input.is_action_pressed(action_name)):
 		if unit.has_method("release_boot_action_driver_hold"):
 			unit.release_boot_action_driver_hold(action_name)
 		held_melee_activation_state[player_id] = {}
 		return
-	var turn_input := Input.get_action_strength("%s_face_right" % prefix) - Input.get_action_strength("%s_face_left" % prefix)
-	if absf(turn_input) <= 0.08:
-		turn_input = 0.0
-	else:
-		turn_input = clampf(turn_input, -1.0, 1.0)
+	var turn_input := _held_melee_activation_service().turn_input_from_strengths(
+		Input.get_action_strength("%s_face_right" % prefix),
+		Input.get_action_strength("%s_face_left" % prefix)
+	)
 	if unit.has_method("update_boot_action_driver_hold"):
 		unit.update_boot_action_driver_hold(action_name, turn_input, delta)
-	state["hold_time"] = float(state.get("hold_time", 0.0)) + delta
-	state["turn_input"] = turn_input
-	held_melee_activation_state[player_id] = state
+	held_melee_activation_state[player_id] = _held_melee_activation_service().tick_state_payload(state, turn_input, delta)
 
 
 func _salvo_preview_points(unit, event: Dictionary) -> Dictionary:
@@ -32248,12 +32027,20 @@ func _clear_salvo_landing_preview(player_id: int) -> void:
 	salvo_landing_preview_effects.erase(player_id)
 
 
+func _set_runtime_gun_activation_aim_pose(unit, event: Dictionary, duration: float = 0.1) -> void:
+	if not _is_live_unit(unit) or not unit.has_method("set_aim_pose"):
+		return
+	var pose := _gun_activation_service().aim_pose_payload(event, _unit_forward_vector(unit), 0)
+	var direction: Vector2 = pose.get("direction", _unit_forward_vector(unit))
+	unit.set_aim_pose(int(pose.get("node_index", 0)), direction, maxf(0.0, duration))
+
+
 func _tick_runtime_gun_activation(player_id: int, prefix: String, delta: float) -> void:
 	if not _runtime_gun_activation_active(player_id):
 		return
 	var state: Dictionary = gun_activation_state[player_id]
 	var action_name := String(state.get("action_name", ""))
-	if action_name == "" or _battle_action_just_released(action_name) or not Input.is_action_pressed(action_name):
+	if _gun_activation_service().should_release_activation(action_name, _battle_action_just_released(action_name), Input.is_action_pressed(action_name)):
 		_release_runtime_gun_activation(player_id)
 		return
 	var unit = active_units[player_id]["hero"]
@@ -32261,66 +32048,57 @@ func _tick_runtime_gun_activation(player_id: int, prefix: String, delta: float) 
 		gun_activation_state[player_id] = {}
 		_clear_salvo_landing_preview(player_id)
 		return
-	state["hold_time"] = float(state.get("hold_time", 0.0)) + delta
 	var binding: Dictionary = state.get("binding", {}) if state.get("binding", {}) is Dictionary else {}
+	state = _gun_activation_service().tick_state_payload(state, delta, _runtime_binding_gun_aim_input_mode(binding))
 	var current_direction := _runtime_gun_activation_direction(unit, binding)
 	if state.get("aim_direction", Vector2.ZERO) is Vector2:
 		current_direction = state.get("aim_direction", Vector2.ZERO)
-	var aim_input_mode := String(state.get("aim_input_mode", _runtime_binding_gun_aim_input_mode(binding))).to_lower()
-	if aim_input_mode == "":
-		aim_input_mode = "turn_keys"
-	state["aim_input_mode"] = aim_input_mode
+	var aim_input_mode := String(state.get("aim_input_mode", "turn_keys")).to_lower()
 	var turn_input_vector := _gun_turn_input_vector_for(prefix) if aim_input_mode == "turn_keys" else _input_vector_for(prefix)
 	var rotate_speed := float(state.get("gun_rotate_speed", _unit2_turn_speed_reference()))
 	state["aim_direction"] = _gun_activation_rotated_direction(unit, current_direction, turn_input_vector, rotate_speed, delta)
 	var event := _runtime_gun_activation_event_for(player_id)
-	if event.is_empty():
+	var tick_route := _gun_activation_service().tick_route_intent(state, event)
+	if tick_route == "event_empty":
 		_clear_salvo_landing_preview(player_id)
 		_clear_runtime_gun_pose_for_payload(unit, state)
 		gun_activation_state[player_id] = state
 		return
-	var semantic := String(state.get("activation_semantic", ""))
-	if semantic == "hold_grenade_arc" and String(event.get("module_variant_key", "")) == "explosive_arc_salvo":
+	if tick_route == "salvo_preview":
 		_update_salvo_landing_preview(player_id, unit, event)
 		gun_activation_state[player_id] = state
-		if unit.has_method("set_aim_pose"):
-			unit.set_aim_pose(_projectile_source_node_for_event(event), Vector2(event.get("direction", _unit_forward_vector(unit))), 0.1)
+		_set_runtime_gun_activation_aim_pose(unit, event)
 		return
-	if semantic in ["hold_stream", "hold_beam", "hold_burst", "hold_grenade_arc"]:
-		var fire_timer := float(state.get("fire_timer", 0.0)) - delta
-		if fire_timer <= 0.0:
+	if tick_route == "continuous_fire":
+		var fire_timer_intent := _gun_activation_service().continuous_fire_timer_intent(state, delta, event)
+		if bool(fire_timer_intent.get("fire_due", false)):
 			if not _runtime_gun_activation_fire_once(unit, event):
 				_clear_runtime_gun_pose_for_payload(unit, event)
 				gun_activation_state[player_id] = {}
 				return
-			fire_timer = maxf(0.05, float(event.get("fire_interval", 0.24)))
-		state["fire_timer"] = fire_timer
+		state = Dictionary(fire_timer_intent.get("state", state))
 		gun_activation_state[player_id] = state
-		if unit.has_method("set_aim_pose"):
-			unit.set_aim_pose(_projectile_source_node_for_event(event), Vector2(event.get("direction", _unit_forward_vector(unit))), 0.1)
+		_set_runtime_gun_activation_aim_pose(unit, event)
 		return
-	if semantic == "release_web":
+	if tick_route == "hold_aim_pose":
 		gun_activation_state[player_id] = state
-		if unit.has_method("set_aim_pose"):
-			unit.set_aim_pose(_projectile_source_node_for_event(event), Vector2(event.get("direction", _unit_forward_vector(unit))), 0.1)
+		_set_runtime_gun_activation_aim_pose(unit, event)
 		return
-	if semantic == "release_missile_lock":
+	if tick_route == "missile_lock":
 		var missile_target = _acquire_missile_lock_target(unit, event)
 		state["locked_target"] = missile_target
 		state["locked_direction"] = _missile_direction_to_target(unit, missile_target, Vector2(event.get("direction", _unit_forward_vector(unit)))) if _is_live_unit(missile_target) else Vector2(event.get("direction", _unit_forward_vector(unit)))
 		gun_activation_state[player_id] = state
-		if unit.has_method("set_aim_pose"):
-			unit.set_aim_pose(_projectile_source_node_for_event(event), Vector2(event.get("direction", _unit_forward_vector(unit))), 0.1)
+		_set_runtime_gun_activation_aim_pose(unit, event)
 		return
-	if semantic != "release_lock":
+	if tick_route == "clear_state":
 		gun_activation_state[player_id] = {}
 		return
 	var target = _acquire_true_bullet_target(unit, event)
 	state["locked_target"] = target
 	state["locked_direction"] = _true_bullet_direction_to_target(unit, target) if _is_live_unit(target) else Vector2(event.get("direction", _unit_forward_vector(unit)))
 	gun_activation_state[player_id] = state
-	if unit.has_method("set_aim_pose"):
-		unit.set_aim_pose(_projectile_source_node_for_event(event), Vector2(event.get("direction", _unit_forward_vector(unit))), 0.1)
+	_set_runtime_gun_activation_aim_pose(unit, event)
 
 
 func _release_runtime_gun_activation(player_id: int) -> void:
@@ -32335,19 +32113,23 @@ func _release_runtime_gun_activation(player_id: int) -> void:
 	var event := _runtime_gun_activation_event_for(player_id)
 	gun_activation_state[player_id] = {}
 	_clear_salvo_landing_preview(player_id)
-	if event.is_empty():
+	var release_intent := _gun_activation_service().release_route_intent(state, event)
+	var event_patch: Dictionary = release_intent.get("event_patch", {}) if release_intent.get("event_patch", {}) is Dictionary else {}
+	for key in event_patch.keys():
+		event[key] = event_patch[key]
+	var release_route := String(release_intent.get("route", "clear_pose"))
+	if release_route == "clear_pose":
 		_clear_runtime_gun_pose_for_payload(unit, state)
 		return
-	if String(state.get("activation_semantic", "")) == "hold_grenade_arc" and String(event.get("module_variant_key", "")) == "explosive_arc_salvo":
-		event["salvo_release_fire"] = true
+	if release_route == "salvo_release_fire":
 		_runtime_gun_activation_fire_once(unit, event)
 		_clear_runtime_gun_pose_for_payload(unit, event)
 		return
-	if String(state.get("activation_semantic", "")) == "release_web":
+	if release_route == "web_tether":
 		_fire_runtime_web_tether(unit, event)
 		_clear_runtime_gun_pose_for_payload(unit, event)
 		return
-	if String(state.get("activation_semantic", "")) == "release_missile_lock":
+	if release_route == "missile_lock":
 		var missile_target = state.get("locked_target", null)
 		if not _is_live_unit(missile_target):
 			missile_target = _acquire_missile_lock_target(unit, event)
@@ -32356,12 +32138,10 @@ func _release_runtime_gun_activation(player_id: int) -> void:
 			_clear_runtime_gun_pose_for_payload(unit, event)
 			return
 		event["locked_target"] = missile_target
-		event["aim_locked"] = true
-		event["direction"] = _missile_direction_to_target(unit, missile_target, Vector2(event.get("direction", _unit_forward_vector(unit))))
+		var missile_patch := _gun_activation_service().release_lock_event_patch(release_route, event, _missile_direction_to_target(unit, missile_target, Vector2(event.get("direction", _unit_forward_vector(unit)))), TRUE_BULLET_DEFAULT_LOCK_SECONDS)
+		for key in missile_patch.keys():
+			event[key] = missile_patch[key]
 		_runtime_gun_activation_fire_once(unit, event)
-		_clear_runtime_gun_pose_for_payload(unit, event)
-		return
-	if String(state.get("activation_semantic", "")) != "release_lock":
 		_clear_runtime_gun_pose_for_payload(unit, event)
 		return
 	var target = state.get("locked_target", null)
@@ -32369,9 +32149,9 @@ func _release_runtime_gun_activation(player_id: int) -> void:
 		_clear_runtime_gun_pose_for_payload(unit, event)
 		return
 	event["locked_target"] = target
-	event["aim_locked"] = true
-	event["direction"] = _true_bullet_direction_to_target(unit, target)
-	event["bullet_lock_time"] = float(event.get("sniper_fire_delay", event.get("bullet_lock_time", TRUE_BULLET_DEFAULT_LOCK_SECONDS)))
+	var lock_patch := _gun_activation_service().release_lock_event_patch(release_route, event, _true_bullet_direction_to_target(unit, target), TRUE_BULLET_DEFAULT_LOCK_SECONDS)
+	for key in lock_patch.keys():
+		event[key] = lock_patch[key]
 	_queue_true_bullet_lock(unit, event)
 
 
@@ -32425,17 +32205,21 @@ func _tick_attack_command_windows(player_id: int, prefix: String, delta: float) 
 		var window: Dictionary = windows[key]
 		var attack_index := int(window.get("attack_index", key.to_int()))
 		var action_name := "%s_attack_%d" % [prefix, attack_index + 1]
-		window["timer"] = float(window.get("timer", ATTACK_WINDOW_TIMEOUT)) - delta
-		if Input.is_action_pressed(action_name):
-			window["hold_time"] = float(window.get("hold_time", 0.0)) + delta
-		else:
-			window["hold_time"] = 0.0
-		if float(window.get("hold_time", 0.0)) >= ATTACK_WINDOW_HOLD_CANCEL:
+		var tick_intent := _battle_action_event_service().command_window_tick_intent(
+			window,
+			Input.is_action_pressed(action_name),
+			delta,
+			ATTACK_WINDOW_TIMEOUT,
+			ATTACK_WINDOW_HOLD_CANCEL
+		)
+		window = tick_intent.get("window", window) if tick_intent.get("window", window) is Dictionary else window
+		var tick_action := String(tick_intent.get("action", "keep"))
+		if tick_action == "cancel":
 			windows.erase(key)
 			changed = true
 			_show_battle_message("P%d 攻击%d 窗口取消" % [player_id, attack_index + 1] if _ui_is_zh() else "P%d attack %d window canceled" % [player_id, attack_index + 1], 0.35)
 			continue
-		if float(window.get("timer", 0.0)) <= 0.0:
+		if tick_action == "expire":
 			windows.erase(key)
 			changed = true
 			continue
@@ -32451,141 +32235,39 @@ func _battle_direction_just_pressed(prefix: String) -> bool:
 
 
 func _attack_window_state_from_direction(hero, input_vector: Vector2) -> String:
-	if input_vector.length() < 0.18:
-		return ""
-	var forward := _unit_forward_vector(hero)
-	if forward.length() < 0.01:
-		return ""
-	var dot := input_vector.normalized().dot(forward.normalized())
-	if dot >= 0.38:
-		return "armor"
-	if dot <= -0.38:
-		return "active"
-	return ""
+	return _battle_action_event_service().command_window_state_for_input(input_vector, _unit_forward_vector(hero))
 
 
 func _attack_window_state_for_binding(hero, binding: Dictionary, input_vector: Vector2) -> String:
-	if input_vector.length() < 0.18:
-		return ""
-	var module_part: Dictionary = binding.get("module_part", {}) if binding.get("module_part", {}) is Dictionary else {}
-	var profile := String(binding.get("command_window_profile", module_part.get("command_window_profile", "")))
-	if profile not in ["two_link_4_6", "blade_simple_4_6", "blunt_terminal_4_6_236_214"]:
-		return ""
-	var forward := _unit_forward_vector(hero)
-	if forward.length() < 0.01:
-		return ""
-	var dot := input_vector.normalized().dot(forward.normalized())
-	if dot >= 0.38:
-		return "armor"
-	if dot <= -0.38:
-		return "active"
-	return ""
+	return _battle_action_event_service().command_window_state_for_binding(
+		binding,
+		input_vector,
+		_unit_forward_vector(hero),
+		["two_link_4_6", "blade_simple_4_6", "blunt_terminal_4_6_236_214"]
+	)
 
 
-func _gauntlet_command_text_state(player_id: int) -> String:
-	var text := _command_text(player_id)
-	if _text_matches_any(text, ["236", "26"]):
-		return "armor"
-	if _text_matches_any(text, ["214", "24"]):
-		return "active"
-	return ""
+func _runtime_gauntlet_command_profiles() -> Array:
+	return ["blunt_gauntlet_extend_swing"]
 
 
-func _blade_command_text_state(player_id: int, binding: Dictionary) -> String:
-	var module_part: Dictionary = binding.get("module_part", {}) if binding.get("module_part", {}) is Dictionary else {}
-	var profile := String(binding.get("command_window_profile", module_part.get("command_window_profile", "")))
-	var text := _command_text(player_id)
-	if profile == "blade_simple_4_6":
-		if _text_matches_any(text, ["6"]):
-			return "armor"
-		if _text_matches_any(text, ["4"]):
-			return "active"
-	elif profile == "blade_complex_236_214":
-		if _text_matches_any(text, ["236", "26"]):
-			return "armor"
-		if _text_matches_any(text, ["214", "24"]):
-			return "active"
-	return ""
+func _runtime_blunt_command_profiles() -> Array:
+	return [SHIELD_GUARD_BASH_PROFILE, HAMMER_WINDUP_SLAM_PROFILE]
 
 
-func _blade_command_variant_for_binding(player_id: int, binding: Dictionary, action_state: String) -> String:
-	var module_part: Dictionary = binding.get("module_part", {}) if binding.get("module_part", {}) is Dictionary else {}
-	var profile := String(binding.get("command_window_profile", module_part.get("command_window_profile", "")))
-	var text := _command_text(player_id)
-	if profile == "blade_simple_4_6":
-		if _text_matches_any(text, ["6"]) or action_state == "armor":
-			return "armor_forward_cut"
-		if _text_matches_any(text, ["4"]) or action_state == "active":
-			return "active_reverse_cut"
-		return "normal_sweep"
-	if profile == "blade_complex_236_214":
-		if _text_matches_any(text, ["236", "26"]) or action_state == "armor":
-			return "armor_special"
-		if _text_matches_any(text, ["214", "24"]) or action_state == "active":
-			return "active_special"
-	return "normal_sweep"
+func _runtime_blade_command_profiles() -> Array:
+	return [
+		"blade_arc_return",
+		"katana_quickdraw",
+		"scythe_hook_return",
+		"greatsword_commit_cleave",
+		"triple_limb_cross_cut",
+		"extend_slash_driver",
+	]
 
 
-func _blunt_terminal_profile(profile: String) -> bool:
-	return profile in [SHIELD_GUARD_BASH_PROFILE, HAMMER_WINDUP_SLAM_PROFILE]
-
-
-func _blunt_terminal_command_variant_for_binding(player_id: int, hero, binding: Dictionary, input_vector: Vector2, action_state: String) -> String:
-	var profile := String(binding.get("module_action_profile", ""))
-	var text := _command_text(player_id)
-	if profile == SHIELD_GUARD_BASH_PROFILE:
-		if _text_matches_any(text, ["236", "26"]) or action_state == "armor":
-			return "armor_guard_bash"
-		if _text_matches_any(text, ["214", "24"]) or action_state == "active":
-			return "active_shoulder_bash"
-		var shield_direction := input_vector
-		if shield_direction.length() < 0.18:
-			shield_direction = _latest_command_direction(player_id)
-		if shield_direction.length() >= 0.18:
-			var shield_forward := _unit_forward_vector(hero)
-			if shield_forward.length() >= 0.01:
-				var shield_dot := shield_direction.normalized().dot(shield_forward.normalized())
-				if shield_dot >= 0.38:
-					return "normal_forward_bash"
-				if shield_dot <= -0.38:
-					return "normal_back_bash"
-		return "normal_guard"
-	if _text_matches_any(text, ["236", "26"]) or action_state == "armor":
-		return "armor_overhead_slam"
-	if _text_matches_any(text, ["214", "24"]) or action_state == "active":
-		return "active_side_slam"
-	var hammer_direction := input_vector
-	if hammer_direction.length() < 0.18:
-		hammer_direction = _latest_command_direction(player_id)
-	if hammer_direction.length() >= 0.18:
-		var hammer_forward := _unit_forward_vector(hero)
-		if hammer_forward.length() >= 0.01:
-			var hammer_dot := hammer_direction.normalized().dot(hammer_forward.normalized())
-			if hammer_dot >= 0.38:
-				return "normal_forward_slam"
-			if hammer_dot <= -0.38:
-				return "normal_back_slam"
-	return "normal_short_swing"
-
-
-func _gauntlet_command_variant_for_binding(player_id: int, hero, binding: Dictionary, input_vector: Vector2, action_state: String) -> String:
-	var text := _command_text(player_id)
-	if _text_matches_any(text, ["236", "26"]) or action_state == "armor":
-		return "armor_inward_extend"
-	if _text_matches_any(text, ["214", "24"]) or action_state == "active":
-		return "active_outward_extend"
-	var command_direction := input_vector
-	if command_direction.length() < 0.18:
-		command_direction = _latest_command_direction(player_id)
-	if command_direction.length() >= 0.18:
-		var forward := _unit_forward_vector(hero)
-		if forward.length() >= 0.01:
-			var dot := command_direction.normalized().dot(forward.normalized())
-			if dot >= 0.38:
-				return "normal_inward_swing"
-			if dot <= -0.38:
-				return "normal_outward_swing"
-	return "normal_extend"
+func _runtime_command_buffer_clear_profiles() -> Array:
+	return _runtime_gauntlet_command_profiles() + _runtime_blunt_command_profiles() + _runtime_blade_command_profiles()
 
 
 func _resolve_attack_command_window(player_id: int, prefix: String, input_vector: Vector2, attack_index: int, action_state: String) -> bool:
@@ -32610,7 +32292,7 @@ func _resolve_all_attack_command_windows(player_id: int, prefix: String, input_v
 	var hero = active_units[player_id]["hero"]
 	if not _is_live_unit(hero):
 		return false
-	var resolved_entries: Array = []
+	var window_entries: Array = []
 	for raw_key in windows.keys():
 		var window: Dictionary = windows[raw_key]
 		var attack_index := int(window.get("attack_index", String(raw_key).to_int()))
@@ -32620,21 +32302,18 @@ func _resolve_all_attack_command_windows(player_id: int, prefix: String, input_v
 			if binding.is_empty():
 				binding = _runtime_binding_for_attack_index(hero, attack_index)
 			resolved_state = _attack_window_state_for_binding(hero, binding, input_vector)
-		if resolved_state == "":
-			continue
-		resolved_entries.append({
+		window_entries.append({
 			"window_key": String(raw_key),
 			"attack_index": attack_index,
 			"state": resolved_state,
 		})
-	if resolved_entries.is_empty():
+	var resolve_intent := _battle_action_event_service().command_window_resolve_all_intent(window_entries)
+	if String(resolve_intent.get("action", "")) != "fire_all":
 		return false
-	resolved_entries.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
-		return int(a.get("attack_index", 0)) < int(b.get("attack_index", 0))
-	)
-	for entry in resolved_entries:
-		windows.erase(String(entry.get("window_key", "")))
+	for raw_key in Array(resolve_intent.get("close_window_keys", [])):
+		windows.erase(String(raw_key))
 	attack_command_windows[player_id] = windows
+	var resolved_entries: Array = Array(resolve_intent.get("entries", []))
 	for entry in resolved_entries:
 		var attack_index := int(entry.get("attack_index", 0))
 		if _is_live_unit(hero) and _unit_uses_direct_runtime_topology(hero):
@@ -32655,21 +32334,16 @@ func _handle_attack_window_direction_resolution(player_id: int, prefix: String, 
 
 
 func _runtime_module_state_for_binding(player_id: int, unit, binding: Dictionary, input_vector: Vector2, fallback_state: String) -> String:
-	var module_part: Dictionary = binding.get("module_part", {}) if binding.get("module_part", {}) is Dictionary else {}
-	var profile := String(binding.get("module_action_profile", module_part.get("module_action_profile", "")))
-	if profile == "blunt_gauntlet_extend_swing":
-		var command_state := _gauntlet_command_text_state(player_id)
-		if command_state != "":
-			return command_state
-	if _blunt_terminal_profile(profile):
-		var blunt_state := _gauntlet_command_text_state(player_id)
-		if blunt_state != "":
-			return blunt_state
-	if profile in ["blade_arc_return", "katana_quickdraw", "scythe_hook_return", "greatsword_commit_cleave", "triple_limb_cross_cut", "extend_slash_driver"]:
-		var blade_state := _blade_command_text_state(player_id, binding)
-		if blade_state != "":
-			return blade_state
-	return fallback_state
+	var profile_payload := _battle_action_event_service().command_window_binding_profile(binding)
+	return _battle_action_event_service().command_window_runtime_state(
+		String(profile_payload.get("profile", "")),
+		String(profile_payload.get("command_profile", "")),
+		_command_text(player_id),
+		fallback_state,
+		_runtime_gauntlet_command_profiles(),
+		_runtime_blunt_command_profiles(),
+		_runtime_blade_command_profiles()
+	)
 
 
 func _hero_runtime_module_attack(player_id: int, prefix: String, input_vector: Vector2, attack_index: int, requested_state: String = "normal") -> void:
@@ -32683,17 +32357,26 @@ func _hero_runtime_module_attack(player_id: int, prefix: String, input_vector: V
 		return
 	var action_state := _runtime_module_state_for_binding(player_id, hero, binding, input_vector, requested_state)
 	var runtime_binding := binding.duplicate(true)
-	var binding_module_part: Dictionary = runtime_binding.get("module_part", {}) if runtime_binding.get("module_part", {}) is Dictionary else {}
-	var runtime_profile := String(runtime_binding.get("module_action_profile", binding_module_part.get("module_action_profile", "")))
-	if runtime_profile == "blunt_gauntlet_extend_swing":
-		runtime_binding["runtime_command_variant"] = _gauntlet_command_variant_for_binding(player_id, hero, runtime_binding, input_vector, action_state)
-	elif _blunt_terminal_profile(runtime_profile):
-		runtime_binding["runtime_command_variant"] = _blunt_terminal_command_variant_for_binding(player_id, hero, runtime_binding, input_vector, action_state)
-	elif runtime_profile in ["blade_arc_return", "katana_quickdraw", "scythe_hook_return", "greatsword_commit_cleave", "triple_limb_cross_cut", "extend_slash_driver"]:
-		runtime_binding["runtime_command_variant"] = _blade_command_variant_for_binding(player_id, runtime_binding, action_state)
-	if action_state in ["active", "armor"] or runtime_profile in ["blunt_gauntlet_extend_swing", SHIELD_GUARD_BASH_PROFILE, HAMMER_WINDUP_SLAM_PROFILE, "blade_arc_return", "katana_quickdraw", "scythe_hook_return", "greatsword_commit_cleave", "triple_limb_cross_cut", "extend_slash_driver"]:
+	var runtime_profile_payload := _battle_action_event_service().command_window_binding_profile(runtime_binding)
+	var runtime_profile := String(runtime_profile_payload.get("profile", ""))
+	var runtime_command_profile := String(runtime_profile_payload.get("command_profile", ""))
+	var runtime_variant := _battle_action_event_service().command_window_runtime_variant(
+		runtime_profile,
+		runtime_command_profile,
+		_command_text(player_id),
+		action_state,
+		input_vector,
+		_latest_command_direction(player_id),
+		_unit_forward_vector(hero),
+		_runtime_gauntlet_command_profiles(),
+		_runtime_blunt_command_profiles(),
+		_runtime_blade_command_profiles()
+	)
+	if runtime_variant != "":
+		runtime_binding["runtime_command_variant"] = runtime_variant
+	if _battle_action_event_service().command_window_should_clear_buffer(action_state, runtime_profile, _runtime_command_buffer_clear_profiles()):
 		command_buffers[player_id] = []
-	var direction := input_vector.normalized() if input_vector.length() >= 0.18 else _unit_forward_vector(hero)
+	var direction := _battle_action_event_service().runtime_module_direction(input_vector, _unit_forward_vector(hero))
 	var event: Dictionary = {}
 	if hero.has_method("begin_runtime_module_action"):
 		event = hero.begin_runtime_module_action(action_state, runtime_binding, direction)
@@ -32754,9 +32437,7 @@ func _hero_normal_attack(player_id: int, prefix: String, input_vector: Vector2, 
 			_show_battle_message("No linked trap has a valid target", 0.65)
 		return
 	var group_projectile := bool(group.get("projectile", hero.stats.get("projectile", false)))
-	var action_kind := "normal"
-	if requested_state in ["active", "armor"]:
-		action_kind = requested_state
+	var action_kind := _battle_action_event_service().normal_attack_action_kind(requested_state)
 	var event: Dictionary = _begin_unit_module_action(hero, action_kind, group, attack_index)
 	if event.is_empty():
 		return
@@ -32910,10 +32591,7 @@ func _hero_command_skill(player_id: int, prefix: String, input_vector: Vector2, 
 			return
 		if _try_fold_barrier_squad(hero):
 			return
-	var action_kind: String = requested_state if requested_state in ["active", "armor"] else String(hero.stats.get("skill_state", "active"))
-	var module_state := String(hero.stats.get("module_state", ""))
-	if module_state in ["active", "armor"]:
-		action_kind = module_state
+	var action_kind := _battle_action_event_service().command_skill_action_kind(requested_state, hero.stats)
 	var command_group := _attack_group(hero, 0)
 	var event: Dictionary = _begin_unit_module_action(hero, action_kind, command_group, 0)
 	if event.is_empty():
@@ -33242,96 +32920,32 @@ func _morph_shape_for(current_shape: String, mode: String) -> String:
 
 func _is_recoil_countered(player_id: int, prefix: String, attack_direction: Vector2) -> bool:
 	var hero = active_units[player_id]["hero"]
-	if not _is_live_unit(hero) or float(hero.stats.get("boost_momentum", 0.0)) <= 0.0:
+	if not _is_live_unit(hero):
 		return false
-	var held := _input_vector_for(prefix)
-	if held.length() < 0.2:
-		return false
-	return held.normalized().dot(-attack_direction.normalized()) > 0.55
-
-
-func _absolute_command_vector(token: String) -> Vector2:
-	match token:
-		"1":
-			return Vector2(-1.0, 1.0)
-		"2":
-			return Vector2.DOWN
-		"3":
-			return Vector2(1.0, 1.0)
-		"4":
-			return Vector2.LEFT
-		"6":
-			return Vector2.RIGHT
-		"7":
-			return Vector2(-1.0, -1.0)
-		"8":
-			return Vector2.UP
-		"9":
-			return Vector2(1.0, -1.0)
-	return Vector2.ZERO
+	return _battle_action_event_service().recoil_countered(float(hero.stats.get("boost_momentum", 0.0)), _input_vector_for(prefix), attack_direction)
 
 
 func _latest_command_direction(player_id: int) -> Vector2:
-	var buffer: Array = command_buffers.get(player_id, [])
-	for i in range(buffer.size() - 1, -1, -1):
-		var direction := _absolute_command_vector(String(buffer[i]))
-		if direction.length() > 0.01:
-			return direction.normalized()
-	return Vector2.ZERO
-
-
-func _facing_relative_attack_state(hero, input_vector: Vector2) -> String:
-	var command_direction := input_vector
-	if command_direction.length() < 0.18:
-		command_direction = _latest_command_direction(int(hero.owner_id) if hero != null and is_instance_valid(hero) else 1)
-	if command_direction.length() < 0.18:
-		return "normal"
-	var forward := _unit_forward_vector(hero)
-	if forward.length() < 0.01:
-		return "normal"
-	var dot := command_direction.normalized().dot(forward.normalized())
-	if dot >= 0.38:
-		return "armor"
-	if dot <= -0.38:
-		return "active"
-	return "normal"
-
-
-func _two_link_forward_snap_attack_state(player_id: int, hero, input_vector: Vector2) -> String:
-	var command_direction := input_vector
-	if command_direction.length() < 0.18:
-		command_direction = _latest_command_direction(player_id)
-	if command_direction.length() < 0.18:
-		return "normal"
-	var forward := _unit_forward_vector(hero)
-	if forward.length() < 0.01:
-		return "normal"
-	forward = forward.normalized()
-	var normalized := command_direction.normalized()
-	if normalized.dot(forward) >= 0.38:
-		return "armor"
-	if normalized.dot(-forward) >= 0.38:
-		return "active"
-	return "normal"
+	return _battle_action_event_service().latest_command_direction(command_buffers.get(player_id, []))
 
 
 func _attack_state_for_group(player_id: int, hero, group: Dictionary, input_vector: Vector2, fallback_state: String) -> String:
-	if String(group.get("module_action_profile", "")) == "two_link_forward_snap":
-		return _two_link_forward_snap_attack_state(player_id, hero, input_vector)
-	return fallback_state
+	return _battle_action_event_service().attack_state_for_group(String(group.get("module_action_profile", "")), input_vector, _latest_command_direction(player_id), _unit_forward_vector(hero), fallback_state)
 
 
 func _melee_command_attack_kind(player_id: int, hero, consume: bool = true, input_vector: Vector2 = Vector2.ZERO) -> String:
-	var attack_state := _facing_relative_attack_state(hero, input_vector)
-	if attack_state in ["active", "armor"] and consume:
+	var intent := _battle_action_event_service().melee_command_attack_intent(input_vector, _latest_command_direction(player_id), _unit_forward_vector(hero), consume)
+	if bool(intent.get("clear_buffer", false)):
 		command_buffers[player_id] = []
-	return attack_state
+	return String(intent.get("attack_state", "normal"))
 
 
 func _consume_melee_state_command(player_id: int, hero, requested_state: String, input_vector: Vector2 = Vector2.ZERO) -> bool:
-	if _melee_command_attack_kind(player_id, hero, false, input_vector) != requested_state:
+	var intent := _battle_action_event_service().consume_melee_state_intent(input_vector, _latest_command_direction(player_id), _unit_forward_vector(hero), requested_state)
+	if not bool(intent.get("matched", false)):
 		return false
-	command_buffers[player_id] = []
+	if bool(intent.get("clear_buffer", false)):
+		command_buffers[player_id] = []
 	return true
 
 
@@ -33352,62 +32966,27 @@ func _unit_forward_vector(unit) -> Vector2:
 
 
 func _attack_direction_for_group(hero, input_vector: Vector2, group: Dictionary) -> Vector2:
-	if input_vector.length() >= 0.2:
-		return input_vector.normalized()
-	var lane_bias: float = float(group.get("lane_bias", 0.0))
-	var forward := _unit_forward_vector(hero)
-	var side := Vector2(-forward.y, forward.x)
-	return (forward + side * lane_bias).normalized()
+	return _battle_action_event_service().attack_direction_for_group(input_vector, _unit_forward_vector(hero), group)
 
 
 func _paired_attack_direction(hero, input_vector: Vector2, group: Dictionary, pair_index: int, pair_count: int) -> Vector2:
-	if String(group.get("paired_motion", "")) != "inward_clamp":
-		return _attack_direction_for_group(hero, input_vector, group)
-	var forward := _unit_forward_vector(hero)
-	var side := Vector2(-forward.y, forward.x)
-	var lane_bias := float(group.get("lane_bias", 0.0))
-	var inward_sign := -signf(lane_bias)
-	if inward_sign == 0.0:
-		inward_sign = 1.0 if pair_index % 2 == 0 else -1.0
-	var clamp_weight := clampf(float(group.get("clamp_close_angle_degrees", 120.0)) / 180.0, 0.28, 0.95)
-	var direction := (forward * (1.0 - clamp_weight * 0.38) + side * inward_sign * clamp_weight).normalized()
-	if input_vector.length() >= 0.2:
-		direction = direction.lerp(input_vector.normalized(), 0.18).normalized()
-	return direction
+	return _battle_action_event_service().paired_attack_direction(input_vector, _unit_forward_vector(hero), group, pair_index, pair_count)
 
 
 func _attack_direction(hero, input_vector: Vector2) -> Vector2:
-	var direction := input_vector
-	if direction.length() < 0.2:
-		direction = _unit_forward_vector(hero)
-	return direction.normalized()
+	return _battle_action_event_service().attack_direction(input_vector, _unit_forward_vector(hero))
 
 
 func _command_matches(player_id: int, command: String) -> bool:
-	var text := _command_text(player_id)
-	var aliases := {
-		"236": ["236", "26"],
-		"214": ["214", "24"],
-		"632146": ["632146", "6246"],
-	}
-	if _text_matches_any(text, aliases.get(command, [command])):
+	var intent := _battle_action_event_service().command_match_intent(_command_text(player_id), command)
+	if bool(intent.get("matched", false)):
 		command_buffers[player_id] = []
 		return true
 	return false
 
 
 func _command_text(player_id: int) -> String:
-	var text := ""
-	for token in command_buffers[player_id]:
-		text += String(token)
-	return text
-
-
-func _text_matches_any(text: String, candidates: Array) -> bool:
-	for candidate in candidates:
-		if text.ends_with(String(candidate)):
-			return true
-	return false
+	return _battle_action_event_service().command_text(command_buffers[player_id])
 
 
 func _apply_ai_attack_group_event_fields(unit, event: Dictionary, group: Dictionary, attack_index: int, attack_direction: Vector2) -> void:
@@ -57400,6 +56979,7 @@ func _battle_runtime_action_telemetry_unit_snapshot(unit) -> Dictionary:
 		"name": String(unit.unit_name),
 		"action_telemetry": telemetry,
 		"command_diagnostics": _battle_command_diagnostics_unit_snapshot(unit),
+		"projectile_diagnostics": _battle_projectile_target_diagnostics_unit_snapshot(unit),
 	}
 
 
@@ -57439,6 +57019,49 @@ func _battle_command_diagnostics_source_rule(stats: Dictionary, source_condition
 	return {}
 
 
+func _battle_projectile_target_diagnostics_unit_snapshot(unit) -> Dictionary:
+	if not _is_live_unit(unit):
+		return {}
+	var stats: Dictionary = unit.stats if unit.stats is Dictionary else {}
+	return _battle_runtime_action_telemetry_service().projectile_target_diagnostics({
+		"id": int(unit.get_instance_id()),
+		"projectile_signal": float(unit.get_meta("projectile_signal", 0.0)),
+		"last_source_error": String(unit.get_meta("last_projectile_source_error", "")),
+		"source_target_policy": String(stats.get("source_target_policy", "")),
+	}, _battle_projectile_target_diagnostics_facts())
+
+
+func _battle_projectile_target_diagnostics_facts() -> Array:
+	var facts: Array = []
+	_append_battle_projectile_target_diagnostics_facts(facts, pending_laser_shots, "laser")
+	_append_battle_projectile_target_diagnostics_facts(facts, pending_true_bullet_shots, "true_bullet")
+	_append_battle_projectile_target_diagnostics_facts(facts, pending_chemical_projectiles, "chemical")
+	_append_battle_projectile_target_diagnostics_facts(facts, pending_missile_projectiles, "explosive")
+	return facts
+
+
+func _append_battle_projectile_target_diagnostics_facts(facts: Array, shots: Array, fallback_behavior: String) -> void:
+	for raw_shot in shots:
+		if not (raw_shot is Dictionary):
+			continue
+		var shot: Dictionary = raw_shot
+		var event: Dictionary = shot.get("event", {}) if shot.get("event", {}) is Dictionary else {}
+		var attacker = shot.get("attacker", null)
+		var target = shot.get("target", event.get("locked_target", null))
+		var target_live := _is_live_unit(target)
+		facts.append({
+			"attacker_id": int(attacker.get_instance_id()) if _is_live_unit(attacker) else -1,
+			"target_id": int(target.get_instance_id()) if target_live else -1,
+			"target_live": target_live,
+			"target_role": String(target.role) if target_live else "",
+			"event": {
+				"projectile_behavior": String(event.get("projectile_behavior", "")),
+				"projectile_style": String(event.get("projectile_style", "")),
+			},
+			"fallback_behavior": fallback_behavior,
+		})
+
+
 func _battle_runtime_action_telemetry_snapshot() -> Dictionary:
 	var snapshots: Array = []
 	for unit in all_units:
@@ -57462,6 +57085,12 @@ func _battle_runtime_action_telemetry_snapshot() -> Dictionary:
 		"movement_mode_counts": {},
 		"fire_cooling_unit_count": 0,
 		"role_switch_configured_unit_count": 0,
+		"projectile_behavior_counts": {},
+		"projectile_target_role_counts": {},
+		"projectile_pending_count": 0,
+		"projectile_locked_target_count": 0,
+		"projectile_signal_unit_count": 0,
+		"projectile_targeted_unit_count": 0,
 		"earliest_timer": 0.0,
 		"latest_phase": 0.0,
 		"has_feint_retarget": false,

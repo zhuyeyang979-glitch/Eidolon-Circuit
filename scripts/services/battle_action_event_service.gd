@@ -13,6 +13,276 @@ func begin_module_action_intent(context: Dictionary) -> Dictionary:
 	}
 
 
+func runtime_attack_button_intent(context: Dictionary) -> Dictionary:
+	var attack_index := int(context.get("attack_index", 0))
+	var requested_state := String(context.get("requested_state", "normal"))
+	if not bool(context.get("direct_runtime_topology", false)):
+		return {"action": "legacy_attack", "attack_index": attack_index, "requested_state": requested_state}
+	if bool(context.get("gun_activation", false)):
+		return {"action": "start_gun_activation", "attack_index": attack_index, "requested_state": requested_state}
+	if bool(context.get("held_melee_activation", false)):
+		return {"action": "start_held_melee_activation", "attack_index": attack_index, "requested_state": requested_state}
+	if bool(context.get("has_attack_window", false)):
+		return {"action": "resolve_command_window", "attack_index": attack_index, "action_state": "normal"}
+	if bool(context.get("binding_empty", false)):
+		return {"action": "fail_unbound", "attack_index": attack_index}
+	return {"action": "open_command_window", "attack_index": attack_index}
+
+
+func attack_button_command_state_intent(requested_state: String, module_action_profile: String) -> Dictionary:
+	if not (requested_state in ["active", "armor"]):
+		return {
+			"action": "none",
+			"requested_state": requested_state,
+			"clear_buffer": false,
+			"consume_melee_state": false,
+		}
+	if module_action_profile == "two_link_forward_snap":
+		return {
+			"action": "clear_buffer",
+			"requested_state": requested_state,
+			"clear_buffer": true,
+			"consume_melee_state": false,
+		}
+	return {
+		"action": "consume_melee_state",
+		"requested_state": requested_state,
+		"clear_buffer": false,
+		"consume_melee_state": true,
+	}
+
+
+func attack_button_aim_mode(fallback_mode: String, true_bullet: bool) -> String:
+	if true_bullet:
+		return "manual"
+	if fallback_mode == "":
+		return "fixed"
+	return fallback_mode
+
+
+func hold_activation_initial_delay(hold_to_activate: bool, projectile: bool, release_to_fire: bool, true_bullet: bool) -> float:
+	if not hold_to_activate or not projectile:
+		return 0.0
+	if release_to_fire or true_bullet:
+		return 9999.0
+	return 0.0
+
+
+func hold_activation_fire_interval(context: Dictionary) -> float:
+	var fire_rate := float(context.get("fire_rate", 0.0))
+	if fire_rate > 0.0:
+		return 1.0 / maxf(0.05, fire_rate)
+	var fire_interval := float(context.get("fire_interval", 0.0))
+	if fire_interval > 0.0:
+		return maxf(0.04, fire_interval)
+	var damage_type := String(context.get("damage_type", ""))
+	if damage_type == "laser":
+		var default_aim := float(context.get("laser_default_aim_seconds", 0.46))
+		var min_aim := float(context.get("laser_min_aim_seconds", 0.18))
+		var max_aim := float(context.get("laser_max_aim_seconds", 1.1))
+		return clampf(float(context.get("laser_aim_time", default_aim)), min_aim, max_aim) + 0.32
+	if damage_type == "chemical":
+		return 0.2
+	if String(context.get("projectile_behavior", "")) == "bullet_hell":
+		return 0.16
+	return 0.24
+
+
+func hold_activation_fire_intent(true_bullet_aim: bool, hold_to_activate: bool, projectile: bool, current_timer: float, delta: float, fire_interval: float) -> Dictionary:
+	if true_bullet_aim or not hold_to_activate or not projectile:
+		return {
+			"action": "none",
+			"timer": current_timer,
+			"fire": false,
+		}
+	var next_timer := current_timer - delta
+	if next_timer > 0.0:
+		return {
+			"action": "wait",
+			"timer": next_timer,
+			"fire": false,
+		}
+	return {
+		"action": "fire",
+		"timer": fire_interval,
+		"fire": true,
+	}
+
+
+func held_aim_release_intent(release_to_fire: bool, hold_to_activate: bool, true_bullet: bool) -> Dictionary:
+	var should_fire := release_to_fire or not hold_to_activate or true_bullet
+	return {
+		"action": "fire" if should_fire else "clear",
+		"fire": should_fire,
+	}
+
+
+func command_token_vector(token: String) -> Vector2:
+	match token:
+		"1":
+			return Vector2(-1.0, 1.0)
+		"2":
+			return Vector2.DOWN
+		"3":
+			return Vector2(1.0, 1.0)
+		"4":
+			return Vector2.LEFT
+		"6":
+			return Vector2.RIGHT
+		"7":
+			return Vector2(-1.0, -1.0)
+		"8":
+			return Vector2.UP
+		"9":
+			return Vector2(1.0, -1.0)
+	return Vector2.ZERO
+
+
+func latest_command_direction(buffer: Array) -> Vector2:
+	for i in range(buffer.size() - 1, -1, -1):
+		var direction := command_token_vector(String(buffer[i]))
+		if direction.length() > 0.01:
+			return direction.normalized()
+	return Vector2.ZERO
+
+
+func command_text(buffer: Array) -> String:
+	var text := ""
+	for token in buffer:
+		text += str(token)
+	return text
+
+
+func command_buffer_record_intent(buffer: Array, timer: float, delta: float, direction_pressed: Dictionary, timeout: float = 0.42, max_tokens: int = 8) -> Dictionary:
+	var next_timer := maxf(0.0, timer - maxf(0.0, delta))
+	var next_buffer := buffer.duplicate(true)
+	if next_timer <= 0.0:
+		next_buffer = []
+	var added_input := false
+	for direction in [
+		{"key": "down", "token": "2"},
+		{"key": "right", "token": "6"},
+		{"key": "left", "token": "4"},
+		{"key": "up", "token": "8"},
+	]:
+		if bool(direction_pressed.get(String(direction["key"]), false)):
+			next_buffer.append(String(direction["token"]))
+			added_input = true
+	if added_input:
+		next_timer = maxf(0.0, timeout)
+	while next_buffer.size() > max_tokens:
+		next_buffer.pop_front()
+	return {"buffer": next_buffer, "timer": next_timer, "added_input": added_input}
+
+
+func command_match_intent(text: String, command: String) -> Dictionary:
+	var aliases := {
+		"236": ["236", "26"],
+		"214": ["214", "24"],
+		"632146": ["632146", "6246"],
+	}
+	var candidates: Array = Array(aliases.get(command, [command]))
+	var matched := _text_matches_any(text, candidates)
+	return {"matched": matched, "clear_buffer": matched, "candidates": candidates}
+
+
+func command_skill_action_kind(requested_state: String, stats: Dictionary) -> String:
+	var action_kind := requested_state if requested_state in ["active", "armor"] else String(stats.get("skill_state", "active"))
+	var module_state := String(stats.get("module_state", ""))
+	if module_state in ["active", "armor"]:
+		action_kind = module_state
+	return action_kind
+
+
+func normal_attack_action_kind(requested_state: String) -> String:
+	if requested_state in ["active", "armor"]:
+		return requested_state
+	return "normal"
+
+
+func attack_direction(input_vector: Vector2, forward_vector: Vector2) -> Vector2:
+	if input_vector.length() >= 0.2:
+		return input_vector.normalized()
+	return _normalized_or(forward_vector, Vector2.RIGHT)
+
+
+func attack_direction_for_group(input_vector: Vector2, forward_vector: Vector2, group: Dictionary) -> Vector2:
+	if input_vector.length() >= 0.2:
+		return input_vector.normalized()
+	var forward := _normalized_or(forward_vector, Vector2.RIGHT)
+	var lane_bias := float(group.get("lane_bias", 0.0))
+	var side := Vector2(-forward.y, forward.x)
+	return _normalized_or(forward + side * lane_bias, forward)
+
+
+func paired_attack_direction(input_vector: Vector2, forward_vector: Vector2, group: Dictionary, pair_index: int, _pair_count: int) -> Vector2:
+	if String(group.get("paired_motion", "")) != "inward_clamp":
+		return attack_direction_for_group(input_vector, forward_vector, group)
+	var forward := _normalized_or(forward_vector, Vector2.RIGHT)
+	var side := Vector2(-forward.y, forward.x)
+	var lane_bias := float(group.get("lane_bias", 0.0))
+	var inward_sign := -signf(lane_bias)
+	if inward_sign == 0.0:
+		inward_sign = 1.0 if pair_index % 2 == 0 else -1.0
+	var clamp_weight := clampf(float(group.get("clamp_close_angle_degrees", 120.0)) / 180.0, 0.28, 0.95)
+	var direction := _normalized_or(forward * (1.0 - clamp_weight * 0.38) + side * inward_sign * clamp_weight, forward)
+	if input_vector.length() >= 0.2:
+		direction = _normalized_or(direction.lerp(input_vector.normalized(), 0.18), direction)
+	return direction
+
+
+func runtime_module_direction(input_vector: Vector2, forward_vector: Vector2) -> Vector2:
+	if input_vector.length() >= 0.18:
+		return input_vector.normalized()
+	return _normalized_or(forward_vector, Vector2.RIGHT)
+
+
+func recoil_countered(boost_momentum: float, held_vector: Vector2, attack_direction: Vector2) -> bool:
+	if boost_momentum <= 0.0:
+		return false
+	if held_vector.length() < 0.2:
+		return false
+	return held_vector.normalized().dot(-attack_direction.normalized()) > 0.55
+
+
+func facing_relative_attack_state(input_vector: Vector2, latest_direction: Vector2, forward_vector: Vector2) -> String:
+	var command_direction := input_vector
+	if command_direction.length() < 0.18:
+		command_direction = latest_direction
+	return _relative_attack_state(command_direction, forward_vector)
+
+
+func two_link_forward_snap_attack_state(input_vector: Vector2, latest_direction: Vector2, forward_vector: Vector2) -> String:
+	var command_direction := input_vector
+	if command_direction.length() < 0.18:
+		command_direction = latest_direction
+	return _relative_attack_state(command_direction, forward_vector)
+
+
+func attack_state_for_group(profile: String, input_vector: Vector2, latest_direction: Vector2, forward_vector: Vector2, fallback_state: String) -> String:
+	if profile == "two_link_forward_snap":
+		return two_link_forward_snap_attack_state(input_vector, latest_direction, forward_vector)
+	return fallback_state
+
+
+func melee_command_attack_intent(input_vector: Vector2, latest_direction: Vector2, forward_vector: Vector2, consume: bool = true) -> Dictionary:
+	var attack_state := facing_relative_attack_state(input_vector, latest_direction, forward_vector)
+	return {
+		"attack_state": attack_state,
+		"clear_buffer": consume and attack_state in ["active", "armor"],
+	}
+
+
+func consume_melee_state_intent(input_vector: Vector2, latest_direction: Vector2, forward_vector: Vector2, requested_state: String) -> Dictionary:
+	var attack_state := facing_relative_attack_state(input_vector, latest_direction, forward_vector)
+	var matched := attack_state == requested_state
+	return {
+		"attack_state": attack_state,
+		"matched": matched,
+		"clear_buffer": matched,
+	}
+
+
 func command_window_route_intent(context: Dictionary) -> Dictionary:
 	if not bool(context.get("has_window", false)):
 		return {"action": "none"}
@@ -25,6 +295,184 @@ func command_window_route_intent(context: Dictionary) -> Dictionary:
 		"action_state": state,
 		"close_window": true,
 	}
+
+
+func command_window_resolve_all_intent(window_entries: Array) -> Dictionary:
+	var resolved_entries: Array = []
+	for raw_entry in window_entries:
+		if not (raw_entry is Dictionary):
+			continue
+		var entry: Dictionary = raw_entry
+		var state := String(entry.get("state", ""))
+		if state == "":
+			continue
+		var attack_index := int(entry.get("attack_index", String(entry.get("window_key", "0")).to_int()))
+		resolved_entries.append({
+			"window_key": String(entry.get("window_key", attack_index)),
+			"attack_index": attack_index,
+			"state": state,
+		})
+	if resolved_entries.is_empty():
+		return {"action": "none", "entries": [], "close_window_keys": []}
+	resolved_entries.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		return int(a.get("attack_index", 0)) < int(b.get("attack_index", 0))
+	)
+	var close_window_keys: Array = []
+	for entry in resolved_entries:
+		close_window_keys.append(String(entry.get("window_key", "")))
+	return {"action": "fire_all", "entries": resolved_entries, "close_window_keys": close_window_keys}
+
+
+func command_window_tick_intent(window: Dictionary, action_pressed: bool, delta: float, timeout: float, hold_cancel_seconds: float) -> Dictionary:
+	var next_window := window.duplicate(true)
+	var step := maxf(0.0, delta)
+	next_window["timer"] = float(next_window.get("timer", timeout)) - step
+	if action_pressed:
+		next_window["hold_time"] = float(next_window.get("hold_time", 0.0)) + step
+	else:
+		next_window["hold_time"] = 0.0
+	if float(next_window.get("hold_time", 0.0)) >= maxf(0.0, hold_cancel_seconds):
+		return {"action": "cancel", "window": next_window}
+	if float(next_window.get("timer", 0.0)) <= 0.0:
+		return {"action": "expire", "window": next_window}
+	return {"action": "keep", "window": next_window}
+
+
+func command_window_text_state(profile: String, text: String) -> String:
+	match profile:
+		"blade_simple_4_6":
+			if _text_matches_any(text, ["6"]):
+				return "armor"
+			if _text_matches_any(text, ["4"]):
+				return "active"
+		"blade_complex_236_214", "gauntlet_4_6_236_214", "blunt_terminal_4_6_236_214":
+			if _text_matches_any(text, ["236", "26"]):
+				return "armor"
+			if _text_matches_any(text, ["214", "24"]):
+				return "active"
+	return ""
+
+
+func command_window_blade_variant(profile: String, text: String, action_state: String) -> String:
+	var text_state := command_window_text_state(profile, text)
+	match profile:
+		"blade_simple_4_6":
+			if text_state == "armor" or action_state == "armor":
+				return "armor_forward_cut"
+			if text_state == "active" or action_state == "active":
+				return "active_reverse_cut"
+		"blade_complex_236_214":
+			if text_state == "armor" or action_state == "armor":
+				return "armor_special"
+			if text_state == "active" or action_state == "active":
+				return "active_special"
+	return "normal_sweep"
+
+
+func command_window_gauntlet_variant(text: String, action_state: String, input_vector: Vector2, latest_direction: Vector2, forward_vector: Vector2) -> String:
+	var text_state := command_window_text_state("gauntlet_4_6_236_214", text)
+	if text_state == "armor" or action_state == "armor":
+		return "armor_inward_extend"
+	if text_state == "active" or action_state == "active":
+		return "active_outward_extend"
+	var command_direction := input_vector
+	if command_direction.length() < 0.18:
+		command_direction = latest_direction
+	if command_direction.length() >= 0.18 and forward_vector.length() >= 0.01:
+		var dot := command_direction.normalized().dot(forward_vector.normalized())
+		if dot >= 0.38:
+			return "normal_inward_swing"
+		if dot <= -0.38:
+			return "normal_outward_swing"
+	return "normal_extend"
+
+
+func command_window_blunt_variant(profile: String, text: String, action_state: String, input_vector: Vector2, latest_direction: Vector2, forward_vector: Vector2) -> String:
+	var text_state := command_window_text_state("blunt_terminal_4_6_236_214", text)
+	var command_direction := input_vector
+	if command_direction.length() < 0.18:
+		command_direction = latest_direction
+	if profile == "blunt_shield_guard_bash":
+		if text_state == "armor" or action_state == "armor":
+			return "armor_guard_bash"
+		if text_state == "active" or action_state == "active":
+			return "active_shoulder_bash"
+		if command_direction.length() >= 0.18 and forward_vector.length() >= 0.01:
+			var shield_dot := command_direction.normalized().dot(forward_vector.normalized())
+			if shield_dot >= 0.38:
+				return "normal_forward_bash"
+			if shield_dot <= -0.38:
+				return "normal_back_bash"
+		return "normal_guard"
+	if text_state == "armor" or action_state == "armor":
+		return "armor_overhead_slam"
+	if text_state == "active" or action_state == "active":
+		return "active_side_slam"
+	if command_direction.length() >= 0.18 and forward_vector.length() >= 0.01:
+		var hammer_dot := command_direction.normalized().dot(forward_vector.normalized())
+		if hammer_dot >= 0.38:
+			return "normal_forward_slam"
+		if hammer_dot <= -0.38:
+			return "normal_back_slam"
+	return "normal_short_swing"
+
+
+func command_window_binding_profile(binding: Dictionary) -> Dictionary:
+	var module_part: Dictionary = binding.get("module_part", {}) if binding.get("module_part", {}) is Dictionary else {}
+	return {
+		"profile": String(binding.get("module_action_profile", module_part.get("module_action_profile", ""))),
+		"command_profile": String(binding.get("command_window_profile", module_part.get("command_window_profile", ""))),
+	}
+
+
+func command_window_should_clear_buffer(action_state: String, runtime_profile: String, command_profiles: Array = []) -> bool:
+	if action_state in ["active", "armor"]:
+		return true
+	return command_profiles.has(runtime_profile)
+
+
+func command_window_runtime_state(runtime_profile: String, command_window_profile: String, text: String, fallback_state: String, gauntlet_profiles: Array = [], blunt_profiles: Array = [], blade_profiles: Array = []) -> String:
+	var text_state := ""
+	if gauntlet_profiles.has(runtime_profile):
+		text_state = command_window_text_state("gauntlet_4_6_236_214", text)
+	elif blunt_profiles.has(runtime_profile):
+		text_state = command_window_text_state("blunt_terminal_4_6_236_214", text)
+	elif blade_profiles.has(runtime_profile):
+		text_state = command_window_text_state(command_window_profile, text)
+	if text_state != "":
+		return text_state
+	return fallback_state
+
+
+func command_window_runtime_variant(runtime_profile: String, command_window_profile: String, text: String, action_state: String, input_vector: Vector2, latest_direction: Vector2, forward_vector: Vector2, gauntlet_profiles: Array = [], blunt_profiles: Array = [], blade_profiles: Array = []) -> String:
+	if gauntlet_profiles.has(runtime_profile):
+		return command_window_gauntlet_variant(text, action_state, input_vector, latest_direction, forward_vector)
+	if blunt_profiles.has(runtime_profile):
+		return command_window_blunt_variant(runtime_profile, text, action_state, input_vector, latest_direction, forward_vector)
+	if blade_profiles.has(runtime_profile):
+		return command_window_blade_variant(command_window_profile, text, action_state)
+	return ""
+
+
+func command_window_state_for_input(input_vector: Vector2, forward_vector: Vector2) -> String:
+	if input_vector.length() < 0.18:
+		return ""
+	if forward_vector.length() < 0.01:
+		return ""
+	var dot := input_vector.normalized().dot(forward_vector.normalized())
+	if dot >= 0.38:
+		return "armor"
+	if dot <= -0.38:
+		return "active"
+	return ""
+
+
+func command_window_state_for_binding(binding: Dictionary, input_vector: Vector2, forward_vector: Vector2, eligible_profiles: Array = []) -> String:
+	var module_part := _dict(binding.get("module_part", {}))
+	var profile := String(binding.get("command_window_profile", module_part.get("command_window_profile", "")))
+	if not eligible_profiles.has(profile):
+		return ""
+	return command_window_state_for_input(input_vector, forward_vector)
 
 
 func module_event_patch(context: Dictionary) -> Dictionary:
@@ -349,3 +797,25 @@ func _normalized_or(value: Vector2, fallback: Vector2) -> Vector2:
 	if fallback.length() > 0.01:
 		return fallback.normalized()
 	return Vector2.RIGHT
+
+
+func _relative_attack_state(command_direction: Vector2, forward_vector: Vector2) -> String:
+	if command_direction.length() < 0.18:
+		return "normal"
+	if forward_vector.length() < 0.01:
+		return "normal"
+	var forward := forward_vector.normalized()
+	var normalized := command_direction.normalized()
+	var dot := normalized.dot(forward)
+	if dot >= 0.38:
+		return "armor"
+	if dot <= -0.38:
+		return "active"
+	return "normal"
+
+
+func _text_matches_any(text: String, candidates: Array) -> bool:
+	for candidate in candidates:
+		if text.ends_with(String(candidate)):
+			return true
+	return false

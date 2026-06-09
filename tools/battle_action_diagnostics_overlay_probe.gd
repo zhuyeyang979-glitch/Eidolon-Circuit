@@ -4,9 +4,12 @@ const MainScene := preload("res://scripts/main.gd")
 const FighterScene := preload("res://scripts/fighter.gd")
 const BattleActionDiagnosticsView := preload("res://scripts/views/battle_action_diagnostics_view.gd")
 
+var failures: Array = []
+
 
 func _fail(message: String) -> void:
 	push_error(message)
+	failures.append(message)
 	quit(1)
 
 
@@ -48,6 +51,12 @@ func _init() -> void:
 		"movement_mode_counts": {"drive": 1},
 		"fire_cooling_unit_count": 1,
 		"role_switch_configured_unit_count": 1,
+		"projectile_behavior_counts": {"true_bullet": 1, "explosive": 1},
+		"projectile_target_role_counts": {"hero": 2},
+		"projectile_pending_count": 2,
+		"projectile_locked_target_count": 2,
+		"projectile_signal_unit_count": 1,
+		"projectile_targeted_unit_count": 1,
 		"has_feint_retarget": false,
 		"has_runtime_contact_speed": true,
 		"unit_rows": [{
@@ -79,6 +88,16 @@ func _init() -> void:
 				"movement_gate_reason": "",
 				"role_switch_configured": true,
 				"role_switch_target": "puppet",
+			},
+			"projectile_diagnostics": {
+				"projectile_signal": 0.44,
+				"pending_projectile_count": 2,
+				"incoming_projectile_count": 0,
+				"locked_target_count": 2,
+				"targeted_by_count": 0,
+				"behavior_counts": {"true_bullet": 1, "explosive": 1},
+				"target_role_counts": {"hero": 2},
+				"last_source_error": "",
 			},
 			"actions": [{
 				"profile": "two_link_forward_snap",
@@ -112,6 +131,10 @@ func _init() -> void:
 	for required in ["cmds ai:line:1", "cond:default:1", "mm:drive:1", "cmd ai:line", "cond:default", "move:hold", "fire:0.18", "step:1/2", "mm:drive", "role:true", "target:puppet"]:
 		if not standalone_text.contains(required):
 			_fail("BattleActionDiagnosticsView text missing command token %s: %s" % [required, standalone_text])
+			return
+	for required in ["projectiles behavior:explosive:1, true_bullet:1", "targets:hero:2", "pending:2", "locks:2", "signal_units:1", "targeted_units:1", "proj signal:0.44", "pending:2", "incoming:0", "locks:2", "targeted:0", "beh:explosive:1, true_bullet:1", "targets:hero:2"]:
+		if not standalone_text.contains(required):
+			_fail("BattleActionDiagnosticsView text missing projectile token %s: %s" % [required, standalone_text])
 			return
 	standalone_view.free()
 	var main = MainScene.new()
@@ -154,13 +177,35 @@ func _init() -> void:
 	fighter.set_meta("fire_timer", 0.18)
 	fighter.set_meta("sequence_step", 1)
 	fighter.set_meta("last_move_command_mode", "drive")
-	main.all_units = [fighter]
+	fighter.set_meta("projectile_signal", 0.44)
+	var target = FighterScene.new()
+	root.add_child(target)
+	target.setup_unit({
+		"unit_name": "Overlay Target",
+		"owner_id": 2,
+		"role": "hero",
+		"stats": {"health": 100, "mass": 10.0},
+	})
+	target.deploy(2.0, 0.0)
+	main.pending_true_bullet_shots = [{
+		"attacker": fighter,
+		"target": target,
+		"event": {"projectile": true, "projectile_behavior": "true_bullet", "aim_locked": true},
+		"timer": 0.25,
+	}]
+	main.pending_missile_projectiles = [{
+		"attacker": fighter,
+		"target": target,
+		"event": {"projectile": true, "projectile_behavior": "explosive", "projectile_style": "missile", "aim_locked": true},
+		"timer": 0.6,
+	}]
+	main.all_units = [fighter, target]
 	main._set_battle_action_diagnostics_overlay_enabled(true)
 	if not main.battle_action_diagnostics_view.visible:
 		_fail("Battle action diagnostics overlay should become visible when enabled.")
 		return
 	var text := main._battle_action_diagnostics_overlay_text()
-	for required in ["units:", "action", "profile:two_link_forward_snap", "phase:", "unit P1 hero Overlay Probe", "key:1", "nodes:1/2", "pose:", "target:", "variant:balance_string", "cmd:normal_sweep", "speed:", "soul:true", "gate", "reason:cooldown", "cd:0.22", "cancel:false", "last:cooldown", "cmds", "cmd ai:line", "cond:default", "fire:0.18", "step:1/2", "mm:drive", "role:true", "target:puppet"]:
+	for required in ["units:", "action", "profile:two_link_forward_snap", "phase:", "unit P1 hero Overlay Probe", "key:1", "nodes:1/2", "pose:", "target:", "variant:balance_string", "cmd:normal_sweep", "speed:", "soul:true", "gate", "reason:cooldown", "cd:0.22", "cancel:false", "last:cooldown", "cmds", "cmd ai:line", "cond:default", "fire:0.18", "step:1/2", "mm:drive", "role:true", "target:puppet", "projectiles", "behavior:explosive:1, true_bullet:1", "targets:hero:2", "proj signal:0.44", "pending:2", "locks:2"]:
 		if not text.contains(required):
 			_fail("Battle action diagnostics overlay text missing token %s: %s" % [required, text])
 			return
@@ -170,6 +215,10 @@ func _init() -> void:
 		return
 	if main.battle_action_diagnostics_view.text() != "":
 		_fail("Battle action diagnostics overlay should clear text when disabled.")
+		return
+	if not failures.is_empty():
+		print("BATTLE_ACTION_DIAGNOSTICS_OVERLAY_PROBE failed count=%d" % failures.size())
+		quit(1)
 		return
 	print("BATTLE_ACTION_DIAGNOSTICS_OVERLAY_PROBE ok text_lines=%d" % text.split("\n").size())
 	quit(0)

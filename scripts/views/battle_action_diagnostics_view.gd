@@ -51,6 +51,14 @@ func text() -> String:
 		int(model.get("fire_cooling_unit_count", 0)),
 		int(model.get("role_switch_configured_unit_count", 0)),
 	])
+	lines.append("projectiles behavior:%s targets:%s pending:%d locks:%d signal_units:%d targeted_units:%d" % [
+		_counts_line(Dictionary(model.get("projectile_behavior_counts", {}))),
+		_counts_line(Dictionary(model.get("projectile_target_role_counts", {}))),
+		int(model.get("projectile_pending_count", 0)),
+		int(model.get("projectile_locked_target_count", 0)),
+		int(model.get("projectile_signal_unit_count", 0)),
+		int(model.get("projectile_targeted_unit_count", 0)),
+	])
 	for raw_row in Array(model.get("unit_rows", [])):
 		if not (raw_row is Dictionary):
 			continue
@@ -86,6 +94,17 @@ func text() -> String:
 			String(command.get("movement_gate_reason", "")),
 			str(bool(command.get("role_switch_configured", false))),
 			String(command.get("role_switch_target", "")),
+		])
+		var projectile: Dictionary = Dictionary(row.get("projectile_diagnostics", {}))
+		lines.append("  proj signal:%.2f pending:%d incoming:%d locks:%d targeted:%d beh:%s targets:%s err:%s" % [
+			float(projectile.get("projectile_signal", 0.0)),
+			int(projectile.get("pending_projectile_count", 0)),
+			int(projectile.get("incoming_projectile_count", 0)),
+			int(projectile.get("locked_target_count", 0)),
+			int(projectile.get("targeted_by_count", 0)),
+			_counts_line(Dictionary(projectile.get("behavior_counts", {}))),
+			_counts_line(Dictionary(projectile.get("target_role_counts", {}))),
+			String(projectile.get("last_source_error", "")),
 		])
 		for raw_action in Array(row.get("actions", [])):
 			if not (raw_action is Dictionary):

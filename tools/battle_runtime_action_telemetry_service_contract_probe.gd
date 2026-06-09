@@ -4,9 +4,12 @@ const MainScene := preload("res://scripts/main.gd")
 const FighterScene := preload("res://scripts/fighter.gd")
 const BattleRuntimeActionTelemetryService := preload("res://scripts/services/battle_runtime_action_telemetry_service.gd")
 
+var failures: Array = []
+
 
 func _fail(message: String) -> void:
 	push_error(message)
+	failures.append(message)
 	quit(1)
 
 
@@ -30,11 +33,71 @@ func _init() -> void:
 		"take_hit",
 		"TopologyPoseResolver",
 		"FighterScene",
+		"pending_laser_shots",
+		"pending_true_bullet_shots",
+		"pending_chemical_projectiles",
+		"pending_missile_projectiles",
 	]:
 		if source.contains(forbidden):
 			_fail("BattleRuntimeActionTelemetryService contains forbidden token: %s" % forbidden)
 			return
 	var service := BattleRuntimeActionTelemetryService.new()
+	var projectile_only: Dictionary = service.projectile_target_diagnostics({
+		"id": 11,
+		"projectile_signal": 0.9,
+		"last_source_error": "bad source",
+		"source_target_policy": "protect_puppet_group",
+	}, [
+		{
+			"attacker_id": 11,
+			"target_id": 22,
+			"target_live": true,
+			"target_role": "hero",
+			"event": {"projectile_style": "beam"},
+			"fallback_behavior": "laser",
+		},
+		{
+			"attacker_id": 11,
+			"target_id": 22,
+			"target_live": true,
+			"target_role": "barrier",
+			"event": {"projectile_behavior": "explosive", "projectile_style": "missile"},
+			"fallback_behavior": "missile",
+		},
+		{
+			"attacker_id": 33,
+			"target_id": 11,
+			"target_live": true,
+			"target_role": "hero",
+			"event": {"projectile_behavior": ""},
+			"fallback_behavior": "chemical",
+		},
+		{
+			"attacker_id": 11,
+			"target_id": -1,
+			"target_live": false,
+			"event": {},
+			"fallback_behavior": "true_bullet",
+		},
+		"bad",
+	])
+	if int(projectile_only.get("pending_projectile_count", 0)) != 3 or int(projectile_only.get("incoming_projectile_count", 0)) != 1:
+		_fail("Projectile target diagnostics pure aggregate mismatch: %s" % str(projectile_only))
+		return
+	if int(projectile_only.get("locked_target_count", 0)) != 2 or int(projectile_only.get("targeted_by_count", 0)) != 1:
+		_fail("Projectile target diagnostics target counts mismatch: %s" % str(projectile_only))
+		return
+	var projectile_only_behaviors: Dictionary = Dictionary(projectile_only.get("behavior_counts", {}))
+	if int(projectile_only_behaviors.get("laser", 0)) != 1 or int(projectile_only_behaviors.get("explosive", 0)) != 1 or int(projectile_only_behaviors.get("true_bullet", 0)) != 1:
+		_fail("Projectile target diagnostics behavior counts mismatch: %s" % str(projectile_only_behaviors))
+		return
+	var projectile_only_roles: Dictionary = Dictionary(projectile_only.get("target_role_counts", {}))
+	if int(projectile_only_roles.get("hero", 0)) != 1 or int(projectile_only_roles.get("barrier", 0)) != 1:
+		_fail("Projectile target diagnostics role counts mismatch: %s" % str(projectile_only_roles))
+		return
+	if absf(float(projectile_only.get("projectile_signal", 0.0)) - 0.9) > 0.001 or String(projectile_only.get("last_source_error", "")) != "bad source":
+		_fail("Projectile target diagnostics scalar facts mismatch: %s" % str(projectile_only))
+		return
 	var action_a := {
 		"profile": "two_link_forward_snap",
 		"phase_label": "startup",
@@ -110,6 +173,16 @@ func _init() -> void:
 				"role_switch_configured": true,
 				"role_switch_target": "hero",
 			},
+			"projectile_diagnostics": {
+				"projectile_signal": 0.42,
+				"pending_projectile_count": 2,
+				"incoming_projectile_count": 0,
+				"locked_target_count": 1,
+				"targeted_by_count": 0,
+				"behavior_counts": {"true_bullet": 1, "laser": 1},
+				"target_role_counts": {"hero": 1},
+				"last_source_error": "",
+			},
 		},
 		{
 			"id": 12,
@@ -148,6 +221,16 @@ func _init() -> void:
 				"movement_mode": "brake",
 				"movement_gate_reason": "braking",
 			},
+			"projectile_diagnostics": {
+				"projectile_signal": 0.0,
+				"pending_projectile_count": 1,
+				"incoming_projectile_count": 1,
+				"locked_target_count": 1,
+				"targeted_by_count": 1,
+				"behavior_counts": {"explosive": 1},
+				"target_role_counts": {"hero": 1},
+				"last_source_error": "runtime projectile source node is not ranged",
+			},
 		},
 		{"id": 13, "live": false, "action_telemetry": {"active_count": 1, "actions": [action_a]}},
 		"bad",
@@ -179,6 +262,20 @@ func _init() -> void:
 		return
 	if int(telemetry.get("fire_cooling_unit_count", 0)) != 1 or int(telemetry.get("role_switch_configured_unit_count", 0)) != 1:
 		_fail("Battle action telemetry command aggregate counts mismatch: %s" % str(telemetry))
+		return
+	if int(telemetry.get("projectile_pending_count", 0)) != 3 or int(telemetry.get("projectile_locked_target_count", 0)) != 2:
+		_fail("Battle action telemetry projectile aggregate mismatch: %s" % str(telemetry))
+		return
+	if int(telemetry.get("projectile_signal_unit_count", 0)) != 1 or int(telemetry.get("projectile_targeted_unit_count", 0)) != 1:
+		_fail("Battle action telemetry projectile unit counts mismatch: %s" % str(telemetry))
+		return
+	var projectile_behavior_counts: Dictionary = Dictionary(telemetry.get("projectile_behavior_counts", {}))
+	if int(projectile_behavior_counts.get("true_bullet", 0)) != 1 or int(projectile_behavior_counts.get("laser", 0)) != 1 or int(projectile_behavior_counts.get("explosive", 0)) != 1:
+		_fail("Battle action telemetry projectile behavior counts mismatch: %s" % str(projectile_behavior_counts))
+		return
+	var projectile_target_role_counts: Dictionary = Dictionary(telemetry.get("projectile_target_role_counts", {}))
+	if int(projectile_target_role_counts.get("hero", 0)) != 2:
+		_fail("Battle action telemetry projectile target role counts mismatch: %s" % str(projectile_target_role_counts))
 		return
 	if absf(float(telemetry.get("earliest_timer", 0.0)) - 0.3) > 0.001 or absf(float(telemetry.get("latest_phase", 0.0)) - 0.8) > 0.001:
 		_fail("Battle action telemetry timing mismatch: %s" % str(telemetry))
@@ -212,6 +309,13 @@ func _init() -> void:
 	if int(diagnostics.get("fire_cooling_unit_count", 0)) != 1 or int(diagnostics.get("role_switch_configured_unit_count", 0)) != 1:
 		_fail("Battle action diagnostics command aggregate mismatch: %s" % str(diagnostics))
 		return
+	if int(diagnostics.get("projectile_pending_count", 0)) != 3 or int(diagnostics.get("projectile_locked_target_count", 0)) != 2:
+		_fail("Battle action diagnostics projectile aggregate mismatch: %s" % str(diagnostics))
+		return
+	var diagnostic_projectile_counts: Dictionary = Dictionary(diagnostics.get("projectile_behavior_counts", {}))
+	if int(diagnostic_projectile_counts.get("laser", 0)) != 1 or int(diagnostic_projectile_counts.get("explosive", 0)) != 1:
+		_fail("Battle action diagnostics projectile behavior counts mismatch: %s" % str(diagnostic_projectile_counts))
+		return
 	var unit_rows: Array = Array(diagnostics.get("unit_rows", []))
 	if unit_rows.size() != 2:
 		_fail("Battle action diagnostics should keep two live unit rows: %s" % str(unit_rows))
@@ -237,6 +341,13 @@ func _init() -> void:
 		return
 	if not bool(first_command.get("role_switch_configured", false)) or String(first_command.get("role_switch_target", "")) != "hero":
 		_fail("Battle action diagnostics role switch mismatch: %s" % str(first_command))
+		return
+	var first_projectile: Dictionary = Dictionary(first_row.get("projectile_diagnostics", {}))
+	if int(first_projectile.get("pending_projectile_count", 0)) != 2 or int(first_projectile.get("locked_target_count", 0)) != 1:
+		_fail("Battle action diagnostics projectile row mismatch: %s" % str(first_projectile))
+		return
+	if absf(float(first_projectile.get("projectile_signal", 0.0)) - 0.42) > 0.001 or String(first_projectile.get("last_source_error", "x")) != "":
+		_fail("Battle action diagnostics projectile signal/source mismatch: %s" % str(first_projectile))
 		return
 	var first_action: Dictionary = Dictionary(first_actions[0])
 	var diagnostic_nodes: Array = Array(first_action.get("target_nodes", []))
@@ -316,6 +427,9 @@ func _init() -> void:
 		"_battle_runtime_action_telemetry_unit_snapshot",
 		"_battle_runtime_action_telemetry_snapshot",
 		"_battle_command_diagnostics_unit_snapshot",
+		"_battle_projectile_target_diagnostics_unit_snapshot",
+		"_battle_projectile_target_diagnostics_facts",
+		"_battle_runtime_action_telemetry_service().projectile_target_diagnostics",
 		"runtime_action_telemetry_snapshot",
 	]:
 		if not main_source.contains(token):
@@ -347,9 +461,31 @@ func _init() -> void:
 	fighter.set_meta("fire_timer", 0.18)
 	fighter.set_meta("sequence_step", 1)
 	fighter.set_meta("last_move_command_mode", "drive")
-	main.all_units = [fighter]
+	fighter.set_meta("projectile_signal", 0.7)
+	var target = FighterScene.new()
+	root.add_child(target)
+	target.setup_unit({
+		"unit_name": "Battle Telemetry Target",
+		"owner_id": 2,
+		"role": "hero",
+		"stats": {"health": 100, "mass": 10.0},
+	})
+	target.deploy(2.0, 0.0)
+	main.pending_true_bullet_shots = [{
+		"attacker": fighter,
+		"target": target,
+		"event": {"projectile": true, "projectile_behavior": "true_bullet", "aim_locked": true},
+		"timer": 0.25,
+	}]
+	main.pending_missile_projectiles = [{
+		"attacker": fighter,
+		"target": target,
+		"event": {"projectile": true, "projectile_behavior": "explosive", "projectile_style": "missile", "aim_locked": true},
+		"timer": 0.6,
+	}]
+	main.all_units = [fighter, target]
 	var main_snapshot := main._battle_runtime_action_telemetry_snapshot()
-	if int(main_snapshot.get("unit_count", 0)) != 1 or int(main_snapshot.get("active_action_count", 0)) != 1:
+	if int(main_snapshot.get("unit_count", 0)) != 2 or int(main_snapshot.get("active_action_count", 0)) != 1:
 		_fail("main battle runtime action telemetry wrapper mismatch: %s" % str(main_snapshot))
 		return
 	if not bool(main_snapshot.get("has_runtime_contact_speed", false)):
@@ -358,10 +494,21 @@ func _init() -> void:
 	if int(main_snapshot.get("fire_cooling_unit_count", 0)) != 1 or int(main_snapshot.get("role_switch_configured_unit_count", 0)) != 1:
 		_fail("main battle runtime action telemetry should expose command diagnostics aggregates: %s" % str(main_snapshot))
 		return
+	if int(main_snapshot.get("projectile_pending_count", 0)) != 2 or int(main_snapshot.get("projectile_locked_target_count", 0)) != 2:
+		_fail("main battle runtime action telemetry should expose projectile diagnostics aggregates: %s" % str(main_snapshot))
+		return
 	var main_units: Array = Array(main_snapshot.get("units", []))
 	var main_command: Dictionary = Dictionary(Dictionary(main_units[0]).get("command_diagnostics", {}))
 	if String(main_command.get("ai_kind", "")) != "line" or String(main_command.get("source_move_kind", "")) != "hold" or String(main_command.get("role_switch_target", "")) != "puppet":
 		_fail("main battle runtime action telemetry command diagnostics mismatch: %s" % str(main_command))
+		return
+	var main_projectile: Dictionary = Dictionary(Dictionary(main_units[0]).get("projectile_diagnostics", {}))
+	if int(main_projectile.get("pending_projectile_count", 0)) != 2 or int(main_projectile.get("locked_target_count", 0)) != 2:
+		_fail("main battle runtime action telemetry projectile diagnostics mismatch: %s" % str(main_projectile))
+		return
+	if not failures.is_empty():
+		print("BATTLE_RUNTIME_ACTION_TELEMETRY_SERVICE_CONTRACT_PROBE failed count=%d" % failures.size())
+		quit(1)
 		return
 	print("BATTLE_RUNTIME_ACTION_TELEMETRY_SERVICE_CONTRACT_PROBE ok actions=%d" % int(main_snapshot.get("active_action_count", 0)))
 	quit(0)

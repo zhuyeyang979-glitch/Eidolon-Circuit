@@ -3,11 +3,13 @@ extends SceneTree
 const MainScene := preload("res://scripts/main.gd")
 const FighterScene := preload("res://scripts/fighter.gd")
 
+var failures: Array = []
+
 
 func _fail(message: String) -> void:
 	push_error(message)
 	_release_actions()
-	quit(1)
+	failures.append(message)
 
 
 func _release_actions() -> void:
@@ -83,5 +85,9 @@ func _run() -> void:
 		if unit.velocity.length() <= 0.001 or unit.velocity.normalized().distance_to(expected.normalized()) > 0.10:
 			_fail("%s velocity did not follow actual battle vector; velocity=%s expected=%s." % [String(test["action"]), str(unit.velocity), str(expected)])
 		_release_actions()
+	if not failures.is_empty():
+		print("BATTLE_REAL_TRAINING_MOVEMENT_SCREEN_DIRECTION_PROBE failed count=%d" % failures.size())
+		quit(1)
+		return
 	print("BATTLE_REAL_TRAINING_MOVEMENT_SCREEN_DIRECTION_PROBE ok")
-	quit()
+	quit(0)

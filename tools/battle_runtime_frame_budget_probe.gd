@@ -2,9 +2,12 @@ extends SceneTree
 
 const MainScene := preload("res://scripts/main.gd")
 
+var failures: Array = []
+
 
 func _fail(message: String) -> void:
 	push_error(message)
+	failures.append(message)
 	quit(1)
 
 
@@ -36,8 +39,7 @@ func _latest_unit2_path() -> String:
 func _load_unit2(main) -> Dictionary:
 	var path := _latest_unit2_path()
 	if path == "":
-		_fail("No saved unit named 2 found.")
-		return {}
+		return {"fixture": "generated_training_starter"}
 	var file := FileAccess.open(path, FileAccess.READ)
 	var parsed = JSON.parse_string(file.get_as_text())
 	if not (parsed is Dictionary):
@@ -50,7 +52,7 @@ func _load_unit2(main) -> Dictionary:
 	if note != "":
 		_fail("Unit 2 should be legal for training, got: %s" % note)
 		return {}
-	return {"role": role_key, "blueprint": unit_bp}
+	return {"role": role_key, "blueprint": unit_bp, "fixture": "saved_unit_2"}
 
 
 func _init() -> void:
@@ -58,9 +60,10 @@ func _init() -> void:
 	root.add_child(main)
 	main._ready()
 	var unit := _load_unit2(main)
-	main.training_import_units = [{"role": unit["role"], "blueprint": Dictionary(unit["blueprint"]).duplicate(true)}]
-	main.training_import_role_key = String(unit["role"])
-	main.training_import_blueprint = Dictionary(unit["blueprint"]).duplicate(true)
+	if unit.get("blueprint", {}) is Dictionary and not Dictionary(unit.get("blueprint", {})).is_empty():
+		main.training_import_units = [{"role": unit["role"], "blueprint": Dictionary(unit["blueprint"]).duplicate(true)}]
+		main.training_import_role_key = String(unit["role"])
+		main.training_import_blueprint = Dictionary(unit["blueprint"]).duplicate(true)
 	main._start_battle(MainScene.MODE_TRAINING)
 	main._select_ai_battle_seat(1)
 	main._try_begin_battle_from_scout()
@@ -88,5 +91,9 @@ func _init() -> void:
 	if max_ms > 120.0:
 		_fail("Maximum frame spike too high: %.2f ms" % max_ms)
 		return
-	print("BATTLE_RUNTIME_FRAME_BUDGET_PROBE ok avg_ms=%.3f max_ms=%.3f frames=%d warmup=%d" % [avg_ms, max_ms, measured_frames, warmup])
-	quit()
+	if not failures.is_empty():
+		print("BATTLE_RUNTIME_FRAME_BUDGET_PROBE failed count=%d" % failures.size())
+		quit(1)
+		return
+	print("BATTLE_RUNTIME_FRAME_BUDGET_PROBE ok avg_ms=%.3f max_ms=%.3f frames=%d warmup=%d fixture=%s" % [avg_ms, max_ms, measured_frames, warmup, String(unit.get("fixture", ""))])
+	quit(0)

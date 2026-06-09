@@ -76,6 +76,578 @@ func auto_summon_intent(context: Dictionary) -> Dictionary:
 	}
 
 
+func ai_battle_original_player_is_ai(ai_battle_seat: int, player_id: int) -> bool:
+	if ai_battle_seat == 3:
+		return true
+	return player_id == 2
+
+
+func ai_battle_roster_prepare_intent(context: Dictionary) -> Dictionary:
+	var ai_controlled := bool(context.get("ai_controlled", false))
+	var roster_empty := bool(context.get("roster_empty", false))
+	var manual_locked := bool(context.get("manual_locked", false))
+	var auto_generate := (ai_controlled and not manual_locked) or (roster_empty and not manual_locked)
+	return {
+		"auto_generate": auto_generate,
+		"legalize": ai_controlled or auto_generate,
+		"force_generate": auto_generate or roster_empty,
+		"template_choice": "random" if auto_generate else "",
+	}
+
+
+func ai_battle_entry_repair_intent(context: Dictionary) -> Dictionary:
+	if bool(context.get("summary_valid", false)):
+		return {"repair": false, "force_generate": false, "template_choice": String(context.get("template_choice", ""))}
+	if not bool(context.get("mode_is_ai", false)) or not bool(context.get("ai_controlled", false)):
+		return {"repair": false, "force_generate": false, "template_choice": String(context.get("template_choice", ""))}
+	var template_choice := String(context.get("template_choice", "teamedit_generated"))
+	if not bool(context.get("manual_locked", false)):
+		template_choice = "random"
+	return {
+		"repair": true,
+		"force_generate": true,
+		"template_choice": template_choice,
+	}
+
+
+func matchup_sortie_selection_intent(context: Dictionary) -> Dictionary:
+	if bool(context.get("ai_controlled", false)):
+		return {
+			"action": "ai_loadout",
+			"build_ai_loadout": true,
+			"normalize_initial": true,
+			"clear_loadout": false,
+			"ensure_bindings": true,
+		}
+	return {
+		"action": "clear",
+		"build_ai_loadout": false,
+		"normalize_initial": false,
+		"clear_loadout": true,
+		"initial_slot": 0,
+		"ensure_bindings": true,
+	}
+
+
+func ai_battle_seat_selection_intent(context: Dictionary) -> Dictionary:
+	var seat := clampi(int(context.get("requested_seat", 1)), 1, 3)
+	var mode_is_training := bool(context.get("mode_is_training", false))
+	var set_scout := false
+	var scout_player := 0
+	if not mode_is_training:
+		if seat == 3 and not bool(context.get("p1_manual_locked", false)):
+			set_scout = true
+			scout_player = 1
+		elif seat == 2:
+			set_scout = true
+			scout_player = 1
+	return {
+		"seat": seat,
+		"training_seat_confirmed": mode_is_training,
+		"configure_training_sides": mode_is_training,
+		"set_scout_sortie_player": set_scout,
+		"scout_sortie_player_id": scout_player,
+		"update_scout_ui": true,
+	}
+
+
+func scout_sortie_side_selection_intent(player_id: int, roster_order: Array) -> Dictionary:
+	var clamped_player_id := clampi(player_id, 1, 2)
+	var intent := {
+		"scout_sortie_player_id": clamped_player_id,
+		"scout_selected_player_id": clamped_player_id,
+		"set_selected_entry": false,
+		"selected_entry": {},
+		"update_scout_ui": true,
+	}
+	if not roster_order.is_empty() and roster_order[0] is Dictionary:
+		intent["set_selected_entry"] = true
+		intent["selected_entry"] = Dictionary(roster_order[0]).duplicate(true)
+	return intent
+
+
+func scout_ai_team_button_intent(player_id: int, mode: String, lock_after: bool, current_template_key: String, template_order: Array) -> Dictionary:
+	var clamped_player_id := clampi(player_id, 1, 2)
+	if mode == "edit":
+		return {
+			"player_id": clamped_player_id,
+			"action": "edit",
+			"show_editor": true,
+			"generate_team": false,
+			"set_template_choice": false,
+			"template_key": "",
+			"lock_after": lock_after,
+		}
+	if mode == "cycle":
+		if template_order.is_empty():
+			return {
+				"player_id": clamped_player_id,
+				"action": "none",
+				"show_editor": false,
+				"generate_team": false,
+				"set_template_choice": false,
+				"template_key": "",
+				"lock_after": true,
+			}
+		var index := template_order.find(current_template_key)
+		if index < 0:
+			index = 0
+		var next_key := String(template_order[_wrapped_index(index + 1, template_order.size())])
+		return {
+			"player_id": clamped_player_id,
+			"action": "generate",
+			"show_editor": false,
+			"generate_team": true,
+			"set_template_choice": false,
+			"template_key": next_key,
+			"lock_after": true,
+		}
+	return {
+		"player_id": clamped_player_id,
+		"action": "generate",
+		"show_editor": false,
+		"generate_team": true,
+		"set_template_choice": true,
+		"template_choice": "random",
+		"template_key": "random",
+		"lock_after": lock_after,
+	}
+
+
+func team_color_index(player_id: int, color_indices: Dictionary, preset_count: int) -> int:
+	var fallback := 0 if player_id == 1 else 1
+	var raw := int(color_indices.get(player_id, fallback))
+	if raw < 0:
+		return -1
+	if preset_count <= 0:
+		return -1
+	return clampi(raw, 0, preset_count - 1)
+
+
+func team_color_preset(player_id: int, color_indices: Dictionary, custom_colors: Dictionary, presets: Array) -> Dictionary:
+	var color_index := team_color_index(player_id, color_indices, presets.size())
+	if color_index >= 0 and color_index < presets.size() and presets[color_index] is Dictionary:
+		return Dictionary(presets[color_index]).duplicate(true)
+	var custom: Variant = custom_colors.get(player_id, custom_colors.get(1, {}))
+	return Dictionary(custom).duplicate(true) if custom is Dictionary else {}
+
+
+func team_color_select_intent(player_id: int, color_index: int, preset_count: int, manual_lock_on_select: bool) -> Dictionary:
+	var clamped_player_id := clampi(player_id, 1, 2)
+	var clamped_color_index := -1
+	if preset_count > 0:
+		clamped_color_index = clampi(color_index, 0, preset_count - 1)
+	return {
+		"player_id": clamped_player_id,
+		"color_index": clamped_color_index,
+		"set_manual_lock": manual_lock_on_select,
+		"manual_locked": true,
+		"update_ui": true,
+	}
+
+
+func team_color_name(preset: Dictionary, ui_is_zh: bool) -> String:
+	if ui_is_zh:
+		return String(preset.get("name", preset.get("name_en", "自定义")))
+	return String(preset.get("name_en", preset.get("name", "CUSTOM")))
+
+
+func valid_roster_entry(entry: Dictionary, roster_sizes: Dictionary, role_order: Array) -> bool:
+	var role_key := String(entry.get("role", ""))
+	if not role_order.has(role_key):
+		return false
+	var unit_index := int(entry.get("index", -1))
+	return unit_index >= 0 and unit_index < int(roster_sizes.get(role_key, 0))
+
+
+func sortie_loadout_plan(raw_loadout: Array, roster_sizes: Dictionary, role_order: Array, sortie_cap: int, initial_slot: int) -> Dictionary:
+	var cap := maxi(0, sortie_cap)
+	if cap <= 0:
+		return {"loadout": [], "initial_slot": 0}
+	var fixed: Array = []
+	var seen := {}
+	for item in raw_loadout:
+		if not (item is Dictionary):
+			continue
+		var entry: Dictionary = Dictionary(item).duplicate(true)
+		var role_key := String(entry.get("role", ""))
+		var unit_index := int(entry.get("index", -1))
+		if not valid_roster_entry(entry, roster_sizes, role_order):
+			continue
+		var ref := _entry_ref_from_values(role_key, unit_index)
+		if seen.has(ref):
+			continue
+		seen[ref] = true
+		fixed.append(entry)
+		if fixed.size() >= cap:
+			break
+	var next_initial_slot := 0 if fixed.is_empty() else clampi(initial_slot, 0, fixed.size() - 1)
+	return {"loadout": fixed, "initial_slot": next_initial_slot}
+
+
+func sortie_after_delete_plan(raw_loadout: Array, roster_sizes: Dictionary, role_order: Array, sortie_cap: int, initial_slot: int, deleted_role: String, deleted_index: int) -> Dictionary:
+	var cap := maxi(0, sortie_cap)
+	if cap <= 0:
+		return {"loadout": [], "initial_slot": 0}
+	var fixed: Array = []
+	var seen := {}
+	for item in raw_loadout:
+		if not (item is Dictionary):
+			continue
+		var entry: Dictionary = Dictionary(item).duplicate(true)
+		if String(entry.get("role", "")) == deleted_role:
+			var unit_index := int(entry.get("index", -1))
+			if unit_index == deleted_index:
+				continue
+			if unit_index > deleted_index:
+				entry["index"] = unit_index - 1
+		if not valid_roster_entry(entry, roster_sizes, role_order):
+			continue
+		var role_key := String(entry.get("role", ""))
+		var next_index := int(entry.get("index", -1))
+		var ref := _entry_ref_from_values(role_key, next_index)
+		if seen.has(ref):
+			continue
+		seen[ref] = true
+		fixed.append(entry)
+		if fixed.size() >= cap:
+			break
+	var next_initial_slot := 0 if fixed.is_empty() else clampi(initial_slot, 0, fixed.size() - 1)
+	return {"loadout": fixed, "initial_slot": next_initial_slot}
+
+
+func sortie_initial_cost_plan(loadout: Array, initial_slot: int, starter_cost_valid: Array) -> Dictionary:
+	if loadout.is_empty():
+		return {"found": false, "initial_slot": 0}
+	var current_slot := clampi(initial_slot, 0, loadout.size() - 1)
+	if current_slot < starter_cost_valid.size() and bool(starter_cost_valid[current_slot]):
+		return {"found": true, "initial_slot": current_slot}
+	for i in range(loadout.size()):
+		if i < starter_cost_valid.size() and bool(starter_cost_valid[i]):
+			return {"found": true, "initial_slot": i}
+	return {"found": false, "initial_slot": current_slot}
+
+
+func sortie_toggle_plan(loadout: Array, entry: Dictionary, existing_position: int, sortie_cap: int, initial_slot: int) -> Dictionary:
+	var next_loadout := loadout.duplicate(true)
+	if existing_position >= 0:
+		if existing_position >= next_loadout.size():
+			return {"action": "none", "loadout": next_loadout, "initial_slot": initial_slot}
+		next_loadout.remove_at(existing_position)
+		var next_initial_slot := 0 if next_loadout.is_empty() else clampi(initial_slot, 0, next_loadout.size() - 1)
+		return {"action": "remove", "loadout": next_loadout, "initial_slot": next_initial_slot}
+	if next_loadout.size() >= maxi(0, sortie_cap):
+		return {"action": "full", "loadout": next_loadout, "initial_slot": initial_slot}
+	var added_entry := entry.duplicate(true)
+	next_loadout.append(added_entry)
+	return {
+		"action": "add",
+		"loadout": next_loadout,
+		"entry": added_entry.duplicate(true),
+		"initial_slot": initial_slot,
+	}
+
+
+func sortie_starter_plan(loadout: Array, entry: Dictionary, existing_position: int, sortie_cap: int) -> Dictionary:
+	var next_loadout := loadout.duplicate(true)
+	var role_key := String(entry.get("role", "hero"))
+	if existing_position >= 0:
+		if existing_position >= next_loadout.size():
+			return {"action": "none", "loadout": next_loadout, "initial_slot": 0, "initial_role": role_key}
+		return {
+			"action": "set",
+			"loadout": next_loadout,
+			"initial_slot": existing_position,
+			"initial_role": role_key,
+		}
+	if next_loadout.size() >= maxi(0, sortie_cap):
+		return {"action": "full", "loadout": next_loadout, "initial_slot": -1, "initial_role": role_key}
+	var added_entry := entry.duplicate(true)
+	next_loadout.append(added_entry)
+	return {
+		"action": "append",
+		"loadout": next_loadout,
+		"entry": added_entry.duplicate(true),
+		"initial_slot": next_loadout.size() - 1,
+		"initial_role": role_key,
+	}
+
+
+func sortie_active_index_plan(entry: Dictionary, valid_roster: bool) -> Dictionary:
+	if not valid_roster:
+		return {"action": "none"}
+	var role_key := String(entry.get("role", "hero"))
+	var unit_index := int(entry.get("index", 0))
+	return {
+		"action": "set",
+		"role_key": role_key,
+		"unit_index": unit_index,
+		"initial_role": role_key,
+	}
+
+
+func sortie_position(loadout: Array, role_key: String, unit_index: int) -> int:
+	for i in range(loadout.size()):
+		if not (loadout[i] is Dictionary):
+			continue
+		var entry: Dictionary = loadout[i]
+		if String(entry.get("role", "")) == role_key and int(entry.get("index", -1)) == unit_index:
+			return i
+	return -1
+
+
+func team_sortie_order(loadout: Array, roster_sizes: Dictionary, role_order: Array, sortie_cap: int) -> Array:
+	var order: Array = []
+	var cap := maxi(0, sortie_cap)
+	if cap <= 0:
+		return order
+	for raw_entry in loadout:
+		if not (raw_entry is Dictionary):
+			continue
+		var entry: Dictionary = raw_entry
+		if not valid_roster_entry(entry, roster_sizes, role_order):
+			continue
+		order.append(entry.duplicate(true))
+		if order.size() >= cap:
+			break
+	return order
+
+
+func starter_sortie_entry(loadout: Array, initial_slot: int, fallback_role: String, active_indices: Dictionary) -> Dictionary:
+	if not loadout.is_empty():
+		var slot_index := clampi(initial_slot, 0, loadout.size() - 1)
+		if loadout[slot_index] is Dictionary:
+			return Dictionary(loadout[slot_index]).duplicate(true)
+	var role_key := String(fallback_role)
+	return {"role": role_key, "index": int(active_indices.get(role_key, 0))}
+
+
+func sortie_role_counts(loadout: Array, role_order: Array) -> Dictionary:
+	var counts := {}
+	for raw_role_key in role_order:
+		counts[String(raw_role_key)] = 0
+	for raw_entry in loadout:
+		if not (raw_entry is Dictionary):
+			continue
+		var role_key := String(Dictionary(raw_entry).get("role", ""))
+		if counts.has(role_key):
+			counts[role_key] = int(counts[role_key]) + 1
+	return counts
+
+
+func sortie_has_required_roles(loadout: Array, role_order: Array) -> bool:
+	var counts := sortie_role_counts(loadout, role_order)
+	for raw_role_key in role_order:
+		var role_key := String(raw_role_key)
+		if int(counts.get(role_key, 0)) <= 0:
+			return false
+	return true
+
+
+func ai_sortie_score(entry: Dictionary, stats: Dictionary, starter_score: bool) -> float:
+	var role_key := String(entry.get("role", "hero"))
+	var score := float(stats.get("health", 0)) * 0.12
+	score += float(stats.get("normal_damage", 0)) * 3.6 + float(stats.get("active_damage", 0)) * 2.2 + float(stats.get("armor_damage", 0)) * 1.5
+	score += float(stats.get("speed", 0.0)) * 34.0 + float(stats.get("data_security", 1.0)) * 14.0
+	score -= float(stats.get("deploy_cost", stats.get("cost", 0))) * 0.1
+	if role_key == "hero":
+		score += 90.0
+	elif role_key == "puppet":
+		score += 64.0 + float(stats.get("group_count", 1)) * 8.0
+	else:
+		score += 54.0 + float(stats.get("aura_range", 0.0)) * 42.0 + float(stats.get("pulse_interval", 1.0)) * -8.0
+	if starter_score:
+		score += 260.0 - float(stats.get("cost", 999)) * 0.65
+	return score
+
+
+func entry_is_selected(entry: Dictionary, selected: Array) -> bool:
+	var ref := _entry_ref_from_values(String(entry.get("role", "hero")), int(entry.get("index", 0)))
+	for raw_selected_entry in selected:
+		if raw_selected_entry is Dictionary:
+			var selected_entry: Dictionary = raw_selected_entry
+			if _entry_ref_from_values(String(selected_entry.get("role", "hero")), int(selected_entry.get("index", 0))) == ref:
+				return true
+	return false
+
+
+func sortie_entry_battle_legality(context: Dictionary) -> bool:
+	if not bool(context.get("valid_roster", false)):
+		return false
+	if bool(context.get("require_starter_cost", false)) and not bool(context.get("starter_cost_valid", false)):
+		return false
+	var role_key := String(context.get("role_key", "hero"))
+	var stats: Dictionary = Dictionary(context.get("stats", {}))
+	if float(stats.get("length", 0.0)) > 4.5:
+		return false
+	if bool(context.get("role_uses_body_board", false)) and not bool(context.get("module_material_valid", true)):
+		return false
+	if String(context.get("topology_note", "")).begins_with("INVALID"):
+		return false
+	for note_key in ["joint_momentum_note", "slot_payload_note", "drive_note", "stiffness_note"]:
+		if role_key == "barrier" and note_key in ["slot_payload_note", "drive_note"]:
+			continue
+		if String(stats.get(note_key, "")).begins_with("INVALID"):
+			return false
+	return true
+
+
+func all_roster_order(roster_sizes: Dictionary, role_order: Array) -> Array:
+	var order: Array = []
+	var max_units := 0
+	for raw_role_key in role_order:
+		var role_key := String(raw_role_key)
+		max_units = maxi(max_units, maxi(0, int(roster_sizes.get(role_key, 0))))
+	for unit_index in range(max_units):
+		for raw_role_key in role_order:
+			var role_key := String(raw_role_key)
+			if unit_index < maxi(0, int(roster_sizes.get(role_key, 0))):
+				order.append({"role": role_key, "index": unit_index})
+	return order
+
+
+func roster_unit_total(roster_sizes: Dictionary, role_order: Array) -> int:
+	var total := 0
+	for raw_role_key in role_order:
+		var role_key := String(raw_role_key)
+		total += maxi(0, int(roster_sizes.get(role_key, 0)))
+	return total
+
+
+func default_sortie_loadout(roster_order: Array, sortie_cap: int) -> Array:
+	var loadout: Array = []
+	var limit := mini(roster_order.size(), maxi(0, sortie_cap))
+	for i in range(limit):
+		if not (roster_order[i] is Dictionary):
+			continue
+		loadout.append(Dictionary(roster_order[i]).duplicate(true))
+	return loadout
+
+
+func default_summon_pair_bindings(default_slots: Array, sortie_cap: int) -> Array:
+	var bindings: Array = []
+	var limit := mini(maxi(0, sortie_cap), default_slots.size())
+	for i in range(limit):
+		var pair: Array = Array(default_slots[i]).duplicate(true) if default_slots[i] is Array else []
+		bindings.append(pair)
+	return bindings
+
+
+func summon_pair_bindings_plan(raw_bindings: Array, default_slots: Array, sortie_cap: int, attack_key_count: int) -> Array:
+	var fixed: Array = []
+	for i in range(maxi(0, sortie_cap)):
+		var pair: Array = []
+		if i < raw_bindings.size() and raw_bindings[i] is Array:
+			pair = Array(raw_bindings[i]).duplicate(true)
+		elif i < default_slots.size() and default_slots[i] is Array:
+			pair = Array(default_slots[i]).duplicate(true)
+		fixed.append(_normalized_summon_pair(pair, attack_key_count))
+	return fixed
+
+
+func summon_pair_clear_intent(bindings: Array, slot_index: int) -> Dictionary:
+	var next_bindings := bindings.duplicate(true)
+	if slot_index < 0 or slot_index >= next_bindings.size():
+		return {"action": "none", "bindings": next_bindings, "slot_index": slot_index}
+	next_bindings[slot_index] = []
+	return {"action": "clear", "bindings": next_bindings, "slot_index": slot_index}
+
+
+func summon_pair_cycle_intent(bindings: Array, slot_index: int, direction: int, default_slots: Array, _attack_key_count: int) -> Dictionary:
+	var next_bindings := bindings.duplicate(true)
+	if default_slots.is_empty() or slot_index < 0 or slot_index >= next_bindings.size():
+		return {"action": "none", "bindings": next_bindings, "pair": [], "candidate_index": -1}
+	var current_pair: Array = Array(next_bindings[slot_index]) if next_bindings[slot_index] is Array else []
+	var current_key := _summon_pair_key(current_pair)
+	var start := 0
+	for i in range(default_slots.size()):
+		var default_pair: Array = Array(default_slots[i]) if default_slots[i] is Array else []
+		if _summon_pair_key(default_pair) == current_key:
+			start = i
+			break
+	for offset in range(1, default_slots.size() + 1):
+		var candidate_index := _wrapped_index(start + direction * offset, default_slots.size())
+		var candidate: Array = Array(default_slots[candidate_index]).duplicate(true)
+		if _summon_pair_used_by_other(next_bindings, candidate, slot_index):
+			continue
+		next_bindings[slot_index] = candidate
+		return {
+			"action": "set",
+			"bindings": next_bindings,
+			"pair": candidate,
+			"candidate_index": candidate_index,
+		}
+	return {"action": "none", "bindings": next_bindings, "pair": [], "candidate_index": -1}
+
+
+func portal_index_from_vector(input_vector: Vector2, fallback_index: int, portal_count: int) -> int:
+	if portal_count <= 0:
+		return 0
+	if input_vector.length() < 0.34:
+		return clampi(fallback_index, 0, portal_count - 1)
+	var x := input_vector.x
+	var y := input_vector.y
+	if y < -0.35:
+		if x < -0.35:
+			return 0
+		if x > 0.35:
+			return mini(2, portal_count - 1)
+		return mini(1, portal_count - 1)
+	if y > 0.35:
+		if x < -0.35:
+			return mini(5, portal_count - 1)
+		if x > 0.35:
+			return mini(7, portal_count - 1)
+		return mini(6, portal_count - 1)
+	if x < -0.35:
+		return mini(3, portal_count - 1)
+	if x > 0.35:
+		return mini(4, portal_count - 1)
+	return clampi(fallback_index, 0, portal_count - 1)
+
+
+func _normalized_summon_pair(pair: Array, attack_key_count: int) -> Array:
+	if attack_key_count <= 0 or pair.size() < 2:
+		return []
+	var a := clampi(int(pair[0]), 1, attack_key_count)
+	var b := clampi(int(pair[1]), 1, attack_key_count)
+	if a == b:
+		return []
+	return [mini(a, b), maxi(a, b)]
+
+
+func _entry_ref_from_values(role_key: String, unit_index: int) -> String:
+	return "%s:%d" % [role_key, unit_index]
+
+
+func _summon_pair_key(pair: Array) -> String:
+	if pair.size() < 2:
+		return ""
+	return "%d:%d" % [int(pair[0]), int(pair[1])]
+
+
+func _summon_pair_used_by_other(bindings: Array, pair: Array, slot_index: int) -> bool:
+	var key := _summon_pair_key(pair)
+	if key == "":
+		return false
+	for i in range(bindings.size()):
+		if i == slot_index:
+			continue
+		var existing: Array = Array(bindings[i]) if bindings[i] is Array else []
+		if _summon_pair_key(existing) == key:
+			return true
+	return false
+
+
+func _wrapped_index(value: int, size: int) -> int:
+	if size <= 0:
+		return 0
+	var wrapped := value % size
+	if wrapped < 0:
+		wrapped += size
+	return wrapped
+
+
 func puppet_condition(context: Dictionary) -> String:
 	if bool(context.get("uses_heat", false)):
 		var heat_capacity := maxf(1.0, float(context.get("heat_capacity", 100.0)))

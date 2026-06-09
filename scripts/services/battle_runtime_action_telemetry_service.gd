@@ -2,6 +2,41 @@ extends RefCounted
 class_name BattleRuntimeActionTelemetryService
 
 
+func projectile_target_diagnostics(unit_facts: Dictionary, projectile_facts: Array) -> Dictionary:
+	var unit_id := int(unit_facts.get("id", -1))
+	var diagnostics: Dictionary = {
+		"projectile_signal": maxf(0.0, float(unit_facts.get("projectile_signal", 0.0))),
+		"pending_projectile_count": 0,
+		"incoming_projectile_count": 0,
+		"locked_target_count": 0,
+		"targeted_by_count": 0,
+		"behavior_counts": {},
+		"target_role_counts": {},
+		"last_source_error": String(unit_facts.get("last_source_error", "")),
+		"source_target_policy": String(unit_facts.get("source_target_policy", "")),
+	}
+	for raw_fact in projectile_facts:
+		if not (raw_fact is Dictionary):
+			continue
+		var fact: Dictionary = raw_fact
+		var attacker_id := int(fact.get("attacker_id", -1))
+		var target_id := int(fact.get("target_id", -1))
+		if attacker_id == unit_id:
+			diagnostics["pending_projectile_count"] = int(diagnostics.get("pending_projectile_count", 0)) + 1
+			var behavior_counts: Dictionary = Dictionary(diagnostics.get("behavior_counts", {}))
+			_increment_count(behavior_counts, _projectile_pending_behavior(Dictionary(fact.get("event", {})), String(fact.get("fallback_behavior", ""))))
+			diagnostics["behavior_counts"] = behavior_counts
+			if bool(fact.get("target_live", false)):
+				diagnostics["locked_target_count"] = int(diagnostics.get("locked_target_count", 0)) + 1
+				var target_role_counts: Dictionary = Dictionary(diagnostics.get("target_role_counts", {}))
+				_increment_count(target_role_counts, String(fact.get("target_role", "")))
+				diagnostics["target_role_counts"] = target_role_counts
+		if target_id == unit_id:
+			diagnostics["incoming_projectile_count"] = int(diagnostics.get("incoming_projectile_count", 0)) + 1
+			diagnostics["targeted_by_count"] = int(diagnostics.get("targeted_by_count", 0)) + 1
+	return _normalized_projectile_diagnostics(diagnostics)
+
+
 func battle_action_telemetry(unit_snapshots: Array) -> Dictionary:
 	var units: Array = []
 	var profile_counts: Dictionary = {}
@@ -20,6 +55,12 @@ func battle_action_telemetry(unit_snapshots: Array) -> Dictionary:
 	var movement_mode_counts: Dictionary = {}
 	var fire_cooling_unit_count := 0
 	var role_switch_configured_unit_count := 0
+	var projectile_behavior_counts: Dictionary = {}
+	var projectile_target_role_counts: Dictionary = {}
+	var projectile_pending_count := 0
+	var projectile_locked_target_count := 0
+	var projectile_signal_unit_count := 0
+	var projectile_targeted_unit_count := 0
 	for raw_unit in unit_snapshots:
 		if not (raw_unit is Dictionary):
 			continue
@@ -29,6 +70,7 @@ func battle_action_telemetry(unit_snapshots: Array) -> Dictionary:
 		var telemetry: Dictionary = Dictionary(unit.get("action_telemetry", {}))
 		var gate_diagnostics := _normalized_gate_diagnostics(telemetry.get("gate_diagnostics", {}))
 		var command_diagnostics := _normalized_command_diagnostics(unit.get("command_diagnostics", telemetry.get("command_diagnostics", {})))
+		var projectile_diagnostics := _normalized_projectile_diagnostics(unit.get("projectile_diagnostics", telemetry.get("projectile_diagnostics", {})))
 		var gate_reason := String(gate_diagnostics.get("reason", ""))
 		if gate_reason != "":
 			gate_reason_counts[gate_reason] = int(gate_reason_counts.get(gate_reason, 0)) + 1
@@ -49,6 +91,14 @@ func battle_action_telemetry(unit_snapshots: Array) -> Dictionary:
 			fire_cooling_unit_count += 1
 		if bool(command_diagnostics.get("role_switch_configured", false)):
 			role_switch_configured_unit_count += 1
+		projectile_pending_count += int(projectile_diagnostics.get("pending_projectile_count", 0))
+		projectile_locked_target_count += int(projectile_diagnostics.get("locked_target_count", 0))
+		if float(projectile_diagnostics.get("projectile_signal", 0.0)) > 0.0:
+			projectile_signal_unit_count += 1
+		if int(projectile_diagnostics.get("targeted_by_count", 0)) > 0 or int(projectile_diagnostics.get("incoming_projectile_count", 0)) > 0:
+			projectile_targeted_unit_count += 1
+		_merge_count_dict(projectile_behavior_counts, Dictionary(projectile_diagnostics.get("behavior_counts", {})))
+		_merge_count_dict(projectile_target_role_counts, Dictionary(projectile_diagnostics.get("target_role_counts", {})))
 		var actions: Array = Array(telemetry.get("actions", []))
 		var active_count: int = max(0, int(telemetry.get("active_count", actions.size())))
 		var unit_summary: Dictionary = {
@@ -68,6 +118,7 @@ func battle_action_telemetry(unit_snapshots: Array) -> Dictionary:
 			"has_runtime_contact_speed": bool(telemetry.get("has_runtime_contact_speed", false)),
 			"gate_diagnostics": gate_diagnostics,
 			"command_diagnostics": command_diagnostics,
+			"projectile_diagnostics": projectile_diagnostics,
 			"actions": actions.duplicate(true),
 		}
 		units.append(unit_summary)
@@ -103,6 +154,12 @@ func battle_action_telemetry(unit_snapshots: Array) -> Dictionary:
 		"movement_mode_counts": movement_mode_counts,
 		"fire_cooling_unit_count": fire_cooling_unit_count,
 		"role_switch_configured_unit_count": role_switch_configured_unit_count,
+		"projectile_behavior_counts": projectile_behavior_counts,
+		"projectile_target_role_counts": projectile_target_role_counts,
+		"projectile_pending_count": projectile_pending_count,
+		"projectile_locked_target_count": projectile_locked_target_count,
+		"projectile_signal_unit_count": projectile_signal_unit_count,
+		"projectile_targeted_unit_count": projectile_targeted_unit_count,
 		"earliest_timer": 0.0 if active_action_count == 0 else earliest_timer,
 		"latest_phase": latest_phase,
 		"has_feint_retarget": has_feint_retarget,
@@ -128,6 +185,7 @@ func battle_action_diagnostics_model(telemetry: Dictionary, options: Dictionary 
 		var action_rows: Array = []
 		var gate_diagnostics := _normalized_gate_diagnostics(unit.get("gate_diagnostics", {}))
 		var command_diagnostics := _normalized_command_diagnostics(unit.get("command_diagnostics", {}))
+		var projectile_diagnostics := _normalized_projectile_diagnostics(unit.get("projectile_diagnostics", {}))
 		for raw_action in actions:
 			if action_rows.size() >= max_actions_per_unit:
 				break
@@ -197,6 +255,7 @@ func battle_action_diagnostics_model(telemetry: Dictionary, options: Dictionary 
 			"active_part_duration": maxf(0.0, float(unit.get("active_part_duration", 0.0))),
 			"gate_diagnostics": gate_diagnostics,
 			"command_diagnostics": command_diagnostics,
+			"projectile_diagnostics": projectile_diagnostics,
 			"actions": action_rows,
 		})
 	return {
@@ -214,6 +273,12 @@ func battle_action_diagnostics_model(telemetry: Dictionary, options: Dictionary 
 		"movement_mode_counts": Dictionary(telemetry.get("movement_mode_counts", {})).duplicate(true),
 		"fire_cooling_unit_count": maxi(0, int(telemetry.get("fire_cooling_unit_count", 0))),
 		"role_switch_configured_unit_count": maxi(0, int(telemetry.get("role_switch_configured_unit_count", 0))),
+		"projectile_behavior_counts": Dictionary(telemetry.get("projectile_behavior_counts", {})).duplicate(true),
+		"projectile_target_role_counts": Dictionary(telemetry.get("projectile_target_role_counts", {})).duplicate(true),
+		"projectile_pending_count": maxi(0, int(telemetry.get("projectile_pending_count", 0))),
+		"projectile_locked_target_count": maxi(0, int(telemetry.get("projectile_locked_target_count", 0))),
+		"projectile_signal_unit_count": maxi(0, int(telemetry.get("projectile_signal_unit_count", 0))),
+		"projectile_targeted_unit_count": maxi(0, int(telemetry.get("projectile_targeted_unit_count", 0))),
 		"earliest_timer": maxf(0.0, float(telemetry.get("earliest_timer", 0.0))),
 		"latest_phase": clampf(float(telemetry.get("latest_phase", 0.0)), 0.0, 1.0),
 		"has_feint_retarget": bool(telemetry.get("has_feint_retarget", false)),
@@ -273,6 +338,15 @@ func _target_nodes_have_invalid_entries(raw_nodes) -> bool:
 	return false
 
 
+func _projectile_pending_behavior(event: Dictionary, fallback_behavior: String) -> String:
+	var behavior := String(event.get("projectile_behavior", ""))
+	if behavior == "":
+		behavior = fallback_behavior
+	if behavior == "":
+		behavior = String(event.get("projectile_style", ""))
+	return behavior
+
+
 func _normalized_gate_diagnostics(raw_gate) -> Dictionary:
 	var gate: Dictionary = raw_gate if raw_gate is Dictionary else {}
 	return {
@@ -305,3 +379,47 @@ func _normalized_command_diagnostics(raw_command) -> Dictionary:
 		"role_switch_configured": bool(command.get("role_switch_configured", false)),
 		"role_switch_target": String(command.get("role_switch_target", "")),
 	}
+
+
+func _normalized_projectile_diagnostics(raw_projectile) -> Dictionary:
+	var projectile: Dictionary = raw_projectile if raw_projectile is Dictionary else {}
+	return {
+		"projectile_signal": maxf(0.0, float(projectile.get("projectile_signal", 0.0))),
+		"pending_projectile_count": maxi(0, int(projectile.get("pending_projectile_count", 0))),
+		"incoming_projectile_count": maxi(0, int(projectile.get("incoming_projectile_count", 0))),
+		"locked_target_count": maxi(0, int(projectile.get("locked_target_count", 0))),
+		"targeted_by_count": maxi(0, int(projectile.get("targeted_by_count", 0))),
+		"behavior_counts": _string_int_counts(projectile.get("behavior_counts", {})),
+		"target_role_counts": _string_int_counts(projectile.get("target_role_counts", {})),
+		"last_source_error": String(projectile.get("last_source_error", "")),
+		"source_target_policy": String(projectile.get("source_target_policy", "")),
+	}
+
+
+func _string_int_counts(raw_counts) -> Dictionary:
+	var normalized: Dictionary = {}
+	if not (raw_counts is Dictionary):
+		return normalized
+	var counts: Dictionary = raw_counts
+	for raw_key in counts.keys():
+		var key := String(raw_key)
+		if key == "":
+			continue
+		var count := maxi(0, int(counts.get(raw_key, 0)))
+		if count > 0:
+			normalized[key] = int(normalized.get(key, 0)) + count
+	return normalized
+
+
+func _merge_count_dict(target: Dictionary, source: Dictionary) -> void:
+	for raw_key in source.keys():
+		var key := String(raw_key)
+		if key == "":
+			continue
+		target[key] = int(target.get(key, 0)) + maxi(0, int(source.get(raw_key, 0)))
+
+
+func _increment_count(counts: Dictionary, key: String, amount: int = 1) -> void:
+	if key == "" or amount <= 0:
+		return
+	counts[key] = int(counts.get(key, 0)) + amount

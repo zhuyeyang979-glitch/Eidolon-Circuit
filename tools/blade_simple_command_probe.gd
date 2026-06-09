@@ -26,6 +26,21 @@ func _binding() -> Dictionary:
 	}
 
 
+func _runtime_variant(main, hero, binding: Dictionary, action_state: String) -> String:
+	return main._battle_action_event_service().command_window_runtime_variant(
+		String(binding.get("module_action_profile", "")),
+		String(binding.get("command_window_profile", "")),
+		main._command_text(1),
+		action_state,
+		Vector2.ZERO,
+		main._latest_command_direction(1),
+		main._unit_forward_vector(hero),
+		main._runtime_gauntlet_command_profiles(),
+		main._runtime_blunt_command_profiles(),
+		main._runtime_blade_command_profiles()
+	)
+
+
 func _init() -> void:
 	var main = MainScene.new()
 	root.add_child(main)
@@ -38,12 +53,12 @@ func _init() -> void:
 	main.command_buffers[1] = ["6"]
 	if main._runtime_module_state_for_binding(1, hero, binding, Vector2.ZERO, "normal") != "armor":
 		_fail("6X should resolve to armor for simple blade profile.")
-	if main._blade_command_variant_for_binding(1, binding, "armor") != "armor_forward_cut":
+	if _runtime_variant(main, hero, binding, "armor") != "armor_forward_cut":
 		_fail("6X should produce blade armor forward cut.")
 	main.command_buffers[1] = ["4"]
 	if main._runtime_module_state_for_binding(1, hero, binding, Vector2.ZERO, "normal") != "active":
 		_fail("4X should resolve to active for simple blade profile.")
-	if main._blade_command_variant_for_binding(1, binding, "active") != "active_reverse_cut":
+	if _runtime_variant(main, hero, binding, "active") != "active_reverse_cut":
 		_fail("4X should produce blade active reverse cut.")
 	main.command_buffers[1] = []
 	if main._attack_window_state_for_binding(hero, binding, Vector2.RIGHT) != "armor":
