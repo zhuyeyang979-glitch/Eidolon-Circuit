@@ -25,6 +25,8 @@ func _init() -> void:
 		"func update_main_menu",
 		"func move_selection",
 		"func select_index",
+		"func pointer_hover_intent",
+		"func pointer_press_intent",
 		"func main_menu_action",
 		"func input_action_intent",
 		"func exit_intent",
@@ -54,8 +56,12 @@ func _init() -> void:
 			"menu_mode_owner.update_main_menu",
 			"menu_mode_owner.move_selection",
 			"menu_mode_owner.select_index",
+			"menu_mode_owner.pointer_hover_intent",
+			"menu_mode_owner.pointer_press_intent",
 			"menu_mode_owner.main_menu_action",
 			"menu_mode_owner.input_action_intent",
+			"func _menu_pointer_hover_intent",
+			"func _menu_pointer_press_intent",
 			"func _menu_move_selection_intent",
 			"func _menu_select_index_intent",
 			"func _menu_input_action_intent",
@@ -106,6 +112,18 @@ func _init() -> void:
 	var selected: Dictionary = mode.select_index(99, 7)
 	if int(selected.get("selected_index", -1)) != 6:
 		_fail("Unbound MenuMode select_index should clamp: %s" % str(selected))
+		return
+	var hover_same: Dictionary = mode.pointer_hover_intent(0, 0, 7)
+	if bool(hover_same.get("handled", true)) or String(hover_same.get("input_source", "")) != "pointer_hover":
+		_fail("Unbound MenuMode same-index pointer hover should be ignored: %s" % str(hover_same))
+		return
+	var hover_next: Dictionary = mode.pointer_hover_intent(2, 0, 7)
+	if not bool(hover_next.get("handled", false)) or String(hover_next.get("kind", "")) != "selection" or int(hover_next.get("selected_index", -1)) != 2:
+		_fail("Unbound MenuMode pointer hover intent mismatch: %s" % str(hover_next))
+		return
+	var press_intent: Dictionary = mode.pointer_press_intent(99, 7)
+	if not bool(press_intent.get("handled", false)) or String(press_intent.get("kind", "")) != "activate" or int(press_intent.get("index", -1)) != 6:
+		_fail("Unbound MenuMode pointer press intent mismatch: %s" % str(press_intent))
 		return
 	var action: Dictionary = mode.main_menu_action(2)
 	if String(action.get("action", "unexpected")) != "" or int(action.get("index", -1)) != 2:

@@ -92,6 +92,47 @@ func select_index(index: int, fallback_count: int) -> Dictionary:
 	}
 
 
+func pointer_hover_intent(index: int, current_index: int, fallback_count: int) -> Dictionary:
+	if fallback_count <= 0 and menu_controller == null:
+		return {
+			"handled": false,
+			"kind": "selection",
+			"input_source": "pointer_hover",
+			"index": index,
+		}
+	var count := maxi(1, fallback_count)
+	var clamped_index := clampi(index, 0, count - 1)
+	if clamped_index == current_index:
+		return {
+			"handled": false,
+			"kind": "selection",
+			"input_source": "pointer_hover",
+			"index": clamped_index,
+		}
+	var intent := select_index(clamped_index, fallback_count)
+	intent["kind"] = "selection"
+	intent["input_source"] = "pointer_hover"
+	intent["index"] = clamped_index
+	return intent
+
+
+func pointer_press_intent(index: int, fallback_count: int) -> Dictionary:
+	if fallback_count <= 0 and menu_controller == null:
+		return {
+			"handled": false,
+			"kind": "activate",
+			"input_source": "pointer_press",
+			"index": index,
+		}
+	var count := maxi(1, fallback_count)
+	return {
+		"handled": true,
+		"kind": "activate",
+		"input_source": "pointer_press",
+		"index": clampi(index, 0, count - 1),
+	}
+
+
 func main_menu_action(index: int) -> Dictionary:
 	if menu_controller != null:
 		return menu_controller.main_menu_action(index)

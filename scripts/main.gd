@@ -18013,12 +18013,15 @@ func _handle_menu_button_gui_input(event: InputEvent, index: int) -> void:
 
 
 func _hover_menu_item(index: int) -> void:
-	_apply_menu_selection_intent(_menu_select_index_intent(index))
+	_apply_menu_selection_intent(_menu_pointer_hover_intent(index))
 	_update_menu_ui()
 
 
 func _activate_menu_item(index: int) -> void:
-	var action := _menu_main_action(index)
+	var press_intent := _menu_pointer_press_intent(index)
+	if not bool(press_intent.get("handled", false)):
+		return
+	var action := _menu_main_action(int(press_intent.get("index", index)))
 	match String(action.get("action", "")):
 		"training_config":
 			_show_training_config(true)
@@ -18035,6 +18038,31 @@ func _activate_menu_item(index: int) -> void:
 			_show_settings()
 		_:
 			get_tree().quit()
+
+
+func _menu_pointer_hover_intent(index: int) -> Dictionary:
+	if menu_mode_owner != null:
+		return menu_mode_owner.pointer_hover_intent(index, menu_index, MENU_ITEMS.size())
+	var handled := MENU_ITEMS.size() > 0 and index >= 0 and index < MENU_ITEMS.size() and index != menu_index
+	return {
+		"handled": handled,
+		"kind": "selection",
+		"input_source": "pointer_hover",
+		"index": index,
+		"selected_index": clampi(index, 0, maxi(0, MENU_ITEMS.size() - 1)),
+		"used_controller": false,
+	}
+
+
+func _menu_pointer_press_intent(index: int) -> Dictionary:
+	if menu_mode_owner != null:
+		return menu_mode_owner.pointer_press_intent(index, MENU_ITEMS.size())
+	return {
+		"handled": MENU_ITEMS.size() > 0,
+		"kind": "activate",
+		"input_source": "pointer_press",
+		"index": clampi(index, 0, maxi(0, MENU_ITEMS.size() - 1)),
+	}
 
 
 func _menu_move_selection_intent(delta: int) -> Dictionary:
