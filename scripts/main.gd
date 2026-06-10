@@ -10,6 +10,7 @@ const GameStateStore = preload("res://scripts/state/game_state_store.gd")
 const DirtyGraph = preload("res://scripts/state/dirty_graph.gd")
 const DerivedStateCache = preload("res://scripts/state/derived_state_cache.gd")
 const HotPathProfiler = preload("res://scripts/perf/hot_path_profiler.gd")
+const AppModeHost = preload("res://scripts/app/app_mode_host.gd")
 const PartZhNames = preload("res://scripts/data/part_zh_names.gd")
 const GpuGeometryService = preload("res://scripts/services/gpu_geometry_service.gd")
 const PartCatalogService = preload("res://scripts/services/part_catalog_service.gd")
@@ -46,6 +47,12 @@ const DataRuleService = preload("res://scripts/services/data_rule_service.gd")
 const UILifecycleService = preload("res://scripts/services/ui_lifecycle_service.gd")
 const LoadingLifecycleService = preload("res://scripts/services/loading_lifecycle_service.gd")
 const NavigationService = preload("res://scripts/services/navigation_service.gd")
+const BattleMode = preload("res://scripts/modes/battle_mode.gd")
+const MenuMode = preload("res://scripts/modes/menu_mode.gd")
+const SavedUnitsMode = preload("res://scripts/modes/saved_units_mode.gd")
+const SettingsMode = preload("res://scripts/modes/settings_mode.gd")
+const TeamEditMode = preload("res://scripts/modes/team_edit_mode.gd")
+const TrainingMode = preload("res://scripts/modes/training_mode.gd")
 const TeamEditController = preload("res://scripts/controllers/team_edit_controller.gd")
 const UnitEditorCatalogController = preload("res://scripts/controllers/unit_editor_catalog_controller.gd")
 const UnitEditorBoardController = preload("res://scripts/controllers/unit_editor_board_controller.gd")
@@ -8971,6 +8978,7 @@ var game_state_store: GameStateStore
 var dirty_graph: DirtyGraph
 var derived_state_cache: DerivedStateCache
 var hot_path_profiler: HotPathProfiler
+var app_mode_host: AppModeHost
 var gpu_geometry_service: GpuGeometryService
 var part_catalog_service: PartCatalogService
 var unit_stats_service: UnitStatsService
@@ -9005,16 +9013,22 @@ var unit_blueprint_validator: UnitBlueprintValidator
 var data_rule_service: DataRuleService
 var navigation_service: NavigationService
 var team_edit_controller: TeamEditController
+var team_edit_mode_owner: TeamEditMode
 var unit_editor_catalog_controller: UnitEditorCatalogController
 var unit_editor_board_controller: UnitEditorBoardController
 var editor_board_controller_missing_warned := false
 var battle_controller: BattleController
+var battle_mode_owner: BattleMode
 var saved_units_controller: SavedUnitsController
 var settings_controller: SettingsController
 var scout_controller: ScoutController
 var menu_controller: MenuController
 var loading_controller: LoadingController
 var menu_view: MenuView
+var menu_mode_owner: MenuMode
+var saved_units_mode_owner: SavedUnitsMode
+var settings_mode_owner: SettingsMode
+var training_mode_owner: TrainingMode
 var loading_auto_transitions_enabled := true
 var loading_transition_applying := false
 var loading_pending_callback := Callable()
@@ -9258,6 +9272,8 @@ func _initialize_hot_path_state_layer() -> void:
 	dirty_graph = DirtyGraph.new()
 	derived_state_cache = DerivedStateCache.new()
 	hot_path_profiler = HotPathProfiler.new()
+	app_mode_host = AppModeHost.new()
+	app_mode_host.reset()
 	gpu_geometry_service = GpuGeometryService.new()
 	part_catalog_service = PartCatalogService.new()
 	part_catalog_service.bind(self)
@@ -9294,21 +9310,33 @@ func _initialize_hot_path_state_layer() -> void:
 	navigation_service.commit_transition(game_state, "ready")
 	team_edit_controller = TeamEditController.new()
 	team_edit_controller.bind(self, game_state_store, dirty_graph, derived_state_cache, hot_path_profiler)
+	team_edit_mode_owner = TeamEditMode.new()
+	team_edit_mode_owner.bind(self, team_edit_controller)
 	unit_editor_catalog_controller = UnitEditorCatalogController.new()
 	unit_editor_catalog_controller.bind(hot_path_profiler)
 	unit_editor_board_controller = UnitEditorBoardController.new()
 	battle_controller = BattleController.new()
 	battle_controller.bind(self, game_state_store, dirty_graph, derived_state_cache, hot_path_profiler, gpu_geometry_service)
+	battle_mode_owner = BattleMode.new()
+	battle_mode_owner.bind(self, battle_controller, battle_runtime_lifecycle_service)
 	saved_units_controller = SavedUnitsController.new()
 	saved_units_controller.bind(self, game_state_store, dirty_graph, derived_state_cache, hot_path_profiler)
+	saved_units_mode_owner = SavedUnitsMode.new()
+	saved_units_mode_owner.bind(self, saved_units_controller)
 	settings_controller = SettingsController.new()
 	settings_controller.bind(self, game_state_store, dirty_graph, derived_state_cache, hot_path_profiler)
+	settings_mode_owner = SettingsMode.new()
+	settings_mode_owner.bind(self, settings_controller)
 	scout_controller = ScoutController.new()
 	scout_controller.bind(self, game_state_store, dirty_graph, derived_state_cache, hot_path_profiler)
+	training_mode_owner = TrainingMode.new()
+	training_mode_owner.bind(self, scout_controller)
 	menu_controller = MenuController.new()
 	menu_controller.bind(self, game_state_store, dirty_graph, derived_state_cache, hot_path_profiler)
 	menu_view = MenuView.new()
 	menu_view.set_viewport_size(_ui_viewport_size())
+	menu_mode_owner = MenuMode.new()
+	menu_mode_owner.bind(self, menu_controller, menu_view)
 	loading_controller = LoadingController.new()
 	loading_controller.bind(game_state_store, dirty_graph, hot_path_profiler)
 	loading_auto_transitions_enabled = DisplayServer.get_name().to_lower() != "headless"
@@ -12543,27 +12571,31 @@ func _show_saved_unit_detail(entry: Dictionary) -> void:
 
 func _show_saved_units_library(focus_path: String = "", return_context: String = "", defer_disk_scan: bool = false, preloaded: bool = false) -> void:
 	var resolved_return_context := _navigation_return_target_for(STATE_SAVED_UNITS, return_context)
-	if not preloaded and _should_queue_loading_transition(STATE_SAVED_UNITS):
+	var loading_queued := not preloaded and _should_queue_loading_transition(STATE_SAVED_UNITS)
+	var show_intent := _saved_units_mode_show_intent(focus_path, resolved_return_context, defer_disk_scan, preloaded, loading_queued)
+	if loading_queued:
 		queue_loading_transition(STATE_SAVED_UNITS, "saved_units", preload_saved_units_content(), Callable(self, "_show_saved_units_library").bind(focus_path, return_context, defer_disk_scan, true), resolved_return_context)
 		return
-	saved_units_return_context = resolved_return_context
-	_transition_page(STATE_SAVED_UNITS, "saved_units", {"focus_path": focus_path}, "" if preloaded else resolved_return_context)
+	saved_units_return_context = String(show_intent.get("return_context", resolved_return_context))
+	var resolved_focus_path := String(show_intent.get("focus_path", focus_path))
+	var should_defer_disk_scan := bool(show_intent.get("defer_disk_scan", defer_disk_scan))
+	_transition_page(STATE_SAVED_UNITS, String(show_intent.get("reason", "saved_units")), Dictionary(show_intent.get("payload", {"focus_path": resolved_focus_path})), "" if preloaded else saved_units_return_context)
 	_hide_match_format_select()
-	if defer_disk_scan and saved_unit_library_cache_dirty and focus_path == "":
-		_request_deferred_saved_unit_cache_refresh(focus_path)
+	if should_defer_disk_scan and saved_unit_library_cache_dirty and resolved_focus_path == "":
+		_request_deferred_saved_unit_cache_refresh(resolved_focus_path)
 	else:
 		saved_unit_library_cache_scan_deferred = false
 		_ensure_saved_unit_library_cache(false, true)
-	saved_unit_focus_path = focus_path
+	saved_unit_focus_path = resolved_focus_path
 	var focus_selected := false
-	if focus_path != "":
+	if resolved_focus_path != "":
 		saved_unit_filter = "all"
 		if not saved_unit_library_cache_scan_deferred:
-			focus_selected = _select_saved_unit_focus_path(focus_path)
+			focus_selected = _select_saved_unit_focus_path(resolved_focus_path)
 	_set_visible_layer(saved_units_layer)
 	_update_saved_units_ui()
-	if focus_path != "" and not focus_selected and saved_unit_hint_label != null:
-		var reason := _saved_unit_rejection_reason_from_file(focus_path)
+	if resolved_focus_path != "" and not focus_selected and saved_unit_hint_label != null:
+		var reason := _saved_unit_rejection_reason_from_file(resolved_focus_path)
 		if reason != "":
 			saved_unit_hint_label.text = ("保存文件未通过读取校验：%s" if _ui_is_zh() else "Saved file did not pass library validation: %s") % reason
 
@@ -15005,6 +15037,372 @@ func _navigation_return_target_for(target_state: String, explicit_return_target:
 	return ""
 
 
+func _app_mode_key_for_page(page: String, payload: Dictionary = {}) -> String:
+	if app_mode_host != null:
+		return app_mode_host.mode_key_for_page(page, payload)
+	match page:
+		STATE_MENU:
+			return AppModeHost.MODE_MENU
+		STATE_EDITOR:
+			return AppModeHost.MODE_TEAM_EDIT
+		STATE_SAVED_UNITS:
+			return AppModeHost.MODE_SAVED_UNITS
+		STATE_SCOUT:
+			var scout_mode := String(payload.get("mode", ""))
+			if scout_mode == AppModeHost.MODE_TRAINING:
+				return AppModeHost.MODE_TRAINING
+			if scout_mode != "":
+				return AppModeHost.MODE_BATTLE
+		STATE_SETTINGS:
+			return AppModeHost.MODE_SETTINGS
+		STATE_BATTLE:
+			if String(payload.get("mode", "")) == AppModeHost.MODE_TRAINING:
+				return AppModeHost.MODE_TRAINING
+			return AppModeHost.MODE_BATTLE
+	return ""
+
+
+func _commit_app_mode_for_page(target_state: String, reason: String = "", payload: Dictionary = {}) -> void:
+	if app_mode_host == null:
+		return
+	var mode_key := _app_mode_key_for_page(target_state, payload)
+	if mode_key == "":
+		return
+	var intent := app_mode_host.transition_intent(mode_key, reason, payload)
+	app_mode_host.commit_transition(intent)
+
+
+func _commit_menu_mode_enter(reason: String = "", payload: Dictionary = {}) -> void:
+	if menu_mode_owner == null:
+		return
+	var intent := menu_mode_owner.enter_intent(reason, payload)
+	menu_mode_owner.commit_enter(intent)
+
+
+func _commit_menu_mode_exit(reason: String = "", payload: Dictionary = {}) -> void:
+	if menu_mode_owner == null:
+		return
+	var intent := menu_mode_owner.exit_intent(reason, payload)
+	menu_mode_owner.commit_exit(intent)
+
+
+func _commit_team_edit_mode_enter(reason: String = "", payload: Dictionary = {}) -> void:
+	if team_edit_mode_owner == null:
+		return
+	var intent := team_edit_mode_owner.enter_intent(reason, payload)
+	team_edit_mode_owner.commit_enter(intent)
+
+
+func _commit_team_edit_mode_exit(reason: String = "", payload: Dictionary = {}) -> void:
+	if team_edit_mode_owner == null:
+		return
+	var intent := team_edit_mode_owner.exit_intent(reason, payload)
+	team_edit_mode_owner.commit_exit(intent)
+
+
+func _commit_saved_units_mode_enter(reason: String = "", payload: Dictionary = {}) -> void:
+	if saved_units_mode_owner == null:
+		return
+	var intent := saved_units_mode_owner.enter_intent(reason, payload)
+	saved_units_mode_owner.commit_enter(intent)
+
+
+func _commit_saved_units_mode_exit(reason: String = "", payload: Dictionary = {}) -> void:
+	if saved_units_mode_owner == null:
+		return
+	var intent := saved_units_mode_owner.exit_intent(reason, payload)
+	saved_units_mode_owner.commit_exit(intent)
+
+
+func _commit_settings_mode_enter(reason: String = "", payload: Dictionary = {}) -> void:
+	if settings_mode_owner == null:
+		return
+	var intent := settings_mode_owner.enter_intent(reason, payload)
+	settings_mode_owner.commit_enter(intent)
+
+
+func _commit_settings_mode_exit(reason: String = "", payload: Dictionary = {}) -> void:
+	if settings_mode_owner == null:
+		return
+	var intent := settings_mode_owner.exit_intent(reason, payload)
+	settings_mode_owner.commit_exit(intent)
+
+
+func _commit_training_mode_enter(reason: String = "", payload: Dictionary = {}) -> void:
+	if training_mode_owner == null:
+		return
+	var intent := training_mode_owner.enter_intent(reason, payload)
+	training_mode_owner.commit_enter(intent)
+
+
+func _commit_training_mode_exit(reason: String = "", payload: Dictionary = {}) -> void:
+	if training_mode_owner == null:
+		return
+	var intent := training_mode_owner.exit_intent(reason, payload)
+	training_mode_owner.commit_exit(intent)
+
+
+func _commit_battle_mode_enter(reason: String = "", payload: Dictionary = {}) -> void:
+	if battle_mode_owner == null:
+		return
+	var intent := battle_mode_owner.enter_intent(reason, payload)
+	battle_mode_owner.commit_enter(intent)
+
+
+func _commit_battle_mode_exit(reason: String = "", payload: Dictionary = {}) -> void:
+	if battle_mode_owner == null:
+		return
+	var intent := battle_mode_owner.exit_intent(reason, payload)
+	battle_mode_owner.commit_exit(intent)
+
+
+func _menu_mode_show_intent(preloaded: bool, loading_queued: bool) -> Dictionary:
+	if menu_mode_owner == null:
+		return {
+			"mode_key": AppModeHost.MODE_MENU,
+			"reason": "menu",
+			"payload": {},
+			"preloaded": preloaded,
+			"loading_queued": loading_queued,
+			"should_apply": not loading_queued,
+			"bound": false,
+		}
+	return menu_mode_owner.show_intent(preloaded, loading_queued, "menu")
+
+
+func _team_edit_mode_show_intent(preloaded: bool, loading_queued: bool, preserve_canvas: bool = false) -> Dictionary:
+	if team_edit_mode_owner == null:
+		return {
+			"mode_key": AppModeHost.MODE_TEAM_EDIT,
+			"reason": "teamedit_preserve" if preserve_canvas else "teamedit",
+			"payload": {"preserve_canvas": true} if preserve_canvas else {},
+			"preloaded": preloaded,
+			"loading_queued": loading_queued,
+			"should_apply": not loading_queued,
+			"preserve_canvas": preserve_canvas,
+			"reset_board_view": not preserve_canvas,
+			"reset_working_canvas": not preserve_canvas,
+			"apply_role_catalog_defaults": true,
+			"clear_clipboard": true,
+			"reset_last_mouse": true,
+			"bound": false,
+		}
+	return team_edit_mode_owner.show_intent(preloaded, loading_queued, preserve_canvas)
+
+
+func _battle_mode_show_intent(mode: String, preloaded: bool, loading_queued: bool, reason: String = "", preserve_runtime: bool = false) -> Dictionary:
+	if battle_mode_owner == null:
+		var resolved_reason := reason.strip_edges()
+		if resolved_reason == "":
+			resolved_reason = "return_battle" if preserve_runtime else "battle:%s" % mode
+		return {
+			"mode_key": AppModeHost.MODE_TRAINING if mode == MODE_TRAINING else AppModeHost.MODE_BATTLE,
+			"battle_mode": mode,
+			"reason": resolved_reason,
+			"payload": {"mode": mode, "preserve_runtime": preserve_runtime} if preserve_runtime else {"mode": mode},
+			"preloaded": preloaded,
+			"loading_queued": loading_queued,
+			"should_apply": not loading_queued,
+			"preserve_runtime": preserve_runtime,
+			"reset_runtime": not preserve_runtime,
+			"bound": false,
+		}
+	return battle_mode_owner.show_intent(mode, preloaded, loading_queued, reason, preserve_runtime)
+
+
+func _commit_battle_mode_show_intent(intent: Dictionary) -> void:
+	if battle_mode_owner != null:
+		battle_mode_owner.commit_show(intent)
+
+
+func _battle_mode_runtime_snapshot(runtime_snapshot: Dictionary) -> Dictionary:
+	if battle_mode_owner != null:
+		return battle_mode_owner.runtime_snapshot(runtime_snapshot)
+	return runtime_snapshot
+
+
+func _battle_mode_cleanup_intent(runtime_snapshot: Dictionary, preserve_for_return: bool) -> Dictionary:
+	if battle_mode_owner != null:
+		return battle_mode_owner.cleanup_intent(runtime_snapshot, preserve_for_return)
+	if battle_runtime_lifecycle_service != null:
+		return battle_runtime_lifecycle_service.cleanup_intent(runtime_snapshot, preserve_for_return)
+	return {
+		"preserve": preserve_for_return,
+		"clear_runtime": not preserve_for_return,
+		"hide_runtime_menu": true,
+		"hide_aim_lines": true,
+		"clear_attack_command_windows": true,
+		"clear_units": true,
+		"clear_presentation_state": true,
+		"clear_input_edges": true,
+		"clear_aim_state": true,
+		"clear_gun_state": true,
+	}
+
+
+func _commit_battle_cleanup_intent(intent: Dictionary) -> void:
+	if battle_mode_owner != null:
+		battle_mode_owner.commit_cleanup(intent)
+
+
+func _team_edit_cleanup_intent(reason: String = "", payload: Dictionary = {}) -> Dictionary:
+	if team_edit_mode_owner != null:
+		return team_edit_mode_owner.cleanup_intent(reason, payload)
+	return {
+		"mode_key": AppModeHost.MODE_TEAM_EDIT,
+		"reason": reason,
+		"payload": payload.duplicate(true),
+		"clear_hover_cards": true,
+		"close_detail_panels": true,
+		"clear_bindings": true,
+		"clear_drag_state": true,
+		"clear_placement_state": true,
+		"clear_clipboard": true,
+		"clear_preview_caches": true,
+		"reset_last_mouse": true,
+		"bound": false,
+	}
+
+
+func _commit_team_edit_cleanup(intent: Dictionary) -> void:
+	if team_edit_mode_owner != null:
+		team_edit_mode_owner.commit_cleanup(intent)
+
+
+func _saved_units_mode_show_intent(focus_path: String, return_context: String, defer_disk_scan: bool, preloaded: bool, loading_queued: bool) -> Dictionary:
+	if saved_units_mode_owner == null:
+		return {
+			"mode_key": AppModeHost.MODE_SAVED_UNITS,
+			"reason": "saved_units",
+			"payload": {"focus_path": focus_path},
+			"focus_path": focus_path,
+			"return_context": return_context,
+			"defer_disk_scan": defer_disk_scan,
+			"preloaded": preloaded,
+			"loading_queued": loading_queued,
+			"should_apply": not loading_queued,
+			"bound": false,
+		}
+	return saved_units_mode_owner.show_intent(focus_path, return_context, defer_disk_scan, preloaded, loading_queued, "saved_units")
+
+
+func _saved_units_cleanup_intent(reason: String = "", payload: Dictionary = {}) -> Dictionary:
+	if saved_units_mode_owner != null:
+		return saved_units_mode_owner.cleanup_intent(reason, payload)
+	return {
+		"mode_key": AppModeHost.MODE_SAVED_UNITS,
+		"reason": reason,
+		"payload": payload.duplicate(true),
+		"clear_hover": true,
+		"clear_focus": true,
+		"clear_detail": true,
+		"clear_pending_delete": true,
+		"bound": false,
+	}
+
+
+func _commit_saved_units_cleanup(intent: Dictionary) -> void:
+	if saved_units_mode_owner != null:
+		saved_units_mode_owner.commit_cleanup(intent)
+
+
+func _settings_mode_show_intent(category_key: String, preloaded: bool, return_target: String, loading_queued: bool) -> Dictionary:
+	if settings_mode_owner == null:
+		var resolved_category := category_key.strip_edges()
+		if resolved_category == "":
+			resolved_category = "root"
+		return {
+			"mode_key": AppModeHost.MODE_SETTINGS,
+			"reason": "settings",
+			"payload": {"category": resolved_category},
+			"category_key": resolved_category,
+			"preloaded": preloaded,
+			"return_target": return_target,
+			"loading_queued": loading_queued,
+			"should_apply": not loading_queued,
+			"bound": false,
+		}
+	return settings_mode_owner.show_intent(category_key, preloaded, return_target, loading_queued, "settings")
+
+
+func _settings_category_intent(category_key: String) -> Dictionary:
+	if settings_mode_owner != null:
+		return settings_mode_owner.category_intent(category_key)
+	var resolved_category := category_key.strip_edges()
+	if resolved_category == "":
+		resolved_category = "root"
+	return {
+		"handled": true,
+		"category_key": resolved_category,
+		"reset_index": true,
+		"clear_rebind": true,
+		"bound": false,
+	}
+
+
+func _apply_settings_category_intent(intent: Dictionary) -> void:
+	if not bool(intent.get("handled", false)):
+		return
+	settings_category = String(intent.get("category_key", settings_category))
+	if bool(intent.get("reset_index", false)):
+		settings_index = 0
+	if bool(intent.get("clear_rebind", false)):
+		settings_rebind_action = ""
+	if settings_mode_owner != null:
+		settings_mode_owner.commit_category(intent)
+
+
+func _training_config_intent(clear_imports: bool) -> Dictionary:
+	if training_mode_owner != null:
+		return training_mode_owner.config_intent(clear_imports)
+	return {
+		"mode_key": AppModeHost.MODE_TRAINING,
+		"reason": "training_config",
+		"clear_imports": clear_imports,
+		"prepare_loadouts": true,
+		"handoff_mode": MODE_TRAINING,
+		"bound": false,
+	}
+
+
+func _commit_training_config_intent(intent: Dictionary) -> void:
+	if training_mode_owner != null:
+		training_mode_owner.commit_config(intent)
+
+
+func _training_scout_show_intent(mode: String, preloaded: bool, loading_queued: bool) -> Dictionary:
+	if mode == MODE_TRAINING and training_mode_owner != null:
+		return training_mode_owner.scout_show_intent(preloaded, loading_queued, "scout:%s" % mode)
+	return {
+		"mode_key": "",
+		"page_key": STATE_SCOUT,
+		"reason": "scout:%s" % mode,
+		"payload": {"mode": mode},
+		"preloaded": preloaded,
+		"loading_queued": loading_queued,
+		"should_apply": not loading_queued,
+		"reset_training_seat": mode == MODE_TRAINING,
+		"reset_scout_selection": true,
+		"bound": false,
+	}
+
+
+func _training_begin_from_scout_intent() -> Dictionary:
+	if training_mode_owner != null:
+		return training_mode_owner.begin_from_scout_intent(pending_battle_mode, training_seat_confirmed)
+	if pending_battle_mode != MODE_TRAINING:
+		return {"handled": false, "action": "", "pending_mode": pending_battle_mode}
+	if not training_seat_confirmed:
+		return {
+			"handled": true,
+			"action": "require_training_seat",
+			"pending_mode": pending_battle_mode,
+			"extend_timer": true,
+			"play_alarm": true,
+		}
+	return {"handled": true, "action": "configure_and_begin_training", "pending_mode": pending_battle_mode}
+
+
 func _begin_page_navigation(target_state: String, reason: String, return_target: String = "", payload: Dictionary = {}) -> void:
 	if navigation_service == null:
 		return
@@ -15036,6 +15434,19 @@ func _commit_page_state(target_state: String, reason: String = "", payload: Dict
 			navigation_service.begin_transition(target_state, nav_reason, return_target, payload)
 		navigation_service.commit_transition(target_state, nav_reason, payload)
 	game_state = target_state
+	_commit_app_mode_for_page(target_state, nav_reason, payload)
+	if target_state == STATE_MENU:
+		_commit_menu_mode_enter(nav_reason, payload)
+	elif target_state == STATE_EDITOR:
+		_commit_team_edit_mode_enter(nav_reason, payload)
+	elif target_state == STATE_SAVED_UNITS:
+		_commit_saved_units_mode_enter(nav_reason, payload)
+	elif target_state == STATE_SETTINGS:
+		_commit_settings_mode_enter(nav_reason, payload)
+	elif target_state == STATE_SCOUT and String(payload.get("mode", "")) == MODE_TRAINING:
+		_commit_training_mode_enter(nav_reason, payload)
+	elif target_state == STATE_BATTLE:
+		_commit_battle_mode_enter(nav_reason, payload)
 	if game_state_store != null:
 		game_state_store.set_app_mode(target_state, nav_reason)
 	if dirty_graph != null:
@@ -15046,13 +15457,22 @@ func _commit_page_state(target_state: String, reason: String = "", payload: Dict
 func _exit_page(from_page: String, to_page: String, reason: String = "", payload: Dictionary = {}) -> void:
 	if from_page == "":
 		return
-	if from_page == STATE_EDITOR:
-		_cleanup_unit_edit_page_runtime()
+	if from_page == STATE_MENU:
+		_commit_menu_mode_exit(reason, payload)
+	elif from_page == STATE_SAVED_UNITS:
+		_commit_saved_units_mode_exit(reason, payload)
+		_cleanup_saved_units_page_runtime(reason, payload)
+	elif from_page == STATE_SETTINGS:
+		_commit_settings_mode_exit(reason, payload)
+	elif from_page == STATE_SCOUT and pending_battle_mode == MODE_TRAINING:
+		_commit_training_mode_exit(reason, payload)
+	elif from_page == STATE_EDITOR:
+		_commit_team_edit_mode_exit(reason, payload)
+		_cleanup_unit_edit_page_runtime(reason, payload)
 		PartPreviewTextureCache.clear_all(true)
 		CatalogCardBodyTextureCache.clear_all(true)
-	elif from_page == STATE_SAVED_UNITS:
-		_cleanup_saved_units_page_runtime()
 	elif from_page == STATE_BATTLE:
+		_commit_battle_mode_exit(reason, payload)
 		var preserve_battle := bool(payload.get("preserve_runtime", false))
 		preserve_battle = preserve_battle or to_page == STATE_BATTLE
 		preserve_battle = preserve_battle or (to_page == STATE_SETTINGS and String(payload.get("return_target", "")) == STATE_BATTLE)
@@ -15076,60 +15496,75 @@ func _enter_page(to_page: String, from_page: String = "", reason: String = "", p
 		hot_path_profiler.count("page.enter.%s" % to_page)
 
 
-func _cleanup_unit_edit_page_runtime() -> void:
-	_clear_editor_hover_card(true)
-	_clear_editor_unit_hover_card(true)
-	_close_engine_momentum_allocation_panel()
-	if editor_torso_detail_view != null:
-		editor_torso_detail_view.set_binding_state(false)
-		editor_torso_detail_view.visible = false
-	editor_open_torso_node_index = -1
-	editor_selected_torso_slot_index = -1
-	editor_selected_torso_slot_kind = ""
-	editor_pending_module_binding = {}
-	editor_bound_module_tryout = {}
-	editor_pose_dragging = false
-	editor_pose_pending_update = false
-	editor_pose_root_node = -1
-	editor_pose_downstream_nodes = []
-	editor_dragging_node_index = -1
-	editor_dragging_selected_nodes = false
-	editor_dragging_whole_unit = false
-	editor_node_click_candidate_index = -1
-	editor_selecting_topology_box = false
-	editor_drag_catalog_active = false
-	editor_drag_catalog_started = false
-	editor_load_drag_index = -1
-	editor_pending_place_slot = ""
-	editor_pending_place_index = -1
-	_clear_pending_payload_part()
-	editor_cached_socket_candidate = {}
-	editor_cached_socket_candidate_node = -1
-	editor_cached_socket_candidate_pos = Vector2.INF
-	editor_cached_socket_candidate_msec = -1000000
-	editor_material_warning_nodes = []
-	editor_deferred_sfx_queue.clear()
-	editor_snap_timer = 0.0
-	editor_snap_part = ""
-	editor_save_success_flash_timer = 0.0
-	if editor_save_unit_feedback_label != null:
-		editor_save_unit_feedback_label.visible = false
-	if editor_orientation_popup_panel != null:
-		editor_orientation_popup_panel.visible = false
-	_hide_editor_drag_ghost()
-	editor_topology_clipboard = {}
-	editor_clipboard_paste_count = 0
-	editor_last_board_mouse_position = Vector2.INF
-	_clear_unit_edit_page_caches()
+func _cleanup_unit_edit_page_runtime(reason: String = "", payload: Dictionary = {}) -> void:
+	var cleanup_intent := _team_edit_cleanup_intent(reason, payload)
+	if bool(cleanup_intent.get("clear_hover_cards", true)):
+		_clear_editor_hover_card(true)
+		_clear_editor_unit_hover_card(true)
+	if bool(cleanup_intent.get("close_detail_panels", true)):
+		_close_engine_momentum_allocation_panel()
+		if editor_torso_detail_view != null:
+			editor_torso_detail_view.set_binding_state(false)
+			editor_torso_detail_view.visible = false
+		editor_open_torso_node_index = -1
+		editor_selected_torso_slot_index = -1
+		editor_selected_torso_slot_kind = ""
+		if editor_save_unit_feedback_label != null:
+			editor_save_unit_feedback_label.visible = false
+		if editor_orientation_popup_panel != null:
+			editor_orientation_popup_panel.visible = false
+	if bool(cleanup_intent.get("clear_bindings", true)):
+		editor_pending_module_binding = {}
+		editor_bound_module_tryout = {}
+	if bool(cleanup_intent.get("clear_drag_state", true)):
+		editor_pose_dragging = false
+		editor_pose_pending_update = false
+		editor_pose_root_node = -1
+		editor_pose_downstream_nodes = []
+		editor_dragging_node_index = -1
+		editor_dragging_selected_nodes = false
+		editor_dragging_whole_unit = false
+		editor_node_click_candidate_index = -1
+		editor_selecting_topology_box = false
+		editor_drag_catalog_active = false
+		editor_drag_catalog_started = false
+		editor_load_drag_index = -1
+		_hide_editor_drag_ghost()
+	if bool(cleanup_intent.get("clear_placement_state", true)):
+		editor_pending_place_slot = ""
+		editor_pending_place_index = -1
+		_clear_pending_payload_part()
+		editor_cached_socket_candidate = {}
+		editor_cached_socket_candidate_node = -1
+		editor_cached_socket_candidate_pos = Vector2.INF
+		editor_cached_socket_candidate_msec = -1000000
+		editor_material_warning_nodes = []
+		editor_deferred_sfx_queue.clear()
+		editor_snap_timer = 0.0
+		editor_snap_part = ""
+		editor_save_success_flash_timer = 0.0
+	if bool(cleanup_intent.get("clear_clipboard", true)):
+		editor_topology_clipboard = {}
+		editor_clipboard_paste_count = 0
+	if bool(cleanup_intent.get("reset_last_mouse", true)):
+		editor_last_board_mouse_position = Vector2.INF
+	if bool(cleanup_intent.get("clear_preview_caches", true)):
+		_clear_unit_edit_page_caches()
+	_commit_team_edit_cleanup(cleanup_intent)
 
 
-func _cleanup_saved_units_page_runtime() -> void:
-	_cancel_delete_saved_units()
-	saved_unit_hovered_path = ""
-	saved_unit_hovered_index = -1
-	saved_unit_detail_path = ""
-	saved_unit_focus_path = ""
-	saved_unit_deferred_focus_path = ""
+func _cleanup_saved_units_page_runtime(reason: String = "", payload: Dictionary = {}) -> void:
+	var cleanup_intent := _saved_units_cleanup_intent(reason, payload)
+	if bool(cleanup_intent.get("clear_pending_delete", true)):
+		_cancel_delete_saved_units()
+	if bool(cleanup_intent.get("clear_hover", true)):
+		saved_unit_hovered_path = ""
+		saved_unit_hovered_index = -1
+	if bool(cleanup_intent.get("clear_detail", true)):
+		saved_unit_detail_path = ""
+	if bool(cleanup_intent.get("clear_focus", true)):
+		saved_unit_focus_path = ""
+		saved_unit_deferred_focus_path = ""
 	if saved_unit_detail_view != null:
 		saved_unit_detail_view.clear("悬停或点击单位查看详情。" if _ui_is_zh() else "Hover or click a unit to inspect it.")
 		saved_unit_detail_view.visible = false
@@ -15138,22 +15573,13 @@ func _cleanup_saved_units_page_runtime() -> void:
 			var thumb: SortieThumbView = raw_thumb
 			thumb.set_entry(1, 0, {}, {}, "reserve", ui_language)
 	_clear_saved_units_page_caches()
+	_commit_saved_units_cleanup(cleanup_intent)
 
 
 func _cleanup_battle_runtime(preserve_for_return: bool = false) -> void:
-	var cleanup_intent := battle_runtime_lifecycle_service.cleanup_intent(_battle_runtime_lifecycle_snapshot(), preserve_for_return) if battle_runtime_lifecycle_service != null else {
-		"preserve": preserve_for_return,
-		"clear_runtime": not preserve_for_return,
-		"hide_runtime_menu": true,
-		"hide_aim_lines": true,
-		"clear_attack_command_windows": true,
-		"clear_units": true,
-		"clear_presentation_state": true,
-		"clear_input_edges": true,
-		"clear_aim_state": true,
-		"clear_gun_state": true,
-	}
+	var cleanup_intent := _battle_mode_cleanup_intent(_battle_runtime_lifecycle_snapshot(), preserve_for_return)
 	if bool(cleanup_intent.get("preserve", preserve_for_return)):
+		_commit_battle_cleanup_intent(cleanup_intent)
 		if hot_path_profiler != null:
 			hot_path_profiler.count("battle.cleanup.preserved")
 		return
@@ -15184,10 +15610,11 @@ func _cleanup_battle_runtime(preserve_for_return: bool = false) -> void:
 	if bool(cleanup_intent.get("clear_gun_state", true)):
 		gun_activation_state = {1: {}, 2: {}}
 		held_melee_activation_state = {1: {}, 2: {}}
+	_commit_battle_cleanup_intent(cleanup_intent)
 
 
 func _battle_runtime_lifecycle_snapshot() -> Dictionary:
-	return {
+	var snapshot := {
 		"unit_count": all_units.size(),
 		"pending_laser_shots": pending_laser_shots.size(),
 		"pending_true_bullet_shots": pending_true_bullet_shots.size(),
@@ -15197,6 +15624,7 @@ func _battle_runtime_lifecycle_snapshot() -> Dictionary:
 		"active_web_swings": active_web_swings.size(),
 		"battle_effect_children": effects_root.get_child_count() if effects_root != null else 0,
 	}
+	return _battle_mode_runtime_snapshot(snapshot)
 
 
 func _cleanup_loading_tasks_for_transition(target_page: String, generation_id: int) -> void:
@@ -15324,7 +15752,9 @@ func _ui_lifecycle_snapshot() -> Dictionary:
 
 
 func _show_battle_layer_without_reset(reason: String = "return_battle") -> void:
-	_transition_page(STATE_BATTLE, reason, {"mode": battle_mode, "preserve_runtime": true})
+	var show_intent := _battle_mode_show_intent(battle_mode, true, false, reason, true)
+	_commit_battle_mode_show_intent(show_intent)
+	_transition_page(STATE_BATTLE, String(show_intent.get("reason", reason)), Dictionary(show_intent.get("payload", {"mode": battle_mode, "preserve_runtime": true})))
 	_set_visible_layer(hud_layer)
 	_update_battle_ui()
 
@@ -15361,11 +15791,13 @@ func _navigate_to_page_target(target_state: String, reason: String = "navigation
 
 
 func _show_menu(preloaded: bool = false) -> void:
-	if not preloaded and _should_queue_loading_transition(STATE_MENU):
+	var loading_queued := not preloaded and _should_queue_loading_transition(STATE_MENU)
+	var show_intent := _menu_mode_show_intent(preloaded, loading_queued)
+	if loading_queued:
 		queue_loading_transition(STATE_MENU, "menu", preload_menu_content(), Callable(self, "_show_menu").bind(true))
 		return
 	_restore_ai_side_roster_mapping()
-	_transition_page(STATE_MENU, "menu")
+	_transition_page(STATE_MENU, String(show_intent.get("reason", "menu")), Dictionary(show_intent.get("payload", {})))
 	_clear_all_units()
 	_hide_match_format_select()
 	editor_board_zoom = 1.0
@@ -15446,34 +15878,48 @@ func _show_editor_for_player(player_id: int) -> void:
 
 
 func _show_editor(preloaded: bool = false) -> void:
-	if not preloaded and _should_queue_loading_transition(STATE_EDITOR):
+	var loading_queued := not preloaded and _should_queue_loading_transition(STATE_EDITOR)
+	var show_intent := _team_edit_mode_show_intent(preloaded, loading_queued, false)
+	if loading_queued:
 		queue_loading_transition(STATE_EDITOR, "teamedit", preload_teamedit_content(), Callable(self, "_show_editor").bind(true))
 		return
-	_transition_page(STATE_EDITOR, "teamedit")
+	_transition_page(STATE_EDITOR, String(show_intent.get("reason", "teamedit")), Dictionary(show_intent.get("payload", {})))
 	_hide_match_format_select()
-	editor_board_zoom = 1.0
-	editor_board_view_offset = Vector2.ZERO
+	var role_key: String = ROLE_ORDER[clampi(editor_role_index, 0, ROLE_ORDER.size() - 1)]
+	if bool(show_intent.get("reset_board_view", true)):
+		editor_board_zoom = 1.0
+		editor_board_view_offset = Vector2.ZERO
 	_refresh_editor_board_zoom_ui()
-	_reset_editor_working_canvas(ROLE_ORDER[clampi(editor_role_index, 0, ROLE_ORDER.size() - 1)])
-	_apply_editor_role_catalog_defaults(ROLE_ORDER[clampi(editor_role_index, 0, ROLE_ORDER.size() - 1)])
-	editor_topology_clipboard = {}
-	editor_clipboard_paste_count = 0
-	editor_last_board_mouse_position = Vector2.INF
+	if bool(show_intent.get("reset_working_canvas", true)):
+		_reset_editor_working_canvas(role_key)
+	if bool(show_intent.get("apply_role_catalog_defaults", true)):
+		_apply_editor_role_catalog_defaults(role_key)
+	if bool(show_intent.get("clear_clipboard", true)):
+		editor_topology_clipboard = {}
+		editor_clipboard_paste_count = 0
+	if bool(show_intent.get("reset_last_mouse", true)):
+		editor_last_board_mouse_position = Vector2.INF
 	_set_visible_layer(editor_layer)
 	_update_editor_ui()
 
 
 func _show_editor_preserve_canvas(preloaded: bool = false) -> void:
-	if not preloaded and _should_queue_loading_transition(STATE_EDITOR):
+	var loading_queued := not preloaded and _should_queue_loading_transition(STATE_EDITOR)
+	var show_intent := _team_edit_mode_show_intent(preloaded, loading_queued, true)
+	if loading_queued:
 		queue_loading_transition(STATE_EDITOR, "teamedit_preserve", preload_teamedit_content(), Callable(self, "_show_editor_preserve_canvas").bind(true))
 		return
-	_transition_page(STATE_EDITOR, "teamedit_preserve", {"preserve_canvas": true})
+	_transition_page(STATE_EDITOR, String(show_intent.get("reason", "teamedit_preserve")), Dictionary(show_intent.get("payload", {"preserve_canvas": true})))
 	_hide_match_format_select()
 	_refresh_editor_board_zoom_ui()
-	_apply_editor_role_catalog_defaults(ROLE_ORDER[clampi(editor_role_index, 0, ROLE_ORDER.size() - 1)])
-	editor_topology_clipboard = {}
-	editor_clipboard_paste_count = 0
-	editor_last_board_mouse_position = Vector2.INF
+	var role_key: String = ROLE_ORDER[clampi(editor_role_index, 0, ROLE_ORDER.size() - 1)]
+	if bool(show_intent.get("apply_role_catalog_defaults", true)):
+		_apply_editor_role_catalog_defaults(role_key)
+	if bool(show_intent.get("clear_clipboard", true)):
+		editor_topology_clipboard = {}
+		editor_clipboard_paste_count = 0
+	if bool(show_intent.get("reset_last_mouse", true)):
+		editor_last_board_mouse_position = Vector2.INF
 	_set_visible_layer(editor_layer)
 	_update_editor_ui()
 
@@ -15522,30 +15968,32 @@ func _update_match_format_select_ui() -> void:
 
 func _show_settings(preloaded: bool = false, category_key: String = "root") -> void:
 	var resolved_return_target := _navigation_return_target_for(STATE_SETTINGS)
-	if not preloaded and _should_queue_loading_transition(STATE_SETTINGS):
+	var loading_queued := not preloaded and _should_queue_loading_transition(STATE_SETTINGS)
+	var show_intent := _settings_mode_show_intent(category_key, preloaded, resolved_return_target, loading_queued)
+	if loading_queued:
 		queue_loading_transition(STATE_SETTINGS, "settings", preload_settings_content(), Callable(self, "_show_settings").bind(true, category_key), resolved_return_target)
 		return
-	settings_category = category_key
-	_transition_page(STATE_SETTINGS, "settings", {}, "" if preloaded else resolved_return_target)
+	settings_category = String(show_intent.get("category_key", category_key))
+	_transition_page(STATE_SETTINGS, String(show_intent.get("reason", "settings")), Dictionary(show_intent.get("payload", {})), "" if preloaded else resolved_return_target)
 	_set_visible_layer(settings_layer)
 	_rebuild_settings_list()
 	_update_settings_ui()
 
 
 func _show_settings_category(category_key: String) -> void:
-	settings_category = category_key
-	settings_index = 0
-	settings_rebind_action = ""
+	_apply_settings_category_intent(_settings_category_intent(category_key))
 	_rebuild_settings_list()
 	_update_settings_ui()
 
 
 func _show_training_config(clear_imports: bool = false) -> void:
-	if clear_imports:
+	var config_intent := _training_config_intent(clear_imports)
+	if bool(config_intent.get("clear_imports", false)):
 		training_import_blueprint = {}
 		training_import_role_key = ""
 		training_import_units = []
-	if not _prepare_training_battle_loadouts(false):
+	_commit_training_config_intent(config_intent)
+	if bool(config_intent.get("prepare_loadouts", true)) and not _prepare_training_battle_loadouts(false):
 		var note := training_import_error_note if training_import_error_note != "" else "INVALID: training configuration failed."
 		if editor_summary_label != null and game_state == STATE_EDITOR:
 			editor_summary_label.text = "训练配置失败：%s" % _localized_system_text(note) if _ui_is_zh() else "Training config failed: %s" % note
@@ -15553,24 +16001,27 @@ func _show_training_config(clear_imports: bool = false) -> void:
 			saved_unit_hint_label.text = "训练配置失败：%s" % _localized_system_text(note) if _ui_is_zh() else "Training config failed: %s" % note
 		_play_sfx_wave("alarm", 170.0, 0.08, -16.0)
 		return
-	_show_scout(MODE_TRAINING)
+	_show_scout(String(config_intent.get("handoff_mode", MODE_TRAINING)))
 
 
 func _show_scout(mode: String, preloaded: bool = false) -> void:
-	if not preloaded and _should_queue_loading_transition(STATE_SCOUT):
+	var loading_queued := not preloaded and _should_queue_loading_transition(STATE_SCOUT)
+	var show_intent := _training_scout_show_intent(mode, preloaded, loading_queued)
+	if loading_queued:
 		pending_battle_mode = mode
 		queue_loading_transition(STATE_SCOUT, "scout:%s" % mode, preload_scout_content(), Callable(self, "_show_scout").bind(mode, true))
 		return
 	_restore_ai_side_roster_mapping()
 	pending_battle_mode = mode
-	if mode == MODE_TRAINING:
+	if bool(show_intent.get("reset_training_seat", mode == MODE_TRAINING)):
 		training_seat_confirmed = false
 	if mode != MODE_TRAINING:
 		_prepare_matchup_sortie_selection(mode)
-	scout_timer = SCOUT_SECONDS
-	scout_selected_entry = {"role": "hero", "index": 0}
-	scout_sortie_player_id = 1
-	scout_selected_player_id = 2
+	if bool(show_intent.get("reset_scout_selection", true)):
+		scout_timer = SCOUT_SECONDS
+		scout_selected_entry = {"role": "hero", "index": 0}
+		scout_sortie_player_id = 1
+		scout_selected_player_id = 2
 	if mode == MODE_AI and ai_battle_seat == 3:
 		scout_sortie_player_id = 1
 	if scout_hint_label != null:
@@ -15582,7 +16033,7 @@ func _show_scout(mode: String, preloaded: bool = false) -> void:
 			scout_hint_label.text = "选择当前屏幕视角 P1/P2/P3；双方仍按出战规则入场。" if _ui_is_zh() else "Choose this screen's P1/P2/P3 view; both sides still enter by sortie rules."
 		else:
 			scout_hint_label.text = "双方完整队伍已公开。每方在此按%s选择出战单位，右键设首发。" % _match_format_name()
-	_transition_page(STATE_SCOUT, "scout:%s" % mode, {"mode": mode})
+	_transition_page(STATE_SCOUT, String(show_intent.get("reason", "scout:%s" % mode)), Dictionary(show_intent.get("payload", {"mode": mode})))
 	_set_visible_layer(scout_layer)
 	_update_scout_ui()
 
@@ -16518,11 +16969,14 @@ func _start_battle(mode: String, preloaded: bool = false) -> void:
 
 func _begin_battle(mode: String, preloaded: bool = false, reason: String = "") -> void:
 	var nav_reason := reason if reason != "" else "battle:%s" % mode
-	if not preloaded and _should_queue_loading_transition(STATE_BATTLE):
+	var loading_queued := not preloaded and _should_queue_loading_transition(STATE_BATTLE)
+	var show_intent := _battle_mode_show_intent(mode, preloaded, loading_queued, nav_reason, false)
+	if loading_queued:
 		queue_loading_transition(STATE_BATTLE, nav_reason, preload_battle_content(mode), Callable(self, "_begin_battle").bind(mode, true, nav_reason))
 		return
-	battle_mode = mode
-	_transition_page(STATE_BATTLE, nav_reason, {"mode": mode})
+	battle_mode = String(show_intent.get("battle_mode", mode))
+	_commit_battle_mode_show_intent(show_intent)
+	_transition_page(STATE_BATTLE, String(show_intent.get("reason", nav_reason)), Dictionary(show_intent.get("payload", {"mode": battle_mode})))
 	game_over = false
 	camera_center = 0.0
 	camera_lane_center = 0.0
@@ -17232,19 +17686,11 @@ func _first_editor_torso_node_index() -> int:
 
 func _handle_menu_input() -> void:
 	if Input.is_action_just_pressed("menu_up"):
-		if menu_controller != null:
-			menu_index = menu_controller.move_selection(-1)
-		else:
-			menu_index = _wrapped_index(menu_index - 1, MENU_ITEMS.size())
-		_update_menu_ui()
+		_apply_menu_input_action("menu_up")
 	elif Input.is_action_just_pressed("menu_down"):
-		if menu_controller != null:
-			menu_index = menu_controller.move_selection(1)
-		else:
-			menu_index = _wrapped_index(menu_index + 1, MENU_ITEMS.size())
-		_update_menu_ui()
+		_apply_menu_input_action("menu_down")
 	elif Input.is_action_just_pressed("menu_confirm"):
-		_activate_menu_item(menu_index)
+		_apply_menu_input_action("menu_confirm")
 
 
 func _handle_global_ui_mouse_input(event: InputEvent) -> bool:
@@ -17567,15 +18013,12 @@ func _handle_menu_button_gui_input(event: InputEvent, index: int) -> void:
 
 
 func _hover_menu_item(index: int) -> void:
-	if menu_controller != null:
-		menu_index = menu_controller.select_index(index)
-	else:
-		menu_index = clampi(index, 0, MENU_ITEMS.size() - 1)
+	_apply_menu_selection_intent(_menu_select_index_intent(index))
 	_update_menu_ui()
 
 
 func _activate_menu_item(index: int) -> void:
-	var action := menu_controller.main_menu_action(index) if menu_controller != null else {"action": "", "index": index}
+	var action := _menu_main_action(index)
 	match String(action.get("action", "")):
 		"training_config":
 			_show_training_config(true)
@@ -17594,6 +18037,76 @@ func _activate_menu_item(index: int) -> void:
 			get_tree().quit()
 
 
+func _menu_move_selection_intent(delta: int) -> Dictionary:
+	if menu_mode_owner != null:
+		return menu_mode_owner.move_selection(delta, menu_index, MENU_ITEMS.size())
+	return {
+		"handled": MENU_ITEMS.size() > 0,
+		"selected_index": _wrapped_index(menu_index + delta, MENU_ITEMS.size()),
+		"used_controller": false,
+	}
+
+
+func _menu_select_index_intent(index: int) -> Dictionary:
+	if menu_mode_owner != null:
+		return menu_mode_owner.select_index(index, MENU_ITEMS.size())
+	return {
+		"handled": MENU_ITEMS.size() > 0,
+		"selected_index": clampi(index, 0, MENU_ITEMS.size() - 1),
+		"used_controller": false,
+	}
+
+
+func _menu_input_action_intent(action_name: String) -> Dictionary:
+	if menu_mode_owner != null:
+		return menu_mode_owner.input_action_intent(action_name, menu_index, MENU_ITEMS.size())
+	match action_name:
+		"menu_up":
+			var up_intent := _menu_move_selection_intent(-1)
+			up_intent["kind"] = "selection"
+			up_intent["input_action"] = action_name
+			return up_intent
+		"menu_down":
+			var down_intent := _menu_move_selection_intent(1)
+			down_intent["kind"] = "selection"
+			down_intent["input_action"] = action_name
+			return down_intent
+		"menu_confirm":
+			return {
+				"handled": MENU_ITEMS.size() > 0,
+				"kind": "activate",
+				"input_action": action_name,
+				"index": menu_index,
+			}
+	return {"handled": false, "kind": "", "input_action": action_name}
+
+
+func _apply_menu_input_action(action_name: String) -> void:
+	var intent := _menu_input_action_intent(action_name)
+	if not bool(intent.get("handled", false)):
+		return
+	match String(intent.get("kind", "")):
+		"selection":
+			_apply_menu_selection_intent(intent)
+			_update_menu_ui()
+		"activate":
+			_activate_menu_item(int(intent.get("index", menu_index)))
+
+
+func _apply_menu_selection_intent(intent: Dictionary) -> void:
+	if not bool(intent.get("handled", false)):
+		return
+	menu_index = int(intent.get("selected_index", menu_index))
+
+
+func _menu_main_action(index: int) -> Dictionary:
+	if menu_mode_owner != null:
+		return menu_mode_owner.main_menu_action(index)
+	if menu_controller != null:
+		return menu_controller.main_menu_action(index)
+	return {"action": "", "index": index}
+
+
 func _handle_scout_input(delta: float) -> void:
 	if Input.is_action_just_pressed("menu_back"):
 		_show_menu()
@@ -17609,21 +18122,26 @@ func _handle_scout_input(delta: float) -> void:
 
 
 func _try_begin_battle_from_scout() -> void:
-	if pending_battle_mode == MODE_TRAINING:
-		if not training_seat_confirmed:
-			scout_timer = maxf(scout_timer, 8.0)
-			if scout_hint_label != null:
-				scout_hint_label.text = "请先点击 P1、P2 或 P3 选择训练入场席位。" if _ui_is_zh() else "Choose P1, P2, or P3 before entering training."
-			_play_sfx_wave("alarm", 170.0, 0.08, -16.0)
-			_update_scout_ui()
-			return
-		if not _configure_training_sides_for_seat():
-			scout_timer = maxf(scout_timer, 8.0)
-			scout_hint_label.text = "训练入场失败：%s" % _localized_system_text(training_import_error_note) if _ui_is_zh() else "Training entry failed: %s" % training_import_error_note
-			_update_scout_ui()
-			return
-		_begin_battle(pending_battle_mode, true)
-		return
+	var training_begin_intent := _training_begin_from_scout_intent()
+	if bool(training_begin_intent.get("handled", false)):
+		match String(training_begin_intent.get("action", "")):
+			"require_training_seat":
+				scout_timer = maxf(scout_timer, 8.0)
+				if scout_hint_label != null:
+					scout_hint_label.text = "请先点击 P1、P2 或 P3 选择训练入场席位。" if _ui_is_zh() else "Choose P1, P2, or P3 before entering training."
+				if bool(training_begin_intent.get("play_alarm", true)):
+					_play_sfx_wave("alarm", 170.0, 0.08, -16.0)
+				_update_scout_ui()
+				return
+			"configure_and_begin_training":
+				if not _configure_training_sides_for_seat():
+					scout_timer = maxf(scout_timer, 8.0)
+					if scout_hint_label != null:
+						scout_hint_label.text = "训练入场失败：%s" % _localized_system_text(training_import_error_note) if _ui_is_zh() else "Training entry failed: %s" % training_import_error_note
+					_update_scout_ui()
+					return
+				_begin_battle(String(training_begin_intent.get("pending_mode", pending_battle_mode)), true)
+				return
 	_normalize_initial_sortie_for_cost(1)
 	_normalize_initial_sortie_for_cost(2)
 	_ensure_sortie_loadout(1)
@@ -51499,7 +52017,7 @@ func _update_music() -> void:
 
 
 func _update_menu_ui() -> void:
-	if menu_controller == null or menu_view == null:
+	if menu_mode_owner == null and (menu_controller == null or menu_view == null):
 		return
 	var summary := _team_summary(1)
 	var starter := _starter_sortie_entry(1)
@@ -51513,7 +52031,10 @@ func _update_menu_ui() -> void:
 		_sortie_entry_label(1, starter),
 		"合法" if bool(summary.get("valid", false)) else "需要编辑",
 	]
-	menu_view.update_main_menu(menu_controller.main_menu_model(ui_language, ai_battle_seat, _match_format_short(), team_status))
+	if menu_mode_owner != null and menu_mode_owner.update_main_menu(ui_language, ai_battle_seat, _match_format_short(), team_status):
+		return
+	if menu_controller != null and menu_view != null:
+		menu_view.update_main_menu(menu_controller.main_menu_model(ui_language, ai_battle_seat, _match_format_short(), team_status))
 
 
 func _scout_opponent_player_id() -> int:
