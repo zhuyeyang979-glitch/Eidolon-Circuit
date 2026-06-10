@@ -15352,6 +15352,114 @@ func _apply_settings_category_intent(intent: Dictionary) -> void:
 		settings_mode_owner.commit_category(intent)
 
 
+func _settings_input_intent(action_name: String) -> Dictionary:
+	if settings_mode_owner != null:
+		return settings_mode_owner.input_intent(action_name, settings_category, settings_index, settings_labels.size(), settings_rebind_action)
+	var resolved_action := action_name.strip_edges()
+	var resolved_category := settings_category.strip_edges()
+	if resolved_category == "":
+		resolved_category = "root"
+	if settings_rebind_action != "":
+		if resolved_action == "menu_back":
+			return {
+				"handled": true,
+				"kind": "cancel_rebind",
+				"input_action": resolved_action,
+				"category_key": resolved_category,
+				"rebind_action": settings_rebind_action,
+				"bound": false,
+			}
+		return {
+			"handled": false,
+			"kind": "ignore",
+			"input_action": resolved_action,
+			"category_key": resolved_category,
+			"rebind_action": settings_rebind_action,
+			"bound": false,
+		}
+	match resolved_action:
+		"menu_back":
+			if resolved_category != "root":
+				return {
+					"handled": true,
+					"kind": "show_category",
+					"input_action": resolved_action,
+					"category_key": "root",
+					"bound": false,
+				}
+			return {
+				"handled": true,
+				"kind": "show_menu",
+				"input_action": resolved_action,
+				"category_key": resolved_category,
+				"bound": false,
+			}
+		"menu_confirm", "p1_left", "p1_right":
+			var activate_intent := _settings_item_activation_intent(settings_index)
+			activate_intent["input_action"] = resolved_action
+			return activate_intent
+		"menu_up":
+			return _settings_selection_intent(-1, resolved_action, resolved_category)
+		"menu_down":
+			return _settings_selection_intent(1, resolved_action, resolved_category)
+	return {"handled": false, "kind": "ignore", "input_action": resolved_action, "category_key": resolved_category, "bound": false}
+
+
+func _settings_selection_intent(delta: int, action_name: String, category_key: String) -> Dictionary:
+	if settings_labels.is_empty():
+		return {
+			"handled": false,
+			"kind": "select",
+			"input_action": action_name,
+			"category_key": category_key,
+			"selected_index": 0,
+			"bound": false,
+		}
+	return {
+		"handled": true,
+		"kind": "select",
+		"input_action": action_name,
+		"category_key": category_key,
+		"selected_index": _wrapped_index(settings_index + delta, settings_labels.size()),
+		"bound": false,
+	}
+
+
+func _settings_item_activation_intent(index: int) -> Dictionary:
+	if settings_mode_owner != null:
+		return settings_mode_owner.activation_intent(index, settings_labels.size())
+	if settings_labels.is_empty():
+		return {
+			"handled": false,
+			"kind": "activate",
+			"index": index,
+			"bound": false,
+		}
+	return {
+		"handled": true,
+		"kind": "activate",
+		"index": clampi(index, 0, settings_labels.size() - 1),
+		"bound": false,
+	}
+
+
+func _apply_settings_input_intent(intent: Dictionary) -> void:
+	if not bool(intent.get("handled", false)):
+		return
+	match String(intent.get("kind", "")):
+		"cancel_rebind":
+			_cancel_battle_input_rebind()
+		"show_menu":
+			_show_menu()
+		"show_category":
+			_show_settings_category(String(intent.get("category_key", "root")))
+		"select":
+			settings_index = int(intent.get("selected_index", settings_index))
+			_update_settings_ui()
+		"activate":
+			_activate_settings_item(int(intent.get("index", settings_index)))
+
+
 func _training_config_intent(clear_imports: bool) -> Dictionary:
 	if training_mode_owner != null:
 		return training_mode_owner.config_intent(clear_imports)
@@ -18243,25 +18351,22 @@ func _handle_editor_input() -> void:
 func _handle_settings_input() -> void:
 	if settings_rebind_action != "":
 		if Input.is_action_just_pressed("menu_back"):
-			_cancel_battle_input_rebind()
+			_apply_settings_input_intent(_settings_input_intent("menu_back"))
 		return
 	if Input.is_action_just_pressed("menu_back"):
-		if settings_category != "root":
-			_show_settings_category("root")
-		else:
-			_show_menu()
+		_apply_settings_input_intent(_settings_input_intent("menu_back"))
 		return
 	if Input.is_action_just_pressed("menu_confirm"):
-		_activate_settings_item(settings_index)
+		_apply_settings_input_intent(_settings_input_intent("menu_confirm"))
 		return
 	if Input.is_action_just_pressed("menu_up"):
-		settings_index = _wrapped_index(settings_index - 1, max(1, settings_labels.size()))
-		_update_settings_ui()
+		_apply_settings_input_intent(_settings_input_intent("menu_up"))
 	elif Input.is_action_just_pressed("menu_down"):
-		settings_index = _wrapped_index(settings_index + 1, max(1, settings_labels.size()))
-		_update_settings_ui()
-	elif Input.is_action_just_pressed("p1_left") or Input.is_action_just_pressed("p1_right"):
-		_activate_settings_item(settings_index)
+		_apply_settings_input_intent(_settings_input_intent("menu_down"))
+	elif Input.is_action_just_pressed("p1_left"):
+		_apply_settings_input_intent(_settings_input_intent("p1_left"))
+	elif Input.is_action_just_pressed("p1_right"):
+		_apply_settings_input_intent(_settings_input_intent("p1_right"))
 
 
 func _select_settings_item(index: int) -> void:
@@ -18270,9 +18375,10 @@ func _select_settings_item(index: int) -> void:
 
 
 func _activate_settings_item(index: int) -> void:
-	settings_index = clampi(index, 0, max(0, settings_labels.size() - 1))
-	if settings_index < 0 or settings_index >= settings_labels.size():
+	var intent := _settings_item_activation_intent(index)
+	if not bool(intent.get("handled", false)):
 		return
+	settings_index = int(intent.get("index", settings_index))
 	var button: Button = settings_labels[settings_index]
 	if button.has_meta("video_action"):
 		match String(button.get_meta("video_action", "")):
