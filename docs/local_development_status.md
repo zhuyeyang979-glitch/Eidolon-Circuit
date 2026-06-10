@@ -1,32 +1,35 @@
 # Eidolon Circuit Local Development Status
 
-Last updated: 2026-06-09
+Last updated: 2026-06-10
 
 This file is the local execution board for the active Linear project `Eidolon Circuit Codebase Slimdown 2026-05-27`. The checked-in backlog remains `docs/development_backlog.md`; this file records local baseline and the next safe implementation order between Linear updates.
+
+For the short current handoff, see `docs/next_development_handoff.md`.
 
 ## Current Baseline
 
 - Project root: `E:\New project`
-- Branch: `safety/eidolon-health-audit-20260525-004915`
-- HEAD: `e4ab183`
+- Active integration branch: `codex/yhzlxp-eidolon-work`
+- Active integration HEAD: `7d44ab2`
+- GitHub PR: `https://github.com/zhuyeyang979-glitch/Eidolon-Circuit/pull/2`
+- Local follow-up branch: `codex/future-dev-handoff`
 - Git remote: `origin https://github.com/zhuyeyang979-glitch/Eidolon-Circuit.git`
-- Worktree state at baseline: clean
+- Worktree state at integration baseline: clean
 - Godot version: `tools/godot-4.6.2/Godot_v4.6.2-stable_win64_console.exe`
 
 ## Current Local Delta
 
-- EC-SLIM-006 follow-up: philosophy `muscle` / `limb_muscle` safe-first live backfill.
-- Old torso, limb, melee, mapped projectile, and barrier-panel designs now normalize through existing catalog/runtime fields so they can appear in unit edit, save topology, and enter training/battle runtime data.
-- Future projectile/control families remain frozen: seeker, MIRV, rotary/barrage/starburst/eclipse/light-sink/homing/area entries and the old dynamic gun/tether/hijack module entrances.
-- Rule guard: philosophy muscle backfill must not invent new action profiles, projectile behavior, AI, save schema, input, settings, or HUD. It only exposes existing action/profile/barrier/runtime facts.
-- New/updated probes: `philosophy_muscle_live_catalog_probe`, `philosophy_muscle_editor_runtime_probe`, `backfilled_projectile_weapons_live_probe`, `weapon_subcategory_filter_probe`, and `barrier_panel_probe`.
+- PR #2 adopts yhzlxp's battle/action service boundary work and merges in the architecture guard branch.
+- New architecture guard files are present for `AppModeHost`, mode owner stubs, `BattleState`, and their contract probes.
+- This handoff branch only updates development handoff documentation; it does not change runtime behavior, save format, input bindings, or UI layout.
+- Continue future work as stacked branches from `codex/yhzlxp-eidolon-work` until PR #2 lands on `main`.
 
 ## Large File Watch
 
 | File | Lines | Bytes | Local Risk |
 | --- | ---: | ---: | --- |
-| `scripts/main.gd` | 51650 | 3101256 | Still the primary extraction target. |
-| `scripts/fighter.gd` | 4617 | 224371 | Keep as Node shell; move pure heat/movement/action rules out gradually. |
+| `scripts/main.gd` | 53675 | 3170433 | Still the primary extraction target; move ownership into mode/app/service boundaries. |
+| `scripts/fighter.gd` | 4682 | 231641 | Keep as Node shell; move pure heat/movement/action rules out gradually. |
 | `scripts/assembly_board_renderer.gd` | 1911 | 107736 | Shared board/runtime art source; avoid duplicate combat visuals. |
 | `scripts/part_art.gd` | 746 | 32890 | Good candidate for small visual taxonomy helpers. |
 | `scripts/motion_budget.gd` | 40 | 2327 | Small and stable; preserve as canonical motion formula surface. |
@@ -35,6 +38,8 @@ This file is the local execution board for the active Linear project `Eidolon Ci
 
 - `tools/run_godot_checked.ps1 -Headless -CheckOnly -TimeoutSec 120`: passed.
 - Governance mirror probes from `.github/workflows/godot-governance.yml`: all 16 passed.
+- PR #2 GitHub Actions `Godot Governance` run #32: passed.
+- Architecture guard probes passed locally: `app_mode_host_contract_probe`, `app_root_boundary_probe`, `battle_state_contract_probe`, `battle_mode_contract_probe`, `menu_mode_contract_probe`, `team_edit_mode_contract_probe`, `saved_units_mode_contract_probe`, `settings_mode_contract_probe`, and `training_mode_contract_probe`.
 - Godot ObjectDB leak warnings appeared on some runs; no functional assertion failed.
 
 Passed governance probes:
