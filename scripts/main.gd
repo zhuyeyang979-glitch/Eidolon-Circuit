@@ -12237,26 +12237,20 @@ func _confirm_delete_saved_units() -> void:
 
 
 func _set_saved_unit_filter(filter_key: String) -> void:
-	if saved_units_controller != null:
-		_apply_saved_unit_selection_state(saved_units_controller.selection_state_for_filter(filter_key))
-	else:
-		saved_unit_filter = filter_key
-		saved_unit_page = 0
-		saved_unit_selected_index = -1
-		saved_unit_hovered_path = ""
-		saved_unit_hovered_index = -1
-		saved_unit_detail_path = ""
-	_update_saved_units_ui()
+	_apply_saved_units_filter_intent(_saved_units_filter_intent(filter_key))
 
 
 func _select_saved_unit_card(card_index: int) -> void:
+	var select_intent := _saved_units_card_select_intent(card_index)
+	if not bool(select_intent.get("handled", false)):
+		return
 	if saved_units_controller != null:
 		var state: Dictionary = saved_units_controller.selection_state_for_card(card_index, saved_unit_page, saved_unit_buttons.size(), _saved_unit_filtered_entries())
 		if not bool(state.get("valid", false)):
 			return
 		_apply_saved_unit_selection_state(state)
 	else:
-		var absolute_index := _saved_unit_absolute_index_for_card(card_index)
+		var absolute_index := int(select_intent.get("absolute_index", _saved_unit_absolute_index_for_card(card_index)))
 		var entry := _saved_unit_entry_at_absolute_index(absolute_index)
 		if entry.is_empty():
 			return
@@ -12310,11 +12304,7 @@ func _handle_saved_unit_card_input(event: InputEvent, card_index: int) -> void:
 	var mouse_event := event as InputEventMouseButton
 	if not mouse_event.pressed or mouse_event.button_index != MOUSE_BUTTON_RIGHT:
 		return
-	var entry := _saved_unit_entry_at_absolute_index(_saved_unit_absolute_index_for_card(card_index))
-	if entry.is_empty():
-		return
-	_toggle_saved_unit_selection(entry)
-	_mark_input_as_handled()
+	_apply_saved_units_card_pointer_intent(_saved_units_card_pointer_intent("right", card_index))
 
 
 func _handle_saved_unit_card_text_input(event: InputEvent, card_index: int) -> void:
@@ -12324,14 +12314,9 @@ func _handle_saved_unit_card_text_input(event: InputEvent, card_index: int) -> v
 	if not mouse_event.pressed:
 		return
 	if mouse_event.button_index == MOUSE_BUTTON_LEFT:
-		_select_saved_unit_card(card_index)
-		_mark_input_as_handled()
+		_apply_saved_units_card_pointer_intent(_saved_units_card_pointer_intent("left", card_index))
 	elif mouse_event.button_index == MOUSE_BUTTON_RIGHT:
-		var entry := _saved_unit_entry_at_absolute_index(_saved_unit_absolute_index_for_card(card_index))
-		if entry.is_empty():
-			return
-		_toggle_saved_unit_selection(entry)
-		_mark_input_as_handled()
+		_apply_saved_units_card_pointer_intent(_saved_units_card_pointer_intent("right", card_index))
 
 
 func _update_saved_units_hover(mouse_position: Vector2) -> void:
@@ -12445,6 +12430,13 @@ func _show_unit_editor_preserve_loaded_blueprint() -> void:
 
 
 func _saved_units_action(action_key: String) -> void:
+	_apply_saved_units_action_intent(_saved_units_action_intent(action_key))
+
+
+func _apply_saved_units_action_intent(intent: Dictionary) -> void:
+	if not bool(intent.get("handled", false)):
+		return
+	var action_key := String(intent.get("action_key", ""))
 	if saved_units_controller != null:
 		var entries := _saved_unit_filtered_entries()
 		match action_key:
@@ -12602,20 +12594,11 @@ func _show_saved_units_library(focus_path: String = "", return_context: String =
 
 func _handle_saved_units_input() -> void:
 	if Input.is_action_just_pressed("menu_back"):
-		if saved_unit_delete_panel != null and saved_unit_delete_panel.visible:
-			_cancel_delete_saved_units()
-			return
-		_page_options_back("saved_units")
+		_apply_saved_units_input_intent(_saved_units_input_intent("menu_back"))
 	elif Input.is_action_just_pressed("menu_up"):
-		saved_unit_selected_index = maxi(0, saved_unit_selected_index - 1)
-		saved_unit_page = int(floor(float(saved_unit_selected_index) / float(maxi(1, saved_unit_buttons.size()))))
-		_update_saved_units_ui()
+		_apply_saved_units_input_intent(_saved_units_input_intent("menu_up"))
 	elif Input.is_action_just_pressed("menu_down"):
-		var entries := _saved_unit_filtered_entries()
-		if not entries.is_empty():
-			saved_unit_selected_index = clampi(saved_unit_selected_index + 1, 0, entries.size() - 1)
-			saved_unit_page = int(floor(float(saved_unit_selected_index) / float(maxi(1, saved_unit_buttons.size()))))
-			_update_saved_units_ui()
+		_apply_saved_units_input_intent(_saved_units_input_intent("menu_down"))
 
 
 func _update_saved_units_ui() -> void:
@@ -15304,6 +15287,160 @@ func _saved_units_cleanup_intent(reason: String = "", payload: Dictionary = {}) 
 func _commit_saved_units_cleanup(intent: Dictionary) -> void:
 	if saved_units_mode_owner != null:
 		saved_units_mode_owner.commit_cleanup(intent)
+
+
+func _saved_units_filter_intent(filter_key: String) -> Dictionary:
+	if saved_units_mode_owner != null:
+		return saved_units_mode_owner.filter_intent(filter_key)
+	var resolved_filter := filter_key.strip_edges()
+	if resolved_filter == "":
+		resolved_filter = "all"
+	return {
+		"handled": true,
+		"kind": "filter",
+		"filter_key": resolved_filter,
+		"reset_page": true,
+		"clear_selection": true,
+		"clear_hover": true,
+		"clear_detail": true,
+		"bound": false,
+	}
+
+
+func _apply_saved_units_filter_intent(intent: Dictionary) -> void:
+	if not bool(intent.get("handled", false)):
+		return
+	var filter_key := String(intent.get("filter_key", saved_unit_filter))
+	if saved_units_controller != null:
+		_apply_saved_unit_selection_state(saved_units_controller.selection_state_for_filter(filter_key))
+	else:
+		saved_unit_filter = filter_key
+		if bool(intent.get("reset_page", true)):
+			saved_unit_page = 0
+		if bool(intent.get("clear_selection", true)):
+			saved_unit_selected_index = -1
+		if bool(intent.get("clear_hover", true)):
+			saved_unit_hovered_path = ""
+			saved_unit_hovered_index = -1
+		if bool(intent.get("clear_detail", true)):
+			saved_unit_detail_path = ""
+	_update_saved_units_ui()
+
+
+func _saved_units_card_select_intent(card_index: int) -> Dictionary:
+	var entries := _saved_unit_filtered_entries()
+	if saved_units_mode_owner != null:
+		return saved_units_mode_owner.card_select_intent(card_index, saved_unit_page, saved_unit_buttons.size(), entries.size())
+	var absolute_index := _saved_unit_absolute_index_for_card(card_index)
+	return {
+		"handled": absolute_index >= 0 and absolute_index < entries.size(),
+		"kind": "select_card",
+		"card_index": card_index,
+		"absolute_index": absolute_index,
+		"bound": false,
+	}
+
+
+func _saved_units_card_pointer_intent(pointer_button: String, card_index: int) -> Dictionary:
+	var entries := _saved_unit_filtered_entries()
+	if saved_units_mode_owner != null:
+		return saved_units_mode_owner.card_pointer_intent(pointer_button, card_index, saved_unit_page, saved_unit_buttons.size(), entries.size())
+	var select_intent := _saved_units_card_select_intent(card_index)
+	select_intent["pointer_button"] = pointer_button
+	match pointer_button:
+		"left":
+			select_intent["kind"] = "select_card"
+		"right":
+			select_intent["kind"] = "toggle_card"
+		_:
+			select_intent["handled"] = false
+			select_intent["kind"] = "ignore"
+	return select_intent
+
+
+func _apply_saved_units_card_pointer_intent(intent: Dictionary) -> void:
+	if not bool(intent.get("handled", false)):
+		return
+	match String(intent.get("kind", "")):
+		"select_card":
+			_select_saved_unit_card(int(intent.get("card_index", 0)))
+			_mark_input_as_handled()
+		"toggle_card":
+			var entry := _saved_unit_entry_at_absolute_index(int(intent.get("absolute_index", -1)))
+			if entry.is_empty():
+				return
+			_toggle_saved_unit_selection(entry)
+			_mark_input_as_handled()
+
+
+func _saved_units_input_intent(action_name: String) -> Dictionary:
+	var entries := _saved_unit_filtered_entries()
+	var delete_panel_visible := saved_unit_delete_panel != null and saved_unit_delete_panel.visible
+	if saved_units_mode_owner != null:
+		return saved_units_mode_owner.input_intent(action_name, saved_unit_selected_index, entries.size(), saved_unit_buttons.size(), delete_panel_visible)
+	match action_name:
+		"menu_back":
+			return {
+				"handled": true,
+				"kind": "cancel_delete" if delete_panel_visible else "show_options",
+				"input_action": action_name,
+				"bound": false,
+			}
+		"menu_up":
+			var up_index := 0 if entries.is_empty() else maxi(0, saved_unit_selected_index - 1)
+			return {
+				"handled": true,
+				"kind": "select_index",
+				"input_action": action_name,
+				"selected_index": up_index,
+				"page": int(floor(float(up_index) / float(maxi(1, saved_unit_buttons.size())))),
+				"bound": false,
+			}
+		"menu_down":
+			if entries.is_empty():
+				return {"handled": false, "kind": "select_index", "input_action": action_name, "selected_index": saved_unit_selected_index, "page": saved_unit_page, "bound": false}
+			var down_index := clampi(saved_unit_selected_index + 1, 0, entries.size() - 1)
+			return {
+				"handled": true,
+				"kind": "select_index",
+				"input_action": action_name,
+				"selected_index": down_index,
+				"page": int(floor(float(down_index) / float(maxi(1, saved_unit_buttons.size())))),
+				"bound": false,
+			}
+	return {"handled": false, "kind": "ignore", "input_action": action_name, "bound": false}
+
+
+func _apply_saved_units_input_intent(intent: Dictionary) -> void:
+	if not bool(intent.get("handled", false)):
+		return
+	match String(intent.get("kind", "")):
+		"cancel_delete":
+			_cancel_delete_saved_units()
+		"show_options":
+			_page_options_back("saved_units")
+		"select_index":
+			saved_unit_selected_index = int(intent.get("selected_index", saved_unit_selected_index))
+			saved_unit_page = int(intent.get("page", saved_unit_page))
+			_update_saved_units_ui()
+
+
+func _saved_units_action_intent(action_key: String) -> Dictionary:
+	var entries := _saved_unit_filtered_entries()
+	var teams := _saved_teams_entries()
+	if saved_units_mode_owner != null:
+		return saved_units_mode_owner.action_intent(action_key, saved_unit_selected_index, entries.size(), saved_unit_selected_paths.size(), saved_team_selected_index, teams.size())
+	return {
+		"handled": true,
+		"kind": "legacy_action",
+		"action_key": action_key,
+		"selected_index": saved_unit_selected_index,
+		"entry_count": entries.size(),
+		"selected_count": saved_unit_selected_paths.size(),
+		"team_index": saved_team_selected_index,
+		"team_count": teams.size(),
+		"bound": false,
+	}
 
 
 func _settings_mode_show_intent(category_key: String, preloaded: bool, return_target: String, loading_queued: bool) -> Dictionary:
