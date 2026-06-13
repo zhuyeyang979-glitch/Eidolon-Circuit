@@ -221,6 +221,17 @@ func part_damage_intent(context: Dictionary) -> Dictionary:
 	return {"action": "none", "reason": "unknown_mode"}
 
 
+func melee_pair_impact_position_intent(context: Dictionary) -> Dictionary:
+	var a_position: Vector2 = context.get("a_position", Vector2.ZERO) if context.get("a_position", Vector2.ZERO) is Vector2 else Vector2.ZERO
+	var ab_delta: Vector2 = context.get("ab_delta", Vector2.ZERO) if context.get("ab_delta", Vector2.ZERO) is Vector2 else Vector2.ZERO
+	var ring_length := maxf(0.001, float(context.get("ring_length", 1.0)))
+	var b_near_x := a_position.x + ab_delta.x
+	return {
+		"action": "resolve_melee_pair_impact_position",
+		"position": Vector2(wrapf(lerpf(a_position.x, b_near_x, 0.5), 0.0, ring_length), a_position.y + ab_delta.y * 0.5),
+	}
+
+
 func momentum_response_intent(context: Dictionary) -> Dictionary:
 	match String(context.get("kind", "")):
 		"projectile_stagger":
@@ -267,6 +278,47 @@ func momentum_response_intent(context: Dictionary) -> Dictionary:
 				"attacker_momentum": maxf(0.0, float(context.get("attacker_momentum", 0.0))) * maxf(0.1, float(context.get("crush_stagger_mult", 1.0))),
 				"target_momentum": maxf(0.0, float(context.get("target_momentum", 0.0))),
 				"source": String(context.get("source", "attack")),
+			}
+		"melee_momentum_stagger_pair":
+			if not bool(context.get("unit_a_mech", false)) or not bool(context.get("unit_b_mech", false)):
+				return {"action": "none", "reason": "invalid_pair"}
+			var momentum_a := float(context.get("momentum_a", 0.0))
+			var momentum_b := float(context.get("momentum_b", 0.0))
+			var gap := absf(momentum_a - momentum_b)
+			var min_momentum := float(context.get("min_momentum", 0.0))
+			if gap < min_momentum:
+				return {"action": "none", "reason": "below_min_momentum", "gap": gap}
+			var staggered_side := "a" if momentum_a < momentum_b else "b"
+			if bool(context.get("combo_active", false)):
+				return {"action": "none", "reason": "combo_active", "gap": gap, "staggered_side": staggered_side}
+			var threshold := float(context.get("threshold", 0.0))
+			var required_gap := threshold
+			if String(context.get("source", "")) == "collision":
+				required_gap = maxf(required_gap, min_momentum * float(context.get("passive_contact_stagger_min_mult", 1.0)))
+			if gap <= required_gap:
+				return {"action": "none", "reason": "below_required_gap", "gap": gap, "required_gap": required_gap, "staggered_side": staggered_side}
+			var now := float(context.get("now", 0.0))
+			if now < float(context.get("gate_until", 0.0)):
+				return {"action": "none", "reason": "gate_active", "gap": gap, "required_gap": required_gap, "staggered_side": staggered_side}
+			var ratio := (gap - required_gap) / maxf(float(context.get("threshold_floor", 1.0)), required_gap)
+			var duration := clampf(
+				float(context.get("base_seconds", 0.0)) + ratio * float(context.get("ratio_seconds", 0.0)),
+				0.0,
+				float(context.get("max_seconds", 0.0))
+			)
+			if duration <= 0.03:
+				return {"action": "none", "reason": "short_duration", "duration": duration, "gap": gap, "required_gap": required_gap, "staggered_side": staggered_side}
+			return {
+				"action": "apply_melee_pair_stagger",
+				"staggered_side": staggered_side,
+				"source_attacker_side": "b" if staggered_side == "a" else "a",
+				"gap": gap,
+				"required_gap": required_gap,
+				"threshold": threshold,
+				"duration": duration,
+				"gate_until": now + float(context.get("gate_seconds", 0.0)),
+				"max_momentum": maxf(momentum_a, momentum_b),
+				"ripple_scale": clampf(duration / maxf(0.1, float(context.get("max_seconds", 0.0))), 0.8, 1.45),
 			}
 		"hit_displacement_direct":
 			var event_momentum := maxf(float(context.get("event_momentum", 0.0)), float(context.get("fallback_momentum", 0.0)))

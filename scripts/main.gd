@@ -10,6 +10,7 @@ const GameStateStore = preload("res://scripts/state/game_state_store.gd")
 const DirtyGraph = preload("res://scripts/state/dirty_graph.gd")
 const DerivedStateCache = preload("res://scripts/state/derived_state_cache.gd")
 const HotPathProfiler = preload("res://scripts/perf/hot_path_profiler.gd")
+const AppModeHost = preload("res://scripts/app/app_mode_host.gd")
 const PartZhNames = preload("res://scripts/data/part_zh_names.gd")
 const GpuGeometryService = preload("res://scripts/services/gpu_geometry_service.gd")
 const PartCatalogService = preload("res://scripts/services/part_catalog_service.gd")
@@ -46,6 +47,12 @@ const DataRuleService = preload("res://scripts/services/data_rule_service.gd")
 const UILifecycleService = preload("res://scripts/services/ui_lifecycle_service.gd")
 const LoadingLifecycleService = preload("res://scripts/services/loading_lifecycle_service.gd")
 const NavigationService = preload("res://scripts/services/navigation_service.gd")
+const BattleMode = preload("res://scripts/modes/battle_mode.gd")
+const MenuMode = preload("res://scripts/modes/menu_mode.gd")
+const SavedUnitsMode = preload("res://scripts/modes/saved_units_mode.gd")
+const SettingsMode = preload("res://scripts/modes/settings_mode.gd")
+const TeamEditMode = preload("res://scripts/modes/team_edit_mode.gd")
+const TrainingMode = preload("res://scripts/modes/training_mode.gd")
 const TeamEditController = preload("res://scripts/controllers/team_edit_controller.gd")
 const UnitEditorCatalogController = preload("res://scripts/controllers/unit_editor_catalog_controller.gd")
 const UnitEditorBoardController = preload("res://scripts/controllers/unit_editor_board_controller.gd")
@@ -8971,6 +8978,7 @@ var game_state_store: GameStateStore
 var dirty_graph: DirtyGraph
 var derived_state_cache: DerivedStateCache
 var hot_path_profiler: HotPathProfiler
+var app_mode_host: AppModeHost
 var gpu_geometry_service: GpuGeometryService
 var part_catalog_service: PartCatalogService
 var unit_stats_service: UnitStatsService
@@ -9005,16 +9013,22 @@ var unit_blueprint_validator: UnitBlueprintValidator
 var data_rule_service: DataRuleService
 var navigation_service: NavigationService
 var team_edit_controller: TeamEditController
+var team_edit_mode_owner: TeamEditMode
 var unit_editor_catalog_controller: UnitEditorCatalogController
 var unit_editor_board_controller: UnitEditorBoardController
 var editor_board_controller_missing_warned := false
 var battle_controller: BattleController
+var battle_mode_owner: BattleMode
 var saved_units_controller: SavedUnitsController
 var settings_controller: SettingsController
 var scout_controller: ScoutController
 var menu_controller: MenuController
 var loading_controller: LoadingController
 var menu_view: MenuView
+var menu_mode_owner: MenuMode
+var saved_units_mode_owner: SavedUnitsMode
+var settings_mode_owner: SettingsMode
+var training_mode_owner: TrainingMode
 var loading_auto_transitions_enabled := true
 var loading_transition_applying := false
 var loading_pending_callback := Callable()
@@ -9143,6 +9157,9 @@ var editor_save_feedback_is_error := false
 var training_import_blueprint := {}
 var training_import_role_key := ""
 var training_import_error_note := ""
+var training_readiness_status_key := ""
+var training_readiness_status_detail := ""
+var training_readiness_status_count := 0
 var editor_sort_panel: ColorRect
 var editor_sort_option_buttons: Array = []
 var editor_torso_detail_view: TorsoDetailPanelView
@@ -9258,6 +9275,8 @@ func _initialize_hot_path_state_layer() -> void:
 	dirty_graph = DirtyGraph.new()
 	derived_state_cache = DerivedStateCache.new()
 	hot_path_profiler = HotPathProfiler.new()
+	app_mode_host = AppModeHost.new()
+	app_mode_host.reset()
 	gpu_geometry_service = GpuGeometryService.new()
 	part_catalog_service = PartCatalogService.new()
 	part_catalog_service.bind(self)
@@ -9294,21 +9313,33 @@ func _initialize_hot_path_state_layer() -> void:
 	navigation_service.commit_transition(game_state, "ready")
 	team_edit_controller = TeamEditController.new()
 	team_edit_controller.bind(self, game_state_store, dirty_graph, derived_state_cache, hot_path_profiler)
+	team_edit_mode_owner = TeamEditMode.new()
+	team_edit_mode_owner.bind(self, team_edit_controller)
 	unit_editor_catalog_controller = UnitEditorCatalogController.new()
 	unit_editor_catalog_controller.bind(hot_path_profiler)
 	unit_editor_board_controller = UnitEditorBoardController.new()
 	battle_controller = BattleController.new()
 	battle_controller.bind(self, game_state_store, dirty_graph, derived_state_cache, hot_path_profiler, gpu_geometry_service)
+	battle_mode_owner = BattleMode.new()
+	battle_mode_owner.bind(self, battle_controller, battle_runtime_lifecycle_service)
 	saved_units_controller = SavedUnitsController.new()
 	saved_units_controller.bind(self, game_state_store, dirty_graph, derived_state_cache, hot_path_profiler)
+	saved_units_mode_owner = SavedUnitsMode.new()
+	saved_units_mode_owner.bind(self, saved_units_controller)
 	settings_controller = SettingsController.new()
 	settings_controller.bind(self, game_state_store, dirty_graph, derived_state_cache, hot_path_profiler)
+	settings_mode_owner = SettingsMode.new()
+	settings_mode_owner.bind(self, settings_controller)
 	scout_controller = ScoutController.new()
 	scout_controller.bind(self, game_state_store, dirty_graph, derived_state_cache, hot_path_profiler)
+	training_mode_owner = TrainingMode.new()
+	training_mode_owner.bind(self, scout_controller)
 	menu_controller = MenuController.new()
 	menu_controller.bind(self, game_state_store, dirty_graph, derived_state_cache, hot_path_profiler)
 	menu_view = MenuView.new()
 	menu_view.set_viewport_size(_ui_viewport_size())
+	menu_mode_owner = MenuMode.new()
+	menu_mode_owner.bind(self, menu_controller, menu_view)
 	loading_controller = LoadingController.new()
 	loading_controller.bind(game_state_store, dirty_graph, hot_path_profiler)
 	loading_auto_transitions_enabled = DisplayServer.get_name().to_lower() != "headless"
@@ -11027,10 +11058,12 @@ func _save_editor_current_unit_to_library(path: String = "") -> String:
 
 
 func _set_save_unit_failure_feedback(reason: String) -> void:
-	var clean_reason := reason.strip_edges()
-	if clean_reason == "":
-		clean_reason = "unknown validation failure"
+	var feedback := _save_unit_blocking_feedback(reason)
+	var clean_reason := String(feedback.get("reason", "unknown validation failure"))
+	var action_hint := String(feedback.get("action_hint", "")).strip_edges()
 	var message := ("保存失败：%s。" if _ui_is_zh() else "Save failed: %s.") % clean_reason
+	if action_hint != "":
+		message = "%s %s" % [message, action_hint]
 	if editor_summary_label != null:
 		editor_summary_label.text = message
 	editor_save_feedback_is_error = true
@@ -11038,6 +11071,21 @@ func _set_save_unit_failure_feedback(reason: String) -> void:
 		editor_save_unit_feedback_label.text = message
 		editor_save_unit_feedback_label.visible = true
 	_play_sfx_wave("alarm", 170.0, 0.08, -16.0)
+
+
+func _save_unit_blocking_feedback(reason: String) -> Dictionary:
+	if team_edit_controller != null:
+		return team_edit_controller.save_blocking_feedback(reason, _ui_is_zh())
+	var clean_reason := reason.strip_edges()
+	if clean_reason == "":
+		clean_reason = "unknown validation failure"
+	return {
+		"reason": clean_reason,
+		"action_key": "unknown",
+		"action_hint": "处理：先修复提示中的第一个非法条件，再重新保存。" if _ui_is_zh() else "Action: fix the first invalid condition named above, then save again.",
+		"field_path": "",
+		"summary": clean_reason,
+	}
 
 
 func _latest_saved_unit_named_for_role(unit_name: String, role_key: String) -> Dictionary:
@@ -11271,23 +11319,66 @@ func _request_deferred_saved_unit_cache_refresh(focus_path: String = "") -> void
 	call_deferred("_flush_deferred_saved_unit_cache_refresh")
 
 
-func _select_saved_unit_focus_path(path: String) -> bool:
-	if path == "":
-		return false
+func _select_saved_unit_focus_path(path: String) -> Dictionary:
+	var resolved_path := path.strip_edges()
+	if resolved_path == "":
+		return {
+			"found": false,
+			"missing": false,
+			"rejected": false,
+			"focus_path": "",
+			"saved_unit_focus_path": "",
+			"saved_unit_selected_index": -1,
+			"saved_unit_hovered_path": "",
+			"saved_unit_hovered_index": -1,
+			"saved_unit_detail_path": "",
+			"focus_notice_key": "",
+			"focus_notice_reason": "",
+		}
 	var entries := _saved_unit_filtered_entries()
 	if saved_units_controller != null:
-		var state: Dictionary = saved_units_controller.page_for_focus_path(entries, path, saved_unit_buttons.size())
-		if bool(state.get("found", false)):
-			saved_unit_selected_index = int(state.get("selected_index", -1))
-			saved_unit_page = int(state.get("page", 0))
-			return true
+		var state: Dictionary = saved_units_controller.focus_state_for_path(entries, resolved_path, saved_unit_buttons.size(), saved_unit_page)
+		_apply_saved_unit_selection_state(state)
+		return state
 	else:
 		for i in range(entries.size()):
-			if _saved_unit_entry_path(entries[i]) == path:
-				saved_unit_selected_index = i
-				saved_unit_page = int(floor(float(i) / float(maxi(1, saved_unit_buttons.size()))))
-				return true
-	return false
+			if not (entries[i] is Dictionary):
+				continue
+			var entry: Dictionary = entries[i]
+			if _saved_unit_entry_path(entry) == resolved_path:
+				var rejection_reason := _saved_unit_entry_illegal_note(entry)
+				var state := {
+					"found": true,
+					"missing": false,
+					"rejected": rejection_reason != "",
+					"focus_path": resolved_path,
+					"saved_unit_focus_path": resolved_path,
+					"saved_unit_page": int(floor(float(i) / float(maxi(1, saved_unit_buttons.size())))),
+					"saved_unit_selected_index": i,
+					"saved_unit_hovered_path": resolved_path,
+					"saved_unit_hovered_index": i,
+					"saved_unit_detail_path": resolved_path,
+					"entry": entry,
+					"focus_notice_key": "focus_rejected" if rejection_reason != "" else "",
+					"focus_notice_reason": rejection_reason,
+				}
+				_apply_saved_unit_selection_state(state)
+				return state
+	var missing_state := {
+		"found": false,
+		"missing": true,
+		"rejected": false,
+		"focus_path": resolved_path,
+		"saved_unit_focus_path": resolved_path,
+		"saved_unit_selected_index": -1,
+		"saved_unit_hovered_path": "",
+		"saved_unit_hovered_index": -1,
+		"saved_unit_detail_path": "",
+		"focus_notice_key": "focus_missing",
+		"focus_notice_reason": "",
+	}
+	_apply_saved_unit_selection_state(missing_state)
+	return missing_state
 
 
 func _flush_deferred_saved_unit_cache_refresh() -> void:
@@ -12180,6 +12271,9 @@ func _confirm_delete_saved_units() -> void:
 	if saved_unit_pending_delete_paths.is_empty():
 		_cancel_delete_saved_units()
 		return
+	var previous_selected_index := saved_unit_selected_index
+	var previous_page := saved_unit_page
+	var attempted_delete_paths := saved_unit_pending_delete_paths.duplicate()
 	var deleted := 0
 	var failed := 0
 	for raw_path in saved_unit_pending_delete_paths.duplicate():
@@ -12198,7 +12292,11 @@ func _confirm_delete_saved_units() -> void:
 	if saved_unit_delete_panel != null:
 		saved_unit_delete_panel.visible = false
 	_invalidate_saved_unit_library_cache()
-	saved_unit_selected_index = -1
+	if saved_units_controller != null:
+		var repair_state: Dictionary = saved_units_controller.post_delete_selection_state(_saved_unit_filtered_entries(), attempted_delete_paths, previous_selected_index, previous_page, saved_unit_buttons.size())
+		_apply_saved_unit_selection_state(repair_state)
+	else:
+		saved_unit_selected_index = -1
 	if saved_unit_hint_label != null:
 		if failed > 0:
 			saved_unit_hint_label.text = ("已删除 %d 个，%d 个删除失败。" if _ui_is_zh() else "Deleted %d; %d failed.") % [deleted, failed]
@@ -12240,6 +12338,8 @@ func _select_saved_unit_card(card_index: int) -> void:
 
 
 func _apply_saved_unit_selection_state(state: Dictionary) -> void:
+	if state.has("saved_unit_focus_path"):
+		saved_unit_focus_path = String(state.get("saved_unit_focus_path", saved_unit_focus_path))
 	if state.has("saved_unit_filter"):
 		saved_unit_filter = String(state.get("saved_unit_filter", saved_unit_filter))
 	if state.has("saved_unit_page"):
@@ -12254,6 +12354,31 @@ func _apply_saved_unit_selection_state(state: Dictionary) -> void:
 		saved_unit_detail_path = String(state.get("saved_unit_detail_path", saved_unit_detail_path))
 	if state.has("saved_unit_selected_paths"):
 		saved_unit_selected_paths = Array(state.get("saved_unit_selected_paths", saved_unit_selected_paths))
+
+
+func _apply_saved_unit_focus_notice(state: Dictionary) -> void:
+	if saved_unit_hint_label == null:
+		return
+	var notice_key := String(state.get("focus_notice_key", ""))
+	if notice_key == "":
+		return
+	match notice_key:
+		"focus_rejected":
+			var reason := String(state.get("focus_notice_reason", "")).strip_edges()
+			if reason == "" and state.get("entry", {}) is Dictionary:
+				reason = _saved_unit_entry_illegal_note(Dictionary(state.get("entry", {})))
+			if reason == "":
+				reason = "INVALID: stored data rejected."
+			saved_unit_hint_label.text = ("聚焦的保存单位不可训练：%s" if _ui_is_zh() else "Focused saved unit is not trainable: %s") % (_localized_system_text(reason) if _ui_is_zh() else reason)
+		"focus_missing":
+			var focus_path := String(state.get("focus_path", ""))
+			var reason := _saved_unit_rejection_reason_from_file(focus_path) if focus_path != "" else ""
+			if reason == "saved file does not exist":
+				saved_unit_hint_label.text = "原聚焦单位文件已不存在，已清空当前选择。" if _ui_is_zh() else "Focused saved unit file is gone; selection was cleared."
+			elif reason != "":
+				saved_unit_hint_label.text = ("保存文件未通过读取校验：%s" if _ui_is_zh() else "Saved file did not pass library validation: %s") % (_localized_system_text(reason) if _ui_is_zh() else reason)
+			else:
+				saved_unit_hint_label.text = "原聚焦单位不在当前单位库中，已清空当前选择。" if _ui_is_zh() else "Focused saved unit is not in the library; selection was cleared."
 
 
 func _hover_saved_unit_card(card_index: int) -> void:
@@ -12543,27 +12668,35 @@ func _show_saved_unit_detail(entry: Dictionary) -> void:
 
 func _show_saved_units_library(focus_path: String = "", return_context: String = "", defer_disk_scan: bool = false, preloaded: bool = false) -> void:
 	var resolved_return_context := _navigation_return_target_for(STATE_SAVED_UNITS, return_context)
-	if not preloaded and _should_queue_loading_transition(STATE_SAVED_UNITS):
+	var loading_queued := not preloaded and _should_queue_loading_transition(STATE_SAVED_UNITS)
+	var show_intent := _saved_units_mode_show_intent(focus_path, resolved_return_context, defer_disk_scan, preloaded, loading_queued)
+	if loading_queued:
 		queue_loading_transition(STATE_SAVED_UNITS, "saved_units", preload_saved_units_content(), Callable(self, "_show_saved_units_library").bind(focus_path, return_context, defer_disk_scan, true), resolved_return_context)
 		return
-	saved_units_return_context = resolved_return_context
-	_transition_page(STATE_SAVED_UNITS, "saved_units", {"focus_path": focus_path}, "" if preloaded else resolved_return_context)
+	saved_units_return_context = String(show_intent.get("return_context", resolved_return_context))
+	var resolved_focus_path := String(show_intent.get("focus_path", focus_path))
+	var should_defer_disk_scan := bool(show_intent.get("defer_disk_scan", defer_disk_scan))
+	_transition_page(STATE_SAVED_UNITS, String(show_intent.get("reason", "saved_units")), Dictionary(show_intent.get("payload", {"focus_path": resolved_focus_path})), "" if preloaded else saved_units_return_context)
 	_hide_match_format_select()
-	if defer_disk_scan and saved_unit_library_cache_dirty and focus_path == "":
-		_request_deferred_saved_unit_cache_refresh(focus_path)
+	if should_defer_disk_scan and saved_unit_library_cache_dirty and resolved_focus_path == "":
+		_request_deferred_saved_unit_cache_refresh(resolved_focus_path)
 	else:
 		saved_unit_library_cache_scan_deferred = false
-		_ensure_saved_unit_library_cache(false, true)
-	saved_unit_focus_path = focus_path
+	_ensure_saved_unit_library_cache(false, true)
+	saved_unit_focus_path = resolved_focus_path
+	var focus_state := {}
 	var focus_selected := false
-	if focus_path != "":
+	if resolved_focus_path != "":
 		saved_unit_filter = "all"
 		if not saved_unit_library_cache_scan_deferred:
-			focus_selected = _select_saved_unit_focus_path(focus_path)
+			focus_state = _select_saved_unit_focus_path(resolved_focus_path)
+			focus_selected = bool(focus_state.get("found", false))
 	_set_visible_layer(saved_units_layer)
 	_update_saved_units_ui()
-	if focus_path != "" and not focus_selected and saved_unit_hint_label != null:
-		var reason := _saved_unit_rejection_reason_from_file(focus_path)
+	if resolved_focus_path != "" and not focus_state.is_empty():
+		_apply_saved_unit_focus_notice(focus_state)
+	elif resolved_focus_path != "" and not focus_selected and saved_unit_hint_label != null:
+		var reason := _saved_unit_rejection_reason_from_file(resolved_focus_path)
 		if reason != "":
 			saved_unit_hint_label.text = ("保存文件未通过读取校验：%s" if _ui_is_zh() else "Saved file did not pass library validation: %s") % reason
 
@@ -15005,6 +15138,372 @@ func _navigation_return_target_for(target_state: String, explicit_return_target:
 	return ""
 
 
+func _app_mode_key_for_page(page: String, payload: Dictionary = {}) -> String:
+	if app_mode_host != null:
+		return app_mode_host.mode_key_for_page(page, payload)
+	match page:
+		STATE_MENU:
+			return AppModeHost.MODE_MENU
+		STATE_EDITOR:
+			return AppModeHost.MODE_TEAM_EDIT
+		STATE_SAVED_UNITS:
+			return AppModeHost.MODE_SAVED_UNITS
+		STATE_SCOUT:
+			var scout_mode := String(payload.get("mode", ""))
+			if scout_mode == AppModeHost.MODE_TRAINING:
+				return AppModeHost.MODE_TRAINING
+			if scout_mode != "":
+				return AppModeHost.MODE_BATTLE
+		STATE_SETTINGS:
+			return AppModeHost.MODE_SETTINGS
+		STATE_BATTLE:
+			if String(payload.get("mode", "")) == AppModeHost.MODE_TRAINING:
+				return AppModeHost.MODE_TRAINING
+			return AppModeHost.MODE_BATTLE
+	return ""
+
+
+func _commit_app_mode_for_page(target_state: String, reason: String = "", payload: Dictionary = {}) -> void:
+	if app_mode_host == null:
+		return
+	var mode_key := _app_mode_key_for_page(target_state, payload)
+	if mode_key == "":
+		return
+	var intent := app_mode_host.transition_intent(mode_key, reason, payload)
+	app_mode_host.commit_transition(intent)
+
+
+func _commit_menu_mode_enter(reason: String = "", payload: Dictionary = {}) -> void:
+	if menu_mode_owner == null:
+		return
+	var intent := menu_mode_owner.enter_intent(reason, payload)
+	menu_mode_owner.commit_enter(intent)
+
+
+func _commit_menu_mode_exit(reason: String = "", payload: Dictionary = {}) -> void:
+	if menu_mode_owner == null:
+		return
+	var intent := menu_mode_owner.exit_intent(reason, payload)
+	menu_mode_owner.commit_exit(intent)
+
+
+func _commit_team_edit_mode_enter(reason: String = "", payload: Dictionary = {}) -> void:
+	if team_edit_mode_owner == null:
+		return
+	var intent := team_edit_mode_owner.enter_intent(reason, payload)
+	team_edit_mode_owner.commit_enter(intent)
+
+
+func _commit_team_edit_mode_exit(reason: String = "", payload: Dictionary = {}) -> void:
+	if team_edit_mode_owner == null:
+		return
+	var intent := team_edit_mode_owner.exit_intent(reason, payload)
+	team_edit_mode_owner.commit_exit(intent)
+
+
+func _commit_saved_units_mode_enter(reason: String = "", payload: Dictionary = {}) -> void:
+	if saved_units_mode_owner == null:
+		return
+	var intent := saved_units_mode_owner.enter_intent(reason, payload)
+	saved_units_mode_owner.commit_enter(intent)
+
+
+func _commit_saved_units_mode_exit(reason: String = "", payload: Dictionary = {}) -> void:
+	if saved_units_mode_owner == null:
+		return
+	var intent := saved_units_mode_owner.exit_intent(reason, payload)
+	saved_units_mode_owner.commit_exit(intent)
+
+
+func _commit_settings_mode_enter(reason: String = "", payload: Dictionary = {}) -> void:
+	if settings_mode_owner == null:
+		return
+	var intent := settings_mode_owner.enter_intent(reason, payload)
+	settings_mode_owner.commit_enter(intent)
+
+
+func _commit_settings_mode_exit(reason: String = "", payload: Dictionary = {}) -> void:
+	if settings_mode_owner == null:
+		return
+	var intent := settings_mode_owner.exit_intent(reason, payload)
+	settings_mode_owner.commit_exit(intent)
+
+
+func _commit_training_mode_enter(reason: String = "", payload: Dictionary = {}) -> void:
+	if training_mode_owner == null:
+		return
+	var intent := training_mode_owner.enter_intent(reason, payload)
+	training_mode_owner.commit_enter(intent)
+
+
+func _commit_training_mode_exit(reason: String = "", payload: Dictionary = {}) -> void:
+	if training_mode_owner == null:
+		return
+	var intent := training_mode_owner.exit_intent(reason, payload)
+	training_mode_owner.commit_exit(intent)
+
+
+func _commit_battle_mode_enter(reason: String = "", payload: Dictionary = {}) -> void:
+	if battle_mode_owner == null:
+		return
+	var intent := battle_mode_owner.enter_intent(reason, payload)
+	battle_mode_owner.commit_enter(intent)
+
+
+func _commit_battle_mode_exit(reason: String = "", payload: Dictionary = {}) -> void:
+	if battle_mode_owner == null:
+		return
+	var intent := battle_mode_owner.exit_intent(reason, payload)
+	battle_mode_owner.commit_exit(intent)
+
+
+func _menu_mode_show_intent(preloaded: bool, loading_queued: bool) -> Dictionary:
+	if menu_mode_owner == null:
+		return {
+			"mode_key": AppModeHost.MODE_MENU,
+			"reason": "menu",
+			"payload": {},
+			"preloaded": preloaded,
+			"loading_queued": loading_queued,
+			"should_apply": not loading_queued,
+			"bound": false,
+		}
+	return menu_mode_owner.show_intent(preloaded, loading_queued, "menu")
+
+
+func _team_edit_mode_show_intent(preloaded: bool, loading_queued: bool, preserve_canvas: bool = false) -> Dictionary:
+	if team_edit_mode_owner == null:
+		return {
+			"mode_key": AppModeHost.MODE_TEAM_EDIT,
+			"reason": "teamedit_preserve" if preserve_canvas else "teamedit",
+			"payload": {"preserve_canvas": true} if preserve_canvas else {},
+			"preloaded": preloaded,
+			"loading_queued": loading_queued,
+			"should_apply": not loading_queued,
+			"preserve_canvas": preserve_canvas,
+			"reset_board_view": not preserve_canvas,
+			"reset_working_canvas": not preserve_canvas,
+			"apply_role_catalog_defaults": true,
+			"clear_clipboard": true,
+			"reset_last_mouse": true,
+			"bound": false,
+		}
+	return team_edit_mode_owner.show_intent(preloaded, loading_queued, preserve_canvas)
+
+
+func _battle_mode_show_intent(mode: String, preloaded: bool, loading_queued: bool, reason: String = "", preserve_runtime: bool = false) -> Dictionary:
+	if battle_mode_owner == null:
+		var resolved_reason := reason.strip_edges()
+		if resolved_reason == "":
+			resolved_reason = "return_battle" if preserve_runtime else "battle:%s" % mode
+		return {
+			"mode_key": AppModeHost.MODE_TRAINING if mode == MODE_TRAINING else AppModeHost.MODE_BATTLE,
+			"battle_mode": mode,
+			"reason": resolved_reason,
+			"payload": {"mode": mode, "preserve_runtime": preserve_runtime} if preserve_runtime else {"mode": mode},
+			"preloaded": preloaded,
+			"loading_queued": loading_queued,
+			"should_apply": not loading_queued,
+			"preserve_runtime": preserve_runtime,
+			"reset_runtime": not preserve_runtime,
+			"bound": false,
+		}
+	return battle_mode_owner.show_intent(mode, preloaded, loading_queued, reason, preserve_runtime)
+
+
+func _commit_battle_mode_show_intent(intent: Dictionary) -> void:
+	if battle_mode_owner != null:
+		battle_mode_owner.commit_show(intent)
+
+
+func _battle_mode_runtime_snapshot(runtime_snapshot: Dictionary) -> Dictionary:
+	if battle_mode_owner != null:
+		return battle_mode_owner.runtime_snapshot(runtime_snapshot)
+	return runtime_snapshot
+
+
+func _battle_mode_cleanup_intent(runtime_snapshot: Dictionary, preserve_for_return: bool) -> Dictionary:
+	if battle_mode_owner != null:
+		return battle_mode_owner.cleanup_intent(runtime_snapshot, preserve_for_return)
+	if battle_runtime_lifecycle_service != null:
+		return battle_runtime_lifecycle_service.cleanup_intent(runtime_snapshot, preserve_for_return)
+	return {
+		"preserve": preserve_for_return,
+		"clear_runtime": not preserve_for_return,
+		"hide_runtime_menu": true,
+		"hide_aim_lines": true,
+		"clear_attack_command_windows": true,
+		"clear_units": true,
+		"clear_presentation_state": true,
+		"clear_input_edges": true,
+		"clear_aim_state": true,
+		"clear_gun_state": true,
+	}
+
+
+func _commit_battle_cleanup_intent(intent: Dictionary) -> void:
+	if battle_mode_owner != null:
+		battle_mode_owner.commit_cleanup(intent)
+
+
+func _team_edit_cleanup_intent(reason: String = "", payload: Dictionary = {}) -> Dictionary:
+	if team_edit_mode_owner != null:
+		return team_edit_mode_owner.cleanup_intent(reason, payload)
+	return {
+		"mode_key": AppModeHost.MODE_TEAM_EDIT,
+		"reason": reason,
+		"payload": payload.duplicate(true),
+		"clear_hover_cards": true,
+		"close_detail_panels": true,
+		"clear_bindings": true,
+		"clear_drag_state": true,
+		"clear_placement_state": true,
+		"clear_clipboard": true,
+		"clear_preview_caches": true,
+		"reset_last_mouse": true,
+		"bound": false,
+	}
+
+
+func _commit_team_edit_cleanup(intent: Dictionary) -> void:
+	if team_edit_mode_owner != null:
+		team_edit_mode_owner.commit_cleanup(intent)
+
+
+func _saved_units_mode_show_intent(focus_path: String, return_context: String, defer_disk_scan: bool, preloaded: bool, loading_queued: bool) -> Dictionary:
+	if saved_units_mode_owner == null:
+		return {
+			"mode_key": AppModeHost.MODE_SAVED_UNITS,
+			"reason": "saved_units",
+			"payload": {"focus_path": focus_path},
+			"focus_path": focus_path,
+			"return_context": return_context,
+			"defer_disk_scan": defer_disk_scan,
+			"preloaded": preloaded,
+			"loading_queued": loading_queued,
+			"should_apply": not loading_queued,
+			"bound": false,
+		}
+	return saved_units_mode_owner.show_intent(focus_path, return_context, defer_disk_scan, preloaded, loading_queued, "saved_units")
+
+
+func _saved_units_cleanup_intent(reason: String = "", payload: Dictionary = {}) -> Dictionary:
+	if saved_units_mode_owner != null:
+		return saved_units_mode_owner.cleanup_intent(reason, payload)
+	return {
+		"mode_key": AppModeHost.MODE_SAVED_UNITS,
+		"reason": reason,
+		"payload": payload.duplicate(true),
+		"clear_hover": true,
+		"clear_focus": true,
+		"clear_detail": true,
+		"clear_pending_delete": true,
+		"bound": false,
+	}
+
+
+func _commit_saved_units_cleanup(intent: Dictionary) -> void:
+	if saved_units_mode_owner != null:
+		saved_units_mode_owner.commit_cleanup(intent)
+
+
+func _settings_mode_show_intent(category_key: String, preloaded: bool, return_target: String, loading_queued: bool) -> Dictionary:
+	if settings_mode_owner == null:
+		var resolved_category := category_key.strip_edges()
+		if resolved_category == "":
+			resolved_category = "root"
+		return {
+			"mode_key": AppModeHost.MODE_SETTINGS,
+			"reason": "settings",
+			"payload": {"category": resolved_category},
+			"category_key": resolved_category,
+			"preloaded": preloaded,
+			"return_target": return_target,
+			"loading_queued": loading_queued,
+			"should_apply": not loading_queued,
+			"bound": false,
+		}
+	return settings_mode_owner.show_intent(category_key, preloaded, return_target, loading_queued, "settings")
+
+
+func _settings_category_intent(category_key: String) -> Dictionary:
+	if settings_mode_owner != null:
+		return settings_mode_owner.category_intent(category_key)
+	var resolved_category := category_key.strip_edges()
+	if resolved_category == "":
+		resolved_category = "root"
+	return {
+		"handled": true,
+		"category_key": resolved_category,
+		"reset_index": true,
+		"clear_rebind": true,
+		"bound": false,
+	}
+
+
+func _apply_settings_category_intent(intent: Dictionary) -> void:
+	if not bool(intent.get("handled", false)):
+		return
+	settings_category = String(intent.get("category_key", settings_category))
+	if bool(intent.get("reset_index", false)):
+		settings_index = 0
+	if bool(intent.get("clear_rebind", false)):
+		settings_rebind_action = ""
+	if settings_mode_owner != null:
+		settings_mode_owner.commit_category(intent)
+
+
+func _training_config_intent(clear_imports: bool) -> Dictionary:
+	if training_mode_owner != null:
+		return training_mode_owner.config_intent(clear_imports)
+	return {
+		"mode_key": AppModeHost.MODE_TRAINING,
+		"reason": "training_config",
+		"clear_imports": clear_imports,
+		"prepare_loadouts": true,
+		"handoff_mode": MODE_TRAINING,
+		"bound": false,
+	}
+
+
+func _commit_training_config_intent(intent: Dictionary) -> void:
+	if training_mode_owner != null:
+		training_mode_owner.commit_config(intent)
+
+
+func _training_scout_show_intent(mode: String, preloaded: bool, loading_queued: bool) -> Dictionary:
+	if mode == MODE_TRAINING and training_mode_owner != null:
+		return training_mode_owner.scout_show_intent(preloaded, loading_queued, "scout:%s" % mode)
+	return {
+		"mode_key": "",
+		"page_key": STATE_SCOUT,
+		"reason": "scout:%s" % mode,
+		"payload": {"mode": mode},
+		"preloaded": preloaded,
+		"loading_queued": loading_queued,
+		"should_apply": not loading_queued,
+		"reset_training_seat": mode == MODE_TRAINING,
+		"reset_scout_selection": true,
+		"bound": false,
+	}
+
+
+func _training_begin_from_scout_intent() -> Dictionary:
+	if training_mode_owner != null:
+		return training_mode_owner.begin_from_scout_intent(pending_battle_mode, training_seat_confirmed)
+	if pending_battle_mode != MODE_TRAINING:
+		return {"handled": false, "action": "", "pending_mode": pending_battle_mode}
+	if not training_seat_confirmed:
+		return {
+			"handled": true,
+			"action": "require_training_seat",
+			"pending_mode": pending_battle_mode,
+			"extend_timer": true,
+			"play_alarm": true,
+		}
+	return {"handled": true, "action": "configure_and_begin_training", "pending_mode": pending_battle_mode}
+
+
 func _begin_page_navigation(target_state: String, reason: String, return_target: String = "", payload: Dictionary = {}) -> void:
 	if navigation_service == null:
 		return
@@ -15036,6 +15535,19 @@ func _commit_page_state(target_state: String, reason: String = "", payload: Dict
 			navigation_service.begin_transition(target_state, nav_reason, return_target, payload)
 		navigation_service.commit_transition(target_state, nav_reason, payload)
 	game_state = target_state
+	_commit_app_mode_for_page(target_state, nav_reason, payload)
+	if target_state == STATE_MENU:
+		_commit_menu_mode_enter(nav_reason, payload)
+	elif target_state == STATE_EDITOR:
+		_commit_team_edit_mode_enter(nav_reason, payload)
+	elif target_state == STATE_SAVED_UNITS:
+		_commit_saved_units_mode_enter(nav_reason, payload)
+	elif target_state == STATE_SETTINGS:
+		_commit_settings_mode_enter(nav_reason, payload)
+	elif target_state == STATE_SCOUT and String(payload.get("mode", "")) == MODE_TRAINING:
+		_commit_training_mode_enter(nav_reason, payload)
+	elif target_state == STATE_BATTLE:
+		_commit_battle_mode_enter(nav_reason, payload)
 	if game_state_store != null:
 		game_state_store.set_app_mode(target_state, nav_reason)
 	if dirty_graph != null:
@@ -15046,13 +15558,22 @@ func _commit_page_state(target_state: String, reason: String = "", payload: Dict
 func _exit_page(from_page: String, to_page: String, reason: String = "", payload: Dictionary = {}) -> void:
 	if from_page == "":
 		return
-	if from_page == STATE_EDITOR:
-		_cleanup_unit_edit_page_runtime()
+	if from_page == STATE_MENU:
+		_commit_menu_mode_exit(reason, payload)
+	elif from_page == STATE_SAVED_UNITS:
+		_commit_saved_units_mode_exit(reason, payload)
+		_cleanup_saved_units_page_runtime(reason, payload)
+	elif from_page == STATE_SETTINGS:
+		_commit_settings_mode_exit(reason, payload)
+	elif from_page == STATE_SCOUT and pending_battle_mode == MODE_TRAINING:
+		_commit_training_mode_exit(reason, payload)
+	elif from_page == STATE_EDITOR:
+		_commit_team_edit_mode_exit(reason, payload)
+		_cleanup_unit_edit_page_runtime(reason, payload)
 		PartPreviewTextureCache.clear_all(true)
 		CatalogCardBodyTextureCache.clear_all(true)
-	elif from_page == STATE_SAVED_UNITS:
-		_cleanup_saved_units_page_runtime()
 	elif from_page == STATE_BATTLE:
+		_commit_battle_mode_exit(reason, payload)
 		var preserve_battle := bool(payload.get("preserve_runtime", false))
 		preserve_battle = preserve_battle or to_page == STATE_BATTLE
 		preserve_battle = preserve_battle or (to_page == STATE_SETTINGS and String(payload.get("return_target", "")) == STATE_BATTLE)
@@ -15076,60 +15597,75 @@ func _enter_page(to_page: String, from_page: String = "", reason: String = "", p
 		hot_path_profiler.count("page.enter.%s" % to_page)
 
 
-func _cleanup_unit_edit_page_runtime() -> void:
-	_clear_editor_hover_card(true)
-	_clear_editor_unit_hover_card(true)
-	_close_engine_momentum_allocation_panel()
-	if editor_torso_detail_view != null:
-		editor_torso_detail_view.set_binding_state(false)
-		editor_torso_detail_view.visible = false
-	editor_open_torso_node_index = -1
-	editor_selected_torso_slot_index = -1
-	editor_selected_torso_slot_kind = ""
-	editor_pending_module_binding = {}
-	editor_bound_module_tryout = {}
-	editor_pose_dragging = false
-	editor_pose_pending_update = false
-	editor_pose_root_node = -1
-	editor_pose_downstream_nodes = []
-	editor_dragging_node_index = -1
-	editor_dragging_selected_nodes = false
-	editor_dragging_whole_unit = false
-	editor_node_click_candidate_index = -1
-	editor_selecting_topology_box = false
-	editor_drag_catalog_active = false
-	editor_drag_catalog_started = false
-	editor_load_drag_index = -1
-	editor_pending_place_slot = ""
-	editor_pending_place_index = -1
-	_clear_pending_payload_part()
-	editor_cached_socket_candidate = {}
-	editor_cached_socket_candidate_node = -1
-	editor_cached_socket_candidate_pos = Vector2.INF
-	editor_cached_socket_candidate_msec = -1000000
-	editor_material_warning_nodes = []
-	editor_deferred_sfx_queue.clear()
-	editor_snap_timer = 0.0
-	editor_snap_part = ""
-	editor_save_success_flash_timer = 0.0
-	if editor_save_unit_feedback_label != null:
-		editor_save_unit_feedback_label.visible = false
-	if editor_orientation_popup_panel != null:
-		editor_orientation_popup_panel.visible = false
-	_hide_editor_drag_ghost()
-	editor_topology_clipboard = {}
-	editor_clipboard_paste_count = 0
-	editor_last_board_mouse_position = Vector2.INF
-	_clear_unit_edit_page_caches()
+func _cleanup_unit_edit_page_runtime(reason: String = "", payload: Dictionary = {}) -> void:
+	var cleanup_intent := _team_edit_cleanup_intent(reason, payload)
+	if bool(cleanup_intent.get("clear_hover_cards", true)):
+		_clear_editor_hover_card(true)
+		_clear_editor_unit_hover_card(true)
+	if bool(cleanup_intent.get("close_detail_panels", true)):
+		_close_engine_momentum_allocation_panel()
+		if editor_torso_detail_view != null:
+			editor_torso_detail_view.set_binding_state(false)
+			editor_torso_detail_view.visible = false
+		editor_open_torso_node_index = -1
+		editor_selected_torso_slot_index = -1
+		editor_selected_torso_slot_kind = ""
+		if editor_save_unit_feedback_label != null:
+			editor_save_unit_feedback_label.visible = false
+		if editor_orientation_popup_panel != null:
+			editor_orientation_popup_panel.visible = false
+	if bool(cleanup_intent.get("clear_bindings", true)):
+		editor_pending_module_binding = {}
+		editor_bound_module_tryout = {}
+	if bool(cleanup_intent.get("clear_drag_state", true)):
+		editor_pose_dragging = false
+		editor_pose_pending_update = false
+		editor_pose_root_node = -1
+		editor_pose_downstream_nodes = []
+		editor_dragging_node_index = -1
+		editor_dragging_selected_nodes = false
+		editor_dragging_whole_unit = false
+		editor_node_click_candidate_index = -1
+		editor_selecting_topology_box = false
+		editor_drag_catalog_active = false
+		editor_drag_catalog_started = false
+		editor_load_drag_index = -1
+		_hide_editor_drag_ghost()
+	if bool(cleanup_intent.get("clear_placement_state", true)):
+		editor_pending_place_slot = ""
+		editor_pending_place_index = -1
+		_clear_pending_payload_part()
+		editor_cached_socket_candidate = {}
+		editor_cached_socket_candidate_node = -1
+		editor_cached_socket_candidate_pos = Vector2.INF
+		editor_cached_socket_candidate_msec = -1000000
+		editor_material_warning_nodes = []
+		editor_deferred_sfx_queue.clear()
+		editor_snap_timer = 0.0
+		editor_snap_part = ""
+		editor_save_success_flash_timer = 0.0
+	if bool(cleanup_intent.get("clear_clipboard", true)):
+		editor_topology_clipboard = {}
+		editor_clipboard_paste_count = 0
+	if bool(cleanup_intent.get("reset_last_mouse", true)):
+		editor_last_board_mouse_position = Vector2.INF
+	if bool(cleanup_intent.get("clear_preview_caches", true)):
+		_clear_unit_edit_page_caches()
+	_commit_team_edit_cleanup(cleanup_intent)
 
 
-func _cleanup_saved_units_page_runtime() -> void:
-	_cancel_delete_saved_units()
-	saved_unit_hovered_path = ""
-	saved_unit_hovered_index = -1
-	saved_unit_detail_path = ""
-	saved_unit_focus_path = ""
-	saved_unit_deferred_focus_path = ""
+func _cleanup_saved_units_page_runtime(reason: String = "", payload: Dictionary = {}) -> void:
+	var cleanup_intent := _saved_units_cleanup_intent(reason, payload)
+	if bool(cleanup_intent.get("clear_pending_delete", true)):
+		_cancel_delete_saved_units()
+	if bool(cleanup_intent.get("clear_hover", true)):
+		saved_unit_hovered_path = ""
+		saved_unit_hovered_index = -1
+	if bool(cleanup_intent.get("clear_detail", true)):
+		saved_unit_detail_path = ""
+	if bool(cleanup_intent.get("clear_focus", true)):
+		saved_unit_focus_path = ""
+		saved_unit_deferred_focus_path = ""
 	if saved_unit_detail_view != null:
 		saved_unit_detail_view.clear("悬停或点击单位查看详情。" if _ui_is_zh() else "Hover or click a unit to inspect it.")
 		saved_unit_detail_view.visible = false
@@ -15138,22 +15674,13 @@ func _cleanup_saved_units_page_runtime() -> void:
 			var thumb: SortieThumbView = raw_thumb
 			thumb.set_entry(1, 0, {}, {}, "reserve", ui_language)
 	_clear_saved_units_page_caches()
+	_commit_saved_units_cleanup(cleanup_intent)
 
 
 func _cleanup_battle_runtime(preserve_for_return: bool = false) -> void:
-	var cleanup_intent := battle_runtime_lifecycle_service.cleanup_intent(_battle_runtime_lifecycle_snapshot(), preserve_for_return) if battle_runtime_lifecycle_service != null else {
-		"preserve": preserve_for_return,
-		"clear_runtime": not preserve_for_return,
-		"hide_runtime_menu": true,
-		"hide_aim_lines": true,
-		"clear_attack_command_windows": true,
-		"clear_units": true,
-		"clear_presentation_state": true,
-		"clear_input_edges": true,
-		"clear_aim_state": true,
-		"clear_gun_state": true,
-	}
+	var cleanup_intent := _battle_mode_cleanup_intent(_battle_runtime_lifecycle_snapshot(), preserve_for_return)
 	if bool(cleanup_intent.get("preserve", preserve_for_return)):
+		_commit_battle_cleanup_intent(cleanup_intent)
 		if hot_path_profiler != null:
 			hot_path_profiler.count("battle.cleanup.preserved")
 		return
@@ -15184,10 +15711,11 @@ func _cleanup_battle_runtime(preserve_for_return: bool = false) -> void:
 	if bool(cleanup_intent.get("clear_gun_state", true)):
 		gun_activation_state = {1: {}, 2: {}}
 		held_melee_activation_state = {1: {}, 2: {}}
+	_commit_battle_cleanup_intent(cleanup_intent)
 
 
 func _battle_runtime_lifecycle_snapshot() -> Dictionary:
-	return {
+	var snapshot := {
 		"unit_count": all_units.size(),
 		"pending_laser_shots": pending_laser_shots.size(),
 		"pending_true_bullet_shots": pending_true_bullet_shots.size(),
@@ -15197,6 +15725,7 @@ func _battle_runtime_lifecycle_snapshot() -> Dictionary:
 		"active_web_swings": active_web_swings.size(),
 		"battle_effect_children": effects_root.get_child_count() if effects_root != null else 0,
 	}
+	return _battle_mode_runtime_snapshot(snapshot)
 
 
 func _cleanup_loading_tasks_for_transition(target_page: String, generation_id: int) -> void:
@@ -15324,7 +15853,9 @@ func _ui_lifecycle_snapshot() -> Dictionary:
 
 
 func _show_battle_layer_without_reset(reason: String = "return_battle") -> void:
-	_transition_page(STATE_BATTLE, reason, {"mode": battle_mode, "preserve_runtime": true})
+	var show_intent := _battle_mode_show_intent(battle_mode, true, false, reason, true)
+	_commit_battle_mode_show_intent(show_intent)
+	_transition_page(STATE_BATTLE, String(show_intent.get("reason", reason)), Dictionary(show_intent.get("payload", {"mode": battle_mode, "preserve_runtime": true})))
 	_set_visible_layer(hud_layer)
 	_update_battle_ui()
 
@@ -15361,11 +15892,13 @@ func _navigate_to_page_target(target_state: String, reason: String = "navigation
 
 
 func _show_menu(preloaded: bool = false) -> void:
-	if not preloaded and _should_queue_loading_transition(STATE_MENU):
+	var loading_queued := not preloaded and _should_queue_loading_transition(STATE_MENU)
+	var show_intent := _menu_mode_show_intent(preloaded, loading_queued)
+	if loading_queued:
 		queue_loading_transition(STATE_MENU, "menu", preload_menu_content(), Callable(self, "_show_menu").bind(true))
 		return
 	_restore_ai_side_roster_mapping()
-	_transition_page(STATE_MENU, "menu")
+	_transition_page(STATE_MENU, String(show_intent.get("reason", "menu")), Dictionary(show_intent.get("payload", {})))
 	_clear_all_units()
 	_hide_match_format_select()
 	editor_board_zoom = 1.0
@@ -15446,34 +15979,48 @@ func _show_editor_for_player(player_id: int) -> void:
 
 
 func _show_editor(preloaded: bool = false) -> void:
-	if not preloaded and _should_queue_loading_transition(STATE_EDITOR):
+	var loading_queued := not preloaded and _should_queue_loading_transition(STATE_EDITOR)
+	var show_intent := _team_edit_mode_show_intent(preloaded, loading_queued, false)
+	if loading_queued:
 		queue_loading_transition(STATE_EDITOR, "teamedit", preload_teamedit_content(), Callable(self, "_show_editor").bind(true))
 		return
-	_transition_page(STATE_EDITOR, "teamedit")
+	_transition_page(STATE_EDITOR, String(show_intent.get("reason", "teamedit")), Dictionary(show_intent.get("payload", {})))
 	_hide_match_format_select()
-	editor_board_zoom = 1.0
-	editor_board_view_offset = Vector2.ZERO
+	var role_key: String = ROLE_ORDER[clampi(editor_role_index, 0, ROLE_ORDER.size() - 1)]
+	if bool(show_intent.get("reset_board_view", true)):
+		editor_board_zoom = 1.0
+		editor_board_view_offset = Vector2.ZERO
 	_refresh_editor_board_zoom_ui()
-	_reset_editor_working_canvas(ROLE_ORDER[clampi(editor_role_index, 0, ROLE_ORDER.size() - 1)])
-	_apply_editor_role_catalog_defaults(ROLE_ORDER[clampi(editor_role_index, 0, ROLE_ORDER.size() - 1)])
-	editor_topology_clipboard = {}
-	editor_clipboard_paste_count = 0
-	editor_last_board_mouse_position = Vector2.INF
+	if bool(show_intent.get("reset_working_canvas", true)):
+		_reset_editor_working_canvas(role_key)
+	if bool(show_intent.get("apply_role_catalog_defaults", true)):
+		_apply_editor_role_catalog_defaults(role_key)
+	if bool(show_intent.get("clear_clipboard", true)):
+		editor_topology_clipboard = {}
+		editor_clipboard_paste_count = 0
+	if bool(show_intent.get("reset_last_mouse", true)):
+		editor_last_board_mouse_position = Vector2.INF
 	_set_visible_layer(editor_layer)
 	_update_editor_ui()
 
 
 func _show_editor_preserve_canvas(preloaded: bool = false) -> void:
-	if not preloaded and _should_queue_loading_transition(STATE_EDITOR):
+	var loading_queued := not preloaded and _should_queue_loading_transition(STATE_EDITOR)
+	var show_intent := _team_edit_mode_show_intent(preloaded, loading_queued, true)
+	if loading_queued:
 		queue_loading_transition(STATE_EDITOR, "teamedit_preserve", preload_teamedit_content(), Callable(self, "_show_editor_preserve_canvas").bind(true))
 		return
-	_transition_page(STATE_EDITOR, "teamedit_preserve", {"preserve_canvas": true})
+	_transition_page(STATE_EDITOR, String(show_intent.get("reason", "teamedit_preserve")), Dictionary(show_intent.get("payload", {"preserve_canvas": true})))
 	_hide_match_format_select()
 	_refresh_editor_board_zoom_ui()
-	_apply_editor_role_catalog_defaults(ROLE_ORDER[clampi(editor_role_index, 0, ROLE_ORDER.size() - 1)])
-	editor_topology_clipboard = {}
-	editor_clipboard_paste_count = 0
-	editor_last_board_mouse_position = Vector2.INF
+	var role_key: String = ROLE_ORDER[clampi(editor_role_index, 0, ROLE_ORDER.size() - 1)]
+	if bool(show_intent.get("apply_role_catalog_defaults", true)):
+		_apply_editor_role_catalog_defaults(role_key)
+	if bool(show_intent.get("clear_clipboard", true)):
+		editor_topology_clipboard = {}
+		editor_clipboard_paste_count = 0
+	if bool(show_intent.get("reset_last_mouse", true)):
+		editor_last_board_mouse_position = Vector2.INF
 	_set_visible_layer(editor_layer)
 	_update_editor_ui()
 
@@ -15522,30 +16069,37 @@ func _update_match_format_select_ui() -> void:
 
 func _show_settings(preloaded: bool = false, category_key: String = "root") -> void:
 	var resolved_return_target := _navigation_return_target_for(STATE_SETTINGS)
-	if not preloaded and _should_queue_loading_transition(STATE_SETTINGS):
+	var loading_queued := not preloaded and _should_queue_loading_transition(STATE_SETTINGS)
+	var show_intent := _settings_mode_show_intent(category_key, preloaded, resolved_return_target, loading_queued)
+	if loading_queued:
 		queue_loading_transition(STATE_SETTINGS, "settings", preload_settings_content(), Callable(self, "_show_settings").bind(true, category_key), resolved_return_target)
 		return
-	settings_category = category_key
-	_transition_page(STATE_SETTINGS, "settings", {}, "" if preloaded else resolved_return_target)
+	settings_category = String(show_intent.get("category_key", category_key))
+	_transition_page(STATE_SETTINGS, String(show_intent.get("reason", "settings")), Dictionary(show_intent.get("payload", {})), "" if preloaded else resolved_return_target)
 	_set_visible_layer(settings_layer)
 	_rebuild_settings_list()
 	_update_settings_ui()
 
 
 func _show_settings_category(category_key: String) -> void:
-	settings_category = category_key
-	settings_index = 0
-	settings_rebind_action = ""
+	_apply_settings_category_intent(_settings_category_intent(category_key))
 	_rebuild_settings_list()
 	_update_settings_ui()
 
 
 func _show_training_config(clear_imports: bool = false) -> void:
-	if clear_imports:
+	var config_intent := _training_config_intent(clear_imports)
+	if bool(config_intent.get("clear_imports", false)):
 		training_import_blueprint = {}
 		training_import_role_key = ""
 		training_import_units = []
-	if not _prepare_training_battle_loadouts(false):
+		training_test_roster_cache = {}
+		training_test_loadout_cache = []
+		training_readiness_status_key = ""
+		training_readiness_status_detail = ""
+		training_readiness_status_count = 0
+	_commit_training_config_intent(config_intent)
+	if bool(config_intent.get("prepare_loadouts", true)) and not _prepare_training_battle_loadouts(false):
 		var note := training_import_error_note if training_import_error_note != "" else "INVALID: training configuration failed."
 		if editor_summary_label != null and game_state == STATE_EDITOR:
 			editor_summary_label.text = "训练配置失败：%s" % _localized_system_text(note) if _ui_is_zh() else "Training config failed: %s" % note
@@ -15553,38 +16107,68 @@ func _show_training_config(clear_imports: bool = false) -> void:
 			saved_unit_hint_label.text = "训练配置失败：%s" % _localized_system_text(note) if _ui_is_zh() else "Training config failed: %s" % note
 		_play_sfx_wave("alarm", 170.0, 0.08, -16.0)
 		return
-	_show_scout(MODE_TRAINING)
+	_show_scout(String(config_intent.get("handoff_mode", MODE_TRAINING)))
 
 
 func _show_scout(mode: String, preloaded: bool = false) -> void:
-	if not preloaded and _should_queue_loading_transition(STATE_SCOUT):
+	var loading_queued := not preloaded and _should_queue_loading_transition(STATE_SCOUT)
+	var show_intent := _training_scout_show_intent(mode, preloaded, loading_queued)
+	if loading_queued:
 		pending_battle_mode = mode
 		queue_loading_transition(STATE_SCOUT, "scout:%s" % mode, preload_scout_content(), Callable(self, "_show_scout").bind(mode, true))
 		return
 	_restore_ai_side_roster_mapping()
 	pending_battle_mode = mode
-	if mode == MODE_TRAINING:
+	if bool(show_intent.get("reset_training_seat", mode == MODE_TRAINING)):
 		training_seat_confirmed = false
 	if mode != MODE_TRAINING:
 		_prepare_matchup_sortie_selection(mode)
-	scout_timer = SCOUT_SECONDS
-	scout_selected_entry = {"role": "hero", "index": 0}
-	scout_sortie_player_id = 1
-	scout_selected_player_id = 2
+	if bool(show_intent.get("reset_scout_selection", true)):
+		scout_timer = SCOUT_SECONDS
+		scout_selected_entry = {"role": "hero", "index": 0}
+		scout_sortie_player_id = 1
+		scout_selected_player_id = 2
 	if mode == MODE_AI and ai_battle_seat == 3:
 		scout_sortie_player_id = 1
 	if scout_hint_label != null:
 		if mode == MODE_AI:
 			scout_hint_label.text = _ai_battle_seat_hint()
 		elif mode == MODE_TRAINING:
-			scout_hint_label.text = "请先选择 P1/P2/P3。专用球体靶机会出现在对手侧，可在下方调整体积。" if _ui_is_zh() else "Choose P1/P2/P3 first. A dedicated ball dummy spawns opposite; adjust its size below."
+			var readiness_hint := _training_readiness_status_text()
+			scout_hint_label.text = readiness_hint if readiness_hint != "" else ("请先选择 P1/P2/P3。专用球体靶机会出现在对手侧，可在下方调整体积。" if _ui_is_zh() else "Choose P1/P2/P3 first. A dedicated ball dummy spawns opposite; adjust its size below.")
 		elif mode == MODE_PVP:
 			scout_hint_label.text = "选择当前屏幕视角 P1/P2/P3；双方仍按出战规则入场。" if _ui_is_zh() else "Choose this screen's P1/P2/P3 view; both sides still enter by sortie rules."
 		else:
 			scout_hint_label.text = "双方完整队伍已公开。每方在此按%s选择出战单位，右键设首发。" % _match_format_name()
-	_transition_page(STATE_SCOUT, "scout:%s" % mode, {"mode": mode})
+	_transition_page(STATE_SCOUT, String(show_intent.get("reason", "scout:%s" % mode)), Dictionary(show_intent.get("payload", {"mode": mode})))
 	_set_visible_layer(scout_layer)
 	_update_scout_ui()
+
+
+func _training_readiness_status_text() -> String:
+	var key := training_readiness_status_key.strip_edges()
+	if key == "":
+		return ""
+	var count := maxi(0, training_readiness_status_count)
+	match key:
+		"imported_units":
+			return ("已导入 %d 个训练单位；请选择 P1/P2/P3 席位后开始。" if _ui_is_zh() else "Imported %d training unit(s); choose P1/P2/P3 to begin.") % count
+		"roster_hero":
+			return "已使用当前队伍中的合法英雄作为训练单位；请选择 P1/P2/P3 席位后开始。" if _ui_is_zh() else "Using a legal hero from the current roster; choose P1/P2/P3 to begin."
+		"fallback_missing_hero":
+			return "未找到英雄单位，已临时使用训练初始单位；请选择 P1/P2/P3 席位后开始。" if _ui_is_zh() else "No hero unit was found, so a temporary training starter is ready; choose P1/P2/P3 to begin."
+		"fallback_invalid_roster":
+			return "没有合法英雄可进入训练，已临时使用训练初始单位；请选择 P1/P2/P3 席位后开始。" if _ui_is_zh() else "No legal hero can enter training, so a temporary training starter is ready; choose P1/P2/P3 to begin."
+		"invalid_import":
+			var detail := training_readiness_status_detail
+			if detail == "":
+				detail = "INVALID: training import failed."
+			return ("训练导入被拦截：%s" if _ui_is_zh() else "Training import blocked: %s") % (_localized_system_text(detail) if _ui_is_zh() else detail)
+		"missing_import":
+			return "没有可导入的训练单位；请选择保存单位或使用当前队伍进入训练。" if _ui_is_zh() else "No training import was provided; choose saved units or use the current roster."
+		"no_valid_imports":
+			return "没有可训练的导入单位；请检查所选单位的保存状态。" if _ui_is_zh() else "No trainable imported units are available; check the selected saved units."
+	return ""
 
 
 func _ai_battle_seat_hint() -> String:
@@ -16286,6 +16870,9 @@ func _start_editor_canvas_training_test() -> void:
 
 func _apply_training_import_loadout(require_dummy: bool = true) -> bool:
 	training_import_error_note = ""
+	training_readiness_status_key = ""
+	training_readiness_status_detail = ""
+	training_readiness_status_count = 0
 	var imports: Array = training_entry_service.pending_imports(training_import_units, training_import_role_key, training_import_blueprint) if training_entry_service != null else _legacy_training_pending_imports(training_import_units, training_import_role_key, training_import_blueprint)
 	var intent := training_entry_service.loadout_from_imports(imports, ROLE_ORDER, Callable(self, "_training_import_legality_note_for_service"), Callable(self, "_apply_entry_pose_to_blueprint")) if training_entry_service != null else _legacy_training_loadout_from_imports(imports)
 	if not bool(intent.get("ok", false)):
@@ -16296,11 +16883,19 @@ func _apply_training_import_loadout(require_dummy: bool = true) -> bool:
 		var error := String(intent.get("error", ""))
 		if error != "":
 			training_import_error_note = error
+			training_readiness_status_key = "invalid_import"
+			training_readiness_status_detail = error
+		elif bool(intent.get("has_imports", false)):
+			training_readiness_status_key = "no_valid_imports"
+		else:
+			training_readiness_status_key = "missing_import"
 		return false
 	training_test_roster_cache = Dictionary(intent.get("roster", {})).duplicate(true)
 	training_test_loadout_cache = Array(intent.get("loadout", [])).duplicate(true)
 	training_test_initial_slot_cache = int(intent.get("initial_slot", 0))
 	training_test_initial_role_cache = String(intent.get("initial_role", "hero"))
+	training_readiness_status_key = "imported_units"
+	training_readiness_status_count = training_test_loadout_cache.size()
 	if require_dummy and not _configure_training_sides_for_seat():
 		return false
 	training_import_units = []
@@ -16444,11 +17039,19 @@ func _prepare_training_battle_loadouts(require_dummy: bool = true) -> bool:
 		return true
 	if explicit_import_requested:
 		if training_import_error_note == "":
-			training_import_error_note = "INVALID: explicit training import could not be loaded."
+			match training_readiness_status_key:
+				"missing_import":
+					training_import_error_note = "INVALID: no training import was provided."
+				"no_valid_imports":
+					training_import_error_note = "INVALID: no trainable imported units are available."
+				_:
+					training_import_error_note = "INVALID: explicit training import could not be loaded."
 		return false
 	training_import_error_note = ""
 	var hero_entry := _first_training_hero_entry(1)
 	if hero_entry.is_empty():
+		var player_roster: Dictionary = Dictionary(blueprints.get(1, {}))
+		var fallback_key := "fallback_missing_hero" if Array(player_roster.get("hero", [])).is_empty() else "fallback_invalid_roster"
 		var starter := _ai_starter_unit("P1 Training Starter")
 		var starter_state := training_entry_service.starter_loadout(starter) if training_entry_service != null else _legacy_training_starter_loadout(starter)
 		if not bool(starter_state.get("ok", false)):
@@ -16458,6 +17061,8 @@ func _prepare_training_battle_loadouts(require_dummy: bool = true) -> bool:
 		training_test_loadout_cache = Array(starter_state.get("loadout", [])).duplicate(true)
 		training_test_initial_slot_cache = int(starter_state.get("initial_slot", 0))
 		training_test_initial_role_cache = String(starter_state.get("initial_role", "hero"))
+		training_readiness_status_key = fallback_key
+		training_readiness_status_count = training_test_loadout_cache.size()
 		if require_dummy and not _configure_training_sides_for_seat():
 			return false
 		hero_entry = {"role": "hero", "index": 0}
@@ -16466,10 +17071,16 @@ func _prepare_training_battle_loadouts(require_dummy: bool = true) -> bool:
 		training_test_loadout_cache = [hero_entry]
 		training_test_initial_slot_cache = 0
 		training_test_initial_role_cache = "hero"
+		training_readiness_status_key = "roster_hero"
+		training_readiness_status_count = training_test_loadout_cache.size()
 		if require_dummy and not _configure_training_sides_for_seat():
 			return false
-	elif require_dummy and not _configure_training_sides_for_seat():
-		return false
+	else:
+		if training_readiness_status_key == "":
+			training_readiness_status_key = "roster_hero"
+			training_readiness_status_count = training_test_loadout_cache.size()
+		if require_dummy and not _configure_training_sides_for_seat():
+			return false
 	return true
 
 
@@ -16518,11 +17129,14 @@ func _start_battle(mode: String, preloaded: bool = false) -> void:
 
 func _begin_battle(mode: String, preloaded: bool = false, reason: String = "") -> void:
 	var nav_reason := reason if reason != "" else "battle:%s" % mode
-	if not preloaded and _should_queue_loading_transition(STATE_BATTLE):
+	var loading_queued := not preloaded and _should_queue_loading_transition(STATE_BATTLE)
+	var show_intent := _battle_mode_show_intent(mode, preloaded, loading_queued, nav_reason, false)
+	if loading_queued:
 		queue_loading_transition(STATE_BATTLE, nav_reason, preload_battle_content(mode), Callable(self, "_begin_battle").bind(mode, true, nav_reason))
 		return
-	battle_mode = mode
-	_transition_page(STATE_BATTLE, nav_reason, {"mode": mode})
+	battle_mode = String(show_intent.get("battle_mode", mode))
+	_commit_battle_mode_show_intent(show_intent)
+	_transition_page(STATE_BATTLE, String(show_intent.get("reason", nav_reason)), Dictionary(show_intent.get("payload", {"mode": battle_mode})))
 	game_over = false
 	camera_center = 0.0
 	camera_lane_center = 0.0
@@ -17232,19 +17846,11 @@ func _first_editor_torso_node_index() -> int:
 
 func _handle_menu_input() -> void:
 	if Input.is_action_just_pressed("menu_up"):
-		if menu_controller != null:
-			menu_index = menu_controller.move_selection(-1)
-		else:
-			menu_index = _wrapped_index(menu_index - 1, MENU_ITEMS.size())
-		_update_menu_ui()
+		_apply_menu_input_action("menu_up")
 	elif Input.is_action_just_pressed("menu_down"):
-		if menu_controller != null:
-			menu_index = menu_controller.move_selection(1)
-		else:
-			menu_index = _wrapped_index(menu_index + 1, MENU_ITEMS.size())
-		_update_menu_ui()
+		_apply_menu_input_action("menu_down")
 	elif Input.is_action_just_pressed("menu_confirm"):
-		_activate_menu_item(menu_index)
+		_apply_menu_input_action("menu_confirm")
 
 
 func _handle_global_ui_mouse_input(event: InputEvent) -> bool:
@@ -17567,15 +18173,12 @@ func _handle_menu_button_gui_input(event: InputEvent, index: int) -> void:
 
 
 func _hover_menu_item(index: int) -> void:
-	if menu_controller != null:
-		menu_index = menu_controller.select_index(index)
-	else:
-		menu_index = clampi(index, 0, MENU_ITEMS.size() - 1)
+	_apply_menu_selection_intent(_menu_select_index_intent(index))
 	_update_menu_ui()
 
 
 func _activate_menu_item(index: int) -> void:
-	var action := menu_controller.main_menu_action(index) if menu_controller != null else {"action": "", "index": index}
+	var action := _menu_main_action(index)
 	match String(action.get("action", "")):
 		"training_config":
 			_show_training_config(true)
@@ -17594,6 +18197,76 @@ func _activate_menu_item(index: int) -> void:
 			get_tree().quit()
 
 
+func _menu_move_selection_intent(delta: int) -> Dictionary:
+	if menu_mode_owner != null:
+		return menu_mode_owner.move_selection(delta, menu_index, MENU_ITEMS.size())
+	return {
+		"handled": MENU_ITEMS.size() > 0,
+		"selected_index": _wrapped_index(menu_index + delta, MENU_ITEMS.size()),
+		"used_controller": false,
+	}
+
+
+func _menu_select_index_intent(index: int) -> Dictionary:
+	if menu_mode_owner != null:
+		return menu_mode_owner.select_index(index, MENU_ITEMS.size())
+	return {
+		"handled": MENU_ITEMS.size() > 0,
+		"selected_index": clampi(index, 0, MENU_ITEMS.size() - 1),
+		"used_controller": false,
+	}
+
+
+func _menu_input_action_intent(action_name: String) -> Dictionary:
+	if menu_mode_owner != null:
+		return menu_mode_owner.input_action_intent(action_name, menu_index, MENU_ITEMS.size())
+	match action_name:
+		"menu_up":
+			var up_intent := _menu_move_selection_intent(-1)
+			up_intent["kind"] = "selection"
+			up_intent["input_action"] = action_name
+			return up_intent
+		"menu_down":
+			var down_intent := _menu_move_selection_intent(1)
+			down_intent["kind"] = "selection"
+			down_intent["input_action"] = action_name
+			return down_intent
+		"menu_confirm":
+			return {
+				"handled": MENU_ITEMS.size() > 0,
+				"kind": "activate",
+				"input_action": action_name,
+				"index": menu_index,
+			}
+	return {"handled": false, "kind": "", "input_action": action_name}
+
+
+func _apply_menu_input_action(action_name: String) -> void:
+	var intent := _menu_input_action_intent(action_name)
+	if not bool(intent.get("handled", false)):
+		return
+	match String(intent.get("kind", "")):
+		"selection":
+			_apply_menu_selection_intent(intent)
+			_update_menu_ui()
+		"activate":
+			_activate_menu_item(int(intent.get("index", menu_index)))
+
+
+func _apply_menu_selection_intent(intent: Dictionary) -> void:
+	if not bool(intent.get("handled", false)):
+		return
+	menu_index = int(intent.get("selected_index", menu_index))
+
+
+func _menu_main_action(index: int) -> Dictionary:
+	if menu_mode_owner != null:
+		return menu_mode_owner.main_menu_action(index)
+	if menu_controller != null:
+		return menu_controller.main_menu_action(index)
+	return {"action": "", "index": index}
+
+
 func _handle_scout_input(delta: float) -> void:
 	if Input.is_action_just_pressed("menu_back"):
 		_show_menu()
@@ -17609,21 +18282,26 @@ func _handle_scout_input(delta: float) -> void:
 
 
 func _try_begin_battle_from_scout() -> void:
-	if pending_battle_mode == MODE_TRAINING:
-		if not training_seat_confirmed:
-			scout_timer = maxf(scout_timer, 8.0)
-			if scout_hint_label != null:
-				scout_hint_label.text = "请先点击 P1、P2 或 P3 选择训练入场席位。" if _ui_is_zh() else "Choose P1, P2, or P3 before entering training."
-			_play_sfx_wave("alarm", 170.0, 0.08, -16.0)
-			_update_scout_ui()
-			return
-		if not _configure_training_sides_for_seat():
-			scout_timer = maxf(scout_timer, 8.0)
-			scout_hint_label.text = "训练入场失败：%s" % _localized_system_text(training_import_error_note) if _ui_is_zh() else "Training entry failed: %s" % training_import_error_note
-			_update_scout_ui()
-			return
-		_begin_battle(pending_battle_mode, true)
-		return
+	var training_begin_intent := _training_begin_from_scout_intent()
+	if bool(training_begin_intent.get("handled", false)):
+		match String(training_begin_intent.get("action", "")):
+			"require_training_seat":
+				scout_timer = maxf(scout_timer, 8.0)
+				if scout_hint_label != null:
+					scout_hint_label.text = "请先点击 P1、P2 或 P3 选择训练入场席位。" if _ui_is_zh() else "Choose P1, P2, or P3 before entering training."
+				if bool(training_begin_intent.get("play_alarm", true)):
+					_play_sfx_wave("alarm", 170.0, 0.08, -16.0)
+				_update_scout_ui()
+				return
+			"configure_and_begin_training":
+				if not _configure_training_sides_for_seat():
+					scout_timer = maxf(scout_timer, 8.0)
+					if scout_hint_label != null:
+						scout_hint_label.text = "训练入场失败：%s" % _localized_system_text(training_import_error_note) if _ui_is_zh() else "Training entry failed: %s" % training_import_error_note
+					_update_scout_ui()
+					return
+				_begin_battle(String(training_begin_intent.get("pending_mode", pending_battle_mode)), true)
+				return
 	_normalize_initial_sortie_for_cost(1)
 	_normalize_initial_sortie_for_cost(2)
 	_ensure_sortie_loadout(1)
@@ -22921,6 +23599,7 @@ func _handle_custom_topology_click(mouse_event: InputEventMouseButton, unit_bp: 
 		"binding_candidate_found": not binding_candidate.is_empty(),
 		"binding_candidate_valid": bool(binding_candidate.get("valid", false)),
 		"binding_selection": Array(binding_candidate.get("selection", binding_candidate.get("target_nodes", []))),
+		"binding_candidate_reason": String(binding_candidate.get("reason", binding_candidate.get("note", ""))),
 		"has_pending_canvas_part": _has_pending_canvas_part(),
 		"board_tool": editor_board_tool,
 		"nearest_node_index": nearest,
@@ -22955,7 +23634,9 @@ func _apply_custom_topology_click_intent(intent: Dictionary, mouse_event: InputE
 			_end_custom_topology_click_profiler()
 			return
 		"binding_invalid":
-			var reason := String(binding_candidate.get("reason", binding_candidate.get("note", ""))) if not binding_candidate.is_empty() else ("没有可绑定部位" if _ui_is_zh() else "No bindable target")
+			var reason := String(intent.get("reject_reason", "")).strip_edges()
+			if reason == "":
+				reason = String(binding_candidate.get("reason", binding_candidate.get("note", ""))) if not binding_candidate.is_empty() else ("没有可绑定部位" if _ui_is_zh() else "No bindable target")
 			if editor_summary_label != null:
 				editor_summary_label.text = ("绑定目标非法：%s" if _ui_is_zh() else "Illegal binding target: %s") % reason
 			if editor_board_hint_label != null:
@@ -23023,7 +23704,7 @@ func _apply_custom_topology_click_intent(intent: Dictionary, mouse_event: InputE
 			_start_topology_group_drag(unit_bp, mouse_event.position, Array(intent.get("group_nodes", [])), bool(intent.get("expand_connected_island", false)))
 		"layout_connected_selection_reject":
 			editor_topology_node_index = int(intent.get("node_index", nearest))
-			_set_layout_drag_reject("connected_selection", editor_topology_node_index, "visible")
+			_set_layout_drag_reject(String(intent.get("reject_reason", "connected_selection")), editor_topology_node_index, "visible")
 			editor_dragging_node_index = -1
 			editor_dragging_selected_nodes = false
 			editor_dragging_whole_unit = false
@@ -23038,7 +23719,7 @@ func _apply_custom_topology_click_intent(intent: Dictionary, mouse_event: InputE
 			editor_dragging_selected_nodes = false
 			editor_dragging_whole_unit = false
 			editor_selecting_topology_box = false
-			_set_layout_drag_reject("connected_part", editor_topology_node_index, "visible")
+			_set_layout_drag_reject(String(intent.get("reject_reason", "connected_part")), editor_topology_node_index, "visible")
 			if editor_board_hint_label != null:
 				editor_board_hint_label.text = "已连接肢体请用姿态模式旋转；布局模式只负责拼搭、解绑和移动未连接零件。" if _ui_is_zh() else "Use POSE to rotate linked limbs; layout mode builds, unlinks, and moves loose parts only."
 			_play_sfx_wave("alarm", 170.0, 0.08, -16.0)
@@ -27275,6 +27956,9 @@ func _editor_current_catalog_max_page() -> int:
 	var role_key: String = ROLE_ORDER[editor_role_index]
 	var slot_key := String(BUILD_SLOTS[editor_slot_index])
 	var entries := _editor_catalog_entries(role_key, slot_key)
+	if unit_editor_catalog_controller != null:
+		var state := unit_editor_catalog_controller.page_state(editor_catalog_page, entries.size(), page_size)
+		return int(state.get("max_page", 0))
 	return maxi(0, int(ceilf(float(entries.size()) / float(page_size))) - 1)
 
 
@@ -30057,6 +30741,18 @@ func _battle_frame_orchestrator_service() -> BattleFrameOrchestratorService:
 	return battle_frame_orchestrator_service
 
 
+func _projectile_runtime_service() -> ProjectileRuntimeService:
+	if projectile_runtime_service == null:
+		projectile_runtime_service = ProjectileRuntimeService.new()
+	return projectile_runtime_service
+
+
+func _runtime_contact_service() -> RuntimeContactService:
+	if runtime_contact_service == null:
+		runtime_contact_service = RuntimeContactService.new()
+	return runtime_contact_service
+
+
 func _battle_actor_command_service() -> BattleActorCommandService:
 	if battle_actor_command_service == null:
 		battle_actor_command_service = BattleActorCommandService.new()
@@ -31397,20 +32093,21 @@ func _start_or_fire_attack_button(player_id: int, prefix: String, input_vector: 
 
 
 func _input_vector_for(prefix: String) -> Vector2:
-	var input_vector := Vector2(
-		Input.get_action_strength("%s_right" % prefix) - Input.get_action_strength("%s_left" % prefix),
-		Input.get_action_strength("%s_down" % prefix) - Input.get_action_strength("%s_up" % prefix)
+	var service := battle_input_service if battle_input_service != null else BattleInputService.new()
+	return service.input_vector_from_strengths(
+		Input.get_action_strength("%s_right" % prefix),
+		Input.get_action_strength("%s_left" % prefix),
+		Input.get_action_strength("%s_down" % prefix),
+		Input.get_action_strength("%s_up" % prefix)
 	)
-	if input_vector.length() <= 0.08:
-		return Vector2.ZERO
-	return input_vector.normalized() if input_vector.length() > 1.0 else input_vector
 
 
 func _gun_turn_input_vector_for(prefix: String) -> Vector2:
-	var x := Input.get_action_strength("%s_face_right" % prefix) - Input.get_action_strength("%s_face_left" % prefix)
-	if absf(x) <= 0.08:
-		return Vector2.ZERO
-	return Vector2(clampf(x, -1.0, 1.0), 0.0)
+	var service := battle_input_service if battle_input_service != null else BattleInputService.new()
+	return service.gun_turn_input_vector_from_strengths(
+		Input.get_action_strength("%s_face_right" % prefix),
+		Input.get_action_strength("%s_face_left" % prefix)
+	)
 
 
 func _refresh_boost_visibility_after_start(unit) -> void:
@@ -31688,32 +32385,17 @@ func _gun_drive_aim_speed_mult(gun_drive_ratio: float) -> float:
 
 
 func _gun_drive_projectile_momentum_mult(gun_drive_ratio: float) -> float:
-	if projectile_runtime_service != null:
-		return projectile_runtime_service.gun_drive_projectile_momentum_mult(gun_drive_ratio)
-	return 1.0
+	return _projectile_runtime_service().gun_drive_projectile_momentum_mult(gun_drive_ratio)
 
 
 func _projectile_drive_momentum_mult_for_event(event: Dictionary) -> float:
-	if projectile_runtime_service != null:
-		return projectile_runtime_service.projectile_drive_momentum_mult_for_event(event)
-	if not event.has("gun_drive_ratio"):
-		return 1.0
-	return _gun_drive_projectile_momentum_mult(float(event.get("gun_drive_ratio", 1.0)))
+	return _projectile_runtime_service().projectile_drive_momentum_mult_for_event(event)
 
 
 func _sync_projectile_drive_momentum_fields(event: Dictionary) -> void:
-	if projectile_runtime_service != null:
-		var fields: Dictionary = projectile_runtime_service.projectile_drive_momentum_fields(event)
-		for key in fields.keys():
-			event[key] = fields[key]
-		return
-	if not bool(event.get("projectile", false)):
-		return
-	var base_momentum := maxf(0.0, float(event.get("projectile_base_momentum", event.get("projectile_momentum", 0.0))))
-	var drive_mult := _projectile_drive_momentum_mult_for_event(event)
-	event["projectile_base_momentum"] = base_momentum
-	event["projectile_drive_momentum_mult"] = drive_mult
-	event["projectile_effective_momentum"] = base_momentum * drive_mult
+	var fields: Dictionary = _projectile_runtime_service().projectile_drive_momentum_fields(event)
+	for key in fields.keys():
+		event[key] = fields[key]
 
 
 func _runtime_gun_segment_for_binding(unit, binding: Dictionary) -> Dictionary:
@@ -32509,16 +33191,7 @@ func _copy_control_event_fields(event: Dictionary, group: Dictionary) -> void:
 
 
 func _projectile_style_for_damage(damage_type: String) -> String:
-	if projectile_runtime_service != null:
-		return projectile_runtime_service.projectile_style_for_damage(damage_type)
-	match damage_type:
-		"chemical":
-			return "spray"
-		"laser":
-			return "beam"
-		"bullet":
-			return "bullet"
-	return "thrown"
+	return _projectile_runtime_service().projectile_style_for_damage(damage_type)
 
 
 func _damage_type_range_bonus(stats: Dictionary, damage_type: String) -> float:
@@ -33271,23 +33944,36 @@ func _update_anti_stall_summons(delta: float) -> void:
 func _player_has_live_mech(player_id: int) -> bool:
 	if not active_units.has(player_id):
 		return false
-	if _is_live_unit(active_units[player_id]["hero"]):
-		return true
-	return _live_primary_puppet_count(player_id) > 0
+	var presence := _battle_actor_command_service().auto_summon_mech_presence({
+		"hero_live": _is_live_unit(active_units[player_id]["hero"]),
+		"live_primary_puppet_count": _live_primary_puppet_count(player_id),
+	})
+	return bool(presence.get("has_live_mech", false))
 
 
 func _player_has_pending_mech(player_id: int) -> bool:
-	return _role_pending(player_id, "hero") or _role_pending(player_id, "puppet")
+	var presence := _battle_actor_command_service().auto_summon_mech_presence({
+		"hero_pending": _role_pending(player_id, "hero"),
+		"puppet_pending": _role_pending(player_id, "puppet"),
+	})
+	return bool(presence.get("has_pending_mech", false))
 
 
 func _role_available_for_auto_summon(player_id: int, role_key: String) -> bool:
-	if not ROLE_ORDER.has(role_key) or not active_units.has(player_id):
-		return false
-	if _role_pending(player_id, role_key):
-		return false
-	if role_key == "puppet":
-		return _live_primary_puppet_count(player_id) <= 0
-	return not _is_live_unit(active_units[player_id][role_key])
+	var role_known := ROLE_ORDER.has(role_key)
+	var player_known := active_units.has(player_id)
+	var pending := _role_pending(player_id, role_key) if role_known and player_known else false
+	var live_primary_puppet_count := _live_primary_puppet_count(player_id) if role_key == "puppet" and player_known else 0
+	var existing_live := false
+	if role_known and player_known and role_key != "puppet":
+		existing_live = _is_live_unit(active_units[player_id][role_key])
+	return _battle_actor_command_service().auto_summon_role_available(role_key, {
+		"role_known": role_known,
+		"player_known": player_known,
+		"pending": pending,
+		"live_primary_puppet_count": live_primary_puppet_count,
+		"existing_live": existing_live,
+	})
 
 
 func _auto_summon_first_affordable_sortie_role(player_id: int, role_filter: Array, reason: String = "") -> bool:
@@ -34101,11 +34787,7 @@ func _current_ammo(unit, ammo_type: String) -> int:
 
 
 func _ammo_type_for_event(event: Dictionary) -> String:
-	var ammo_kind := _normalized_ammo_type(String(event.get("ammo_kind", "")))
-	if AMMO_TYPES.has(ammo_kind):
-		return ammo_kind
-	var damage_type := String(event.get("projectile_damage_type", event.get("damage_type", "")))
-	return damage_type if AMMO_TYPES.has(damage_type) else ""
+	return _projectile_runtime_service().ammo_type_for_event(event, AMMO_TYPES)
 
 
 func _consume_ammo_for_event(attacker, event: Dictionary) -> bool:
@@ -34710,141 +35392,16 @@ func _puppet_condition(unit, target, player_id: int) -> String:
 
 
 func _source_rule_for_condition(unit, condition: String) -> Dictionary:
-	var rules: Dictionary = unit.stats.get("source_rules", {})
-	if rules.has(condition):
-		return rules[condition]
-	return rules.get("default", {})
-
-
-func _source_attack_index_for_step(unit, modules: Array, step: int) -> int:
-	if modules.is_empty():
-		return 0
-	var preference := String(unit.stats.get("source_attack_preference", ""))
-	var fallback := clampi(int(modules[step % modules.size()]), 0, ATTACK_GROUP_COUNT - 1)
-	if preference == "":
-		return fallback
-	var ordered: Array = []
-	for offset in range(modules.size()):
-		ordered.append(clampi(int(modules[(step + offset) % modules.size()]), 0, ATTACK_GROUP_COUNT - 1))
-	if preference in ["ranged_first", "finish_first"]:
-		for attack_index in ordered:
-			var group := _attack_group(unit, int(attack_index))
-			if bool(group.get("projectile", false)) and not _part_disabled(unit, int(attack_index)):
-				return int(attack_index)
-	if preference == "melee_first":
-		for attack_index in ordered:
-			var group := _attack_group(unit, int(attack_index))
-			if not bool(group.get("projectile", false)) and not _part_disabled(unit, int(attack_index)):
-				return int(attack_index)
-	if preference == "intercept_first":
-		for attack_index in ordered:
-			var group := _attack_group(unit, int(attack_index))
-			if String(group.get("damage_type", "blunt")) == "blunt" or String(group.get("skill_state", "")) == "armor":
-				return int(attack_index)
-	for attack_index in ordered:
-		if not _part_disabled(unit, int(attack_index)):
-			return int(attack_index)
-	return fallback
+	var stats: Dictionary = unit.stats if unit != null and unit.stats is Dictionary else {}
+	return _battle_actor_command_service().source_rule_for_condition(stats.get("source_rules", {}), condition)
 
 
 func _default_puppet_attack_modules(unit, unit_index: int) -> Array:
-	var modules: Array = []
-	var preferred := clampi(unit_index % ATTACK_GROUP_COUNT, 0, ATTACK_GROUP_COUNT - 1)
-	if not _part_disabled(unit, preferred):
-		modules.append(preferred)
-	for attack_index in range(ATTACK_GROUP_COUNT):
-		if attack_index == preferred:
-			continue
-		if not _part_disabled(unit, attack_index):
-			modules.append(attack_index)
-	return modules
-
-
-func _puppet_attack_reaches(unit, group: Dictionary, action_kind: String, ai_kind: String, delta_ring: float, delta_lane: float) -> bool:
-	var range_limit := _ai_group_attack_reach(unit, group, action_kind)
-	var lane_limit := 0.38
-	if bool(group.get("projectile", false)):
-		lane_limit = maxf(lane_limit, BATTLE_HALF_HEIGHT * 2.0)
-	if ai_kind in ["volley", "mine_dance"]:
-		range_limit += 0.42
-	if ai_kind == "drone_cloud":
-		range_limit += 0.72
-		lane_limit += 0.16
-	if ai_kind == "screen_wall" and action_kind == "armor":
-		lane_limit += 0.24
-	return absf(delta_ring) <= range_limit and absf(delta_lane) <= lane_limit
-
-
-func _source_move_vector(unit, target, player_id: int, unit_index: int, group_size: int, phase: float, move_kind: String) -> Vector2:
-	var delta_ring: float = _ring_delta(unit.ring_pos, target.ring_pos)
-	var delta_lane: float = target.lane - unit.lane
-	match move_kind:
-		"retreat":
-			return Vector2(-signf(delta_ring), clampf(-delta_lane * 1.4, -1.0, 1.0))
-		"kite":
-			var keep_range := float(unit.stats.get("source_keep_range", unit.stats.get("hold_range", 1.1)))
-			var side := -1.0 if unit_index % 2 == 0 else 1.0
-			if absf(delta_ring) < keep_range:
-				return Vector2(-signf(delta_ring), clampf(-delta_lane * 1.25 + side * 0.32, -1.0, 1.0))
-			return Vector2(side * 0.18, clampf(delta_lane * 1.05 + sin(phase + float(unit_index)) * 0.42, -1.0, 1.0))
-		"keep_range":
-			var keep_range := float(unit.stats.get("source_keep_range", unit.stats.get("hold_range", 1.2)))
-			if absf(delta_ring) < keep_range * 0.74:
-				return Vector2(-signf(delta_ring), clampf(-delta_lane * 1.15, -1.0, 1.0))
-			if absf(delta_ring) > keep_range * 1.2:
-				return Vector2(signf(delta_ring), clampf(delta_lane * 1.2, -1.0, 1.0))
-			return Vector2(0.0, clampf(delta_lane * 1.45 + sin(phase + float(unit_index)) * 0.32, -1.0, 1.0))
-		"screen":
-			var own_hero = active_units[player_id]["hero"]
-			if _is_live_unit(own_hero):
-				var hero_to_target := _ring_delta(own_hero.ring_pos, target.ring_pos)
-				var spread := (float(unit_index) - float(group_size - 1) * 0.5) * 0.22
-				var desired_ring := wrapf(own_hero.ring_pos + hero_to_target * 0.38, 0.0, RING_LENGTH)
-				var desired_lane := clampf(lerpf(own_hero.lane, target.lane, 0.46) + spread, -BATTLE_HALF_HEIGHT, BATTLE_HALF_HEIGHT)
-				return Vector2(signf(_ring_delta(unit.ring_pos, desired_ring)), clampf((desired_lane - unit.lane) * 2.3, -1.0, 1.0))
-			return Vector2(signf(delta_ring), clampf(delta_lane * 1.2, -1.0, 1.0))
-		"intercept":
-			var guard_anchor = _source_guard_anchor_for(unit, target, player_id)
-			if _is_live_unit(guard_anchor):
-				var anchor_to_target := _ring_delta(guard_anchor.ring_pos, target.ring_pos)
-				var spread := (float(unit_index) - float(group_size - 1) * 0.5) * 0.18
-				var desired_ring := wrapf(guard_anchor.ring_pos + anchor_to_target * 0.56, 0.0, RING_LENGTH)
-				var desired_lane := clampf(lerpf(guard_anchor.lane, target.lane, 0.52) + spread, -BATTLE_HALF_HEIGHT, BATTLE_HALF_HEIGHT)
-				return Vector2(signf(_ring_delta(unit.ring_pos, desired_ring)), clampf((desired_lane - unit.lane) * 2.7, -1.0, 1.0))
-			return Vector2(signf(delta_ring), clampf(delta_lane * 1.45, -1.0, 1.0))
-		"cover_group":
-			var guard_anchor = _source_guard_anchor_for(unit, target, player_id)
-			if _is_live_unit(guard_anchor):
-				var orbit := float(unit.stats.get("orbit_radius", 0.46))
-				var angle := phase + TAU * float(unit_index) / maxf(1.0, float(group_size))
-				var desired_ring := wrapf(guard_anchor.ring_pos + cos(angle) * orbit + _ring_delta(guard_anchor.ring_pos, target.ring_pos) * 0.22, 0.0, RING_LENGTH)
-				var desired_lane := clampf(guard_anchor.lane + sin(angle) * orbit * 0.8 + (target.lane - guard_anchor.lane) * 0.22, -BATTLE_HALF_HEIGHT, BATTLE_HALF_HEIGHT)
-				return Vector2(signf(_ring_delta(unit.ring_pos, desired_ring)), clampf((desired_lane - unit.lane) * 2.3, -1.0, 1.0))
-			return Vector2(signf(delta_ring), clampf(delta_lane * 1.1, -1.0, 1.0))
-		"cover_retreat":
-			var guard_anchor = _source_guard_anchor_for(unit, target, player_id)
-			if _is_live_unit(guard_anchor):
-				var away_from_target := -signf(_ring_delta(guard_anchor.ring_pos, target.ring_pos))
-				var desired_ring := wrapf(guard_anchor.ring_pos + away_from_target * 0.28, 0.0, RING_LENGTH)
-				var desired_lane := clampf(guard_anchor.lane - signf(target.lane - guard_anchor.lane) * 0.22, -BATTLE_HALF_HEIGHT, BATTLE_HALF_HEIGHT)
-				return Vector2(signf(_ring_delta(unit.ring_pos, desired_ring)), clampf((desired_lane - unit.lane) * 2.0, -1.0, 1.0))
-			return Vector2(-signf(delta_ring), clampf(-delta_lane * 1.2, -1.0, 1.0))
-		"hunt":
-			var side := -1.0 if unit_index % 2 == 0 else 1.0
-			return Vector2(signf(delta_ring), clampf(delta_lane * 1.7 + side * 0.38, -1.0, 1.0))
-		"hold":
-			return Vector2(0.0, clampf(delta_lane * 1.2, -0.7, 0.7))
-		"orbit":
-			var orbit := float(unit.stats.get("orbit_radius", 0.54))
-			var angle := phase + TAU * float(unit_index) / maxf(1.0, float(group_size))
-			var desired_ring := wrapf(target.ring_pos + cos(angle) * orbit, 0.0, RING_LENGTH)
-			var desired_lane := clampf(target.lane + sin(angle) * orbit, -BATTLE_HALF_HEIGHT, BATTLE_HALF_HEIGHT)
-			return Vector2(signf(_ring_delta(unit.ring_pos, desired_ring)), clampf((desired_lane - unit.lane) * 2.0, -1.0, 1.0))
-		"flank":
-			var side := -1.0 if unit_index % 2 == 0 else 1.0
-			var lane_goal := clampf(target.lane + side * float(unit.stats.get("flank_width", 0.58)), -BATTLE_HALF_HEIGHT, BATTLE_HALF_HEIGHT)
-			return Vector2(signf(delta_ring), clampf((lane_goal - unit.lane) * 2.0, -1.0, 1.0))
-	return Vector2(signf(delta_ring), clampf(delta_lane * 2.0, -1.0, 1.0))
+	return _battle_actor_command_service().default_puppet_attack_modules(
+		unit_index,
+		ATTACK_GROUP_COUNT,
+		_battle_actor_disabled_modules(unit)
+	)
 
 
 func _try_puppet_action(unit, target, player_id: int, unit_index: int, delta: float, condition: String = "default") -> void:
@@ -35738,7 +36295,7 @@ func _resolve_runtime_gpu_contact_once(a, raw_collider_a: Dictionary, collider_a
 	var key := _runtime_contact_pair_key(a, raw_collider_a, b, raw_collider_b)
 	var source_a := _runtime_contact_source_for_collider(raw_collider_a)
 	var source_b := _runtime_contact_source_for_collider(raw_collider_b)
-	var intent := runtime_contact_service.gpu_contact_intent({
+	var intent := _runtime_contact_service().gpu_contact_intent({
 		"normal": normal,
 		"penetration": penetration,
 		"position_delta_a": response.get("position_delta_a", Vector2.ZERO),
@@ -35760,32 +36317,7 @@ func _resolve_runtime_gpu_contact_once(a, raw_collider_a: Dictionary, collider_a
 		"velocity_delta_a": response.get("velocity_delta_a", Vector2.ZERO),
 		"velocity_delta_b": response.get("velocity_delta_b", Vector2.ZERO),
 		"constants": _runtime_contact_constants(),
-	}) if runtime_contact_service != null else {}
-	if runtime_contact_service == null:
-		if penetration <= RUNTIME_CONTACT_REQUIRED_OVERLAP:
-			return
-		intent = {
-			"should_process": not runtime_contact_pairs_active.has(key),
-			"mark_seen": true,
-			"mark_active": not runtime_contact_pairs_active.has(key),
-			"normal": normal,
-			"position_delta_a": response.get("position_delta_a", Vector2.ZERO),
-			"position_delta_b": response.get("position_delta_b", Vector2.ZERO),
-			"recovery_a": bool(response.get("recovery_a", false)),
-			"recovery_b": bool(response.get("recovery_b", false)),
-			"contact_momentum": maxf(0.0, float(response.get("raw_contact_momentum", response.get("usable_contact_momentum", 0.0)))),
-			"response_momentum": maxf(0.0, float(response.get("usable_contact_momentum", 0.0))),
-			"closing_speed": maxf(0.0, float(response.get("relative_normal_velocity", 0.0))),
-			"vfx_strength": maxf(0.0, float(response.get("vfx_strength", 0.0))),
-			"vfx_kind": int(response.get("vfx_kind", 0)),
-			"source_a": source_a,
-			"source_b": source_b,
-			"damage_a": int(a.owner_id) != int(b.owner_id) and maxf(0.0, float(response.get("relative_normal_velocity", 0.0))) >= PASSIVE_CONTACT_MIN_SPEED and not _active_melee_contact_damage_suppressed(a, raw_collider_a, b, raw_collider_b),
-			"damage_b": int(a.owner_id) != int(b.owner_id) and maxf(0.0, float(response.get("relative_normal_velocity", 0.0))) >= PASSIVE_CONTACT_MIN_SPEED and not _active_melee_contact_damage_suppressed(b, raw_collider_b, a, raw_collider_a),
-			"velocity_delta_a": response.get("velocity_delta_a", Vector2.ZERO),
-			"velocity_delta_b": response.get("velocity_delta_b", Vector2.ZERO),
-			"apply_velocity_delta": maxf(0.0, float(response.get("usable_contact_momentum", 0.0))) > 0.001,
-		}
+	})
 	if not bool(intent.get("mark_seen", false)):
 		return
 	runtime_contact_pairs_seen[key] = true
@@ -35887,18 +36419,7 @@ func _gpu_collision_recovery_capable(unit, collider: Dictionary) -> bool:
 	var actions = unit.get("runtime_module_actions")
 	if not (actions is Array):
 		return false
-	for raw_action in Array(actions):
-		if not (raw_action is Dictionary):
-			continue
-		var action: Dictionary = raw_action
-		if not _runtime_node_array_has_for_gpu(Array(action.get("target_nodes", [])), node_index):
-			continue
-		var duration := maxf(0.001, float(action.get("duration", 0.62)))
-		var phase := clampf(1.0 - float(action.get("timer", 0.0)) / duration, 0.0, 1.0)
-		var startup_ratio := clampf(float(action.get("startup_ratio", 1.0 / 3.0)), 0.05, 0.95)
-		if phase < startup_ratio:
-			return true
-	return false
+	return _runtime_contact_service().runtime_recovery_capable(Array(actions), node_index)
 
 
 func _gpu_collision_action_phase(unit, collider: Dictionary) -> float:
@@ -35910,22 +36431,7 @@ func _gpu_collision_action_phase(unit, collider: Dictionary) -> float:
 	var actions = unit.get("runtime_module_actions")
 	if not (actions is Array):
 		return 1.0
-	for raw_action in Array(actions):
-		if not (raw_action is Dictionary):
-			continue
-		var action: Dictionary = raw_action
-		if not _runtime_node_array_has_for_gpu(Array(action.get("target_nodes", [])), node_index):
-			continue
-		var duration := maxf(0.001, float(action.get("duration", 0.62)))
-		return clampf(1.0 - float(action.get("timer", 0.0)) / duration, 0.0, 1.0)
-	return 1.0
-
-
-func _runtime_node_array_has_for_gpu(raw_nodes: Array, node_index: int) -> bool:
-	for raw_node in raw_nodes:
-		if int(raw_node) == node_index:
-			return true
-	return false
+	return _runtime_contact_service().runtime_action_phase(Array(actions), node_index)
 
 
 func _runtime_contact_constants() -> Dictionary:
@@ -35945,23 +36451,19 @@ func _runtime_contact_constants() -> Dictionary:
 		"part_break_coeff_barrier": PART_BREAK_COEFF_BARRIER,
 		"passive_contact_min_speed": PASSIVE_CONTACT_MIN_SPEED,
 		"runtime_contact_required_overlap": RUNTIME_CONTACT_REQUIRED_OVERLAP,
+		"passive_contact_scrape_mult": PASSIVE_CONTACT_SCRAPE_MULT,
+		"attack_group_count": ATTACK_GROUP_COUNT,
+		"unit_body_spacing_mult": UNIT_BODY_SPACING_MULT,
+		"melee_stability_threshold_floor": MELEE_STABILITY_THRESHOLD_FLOOR,
 	}
 
 
 func _runtime_contact_socket_key(collider: Dictionary) -> String:
-	if runtime_contact_service != null:
-		return runtime_contact_service.socket_key(collider)
-	if _runtime_collider_uses_torso_damage(collider):
-		return "torso:%d:proxy" % int(collider.get("damage_proxy_torso_unit_index", collider.get("torso_unit_index", 0)))
-	return "%s:%s:%d" % [String(collider.get("part_kind", "")), str(collider.get("node_index", collider.get("part_index", ""))), int(collider.get("torso_unit_index", -1))]
+	return _runtime_contact_service().socket_key(collider)
 
 
 func _runtime_contact_sorted_colliders(colliders: Array) -> Array:
-	if runtime_contact_service != null:
-		return runtime_contact_service.sorted_colliders(colliders)
-	var sorted := colliders.duplicate()
-	sorted.sort_custom(Callable(self, "_runtime_contact_collider_sort"))
-	return sorted
+	return _runtime_contact_service().sorted_colliders(colliders)
 
 
 func _runtime_contact_collider_sort(a, b) -> bool:
@@ -35969,49 +36471,19 @@ func _runtime_contact_collider_sort(a, b) -> bool:
 
 
 func _runtime_contact_collider_priority(raw_collider) -> int:
-	if runtime_contact_service != null:
-		return runtime_contact_service.collider_priority(raw_collider)
-	if not (raw_collider is Dictionary):
-		return 999
-	var collider: Dictionary = raw_collider
-	var part_kind := String(collider.get("part_kind", ""))
-	var independent := bool(collider.get("independent_damage", false)) and part_kind != "torso"
-	if independent:
-		if part_kind == "terminal":
-			return 0
-		return 1
-	if part_kind == "torso":
-		return 8
-	if _runtime_collider_uses_torso_damage(collider):
-		return 9
-	return 5
+	return _runtime_contact_service().collider_priority(raw_collider)
 
 
 func _runtime_contact_pair_key(a, collider_a: Dictionary, b, collider_b: Dictionary) -> String:
 	var aid := int(a.get_instance_id()) if a != null and is_instance_valid(a) else 0
 	var bid := int(b.get_instance_id()) if b != null and is_instance_valid(b) else 0
-	if runtime_contact_service != null:
-		return runtime_contact_service.pair_key(aid, collider_a, bid, collider_b)
-	var a_socket := _runtime_contact_socket_key(collider_a)
-	var b_socket := _runtime_contact_socket_key(collider_b)
-	if aid > bid:
-		var tmp_id := aid
-		aid = bid
-		bid = tmp_id
-		var tmp_socket := a_socket
-		a_socket = b_socket
-		b_socket = tmp_socket
-	return "%d|%s--%d|%s" % [aid, a_socket, bid, b_socket]
+	return _runtime_contact_service().pair_key(aid, collider_a, bid, collider_b)
 
 
 func _runtime_directed_contact_key(a, collider_a: Dictionary, b, collider_b: Dictionary) -> String:
 	var aid := int(a.get_instance_id()) if a != null and is_instance_valid(a) else 0
 	var bid := int(b.get_instance_id()) if b != null and is_instance_valid(b) else 0
-	if runtime_contact_service != null:
-		return runtime_contact_service.directed_contact_key(aid, collider_a, bid, collider_b)
-	var a_socket := _runtime_contact_socket_key(collider_a)
-	var b_socket := _runtime_contact_socket_key(collider_b)
-	return "%d|%s->%d|%s" % [aid, a_socket, bid, b_socket]
+	return _runtime_contact_service().directed_contact_key(aid, collider_a, bid, collider_b)
 
 
 func _mark_active_melee_contact_suppression(attacker, attacker_collider: Dictionary, target, target_collider: Dictionary) -> void:
@@ -36051,117 +36523,35 @@ func _cleanup_active_melee_contact_suppression() -> void:
 
 
 func _runtime_collider_uses_torso_damage(collider: Dictionary) -> bool:
-	if runtime_contact_service != null:
-		return runtime_contact_service.collider_uses_torso_damage(collider)
-	return String(collider.get("damage_proxy", "")).to_lower() == "torso" or (collider.has("independent_damage") and not bool(collider.get("independent_damage", true)))
+	return _runtime_contact_service().collider_uses_torso_damage(collider)
 
 
 func _runtime_contact_part_damage_coeff(collider: Dictionary) -> float:
-	if runtime_contact_service != null:
-		return runtime_contact_service.damage_coeff(collider, _runtime_contact_constants())
-	if _runtime_collider_uses_torso_damage(collider):
-		return PART_DAMAGE_COEFF_TORSO
-	if collider.has("damage_coeff"):
-		return maxf(0.0, float(collider.get("damage_coeff", 0.0)))
-	match String(collider.get("part_kind", "")):
-		"torso":
-			return PART_DAMAGE_COEFF_TORSO
-		"terminal":
-			return PART_DAMAGE_COEFF_TERMINAL_RANGED if String(collider.get("terminal_weapon_kind", "")).to_lower() == "ranged" else PART_DAMAGE_COEFF_TERMINAL_MELEE
-		"barrier_tile":
-			return PART_DAMAGE_COEFF_BARRIER
-		_:
-			return PART_DAMAGE_COEFF_LIMB
+	return _runtime_contact_service().damage_coeff(collider, _runtime_contact_constants())
 
 
 func _runtime_contact_part_break_coeff(collider: Dictionary) -> float:
-	if runtime_contact_service != null:
-		return runtime_contact_service.break_coeff(collider, _runtime_contact_constants())
-	if _runtime_collider_uses_torso_damage(collider):
-		return PART_BREAK_COEFF_TORSO
-	if collider.has("break_coeff"):
-		return maxf(0.0, float(collider.get("break_coeff", 0.0)))
-	match String(collider.get("part_kind", "")):
-		"torso":
-			return PART_BREAK_COEFF_TORSO
-		"terminal":
-			return PART_BREAK_COEFF_TERMINAL_RANGED if String(collider.get("terminal_weapon_kind", "")).to_lower() == "ranged" else PART_BREAK_COEFF_TERMINAL_MELEE
-		"barrier_tile":
-			return PART_BREAK_COEFF_BARRIER
-		_:
-			return PART_BREAK_COEFF_LIMB
+	return _runtime_contact_service().break_coeff(collider, _runtime_contact_constants())
 
 
 func _runtime_contact_part_stiffness(unit, collider: Dictionary) -> float:
-	if runtime_contact_service != null:
-		return runtime_contact_service.part_stiffness(collider, _collider_stiffness_size_multiplier(collider, unit), _runtime_contact_constants())
-	if _runtime_collider_uses_torso_damage(collider):
-		var mult_proxy := _collider_stiffness_size_multiplier(collider, unit)
-		return PART_STIFFNESS_BASE_MOMENTUM * 2.0 * mult_proxy
-	if collider.has("stiffness_momentum"):
-		return maxf(1.0, float(collider.get("stiffness_momentum", 0.0)))
-	var mult := _collider_stiffness_size_multiplier(collider, unit)
-	match String(collider.get("part_kind", "")):
-		"torso":
-			return PART_STIFFNESS_BASE_MOMENTUM * 2.0 * mult
-		"terminal":
-			var terminal_kind := String(collider.get("terminal_weapon_kind", "")).to_lower()
-			return PART_STIFFNESS_BASE_MOMENTUM * (0.8 if terminal_kind == "ranged" else 2.0) * mult
-		"barrier_tile":
-			return PART_STIFFNESS_BASE_MOMENTUM * mult
-		_:
-			return PART_STIFFNESS_BASE_MOMENTUM * mult
+	return _runtime_contact_service().part_stiffness(collider, _collider_stiffness_size_multiplier(collider, unit), _runtime_contact_constants())
 
 
 func _runtime_contact_path_stiffness(unit, collider: Dictionary) -> float:
-	if runtime_contact_service != null:
-		return runtime_contact_service.path_stiffness(collider, _collider_stiffness_size_multiplier(collider, unit), _runtime_contact_constants())
-	if _runtime_collider_uses_torso_damage(collider):
-		var mult_proxy := _collider_stiffness_size_multiplier(collider, unit)
-		return PART_STIFFNESS_BASE_MOMENTUM * 2.0 * mult_proxy
-	if collider.has("path_stiffness_momentum"):
-		return maxf(1.0, float(collider.get("path_stiffness_momentum", 0.0)))
-	var size_mult := _collider_stiffness_size_multiplier(collider, unit)
-	var torso_stiffness := PART_STIFFNESS_BASE_MOMENTUM * 2.0 * size_mult
-	var limb_stiffness := PART_STIFFNESS_BASE_MOMENTUM * size_mult
-	var part_stiffness := _runtime_contact_part_stiffness(unit, collider)
-	match String(collider.get("part_kind", "")):
-		"torso":
-			return part_stiffness
-		"terminal":
-			return maxf(1.0, minf(part_stiffness, minf(limb_stiffness, torso_stiffness)))
-		"barrier_tile":
-			return part_stiffness
-		_:
-			return maxf(1.0, minf(part_stiffness, torso_stiffness))
+	return _runtime_contact_service().path_stiffness(collider, _collider_stiffness_size_multiplier(collider, unit), _runtime_contact_constants())
 
 
 func _runtime_contact_break_threshold(unit, collider: Dictionary) -> float:
-	if runtime_contact_service != null:
-		return runtime_contact_service.break_threshold(collider, _collider_stiffness_size_multiplier(collider, unit), _runtime_contact_constants())
-	return maxf(0.5, _runtime_contact_path_stiffness(unit, collider) * _runtime_contact_part_break_coeff(collider) * BREAK_STIFFNESS_SCALE)
+	return _runtime_contact_service().break_threshold(collider, _collider_stiffness_size_multiplier(collider, unit), _runtime_contact_constants())
 
 
 func _runtime_contact_damage_type(collider: Dictionary) -> String:
-	if runtime_contact_service != null:
-		return runtime_contact_service.damage_type(collider, MELEE_DAMAGE_TYPES)
-	if _runtime_collider_uses_torso_damage(collider):
-		return "blunt"
-	var damage_type := String(collider.get("damage_type", "blunt"))
-	if not MELEE_DAMAGE_TYPES.has(damage_type):
-		return "blunt"
-	return damage_type
+	return _runtime_contact_service().damage_type(collider, MELEE_DAMAGE_TYPES)
 
 
 func _runtime_contact_material_class(collider: Dictionary) -> String:
-	if runtime_contact_service != null:
-		return runtime_contact_service.material_class(collider)
-	if _runtime_collider_uses_torso_damage(collider):
-		return "body"
-	var material_class := String(collider.get("material_class", "body"))
-	if material_class == "gun" or material_class == "missile_launcher" or material_class == "web_gun":
-		return "body"
-	return material_class
+	return _runtime_contact_service().material_class(collider)
 
 
 func _apply_runtime_contact_damage(attacker, attacker_collider: Dictionary, target, target_collider: Dictionary, normal: Vector2, contact_momentum: float, hit_position: Vector2, contact_source: String = "runtime_contact") -> void:
@@ -36175,7 +36565,7 @@ func _apply_runtime_contact_damage(attacker, attacker_collider: Dictionary, targ
 		"passive_contact": true,
 		"runtime_contact": true,
 	}
-	var intent := runtime_contact_service.damage_intent({
+	var intent := _runtime_contact_service().damage_intent({
 		"attacker_id": int(attacker.get_instance_id()) if attacker != null and is_instance_valid(attacker) else 0,
 		"target_id": int(target.get_instance_id()) if target != null and is_instance_valid(target) else 0,
 		"attacker_collider": attacker_collider,
@@ -36192,51 +36582,7 @@ func _apply_runtime_contact_damage(attacker, attacker_collider: Dictionary, targ
 		"damage_type": damage_type,
 		"material_class": material_class,
 		"vulnerability_multiplier": _vulnerability_multiplier(target, vulnerability_event),
-	}) if runtime_contact_service != null else {}
-	if runtime_contact_service == null:
-		var fallback_usable_momentum := minf(contact_momentum, attacker_path_stiffness)
-		var fallback_damage_float := fallback_usable_momentum * _runtime_contact_part_damage_coeff(attacker_collider) * CONTACT_DAMAGE_SCALE
-		fallback_damage_float *= _vulnerability_multiplier(target, vulnerability_event)
-		if fallback_damage_float <= 0.001:
-			return
-		var fallback_threshold := _runtime_contact_break_threshold(target, target_collider)
-		intent = {
-			"should_apply": true,
-			"threshold_blocked": fallback_damage_float < fallback_threshold,
-			"damage_float": fallback_damage_float,
-			"event": {
-				"state": "normal",
-				"projectile": false,
-				"passive_contact": true,
-				"runtime_contact": true,
-				"contact_source": contact_source,
-				"contact_node_key": _runtime_contact_socket_key(attacker_collider),
-				"contact_segment_key": "%s:%s" % [String(attacker_collider.get("part_kind", "")), str(attacker_collider.get("node_index", attacker_collider.get("part_index", "")))],
-				"contact_pair_key": _runtime_directed_contact_key(attacker, attacker_collider, target, target_collider),
-				"damage_resolution_part": _runtime_contact_socket_key(target_collider),
-				"damage_type": damage_type,
-				"material_class": material_class,
-				"direction": normal,
-				"momentum": fallback_usable_momentum,
-				"momentum_vector": normal * fallback_usable_momentum,
-				"momentum_magnitude": fallback_usable_momentum,
-				"raw_momentum": contact_momentum,
-				"usable_contact_momentum": fallback_usable_momentum,
-				"attacker_path_stiffness": attacker_path_stiffness,
-				"target_path_stiffness": _runtime_contact_path_stiffness(target, target_collider),
-				"break_threshold": fallback_threshold,
-				"damage_after_break": fallback_damage_float,
-				"contact_damage": fallback_damage_float,
-				"target_part_index": int(target_collider.get("part_index", -1)),
-				"target_part_kind": String(target_collider.get("part_kind", "core")),
-				"target_part_name": String(target_collider.get("name", "CORE")),
-				"target_torso_unit_index": int(target_collider.get("torso_unit_index", -1)),
-				"attacker_part_index": int(attacker_collider.get("part_index", -1)),
-				"attacker_part_kind": String(attacker_collider.get("part_kind", "")),
-				"attacker_terminal_weapon_kind": String(attacker_collider.get("terminal_weapon_kind", "")),
-				"hit_position_combat": hit_position,
-			},
-		}
+	})
 	if not bool(intent.get("should_apply", false)):
 		return
 	var event: Dictionary = Dictionary(intent.get("event", {}))
@@ -36273,15 +36619,18 @@ func _request_runtime_collision_brake(unit) -> void:
 
 
 func _apply_runtime_contact_velocity_response(a, b, normal: Vector2, contact_momentum: float) -> void:
-	if contact_momentum <= 0.001 or normal.length() <= 0.001:
+	var intent := _runtime_contact_service().velocity_response_intent({
+		"normal": normal,
+		"contact_momentum": contact_momentum,
+		"mass_a": _unit_effective_mass(a),
+		"mass_b": _unit_effective_mass(b),
+		"anchored_a": _unit_is_anchored_barrier(a),
+		"anchored_b": _unit_is_anchored_barrier(b),
+	})
+	if not bool(intent.get("should_apply", false)):
 		return
-	var direction := normal.normalized()
-	var mass_a := maxf(1.0, _unit_effective_mass(a))
-	var mass_b := maxf(1.0, _unit_effective_mass(b))
-	if not _unit_is_anchored_barrier(a):
-		a.velocity -= direction * (contact_momentum / mass_a)
-	if not _unit_is_anchored_barrier(b):
-		b.velocity += direction * (contact_momentum / mass_b)
+	a.velocity += intent.get("velocity_delta_a", Vector2.ZERO)
+	b.velocity += intent.get("velocity_delta_b", Vector2.ZERO)
 	_request_runtime_collision_brake(a)
 	_request_runtime_collision_brake(b)
 
@@ -36292,7 +36641,7 @@ func _resolve_runtime_contact_pair_once(a, raw_collider_a: Dictionary, collider_
 	var key := _runtime_contact_pair_key(a, raw_collider_a, b, raw_collider_b)
 	var source_a := _runtime_contact_source_for_collider(raw_collider_a)
 	var source_b := _runtime_contact_source_for_collider(raw_collider_b)
-	var intent := runtime_contact_service.runtime_pair_intent({
+	var intent := _runtime_contact_service().runtime_pair_intent({
 		"normal": normal_a_to_b,
 		"pair_active": runtime_contact_pairs_active.has(key),
 		"velocity_a": _contact_collider_velocity(a, raw_collider_a),
@@ -36306,32 +36655,7 @@ func _resolve_runtime_contact_pair_once(a, raw_collider_a: Dictionary, collider_
 		"suppressed_a": _active_melee_contact_damage_suppressed(a, raw_collider_a, b, raw_collider_b),
 		"suppressed_b": _active_melee_contact_damage_suppressed(b, raw_collider_b, a, raw_collider_a),
 		"constants": _runtime_contact_constants(),
-	}) if runtime_contact_service != null else {}
-	if runtime_contact_service == null:
-		var fallback_normal := normal_a_to_b.normalized()
-		var fallback_velocity_a := _contact_collider_velocity(a, raw_collider_a)
-		var fallback_velocity_b := _contact_collider_velocity(b, raw_collider_b)
-		var fallback_closing_speed := maxf(0.0, (fallback_velocity_a - fallback_velocity_b).dot(fallback_normal))
-		var fallback_contact_momentum := fallback_closing_speed * (maxf(1.0, _unit_effective_mass(a)) + maxf(1.0, _unit_effective_mass(b)))
-		var fallback_allow_a_damage := true
-		var fallback_allow_b_damage := true
-		if source_a == "active_module_contact" and source_b != "active_module_contact":
-			fallback_allow_b_damage = false
-		elif source_b == "active_module_contact" and source_a != "active_module_contact":
-			fallback_allow_a_damage = false
-		intent = {
-			"should_process": not runtime_contact_pairs_active.has(key) and fallback_closing_speed >= PASSIVE_CONTACT_MIN_SPEED and fallback_contact_momentum > 0.001,
-			"mark_seen": true,
-			"mark_active": not runtime_contact_pairs_active.has(key) and fallback_closing_speed >= PASSIVE_CONTACT_MIN_SPEED and fallback_contact_momentum > 0.001,
-			"normal": fallback_normal,
-			"closing_speed": fallback_closing_speed,
-			"contact_momentum": fallback_contact_momentum,
-			"response_momentum": minf(fallback_contact_momentum, minf(_runtime_contact_path_stiffness(a, raw_collider_a), _runtime_contact_path_stiffness(b, raw_collider_b))),
-			"source_a": source_a,
-			"source_b": source_b,
-			"damage_a": fallback_allow_a_damage and not _active_melee_contact_damage_suppressed(a, raw_collider_a, b, raw_collider_b),
-			"damage_b": fallback_allow_b_damage and not _active_melee_contact_damage_suppressed(b, raw_collider_b, a, raw_collider_a),
-		}
+	})
 	runtime_contact_pairs_seen[key] = true
 	if not bool(intent.get("should_process", false)):
 		return
@@ -36377,11 +36701,7 @@ func _flush_runtime_contact_velocity_responses(responses: Array) -> void:
 
 
 func _runtime_contact_source_for_collider(collider: Dictionary) -> String:
-	if runtime_contact_service != null:
-		return runtime_contact_service.contact_source(collider)
-	if bool(collider.get("independent_damage", false)) and String(collider.get("part_kind", "")) != "torso":
-		return "active_module_contact"
-	return "default_body_contact"
+	return _runtime_contact_service().contact_source(collider)
 
 
 func _resolve_passive_contact_pair(a, raw_collider_a: Dictionary, collider_a: Dictionary, b, raw_collider_b: Dictionary, collider_b: Dictionary, normal_a_to_b: Vector2, penetration: float, delta: float) -> void:
@@ -36582,49 +36902,27 @@ func _combo_knock_multiplier_for_event(event: Dictionary) -> float:
 
 
 func _event_vector_value(event: Dictionary, key: String) -> Vector2:
-	if event.has(key) and event[key] is Vector2:
-		var value: Vector2 = event[key]
-		return value
-	return Vector2.ZERO
+	return _projectile_runtime_service().event_vector_value(event, key)
 
 
 func _set_event_momentum_vector(event: Dictionary, vector: Vector2, magnitude: float = -1.0) -> void:
-	var resolved_magnitude := magnitude if magnitude >= 0.0 else vector.length()
-	event["momentum_vector"] = vector
-	event["momentum_magnitude"] = resolved_magnitude
-	if resolved_magnitude > 0.001 and vector.length() > 0.001:
-		event["direction"] = vector.normalized()
+	var patch: Dictionary = _projectile_runtime_service().event_momentum_vector_patch(vector, magnitude)
+	for key in patch.keys():
+		event[key] = patch[key]
 
 
 func _event_direction_vector(attacker, target, event: Dictionary, fallback: Vector2 = Vector2.RIGHT) -> Vector2:
-	var momentum_vector := _event_vector_value(event, "momentum_vector")
-	if momentum_vector.length() > 0.001:
-		return momentum_vector.normalized()
-	var event_direction := _event_vector_value(event, "direction")
-	if event_direction.length() > 0.001:
-		return event_direction.normalized()
+	var target_delta := Vector2.ZERO
 	if attacker != null and is_instance_valid(attacker) and target != null and is_instance_valid(target):
-		var target_delta := _mobius_delta_vec_between(attacker, target)
-		if target_delta.length() > 0.001:
-			return target_delta.normalized()
+		target_delta = _mobius_delta_vec_between(attacker, target)
+	var attacker_forward := Vector2.ZERO
 	if attacker != null and is_instance_valid(attacker):
-		var forward := _unit_forward_vector(attacker)
-		if forward.length() > 0.001:
-			return forward.normalized()
-	if fallback.length() > 0.001:
-		return fallback.normalized()
-	return Vector2.RIGHT
+		attacker_forward = _unit_forward_vector(attacker)
+	return _projectile_runtime_service().event_direction_vector(event, target_delta, attacker_forward, fallback)
 
 
 func _event_momentum_magnitude(event: Dictionary, fallback: float = 0.0) -> float:
-	var momentum_vector := _event_vector_value(event, "momentum_vector")
-	if momentum_vector.length() > 0.001:
-		return momentum_vector.length()
-	if event.has("momentum_magnitude"):
-		return maxf(0.0, float(event.get("momentum_magnitude", fallback)))
-	if event.has("momentum"):
-		return maxf(0.0, float(event.get("momentum", fallback)))
-	return maxf(0.0, fallback)
+	return _projectile_runtime_service().event_momentum_magnitude(event, fallback)
 
 
 func _apply_active_melee_momentum_stagger(attacker, target, event: Dictionary) -> void:
@@ -36689,24 +36987,7 @@ func _apply_module_variant_hit_effect(attacker, target, event: Dictionary) -> vo
 
 
 func _projectile_behavior_key(event: Dictionary) -> String:
-	if projectile_runtime_service != null:
-		return projectile_runtime_service.projectile_behavior_key(event)
-	var behavior := _projectile_behavior_for_data(event)
-	var style := String(event.get("projectile_style", ""))
-	var damage_type := String(event.get("damage_type", event.get("projectile_damage_type", "bullet")))
-	if behavior == "true_bullet" or style == "true_bullet":
-		return "true_bullet"
-	if behavior == "explosive" or style in ["explosive", "blast", "missile"]:
-		return "explosive"
-	if behavior == "bullet_hell" or style == "bullet_hell":
-		return "bullet_hell"
-	if damage_type == "laser" or style in ["beam", "chaos"]:
-		return "laser"
-	if damage_type == "chemical" or style == "spray":
-		return "chemical"
-	if damage_type == "bullet":
-		return "bullet_hell"
-	return ""
+	return _projectile_runtime_service().projectile_behavior_key(event)
 
 
 func _projectile_runtime_constants() -> Dictionary:
@@ -36734,6 +37015,7 @@ func _projectile_runtime_constants() -> Dictionary:
 		"chemical_dot_default_duration": CHEMICAL_DOT_DEFAULT_DURATION,
 		"chemical_dot_default_mult": CHEMICAL_DOT_DEFAULT_MULT,
 		"chemical_dot_default_frontload": CHEMICAL_DOT_DEFAULT_FRONTLOAD,
+		"projectile_damage_types": PROJECTILE_DAMAGE_TYPES,
 	}
 
 
@@ -36742,65 +37024,15 @@ func _gun_current_multiplier_for_projectile_service(max_multiplier: float, alloc
 
 
 func _projectile_default_momentum_for_event(event: Dictionary) -> float:
-	if projectile_runtime_service != null:
-		return projectile_runtime_service.projectile_default_momentum_for_event(event, _projectile_runtime_constants())
-	match _projectile_behavior_key(event):
-		"true_bullet":
-			return PROJECTILE_MOMENTUM_TRUE_BULLET
-		"explosive":
-			return PROJECTILE_MOMENTUM_EXPLOSIVE
-		"bullet_hell":
-			return PROJECTILE_MOMENTUM_BULLET_HELL
-		"laser":
-			return PROJECTILE_MOMENTUM_LASER
-		"chemical":
-			return PROJECTILE_MOMENTUM_CHEMICAL
-	return 0.0
+	return _projectile_runtime_service().projectile_default_momentum_for_event(event, _projectile_runtime_constants())
 
 
 func _projectile_collision_speed_for_event(event: Dictionary) -> float:
-	if projectile_runtime_service != null:
-		return projectile_runtime_service.projectile_collision_speed_for_event(event, _projectile_runtime_constants())
-	if not bool(event.get("projectile", false)):
-		return 0.0
-	if float(event.get("projectile_collision_speed", 0.0)) > 0.0:
-		return maxf(0.0, float(event["projectile_collision_speed"]))
-	match _projectile_behavior_key(event):
-		"true_bullet":
-			return PROJECTILE_SPEED_TRUE_BULLET
-		"laser":
-			return PROJECTILE_SPEED_LASER
-		"explosive":
-			return clampf(float(event.get("projectile_speed_mult", 1.6)), 0.9, 2.4) * PROJECTILE_SPEED_UNIT
-		"bullet_hell":
-			return clampf(float(event.get("projectile_speed_mult", BULLET_HELL_DEFAULT_SPEED_MULT)), 1.5, 5.0) * PROJECTILE_SPEED_UNIT
-		"chemical":
-			return clampf(float(event.get("projectile_speed_mult", CHEMICAL_PROJECTILE_DEFAULT_SPEED_MULT)), 0.35, 1.45) * PROJECTILE_SPEED_UNIT
-	return PROJECTILE_SPEED_UNIT
+	return _projectile_runtime_service().projectile_collision_speed_for_event(event, _projectile_runtime_constants())
 
 
 func _projectile_mass_for_event(event: Dictionary, collision_speed: float = -1.0) -> float:
-	if projectile_runtime_service != null:
-		return projectile_runtime_service.projectile_mass_for_event(event, _projectile_runtime_constants(), collision_speed)
-	if not bool(event.get("projectile", false)):
-		return 0.0
-	if float(event.get("projectile_mass", 0.0)) > 0.0:
-		return maxf(0.0, float(event["projectile_mass"]))
-	var speed := collision_speed if collision_speed > 0.0 else _projectile_collision_speed_for_event(event)
-	if event.has("projectile_momentum") and float(event.get("projectile_momentum", 0.0)) > 0.0 and speed > 0.001:
-		return maxf(0.01, float(event["projectile_momentum"]) * _projectile_drive_momentum_mult_for_event(event) / speed)
-	match _projectile_behavior_key(event):
-		"true_bullet":
-			return PROJECTILE_MASS_TRUE_BULLET
-		"explosive":
-			return PROJECTILE_MASS_EXPLOSIVE
-		"bullet_hell":
-			return PROJECTILE_MASS_BULLET_HELL
-		"laser":
-			return PROJECTILE_MASS_LASER
-		"chemical":
-			return PROJECTILE_MASS_CHEMICAL
-	return 1.0
+	return _projectile_runtime_service().projectile_mass_for_event(event, _projectile_runtime_constants(), collision_speed)
 
 
 func _projectile_velocity_vector_for_event(attacker, target, event: Dictionary) -> Vector2:
@@ -36823,43 +37055,32 @@ func _projectile_collision_momentum(attacker, target, event: Dictionary, momentu
 		var target_collider := _target_collider_for_stagger(target, event, attacker.ring_pos if attacker != null and is_instance_valid(attacker) else target.ring_pos)
 		if not target_collider.is_empty():
 			target_velocity = _contact_collider_velocity(target, target_collider)
-	var relative_velocity := projectile_velocity - target_velocity
-	var closing_speed := maxf(0.0, relative_velocity.dot(projectile_direction))
 	var projectile_mass := _projectile_mass_for_event(event, projectile_speed)
 	var explicit_momentum := _projectile_momentum_for_event(event)
-	var momentum := projectile_mass * closing_speed * maxf(0.0, momentum_scale)
-	if explicit_momentum > 0.0 and _projectile_behavior_key(event) == "true_bullet":
-		momentum = explicit_momentum * maxf(0.0, momentum_scale)
-	event["projectile_mass"] = projectile_mass
-	event["projectile_collision_speed"] = projectile_speed
-	event["projectile_velocity_vector"] = projectile_velocity
-	event["projectile_target_velocity_vector"] = target_velocity
-	event["projectile_relative_velocity_vector"] = relative_velocity
-	event["projectile_closing_speed"] = closing_speed
-	event["projectile_momentum_resolved"] = momentum
-	event["momentum"] = momentum
-	_set_event_momentum_vector(event, projectile_direction * momentum, momentum)
-	return momentum
+	var intent := _projectile_runtime_service().projectile_collision_momentum_intent({
+		"projectile": bool(event.get("projectile", false)),
+		"projectile_velocity": projectile_velocity,
+		"fallback_direction": projectile_direction,
+		"target_velocity": target_velocity,
+		"projectile_mass": projectile_mass,
+		"explicit_momentum": explicit_momentum,
+		"behavior_key": _projectile_behavior_key(event),
+		"momentum_scale": momentum_scale,
+	})
+	if String(intent.get("action", "")) != "resolve_projectile_collision_momentum":
+		return 0.0
+	var event_patch: Dictionary = Dictionary(intent.get("event_patch", {}))
+	for key in event_patch.keys():
+		event[key] = event_patch[key]
+	return float(intent.get("momentum", 0.0))
 
 
 func _projectile_momentum_for_event(event: Dictionary) -> float:
-	if projectile_runtime_service != null:
-		var state: Dictionary = projectile_runtime_service.projectile_momentum_state_for_event(event, _projectile_runtime_constants())
-		var fields: Dictionary = Dictionary(state.get("fields", {}))
-		for key in fields.keys():
-			event[key] = fields[key]
-		return float(state.get("momentum", 0.0))
-	if not bool(event.get("projectile", false)):
-		return 0.0
-	if float(event.get("projectile_momentum", 0.0)) > 0.0:
-		var effective := maxf(0.0, float(event.get("projectile_momentum", 0.0)) * _projectile_drive_momentum_mult_for_event(event))
-		event["projectile_base_momentum"] = maxf(0.0, float(event.get("projectile_momentum", 0.0)))
-		event["projectile_drive_momentum_mult"] = _projectile_drive_momentum_mult_for_event(event)
-		event["projectile_effective_momentum"] = effective
-		return effective
-	var speed := _projectile_collision_speed_for_event(event)
-	var mass := _projectile_mass_for_event(event, speed)
-	return maxf(0.0, mass * speed)
+	var state: Dictionary = _projectile_runtime_service().projectile_momentum_state_for_event(event, _projectile_runtime_constants())
+	var fields: Dictionary = Dictionary(state.get("fields", {}))
+	for key in fields.keys():
+		event[key] = fields[key]
+	return float(state.get("momentum", 0.0))
 
 
 func _ammo_damage_coeff_for_data(_data: Dictionary) -> float:
@@ -36867,52 +37088,11 @@ func _ammo_damage_coeff_for_data(_data: Dictionary) -> float:
 
 
 func _gun_projectile_damage_mult_max_for_data(data: Dictionary) -> float:
-	if projectile_runtime_service != null:
-		return projectile_runtime_service.gun_projectile_damage_mult_max_for_data(data, _gun_kind_for_data(data), _ammo_kind_for_data(data), _projectile_runtime_constants())
-	if bool(data.get("non_damage", false)):
-		return 0.0
-	if data.has("gun_projectile_damage_mult"):
-		return maxf(0.0, float(data.get("gun_projectile_damage_mult", 0.0)))
-	var gun_kind := String(data.get("gun_kind", _gun_kind_for_data(data))).to_lower()
-	var ammo_kind := String(data.get("ammo_kind", _ammo_kind_for_data(data))).to_lower()
-	match gun_kind:
-		"sniper":
-			return STANDARD_SNIPER_GUN_DAMAGE_COEFF
-		"rifle":
-			return 4.0
-		"laser_gun":
-			return 3.0
-		"sprayer":
-			return 2.0
-		"grenade_launcher":
-			return 4.0
-		"missile_launcher":
-			return 5.0
-		"web_gun":
-			return 0.0
-	match ammo_kind:
-		"laser":
-			return 3.0
-		"chemical":
-			return 2.0
-		"explosive":
-			return 4.0
-		"web":
-			return 0.0
-	return 1.0
+	return _projectile_runtime_service().gun_projectile_damage_mult_max_for_data(data, _gun_kind_for_data(data), _ammo_kind_for_data(data), _projectile_runtime_constants())
 
 
 func _gun_projectile_damage_mult_for_event(event: Dictionary) -> float:
-	if projectile_runtime_service != null:
-		return projectile_runtime_service.gun_projectile_damage_mult_for_event(event, _gun_kind_for_data(event), _ammo_kind_for_data(event), _projectile_runtime_constants(), Callable(self, "_gun_current_multiplier_for_projectile_service"))
-	if bool(event.get("non_damage", false)):
-		return 0.0
-	if event.has("gun_projectile_damage_mult_current") and not event.has("gun_drive_allocated") and not event.has("gun_drive_max"):
-		return maxf(0.0, float(event.get("gun_projectile_damage_mult_current", 0.0)))
-	var max_mult := _gun_projectile_damage_mult_max_for_data(event)
-	var max_drive := maxf(0.0, float(event.get("gun_drive_max", event.get("momentum_max", 0.0))))
-	var allocated := clampf(float(event.get("gun_drive_allocated", max_drive)), 0.0, max_drive)
-	return data_rule_service.gun_current_multiplier(max_mult, allocated, max_drive, false) if data_rule_service != null else DataRuleService.new().gun_current_multiplier(max_mult, allocated, max_drive, false)
+	return _projectile_runtime_service().gun_projectile_damage_mult_for_event(event, _gun_kind_for_data(event), _ammo_kind_for_data(event), _projectile_runtime_constants(), Callable(self, "_gun_current_multiplier_for_projectile_service"))
 
 
 func _gun_damage_coeff_for_data(data: Dictionary) -> float:
@@ -36920,43 +37100,22 @@ func _gun_damage_coeff_for_data(data: Dictionary) -> float:
 
 
 func _projectile_damage_coeffs_for_event(event: Dictionary) -> Dictionary:
-	if projectile_runtime_service != null:
-		var coeffs: Dictionary = projectile_runtime_service.projectile_damage_coeffs_for_event(event, _gun_kind_for_data(event), _ammo_kind_for_data(event), _projectile_runtime_constants(), Callable(self, "_gun_current_multiplier_for_projectile_service"))
-		var fields: Dictionary = Dictionary(coeffs.get("fields", {}))
-		for key in fields.keys():
-			event[key] = fields[key]
-		return {"ammo": float(coeffs.get("ammo", 1.0)), "gun": float(coeffs.get("gun", 1.0))}
-	var gun_mult := _gun_projectile_damage_mult_for_event(event)
-	event["gun_projectile_damage_mult_current"] = gun_mult
-	event["gun_projectile_damage_mult"] = _gun_projectile_damage_mult_max_for_data(event)
-	return {"ammo": 1.0, "gun": gun_mult}
+	var coeffs: Dictionary = _projectile_runtime_service().projectile_damage_coeffs_for_event(event, _gun_kind_for_data(event), _ammo_kind_for_data(event), _projectile_runtime_constants(), Callable(self, "_gun_current_multiplier_for_projectile_service"))
+	var fields: Dictionary = Dictionary(coeffs.get("fields", {}))
+	for key in fields.keys():
+		event[key] = fields[key]
+	return {"ammo": float(coeffs.get("ammo", 1.0)), "gun": float(coeffs.get("gun", 1.0))}
 
 
 func _projectile_raw_damage_for_event(attacker, target, event: Dictionary) -> float:
 	var projectile_momentum := _projectile_collision_momentum(attacker, target, event)
 	if projectile_momentum <= 0.0:
 		return 0.0
-	if projectile_runtime_service != null:
-		return projectile_runtime_service.projectile_raw_damage_for_momentum(event, projectile_momentum, _gun_kind_for_data(event), _ammo_kind_for_data(event), _projectile_runtime_constants(), Callable(self, "_gun_current_multiplier_for_projectile_service"))
-	var coeffs := _projectile_damage_coeffs_for_event(event)
-	return projectile_momentum * float(coeffs.get("gun", 1.0))
+	return _projectile_runtime_service().projectile_raw_damage_for_momentum(event, projectile_momentum, _gun_kind_for_data(event), _ammo_kind_for_data(event), _projectile_runtime_constants(), Callable(self, "_gun_current_multiplier_for_projectile_service"))
 
 
 func _default_recoil_transfer_for_projectile(event: Dictionary) -> float:
-	if projectile_runtime_service != null:
-		return projectile_runtime_service.default_recoil_transfer_for_projectile(event)
-	match _projectile_behavior_key(event):
-		"true_bullet":
-			return 0.85
-		"explosive":
-			return 1.0
-		"bullet_hell":
-			return 0.7
-		"laser":
-			return 0.35
-		"chemical":
-			return 0.55
-	return 0.65
+	return _projectile_runtime_service().default_recoil_transfer_for_projectile(event)
 
 
 func _apply_weapon_recoil_from_momentum(shooter, event: Dictionary) -> void:
@@ -36965,22 +37124,26 @@ func _apply_weapon_recoil_from_momentum(shooter, event: Dictionary) -> void:
 	if bool(event.get("weapon_recoil_applied", false)):
 		return
 	var projectile_velocity := _projectile_velocity_vector_for_event(shooter, null, event)
-	if projectile_velocity.length() <= 0.001:
-		return
 	var launch_momentum := _projectile_momentum_for_event(event)
-	if launch_momentum <= 0.001:
-		return
 	var shooter_mass := _unit_effective_mass(shooter)
-	var recoil_amount := launch_momentum / maxf(1.0, shooter_mass)
-	if recoil_amount <= 0.0001:
+	var intent := _projectile_runtime_service().weapon_recoil_intent({
+		"projectile": bool(event.get("projectile", false)),
+		"weapon_recoil_applied": bool(event.get("weapon_recoil_applied", false)),
+		"projectile_velocity": projectile_velocity,
+		"launch_momentum": launch_momentum,
+		"shooter_mass": shooter_mass,
+	})
+	if String(intent.get("action", "")) != "apply_weapon_recoil":
 		return
-	var direction := projectile_velocity.normalized()
-	event["weapon_recoil_momentum"] = launch_momentum
-	event["weapon_recoil_amount"] = recoil_amount
-	event["weapon_recoil_direction"] = -direction
-	event["weapon_recoil_applied"] = true
+	var event_patch: Dictionary = Dictionary(intent.get("event_patch", {}))
+	for key in event_patch.keys():
+		event[key] = event_patch[key]
+	var direction_value = intent.get("direction", projectile_velocity.normalized())
+	var direction: Vector2 = direction_value if direction_value is Vector2 else projectile_velocity.normalized()
+	var resolved_launch_momentum := float(intent.get("launch_momentum", launch_momentum))
+	var recoil_amount := float(intent.get("recoil_amount", 0.0))
 	if shooter.has_method("apply_projectile_recoil"):
-		shooter.apply_projectile_recoil(direction, launch_momentum)
+		shooter.apply_projectile_recoil(direction, resolved_launch_momentum)
 	elif shooter.has_method("apply_recoil"):
 		shooter.apply_recoil(direction, recoil_amount, false)
 
@@ -37021,11 +37184,9 @@ func _apply_projectile_momentum_stagger(attacker, target, event: Dictionary, mom
 		target.set_meta("melee_stagger_timer", duration)
 	var actual_duration := maxf(duration, float(target.get_meta("melee_stagger_timer", duration)))
 	_open_stagger_combo(target, attacker, actual_duration, true, projectile_momentum)
-	var impact_combat := Vector2(target.ring_pos, target.lane)
-	if event.has("hit_position_combat") and event["hit_position_combat"] is Vector2:
-		impact_combat = event["hit_position_combat"]
-	elif event.has("projectile_impact_position") and event["projectile_impact_position"] is Vector2:
-		impact_combat = event["projectile_impact_position"]
+	var impact_intent := _projectile_runtime_service().projectile_stagger_impact_position_intent(event, Vector2(target.ring_pos, target.lane))
+	var impact_value = impact_intent.get("position", Vector2(target.ring_pos, target.lane))
+	var impact_combat: Vector2 = impact_value if impact_value is Vector2 else Vector2(target.ring_pos, target.lane)
 	_apply_local_hitstop(attacker, target, MELEE_STAGGER_HITSTOP_SECONDS)
 	_spawn_combo_ripple(impact_combat, int(target.owner_id), float(intent.get("ripple_scale", clampf(actual_duration / maxf(0.1, PROJECTILE_STAGGER_MAX_SECONDS), 0.75, 1.35))))
 	var impulse := float(intent.get("impulse", clampf((projectile_momentum - threshold) * 0.0028, 0.025, 0.42)))
@@ -37056,44 +37217,63 @@ func _target_collider_for_stagger(target, event: Dictionary, origin_x: float) ->
 
 
 func _apply_melee_momentum_stagger_pair(a, momentum_a: float, b, momentum_b: float, normal_a_to_b: Vector2, source: String, initial_hit_counts: bool = true) -> void:
-	if not _unit_role_is_mech(a) or not _unit_role_is_mech(b):
-		return
-	var gap := absf(momentum_a - momentum_b)
-	if gap < MELEE_STAGGER_MIN_MOMENTUM:
-		return
-	var staggered = a if momentum_a < momentum_b else b
-	if _combo_opportunity_active(staggered):
-		return
-	var threshold := _unit_melee_stability_threshold(staggered)
-	var required_gap := threshold
-	if source == "collision":
-		required_gap = maxf(required_gap, MELEE_STAGGER_MIN_MOMENTUM * PASSIVE_CONTACT_STAGGER_MIN_MULT)
-	if gap <= required_gap:
-		return
+	var unit_a_mech := _unit_role_is_mech(a)
+	var unit_b_mech := _unit_role_is_mech(b)
+	var staggered_candidate = a if momentum_a < momentum_b else b
+	var candidate_ready := unit_a_mech and unit_b_mech
+	var threshold := _unit_melee_stability_threshold(staggered_candidate) if candidate_ready else 0.0
 	var now := Time.get_ticks_msec() * 0.001
-	if now < float(staggered.get_meta("melee_stagger_gate_until", 0.0)):
+	var intent := _battle_hit_resolution_service().momentum_response_intent({
+		"kind": "melee_momentum_stagger_pair",
+		"unit_a_mech": unit_a_mech,
+		"unit_b_mech": unit_b_mech,
+		"momentum_a": momentum_a,
+		"momentum_b": momentum_b,
+		"combo_active": _combo_opportunity_active(staggered_candidate) if candidate_ready else false,
+		"threshold": threshold,
+		"source": source,
+		"min_momentum": MELEE_STAGGER_MIN_MOMENTUM,
+		"passive_contact_stagger_min_mult": PASSIVE_CONTACT_STAGGER_MIN_MULT,
+		"threshold_floor": MELEE_STABILITY_THRESHOLD_FLOOR,
+		"base_seconds": MELEE_STAGGER_BASE_SECONDS,
+		"ratio_seconds": MELEE_STAGGER_RATIO_SECONDS,
+		"max_seconds": MELEE_STAGGER_MAX_SECONDS,
+		"gate_seconds": MELEE_STAGGER_GATE_SECONDS,
+		"gate_until": float(staggered_candidate.get_meta("melee_stagger_gate_until", 0.0)) if candidate_ready else 0.0,
+		"now": now,
+	})
+	if String(intent.get("action", "")) != "apply_melee_pair_stagger":
 		return
-	var ratio := (gap - required_gap) / maxf(MELEE_STABILITY_THRESHOLD_FLOOR, required_gap)
-	var duration := clampf(MELEE_STAGGER_BASE_SECONDS + ratio * MELEE_STAGGER_RATIO_SECONDS, 0.0, MELEE_STAGGER_MAX_SECONDS)
-	if duration <= 0.03:
-		return
-	staggered.set_meta("melee_stagger_gate_until", now + MELEE_STAGGER_GATE_SECONDS)
+	var staggered = a if String(intent.get("staggered_side", "")) == "a" else b
+	var source_attacker = b if staggered == a else a
+	if String(intent.get("source_attacker_side", "")) == "a":
+		source_attacker = a
+	elif String(intent.get("source_attacker_side", "")) == "b":
+		source_attacker = b
+	var duration := float(intent.get("duration", 0.0))
+	var gap := float(intent.get("gap", 0.0))
+	threshold = float(intent.get("threshold", threshold))
+	staggered.set_meta("melee_stagger_gate_until", float(intent.get("gate_until", now + MELEE_STAGGER_GATE_SECONDS)))
 	if staggered.has_method("apply_melee_stagger"):
 		staggered.apply_melee_stagger(duration, gap, threshold)
 	else:
 		staggered.action_cooldown = maxf(float(staggered.action_cooldown), duration)
 		staggered.set_meta("melee_stagger_timer", duration)
-	var source_attacker = b if staggered == a else a
 	var actual_duration := maxf(duration, float(staggered.get_meta("melee_stagger_timer", duration)))
-	_open_stagger_combo(staggered, source_attacker, actual_duration, initial_hit_counts, maxf(momentum_a, momentum_b))
+	_open_stagger_combo(staggered, source_attacker, actual_duration, initial_hit_counts, float(intent.get("max_momentum", maxf(momentum_a, momentum_b))))
 	_apply_local_hitstop(source_attacker, staggered, MELEE_STAGGER_HITSTOP_SECONDS)
 	var direction := normal_a_to_b.normalized() if normal_a_to_b.length() > 0.001 else Vector2.RIGHT
 	if staggered == a:
 		direction = -direction
 	var ab_delta := _mobius_delta_vec_between(a, b)
-	var b_near_x: float = a.ring_pos + ab_delta.x
-	var impact_combat := Vector2(wrapf(lerpf(a.ring_pos, b_near_x, 0.5), 0.0, RING_LENGTH), a.lane + ab_delta.y * 0.5)
-	_spawn_combo_ripple(impact_combat, int(staggered.owner_id), clampf(actual_duration / maxf(0.1, MELEE_STAGGER_MAX_SECONDS), 0.8, 1.45))
+	var impact_intent := _battle_hit_resolution_service().melee_pair_impact_position_intent({
+		"a_position": Vector2(a.ring_pos, a.lane),
+		"ab_delta": ab_delta,
+		"ring_length": RING_LENGTH,
+	})
+	var impact_value = impact_intent.get("position", Vector2(a.ring_pos, a.lane))
+	var impact_combat: Vector2 = impact_value if impact_value is Vector2 else Vector2(a.ring_pos, a.lane)
+	_spawn_combo_ripple(impact_combat, int(staggered.owner_id), float(intent.get("ripple_scale", clampf(actual_duration / maxf(0.1, MELEE_STAGGER_MAX_SECONDS), 0.8, 1.45))))
 	_spawn_hit_effect(staggered, 2, "blunt", false, "impact", impact_combat)
 	_show_battle_message("%s %s %.2fs" % [staggered.unit_name, "硬直" if _ui_is_zh() else "STAGGER", duration], 0.42)
 
@@ -37151,14 +37331,7 @@ func _contact_collider_velocity(unit, collider: Dictionary) -> Vector2:
 
 
 func _passive_contact_scrape_factor(collider: Dictionary) -> float:
-	match String(collider.get("part_kind", "")):
-		"terminal":
-			return PASSIVE_CONTACT_SCRAPE_MULT
-		"limb_muscle":
-			return PASSIVE_CONTACT_SCRAPE_MULT * maxf(0.25, float(collider.get("contact_damage_mult", 0.18)))
-		"joint":
-			return PASSIVE_CONTACT_SCRAPE_MULT * 0.18
-	return PASSIVE_CONTACT_SCRAPE_MULT * 0.28
+	return _runtime_contact_service().passive_contact_scrape_factor(collider, _runtime_contact_constants())
 
 
 func _passive_contact_profile(unit, collider: Dictionary) -> Dictionary:
@@ -37213,19 +37386,7 @@ func _unit_group_for_collider(unit, collider: Dictionary) -> Dictionary:
 
 
 func _passive_contact_damage_key(attacker, attacker_collider: Dictionary, target, target_collider: Dictionary, state_key: String) -> String:
-	return "passive_contact_%d_%d_%s_%s_%s_%s_%s" % [
-		int(attacker.get_instance_id()),
-		int(target.get_instance_id()),
-		_meta_safe_part_index(int(attacker_collider.get("part_index", -1))),
-		String(attacker_collider.get("part_kind", "")),
-		_meta_safe_part_index(int(target_collider.get("part_index", -1))),
-		String(target_collider.get("part_kind", "")),
-		state_key,
-	]
-
-
-func _meta_safe_part_index(part_index: int) -> String:
-	return "m%d" % abs(part_index) if part_index < 0 else str(part_index)
+	return _runtime_contact_service().passive_contact_damage_key(int(attacker.get_instance_id()), attacker_collider, int(target.get_instance_id()), target_collider, state_key)
 
 
 func _maybe_spawn_passive_contact_feedback(target, key: String, delta: float, counter_tier: int, damage_type: String, nullified: bool, damage: int, hit_position_combat: Vector2 = Vector2(1.0e20, 1.0e20), feedback_style: String = "") -> void:
@@ -37243,51 +37404,43 @@ func _maybe_spawn_passive_contact_feedback(target, key: String, delta: float, co
 func _unit_contact_radius(unit) -> float:
 	if unit == null or not is_instance_valid(unit):
 		return 0.12
-	var body_radius := maxf(0.04, float(unit.stats.get("radius", 0.22)))
-	var body_length := maxf(0.12, float(unit.stats.get("length", 0.7)))
-	var limb_count := maxi(1, int(unit.stats.get("group_count", ATTACK_GROUP_COUNT)))
-	var limb_bonus := clampf(float(limb_count) * 0.012, 0.02, 0.11)
-	return clampf((body_radius * 1.18 + sqrt(body_radius * body_length) * 0.18 + limb_bonus) * UNIT_BODY_SPACING_MULT, 0.18, 4.6)
+	return _runtime_contact_service().unit_contact_radius(unit.stats, _runtime_contact_constants())
 
 
 func _unit_effective_mass(unit) -> float:
 	if unit == null or not is_instance_valid(unit):
 		return 1.0
-	return maxf(1.0, float(unit.stats.get("mass", 1.0)))
+	return _runtime_contact_service().unit_effective_mass(unit.stats)
 
 
 func _unit_thruster_power(unit) -> float:
 	if unit == null or not is_instance_valid(unit):
 		return 0.0
-	var mass := maxf(1.0, float(unit.stats.get("mass", 1.0)))
-	return maxf(0.0, float(unit.stats.get("boost_momentum", 0.0))) / mass
+	return _runtime_contact_service().unit_thruster_power(unit.stats)
 
 
 func _unit_knockback_resist(unit) -> float:
 	if unit == null or not is_instance_valid(unit):
 		return 0.0
-	return clampf(float(unit.stats.get("knockback_resist", 0.0)), 0.0, 0.68)
+	return _runtime_contact_service().unit_knockback_resist(unit.stats)
 
 
 func _unit_melee_stability_threshold(unit) -> float:
 	if unit == null or not is_instance_valid(unit):
-		return MELEE_STABILITY_THRESHOLD_FLOOR
-	return maxf(MELEE_STABILITY_THRESHOLD_FLOOR, float(unit.stats.get("melee_stability_threshold", MELEE_STABILITY_THRESHOLD_FLOOR)))
+		return _runtime_contact_service().unit_melee_stability_threshold({}, _runtime_contact_constants())
+	return _runtime_contact_service().unit_melee_stability_threshold(unit.stats, _runtime_contact_constants())
 
 
 func _unit_impulse_motion_mult(unit) -> float:
-	return clampf(1.0 - _unit_knockback_resist(unit) * 0.72, 0.48, 1.12)
+	if unit == null or not is_instance_valid(unit):
+		return _runtime_contact_service().unit_impulse_motion_mult({})
+	return _runtime_contact_service().unit_impulse_motion_mult(unit.stats)
 
 
 func _unit_posture_anchor(unit, opposing_mass: float) -> float:
 	if unit == null or not is_instance_valid(unit):
 		return 0.0
-	var mass := _unit_effective_mass(unit)
-	var thruster := _unit_thruster_power(unit)
-	var stabilization := clampf(float(unit.stats.get("recoil_stabilization", unit.stats.get("attitude_control", 0.85))), 0.0, 2.6)
-	var thruster_anchor := thruster / maxf(0.001, thruster + opposing_mass * 0.36 + mass * 0.04 + 6.0)
-	var control_anchor := clampf(_unit_knockback_resist(unit) + maxf(0.0, stabilization - 0.7) * 0.08, 0.0, 0.5)
-	return clampf(thruster_anchor * 0.78 + control_anchor, 0.0, 0.82)
+	return _runtime_contact_service().unit_posture_anchor(unit.stats, opposing_mass)
 
 
 func _apply_unit_displacement(unit, direction: Vector2, distance: float) -> void:
@@ -37307,47 +37460,15 @@ func _apply_unit_displacement(unit, direction: Vector2, distance: float) -> void
 
 
 func _heat_tags_for_projectile_event(event: Dictionary) -> Array:
-	if projectile_runtime_service != null:
-		return projectile_runtime_service.heat_tags_for_projectile_event(event)
-	var tags: Array = ["projectile"]
-	var tag_source := ""
-	for key in ["gun_kind", "ammo_kind", "projectile_style", "projectile_behavior", "module_action_profile"]:
-		var value := String(event.get(key, ""))
-		if value != "":
-			tag_source += " " + value.to_lower()
-	if tag_source.contains("laser"):
-		tags.append("laser")
-	if tag_source.contains("chemical"):
-		tags.append("chemical")
-	if tag_source.contains("missile") or tag_source.contains("explosive") or tag_source.contains("grenade"):
-		tags.append("missile")
-	return tags
+	return _projectile_runtime_service().heat_tags_for_projectile_event(event)
 
 
 func _heat_reason_for_tags(tags: Array, source: String = "") -> String:
-	if projectile_runtime_service != null:
-		return projectile_runtime_service.heat_reason_for_tags(tags, source)
-	var reason_tags: Array = []
-	for raw_tag in tags:
-		var tag := String(raw_tag).strip_edges().to_lower()
-		if tag.begins_with("heat_event:"):
-			tag = tag.substr("heat_event:".length())
-		elif tag.begins_with("heat:"):
-			tag = tag.substr("heat:".length())
-		if tag == "":
-			continue
-		var heat_tag := "heat:%s" % tag
-		if not reason_tags.has(heat_tag):
-			reason_tags.append(heat_tag)
-	if source.strip_edges() != "":
-		reason_tags.append(source)
-	return " ".join(reason_tags)
+	return _projectile_runtime_service().heat_reason_for_tags(tags, source)
 
 
 func _heat_reason_for_projectile_event(event: Dictionary) -> String:
-	if projectile_runtime_service != null:
-		return projectile_runtime_service.heat_reason_for_projectile_event(event)
-	return _heat_reason_for_tags(_heat_tags_for_projectile_event(event), "projectile")
+	return _projectile_runtime_service().heat_reason_for_projectile_event(event)
 
 
 func _add_unit_heat(unit, amount: float, reason: String = "external heat") -> void:
@@ -38052,99 +38173,44 @@ func _update_laser_telegraphs(delta: float) -> void:
 
 
 func _projectile_behavior_for_data(data: Dictionary) -> String:
-	if projectile_runtime_service != null:
-		return projectile_runtime_service.projectile_behavior_for_data(data)
-	var behavior := String(data.get("projectile_behavior", ""))
-	if behavior != "":
-		return behavior
-	var damage_type := String(data.get("projectile_damage_type", data.get("damage_type", "")))
-	var style := String(data.get("projectile_style", ""))
-	var path := String(data.get("travel_path", ""))
-	if style in ["web", "web_snap"] or path == "tether":
-		return "web_tether"
-	if style in ["explosive", "blast"] or (style == "missile" and float(data.get("explosion_radius", 0.0)) > 0.0):
-		return "explosive"
-	if damage_type == "bullet":
-		if style in ["true_bullet", "rail"]:
-			return "true_bullet"
-		if style in ["", "bullet", "bullet_hell"]:
-			return "bullet_hell"
-	if damage_type == "chemical":
-		return "chemical_firework" if path in ["firework", "shotgun", "burst", "sine", "arc_u"] else "chemical_line"
-	return ""
+	return _projectile_runtime_service().projectile_behavior_for_data(data)
 
 
 func _group_uses_true_bullet(group: Dictionary) -> bool:
-	if not bool(group.get("projectile", false)):
-		return false
-	return _projectile_behavior_for_data(group) == "true_bullet"
+	return _battle_projectile_lifecycle_service().group_uses_true_bullet(group, _projectile_behavior_for_data(group))
 
 
 func _is_true_bullet_event(event: Dictionary) -> bool:
-	if bool(event.get("true_bullet_ready", false)):
-		return false
-	if bool(event.get("non_damage", false)):
-		return false
-	if not bool(event.get("projectile", false)):
-		return false
-	return _projectile_behavior_for_data(event) == "true_bullet"
+	return _battle_projectile_lifecycle_service().true_bullet_event_pending(event, _projectile_behavior_for_data(event))
 
 
 func _projectile_event_has_gun_source(event: Dictionary) -> bool:
-	if not bool(event.get("projectile", false)):
-		return true
-	if not event.has("muscle_node") or not event.has("collision_group"):
-		return false
-	var group_raw = event.get("collision_group", {})
-	if not (group_raw is Dictionary):
-		return false
-	var group: Dictionary = group_raw
-	if not bool(group.get("projectile", false)) and not bool(group.get("projectile_only", false)):
-		return false
-	var material_class := String(group.get("material_class", "")).to_lower()
-	if material_class in ["gun", "missile_launcher", "web_gun"]:
-		return true
-	var shape := String(group.get("shape", "")).to_lower()
-	return shape in ["gun", "rifle", "turret", "heavy_cannon", "mortar", "missile_rack", "web_gun"]
+	return _battle_projectile_lifecycle_service().projectile_event_has_gun_source(event)
 
 
 func _projectile_source_node_for_event(event: Dictionary, fallback: int = 0) -> int:
-	return int(event.get("source_gun_node", event.get("source_node_index", event.get("muscle_node", fallback))))
+	return _battle_projectile_lifecycle_service().projectile_source_node_for_event(event, fallback)
 
 
 func _clear_runtime_gun_pose_for_payload(unit, payload: Dictionary) -> void:
 	if not _is_live_unit(unit) or not unit.has_method("clear_aim_pose"):
 		return
-	var node_index := -1
-	if payload.has("source_gun_node") or payload.has("source_node_index") or payload.has("muscle_node"):
-		node_index = _projectile_source_node_for_event(payload, -1)
-	elif payload.has("binding") and payload.get("binding", {}) is Dictionary:
-		var binding: Dictionary = payload.get("binding", {})
-		var target_nodes: Array = Array(binding.get("target_nodes", []))
-		if not target_nodes.is_empty():
-			node_index = int(target_nodes[target_nodes.size() - 1])
-	elif payload.has("target_nodes"):
-		var direct_nodes: Array = Array(payload.get("target_nodes", []))
-		if not direct_nodes.is_empty():
-			node_index = int(direct_nodes[direct_nodes.size() - 1])
+	var node_index := _battle_projectile_lifecycle_service().runtime_gun_pose_clear_node(payload, -1)
 	unit.clear_aim_pose(node_index, true)
 
 
 func _event_is_explicit_gun_activation(event: Dictionary) -> bool:
 	var profile := String(event.get("module_action_profile", ""))
-	if _gun_activation_profiles().has(profile):
-		return true
-	return bool(event.get("gun_activation", false)) and _gun_activation_profiles().has(profile)
+	return _battle_action_event_service().explicit_gun_activation_event(event, _gun_activation_profiles().has(profile))
 
 
 func _clear_projectile_fields_for_runtime_melee(event: Dictionary) -> void:
-	event["projectile"] = false
-	event["projectile_only"] = false
-	event["runtime_melee_contact"] = true
-	event.erase("projectile_style")
-	event.erase("projectile_behavior")
-	event.erase("travel_path")
-	event.erase("projectile_damage_type")
+	var intent := _battle_projectile_lifecycle_service().runtime_melee_projectile_clear_intent(event)
+	var set_patch: Dictionary = Dictionary(intent.get("set", {}))
+	for key in set_patch.keys():
+		event[key] = set_patch[key]
+	for raw_key in Array(intent.get("erase", [])):
+		event.erase(String(raw_key))
 
 
 func _normalize_runtime_attack_event(attacker, event: Dictionary) -> Dictionary:
@@ -38156,7 +38222,7 @@ func _normalize_runtime_attack_event(attacker, event: Dictionary) -> Dictionary:
 
 
 func _is_true_bullet_fired_event(event: Dictionary) -> bool:
-	return bool(event.get("projectile", false)) and bool(event.get("true_bullet_ready", false)) and _projectile_behavior_for_data(event) == "true_bullet"
+	return _battle_projectile_lifecycle_service().true_bullet_event_fired(event, _projectile_behavior_for_data(event))
 
 
 func _true_bullet_lock_color(attacker) -> Color:
@@ -38248,9 +38314,13 @@ func _acquire_true_bullet_target(attacker, event: Dictionary):
 				"position": wrapped_hit.get("position", Vector2(wrapped_target.ring_pos, wrapped_target.lane)),
 				"hit": Dictionary(wrapped_hit.get("hit", {})),
 			})
-	var selected_index := int(selection.get("target_index", -1))
-	if selected_index < 0 or selected_index >= candidate_targets.size():
+	var selected_index_intent: Dictionary = _battle_target_acquisition_service().selected_target_index_intent({
+		"selection": selection,
+		"target_count": candidate_targets.size(),
+	})
+	if String(selected_index_intent.get("action", "reject")) != "accept":
 		return null
+	var selected_index := int(selected_index_intent.get("target_index", -1))
 	var selected_target = candidate_targets[selected_index]
 	return selected_target if _is_live_unit(selected_target) else null
 
@@ -38355,9 +38425,13 @@ func _acquire_missile_lock_target(attacker, event: Dictionary):
 		})
 		candidates.append(candidate)
 	var selection := _battle_target_acquisition_service().missile_target_selection(candidates)
-	var selected_index := int(selection.get("target_index", -1))
-	if selected_index < 0 or selected_index >= candidate_targets.size():
+	var selected_index_intent: Dictionary = _battle_target_acquisition_service().selected_target_index_intent({
+		"selection": selection,
+		"target_count": candidate_targets.size(),
+	})
+	if String(selected_index_intent.get("action", "reject")) != "accept":
 		return null
+	var selected_index := int(selected_index_intent.get("target_index", -1))
 	var selected_target = candidate_targets[selected_index]
 	return selected_target if _is_live_unit(selected_target) else null
 
@@ -38591,58 +38665,24 @@ func _update_true_bullet_locks(delta: float) -> void:
 
 
 func _is_chemical_projectile_event(event: Dictionary) -> bool:
-	if projectile_runtime_service != null:
-		return projectile_runtime_service.is_chemical_projectile_event(event)
-	if bool(event.get("non_damage", false)):
-		return false
-	if not bool(event.get("projectile", false)):
-		return false
-	var damage_type := String(event.get("damage_type", event.get("projectile_damage_type", "")))
-	return damage_type == "chemical"
+	return _projectile_runtime_service().is_chemical_projectile_event(event)
 
 
 func _prepare_chemical_projectile_event(event: Dictionary) -> void:
-	if projectile_runtime_service != null:
-		var prepared := projectile_runtime_service.prepared_chemical_projectile_event(event, _projectile_runtime_constants())
-		event.clear()
-		for key in prepared.keys():
-			event[key] = prepared[key]
-		return
-	event["damage_type"] = "chemical"
-	event["projectile_damage_type"] = "chemical"
-	if String(event.get("projectile_style", "")) == "":
-		event["projectile_style"] = "spray"
-	if String(event.get("projectile_behavior", "")) == "":
-		event["projectile_behavior"] = "chemical_firework" if _chemical_firework_event(event) else "chemical_line"
-	if not event.has("projectile_speed_mult") or float(event.get("projectile_speed_mult", 0.0)) <= 0.0:
-		event["projectile_speed_mult"] = CHEMICAL_PROJECTILE_DEFAULT_SPEED_MULT
-	event["projectile_speed_mult"] = clampf(float(event.get("projectile_speed_mult", CHEMICAL_PROJECTILE_DEFAULT_SPEED_MULT)), 0.35, 1.45)
-	if not event.has("chemical_dot_duration"):
-		event["chemical_dot_duration"] = CHEMICAL_DOT_DEFAULT_DURATION
-	if not event.has("chemical_dot_mult"):
-		event["chemical_dot_mult"] = CHEMICAL_DOT_DEFAULT_MULT
-	if not event.has("chemical_frontload"):
-		event["chemical_frontload"] = CHEMICAL_DOT_DEFAULT_FRONTLOAD
-	if not event.has("chemical_pellets"):
-		event["chemical_pellets"] = 7 if _chemical_firework_event(event) else 1
-	if not event.has("chemical_spread"):
-		event["chemical_spread"] = 0.54 if _chemical_firework_event(event) else 0.0
+	var prepared := _projectile_runtime_service().prepared_chemical_projectile_event(event, _projectile_runtime_constants())
+	event.clear()
+	for key in prepared.keys():
+		event[key] = prepared[key]
 
 
 func _chemical_firework_event(event: Dictionary) -> bool:
-	if projectile_runtime_service != null:
-		return projectile_runtime_service.chemical_firework_event(event)
-	var behavior := String(event.get("projectile_behavior", ""))
-	if behavior == "chemical_firework":
-		return true
-	var path := String(event.get("travel_path", "straight"))
-	return path in ["firework", "shotgun", "burst", "sine", "arc_u"]
+	return _projectile_runtime_service().chemical_firework_event(event)
 
 
 func _queue_chemical_projectile(attacker, event: Dictionary) -> bool:
 	if not _is_live_unit(attacker):
 		return false
-	var queue_intent := projectile_runtime_service.chemical_queue_intent(event, event.get("direction", _unit_forward_vector(attacker)), _unit_forward_vector(attacker), _projectile_runtime_constants()) if projectile_runtime_service != null else _legacy_chemical_queue_intent(attacker, event)
+	var queue_intent := _projectile_runtime_service().chemical_queue_intent(event, event.get("direction", _unit_forward_vector(attacker)), _unit_forward_vector(attacker), _projectile_runtime_constants())
 	var shot_event: Dictionary = Dictionary(queue_intent.get("event", event.duplicate(true)))
 	_apply_weapon_recoil_from_momentum(attacker, shot_event)
 	var travel_time := float(queue_intent.get("timer", _chemical_projectile_travel_time(shot_event)))
@@ -38658,28 +38698,8 @@ func _queue_chemical_projectile(attacker, event: Dictionary) -> bool:
 	return true
 
 
-func _legacy_chemical_queue_intent(attacker, event: Dictionary) -> Dictionary:
-	var shot_event := event.duplicate(true)
-	_prepare_chemical_projectile_event(shot_event)
-	var direction: Vector2 = shot_event.get("direction", _unit_forward_vector(attacker))
-	if direction.length() <= 0.01:
-		direction = _unit_forward_vector(attacker)
-	shot_event["direction"] = direction.normalized()
-	shot_event["chemical_projectile_ready"] = true
-	var travel_time := _chemical_projectile_travel_time(shot_event)
-	return {
-		"event": shot_event,
-		"timer": travel_time,
-		"signal_time": travel_time + 0.12,
-	}
-
-
 func _chemical_projectile_travel_time(event: Dictionary) -> float:
-	if projectile_runtime_service != null:
-		return projectile_runtime_service.chemical_projectile_travel_time(event, _projectile_runtime_constants())
-	var travel_range := maxf(0.4, float(event.get("range", event.get("projectile_range", 1.2))))
-	var speed_mult := clampf(float(event.get("projectile_speed_mult", CHEMICAL_PROJECTILE_DEFAULT_SPEED_MULT)), 0.35, 1.45)
-	return clampf(travel_range / (2.15 * speed_mult), CHEMICAL_PROJECTILE_MIN_TRAVEL, CHEMICAL_PROJECTILE_MAX_TRAVEL)
+	return _projectile_runtime_service().chemical_projectile_travel_time(event, _projectile_runtime_constants())
 
 
 func _update_chemical_projectiles(delta: float) -> void:
@@ -38708,25 +38728,14 @@ func _update_chemical_projectiles(delta: float) -> void:
 
 
 func _is_missile_projectile_event(event: Dictionary) -> bool:
-	if projectile_runtime_service != null:
-		return projectile_runtime_service.is_missile_projectile_event(event)
-	if bool(event.get("missile_flight_ready", false)):
-		return false
-	if bool(event.get("non_damage", false)):
-		return false
-	if not bool(event.get("projectile", false)):
-		return false
-	return String(event.get("projectile_style", "")) == "missile" and String(event.get("travel_path", "")) == "homing"
+	return _projectile_runtime_service().is_missile_projectile_event(event)
 
 
 func _missile_projectile_travel_time(attacker, target, event: Dictionary) -> float:
 	var range_hint := maxf(0.4, float(event.get("range", event.get("projectile_range", STANDARD_MISSILE_RANGE_M))))
 	if _is_live_unit(attacker) and _is_live_unit(target):
 		range_hint = maxf(0.2, _mobius_delta_vec_between(attacker, target).length())
-	if projectile_runtime_service != null:
-		return projectile_runtime_service.missile_projectile_travel_time(range_hint, event, _projectile_runtime_constants())
-	var speed_mult := clampf(float(event.get("projectile_speed_mult", STANDARD_MISSILE_SPEED_MULT)), 0.45, 1.45)
-	return clampf(range_hint / (2.05 * speed_mult), 0.38, 2.2)
+	return _projectile_runtime_service().missile_projectile_travel_time(range_hint, event, _projectile_runtime_constants())
 
 
 func _queue_missile_projectile(attacker, event: Dictionary) -> bool:
@@ -38744,14 +38753,8 @@ func _queue_missile_projectile(attacker, event: Dictionary) -> bool:
 		return true
 	var direction := _missile_direction_to_target(attacker, target, Vector2(shot_event.get("direction", _unit_forward_vector(attacker))))
 	var target_distance := _mobius_delta_vec_between(attacker, target).length()
-	var queue_intent := projectile_runtime_service.missile_queue_intent(shot_event, direction, target_distance, _projectile_runtime_constants()) if projectile_runtime_service != null else {}
-	if not queue_intent.is_empty():
-		shot_event = Dictionary(queue_intent.get("event", shot_event))
-	else:
-		shot_event["aim_locked"] = true
-		shot_event["direction"] = direction
-		shot_event["range"] = maxf(float(shot_event.get("range", STANDARD_MISSILE_RANGE_M)), target_distance)
-		queue_intent = {"timer": _missile_projectile_travel_time(attacker, target, shot_event), "signal_time": _missile_projectile_travel_time(attacker, target, shot_event) + 0.12, "last_direction": direction}
+	var queue_intent := _projectile_runtime_service().missile_queue_intent(shot_event, direction, target_distance, _projectile_runtime_constants())
+	shot_event = Dictionary(queue_intent.get("event", shot_event))
 	shot_event["locked_target"] = target
 	_apply_weapon_recoil_from_momentum(attacker, shot_event)
 	_spawn_projectile_trace(attacker, shot_event)
@@ -38842,14 +38845,26 @@ func _projection_to_target(attacker, target, direction: Vector2) -> float:
 	if not _is_live_unit(attacker) or not _is_live_unit(target):
 		return 999999.0
 	var delta := _mobius_delta_vec_between(attacker, target)
-	return delta.dot(direction.normalized() if direction.length() > 0.01 else _unit_forward_vector(attacker))
+	var intent := _battle_impact_query_service().projectile_projection_intent({
+		"attacker_live": true,
+		"delta": delta,
+		"direction": direction,
+		"fallback_direction": _unit_forward_vector(attacker),
+		"missing_projection": 999999.0,
+	})
+	return float(intent.get("projection", 999999.0))
 
 
 func _true_bullet_unit_before_locked_target(attacker, unit, locked_target, event: Dictionary) -> bool:
 	var direction: Vector2 = event.get("direction", _unit_forward_vector(attacker))
 	var target_distance := _projection_to_target(attacker, locked_target, direction)
 	var unit_distance := _projection_to_target(attacker, unit, direction)
-	return unit_distance >= 0.0 and unit_distance <= target_distance - 0.035
+	var intent := _battle_impact_query_service().true_bullet_before_locked_target_intent({
+		"unit_distance": unit_distance,
+		"target_distance": target_distance,
+		"clearance": 0.035,
+	})
+	return bool(intent.get("before_locked_target", false))
 
 
 func _true_bullet_target_blocked(attacker, locked_target, event: Dictionary) -> bool:
@@ -38866,23 +38881,21 @@ func _true_bullet_target_blocked(attacker, locked_target, event: Dictionary) -> 
 
 
 func _projectile_consumes_on_first_hit(event: Dictionary) -> bool:
-	if not bool(event.get("projectile", false)):
-		return false
-	if bool(event.get("non_damage", false)):
-		return false
-	var style := String(event.get("projectile_style", ""))
-	if style in ["web", "web_snap", "blind", "shield", "chain"]:
-		return false
-	var damage_type := String(event.get("damage_type", ""))
-	return damage_type in PROJECTILE_DAMAGE_TYPES or style in ["beam", "chaos", "true_bullet", "bullet_hell", "spray", "missile", "explosive", "blast"]
+	return _projectile_runtime_service().projectile_consumes_on_first_hit(event, _projectile_runtime_constants())
 
 
 func _projectile_projection_from(attacker, position: Vector2, direction: Vector2) -> float:
 	if not _is_live_unit(attacker):
 		return 999999.0
-	var normalized := direction.normalized() if direction.length() > 0.01 else _unit_forward_vector(attacker)
 	var delta := _mobius_delta_unit_to_point(attacker, position.x, position.y)
-	return delta.dot(normalized)
+	var intent := _battle_impact_query_service().projectile_projection_intent({
+		"attacker_live": true,
+		"delta": delta,
+		"direction": direction,
+		"fallback_direction": _unit_forward_vector(attacker),
+		"missing_projection": 999999.0,
+	})
+	return float(intent.get("projection", 999999.0))
 
 
 func _first_projectile_impact(attacker, event: Dictionary) -> Dictionary:
@@ -38942,19 +38955,29 @@ func _first_projectile_impact(attacker, event: Dictionary) -> Dictionary:
 			"distance": projection,
 		})
 	var selection := _battle_impact_query_service().first_impact_selection(candidates)
-	if selection.is_empty():
+	var selection_result := _battle_impact_query_service().projectile_selection_result_intent({
+		"selection": selection,
+		"target_count": candidate_targets.size(),
+		"missing_distance": 999999.0,
+	})
+	if String(selection_result.get("action", "reject")) != "accept":
 		return {}
-	var selected_index := int(selection.get("target_index", -1))
-	if selected_index < 0 or selected_index >= candidate_targets.size():
-		return {}
+	var selected_index := int(selection_result.get("target_index", -1))
 	var selected_target = candidate_targets[selected_index]
-	if not _is_live_unit(selected_target):
+	var selected_target_live := _is_live_unit(selected_target)
+	var final_impact := _battle_impact_query_service().projectile_final_impact_payload({
+		"selection_result": selection_result,
+		"target_live": selected_target_live,
+		"target_position": Vector2(selected_target.ring_pos, selected_target.lane) if selected_target_live else Vector2.ZERO,
+		"missing_distance": 999999.0,
+	})
+	if String(final_impact.get("action", "reject")) != "accept":
 		return {}
 	return {
 		"target": selected_target,
-		"hit": Dictionary(selection.get("hit", {})),
-		"position": selection.get("position", Vector2(selected_target.ring_pos, selected_target.lane)),
-		"distance": float(selection.get("distance", 999999.0)),
+		"hit": Dictionary(final_impact.get("hit", {})),
+		"position": final_impact.get("position", Vector2(selected_target.ring_pos, selected_target.lane)),
+		"distance": float(final_impact.get("distance", 999999.0)),
 	}
 
 
@@ -38967,11 +38990,14 @@ func _first_projectile_impact_gpu(attacker, event: Dictionary, candidate_targets
 	var start: Vector2 = attack_collider.get("a", _collider_center(attack_collider))
 	var end: Vector2 = attack_collider.get("b", start)
 	var direction: Vector2 = event.get("direction", _unit_forward_vector(attacker))
-	if direction.length() > 0.01:
-		var range := maxf(float(event.get("range", event.get("projectile_range", start.distance_to(end)))), start.distance_to(end))
-		var ray := GameplayTransform.projectile_ray(start, direction, range)
-		end = ray.get("end", end)
-		direction = ray.get("direction", direction.normalized())
+	var query_ray := _battle_impact_query_service().gpu_projectile_query_ray_intent({
+		"start": start,
+		"end": end,
+		"direction": direction,
+		"requested_range": event.get("range", event.get("projectile_range", start.distance_to(end))),
+	})
+	end = query_ray.get("end", end)
+	direction = query_ray.get("direction", direction)
 	var gpu_colliders: Array = []
 	var entries: Array = []
 	var unit_key := 2
@@ -38983,15 +39009,15 @@ func _first_projectile_impact_gpu(attacker, event: Dictionary, candidate_targets
 		unit_key += 1
 	if gpu_colliders.is_empty():
 		return {}
-	var query := [{
+	var query := [_battle_impact_query_service().gpu_projectile_query_payload({
 		"start": start,
 		"end": end,
-		"radius": maxf(0.0, float(attack_collider.get("radius", event.get("lane_range", 0.0)))),
+		"radius": attack_collider.get("radius", event.get("lane_range", 0.0)),
 		"owner_unit_key": 1,
 		"owner_team_key": int(attacker.owner_id),
 		"query_id": 0,
 		"include_friendly": include_friendly,
-	}]
+	})]
 	var hits := _submit_gpu_geometry_queries(gpu_colliders, query, get_physics_process_delta_time()) if immediate_query else _submit_gpu_geometry_queries_deferred(gpu_colliders, query, get_physics_process_delta_time())
 	if hits.is_empty():
 		return {}
@@ -39001,14 +39027,16 @@ func _first_projectile_impact_gpu(attacker, event: Dictionary, candidate_targets
 		var entry: Dictionary = Dictionary(raw_entry)
 		var target = entry.get("unit", null)
 		var target_live := _is_live_unit(target)
+		var target_index := entry_targets.size()
 		entry_targets.append(target)
-		entry.erase("unit")
-		entry["target_index"] = entry_targets.size() - 1
-		entry["target_live"] = target_live
-		entry["occluded"] = _map_line_occluded(attacker, target, event) if target_live else false
-		if target_live:
-			entry["target_position"] = Vector2(target.ring_pos, target.lane)
-		service_entries.append(entry)
+		service_entries.append(_battle_impact_query_service().gpu_projectile_target_entry_payload({
+			"entry": entry,
+			"target_index": target_index,
+			"target_live": target_live,
+			"occluded": _map_line_occluded(attacker, target, event) if target_live else false,
+			"target_position": Vector2(target.ring_pos, target.lane) if target_live else Vector2.ZERO,
+			"has_target_position": target_live,
+		}))
 	var selection := _battle_impact_query_service().gpu_hit_selection({
 		"hits": hits,
 		"entries": service_entries,
@@ -39016,20 +39044,29 @@ func _first_projectile_impact_gpu(attacker, event: Dictionary, candidate_targets
 		"gpu_gap": -RUNTIME_CONTACT_REQUIRED_OVERLAP,
 		"fallback_position": start,
 	})
-	if selection.is_empty():
+	var selection_result := _battle_impact_query_service().gpu_projectile_selection_result_intent({
+		"selection": selection,
+		"target_count": entry_targets.size(),
+		"missing_distance": 999999.0,
+	})
+	if String(selection_result.get("action", "reject")) != "accept":
 		return {}
-	var selected_entry: Dictionary = Dictionary(selection.get("entry", {}))
-	var selected_index := int(selected_entry.get("target_index", -1))
-	if selected_index < 0 or selected_index >= entry_targets.size():
-		return {}
+	var selected_index := int(selection_result.get("target_index", -1))
 	var selected_target = entry_targets[selected_index]
-	if not _is_live_unit(selected_target):
+	var selected_target_live := _is_live_unit(selected_target)
+	var final_impact := _battle_impact_query_service().gpu_projectile_final_impact_payload({
+		"selection_result": selection_result,
+		"target_live": selected_target_live,
+		"target_position": Vector2(selected_target.ring_pos, selected_target.lane) if selected_target_live else Vector2.ZERO,
+		"missing_distance": 999999.0,
+	})
+	if String(final_impact.get("action", "reject")) != "accept":
 		return {}
 	return {
 		"target": selected_target,
-		"hit": Dictionary(selection.get("hit", {})),
-		"position": selection.get("position", Vector2(selected_target.ring_pos, selected_target.lane)),
-		"distance": float(selection.get("distance", 999999.0)),
+		"hit": Dictionary(final_impact.get("hit", {})),
+		"position": final_impact.get("position", Vector2(selected_target.ring_pos, selected_target.lane)),
+		"distance": float(final_impact.get("distance", 999999.0)),
 	}
 
 
@@ -39775,18 +39812,16 @@ func _one_way_shield_intercept(attacker, target, event: Dictionary) -> bool:
 
 
 func _one_way_shield_allows_projectile(shield, attacker, attack_direction: Vector2) -> bool:
-	var mode := String(shield.stats.get("shield_pass_mode", "directional"))
-	if mode in ["iff", "ally"]:
-		return int(attacker.owner_id) == int(shield.owner_id)
-	if mode == "enemy":
-		return int(attacker.owner_id) != int(shield.owner_id)
-	var dir_sign := signf(attack_direction.x)
-	if dir_sign == 0.0:
-		dir_sign = float(attacker.facing)
-	var pass_facing := float(shield.facing)
-	if String(shield.stats.get("shield_pass_direction", "facing")) == "reverse":
-		pass_facing *= -1.0
-	return dir_sign == pass_facing
+	var intent := _battle_map_occlusion_service().one_way_projectile_pass_intent({
+		"pass_mode": String(shield.stats.get("shield_pass_mode", "directional")),
+		"attacker_owner": int(attacker.owner_id),
+		"shield_owner": int(shield.owner_id),
+		"attack_direction": attack_direction,
+		"attacker_facing": float(attacker.facing),
+		"shield_facing": float(shield.facing),
+		"pass_direction": String(shield.stats.get("shield_pass_direction", "facing")),
+	})
+	return bool(intent.get("passes", false))
 
 
 func _cleanup_fracture_puppets_for_parent(parent) -> int:
@@ -41093,10 +41128,15 @@ func _apply_projectile_reflection(attacker, event: Dictionary) -> void:
 	var reflectors: Array = []
 	var candidates: Array = []
 	for reflector in _friendly_units(owner):
-		if reflector == attacker or not _is_live_unit(reflector) or not bool(reflector.stats.get("reflect_projectiles", false)):
-			continue
-		var reflect_types: Array = reflector.stats.get("reflect_types", [])
-		if not reflect_types.is_empty() and not reflect_types.has(damage_type):
+		var reflector_live := _is_live_unit(reflector)
+		var candidate_intent := _battle_projectile_lifecycle_service().projectile_reflector_candidate_intent({
+			"is_self": reflector == attacker,
+			"reflector_live": reflector_live,
+			"reflect_projectiles": bool(reflector.stats.get("reflect_projectiles", false)) if reflector_live else false,
+			"reflect_types": reflector.stats.get("reflect_types", []) if reflector_live else [],
+			"damage_type": damage_type,
+		})
+		if not bool(candidate_intent.get("include", false)):
 			continue
 		var delta_vec := _mobius_delta_vec_between(attacker, reflector, 1.25)
 		reflectors.append(reflector)
@@ -41138,13 +41178,15 @@ func _apply_projectile_reflection(attacker, event: Dictionary) -> void:
 
 
 func _target_projectile_shield_reflects(target, event: Dictionary) -> bool:
-	if not _is_live_unit(target):
-		return false
-	if float(target.get_meta("projectile_shield_timer", 0.0)) <= 0.0:
-		return false
-	var damage_type := String(event.get("damage_type", "bullet"))
-	var reflect_types: Array = target.get_meta("projectile_shield_types", target.stats.get("reflect_types", []))
-	return reflect_types.is_empty() or reflect_types.has(damage_type)
+	var target_live := _is_live_unit(target)
+	var shield_timer := float(target.get_meta("projectile_shield_timer", 0.0)) if target_live else 0.0
+	var reflect_types: Array = target.get_meta("projectile_shield_types", target.stats.get("reflect_types", [])) if target_live else []
+	return _battle_projectile_lifecycle_service().target_projectile_shield_reflects({
+		"target_live": target_live,
+		"shield_timer": shield_timer,
+		"damage_type": String(event.get("damage_type", "bullet")),
+		"reflect_types": reflect_types,
+	})
 
 
 func _reflect_projectile_from_target_shield(target, attacker, event: Dictionary) -> void:
@@ -41181,20 +41223,35 @@ func _reflect_projectile_from_target_shield(target, attacker, event: Dictionary)
 	_update_field_aura_visual(target, "repulsion", maxf(0.28, float(target.stats.get("radius", 0.2)) * 2.4), 2.0, 0.0)
 	_show_battle_message("%s AEGIS REFLECT %s" % [target.unit_name, damage_type.to_upper()], 0.55)
 	for reflected_target in _enemy_units(int(target.owner_id)):
-		if reflected_target == attacker or reflected_target == target or not _is_live_unit(reflected_target):
+		var reflected_target_live := _is_live_unit(reflected_target)
+		var base_target_intent := _battle_projectile_lifecycle_service().target_shield_reflected_target_intent({
+			"is_attacker": reflected_target == attacker,
+			"is_source_target": reflected_target == target,
+			"reflected_target_live": reflected_target_live,
+		})
+		if not bool(base_target_intent.get("include", false)):
 			continue
 		var reflected_delta := _mobius_delta_vec_between(target, reflected_target, 1.25)
-		var distance := absf(reflected_delta.x)
-		var lane_distance := absf(reflected_delta.y)
 		var target_radius := float(reflected_target.stats.get("radius", 0.2))
-		if distance > float(event_copy["range"]) + target_radius or lane_distance > float(event_copy["lane_range"]) + target_radius * 0.6:
-			continue
-		var target_vector := reflected_delta
-		if target_vector.length() > 0.01 and reflected_dir.dot(target_vector.normalized()) < 0.24:
+		var reflected_target_intent := _battle_projectile_lifecycle_service().target_shield_reflected_target_intent({
+			"is_attacker": false,
+			"is_source_target": false,
+			"reflected_target_live": reflected_target_live,
+			"range": float(event_copy["range"]),
+			"lane_range": float(event_copy["lane_range"]),
+			"target_radius": target_radius,
+			"reflected_delta": reflected_delta,
+			"reflected_direction": reflected_dir,
+		})
+		if not bool(reflected_target_intent.get("include", false)):
 			continue
 		var final_damage := maxi(1, int(roundf(float(event_copy["damage"]) * _vulnerability_multiplier(reflected_target, event_copy))))
 		final_damage = _projectile_material_adjusted_damage(reflected_target, event_copy, final_damage)
-		var blocked := final_damage <= 0 or bool(event_copy.get("contact_gate_blocked", false))
+		var block_intent := _battle_projectile_lifecycle_service().projectile_hit_block_intent({
+			"final_damage": final_damage,
+			"contact_gate_blocked": bool(event_copy.get("contact_gate_blocked", false)),
+		})
+		var blocked := bool(block_intent.get("blocked", false))
 		_spawn_hit_effect(reflected_target, _counter_tier_for_hit(reflected_target, damage_type), damage_type, blocked, String(event_copy.get("projectile_style", "shield")))
 		if blocked:
 			break
@@ -41209,19 +41266,39 @@ func _apply_explosion_damage(attacker, primary_target, event: Dictionary) -> Arr
 	if attacker == null or not is_instance_valid(attacker):
 		return killed_units
 	var owner := int(attacker.owner_id)
-	var radius := maxf(0.08, float(event.get("explosion_radius", 0.0)))
-	var damage := int(event.get("explosion_damage", 0))
-	if damage <= 0:
+	var explosion_request := _battle_projectile_lifecycle_service().explosion_request_intent({
+		"event": event,
+	})
+	if not bool(explosion_request.get("applies", false)):
 		return killed_units
-	var damage_type := String(event.get("explosion_damage_type", event.get("damage_type", "blunt")))
-	var center_ring: float = attacker.ring_pos
-	var center_lane: float = attacker.lane
-	if primary_target != null and is_instance_valid(primary_target):
-		center_ring = primary_target.ring_pos
-		center_lane = primary_target.lane
-	_spawn_hit_effect(primary_target if primary_target != null and is_instance_valid(primary_target) else attacker, 2, damage_type, false, String(event.get("explosion_style", "blast")))
+	var radius := float(explosion_request.get("radius", 0.08))
+	var damage := int(explosion_request.get("damage", 0))
+	var damage_type := String(explosion_request.get("damage_type", "blunt"))
+	var explosion_style := String(explosion_request.get("explosion_style", event.get("explosion_style", "explosive")))
+	var attacker_explosion_position := Vector2(attacker.ring_pos, attacker.lane)
+	var primary_target_valid := primary_target != null and is_instance_valid(primary_target)
+	var primary_explosion_position := attacker_explosion_position
+	if primary_target_valid:
+		primary_explosion_position = Vector2(primary_target.ring_pos, primary_target.lane)
+	var explosion_center := _battle_projectile_lifecycle_service().explosion_center_position({
+		"attacker_position": attacker_explosion_position,
+		"primary_target_valid": primary_target_valid,
+		"primary_target_position": primary_explosion_position,
+	})
+	var center_position: Vector2 = explosion_center.get("position", attacker_explosion_position)
+	var center_ring: float = center_position.x
+	var center_lane: float = center_position.y
+	var initial_effect_anchor := _battle_projectile_lifecycle_service().explosion_initial_effect_anchor_intent({
+		"primary_target_valid": primary_target_valid,
+	})
+	var initial_effect_target = primary_target if String(initial_effect_anchor.get("source", "attacker")) == "primary_target" else attacker
+	_spawn_hit_effect(initial_effect_target, 2, damage_type, false, String(event.get("explosion_style", "blast")))
 	for target in _enemy_units(owner):
-		if not _is_live_unit(target) or target == primary_target:
+		var target_candidate_intent := _battle_projectile_lifecycle_service().explosion_target_candidate_intent({
+			"target_live": _is_live_unit(target),
+			"is_primary_target": target == primary_target,
+		})
+		if not bool(target_candidate_intent.get("include", false)):
 			continue
 		var blast_delta := _mobius_delta_points(center_ring, center_lane, target.ring_pos, target.lane)
 		var target_radius := float(target.stats.get("radius", 0.2))
@@ -41232,7 +41309,7 @@ func _apply_explosion_damage(attacker, primary_target, event: Dictionary) -> Arr
 			"fallback_direction": _event_direction_vector(attacker, target, event, Vector2.RIGHT),
 			"projectile_momentum": _projectile_momentum_for_event(event),
 			"damage_type": damage_type,
-			"explosion_style": String(event.get("explosion_style", "explosive")),
+			"explosion_style": explosion_style,
 			"target_position": Vector2(target.ring_pos, target.lane),
 		})
 		if not bool(intent.get("applies", false)):
@@ -41247,7 +41324,11 @@ func _apply_explosion_damage(attacker, primary_target, event: Dictionary) -> Arr
 		_set_event_momentum_vector(event_copy, blast_direction * blast_momentum, blast_momentum)
 		var final_damage := maxi(1, int(roundf(float(damage) * falloff * _vulnerability_multiplier(target, event_copy))))
 		final_damage = _projectile_material_adjusted_damage(target, event_copy, final_damage)
-		var blocked := final_damage <= 0 or bool(event_copy.get("contact_gate_blocked", false))
+		var block_intent := _battle_projectile_lifecycle_service().projectile_hit_block_intent({
+			"final_damage": final_damage,
+			"contact_gate_blocked": bool(event_copy.get("contact_gate_blocked", false)),
+		})
+		var blocked := bool(block_intent.get("blocked", false))
 		if not blocked:
 			final_damage = _apply_combo_hit_scaling(attacker, target, event_copy, final_damage)
 			if final_damage < 0:
@@ -41634,17 +41715,7 @@ func _web_boundary_anchor_for_event(attacker, event: Dictionary) -> Dictionary:
 
 
 func _web_trace_event(base_event: Dictionary, impact_position: Vector2) -> Dictionary:
-	if projectile_runtime_service != null:
-		return projectile_runtime_service.web_trace_event(base_event, impact_position)
-	var event := base_event.duplicate(true)
-	event["projectile_impact_position"] = impact_position
-	event["projectile_style"] = "web"
-	event["projectile_behavior"] = "web_tether"
-	event["travel_path"] = "tether"
-	event["damage_type"] = "blunt"
-	event["non_damage"] = true
-	event["projectile_trace_spawned"] = true
-	return event
+	return _projectile_runtime_service().web_trace_event(base_event, impact_position)
 
 
 func _start_web_tether(attacker, target, event: Dictionary, hit_position: Vector2) -> void:
@@ -41801,7 +41872,7 @@ func _spawn_projectile_trace(attacker, event: Dictionary) -> void:
 	var segment := _projected_projectile_screen_segment(attacker, event, 92.0)
 	if segment.is_empty():
 		return
-	var payload := projectile_runtime_service.trace_payload(event, segment, attacker.position, _projectile_runtime_constants()) if projectile_runtime_service != null else _legacy_projectile_trace_payload(attacker, event, segment)
+	var payload := _projectile_runtime_service().trace_payload(event, segment, attacker.position, _projectile_runtime_constants())
 	var trace := ProjectileTraceEffect.new()
 	trace.setup(
 		payload.get("start", attacker.position),
@@ -41814,17 +41885,6 @@ func _spawn_projectile_trace(attacker, event: Dictionary) -> void:
 	)
 	effects_root.add_child(trace)
 	_play_projectile_launch_sfx(event)
-
-
-func _legacy_projectile_trace_payload(attacker, event: Dictionary, segment: Dictionary) -> Dictionary:
-	return {
-		"start": segment.get("start", attacker.position),
-		"end": segment.get("end", attacker.position),
-		"damage_type": String(event.get("damage_type", "bullet")),
-		"projectile_style": String(event.get("projectile_style", _projectile_style_for_damage(String(event.get("damage_type", "bullet"))))),
-		"travel_path": String(event.get("travel_path", "straight")),
-		"projectile_speed_mult": float(event.get("projectile_speed_mult", BULLET_HELL_DEFAULT_SPEED_MULT)),
-	}
 
 
 func _spawn_hit_effect(target, counter_tier: int, damage_type: String, nullified: bool, projectile_style: String = "", hit_position_combat: Vector2 = Vector2(1.0e20, 1.0e20)) -> void:
@@ -51499,7 +51559,7 @@ func _update_music() -> void:
 
 
 func _update_menu_ui() -> void:
-	if menu_controller == null or menu_view == null:
+	if menu_mode_owner == null and (menu_controller == null or menu_view == null):
 		return
 	var summary := _team_summary(1)
 	var starter := _starter_sortie_entry(1)
@@ -51513,7 +51573,10 @@ func _update_menu_ui() -> void:
 		_sortie_entry_label(1, starter),
 		"合法" if bool(summary.get("valid", false)) else "需要编辑",
 	]
-	menu_view.update_main_menu(menu_controller.main_menu_model(ui_language, ai_battle_seat, _match_format_short(), team_status))
+	if menu_mode_owner != null and menu_mode_owner.update_main_menu(ui_language, ai_battle_seat, _match_format_short(), team_status):
+		return
+	if menu_controller != null and menu_view != null:
+		menu_view.update_main_menu(menu_controller.main_menu_model(ui_language, ai_battle_seat, _match_format_short(), team_status))
 
 
 func _scout_opponent_player_id() -> int:
@@ -52795,7 +52858,7 @@ func _update_editor_board_ui(role_key: String, unit_bp: Dictionary, precomputed_
 	var custom_board_cache_key := _editor_board_snapshot_cache_key(role_key, unit_bp) if custom_board_enabled else ""
 	var board_selected_slot: String = BUILD_SLOTS[editor_slot_index]
 	var board_selected_part_index := _editor_selected_part_index_for_slot(unit_bp, role_key, board_selected_slot)
-	var board_ui_revision_key := "%s|%s|%s|%d|%d|%d|%d|%s|%s|%s|%d|%d|%s|%s|%s|%d|%s|%d|%d|%s" % [
+	var board_ui_revision_key := "%s|%s|%s|%d|%d|%d|%d|%s|%s|%s|%d|%d|%s|%s|%s|%d|%s|%d|%d|%s|%s" % [
 		role_key,
 		editor_panel_mode,
 		str(body_board_enabled),
@@ -52815,6 +52878,7 @@ func _update_editor_board_ui(role_key: String, unit_bp: Dictionary, precomputed_
 		editor_pending_payload_slot,
 		editor_pending_payload_index,
 		1 if editor_barrier_grid_guides_enabled else 0,
+		editor_board_tool,
 		ui_language,
 	]
 	if board_ui_revision_key == editor_board_ui_revision_key:
@@ -52824,9 +52888,11 @@ func _update_editor_board_ui(role_key: String, unit_bp: Dictionary, precomputed_
 			hot_path_profiler.scope_end("teamedit.board_ui")
 		return
 	editor_board_ui_revision_key = board_ui_revision_key
+	var selected_node_feedback := {}
 	if custom_board_enabled:
 		var topology: Dictionary = unit_bp.get("custom_topology", {})
 		var nodes: Array = topology.get("nodes", [])
+		var edges: Array = topology.get("edges", [])
 		var node_label := "NODE"
 		var module_count := 1
 		if not nodes.is_empty():
@@ -52834,6 +52900,7 @@ func _update_editor_board_ui(role_key: String, unit_bp: Dictionary, precomputed_
 			var selected_node_for_hint: Dictionary = nodes[editor_topology_node_index]
 			node_label = String(selected_node_for_hint.get("label", "NODE %d" % (editor_topology_node_index + 1)))
 			module_count = _module_indices_for_topology_node(selected_node_for_hint, unit_bp).size()
+			selected_node_feedback = _editor_selected_node_feedback(role_key, unit_bp, nodes, edges, editor_topology_node_index)
 		var lightweight_board_ui := bool(precomputed_stats.get("lightweight", false))
 		var topology_note := "" if lightweight_board_ui else _topology_rule_note(unit_bp, role_key, {})
 		var action_note := "" if lightweight_board_ui else _action_module_rule_note(unit_bp, role_key)
@@ -52856,7 +52923,12 @@ func _update_editor_board_ui(role_key: String, unit_bp: Dictionary, precomputed_
 		elif selected_handedness_active and not nodes.is_empty():
 			var selected_side := _topology_node_visual_handedness(Dictionary(nodes[editor_topology_node_index]))
 			pending_note += "  刃向:%s" % ("左" if selected_side == "left" else "右") if _ui_is_zh() else "  side:%s" % selected_side.to_upper()
-		_set_control_text_if_changed(editor_board_hint_label, "%s  %s %d/%d  %sx%d%s" % [rule_short, _short_part_name(node_label), clampi(editor_topology_node_index + 1, 1, maxi(1, nodes.size())), nodes.size(), "模块" if _ui_is_zh() else "MOD", module_count, pending_note])
+		var board_hint := "%s  %s %d/%d  %sx%d" % [rule_short, _short_part_name(node_label), clampi(editor_topology_node_index + 1, 1, maxi(1, nodes.size())), nodes.size(), "模块" if _ui_is_zh() else "MOD", module_count]
+		var selected_summary := String(selected_node_feedback.get("summary", "")).strip_edges()
+		if selected_summary != "":
+			board_hint += "  %s" % selected_summary
+		board_hint += pending_note
+		_set_control_text_if_changed(editor_board_hint_label, board_hint)
 	elif barrier_screen_board:
 		var tile_count := Array(unit_bp.get("barrier_tiles", [])).size()
 		var stats := precomputed_stats if not precomputed_stats.is_empty() else _editor_current_stats()
@@ -52903,7 +52975,11 @@ func _update_editor_board_ui(role_key: String, unit_bp: Dictionary, precomputed_
 			part = _selected_component(role_key, slot_key, index)
 			volume_note = ("长 %.2f / 接口 %d" if _ui_is_zh() else "L %.2f / ends %d") % [float(part.get("length", 0.0)), int(part.get("connection_ends", 1))]
 		var pending_marker := ("待放置 " if _ui_is_zh() else "PENDING ") if _has_pending_canvas_part() and editor_pending_place_slot == slot_key else ""
-		var selected_marker := ("当前节点 " if _ui_is_zh() else "NODE ") if custom_board_enabled and _topology_node_is_component(selected_bp) and _topology_node_slot(selected_bp) == slot_key else ""
+		var selected_marker := ""
+		if custom_board_enabled and _topology_node_is_component(selected_bp) and _topology_node_slot(selected_bp) == slot_key:
+			selected_marker = String(selected_node_feedback.get("shop_marker", ""))
+			if selected_marker == "":
+				selected_marker = "当前节点 " if _ui_is_zh() else "NODE "
 		_set_control_text_if_changed(button, _shop_slot_button_text(slot_key, part, volume_note, pending_marker, selected_marker))
 		if _has_pending_canvas_part() and editor_pending_place_slot == slot_key:
 			_set_canvas_item_modulate_if_changed(button, Color(1.0, 0.86, 0.28, 1.0))
@@ -52964,6 +53040,39 @@ func _update_editor_board_ui(role_key: String, unit_bp: Dictionary, precomputed_
 	if hot_path_profiler != null:
 		hot_path_profiler.record_value("teamedit.board_ui_usec", Time.get_ticks_usec() - board_ui_started)
 		hot_path_profiler.scope_end("teamedit.board_ui")
+
+
+func _editor_selected_node_feedback(role_key: String, unit_bp: Dictionary, nodes: Array, edges: Array, node_index: int) -> Dictionary:
+	if unit_editor_board_controller == null or node_index < 0 or node_index >= nodes.size() or not (nodes[node_index] is Dictionary):
+		return {}
+	var node: Dictionary = nodes[node_index]
+	if not _topology_node_is_component(node):
+		return {}
+	var slot_key := _topology_node_slot(node)
+	var part := _topology_node_part(role_key, node, unit_bp)
+	var action_hints := {
+		"open_torso_detail": "双击详情" if _ui_is_zh() else "double-click detail",
+		"switch_pose_for_connected": "切到姿态拖动" if _ui_is_zh() else "switch to POSE",
+		"pose_drag_connected": "姿态拖动" if _ui_is_zh() else "POSE drag",
+		"drag_loose_part": "布局拖动" if _ui_is_zh() else "drag loose part",
+		"select_part": "已选中" if _ui_is_zh() else "selected",
+	}
+	return unit_editor_board_controller.selected_node_feedback({
+		"valid": true,
+		"zh": _ui_is_zh(),
+		"slot_key": slot_key,
+		"slot_label": _slot_name(slot_key),
+		"part_name": _short_part_display_name(part),
+		"selected_label": "选中" if _ui_is_zh() else "SELECTED",
+		"shop_marker": "当前节点 " if _ui_is_zh() else "NODE ",
+		"action_hints": action_hints,
+		"node_index": node_index,
+		"node_count": nodes.size(),
+		"module_count": _module_indices_for_topology_node(node, unit_bp).size(),
+		"edge_count": _topology_node_edge_count(edges, node_index),
+		"is_torso": _topology_node_is_torso(role_key, node, unit_bp),
+		"board_tool": editor_board_tool,
+	})
 
 
 func _shop_slot_button_text(slot_key: String, part: Dictionary, volume_note: String, pending_marker: String, selected_marker: String) -> String:
@@ -53927,11 +54036,19 @@ func _update_editor_catalog_buttons(role_key: String, unit_bp: Dictionary) -> vo
 	var entries := _editor_catalog_entries(role_key, slot_key)
 	if hot_path_profiler != null:
 		hot_path_profiler.scope_end("teamedit.catalog.entries")
-	var page_size: int = max(1, editor_catalog_buttons.size())
+	var page_size: int = maxi(1, editor_catalog_buttons.size())
 	var max_page: int = maxi(0, int(ceilf(float(entries.size()) / float(page_size))) - 1)
-	editor_catalog_page = clampi(editor_catalog_page, 0, max_page)
 	var page_start := editor_catalog_page * page_size
 	var page_end := mini(entries.size(), page_start + page_size)
+	if unit_editor_catalog_controller != null:
+		var page_state := unit_editor_catalog_controller.page_state(editor_catalog_page, entries.size(), page_size)
+		editor_catalog_page = int(page_state.get("page", editor_catalog_page))
+		max_page = int(page_state.get("max_page", max_page))
+		page_size = int(page_state.get("page_size", page_size))
+		page_start = int(page_state.get("start_index", editor_catalog_page * page_size))
+		page_end = int(page_state.get("end_index", mini(entries.size(), page_start + page_size)))
+	else:
+		editor_catalog_page = clampi(editor_catalog_page, 0, max_page)
 	var page_selection_key := _editor_catalog_page_selection_key(unit_bp, role_key, entries.slice(page_start, page_end))
 	var revision_key := "%s|%s|%s|%s|%s|%s|%d|%d|%d|%d" % [
 		role_key,
@@ -54059,6 +54176,20 @@ func _hover_catalog_component(component_index: int) -> void:
 	var role_key: String = ROLE_ORDER[editor_role_index]
 	var slot_key: String = BUILD_SLOTS[editor_slot_index]
 	var entries := _editor_catalog_entries(role_key, slot_key)
+	if unit_editor_catalog_controller != null:
+		var state := unit_editor_catalog_controller.entry_state_for_card(component_index, editor_catalog_page, editor_catalog_buttons.size(), entries, slot_key)
+		if not bool(state.get("valid", false)):
+			if bool(state.get("clear_hover", false)):
+				_clear_editor_hover_card()
+			return
+		var delegated_entry: Dictionary = state.get("entry", {})
+		var delegated_part_index := int(state.get("part_index", 0))
+		var delegated_slot := String(state.get("slot", slot_key))
+		var delegated_part: Dictionary = state.get("part", {})
+		if delegated_part.is_empty():
+			delegated_part = _catalog_display_part(delegated_slot, delegated_entry.get("part", _selected_component(role_key, delegated_slot, delegated_part_index)))
+		_show_editor_part_hover(delegated_slot, delegated_part_index, delegated_part)
+		return
 	var actual_entry_index: int = editor_catalog_page * maxi(1, editor_catalog_buttons.size()) + component_index
 	if actual_entry_index < 0 or actual_entry_index >= entries.size():
 		_clear_editor_hover_card()
@@ -56720,6 +56851,7 @@ func _battle_hud_terms() -> Dictionary:
 		"blind": _ui_term("blind"),
 		"overheat": _ui_term("overheat"),
 		"stagger": _ui_term("stagger"),
+		"normal": _ui_term("normal"),
 		"support_armor": _ui_term("support_armor"),
 		"electronic_armor": _ui_term("electronic_armor"),
 		"heat": _ui_term("heat"),
@@ -57008,15 +57140,8 @@ func _battle_command_diagnostics_unit_snapshot(unit) -> Dictionary:
 
 
 func _battle_command_diagnostics_source_rule(stats: Dictionary, source_condition: String) -> Dictionary:
-	var raw_rules = stats.get("source_rules", {})
-	if not (raw_rules is Dictionary):
-		return {}
-	var rules: Dictionary = raw_rules
-	if source_condition != "" and rules.get(source_condition, null) is Dictionary:
-		return Dictionary(rules.get(source_condition, {}))
-	if rules.get("default", null) is Dictionary:
-		return Dictionary(rules.get("default", {}))
-	return {}
+	var condition := source_condition if source_condition != "" else "default"
+	return _battle_actor_command_service().source_rule_for_condition(stats.get("source_rules", {}), condition)
 
 
 func _battle_projectile_target_diagnostics_unit_snapshot(unit) -> Dictionary:

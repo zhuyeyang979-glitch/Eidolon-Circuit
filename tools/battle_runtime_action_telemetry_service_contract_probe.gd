@@ -366,6 +366,27 @@ func _init() -> void:
 	if not bool(first_action.get("soul_echo_refund_applied", false)) or not bool(first_action.get("combo_balance_refund_applied", false)):
 		_fail("Battle action diagnostics refund flags mismatch: %s" % str(first_action))
 		return
+	var truncation_model := service.battle_action_diagnostics_model({
+		"unit_count": 3,
+		"active_action_unit_count": 3,
+		"active_action_count": 5,
+		"units": [
+			{"live": true, "name": "Alpha", "owner": 1, "role": "hero", "active_count": 3, "actions": [action_a, action_b, action_a]},
+			{"live": true, "name": "Beta", "owner": 1, "role": "barrier", "active_count": 1, "actions": [action_b]},
+			{"live": true, "name": "Gamma", "owner": 2, "role": "hero", "active_count": 1, "actions": [action_a]},
+		],
+	}, {"max_units": 1, "max_actions_per_unit": 1})
+	if int(truncation_model.get("displayed_unit_count", -1)) != 1 or int(truncation_model.get("omitted_unit_count", -1)) != 2:
+		_fail("Battle action diagnostics should expose unit truncation counts: %s" % str(truncation_model))
+		return
+	var truncation_rows: Array = Array(truncation_model.get("unit_rows", []))
+	if truncation_rows.size() != 1:
+		_fail("Battle action diagnostics truncation should keep one row: %s" % str(truncation_rows))
+		return
+	var truncation_row: Dictionary = Dictionary(truncation_rows[0])
+	if String(truncation_row.get("name", "")) != "Alpha" or int(truncation_row.get("displayed_action_count", -1)) != 1 or int(truncation_row.get("omitted_action_count", -1)) != 2:
+		_fail("Battle action diagnostics should expose action truncation counts: %s" % str(truncation_row))
+		return
 	var warning_model := service.battle_action_diagnostics_model({
 		"unit_count": 2,
 		"active_action_unit_count": 2,

@@ -54,6 +54,12 @@ func _init() -> void:
 	var remove_error := DirAccess.remove_absolute(ProjectSettings.globalize_path(temp_path))
 	if remove_error != OK:
 		_fail("Could not remove temporary saved unit file: %d" % remove_error)
+	main._show_saved_units_library(temp_path)
+	if main.saved_unit_selected_index != -1 or main.saved_unit_detail_path != "":
+		_fail("Missing focused saved-unit file should clear stale selection/detail state.")
+	var missing_hint := String(main.saved_unit_hint_label.text) if main.saved_unit_hint_label != null else ""
+	if not missing_hint.contains("不存在") and not missing_hint.contains("gone"):
+		_fail("Missing focused saved-unit file should explain that the file is gone.")
 	main._show_saved_units_library()
 	if _has_entry_path(main, temp_path):
 		_fail("Saved unit cache should drop deleted files after disk invalidation.")

@@ -174,6 +174,7 @@ func battle_action_diagnostics_model(telemetry: Dictionary, options: Dictionary 
 	var max_actions_per_unit := maxi(0, int(options.get("max_actions_per_unit", 2)))
 	var units: Array = Array(telemetry.get("units", []))
 	var sorted_units := _sorted_unit_summaries(units)
+	var source_unit_count := _dictionary_item_count(sorted_units)
 	for raw_unit in sorted_units:
 		if unit_rows.size() >= max_units:
 			break
@@ -183,6 +184,7 @@ func battle_action_diagnostics_model(telemetry: Dictionary, options: Dictionary 
 		var unit: Dictionary = raw_unit
 		var actions: Array = Array(unit.get("actions", []))
 		var action_rows: Array = []
+		var source_action_count := _dictionary_item_count(actions)
 		var gate_diagnostics := _normalized_gate_diagnostics(unit.get("gate_diagnostics", {}))
 		var command_diagnostics := _normalized_command_diagnostics(unit.get("command_diagnostics", {}))
 		var projectile_diagnostics := _normalized_projectile_diagnostics(unit.get("projectile_diagnostics", {}))
@@ -256,6 +258,8 @@ func battle_action_diagnostics_model(telemetry: Dictionary, options: Dictionary 
 			"gate_diagnostics": gate_diagnostics,
 			"command_diagnostics": command_diagnostics,
 			"projectile_diagnostics": projectile_diagnostics,
+			"displayed_action_count": action_rows.size(),
+			"omitted_action_count": maxi(0, source_action_count - action_rows.size()),
 			"actions": action_rows,
 		})
 	return {
@@ -263,6 +267,10 @@ func battle_action_diagnostics_model(telemetry: Dictionary, options: Dictionary 
 		"unit_count": maxi(0, int(telemetry.get("unit_count", units.size()))),
 		"active_action_unit_count": maxi(0, int(telemetry.get("active_action_unit_count", 0))),
 		"active_action_count": maxi(0, int(telemetry.get("active_action_count", 0))),
+		"max_units": max_units,
+		"max_actions_per_unit": max_actions_per_unit,
+		"displayed_unit_count": unit_rows.size(),
+		"omitted_unit_count": maxi(0, source_unit_count - unit_rows.size()),
 		"profile_counts": Dictionary(telemetry.get("profile_counts", {})).duplicate(true),
 		"phase_label_counts": Dictionary(telemetry.get("phase_label_counts", {})).duplicate(true),
 		"gate_reason_counts": Dictionary(telemetry.get("gate_reason_counts", {})).duplicate(true),
@@ -292,6 +300,14 @@ func _sorted_unit_summaries(units: Array) -> Array:
 	var sorted := units.duplicate(true)
 	sorted.sort_custom(Callable(self, "_compare_unit_summaries"))
 	return sorted
+
+
+func _dictionary_item_count(items: Array) -> int:
+	var count := 0
+	for item in items:
+		if item is Dictionary:
+			count += 1
+	return count
 
 
 func _compare_unit_summaries(a, b) -> bool:

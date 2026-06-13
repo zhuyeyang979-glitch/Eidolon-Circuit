@@ -88,6 +88,31 @@ func true_bullet_target_selection(candidates: Array, wrapped_candidate: Dictiona
 	}
 
 
+func selected_target_index_intent(context: Dictionary) -> Dictionary:
+	var selection := _dict(context.get("selection", {}))
+	var target_count := maxi(0, int(context.get("target_count", 0)))
+	var selected_index := int(selection.get("target_index", -1))
+	if selected_index < 0:
+		return {
+			"action": "reject",
+			"reason": "missing_target_index",
+			"target_index": selected_index,
+			"target_count": target_count,
+		}
+	if selected_index >= target_count:
+		return {
+			"action": "reject",
+			"reason": "target_index_out_of_range",
+			"target_index": selected_index,
+			"target_count": target_count,
+		}
+	return {
+		"action": "accept",
+		"target_index": selected_index,
+		"target_count": target_count,
+	}
+
+
 func missile_candidate_intent(context: Dictionary) -> Dictionary:
 	if not bool(context.get("candidate_live", true)):
 		return {"action": "reject", "reason": "candidate_gone"}

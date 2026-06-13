@@ -25,11 +25,14 @@ func text() -> String:
 	if model.is_empty():
 		return ""
 	var lines: Array[String] = []
+	var unit_rows: Array = Array(model.get("unit_rows", []))
 	lines.append(String(model.get("title", "BATTLE ACTION DIAGNOSTICS")))
-	lines.append("units:%d active_units:%d actions:%d" % [
+	lines.append("units:%d active_units:%d actions:%d shown:%d omitted:%d" % [
 		int(model.get("unit_count", 0)),
 		int(model.get("active_action_unit_count", 0)),
 		int(model.get("active_action_count", 0)),
+		int(model.get("displayed_unit_count", unit_rows.size())),
+		int(model.get("omitted_unit_count", 0)),
 	])
 	lines.append("flags feint:%s contact_speed:%s phase:%.2f earliest:%.2f" % [
 		str(bool(model.get("has_feint_retarget", false))),
@@ -59,16 +62,19 @@ func text() -> String:
 		int(model.get("projectile_signal_unit_count", 0)),
 		int(model.get("projectile_targeted_unit_count", 0)),
 	])
-	for raw_row in Array(model.get("unit_rows", [])):
+	for raw_row in unit_rows:
 		if not (raw_row is Dictionary):
 			continue
 		var row: Dictionary = raw_row
-		lines.append("unit P%d %s %s active:%d state:%s" % [
+		var actions: Array = Array(row.get("actions", []))
+		lines.append("unit P%d %s %s active:%d state:%s shown:%d omitted:%d" % [
 			int(row.get("owner", 0)),
 			String(row.get("role", "")),
 			String(row.get("name", "")),
 			int(row.get("active_count", 0)),
 			String(row.get("active_part_state", "")),
+			int(row.get("displayed_action_count", actions.size())),
+			int(row.get("omitted_action_count", 0)),
 		])
 		var gate: Dictionary = Dictionary(row.get("gate_diagnostics", {}))
 		lines.append("  gate ready:%s reason:%s cd:%.2f stagger:%.2f cancel:%s phase:%.2f power:%.2f same:%s last:%s" % [
@@ -106,7 +112,7 @@ func text() -> String:
 			_counts_line(Dictionary(projectile.get("target_role_counts", {}))),
 			String(projectile.get("last_source_error", "")),
 		])
-		for raw_action in Array(row.get("actions", [])):
+		for raw_action in actions:
 			if not (raw_action is Dictionary):
 				continue
 			var action: Dictionary = raw_action

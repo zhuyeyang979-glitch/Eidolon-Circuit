@@ -24,6 +24,8 @@ func _init() -> void:
 		"deploy_tick_plan",
 		"summon_gate_intent",
 		"auto_summon_intent",
+		"auto_summon_role_available",
+		"auto_summon_mech_presence",
 		"ai_battle_original_player_is_ai",
 		"ai_battle_roster_prepare_intent",
 		"ai_battle_entry_repair_intent",
@@ -58,6 +60,8 @@ func _init() -> void:
 		"summon_pair_clear_intent",
 		"summon_pair_cycle_intent",
 		"portal_index_from_vector",
+		"source_rule_for_condition",
+		"default_puppet_attack_modules",
 		"puppet_condition",
 		"puppet_move_intent",
 		"puppet_attack_intent",
@@ -100,6 +104,8 @@ func _init() -> void:
 		"_battle_actor_command_service().deploy_tick_plan",
 		"_battle_actor_command_service().summon_gate_intent",
 		"_battle_actor_command_service().auto_summon_intent",
+		"_battle_actor_command_service().auto_summon_role_available",
+		"_battle_actor_command_service().auto_summon_mech_presence",
 		"_battle_actor_command_service().ai_battle_original_player_is_ai",
 		"_battle_actor_command_service().ai_battle_roster_prepare_intent",
 		"_battle_actor_command_service().ai_battle_entry_repair_intent",
@@ -134,6 +140,8 @@ func _init() -> void:
 		"_battle_actor_command_service().summon_pair_clear_intent",
 		"_battle_actor_command_service().summon_pair_cycle_intent",
 		"_battle_actor_command_service().portal_index_from_vector",
+		"_battle_actor_command_service().source_rule_for_condition",
+		"_battle_actor_command_service().default_puppet_attack_modules",
 		"_battle_actor_command_service().puppet_condition",
 		"_battle_actor_command_service().puppet_move_intent",
 		"_battle_actor_command_service().puppet_attack_intent",
@@ -146,14 +154,19 @@ func _init() -> void:
 	for stale_token in [
 		"func _pair_key(",
 		"func _pair_used_by_other(",
+		"func _source_attack_index_for_step(",
+		"func _puppet_attack_reaches(",
+		"func _source_move_vector(",
 	]:
 		if main_source.find(stale_token) >= 0:
-			_fail("main.gd should not retain stale summon-pair helper: %s" % stale_token)
+			_fail("main.gd should not retain stale battle actor command helper: %s" % stale_token)
 			return
 	var service = BattleActorCommandServiceScript.new()
 	_check_deploy(service)
 	_check_summon(service)
 	_check_auto_summon(service)
+	_check_auto_summon_role_available(service)
+	_check_auto_summon_mech_presence(service)
 	_check_ai_battle_original_player(service)
 	_check_ai_battle_roster_prepare(service)
 	_check_ai_battle_entry_repair(service)
@@ -186,6 +199,8 @@ func _init() -> void:
 	_check_summon_pair_clear(service)
 	_check_summon_pair_cycle(service)
 	_check_portal_index(service)
+	_check_source_rule_for_condition(service)
+	_check_default_puppet_attack_modules(service)
 	_check_puppet_condition(service)
 	_check_puppet_move(service)
 	_check_puppet_attack(service)
@@ -253,6 +268,88 @@ func _check_auto_summon(service) -> void:
 	]})
 	if not bool(candidate.get("found", false)) or String(candidate.get("role_key", "")) != "puppet" or int(candidate.get("unit_index", -1)) != 2:
 		_fail("auto_summon_intent should pick first valid affordable candidate: %s" % str(candidate))
+
+
+func _check_auto_summon_role_available(service) -> void:
+	if bool(service.auto_summon_role_available("hero", {
+		"role_known": false,
+		"player_known": true,
+		"pending": false,
+		"existing_live": false,
+	})):
+		_fail("auto_summon_role_available should reject unknown roles.")
+	if bool(service.auto_summon_role_available("hero", {
+		"role_known": true,
+		"player_known": false,
+		"pending": false,
+		"existing_live": false,
+	})):
+		_fail("auto_summon_role_available should reject missing players.")
+	if bool(service.auto_summon_role_available("hero", {
+		"role_known": true,
+		"player_known": true,
+		"pending": true,
+		"existing_live": false,
+	})):
+		_fail("auto_summon_role_available should reject pending roles.")
+	if bool(service.auto_summon_role_available("hero", {
+		"role_known": true,
+		"player_known": true,
+		"pending": false,
+		"existing_live": true,
+	})):
+		_fail("auto_summon_role_available should reject live non-puppet roles.")
+	if not bool(service.auto_summon_role_available("hero", {
+		"role_known": true,
+		"player_known": true,
+		"pending": false,
+		"existing_live": false,
+	})):
+		_fail("auto_summon_role_available should accept vacant non-puppet roles.")
+	if bool(service.auto_summon_role_available("puppet", {
+		"role_known": true,
+		"player_known": true,
+		"pending": false,
+		"live_primary_puppet_count": 1,
+	})):
+		_fail("auto_summon_role_available should reject live puppet groups.")
+	if not bool(service.auto_summon_role_available("puppet", {
+		"role_known": true,
+		"player_known": true,
+		"pending": false,
+		"live_primary_puppet_count": 0,
+	})):
+		_fail("auto_summon_role_available should accept empty puppet groups.")
+
+
+func _check_auto_summon_mech_presence(service) -> void:
+	var empty: Dictionary = service.auto_summon_mech_presence({})
+	if bool(empty.get("has_live_mech", true)) or bool(empty.get("has_pending_mech", true)):
+		_fail("auto_summon_mech_presence should default to no live or pending mech: %s" % str(empty))
+	var live_hero: Dictionary = service.auto_summon_mech_presence({
+		"hero_live": true,
+		"live_primary_puppet_count": 0,
+		"hero_pending": false,
+		"puppet_pending": false,
+	})
+	if not bool(live_hero.get("has_live_mech", false)) or bool(live_hero.get("has_pending_mech", true)):
+		_fail("auto_summon_mech_presence should treat a live hero as live mech only: %s" % str(live_hero))
+	var live_puppets: Dictionary = service.auto_summon_mech_presence({
+		"hero_live": false,
+		"live_primary_puppet_count": 2,
+		"hero_pending": false,
+		"puppet_pending": true,
+	})
+	if not bool(live_puppets.get("has_live_mech", false)) or not bool(live_puppets.get("has_pending_mech", false)):
+		_fail("auto_summon_mech_presence should merge puppet live count and pending flags: %s" % str(live_puppets))
+	var pending_hero: Dictionary = service.auto_summon_mech_presence({
+		"hero_live": false,
+		"live_primary_puppet_count": 0,
+		"hero_pending": true,
+		"puppet_pending": false,
+	})
+	if bool(pending_hero.get("has_live_mech", true)) or not bool(pending_hero.get("has_pending_mech", false)):
+		_fail("auto_summon_mech_presence should expose hero pending without live mech: %s" % str(pending_hero))
 
 
 func _check_ai_battle_original_player(service) -> void:
@@ -980,6 +1077,36 @@ func _check_portal_index(service) -> void:
 	_assert_eq(int(service.portal_index_from_vector(Vector2(0.0, 0.7), 4, 8)), 6, "down vector selects portal 6")
 	_assert_eq(int(service.portal_index_from_vector(Vector2(0.7, 0.7), 4, 8)), 7, "down-right vector selects portal 7")
 	_assert_eq(int(service.portal_index_from_vector(Vector2.RIGHT, 2, 0)), 0, "empty portal count falls back to zero safely")
+
+
+func _check_source_rule_for_condition(service) -> void:
+	var rules := {
+		"default": {"move": "approach", "states": ["normal"]},
+		"enemy_far": {"move": "kite", "states": ["skill"]},
+		"empty": "not-a-rule",
+	}
+	var specific: Dictionary = service.source_rule_for_condition(rules, "enemy_far")
+	_assert_eq(String(specific.get("move", "")), "kite", "source rule should prefer exact condition")
+	_assert_eq(String(Array(specific.get("states", []))[0]), "skill", "source rule should preserve exact condition state")
+	specific["move"] = "mutated"
+	_assert_eq(String(Dictionary(rules["enemy_far"]).get("move", "")), "kite", "source rule should duplicate exact condition data")
+	var fallback: Dictionary = service.source_rule_for_condition(rules, "enemy_close")
+	_assert_eq(String(fallback.get("move", "")), "approach", "source rule should fallback to default")
+	fallback["move"] = "mutated"
+	_assert_eq(String(Dictionary(rules["default"]).get("move", "")), "approach", "source rule should duplicate default data")
+	if not service.source_rule_for_condition(rules, "empty").is_empty():
+		_fail("source rule should reject non-dictionary condition entries.")
+	if not service.source_rule_for_condition([], "default").is_empty():
+		_fail("source rule should reject non-dictionary rule maps.")
+	if not service.source_rule_for_condition({"default": "bad"}, "missing").is_empty():
+		_fail("source rule should reject non-dictionary default entries.")
+
+
+func _check_default_puppet_attack_modules(service) -> void:
+	_assert_eq(_array_text(service.default_puppet_attack_modules(1, 4, [2])), "1,0,3", "default puppet modules should keep preferred module first")
+	_assert_eq(_array_text(service.default_puppet_attack_modules(2, 4, [2])), "0,1,3", "default puppet modules should skip disabled preferred module")
+	_assert_eq(_array_text(service.default_puppet_attack_modules(5, 4, ["1", 3])), "0,2", "default puppet modules should honor string disabled markers")
+	_assert_eq(_array_text(service.default_puppet_attack_modules(0, 0, [])), "", "default puppet modules should handle empty attack slot count")
 
 
 func _check_puppet_condition(service) -> void:

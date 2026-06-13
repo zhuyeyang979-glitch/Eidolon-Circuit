@@ -46,6 +46,18 @@ const CLICK_LAYOUT_CONNECTED_PART_REJECT := "layout_connected_part_reject"
 const CLICK_START_LOOSE_DRAG := "start_loose_drag"
 const CLICK_BLANK_CANVAS_SELECT_BOX := "blank_canvas_select_box"
 const CLICK_BLANK_CANVAS_HINT := "blank_canvas_hint"
+const REJECT_CONNECTED_SELECTION := "connected_selection"
+const REJECT_CONNECTED_PART := "connected_part"
+const HINT_BINDING_INVALID := "binding_invalid"
+const HINT_POSE_DRAG_INVALID := "pose_drag_invalid"
+const HINT_LAYOUT_CONNECTED_SELECTION := "layout_connected_selection"
+const HINT_LAYOUT_CONNECTED_PART := "layout_connected_part"
+const HINT_BLANK_CANVAS := "blank_canvas"
+const SELECTED_OPEN_TORSO_DETAIL := "open_torso_detail"
+const SELECTED_SWITCH_POSE_FOR_CONNECTED := "switch_pose_for_connected"
+const SELECTED_POSE_DRAG_CONNECTED := "pose_drag_connected"
+const SELECTED_DRAG_LOOSE_PART := "drag_loose_part"
+const SELECTED_PART := "select_part"
 
 
 func route_board_input_event(event: InputEvent, context: Dictionary) -> Dictionary:
@@ -160,10 +172,16 @@ func custom_topology_click_intent(context: Dictionary) -> Dictionary:
 			return {"action": CLICK_BINDING_CANCEL}
 		if is_left:
 			if bool(context.get("binding_candidate_found", false)):
-				return {
-					"action": CLICK_BINDING_COMPLETE if bool(context.get("binding_candidate_valid", false)) else CLICK_BINDING_INVALID,
+				var binding_action := CLICK_BINDING_COMPLETE if bool(context.get("binding_candidate_valid", false)) else CLICK_BINDING_INVALID
+				var binding_intent := {
+					"action": binding_action,
 					"binding_selection": Array(context.get("binding_selection", [])).duplicate(),
 				}
+				if binding_action == CLICK_BINDING_INVALID:
+					var reject_reason := String(context.get("binding_candidate_reason", context.get("binding_candidate_note", ""))).strip_edges()
+					binding_intent["reject_reason"] = reject_reason if reject_reason != "" else CLICK_BINDING_INVALID
+					binding_intent["hint_key"] = HINT_BINDING_INVALID
+				return binding_intent
 			return {"action": CLICK_START_SELECTION_BOX}
 	if is_right:
 		var edge_index := int(context.get("edge_hit_index", -1))
@@ -197,6 +215,7 @@ func custom_topology_click_intent(context: Dictionary) -> Dictionary:
 					"pose_root_index": int(context.get("pose_candidate_root_index", -1)),
 					"pose_downstream_count": int(context.get("pose_candidate_downstream_count", 0)),
 					"set_node_click_candidate": should_set_click_candidate,
+					"hint_key": HINT_POSE_DRAG_INVALID,
 				}
 			return {
 				"action": CLICK_START_POSE_DRAG,
@@ -218,6 +237,8 @@ func custom_topology_click_intent(context: Dictionary) -> Dictionary:
 					"action": CLICK_LAYOUT_CONNECTED_SELECTION_REJECT,
 					"node_index": nearest_node_index,
 					"set_node_click_candidate": should_set_click_candidate,
+					"reject_reason": REJECT_CONNECTED_SELECTION,
+					"hint_key": HINT_LAYOUT_CONNECTED_SELECTION,
 				}
 			return {
 				"action": CLICK_START_GROUP_DRAG,
@@ -239,6 +260,8 @@ func custom_topology_click_intent(context: Dictionary) -> Dictionary:
 				"action": CLICK_LAYOUT_CONNECTED_PART_REJECT,
 				"node_index": nearest_node_index,
 				"set_node_click_candidate": should_set_click_candidate,
+				"reject_reason": REJECT_CONNECTED_PART,
+				"hint_key": HINT_LAYOUT_CONNECTED_PART,
 			}
 		return {
 			"action": CLICK_START_LOOSE_DRAG,
@@ -247,7 +270,67 @@ func custom_topology_click_intent(context: Dictionary) -> Dictionary:
 		}
 	if bool(context.get("has_nodes", false)) and is_left:
 		return {"action": CLICK_BLANK_CANVAS_SELECT_BOX}
-	return {"action": CLICK_BLANK_CANVAS_HINT}
+	return {"action": CLICK_BLANK_CANVAS_HINT, "hint_key": HINT_BLANK_CANVAS}
+
+
+func selected_node_feedback(context: Dictionary) -> Dictionary:
+	if not bool(context.get("valid", false)):
+		return {"valid": false, "action_key": ACTION_NONE, "summary": "", "shop_marker": ""}
+	var slot_key := String(context.get("slot_key", "")).strip_edges()
+	var slot_label := String(context.get("slot_label", slot_key)).strip_edges()
+	if slot_label == "":
+		slot_label = "PART"
+	var part_name := String(context.get("part_name", "")).strip_edges()
+	var node_index := maxi(0, int(context.get("node_index", 0)))
+	var node_count := maxi(0, int(context.get("node_count", 0)))
+	var module_count := maxi(0, int(context.get("module_count", 0)))
+	var edge_count := maxi(0, int(context.get("edge_count", 0)))
+	var board_tool := String(context.get("board_tool", "layout"))
+	var is_torso := bool(context.get("is_torso", false))
+	var selected_label := String(context.get("selected_label", "SELECTED")).strip_edges()
+	if selected_label == "":
+		selected_label = "SELECTED"
+	var shop_marker := String(context.get("shop_marker", "NODE "))
+	var action_key := SELECTED_PART
+	if is_torso:
+		action_key = SELECTED_OPEN_TORSO_DETAIL
+	elif edge_count > 0 and board_tool != "pose":
+		action_key = SELECTED_SWITCH_POSE_FOR_CONNECTED
+	elif edge_count > 0:
+		action_key = SELECTED_POSE_DRAG_CONNECTED
+	else:
+		action_key = SELECTED_DRAG_LOOSE_PART
+	var action_hints: Dictionary = context.get("action_hints", {})
+	var action_hint := String(action_hints.get(action_key, _default_selected_node_action_hint(action_key))).strip_edges()
+	var index_label := "%d/%d" % [node_index + 1, maxi(1, node_count)]
+	var summary := "%s %s %s: %s" % [selected_label, slot_label, index_label, action_hint]
+	return {
+		"valid": true,
+		"slot_key": slot_key,
+		"slot_label": slot_label,
+		"part_name": part_name,
+		"node_index": node_index,
+		"node_count": node_count,
+		"module_count": module_count,
+		"edge_count": edge_count,
+		"action_key": action_key,
+		"action_hint": action_hint,
+		"summary": summary,
+		"shop_marker": shop_marker,
+	}
+
+
+func _default_selected_node_action_hint(action_key: String) -> String:
+	match action_key:
+		SELECTED_OPEN_TORSO_DETAIL:
+			return "double-click detail"
+		SELECTED_SWITCH_POSE_FOR_CONNECTED:
+			return "switch to POSE"
+		SELECTED_POSE_DRAG_CONNECTED:
+			return "POSE drag"
+		SELECTED_DRAG_LOOSE_PART:
+			return "drag loose part"
+	return "selected"
 
 
 func _motion_action(context: Dictionary) -> String:

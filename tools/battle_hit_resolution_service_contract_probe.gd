@@ -26,6 +26,8 @@ func _init() -> void:
 		"damage_stack_intent",
 		"part_damage_intent",
 		"momentum_response_intent",
+		"melee_momentum_stagger_pair",
+		"melee_pair_impact_position_intent",
 		"post_hit_intents",
 		"status_tick_intent",
 	]:
@@ -67,6 +69,8 @@ func _init() -> void:
 		"_battle_hit_resolution_service().damage_stack_intent",
 		"_battle_hit_resolution_service().part_damage_intent",
 		"_battle_hit_resolution_service().momentum_response_intent",
+		"\"kind\": \"melee_momentum_stagger_pair\"",
+		"_battle_hit_resolution_service().melee_pair_impact_position_intent({",
 		"_battle_hit_resolution_service().post_hit_intents",
 		"_battle_hit_resolution_service().status_tick_intent",
 	]:
@@ -80,6 +84,19 @@ func _init() -> void:
 	if resolve_body.contains("if false and _is_laser_telegraph_event"):
 		_fail("_resolve_attack should not keep disabled laser telegraph fallback.")
 		return
+	var melee_pair_body := _function_body(main_source, "func _apply_melee_momentum_stagger_pair")
+	if melee_pair_body.is_empty():
+		_fail("Unable to locate _apply_melee_momentum_stagger_pair body.")
+		return
+	for stale_fragment in [
+		"var ratio := (gap - required_gap) / maxf(MELEE_STABILITY_THRESHOLD_FLOOR, required_gap)",
+		"var duration := clampf(MELEE_STAGGER_BASE_SECONDS + ratio * MELEE_STAGGER_RATIO_SECONDS, 0.0, MELEE_STAGGER_MAX_SECONDS)",
+		"var b_near_x: float = a.ring_pos + ab_delta.x",
+		"var impact_combat := Vector2(wrapf(lerpf(a.ring_pos, b_near_x, 0.5), 0.0, RING_LENGTH), a.lane + ab_delta.y * 0.5)",
+	]:
+		if melee_pair_body.contains(stale_fragment):
+			_fail("_apply_melee_momentum_stagger_pair should delegate pure stagger math to BattleHitResolutionService: %s" % stale_fragment)
+			return
 	var service = BattleHitResolutionServiceScript.new()
 	_check_entry(service)
 	_check_projectile_preflight(service)
@@ -332,6 +349,67 @@ func _check_momentum_response(service) -> void:
 		"crush_stagger_mult": 1.5,
 	})
 	_assert_close(float(melee_pair.get("attacker_momentum", 0.0)), 75.0, "active melee crush mult")
+	var stagger_pair: Dictionary = service.momentum_response_intent({
+		"kind": "melee_momentum_stagger_pair",
+		"unit_a_mech": true,
+		"unit_b_mech": true,
+		"momentum_a": 180.0,
+		"momentum_b": 20.0,
+		"combo_active": false,
+		"threshold": 28.0,
+		"source": "attack",
+		"min_momentum": 18.0,
+		"passive_contact_stagger_min_mult": 1.75,
+		"threshold_floor": 28.0,
+		"base_seconds": 0.045,
+		"ratio_seconds": 0.11,
+		"max_seconds": 0.56,
+		"gate_seconds": 0.32,
+		"gate_until": 0.0,
+		"now": 2.0,
+	})
+	_assert_eq(String(stagger_pair.get("action", "")), "apply_melee_pair_stagger", "melee pair stagger action")
+	_assert_eq(String(stagger_pair.get("staggered_side", "")), "b", "melee pair stagger side")
+	_assert_eq(String(stagger_pair.get("source_attacker_side", "")), "a", "melee pair source side")
+	_assert_close(float(stagger_pair.get("gap", 0.0)), 160.0, "melee pair stagger gap")
+	_assert_close(float(stagger_pair.get("required_gap", 0.0)), 28.0, "melee pair required gap")
+	_assert_close(float(stagger_pair.get("duration", 0.0)), 0.56, "melee pair stagger duration")
+	_assert_close(float(stagger_pair.get("gate_until", 0.0)), 2.32, "melee pair stagger gate")
+	_assert_close(float(stagger_pair.get("ripple_scale", 0.0)), 1.0, "melee pair ripple scale")
+	var wrap_impact: Dictionary = service.melee_pair_impact_position_intent({
+		"a_position": Vector2(9.0, 1.0),
+		"ab_delta": Vector2(3.0, -2.0),
+		"ring_length": 10.0,
+	})
+	_assert_eq(String(wrap_impact.get("action", "")), "resolve_melee_pair_impact_position", "melee pair impact action")
+	_assert_vec_close(wrap_impact.get("position", Vector2.ZERO), Vector2(0.5, 0.0), "melee pair wrapped impact")
+	var direct_impact: Dictionary = service.melee_pair_impact_position_intent({
+		"a_position": Vector2(2.0, -0.5),
+		"ab_delta": Vector2(4.0, 1.0),
+		"ring_length": 10.0,
+	})
+	_assert_vec_close(direct_impact.get("position", Vector2.ZERO), Vector2(4.0, 0.0), "melee pair direct impact")
+	_assert_eq(String(service.momentum_response_intent({
+		"kind": "melee_momentum_stagger_pair",
+		"unit_a_mech": true,
+		"unit_b_mech": true,
+		"momentum_a": 42.0,
+		"momentum_b": 12.0,
+		"threshold": 20.0,
+		"source": "collision",
+		"min_momentum": 18.0,
+		"passive_contact_stagger_min_mult": 1.75,
+	}).get("reason", "")), "below_required_gap", "melee pair collision gap gate")
+	_assert_eq(String(service.momentum_response_intent({
+		"kind": "melee_momentum_stagger_pair",
+		"unit_a_mech": true,
+		"unit_b_mech": true,
+		"momentum_a": 120.0,
+		"momentum_b": 10.0,
+		"threshold": 20.0,
+		"gate_until": 3.0,
+		"now": 2.0,
+	}).get("reason", "")), "gate_active", "melee pair stagger gate active")
 	var direct: Dictionary = service.momentum_response_intent({
 		"kind": "hit_displacement_direct",
 		"event_momentum": 100.0,

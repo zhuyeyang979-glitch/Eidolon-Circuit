@@ -29,6 +29,12 @@ func runtime_attack_button_intent(context: Dictionary) -> Dictionary:
 	return {"action": "open_command_window", "attack_index": attack_index}
 
 
+func explicit_gun_activation_event(event: Dictionary, profile_known: bool) -> bool:
+	if profile_known:
+		return true
+	return bool(event.get("gun_activation", false)) and profile_known
+
+
 func attack_button_command_state_intent(requested_state: String, module_action_profile: String) -> Dictionary:
 	if not (requested_state in ["active", "armor"]):
 		return {

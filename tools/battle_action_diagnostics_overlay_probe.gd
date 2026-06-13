@@ -59,11 +59,15 @@ func _init() -> void:
 		"projectile_targeted_unit_count": 1,
 		"has_feint_retarget": false,
 		"has_runtime_contact_speed": true,
+		"displayed_unit_count": 1,
+		"omitted_unit_count": 0,
 		"unit_rows": [{
 			"owner": 1,
 			"role": "hero",
 			"name": "Standalone",
 			"active_count": 1,
+			"displayed_action_count": 1,
+			"omitted_action_count": 0,
 			"active_part_state": "normal",
 			"gate_diagnostics": {
 				"ready": false,
@@ -123,6 +127,10 @@ func _init() -> void:
 	for required in ["key:3", "nodes:4/5", "pose:", "target:", "variant:balance_string", "cmd:normal_sweep", "speed:", "soul:true", "combo:true"]:
 		if not standalone_text.contains(required):
 			_fail("BattleActionDiagnosticsView text missing enriched token %s: %s" % [required, standalone_text])
+			return
+	for required in ["shown:1", "omitted:0"]:
+		if not standalone_text.contains(required):
+			_fail("BattleActionDiagnosticsView text missing truncation token %s: %s" % [required, standalone_text])
 			return
 	for required in ["gates cooldown:1", "gate ready:false", "reason:cooldown", "cd:0.22", "cancel:false", "last:cooldown"]:
 		if not standalone_text.contains(required):

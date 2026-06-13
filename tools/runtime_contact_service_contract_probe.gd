@@ -34,6 +34,20 @@ func _init() -> void:
 		"runtime_pair_intent",
 		"gpu_contact_intent",
 		"damage_intent",
+		"velocity_response_intent",
+		"runtime_node_array_has",
+		"runtime_action_phase",
+		"runtime_recovery_capable",
+		"passive_contact_scrape_factor",
+		"meta_safe_part_index",
+		"passive_contact_damage_key",
+		"unit_contact_radius",
+		"unit_effective_mass",
+		"unit_thruster_power",
+		"unit_knockback_resist",
+		"unit_impulse_motion_mult",
+		"unit_melee_stability_threshold",
+		"unit_posture_anchor",
 	]:
 		if service_source.find(token) < 0:
 			_fail("RuntimeContactService missing token: %s" % token)
@@ -47,25 +61,79 @@ func _init() -> void:
 		"const RuntimeContactService = preload(\"res://scripts/services/runtime_contact_service.gd\")",
 		"var runtime_contact_service: RuntimeContactService",
 		"runtime_contact_service = RuntimeContactService.new()",
-		"runtime_contact_service.socket_key",
-		"runtime_contact_service.sorted_colliders",
-		"runtime_contact_service.collider_priority",
-		"runtime_contact_service.pair_key",
-		"runtime_contact_service.directed_contact_key",
-		"runtime_contact_service.damage_coeff",
-		"runtime_contact_service.break_coeff",
-		"runtime_contact_service.part_stiffness",
-		"runtime_contact_service.path_stiffness",
-		"runtime_contact_service.break_threshold",
-		"runtime_contact_service.damage_type",
-		"runtime_contact_service.material_class",
-		"runtime_contact_service.runtime_pair_intent",
-		"runtime_contact_service.gpu_contact_intent",
-		"runtime_contact_service.damage_intent",
-		"runtime_contact_service.contact_source",
+		"func _runtime_contact_service() -> RuntimeContactService",
+		"_runtime_contact_service().socket_key(collider)",
+		"_runtime_contact_service().sorted_colliders(colliders)",
+		"_runtime_contact_service().collider_priority(raw_collider)",
+		"_runtime_contact_service().pair_key(aid, collider_a, bid, collider_b)",
+		"_runtime_contact_service().directed_contact_key(aid, collider_a, bid, collider_b)",
+		"_runtime_contact_service().collider_uses_torso_damage(collider)",
+		"_runtime_contact_service().damage_coeff(collider, _runtime_contact_constants())",
+		"_runtime_contact_service().break_coeff(collider, _runtime_contact_constants())",
+		"_runtime_contact_service().part_stiffness(collider, _collider_stiffness_size_multiplier(collider, unit), _runtime_contact_constants())",
+		"_runtime_contact_service().path_stiffness(collider, _collider_stiffness_size_multiplier(collider, unit), _runtime_contact_constants())",
+		"_runtime_contact_service().break_threshold(collider, _collider_stiffness_size_multiplier(collider, unit), _runtime_contact_constants())",
+		"_runtime_contact_service().damage_type(collider, MELEE_DAMAGE_TYPES)",
+		"_runtime_contact_service().material_class(collider)",
+		"_runtime_contact_service().runtime_pair_intent",
+		"_runtime_contact_service().gpu_contact_intent",
+		"_runtime_contact_service().damage_intent",
+		"_runtime_contact_service().velocity_response_intent",
+		"_runtime_contact_service().runtime_recovery_capable",
+		"_runtime_contact_service().runtime_action_phase",
+		"_runtime_contact_service().passive_contact_scrape_factor",
+		"_runtime_contact_service().passive_contact_damage_key",
+		"_runtime_contact_service().unit_contact_radius",
+		"_runtime_contact_service().unit_effective_mass",
+		"_runtime_contact_service().unit_thruster_power",
+		"_runtime_contact_service().unit_knockback_resist",
+		"_runtime_contact_service().unit_impulse_motion_mult",
+		"_runtime_contact_service().unit_melee_stability_threshold",
+		"_runtime_contact_service().unit_posture_anchor",
+		"\"melee_stability_threshold_floor\": MELEE_STABILITY_THRESHOLD_FLOOR",
+		"_runtime_contact_service().contact_source(collider)",
 	]:
 		if main_source.find(token) < 0:
 			_fail("main.gd should delegate runtime contact service token: %s" % token)
+			return
+	for stale_scalar_parse in [
+		"if runtime_contact_service != null:\n\t\treturn runtime_contact_service.socket_key(collider)",
+		"var sorted := colliders.duplicate()\n\tsorted.sort_custom(Callable(self, \"_runtime_contact_collider_sort\"))",
+		"if not (raw_collider is Dictionary):\n\t\treturn 999",
+		"var a_socket := _runtime_contact_socket_key(collider_a)\n\tvar b_socket := _runtime_contact_socket_key(collider_b)",
+		"if runtime_contact_service != null:\n\t\treturn runtime_contact_service.collider_uses_torso_damage(collider)",
+		"if runtime_contact_service != null:\n\t\treturn runtime_contact_service.damage_coeff(collider, _runtime_contact_constants())",
+		"if _runtime_collider_uses_torso_damage(collider):\n\t\treturn PART_DAMAGE_COEFF_TORSO",
+		"if runtime_contact_service != null:\n\t\treturn runtime_contact_service.break_coeff(collider, _runtime_contact_constants())",
+		"if runtime_contact_service != null:\n\t\treturn runtime_contact_service.part_stiffness(collider, _collider_stiffness_size_multiplier(collider, unit), _runtime_contact_constants())",
+		"if runtime_contact_service != null:\n\t\treturn runtime_contact_service.path_stiffness(collider, _collider_stiffness_size_multiplier(collider, unit), _runtime_contact_constants())",
+		"if runtime_contact_service != null:\n\t\treturn runtime_contact_service.break_threshold(collider, _collider_stiffness_size_multiplier(collider, unit), _runtime_contact_constants())",
+		"if runtime_contact_service != null:\n\t\treturn runtime_contact_service.damage_type(collider, MELEE_DAMAGE_TYPES)",
+		"if runtime_contact_service != null:\n\t\treturn runtime_contact_service.material_class(collider)",
+		"if runtime_contact_service != null:\n\t\treturn runtime_contact_service.contact_source(collider)",
+		"}) if runtime_contact_service != null else {}",
+		"if runtime_contact_service == null:\n\t\tif penetration <= RUNTIME_CONTACT_REQUIRED_OVERLAP",
+		"if runtime_contact_service == null:\n\t\tvar fallback_usable_momentum",
+		"if runtime_contact_service == null:\n\t\tvar fallback_closing_speed",
+		"a.velocity -= direction * (contact_momentum / mass_a)",
+		"b.velocity += direction * (contact_momentum / mass_b)",
+		"func _runtime_node_array_has_for_gpu",
+		"var duration := maxf(0.001, float(action.get(\"duration\", 0.62)))\n\t\tvar phase := clampf(1.0 - float(action.get(\"timer\", 0.0)) / duration, 0.0, 1.0)",
+		"match String(collider.get(\"part_kind\", \"\")):\n\t\t\"terminal\":\n\t\t\treturn PASSIVE_CONTACT_SCRAPE_MULT",
+		"func _meta_safe_part_index",
+		"return \"passive_contact_%d_%d_%s_%s_%s_%s_%s\"",
+		"var body_radius := maxf(0.04, float(unit.stats.get(\"radius\", 0.22)))",
+		"sqrt(body_radius * body_length) * 0.18",
+		"return maxf(1.0, float(unit.stats.get(\"mass\", 1.0)))",
+		"var mass := maxf(1.0, float(unit.stats.get(\"mass\", 1.0)))\n\treturn maxf(0.0, float(unit.stats.get(\"boost_momentum\", 0.0))) / mass",
+		"return clampf(float(unit.stats.get(\"knockback_resist\", 0.0)), 0.0, 0.68)",
+		"return clampf(1.0 - _unit_knockback_resist(unit) * 0.72, 0.48, 1.12)",
+		"return maxf(MELEE_STABILITY_THRESHOLD_FLOOR, float(unit.stats.get(\"melee_stability_threshold\", MELEE_STABILITY_THRESHOLD_FLOOR)))",
+		"var stabilization := clampf(float(unit.stats.get(\"recoil_stabilization\", unit.stats.get(\"attitude_control\", 0.85))), 0.0, 2.6)",
+		"var thruster_anchor := thruster / maxf(0.001, thruster + opposing_mass * 0.36 + mass * 0.04 + 6.0)",
+	]:
+		if main_source.find(stale_scalar_parse) >= 0:
+			_fail("main.gd should not keep duplicate runtime contact scalar fallback: %s" % stale_scalar_parse)
 			return
 	var service = RuntimeContactServiceScript.new()
 	var constants := _constants()
@@ -173,6 +241,102 @@ func _init() -> void:
 	var event: Dictionary = Dictionary(blocked_damage.get("event", {}))
 	if String(event.get("contact_pair_key", "")) != "1|terminal:3:0->2|torso:0:-1":
 		_fail("Damage event should include directed contact key: %s" % String(event.get("contact_pair_key", "")))
+	var velocity_response: Dictionary = service.velocity_response_intent({
+		"normal": Vector2(2.0, 0.0),
+		"contact_momentum": 30.0,
+		"mass_a": 10.0,
+		"mass_b": 5.0,
+	})
+	if not bool(velocity_response.get("should_apply", false)):
+		_fail("Velocity response should apply for positive momentum and valid normal.")
+	_assert_vec_close(velocity_response.get("velocity_delta_a", Vector2.ZERO), Vector2(-3.0, 0.0), "velocity response delta A")
+	_assert_vec_close(velocity_response.get("velocity_delta_b", Vector2.ZERO), Vector2(6.0, 0.0), "velocity response delta B")
+	var anchored_response: Dictionary = service.velocity_response_intent({
+		"normal": Vector2.RIGHT,
+		"contact_momentum": 30.0,
+		"mass_a": 10.0,
+		"mass_b": 5.0,
+		"anchored_a": true,
+	})
+	_assert_vec_close(anchored_response.get("velocity_delta_a", Vector2.ONE), Vector2.ZERO, "anchored velocity response delta A")
+	_assert_vec_close(anchored_response.get("velocity_delta_b", Vector2.ZERO), Vector2(6.0, 0.0), "anchored velocity response delta B")
+	var invalid_response: Dictionary = service.velocity_response_intent({"normal": Vector2.ZERO, "contact_momentum": 30.0})
+	if bool(invalid_response.get("should_apply", true)):
+		_fail("Velocity response should reject invalid normal.")
+	var action_phase_actions := [
+		{"target_nodes": [1, "4"], "duration": 2.0, "timer": 1.0, "startup_ratio": 0.6},
+		{"target_nodes": [8], "duration": 1.0, "timer": 0.2, "startup_ratio": 0.4},
+	]
+	if not service.runtime_node_array_has(["1", 4], 4):
+		_fail("Runtime node array helper should match numeric string node ids.")
+	if absf(service.runtime_action_phase(action_phase_actions, 4) - 0.5) > 0.001:
+		_fail("GPU action phase should derive phase from the first action targeting the node.")
+	if not service.runtime_recovery_capable(action_phase_actions, 4):
+		_fail("GPU recovery should be capable during startup phase.")
+	if service.runtime_recovery_capable(action_phase_actions, 8):
+		_fail("GPU recovery should be false after startup ratio.")
+	if absf(service.runtime_action_phase(action_phase_actions, 42) - 1.0) > 0.001:
+		_fail("GPU action phase should fall back to 1.0 when no action targets the node.")
+	if absf(service.passive_contact_scrape_factor({"part_kind": "terminal"}, constants) - 0.42) > 0.001:
+		_fail("Terminal scrape factor should use the base passive scrape multiplier.")
+	if absf(service.passive_contact_scrape_factor({"part_kind": "limb_muscle", "contact_damage_mult": 0.10}, constants) - 0.105) > 0.001:
+		_fail("Limb scrape factor should apply the minimum contact damage multiplier.")
+	if absf(service.passive_contact_scrape_factor({"part_kind": "joint"}, constants) - 0.0756) > 0.001:
+		_fail("Joint scrape factor should use the joint multiplier.")
+	if absf(service.passive_contact_scrape_factor({"part_kind": "unknown"}, constants) - 0.1176) > 0.001:
+		_fail("Unknown scrape factor should use the fallback multiplier.")
+	_assert_eq(service.meta_safe_part_index(-3), "m3", "negative meta-safe part index")
+	_assert_eq(service.meta_safe_part_index(4), "4", "positive meta-safe part index")
+	var passive_key: String = service.passive_contact_damage_key(11, {"part_index": -2, "part_kind": "terminal"}, 22, {"part_index": 5, "part_kind": "torso"}, "normal")
+	_assert_eq(passive_key, "passive_contact_11_22_m2_terminal_5_torso_normal", "passive contact damage key")
+	if absf(service.unit_contact_radius({"radius": 0.25, "length": 1.0, "group_count": 4}, constants) - 0.433) > 0.001:
+		_fail("Unit contact radius should match body radius/length/limb formula.")
+	if absf(service.unit_contact_radius({}, constants) - 0.402237) > 0.001:
+		_fail("Unit contact radius should use existing default stats.")
+	if absf(service.unit_contact_radius({"radius": 0.0, "length": 0.0, "group_count": 0}, constants) - 0.18) > 0.001:
+		_fail("Unit contact radius should clamp very small bodies to the minimum.")
+	if absf(service.unit_effective_mass({"mass": 3.5}) - 3.5) > 0.001:
+		_fail("Unit effective mass should read positive mass stat.")
+	if absf(service.unit_effective_mass({"mass": 0.2}) - 1.0) > 0.001:
+		_fail("Unit effective mass should clamp low mass to 1.0.")
+	if absf(service.unit_effective_mass({}) - 1.0) > 0.001:
+		_fail("Unit effective mass should default to 1.0.")
+	if absf(service.unit_thruster_power({"mass": 10.0, "boost_momentum": 25.0}) - 2.5) > 0.001:
+		_fail("Unit thruster power should divide positive boost momentum by effective mass.")
+	if absf(service.unit_thruster_power({"mass": 0.2, "boost_momentum": 3.0}) - 3.0) > 0.001:
+		_fail("Unit thruster power should use clamped effective mass.")
+	if absf(service.unit_thruster_power({"mass": 2.0, "boost_momentum": -4.0})) > 0.001:
+		_fail("Unit thruster power should clamp negative boost momentum to zero.")
+	if absf(service.unit_thruster_power({})) > 0.001:
+		_fail("Unit thruster power should default to zero without boost momentum.")
+	if absf(service.unit_knockback_resist({"knockback_resist": 0.42}) - 0.42) > 0.001:
+		_fail("Unit knockback resist should read positive stat values.")
+	if absf(service.unit_knockback_resist({"knockback_resist": -0.2})) > 0.001:
+		_fail("Unit knockback resist should clamp negative values to zero.")
+	if absf(service.unit_knockback_resist({"knockback_resist": 2.0}) - 0.68) > 0.001:
+		_fail("Unit knockback resist should clamp high values to the existing cap.")
+	if absf(service.unit_knockback_resist({})) > 0.001:
+		_fail("Unit knockback resist should default to zero.")
+	if absf(service.unit_impulse_motion_mult({}) - 1.0) > 0.001:
+		_fail("Unit impulse motion multiplier should default to neutral.")
+	if absf(service.unit_impulse_motion_mult({"knockback_resist": 0.42}) - 0.6976) > 0.001:
+		_fail("Unit impulse motion multiplier should apply the existing resist slope.")
+	if absf(service.unit_impulse_motion_mult({"knockback_resist": 2.0}) - 0.5104) > 0.001:
+		_fail("Unit impulse motion multiplier should use clamped knockback resist.")
+	if absf(service.unit_melee_stability_threshold({"melee_stability_threshold": 64.0}, constants) - 64.0) > 0.001:
+		_fail("Unit melee stability threshold should read positive stat values.")
+	if absf(service.unit_melee_stability_threshold({"melee_stability_threshold": 10.0}, constants) - 28.0) > 0.001:
+		_fail("Unit melee stability threshold should clamp low values to the floor.")
+	if absf(service.unit_melee_stability_threshold({}, constants) - 28.0) > 0.001:
+		_fail("Unit melee stability threshold should default to the floor.")
+	if absf(service.unit_melee_stability_threshold({"melee_stability_threshold": 10.0}, {"melee_stability_threshold_floor": 12.0}) - 12.0) > 0.001:
+		_fail("Unit melee stability threshold should use provided floor constant.")
+	if absf(service.unit_posture_anchor({}, 0.0) - 0.012) > 0.001:
+		_fail("Unit posture anchor should use the existing default stabilization.")
+	if absf(service.unit_posture_anchor({"mass": 10.0, "boost_momentum": 25.0, "knockback_resist": 0.2, "recoil_stabilization": 1.2}, 20.0) - 0.361118) > 0.001:
+		_fail("Unit posture anchor should combine thruster and control anchors.")
+	if absf(service.unit_posture_anchor({"mass": 1.0, "boost_momentum": 10000.0, "knockback_resist": 2.0, "recoil_stabilization": 5.0}, 0.0) - 0.82) > 0.001:
+		_fail("Unit posture anchor should clamp high anchor values.")
 	print("RUNTIME_CONTACT_SERVICE_CONTRACT_PROBE ok")
 	quit(0)
 
@@ -194,9 +358,22 @@ func _constants() -> Dictionary:
 		"part_break_coeff_barrier": 0.5,
 		"passive_contact_min_speed": 0.24,
 		"runtime_contact_required_overlap": 0.003,
+		"passive_contact_scrape_mult": 0.42,
+		"attack_group_count": 6,
+		"unit_body_spacing_mult": 1.0,
+		"melee_stability_threshold_floor": 28.0,
 	}
 
 
 func _assert_eq(actual, expected, label: String) -> void:
 	if actual != expected:
 		_fail("%s expected %s, got %s." % [label, str(expected), str(actual)])
+
+
+func _assert_vec_close(actual, expected: Vector2, label: String) -> void:
+	if not (actual is Vector2):
+		_fail("%s expected Vector2, got %s." % [label, str(actual)])
+		return
+	var actual_vec: Vector2 = actual
+	if actual_vec.distance_to(expected) > 0.001:
+		_fail("%s expected %s, got %s." % [label, str(expected), str(actual_vec)])

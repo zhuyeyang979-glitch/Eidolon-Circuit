@@ -4,10 +4,12 @@ const CONTROLLER_PATH := "res://scripts/controllers/unit_editor_board_controller
 const MAIN_PATH := "res://scripts/main.gd"
 const UnitEditorBoardControllerScript := preload("res://scripts/controllers/unit_editor_board_controller.gd")
 
+var failed := false
+
 
 func _fail(message: String) -> void:
 	push_error(message)
-	quit(1)
+	failed = true
 
 
 func _init() -> void:
@@ -20,9 +22,10 @@ func _init() -> void:
 		"zoom_input_allowed",
 		"node_drag_release_intent",
 		"whole_drag_release_intent",
-		"selection_box_release_intent",
-		"custom_topology_click_intent",
-		"clipboard_shortcut_intent",
+			"selection_box_release_intent",
+			"custom_topology_click_intent",
+			"selected_node_feedback",
+			"clipboard_shortcut_intent",
 		"update_pose_drag",
 		"update_selection_box",
 		"move_selected_nodes",
@@ -66,6 +69,8 @@ func _init() -> void:
 		"start_loose_drag",
 		"blank_canvas_select_box",
 		"blank_canvas_hint",
+		"reject_reason",
+		"hint_key",
 	]:
 		if controller_source.find(token) < 0:
 			_fail("UnitEditorBoardController missing token: %s" % token)
@@ -78,9 +83,10 @@ func _init() -> void:
 		"unit_editor_board_controller.zoom_input_allowed",
 		"unit_editor_board_controller.node_drag_release_intent",
 		"unit_editor_board_controller.whole_drag_release_intent",
-		"unit_editor_board_controller.selection_box_release_intent",
-		"unit_editor_board_controller.custom_topology_click_intent",
-		"unit_editor_board_controller.clipboard_shortcut_intent",
+			"unit_editor_board_controller.selection_box_release_intent",
+			"unit_editor_board_controller.custom_topology_click_intent",
+			"unit_editor_board_controller.selected_node_feedback",
+			"unit_editor_board_controller.clipboard_shortcut_intent",
 		"_editor_board_input_context",
 		"_dispatch_editor_board_input_route",
 	]:
@@ -131,6 +137,72 @@ func _init() -> void:
 	_assert_clipboard_shortcut(controller, _key(KEY_C, true), _with(base_context, {"busy": true}), "none")
 	_assert_clipboard_shortcut(controller, _key(KEY_C, true), _with(base_context, {"role_uses_body_board": false}), "none")
 	_assert_clipboard_shortcut(controller, _key(KEY_C, true), _with(base_context, {"has_custom_topology": false}), "none")
+	_assert_selected_node_feedback(
+		controller,
+		{
+			"valid": true,
+			"zh": false,
+			"slot_key": "limb_muscle",
+			"slot_label": "LIMB MUSCLE",
+			"part_name": "TEST LIMB",
+			"node_index": 1,
+			"node_count": 3,
+			"module_count": 0,
+			"edge_count": 1,
+			"is_torso": false,
+			"board_tool": "layout",
+		},
+		"switch_pose_for_connected",
+		"NODE ",
+		["SELECTED LIMB MUSCLE", "POSE"]
+	)
+	_assert_selected_node_feedback(
+		controller,
+		{
+			"valid": true,
+			"zh": true,
+			"slot_key": "muscle",
+			"slot_label": "躯干肌肉",
+				"part_name": "CORE",
+				"selected_label": "选中",
+				"shop_marker": "当前节点 ",
+				"action_hints": {"open_torso_detail": "双击详情"},
+				"node_index": 0,
+			"node_count": 2,
+			"module_count": 2,
+			"edge_count": 2,
+			"is_torso": true,
+			"board_tool": "layout",
+		},
+		"open_torso_detail",
+		"当前节点 ",
+		["选中 躯干肌肉", "双击详情"]
+	)
+	_assert_selected_node_feedback(
+		controller,
+		{
+			"valid": true,
+			"zh": false,
+			"slot_key": "joint",
+			"slot_label": "JOINT",
+			"part_name": "LOOSE JOINT",
+			"node_index": 2,
+			"node_count": 3,
+			"module_count": 0,
+			"edge_count": 0,
+			"is_torso": false,
+			"board_tool": "layout",
+		},
+		"drag_loose_part",
+		"NODE ",
+		["SELECTED JOINT", "drag loose"]
+	)
+	if controller.has_method("selected_node_feedback"):
+		var empty_feedback: Dictionary = controller.selected_node_feedback({"valid": false})
+		if bool(empty_feedback.get("valid", true)):
+			_fail("selected_node_feedback should mark empty selection invalid, got %s." % str(empty_feedback))
+	else:
+		_fail("selected_node_feedback method missing.")
 	_assert_node_release_intent(
 		controller,
 		_with(base_context, {
@@ -303,7 +375,7 @@ func _init() -> void:
 	}
 	_assert_click_intent(controller, _with(click_base, {"pending_module_binding": true, "button_index": MOUSE_BUTTON_RIGHT}), {"action": "binding_cancel"})
 	_assert_click_intent(controller, _with(click_base, {"pending_module_binding": true, "binding_candidate_found": true, "binding_candidate_valid": true, "binding_selection": [2, 3]}), {"action": "binding_complete", "binding_selection": [2, 3]})
-	_assert_click_intent(controller, _with(click_base, {"pending_module_binding": true, "binding_candidate_found": true, "binding_candidate_valid": false}), {"action": "binding_invalid"})
+	_assert_click_intent(controller, _with(click_base, {"pending_module_binding": true, "binding_candidate_found": true, "binding_candidate_valid": false, "binding_candidate_reason": "target is stale"}), {"action": "binding_invalid", "reject_reason": "target is stale", "hint_key": "binding_invalid"})
 	_assert_click_intent(controller, _with(click_base, {"pending_module_binding": true, "binding_candidate_found": false}), {"action": "start_selection_box"})
 	_assert_click_intent(controller, _with(click_base, {"button_index": MOUSE_BUTTON_RIGHT, "edge_hit_index": 4}), {"action": "unlink_edge", "edge_index": 4})
 	_assert_click_intent(controller, _with(click_base, {"button_index": MOUSE_BUTTON_RIGHT, "right_clicked_node_index": 2}), {"action": "unlink_node", "node_index": 2})
@@ -313,15 +385,18 @@ func _init() -> void:
 	_assert_click_intent(controller, _with(click_base, {"nearest_node_index": 2, "nearest_unconnected_draggable": true}), {"action": "start_unconnected_drag", "node_index": 2, "source_mode": "layout", "set_node_click_candidate": true})
 	_assert_click_intent(controller, _with(click_base, {"nearest_node_index": 2, "nearest_unconnected_draggable": true, "board_tool": "pose"}), {"action": "start_unconnected_drag", "node_index": 2, "source_mode": "pose", "set_node_click_candidate": true})
 	_assert_click_intent(controller, _with(click_base, {"nearest_node_index": 2, "board_tool": "pose", "pose_candidate_valid": true, "pose_candidate_root_index": 5}), {"action": "start_pose_drag", "node_index": 2, "pose_root_index": 5, "set_node_click_candidate": true})
-	_assert_click_intent(controller, _with(click_base, {"nearest_node_index": 2, "board_tool": "pose", "pose_candidate_valid": false, "pose_candidate_reason": "bad", "pose_candidate_root_index": -1, "pose_candidate_downstream_count": 0}), {"action": "pose_drag_invalid", "node_index": 2, "pose_reject_reason": "bad", "pose_root_index": -1, "pose_downstream_count": 0, "set_node_click_candidate": true})
+	_assert_click_intent(controller, _with(click_base, {"nearest_node_index": 2, "board_tool": "pose", "pose_candidate_valid": false, "pose_candidate_reason": "bad", "pose_candidate_root_index": -1, "pose_candidate_downstream_count": 0}), {"action": "pose_drag_invalid", "node_index": 2, "pose_reject_reason": "bad", "pose_root_index": -1, "pose_downstream_count": 0, "set_node_click_candidate": true, "hint_key": "pose_drag_invalid"})
 	_assert_click_intent(controller, _with(click_base, {"nearest_node_index": 1, "dragging_selection": true, "selection_contains_torso": true, "selected_topology_nodes": [0, 1]}), {"action": "start_group_drag", "node_index": 1, "group_nodes": [0, 1], "expand_connected_island": true})
-	_assert_click_intent(controller, _with(click_base, {"nearest_node_index": 1, "dragging_selection": true, "selection_connected_node": true, "selected_topology_nodes": [1, 2]}), {"action": "layout_connected_selection_reject", "node_index": 1})
+	_assert_click_intent(controller, _with(click_base, {"nearest_node_index": 1, "dragging_selection": true, "selection_connected_node": true, "selected_topology_nodes": [1, 2]}), {"action": "layout_connected_selection_reject", "node_index": 1, "reject_reason": "connected_selection", "hint_key": "layout_connected_selection"})
 	_assert_click_intent(controller, _with(click_base, {"nearest_node_index": 1, "dragging_selection": true, "selected_topology_nodes": [1, 2]}), {"action": "start_group_drag", "node_index": 1, "group_nodes": [1, 2], "expand_connected_island": false})
 	_assert_click_intent(controller, _with(click_base, {"nearest_node_index": 0, "nearest_is_torso": true}), {"action": "start_group_drag", "node_index": 0, "group_nodes": [0], "expand_connected_island": true})
-	_assert_click_intent(controller, _with(click_base, {"nearest_node_index": 3, "nearest_edge_count": 1}), {"action": "layout_connected_part_reject", "node_index": 3})
+	_assert_click_intent(controller, _with(click_base, {"nearest_node_index": 3, "nearest_edge_count": 1}), {"action": "layout_connected_part_reject", "node_index": 3, "reject_reason": "connected_part", "hint_key": "layout_connected_part"})
 	_assert_click_intent(controller, _with(click_base, {"nearest_node_index": 4, "nearest_edge_count": 0}), {"action": "start_loose_drag", "node_index": 4})
 	_assert_click_intent(controller, _with(click_base, {"nearest_node_index": -1, "has_nodes": true}), {"action": "blank_canvas_select_box"})
-	_assert_click_intent(controller, _with(click_base, {"nearest_node_index": -1, "has_nodes": false}), {"action": "blank_canvas_hint"})
+	_assert_click_intent(controller, _with(click_base, {"nearest_node_index": -1, "has_nodes": false}), {"action": "blank_canvas_hint", "hint_key": "blank_canvas"})
+	if failed:
+		quit(1)
+		return
 	print("UNIT_EDITOR_BOARD_CONTROLLER_CONTRACT_PROBE ok")
 	quit(0)
 
@@ -338,6 +413,23 @@ func _assert_clipboard_shortcut(controller, event: InputEvent, context: Dictiona
 	var action := String(intent.get("action", ""))
 	if action != expected:
 		_fail("Expected clipboard shortcut action %s, got %s for context %s." % [expected, action, str(context)])
+
+
+func _assert_selected_node_feedback(controller, context: Dictionary, expected_action_key: String, expected_marker: String, expected_summary_tokens: Array) -> void:
+	if not controller.has_method("selected_node_feedback"):
+		_fail("selected_node_feedback method missing.")
+		return
+	var result: Dictionary = controller.selected_node_feedback(context)
+	if not bool(result.get("valid", false)):
+		_fail("selected_node_feedback should be valid for %s, got %s." % [str(context), str(result)])
+	if String(result.get("action_key", "")) != expected_action_key:
+		_fail("Expected selected_node_feedback action_key %s, got %s." % [expected_action_key, str(result)])
+	if String(result.get("shop_marker", "")) != expected_marker:
+		_fail("Expected selected_node_feedback shop marker %s, got %s." % [expected_marker, str(result)])
+	var summary := String(result.get("summary", ""))
+	for token in expected_summary_tokens:
+		if summary.find(String(token)) < 0:
+			_fail("selected_node_feedback summary missing token %s in %s." % [String(token), summary])
 
 
 func _assert_node_release_intent(controller, context: Dictionary, expected: Dictionary) -> void:

@@ -93,6 +93,20 @@ func movement_input_state(raw_input: Vector2, previous_input: Vector2, direction
 	}
 
 
+func input_vector_from_strengths(right_strength: float, left_strength: float, down_strength: float, up_strength: float, deadzone: float = 0.08) -> Vector2:
+	var input_vector := Vector2(right_strength - left_strength, down_strength - up_strength)
+	if input_vector.length() <= maxf(0.0, deadzone):
+		return Vector2.ZERO
+	return input_vector.normalized() if input_vector.length() > 1.0 else input_vector
+
+
+func gun_turn_input_vector_from_strengths(face_right_strength: float, face_left_strength: float, deadzone: float = 0.08) -> Vector2:
+	var x := face_right_strength - face_left_strength
+	if absf(x) <= maxf(0.0, deadzone):
+		return Vector2.ZERO
+	return Vector2(clampf(x, -1.0, 1.0), 0.0)
+
+
 func spectator_input_intent(prefix: String, input_vector: Vector2, pressed_fn: Callable) -> Dictionary:
 	var intent := {
 		"input_vector": input_vector,

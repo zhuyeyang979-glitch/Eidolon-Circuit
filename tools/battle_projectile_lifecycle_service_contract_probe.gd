@@ -28,9 +28,24 @@ func _init() -> void:
 		"web_impact_selection",
 		"web_boundary_anchor_intent",
 		"web_fire_intent",
+		"explosion_request_intent",
+		"explosion_center_position",
+		"explosion_initial_effect_anchor_intent",
+		"explosion_target_candidate_intent",
 		"explosion_damage_intent",
+		"projectile_hit_block_intent",
+		"projectile_reflector_candidate_intent",
 		"projectile_reflection_intent",
+		"target_projectile_shield_reflects",
 		"target_shield_reflection_intent",
+		"target_shield_reflected_target_intent",
+		"projectile_source_node_for_event",
+		"projectile_event_has_gun_source",
+		"runtime_melee_projectile_clear_intent",
+		"runtime_gun_pose_clear_node",
+		"group_uses_true_bullet",
+		"true_bullet_event_pending",
+		"true_bullet_event_fired",
 	]:
 		if service_source.find(token) < 0:
 			_fail("BattleProjectileLifecycleService missing token: %s" % token)
@@ -73,13 +88,67 @@ func _init() -> void:
 		"_battle_projectile_lifecycle_service().web_impact_selection",
 		"_battle_projectile_lifecycle_service().web_boundary_anchor_intent",
 		"_battle_projectile_lifecycle_service().web_fire_intent",
+		"_battle_projectile_lifecycle_service().explosion_request_intent({",
+		"_battle_projectile_lifecycle_service().explosion_center_position({",
+		"_battle_projectile_lifecycle_service().explosion_initial_effect_anchor_intent({",
+		"_battle_projectile_lifecycle_service().explosion_target_candidate_intent({",
 		"_battle_projectile_lifecycle_service().explosion_damage_intent",
+		"_battle_projectile_lifecycle_service().projectile_hit_block_intent({",
+		"_battle_projectile_lifecycle_service().projectile_reflector_candidate_intent({",
 		"_battle_projectile_lifecycle_service().projectile_reflection_intent",
+		"_battle_projectile_lifecycle_service().target_projectile_shield_reflects({",
 		"_battle_projectile_lifecycle_service().target_shield_reflection_intent",
+		"_battle_projectile_lifecycle_service().target_shield_reflected_target_intent({",
+		"_battle_projectile_lifecycle_service().projectile_source_node_for_event",
+		"_battle_projectile_lifecycle_service().projectile_event_has_gun_source",
+		"_battle_projectile_lifecycle_service().runtime_melee_projectile_clear_intent",
+		"_battle_projectile_lifecycle_service().runtime_gun_pose_clear_node",
+		"_battle_projectile_lifecycle_service().group_uses_true_bullet",
+		"_battle_projectile_lifecycle_service().true_bullet_event_pending",
+		"_battle_projectile_lifecycle_service().true_bullet_event_fired",
 	]:
 		if main_source.find(token) < 0:
 			_fail("main.gd should delegate projectile lifecycle token: %s" % token)
 			return
+	if main_source.count("_battle_projectile_lifecycle_service().projectile_hit_block_intent({") != 2:
+		_fail("main.gd should delegate both explosion and target-shield hit blocking to projectile_hit_block_intent.")
+		return
+	var stale_target_shield_reflects := "func _target_projectile_shield_reflects(target, event: Dictionary) -> bool:\n\tif not _is_live_unit(target):\n\t\treturn false\n\tif float(target.get_meta(\"projectile_shield_timer\", 0.0)) <= 0.0:\n\t\treturn false\n\tvar damage_type := String(event.get(\"damage_type\", \"bullet\"))\n\tvar reflect_types: Array = target.get_meta(\"projectile_shield_types\", target.stats.get(\"reflect_types\", []))\n\treturn reflect_types.is_empty() or reflect_types.has(damage_type)"
+	if main_source.find(stale_target_shield_reflects) >= 0:
+		_fail("main.gd should not keep duplicate target projectile shield reflection rules.")
+		return
+	var stale_reflector_candidate_filter := "if reflector == attacker or not _is_live_unit(reflector) or not bool(reflector.stats.get(\"reflect_projectiles\", false)):\n\t\t\tcontinue\n\t\tvar reflect_types: Array = reflector.stats.get(\"reflect_types\", [])\n\t\tif not reflect_types.is_empty() and not reflect_types.has(damage_type):\n\t\t\tcontinue"
+	if main_source.find(stale_reflector_candidate_filter) >= 0:
+		_fail("main.gd should not keep duplicate projectile reflector candidate rules.")
+		return
+	var stale_target_shield_reflected_target_filter := "if reflected_target == attacker or reflected_target == target or not _is_live_unit(reflected_target):\n\t\t\tcontinue\n\t\tvar reflected_delta := _mobius_delta_vec_between(target, reflected_target, 1.25)\n\t\tvar distance := absf(reflected_delta.x)\n\t\tvar lane_distance := absf(reflected_delta.y)\n\t\tvar target_radius := float(reflected_target.stats.get(\"radius\", 0.2))\n\t\tif distance > float(event_copy[\"range\"]) + target_radius or lane_distance > float(event_copy[\"lane_range\"]) + target_radius * 0.6:\n\t\t\tcontinue\n\t\tvar target_vector := reflected_delta\n\t\tif target_vector.length() > 0.01 and reflected_dir.dot(target_vector.normalized()) < 0.24:\n\t\t\tcontinue"
+	if main_source.find(stale_target_shield_reflected_target_filter) >= 0:
+		_fail("main.gd should not keep duplicate target shield reflected-target rules.")
+		return
+	var stale_explosion_candidate_filter := "if not _is_live_unit(target) or target == primary_target:\n\t\t\tcontinue"
+	if main_source.find(stale_explosion_candidate_filter) >= 0:
+		_fail("main.gd should not keep duplicate explosion target candidate rules.")
+		return
+	var stale_explosion_request_parser := "var radius := maxf(0.08, float(event.get(\"explosion_radius\", 0.0)))\n\tvar damage := int(event.get(\"explosion_damage\", 0))\n\tif damage <= 0:\n\t\treturn killed_units\n\tvar damage_type := String(event.get(\"explosion_damage_type\", event.get(\"damage_type\", \"blunt\")))"
+	if main_source.find(stale_explosion_request_parser) >= 0:
+		_fail("main.gd should not keep duplicate explosion request parsing rules.")
+		return
+	var stale_explosion_center_selection := "var center_ring: float = attacker.ring_pos\n\tvar center_lane: float = attacker.lane\n\tif primary_target != null and is_instance_valid(primary_target):\n\t\tcenter_ring = primary_target.ring_pos\n\t\tcenter_lane = primary_target.lane"
+	if main_source.find(stale_explosion_center_selection) >= 0:
+		_fail("main.gd should not keep duplicate explosion center selection rules.")
+		return
+	var stale_explosion_initial_effect_anchor := "_spawn_hit_effect(primary_target if primary_target != null and is_instance_valid(primary_target) else attacker, 2, damage_type, false, String(event.get(\"explosion_style\", \"blast\")))"
+	if main_source.find(stale_explosion_initial_effect_anchor) >= 0:
+		_fail("main.gd should not keep duplicate explosion initial effect anchor rules.")
+		return
+	var stale_explosion_hit_block := "final_damage = _projectile_material_adjusted_damage(target, event_copy, final_damage)\n\t\tvar blocked := final_damage <= 0 or bool(event_copy.get(\"contact_gate_blocked\", false))"
+	if main_source.find(stale_explosion_hit_block) >= 0:
+		_fail("main.gd should not keep duplicate explosion hit block rules.")
+		return
+	var stale_target_shield_hit_block := "final_damage = _projectile_material_adjusted_damage(reflected_target, event_copy, final_damage)\n\t\tvar blocked := final_damage <= 0 or bool(event_copy.get(\"contact_gate_blocked\", false))"
+	if main_source.find(stale_target_shield_hit_block) >= 0:
+		_fail("main.gd should not keep duplicate target shield reflected-hit block rules.")
+		return
 	var service = BattleProjectileLifecycleServiceScript.new()
 	_check_chemical_tick(service)
 	_check_missile_tick(service)
@@ -87,6 +156,11 @@ func _init() -> void:
 	_check_web(service)
 	_check_explosion(service)
 	_check_reflection(service)
+	_check_projectile_source_node(service)
+	_check_projectile_gun_source(service)
+	_check_runtime_melee_projectile_clear(service)
+	_check_runtime_gun_pose_clear_node(service)
+	_check_true_bullet_classification(service)
 	print("BATTLE_PROJECTILE_LIFECYCLE_SERVICE_CONTRACT_PROBE ok")
 	quit(0)
 
@@ -301,6 +375,61 @@ func _check_web(service) -> void:
 
 
 func _check_explosion(service) -> void:
+	_assert_eq(String(service.explosion_request_intent({
+		"event": {"explosion_damage": 0},
+	}).get("reason", "")), "no_damage", "explosion request damage gate")
+	var request: Dictionary = service.explosion_request_intent({
+		"event": {
+			"explosion_radius": 0.01,
+			"explosion_damage": 7,
+			"damage_type": "laser",
+			"explosion_style": "plasma",
+		},
+	})
+	_assert_bool(request.get("applies", false), true, "explosion request include")
+	_assert_close(float(request.get("radius", 0.0)), 0.08, "explosion request radius clamp")
+	_assert_eq(int(request.get("damage", 0)), 7, "explosion request damage")
+	_assert_eq(String(request.get("damage_type", "")), "laser", "explosion request fallback type")
+	_assert_eq(String(request.get("explosion_style", "")), "plasma", "explosion request style")
+	_assert_eq(String(service.explosion_request_intent({
+		"event": {
+			"explosion_damage": 3,
+			"damage_type": "laser",
+			"explosion_damage_type": "chemical",
+		},
+	}).get("damage_type", "")), "chemical", "explosion request explicit type")
+	var attacker_center: Dictionary = service.explosion_center_position({
+		"attacker_position": Vector2(1.2, -0.3),
+		"primary_target_valid": false,
+		"primary_target_position": Vector2(4.0, 0.7),
+	})
+	_assert_vec_close(attacker_center.get("position", Vector2.ZERO), Vector2(1.2, -0.3), "explosion center attacker fallback")
+	_assert_eq(String(attacker_center.get("source", "")), "attacker", "explosion center attacker source")
+	var primary_center: Dictionary = service.explosion_center_position({
+		"attacker_position": Vector2(1.2, -0.3),
+		"primary_target_valid": true,
+		"primary_target_position": Vector2(4.0, 0.7),
+	})
+	_assert_vec_close(primary_center.get("position", Vector2.ZERO), Vector2(4.0, 0.7), "explosion center primary")
+	_assert_eq(String(primary_center.get("source", "")), "primary_target", "explosion center primary source")
+	_assert_eq(String(service.explosion_initial_effect_anchor_intent({
+		"primary_target_valid": false,
+	}).get("source", "")), "attacker", "explosion initial effect attacker anchor")
+	_assert_eq(String(service.explosion_initial_effect_anchor_intent({
+		"primary_target_valid": true,
+	}).get("source", "")), "primary_target", "explosion initial effect primary anchor")
+	_assert_eq(String(service.explosion_target_candidate_intent({
+		"target_live": false,
+		"is_primary_target": false,
+	}).get("reason", "")), "target_gone", "explosion target live gate")
+	_assert_eq(String(service.explosion_target_candidate_intent({
+		"target_live": true,
+		"is_primary_target": true,
+	}).get("reason", "")), "primary_target", "explosion target primary gate")
+	_assert_bool(service.explosion_target_candidate_intent({
+		"target_live": true,
+		"is_primary_target": false,
+	}).get("include", false), true, "explosion target include")
 	var miss: Dictionary = service.explosion_damage_intent({
 		"radius": 1.0,
 		"target_radius": 0.1,
@@ -329,9 +458,149 @@ func _check_explosion(service) -> void:
 	var stagger: Dictionary = Dictionary(hit.get("stagger_patch", {}))
 	_assert_eq(String(stagger.get("projectile_behavior", "")), "explosive", "explosion stagger behavior")
 	_assert_eq(String(stagger.get("projectile_style", "")), "plasma", "explosion stagger style")
+	var no_damage_block: Dictionary = service.projectile_hit_block_intent({
+		"final_damage": 0,
+		"contact_gate_blocked": false,
+	})
+	_assert_bool(no_damage_block.get("blocked", false), true, "projectile no-damage block")
+	_assert_eq(String(no_damage_block.get("reason", "")), "no_damage", "projectile no-damage block reason")
+	var contact_block: Dictionary = service.projectile_hit_block_intent({
+		"final_damage": 7,
+		"contact_gate_blocked": true,
+	})
+	_assert_bool(contact_block.get("blocked", false), true, "projectile contact-gate block")
+	_assert_eq(String(contact_block.get("reason", "")), "contact_gate_blocked", "projectile contact-gate block reason")
+	var pass_block: Dictionary = service.projectile_hit_block_intent({
+		"final_damage": 7,
+		"contact_gate_blocked": false,
+	})
+	_assert_bool(pass_block.get("blocked", true), false, "projectile hit should pass")
+	_assert_eq(String(pass_block.get("reason", "")), "ok", "projectile hit pass reason")
 
 
 func _check_reflection(service) -> void:
+	_assert_bool(service.projectile_reflector_candidate_intent({
+		"is_self": true,
+		"reflector_live": true,
+		"reflect_projectiles": true,
+		"reflect_types": [],
+		"damage_type": "bullet",
+	}).get("include", true), false, "projectile reflector self gate")
+	_assert_eq(String(service.projectile_reflector_candidate_intent({
+		"reflector_live": false,
+		"reflect_projectiles": true,
+		"reflect_types": [],
+		"damage_type": "bullet",
+	}).get("reason", "")), "reflector_gone", "projectile reflector live gate")
+	_assert_eq(String(service.projectile_reflector_candidate_intent({
+		"reflector_live": true,
+		"reflect_projectiles": false,
+		"reflect_types": [],
+		"damage_type": "bullet",
+	}).get("reason", "")), "reflection_disabled", "projectile reflector enabled gate")
+	_assert_bool(service.projectile_reflector_candidate_intent({
+		"reflector_live": true,
+		"reflect_projectiles": true,
+		"reflect_types": [],
+		"damage_type": "chemical",
+	}).get("include", false), true, "projectile reflector empty allowlist")
+	_assert_bool(service.projectile_reflector_candidate_intent({
+		"reflector_live": true,
+		"reflect_projectiles": true,
+		"reflect_types": ["bullet", "laser"],
+		"damage_type": "chemical",
+	}).get("include", true), false, "projectile reflector type gate")
+	_assert_bool(service.projectile_reflector_candidate_intent({
+		"reflector_live": true,
+		"reflect_projectiles": true,
+		"reflect_types": ["bullet", "laser"],
+		"damage_type": "laser",
+	}).get("include", false), true, "projectile reflector matching type")
+	_assert_bool(service.target_projectile_shield_reflects({
+		"target_live": false,
+		"shield_timer": 1.0,
+		"damage_type": "bullet",
+		"reflect_types": [],
+	}), false, "dead target shield reflection gate")
+	_assert_bool(service.target_projectile_shield_reflects({
+		"target_live": true,
+		"shield_timer": 0.0,
+		"damage_type": "bullet",
+		"reflect_types": [],
+	}), false, "expired target shield reflection gate")
+	_assert_bool(service.target_projectile_shield_reflects({
+		"target_live": true,
+		"shield_timer": 0.5,
+		"damage_type": "laser",
+		"reflect_types": [],
+	}), true, "empty target shield type allowlist")
+	_assert_bool(service.target_projectile_shield_reflects({
+		"target_live": true,
+		"shield_timer": 0.5,
+		"damage_type": "laser",
+		"reflect_types": ["bullet", "laser"],
+	}), true, "matching target shield type")
+	_assert_bool(service.target_projectile_shield_reflects({
+		"target_live": true,
+		"shield_timer": 0.5,
+		"damage_type": "chemical",
+		"reflect_types": ["bullet", "laser"],
+	}), false, "non-matching target shield type")
+	_assert_eq(String(service.target_shield_reflected_target_intent({
+		"is_attacker": true,
+		"is_source_target": false,
+		"reflected_target_live": true,
+	}).get("reason", "")), "attacker", "shield reflected target attacker gate")
+	_assert_eq(String(service.target_shield_reflected_target_intent({
+		"is_attacker": false,
+		"is_source_target": true,
+		"reflected_target_live": true,
+	}).get("reason", "")), "source_target", "shield reflected target source gate")
+	_assert_eq(String(service.target_shield_reflected_target_intent({
+		"is_attacker": false,
+		"is_source_target": false,
+		"reflected_target_live": false,
+	}).get("reason", "")), "target_gone", "shield reflected target live gate")
+	_assert_eq(String(service.target_shield_reflected_target_intent({
+		"is_attacker": false,
+		"is_source_target": false,
+		"reflected_target_live": true,
+		"range": 1.0,
+		"lane_range": 0.2,
+		"target_radius": 0.2,
+		"reflected_delta": Vector2(1.3, 0.0),
+		"reflected_direction": Vector2.RIGHT,
+	}).get("reason", "")), "out_of_range", "shield reflected target distance gate")
+	_assert_eq(String(service.target_shield_reflected_target_intent({
+		"is_attacker": false,
+		"is_source_target": false,
+		"reflected_target_live": true,
+		"range": 1.0,
+		"lane_range": 0.2,
+		"target_radius": 0.2,
+		"reflected_delta": Vector2(0.4, 0.5),
+		"reflected_direction": Vector2.RIGHT,
+	}).get("reason", "")), "out_of_lane", "shield reflected target lane gate")
+	_assert_eq(String(service.target_shield_reflected_target_intent({
+		"is_attacker": false,
+		"is_source_target": false,
+		"reflected_target_live": true,
+		"range": 1.0,
+		"lane_range": 0.2,
+		"target_radius": 0.2,
+		"reflected_delta": Vector2(-0.4, 0.0),
+		"reflected_direction": Vector2.RIGHT,
+	}).get("reason", "")), "direction_rejected", "shield reflected target direction gate")
+	_assert_bool(service.target_shield_reflected_target_intent({
+		"is_attacker": false,
+		"is_source_target": false,
+		"reflected_target_live": true,
+		"range": 1.0,
+		"lane_range": 0.2,
+		"target_radius": 0.2,
+		"reflected_delta": Vector2(0.6, 0.08),
+		"reflected_direction": Vector2.RIGHT,
+	}).get("include", false), true, "shield reflected target include")
 	var none: Dictionary = service.projectile_reflection_intent({"direction": Vector2.ZERO})
 	_assert_eq(String(none.get("action", "")), "none", "reflection no direction")
 	var reflect: Dictionary = service.projectile_reflection_intent({
@@ -367,6 +636,63 @@ func _check_reflection(service) -> void:
 	_assert_eq(String(shield_patch.get("source_name", "")), "A shield", "shield source")
 	_assert_eq(int(shield_patch.get("damage", 0)), 15, "shield reflected damage")
 	_assert_vec_close(shield_patch.get("direction", Vector2.ZERO), Vector2.RIGHT, "shield direction")
+
+
+func _check_projectile_source_node(service) -> void:
+	_assert_eq(service.projectile_source_node_for_event({"source_gun_node": 8, "source_node_index": 4, "muscle_node": 2}, 0), 8, "source gun node should win")
+	_assert_eq(service.projectile_source_node_for_event({"source_node_index": 4, "muscle_node": 2}, 0), 4, "source node index should fallback second")
+	_assert_eq(service.projectile_source_node_for_event({"muscle_node": 2}, 0), 2, "muscle node should fallback third")
+	_assert_eq(service.projectile_source_node_for_event({}, 7), 7, "fallback source node should be used")
+
+
+func _check_projectile_gun_source(service) -> void:
+	_assert_bool(service.projectile_event_has_gun_source({"projectile": false}), true, "non-projectile events should not require gun source")
+	_assert_bool(service.projectile_event_has_gun_source({"projectile": true, "collision_group": {"projectile": true, "material_class": "gun"}}), false, "projectile events should require a muscle node")
+	_assert_bool(service.projectile_event_has_gun_source({"projectile": true, "muscle_node": 1, "collision_group": "bad"}), false, "projectile events should reject non-dictionary groups")
+	_assert_bool(service.projectile_event_has_gun_source({"projectile": true, "muscle_node": 1, "collision_group": {"projectile": false, "projectile_only": false, "material_class": "gun"}}), false, "projectile events should require projectile group flags")
+	_assert_bool(service.projectile_event_has_gun_source({"projectile": true, "muscle_node": 1, "collision_group": {"projectile": true, "material_class": "MISSILE_LAUNCHER"}}), true, "projectile events should accept gun material classes")
+	_assert_bool(service.projectile_event_has_gun_source({"projectile": true, "muscle_node": 1, "collision_group": {"projectile_only": true, "shape": "heavy_cannon"}}), true, "projectile events should accept gun shapes")
+	_assert_bool(service.projectile_event_has_gun_source({"projectile": true, "muscle_node": 1, "collision_group": {"projectile": true, "material_class": "blade", "shape": "edge"}}), false, "projectile events should reject non-gun groups")
+
+
+func _check_runtime_melee_projectile_clear(service) -> void:
+	var intent: Dictionary = service.runtime_melee_projectile_clear_intent({
+		"projectile": true,
+		"projectile_only": true,
+		"projectile_style": "missile",
+		"projectile_behavior": "explosive",
+		"travel_path": "homing",
+		"projectile_damage_type": "bullet",
+		"damage": 12,
+	})
+	var set_patch: Dictionary = Dictionary(intent.get("set", {}))
+	_assert_bool(set_patch.get("projectile", true), false, "runtime melee clear should disable projectile")
+	_assert_bool(set_patch.get("projectile_only", true), false, "runtime melee clear should disable projectile-only")
+	_assert_bool(set_patch.get("runtime_melee_contact", false), true, "runtime melee clear should mark runtime melee contact")
+	_assert_eq(Array(intent.get("erase", [])), ["projectile_style", "projectile_behavior", "travel_path", "projectile_damage_type"], "runtime melee clear erase list")
+
+
+func _check_runtime_gun_pose_clear_node(service) -> void:
+	_assert_eq(service.runtime_gun_pose_clear_node({"source_gun_node": 8, "binding": {"target_nodes": [2, 3]}}, -1), 8, "runtime gun pose clear should prefer explicit source node")
+	_assert_eq(service.runtime_gun_pose_clear_node({"binding": {"target_nodes": [2, 3, 5]}}, -1), 5, "runtime gun pose clear should use binding target tail")
+	_assert_eq(service.runtime_gun_pose_clear_node({"target_nodes": [4, 7]}, -1), 7, "runtime gun pose clear should use direct target tail")
+	_assert_eq(service.runtime_gun_pose_clear_node({"binding": {"target_nodes": []}, "target_nodes": [9]}, -1), 9, "runtime gun pose clear should fall through empty binding targets")
+	_assert_eq(service.runtime_gun_pose_clear_node({}, -1), -1, "runtime gun pose clear should preserve fallback for empty payload")
+
+
+func _check_true_bullet_classification(service) -> void:
+	_assert_bool(service.group_uses_true_bullet({"projectile": true}, "true_bullet"), true, "true bullet group should classify with projectile flag")
+	_assert_bool(service.group_uses_true_bullet({"projectile": false}, "true_bullet"), false, "true bullet group should require projectile flag")
+	_assert_bool(service.group_uses_true_bullet({"projectile": true}, "bullet_hell"), false, "true bullet group should require true bullet behavior")
+	_assert_bool(service.true_bullet_event_pending({"projectile": true}, "true_bullet"), true, "pending true bullet event should classify before fire")
+	_assert_bool(service.true_bullet_event_pending({"projectile": true, "true_bullet_ready": true}, "true_bullet"), false, "pending true bullet event should reject fired events")
+	_assert_bool(service.true_bullet_event_pending({"projectile": true, "non_damage": true}, "true_bullet"), false, "pending true bullet event should reject non-damage events")
+	_assert_bool(service.true_bullet_event_pending({"projectile": false}, "true_bullet"), false, "pending true bullet event should require projectile flag")
+	_assert_bool(service.true_bullet_event_pending({"projectile": true}, "bullet_hell"), false, "pending true bullet event should require true bullet behavior")
+	_assert_bool(service.true_bullet_event_fired({"projectile": true, "true_bullet_ready": true}, "true_bullet"), true, "fired true bullet event should classify ready projectiles")
+	_assert_bool(service.true_bullet_event_fired({"projectile": true, "true_bullet_ready": false}, "true_bullet"), false, "fired true bullet event should require ready flag")
+	_assert_bool(service.true_bullet_event_fired({"projectile": false, "true_bullet_ready": true}, "true_bullet"), false, "fired true bullet event should require projectile flag")
+	_assert_bool(service.true_bullet_event_fired({"projectile": true, "true_bullet_ready": true}, "bullet_hell"), false, "fired true bullet event should require true bullet behavior")
 
 
 func _assert_eq(actual, expected, label: String) -> void:

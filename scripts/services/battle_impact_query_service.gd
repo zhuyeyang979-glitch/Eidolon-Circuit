@@ -18,6 +18,81 @@ func projectile_direction_intent(context: Dictionary) -> Dictionary:
 	}
 
 
+func projectile_projection_intent(context: Dictionary) -> Dictionary:
+	var missing_projection := float(context.get("missing_projection", 999999.0))
+	if not bool(context.get("attacker_live", true)):
+		return {"projection": missing_projection, "used_fallback": false, "reason": "attacker_gone"}
+	var direction_intent := projectile_direction_intent({
+		"direction": context.get("direction", Vector2.ZERO),
+		"fallback_direction": context.get("fallback_direction", Vector2.RIGHT),
+	})
+	var direction: Vector2 = direction_intent.get("direction", Vector2.RIGHT)
+	var delta := _vec(context.get("delta", Vector2.ZERO))
+	return {
+		"projection": delta.dot(direction),
+		"direction": direction,
+		"used_fallback": bool(direction_intent.get("used_fallback", false)),
+	}
+
+
+func true_bullet_before_locked_target_intent(context: Dictionary) -> Dictionary:
+	var unit_distance := float(context.get("unit_distance", 999999.0))
+	var target_distance := float(context.get("target_distance", 999999.0))
+	var clearance := maxf(0.0, float(context.get("clearance", 0.035)))
+	if unit_distance < 0.0:
+		return {"before_locked_target": false, "reason": "behind_attacker", "unit_distance": unit_distance, "target_distance": target_distance}
+	if unit_distance > target_distance - clearance:
+		return {"before_locked_target": false, "reason": "at_or_beyond_locked_target", "unit_distance": unit_distance, "target_distance": target_distance}
+	return {"before_locked_target": true, "reason": "before_locked_target", "unit_distance": unit_distance, "target_distance": target_distance}
+
+
+func gpu_projectile_query_ray_intent(context: Dictionary) -> Dictionary:
+	var start := _vec(context.get("start", Vector2.ZERO))
+	var end := _vec(context.get("end", start), start)
+	var direction := _vec(context.get("direction", Vector2.ZERO))
+	var collider_range := start.distance_to(end)
+	if direction.length() <= 0.01:
+		return {
+			"start": start,
+			"end": end,
+			"direction": direction,
+			"range": collider_range,
+			"extended": false,
+		}
+	var reach := maxf(float(context.get("requested_range", collider_range)), collider_range)
+	var normalized := direction.normalized()
+	return {
+		"start": start,
+		"end": start + normalized * reach,
+		"direction": normalized,
+		"range": reach,
+		"extended": true,
+	}
+
+
+func gpu_projectile_query_payload(context: Dictionary) -> Dictionary:
+	return {
+		"start": _vec(context.get("start", Vector2.ZERO)),
+		"end": _vec(context.get("end", Vector2.ZERO)),
+		"radius": maxf(0.0, float(context.get("radius", 0.0))),
+		"owner_unit_key": int(context.get("owner_unit_key", 1)),
+		"owner_team_key": int(context.get("owner_team_key", 0)),
+		"query_id": int(context.get("query_id", 0)),
+		"include_friendly": bool(context.get("include_friendly", false)),
+	}
+
+
+func gpu_projectile_target_entry_payload(context: Dictionary) -> Dictionary:
+	var entry := _dict(context.get("entry", {})).duplicate(false)
+	entry.erase("unit")
+	entry["target_index"] = int(context.get("target_index", -1))
+	entry["target_live"] = bool(context.get("target_live", false))
+	entry["occluded"] = bool(context.get("occluded", false))
+	if bool(context.get("has_target_position", entry["target_live"])):
+		entry["target_position"] = _vec(context.get("target_position", Vector2.ZERO))
+	return entry
+
+
 func projectile_candidate_intent(context: Dictionary) -> Dictionary:
 	if not bool(context.get("candidate_live", true)):
 		return {"action": "reject", "reason": "candidate_gone"}
@@ -53,6 +128,46 @@ func first_impact_selection(candidates: Array) -> Dictionary:
 		return {}
 	best["distance"] = best_distance
 	return best
+
+
+func projectile_selection_result_intent(context: Dictionary) -> Dictionary:
+	var selection := _dict(context.get("selection", {}))
+	if selection.is_empty():
+		return {"action": "reject", "reason": "no_selection"}
+	var target_index := int(selection.get("target_index", -1))
+	var target_count := maxi(0, int(context.get("target_count", 0)))
+	if target_index < 0 or target_index >= target_count:
+		return {
+			"action": "reject",
+			"reason": "invalid_target_index",
+			"target_index": target_index,
+			"target_count": target_count,
+		}
+	var intent := {
+		"action": "accept",
+		"target_index": target_index,
+		"hit": _dict(selection.get("hit", {})),
+		"distance": float(selection.get("distance", context.get("missing_distance", 999999.0))),
+		"has_position": selection.has("position"),
+	}
+	if bool(intent["has_position"]):
+		intent["position"] = _vec(selection.get("position", Vector2.ZERO))
+	return intent
+
+
+func projectile_final_impact_payload(context: Dictionary) -> Dictionary:
+	if not bool(context.get("target_live", false)):
+		return {"action": "reject", "reason": "target_gone"}
+	var selection_result := _dict(context.get("selection_result", {}))
+	var position := _vec(context.get("target_position", Vector2.ZERO))
+	if bool(selection_result.get("has_position", selection_result.has("position"))):
+		position = _vec(selection_result.get("position", position))
+	return {
+		"action": "accept",
+		"hit": _dict(selection_result.get("hit", {})),
+		"position": position,
+		"distance": float(selection_result.get("distance", context.get("missing_distance", 999999.0))),
+	}
 
 
 func gpu_hit_selection(context: Dictionary) -> Dictionary:
@@ -95,6 +210,47 @@ func gpu_hit_selection(context: Dictionary) -> Dictionary:
 			"distance": best_distance,
 		}
 	return best
+
+
+func gpu_projectile_selection_result_intent(context: Dictionary) -> Dictionary:
+	var selection := _dict(context.get("selection", {}))
+	if selection.is_empty():
+		return {"action": "reject", "reason": "no_selection"}
+	var selected_entry := _dict(selection.get("entry", {}))
+	var target_index := int(selected_entry.get("target_index", -1))
+	var target_count := maxi(0, int(context.get("target_count", 0)))
+	if target_index < 0 or target_index >= target_count:
+		return {
+			"action": "reject",
+			"reason": "invalid_target_index",
+			"target_index": target_index,
+			"target_count": target_count,
+		}
+	var intent := {
+		"action": "accept",
+		"target_index": target_index,
+		"hit": _dict(selection.get("hit", {})),
+		"distance": float(selection.get("distance", context.get("missing_distance", 999999.0))),
+		"has_position": selection.has("position"),
+	}
+	if bool(intent["has_position"]):
+		intent["position"] = _vec(selection.get("position", Vector2.ZERO))
+	return intent
+
+
+func gpu_projectile_final_impact_payload(context: Dictionary) -> Dictionary:
+	if not bool(context.get("target_live", false)):
+		return {"action": "reject", "reason": "target_gone"}
+	var selection_result := _dict(context.get("selection_result", {}))
+	var position := _vec(context.get("target_position", Vector2.ZERO))
+	if bool(selection_result.get("has_position", selection_result.has("position"))):
+		position = _vec(selection_result.get("position", position))
+	return {
+		"action": "accept",
+		"hit": _dict(selection_result.get("hit", {})),
+		"position": position,
+		"distance": float(selection_result.get("distance", context.get("missing_distance", 999999.0))),
+	}
 
 
 func hit_slop_intent(context: Dictionary) -> Dictionary:

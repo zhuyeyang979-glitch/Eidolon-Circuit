@@ -23,6 +23,7 @@ func _init() -> void:
 		"extends RefCounted",
 		"begin_module_action_intent",
 		"runtime_attack_button_intent",
+		"explicit_gun_activation_event",
 		"attack_button_command_state_intent",
 		"func attack_button_aim_mode(",
 		"func hold_activation_initial_delay(",
@@ -99,6 +100,7 @@ func _init() -> void:
 		"func _battle_action_event_service() -> BattleActionEventService",
 		"_battle_action_event_service().begin_module_action_intent",
 		"_battle_action_event_service().runtime_attack_button_intent",
+		"_battle_action_event_service().explicit_gun_activation_event",
 		"_battle_action_event_service().attack_button_command_state_intent",
 		"_battle_action_event_service().attack_button_aim_mode(",
 		"_battle_action_event_service().hold_activation_initial_delay(",
@@ -150,6 +152,7 @@ func _init() -> void:
 	var service = BattleActionEventServiceScript.new()
 	_check_begin_and_window(service)
 	_check_runtime_attack_button(service)
+	_check_explicit_gun_activation_event(service)
 	_check_attack_button_command_state(service)
 	_check_attack_button_aim_mode(service)
 	_check_hold_activation_initial_delay(service)
@@ -217,6 +220,13 @@ func _check_runtime_attack_button(service) -> void:
 	_assert_eq(int(resolve.get("attack_index", -1)), 2, "direct runtime route preserves attack index")
 	_assert_eq(String(service.runtime_attack_button_intent({"direct_runtime_topology": true, "binding_empty": true}).get("action", "")), "fail_unbound", "direct runtime empty binding reports fail route")
 	_assert_eq(String(service.runtime_attack_button_intent({"direct_runtime_topology": true, "binding_empty": false}).get("action", "")), "open_command_window", "direct runtime valid binding opens command window")
+
+
+func _check_explicit_gun_activation_event(service) -> void:
+	_assert_eq(bool(service.explicit_gun_activation_event({"module_action_profile": "gun_activate"}, true)), true, "known gun profile should be explicit")
+	_assert_eq(bool(service.explicit_gun_activation_event({"module_action_profile": "gun_activate", "gun_activation": false}, true)), true, "known profile remains explicit without gun flag")
+	_assert_eq(bool(service.explicit_gun_activation_event({"module_action_profile": "unknown", "gun_activation": true}, false)), false, "unknown profile should not be explicit even with gun flag")
+	_assert_eq(bool(service.explicit_gun_activation_event({"gun_activation": true}, false)), false, "missing profile should not be explicit")
 
 
 func _check_attack_button_command_state(service) -> void:

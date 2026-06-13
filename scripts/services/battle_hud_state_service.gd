@@ -9,34 +9,65 @@ func timer_text(match_time_remaining: float) -> String:
 	return "%02d:%02d" % [minutes, seconds]
 
 
-func unit_status_text(unit_state: Dictionary, fallback: String, terms: Dictionary, hp_label: String) -> String:
-	if not bool(unit_state.get("live", false)):
-		return "%s: %s" % [fallback, String(terms.get("offline", "offline"))]
-	var state_text := String(unit_state.get("combat_state", "normal"))
+func _display_max_int(value) -> int:
+	return maxi(0, int(value))
+
+
+func _display_health(unit_state: Dictionary) -> int:
+	var max_health := _display_max_int(unit_state.get("max_health", 0))
+	return clampi(int(unit_state.get("health", 0)), 0, max_health)
+
+
+func _display_armor_hp(unit_state: Dictionary, hp_key: String, max_key: String) -> float:
+	var armor_max := maxf(0.0, float(unit_state.get(max_key, 0.0)))
+	return clampf(float(unit_state.get(hp_key, 0.0)), 0.0, armor_max)
+
+
+func _display_ratio(value) -> float:
+	return clampf(float(value), 0.0, 1.0)
+
+
+func _display_ratio_percent(value) -> int:
+	return int(roundf(_display_ratio(value) * 100.0))
+
+
+func _display_combat_state(unit_state: Dictionary, terms: Dictionary) -> String:
+	var state_text := String(unit_state.get("combat_state", "")).strip_edges()
+	if state_text == "" or state_text.to_lower() == "normal":
+		state_text = String(terms.get("normal", "normal"))
 	if float(unit_state.get("blind_strength", 0.0)) > 0.08:
 		state_text = String(terms.get("blind", "blind"))
 	elif bool(unit_state.get("overheated", false)):
 		state_text = String(terms.get("overheat", "overheat"))
 	elif float(unit_state.get("stagger_timer", 0.0)) > 0.0:
 		state_text = String(terms.get("stagger", "stagger"))
+	return state_text
+
+
+func unit_status_text(unit_state: Dictionary, fallback: String, terms: Dictionary, hp_label: String) -> String:
+	if not bool(unit_state.get("live", false)):
+		return "%s: %s" % [fallback, String(terms.get("offline", "offline"))]
+	var state_text := _display_combat_state(unit_state, terms)
 	var armor_text := ""
-	if float(unit_state.get("support_armor_timer", 0.0)) > 0.0 and float(unit_state.get("support_armor_hp", 0.0)) > 0.0:
-		armor_text = " %s%.0f" % [String(terms.get("support_armor", "armor")), float(unit_state.get("support_armor_hp", 0.0))]
+	var support_armor_hp := maxf(0.0, float(unit_state.get("support_armor_hp", 0.0)))
+	if float(unit_state.get("support_armor_timer", 0.0)) > 0.0 and support_armor_hp > 0.0:
+		armor_text = " %s%.0f" % [String(terms.get("support_armor", "armor")), support_armor_hp]
 	var electronic_armor_text := ""
-	if float(unit_state.get("electronic_armor_max", 0.0)) > 0.0:
+	var electronic_armor_max := maxf(0.0, float(unit_state.get("electronic_armor_max", 0.0)))
+	if electronic_armor_max > 0.0:
 		electronic_armor_text = " %s%.0f/%.0f" % [
 			String(terms.get("electronic_armor", "shield")),
-			float(unit_state.get("electronic_armor_hp", 0.0)),
-			float(unit_state.get("electronic_armor_max", 0.0)),
+			_display_armor_hp(unit_state, "electronic_armor_hp", "electronic_armor_max"),
+			electronic_armor_max,
 		]
 	var heat_text := ""
 	if bool(unit_state.get("uses_heat", false)):
-		heat_text = "  %s %d%%" % [String(terms.get("heat", "heat")), int(roundf(float(unit_state.get("heat_ratio", 0.0)) * 100.0))]
+		heat_text = "  %s %d%%" % [String(terms.get("heat", "heat")), _display_ratio_percent(unit_state.get("heat_ratio", 0.0))]
 	return "%s %s %d/%d%s%s%s  %s" % [
 		fallback,
 		hp_label,
-		int(unit_state.get("health", 0)),
-		int(unit_state.get("max_health", 0)),
+		_display_health(unit_state),
+		_display_max_int(unit_state.get("max_health", 0)),
 		armor_text,
 		electronic_armor_text,
 		heat_text,
@@ -203,7 +234,7 @@ func role_bar_text(role_state: Dictionary, terms: Dictionary) -> String:
 		var pieces := PackedStringArray()
 		for raw_entry in entries:
 			var entry: Dictionary = Dictionary(raw_entry)
-			var ratio := float(entry.get("ratio", 0.0))
+			var ratio := _display_ratio(entry.get("ratio", 0.0))
 			var suffix := "*" if bool(entry.get("temporary", false)) else ""
 			pieces.append("--" if ratio <= 0.001 else "%d%s" % [int(roundf(ratio * 100.0)), suffix])
 		return "x%d %s%%" % [entries.size(), "/".join(pieces)]
@@ -212,18 +243,18 @@ func role_bar_text(role_state: Dictionary, terms: Dictionary) -> String:
 		return String(terms.get("offline", "offline"))
 	var switch_tag := " %s" % String(terms.get("shift", "shift")) if bool(unit_state.get("has_role_switch", false)) else ""
 	var electronic_armor_tag := ""
-	if float(unit_state.get("electronic_armor_max", 0.0)) > 0.0:
-		electronic_armor_tag = " %s%.0f" % [String(terms.get("electronic_armor", "shield")), float(unit_state.get("electronic_armor_hp", 0.0))]
+	if maxf(0.0, float(unit_state.get("electronic_armor_max", 0.0))) > 0.0:
+		electronic_armor_tag = " %s%.0f" % [String(terms.get("electronic_armor", "shield")), _display_armor_hp(unit_state, "electronic_armor_hp", "electronic_armor_max")]
 	if role_key == "hero" and bool(unit_state.get("uses_heat", false)):
 		return "%d/%d%s  %s %.0f%%%s" % [
-			int(unit_state.get("health", 0)),
-			int(unit_state.get("max_health", 0)),
+			_display_health(unit_state),
+			_display_max_int(unit_state.get("max_health", 0)),
 			electronic_armor_tag,
 			String(terms.get("heat", "heat")),
-			float(unit_state.get("heat_ratio", 0.0)) * 100.0,
+			float(_display_ratio_percent(unit_state.get("heat_ratio", 0.0))),
 			switch_tag,
 		]
-	return "%d/%d%s%s" % [int(unit_state.get("health", 0)), int(unit_state.get("max_health", 0)), electronic_armor_tag, switch_tag]
+	return "%d/%d%s%s" % [_display_health(unit_state), _display_max_int(unit_state.get("max_health", 0)), electronic_armor_tag, switch_tag]
 
 
 func sortie_entry_runtime_discount_label(entry: Dictionary) -> String:

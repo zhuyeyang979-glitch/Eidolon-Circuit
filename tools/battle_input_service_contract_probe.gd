@@ -28,6 +28,8 @@ func _init() -> void:
 		"battle_control_routes",
 		"direction_just_pressed",
 		"movement_input_state",
+		"input_vector_from_strengths",
+		"gun_turn_input_vector_from_strengths",
 		"spectator_input_intent",
 	]:
 		if service_source.find(token) < 0:
@@ -50,6 +52,8 @@ func _init() -> void:
 		"battle_input_service.battle_control_routes",
 		"battle_input_service.direction_just_pressed",
 		"battle_input_service.movement_input_state",
+		"input_vector_from_strengths",
+		"gun_turn_input_vector_from_strengths",
 		"battle_input_service.spectator_input_intent",
 	]:
 		if main_source.find(token) < 0:
@@ -130,6 +134,23 @@ func _init() -> void:
 	var move_idle: Dictionary = service.movement_input_state(Vector2(0.01, 0.0), Vector2.ZERO, true)
 	if bool(move_idle.get("has_move_input", true)) or bool(move_idle.get("movement_just_pressed", true)):
 		_fail("movement_input_state should ignore tiny vectors.")
+		return
+	if service.input_vector_from_strengths(0.04, 0.0, 0.0, 0.0) != Vector2.ZERO:
+		_fail("input_vector_from_strengths should apply the movement deadzone.")
+		return
+	var diagonal_input: Vector2 = service.input_vector_from_strengths(1.0, 0.0, 1.0, 0.0)
+	if absf(diagonal_input.length() - 1.0) > 0.001 or diagonal_input.x <= 0.7 or diagonal_input.y <= 0.7:
+		_fail("input_vector_from_strengths should normalize over-length diagonals: %s" % str(diagonal_input))
+		return
+	var analog_input: Vector2 = service.input_vector_from_strengths(0.6, 0.1, 0.2, 0.0)
+	if analog_input.distance_to(Vector2(0.5, 0.2)) > 0.001:
+		_fail("input_vector_from_strengths should preserve analog vectors inside unit length: %s" % str(analog_input))
+		return
+	if service.gun_turn_input_vector_from_strengths(0.05, 0.0) != Vector2.ZERO:
+		_fail("gun_turn_input_vector_from_strengths should apply turn deadzone.")
+		return
+	if service.gun_turn_input_vector_from_strengths(1.4, 0.0) != Vector2(1.0, 0.0) or service.gun_turn_input_vector_from_strengths(0.0, 1.4) != Vector2(-1.0, 0.0):
+		_fail("gun_turn_input_vector_from_strengths should clamp turn input.")
 		return
 	pressed_actions = {"p1_face_left": true, "p1_attack_3": true}
 	var spectator: Dictionary = service.spectator_input_intent("p1", Vector2(0.4, -0.3), Callable(self, "_pressed_for_probe"))

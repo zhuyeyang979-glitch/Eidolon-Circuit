@@ -55,6 +55,77 @@ func projectile_behavior_key(event: Dictionary) -> String:
 	return ""
 
 
+func ammo_type_for_event(event: Dictionary, valid_ammo_types: Array) -> String:
+	var ammo_kind := _normalized_ammo_type(String(event.get("ammo_kind", "")), valid_ammo_types)
+	if _ammo_type_list_has(valid_ammo_types, ammo_kind):
+		return ammo_kind
+	var damage_type := String(event.get("projectile_damage_type", event.get("damage_type", "")))
+	return damage_type if _ammo_type_list_has(valid_ammo_types, damage_type) else ""
+
+
+func _normalized_ammo_type(ammo_type: String, valid_ammo_types: Array) -> String:
+	var normalized := ammo_type.to_lower()
+	if normalized in ["explosion", "missile"]:
+		return "explosive"
+	if normalized in ["chemical_splash", "acid"]:
+		return "chemical"
+	if normalized in ["silk", "thread"]:
+		return "web"
+	return normalized if _ammo_type_list_has(valid_ammo_types, normalized) else ""
+
+
+func _ammo_type_list_has(valid_ammo_types: Array, ammo_type: String) -> bool:
+	for raw_type in valid_ammo_types:
+		if String(raw_type) == ammo_type:
+			return true
+	return false
+
+
+func event_vector_value(event: Dictionary, key: String) -> Vector2:
+	if event.has(key) and event[key] is Vector2:
+		var value: Vector2 = event[key]
+		return value
+	return Vector2.ZERO
+
+
+func event_momentum_vector_patch(vector: Vector2, magnitude: float = -1.0) -> Dictionary:
+	var resolved_magnitude := magnitude if magnitude >= 0.0 else vector.length()
+	var patch := {
+		"momentum_vector": vector,
+		"momentum_magnitude": resolved_magnitude,
+	}
+	if resolved_magnitude > 0.001 and vector.length() > 0.001:
+		patch["direction"] = vector.normalized()
+	return patch
+
+
+func event_direction_vector(event: Dictionary, target_delta: Vector2, attacker_forward: Vector2, fallback: Vector2 = Vector2.RIGHT) -> Vector2:
+	var momentum_vector := event_vector_value(event, "momentum_vector")
+	if momentum_vector.length() > 0.001:
+		return momentum_vector.normalized()
+	var event_direction := event_vector_value(event, "direction")
+	if event_direction.length() > 0.001:
+		return event_direction.normalized()
+	if target_delta.length() > 0.001:
+		return target_delta.normalized()
+	if attacker_forward.length() > 0.001:
+		return attacker_forward.normalized()
+	if fallback.length() > 0.001:
+		return fallback.normalized()
+	return Vector2.RIGHT
+
+
+func event_momentum_magnitude(event: Dictionary, fallback: float = 0.0) -> float:
+	var momentum_vector := event_vector_value(event, "momentum_vector")
+	if momentum_vector.length() > 0.001:
+		return momentum_vector.length()
+	if event.has("momentum_magnitude"):
+		return maxf(0.0, float(event.get("momentum_magnitude", fallback)))
+	if event.has("momentum"):
+		return maxf(0.0, float(event.get("momentum", fallback)))
+	return maxf(0.0, fallback)
+
+
 func gun_drive_projectile_momentum_mult(_gun_drive_ratio: float) -> float:
 	return 1.0
 
@@ -154,6 +225,76 @@ func projectile_momentum_state_for_event(event: Dictionary, constants: Dictionar
 	return {"momentum": maxf(0.0, mass * speed), "fields": {}}
 
 
+func projectile_collision_momentum_intent(context: Dictionary) -> Dictionary:
+	if not bool(context.get("projectile", false)):
+		return {"action": "none", "reason": "not_projectile", "momentum": 0.0, "event_patch": {}}
+	var projectile_velocity: Vector2 = context.get("projectile_velocity", Vector2.ZERO) if context.get("projectile_velocity", Vector2.ZERO) is Vector2 else Vector2.ZERO
+	var target_velocity: Vector2 = context.get("target_velocity", Vector2.ZERO) if context.get("target_velocity", Vector2.ZERO) is Vector2 else Vector2.ZERO
+	var projectile_speed := projectile_velocity.length()
+	var fallback_direction: Vector2 = context.get("fallback_direction", Vector2.RIGHT) if context.get("fallback_direction", Vector2.RIGHT) is Vector2 else Vector2.RIGHT
+	var projectile_direction := projectile_velocity.normalized() if projectile_speed > 0.001 else (fallback_direction.normalized() if fallback_direction.length() > 0.001 else Vector2.RIGHT)
+	var relative_velocity := projectile_velocity - target_velocity
+	var closing_speed := maxf(0.0, relative_velocity.dot(projectile_direction))
+	var projectile_mass := float(context.get("projectile_mass", 0.0))
+	var momentum_scale := maxf(0.0, float(context.get("momentum_scale", 1.0)))
+	var explicit_momentum := float(context.get("explicit_momentum", 0.0))
+	var momentum := projectile_mass * closing_speed * momentum_scale
+	if explicit_momentum > 0.0 and String(context.get("behavior_key", "")) == "true_bullet":
+		momentum = explicit_momentum * momentum_scale
+	var momentum_vector := projectile_direction * momentum
+	var patch := {
+		"projectile_mass": projectile_mass,
+		"projectile_collision_speed": projectile_speed,
+		"projectile_velocity_vector": projectile_velocity,
+		"projectile_target_velocity_vector": target_velocity,
+		"projectile_relative_velocity_vector": relative_velocity,
+		"projectile_closing_speed": closing_speed,
+		"projectile_momentum_resolved": momentum,
+		"momentum": momentum,
+		"momentum_vector": momentum_vector,
+		"momentum_magnitude": momentum,
+	}
+	if momentum > 0.001 and momentum_vector.length() > 0.001:
+		patch["direction"] = projectile_direction
+	return {
+		"action": "resolve_projectile_collision_momentum",
+		"momentum": momentum,
+		"projectile_direction": projectile_direction,
+		"closing_speed": closing_speed,
+		"relative_velocity": relative_velocity,
+		"event_patch": patch,
+	}
+
+
+func projectile_stagger_impact_position_intent(event: Dictionary, target_position: Vector2) -> Dictionary:
+	var position := target_position
+	var source := "target_position"
+	if event.has("hit_position_combat") and event["hit_position_combat"] is Vector2:
+		position = event["hit_position_combat"]
+		source = "hit_position_combat"
+	elif event.has("projectile_impact_position") and event["projectile_impact_position"] is Vector2:
+		position = event["projectile_impact_position"]
+		source = "projectile_impact_position"
+	return {
+		"action": "resolve_projectile_stagger_impact_position",
+		"position": position,
+		"source": source,
+	}
+
+
+func projectile_consumes_on_first_hit(event: Dictionary, constants: Dictionary) -> bool:
+	if not bool(event.get("projectile", false)):
+		return false
+	if bool(event.get("non_damage", false)):
+		return false
+	var style := String(event.get("projectile_style", ""))
+	if style in ["web", "web_snap", "blind", "shield", "chain"]:
+		return false
+	var damage_type := String(event.get("damage_type", ""))
+	var damage_types: Array = constants.get("projectile_damage_types", []) if constants.get("projectile_damage_types", []) is Array else []
+	return damage_type in damage_types or style in ["beam", "chaos", "true_bullet", "bullet_hell", "spray", "missile", "explosive", "blast"]
+
+
 func gun_projectile_damage_mult_max_for_data(data: Dictionary, resolved_gun_kind: String, resolved_ammo_kind: String, constants: Dictionary) -> float:
 	if bool(data.get("non_damage", false)):
 		return 0.0
@@ -235,6 +376,36 @@ func default_recoil_transfer_for_projectile(event: Dictionary) -> float:
 		"chemical":
 			return 0.55
 	return 0.65
+
+
+func weapon_recoil_intent(context: Dictionary) -> Dictionary:
+	if not bool(context.get("projectile", false)):
+		return {"action": "none", "reason": "not_projectile"}
+	if bool(context.get("weapon_recoil_applied", false)):
+		return {"action": "none", "reason": "already_applied"}
+	var projectile_velocity: Vector2 = context.get("projectile_velocity", Vector2.ZERO) if context.get("projectile_velocity", Vector2.ZERO) is Vector2 else Vector2.ZERO
+	if projectile_velocity.length() <= 0.001:
+		return {"action": "none", "reason": "no_velocity"}
+	var launch_momentum := float(context.get("launch_momentum", 0.0))
+	if launch_momentum <= 0.001:
+		return {"action": "none", "reason": "no_momentum"}
+	var shooter_mass := maxf(1.0, float(context.get("shooter_mass", 1.0)))
+	var recoil_amount := launch_momentum / shooter_mass
+	if recoil_amount <= 0.0001:
+		return {"action": "none", "reason": "small_recoil"}
+	var direction := projectile_velocity.normalized()
+	return {
+		"action": "apply_weapon_recoil",
+		"direction": direction,
+		"launch_momentum": launch_momentum,
+		"recoil_amount": recoil_amount,
+		"event_patch": {
+			"weapon_recoil_momentum": launch_momentum,
+			"weapon_recoil_amount": recoil_amount,
+			"weapon_recoil_direction": -direction,
+			"weapon_recoil_applied": true,
+		},
+	}
 
 
 func heat_tags_for_projectile_event(event: Dictionary) -> Array:

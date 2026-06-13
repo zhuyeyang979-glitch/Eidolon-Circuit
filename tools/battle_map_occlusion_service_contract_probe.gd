@@ -24,6 +24,9 @@ func _init() -> void:
 	if source.is_empty():
 		_fail("Unable to read BattleMapOcclusionService.")
 		return
+	if not source.contains("func one_way_projectile_pass_intent"):
+		_fail("BattleMapOcclusionService missing one_way_projectile_pass_intent.")
+		return
 	for forbidden in ["Input.", "FileAccess", "DirAccess", "JSON.parse_string", "extends Node", "extends Control", "active_units", "all_units", "GpuCollisionPipeline", "Fighter", "_resolve_attack", "_attack_part_hit", "take_hit", "queue_free", "_one_way_shield_allows_projectile", "_unit_part_colliders", "randf", "randi", "Time", "_spawn_hit_effect", "_play_sfx"]:
 		if source.contains(forbidden):
 			_fail("BattleMapOcclusionService contains forbidden token: %s" % forbidden)
@@ -39,6 +42,57 @@ func _init() -> void:
 	if not _expect(service.occlusion_kind_for_data({"material_class": "signal_jammer"}) == "solid", "signal jammer should be solid"):
 		return
 	if not _expect(service.occlusion_kind_for_data({"shape": "coolant_field", "panel_family": "support"}) == "none", "support field should not occlude"):
+		return
+
+	var allied_pass: Dictionary = service.one_way_projectile_pass_intent({
+		"pass_mode": "ally",
+		"attacker_owner": 1,
+		"shield_owner": 1,
+	})
+	if not _expect(bool(allied_pass.get("passes", false)) and String(allied_pass.get("reason", "")) == "allied_owner", "allied one-way pass mismatch: %s" % str(allied_pass)):
+		return
+	var iff_block: Dictionary = service.one_way_projectile_pass_intent({
+		"pass_mode": "iff",
+		"attacker_owner": 2,
+		"shield_owner": 1,
+	})
+	if not _expect(not bool(iff_block.get("passes", true)) and String(iff_block.get("reason", "")) == "foreign_owner", "IFF one-way block mismatch: %s" % str(iff_block)):
+		return
+	var enemy_pass: Dictionary = service.one_way_projectile_pass_intent({
+		"pass_mode": "enemy",
+		"attacker_owner": 2,
+		"shield_owner": 1,
+	})
+	if not _expect(bool(enemy_pass.get("passes", false)) and String(enemy_pass.get("reason", "")) == "enemy_owner", "enemy one-way pass mismatch: %s" % str(enemy_pass)):
+		return
+	var enemy_block: Dictionary = service.one_way_projectile_pass_intent({
+		"pass_mode": "enemy",
+		"attacker_owner": 1,
+		"shield_owner": 1,
+	})
+	if not _expect(not bool(enemy_block.get("passes", true)) and String(enemy_block.get("reason", "")) == "same_owner", "same-owner enemy-mode block mismatch: %s" % str(enemy_block)):
+		return
+	var directional_pass: Dictionary = service.one_way_projectile_pass_intent({
+		"attack_direction": Vector2.RIGHT,
+		"attacker_facing": -1.0,
+		"shield_facing": 1.0,
+	})
+	if not _expect(bool(directional_pass.get("passes", false)) and not bool(directional_pass.get("used_attacker_facing", true)), "directional one-way pass mismatch: %s" % str(directional_pass)):
+		return
+	var reverse_block: Dictionary = service.one_way_projectile_pass_intent({
+		"attack_direction": Vector2.RIGHT,
+		"attacker_facing": 1.0,
+		"shield_facing": 1.0,
+		"pass_direction": "reverse",
+	})
+	if not _expect(not bool(reverse_block.get("passes", true)), "reverse one-way direction should block forward fire: %s" % str(reverse_block)):
+		return
+	var facing_fallback: Dictionary = service.one_way_projectile_pass_intent({
+		"attack_direction": Vector2.UP,
+		"attacker_facing": -1.0,
+		"shield_facing": -1.0,
+	})
+	if not _expect(bool(facing_fallback.get("passes", false)) and bool(facing_fallback.get("used_attacker_facing", false)), "zero-X direction should use attacker facing: %s" % str(facing_fallback)):
 		return
 
 	var event_path := service.path_collider_for_event({
@@ -113,6 +167,7 @@ func _init() -> void:
 		"scripts/services/battle_map_occlusion_service.gd",
 		"BattleMapOcclusionService.new",
 		"_battle_map_occlusion_service().occlusion_kind_for_data",
+		"_battle_map_occlusion_service().one_way_projectile_pass_intent({",
 		"_battle_map_occlusion_service().path_collider_for_event",
 		"_battle_map_occlusion_service().path_collider_between",
 		"_battle_map_occlusion_service().blocker_candidate_intent",
@@ -124,5 +179,9 @@ func _init() -> void:
 		if not main_source.contains(token):
 			_fail("main.gd missing BattleMapOcclusionService boundary token: %s" % token)
 			return
+	var stale_one_way_pass_policy := "var mode := String(shield.stats.get(\"shield_pass_mode\", \"directional\"))\n\tif mode in [\"iff\", \"ally\"]:\n\t\treturn int(attacker.owner_id) == int(shield.owner_id)\n\tif mode == \"enemy\":\n\t\treturn int(attacker.owner_id) != int(shield.owner_id)\n\tvar dir_sign := signf(attack_direction.x)"
+	if main_source.contains(stale_one_way_pass_policy):
+		_fail("main.gd should not keep duplicate one-way projectile pass policy.")
+		return
 	print("BATTLE_MAP_OCCLUSION_SERVICE_CONTRACT_PROBE ok")
 	quit(0)

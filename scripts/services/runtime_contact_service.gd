@@ -134,6 +134,72 @@ func break_threshold(collider: Dictionary, size_mult: float, constants: Dictiona
 	return maxf(0.5, path_stiffness(collider, size_mult, constants) * break_coeff(collider, constants) * float(constants.get("break_stiffness_scale", 0.0045)))
 
 
+func passive_contact_scrape_factor(collider: Dictionary, constants: Dictionary) -> float:
+	var base := float(constants.get("passive_contact_scrape_mult", 0.42))
+	match String(collider.get("part_kind", "")):
+		"terminal":
+			return base
+		"limb_muscle":
+			return base * maxf(0.25, float(collider.get("contact_damage_mult", 0.18)))
+		"joint":
+			return base * 0.18
+	return base * 0.28
+
+
+func meta_safe_part_index(part_index: int) -> String:
+	return "m%d" % abs(part_index) if part_index < 0 else str(part_index)
+
+
+func passive_contact_damage_key(attacker_id: int, attacker_collider: Dictionary, target_id: int, target_collider: Dictionary, state_key: String) -> String:
+	return "passive_contact_%d_%d_%s_%s_%s_%s_%s" % [
+		attacker_id,
+		target_id,
+		meta_safe_part_index(int(attacker_collider.get("part_index", -1))),
+		String(attacker_collider.get("part_kind", "")),
+		meta_safe_part_index(int(target_collider.get("part_index", -1))),
+		String(target_collider.get("part_kind", "")),
+		state_key,
+	]
+
+
+func unit_contact_radius(stats: Dictionary, constants: Dictionary) -> float:
+	var body_radius := maxf(0.04, float(stats.get("radius", 0.22)))
+	var body_length := maxf(0.12, float(stats.get("length", 0.7)))
+	var limb_count := maxi(1, int(stats.get("group_count", int(constants.get("attack_group_count", 6)))))
+	var limb_bonus := clampf(float(limb_count) * 0.012, 0.02, 0.11)
+	return clampf((body_radius * 1.18 + sqrt(body_radius * body_length) * 0.18 + limb_bonus) * float(constants.get("unit_body_spacing_mult", 1.0)), 0.18, 4.6)
+
+
+func unit_effective_mass(stats: Dictionary) -> float:
+	return maxf(1.0, float(stats.get("mass", 1.0)))
+
+
+func unit_thruster_power(stats: Dictionary) -> float:
+	return maxf(0.0, float(stats.get("boost_momentum", 0.0))) / unit_effective_mass(stats)
+
+
+func unit_knockback_resist(stats: Dictionary) -> float:
+	return clampf(float(stats.get("knockback_resist", 0.0)), 0.0, 0.68)
+
+
+func unit_impulse_motion_mult(stats: Dictionary) -> float:
+	return clampf(1.0 - unit_knockback_resist(stats) * 0.72, 0.48, 1.12)
+
+
+func unit_melee_stability_threshold(stats: Dictionary, constants: Dictionary) -> float:
+	var floor := float(constants.get("melee_stability_threshold_floor", 28.0))
+	return maxf(floor, float(stats.get("melee_stability_threshold", floor)))
+
+
+func unit_posture_anchor(stats: Dictionary, opposing_mass: float) -> float:
+	var mass := unit_effective_mass(stats)
+	var thruster := unit_thruster_power(stats)
+	var stabilization := clampf(float(stats.get("recoil_stabilization", stats.get("attitude_control", 0.85))), 0.0, 2.6)
+	var thruster_anchor := thruster / maxf(0.001, thruster + opposing_mass * 0.36 + mass * 0.04 + 6.0)
+	var control_anchor := clampf(unit_knockback_resist(stats) + maxf(0.0, stabilization - 0.7) * 0.08, 0.0, 0.5)
+	return clampf(thruster_anchor * 0.78 + control_anchor, 0.0, 0.82)
+
+
 func damage_type(collider: Dictionary, melee_damage_types: Array) -> String:
 	if collider_uses_torso_damage(collider):
 		return "blunt"
@@ -309,3 +375,60 @@ func damage_intent(context: Dictionary) -> Dictionary:
 		"break_threshold": threshold,
 		"event": event,
 	}
+
+
+func velocity_response_intent(context: Dictionary) -> Dictionary:
+	var contact_momentum := maxf(0.0, float(context.get("contact_momentum", 0.0)))
+	if contact_momentum <= 0.001:
+		return {"should_apply": false, "reason": "low_momentum"}
+	var normal: Vector2 = context.get("normal", Vector2.ZERO)
+	if normal.length() <= 0.001:
+		return {"should_apply": false, "reason": "invalid_normal"}
+	var direction := normal.normalized()
+	var mass_a := maxf(1.0, float(context.get("mass_a", 1.0)))
+	var mass_b := maxf(1.0, float(context.get("mass_b", 1.0)))
+	return {
+		"should_apply": true,
+		"direction": direction,
+		"contact_momentum": contact_momentum,
+		"velocity_delta_a": Vector2.ZERO if bool(context.get("anchored_a", false)) else -direction * (contact_momentum / mass_a),
+		"velocity_delta_b": Vector2.ZERO if bool(context.get("anchored_b", false)) else direction * (contact_momentum / mass_b),
+	}
+
+
+func runtime_node_array_has(raw_nodes: Array, node_index: int) -> bool:
+	for raw_node in raw_nodes:
+		if int(raw_node) == node_index:
+			return true
+	return false
+
+
+func runtime_action_phase(actions: Array, node_index: int) -> float:
+	if node_index < 0:
+		return 1.0
+	for raw_action in actions:
+		if not (raw_action is Dictionary):
+			continue
+		var action: Dictionary = raw_action
+		if not runtime_node_array_has(Array(action.get("target_nodes", [])), node_index):
+			continue
+		var duration := maxf(0.001, float(action.get("duration", 0.62)))
+		return clampf(1.0 - float(action.get("timer", 0.0)) / duration, 0.0, 1.0)
+	return 1.0
+
+
+func runtime_recovery_capable(actions: Array, node_index: int) -> bool:
+	if node_index < 0:
+		return false
+	for raw_action in actions:
+		if not (raw_action is Dictionary):
+			continue
+		var action: Dictionary = raw_action
+		if not runtime_node_array_has(Array(action.get("target_nodes", [])), node_index):
+			continue
+		var duration := maxf(0.001, float(action.get("duration", 0.62)))
+		var phase := clampf(1.0 - float(action.get("timer", 0.0)) / duration, 0.0, 1.0)
+		var startup_ratio := clampf(float(action.get("startup_ratio", 1.0 / 3.0)), 0.05, 0.95)
+		if phase < startup_ratio:
+			return true
+	return false

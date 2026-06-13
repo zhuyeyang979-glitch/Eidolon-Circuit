@@ -62,6 +62,15 @@ func _init() -> void:
 	var wrapped_selection := service.true_bullet_target_selection([], {"candidate_live": true, "target_index": 4, "distance": 2.0})
 	if not _expect(bool(wrapped_selection.get("found", false)) and int(wrapped_selection.get("target_index", -1)) == 4 and String(wrapped_selection.get("reason", "")) == "wrapped", "wrapped fallback mismatch: %s" % str(wrapped_selection)):
 		return
+	var valid_index: Dictionary = service.selected_target_index_intent({"selection": {"target_index": 2}, "target_count": 3})
+	if not _expect(String(valid_index.get("action", "")) == "accept" and int(valid_index.get("target_index", -1)) == 2, "valid selected index mismatch: %s" % str(valid_index)):
+		return
+	var negative_index: Dictionary = service.selected_target_index_intent({"selection": {"target_index": -1}, "target_count": 3})
+	if not _expect(String(negative_index.get("action", "")) == "reject" and String(negative_index.get("reason", "")) == "missing_target_index", "negative selected index should reject: %s" % str(negative_index)):
+		return
+	var out_of_range_index: Dictionary = service.selected_target_index_intent({"selection": {"target_index": 3}, "target_count": 3})
+	if not _expect(String(out_of_range_index.get("action", "")) == "reject" and String(out_of_range_index.get("reason", "")) == "target_index_out_of_range", "out-of-range selected index should reject: %s" % str(out_of_range_index)):
+		return
 
 	var blocked_class := service.missile_candidate_intent({"candidate_live": true, "target_index": 0, "target_class": "puppet", "allowed_classes": ["hero"], "distance": 1.0, "max_range": 3.0, "direction": Vector2.RIGHT, "target_direction": Vector2.RIGHT, "cone_cos": 0.5})
 	if not _expect(String(blocked_class.get("reason", "")) == "class_blocked", "missile class gate mismatch: %s" % str(blocked_class)):
@@ -103,6 +112,7 @@ func _init() -> void:
 		"_battle_target_acquisition_service().target_class_allowed",
 		"_battle_target_acquisition_service().true_bullet_candidate_intent",
 		"_battle_target_acquisition_service().true_bullet_target_selection",
+		"_battle_target_acquisition_service().selected_target_index_intent",
 		"_battle_target_acquisition_service().missile_candidate_intent",
 		"_battle_target_acquisition_service().missile_lock_score",
 		"_battle_target_acquisition_service().missile_target_selection",
@@ -110,5 +120,9 @@ func _init() -> void:
 		if not main_source.contains(token):
 			_fail("main.gd missing BattleTargetAcquisitionService boundary token: %s" % token)
 			return
+	var stale_inline_index_guard := "var selected_index := int(selection.get(\"target_index\", -1))\n\tif selected_index < 0 or selected_index >= candidate_targets.size():\n\t\treturn null"
+	if main_source.contains(stale_inline_index_guard):
+		_fail("main.gd still owns target-acquisition selected-index bounds.")
+		return
 	print("BATTLE_TARGET_ACQUISITION_SERVICE_CONTRACT_PROBE ok")
 	quit(0)

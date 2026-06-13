@@ -76,6 +76,25 @@ func auto_summon_intent(context: Dictionary) -> Dictionary:
 	}
 
 
+func auto_summon_role_available(role_key: String, context: Dictionary) -> bool:
+	if not bool(context.get("role_known", false)):
+		return false
+	if not bool(context.get("player_known", false)):
+		return false
+	if bool(context.get("pending", false)):
+		return false
+	if role_key == "puppet":
+		return int(context.get("live_primary_puppet_count", 0)) <= 0
+	return not bool(context.get("existing_live", false))
+
+
+func auto_summon_mech_presence(context: Dictionary) -> Dictionary:
+	return {
+		"has_live_mech": bool(context.get("hero_live", false)) or int(context.get("live_primary_puppet_count", 0)) > 0,
+		"has_pending_mech": bool(context.get("hero_pending", false)) or bool(context.get("puppet_pending", false)),
+	}
+
+
 func ai_battle_original_player_is_ai(ai_battle_seat: int, player_id: int) -> bool:
 	if ai_battle_seat == 3:
 		return true
@@ -646,6 +665,32 @@ func _wrapped_index(value: int, size: int) -> int:
 	if wrapped < 0:
 		wrapped += size
 	return wrapped
+
+
+func source_rule_for_condition(raw_rules, condition: String) -> Dictionary:
+	if not (raw_rules is Dictionary):
+		return {}
+	var rules: Dictionary = raw_rules
+	if rules.has(condition):
+		var exact = rules.get(condition, {})
+		return Dictionary(exact).duplicate(true) if exact is Dictionary else {}
+	var fallback = rules.get("default", {})
+	return Dictionary(fallback).duplicate(true) if fallback is Dictionary else {}
+
+
+func default_puppet_attack_modules(unit_index: int, attack_group_count: int, disabled_modules: Array) -> Array:
+	var modules: Array = []
+	if attack_group_count <= 0:
+		return modules
+	var preferred := clampi(unit_index % attack_group_count, 0, attack_group_count - 1)
+	if not _is_disabled(disabled_modules, preferred):
+		modules.append(preferred)
+	for attack_index in range(attack_group_count):
+		if attack_index == preferred:
+			continue
+		if not _is_disabled(disabled_modules, attack_index):
+			modules.append(attack_index)
+	return modules
 
 
 func puppet_condition(context: Dictionary) -> String:

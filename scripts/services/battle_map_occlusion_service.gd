@@ -25,6 +25,40 @@ func occlusion_kind_for_data(data: Dictionary, fallback: Dictionary = {}) -> Str
 	return MAP_OCCLUSION_NONE
 
 
+func one_way_projectile_pass_intent(context: Dictionary) -> Dictionary:
+	var mode := String(context.get("pass_mode", "directional"))
+	var attacker_owner := int(context.get("attacker_owner", 0))
+	var shield_owner := int(context.get("shield_owner", 0))
+	if mode in ["iff", "ally"]:
+		var allied := attacker_owner == shield_owner
+		return {
+			"passes": allied,
+			"reason": "allied_owner" if allied else "foreign_owner",
+		}
+	if mode == "enemy":
+		var enemy := attacker_owner != shield_owner
+		return {
+			"passes": enemy,
+			"reason": "enemy_owner" if enemy else "same_owner",
+		}
+	var attack_direction := _vec(context.get("attack_direction", Vector2.ZERO))
+	var direction_sign := signf(attack_direction.x)
+	var used_attacker_facing := direction_sign == 0.0
+	if used_attacker_facing:
+		direction_sign = float(context.get("attacker_facing", 1.0))
+	var pass_facing := float(context.get("shield_facing", 1.0))
+	if String(context.get("pass_direction", "facing")) == "reverse":
+		pass_facing *= -1.0
+	var passes := direction_sign == pass_facing
+	return {
+		"passes": passes,
+		"reason": "direction_allowed" if passes else "direction_blocked",
+		"direction_sign": direction_sign,
+		"pass_facing": pass_facing,
+		"used_attacker_facing": used_attacker_facing,
+	}
+
+
 func path_collider_for_event(context: Dictionary) -> Dictionary:
 	if not bool(context.get("attacker_live", true)):
 		return {}

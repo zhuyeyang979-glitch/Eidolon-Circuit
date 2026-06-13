@@ -212,6 +212,78 @@ func page_cache_key(entries_key: String, page: int, page_size: int, language: St
 	]
 
 
+func page_state(current_page: int, entry_count: int, page_size: int) -> Dictionary:
+	var normalized_page_size := maxi(1, page_size)
+	var normalized_count := maxi(0, entry_count)
+	var max_page := maxi(0, int(ceilf(float(normalized_count) / float(normalized_page_size))) - 1)
+	var page := clampi(current_page, 0, max_page)
+	var start_index := page * normalized_page_size if normalized_count > 0 else 0
+	var end_index := mini(normalized_count, start_index + normalized_page_size)
+	return {
+		"valid": true,
+		"page": page,
+		"max_page": max_page,
+		"page_size": normalized_page_size,
+		"entry_count": normalized_count,
+		"start_index": start_index,
+		"end_index": end_index,
+	}
+
+
+func entry_state_for_card(component_index: int, current_page: int, page_size: int, entries: Array, fallback_slot_key: String) -> Dictionary:
+	var state := page_state(current_page, entries.size(), page_size)
+	var normalized_page := int(state.get("page", 0))
+	var normalized_page_size := int(state.get("page_size", 1))
+	var absolute_index := int(state.get("start_index", 0)) + component_index
+	if component_index < 0 or component_index >= normalized_page_size:
+		return {
+			"valid": false,
+			"clear_hover": true,
+			"reason": "card_out_of_page",
+			"page": normalized_page,
+			"page_size": normalized_page_size,
+			"absolute_index": absolute_index,
+		}
+	if absolute_index < int(state.get("start_index", 0)) or absolute_index >= int(state.get("end_index", 0)) or absolute_index >= entries.size():
+		return {
+			"valid": false,
+			"clear_hover": true,
+			"reason": "empty_card",
+			"page": normalized_page,
+			"page_size": normalized_page_size,
+			"absolute_index": absolute_index,
+		}
+	var raw_entry = entries[absolute_index]
+	if not (raw_entry is Dictionary):
+		return {
+			"valid": false,
+			"clear_hover": true,
+			"reason": "invalid_entry",
+			"page": normalized_page,
+			"page_size": normalized_page_size,
+			"absolute_index": absolute_index,
+		}
+	var entry: Dictionary = raw_entry
+	var entry_slot := String(entry.get("slot", fallback_slot_key))
+	var part_index := int(entry.get("index", 0))
+	var part: Dictionary = entry.get("display_part", {})
+	if part.is_empty():
+		part = entry.get("part", {})
+	var stable_key := String(part.get("stable_key", part.get("name", "")))
+	return {
+		"valid": true,
+		"clear_hover": false,
+		"page": normalized_page,
+		"page_size": normalized_page_size,
+		"absolute_index": absolute_index,
+		"slot": entry_slot,
+		"part_index": part_index,
+		"entry": entry,
+		"part": part,
+		"hover_key": "%d|%s:%d:%s" % [absolute_index, entry_slot, part_index, stable_key],
+	}
+
+
 func state_for_slot_selection(slot_index: int, build_slots: Array) -> Dictionary:
 	var clamped_index := clampi(slot_index, 0, maxi(0, build_slots.size() - 1))
 	var slot_key := String(build_slots[clamped_index]) if not build_slots.is_empty() else ""

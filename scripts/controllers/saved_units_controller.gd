@@ -76,8 +76,67 @@ func page_for_focus_path(entries: Array, path: String, page_size: int) -> Dictio
 				"found": true,
 				"selected_index": i,
 				"page": int(floor(float(i) / float(safe_page_size))),
-			}
+		}
 	return {"found": false, "selected_index": -1, "page": 0}
+
+
+func focus_state_for_path(entries: Array, path: String, page_size: int, current_page: int = 0) -> Dictionary:
+	var resolved_path := path.strip_edges()
+	var safe_page_size := maxi(1, page_size)
+	var max_page := maxi(0, int(ceil(float(maxi(0, entries.size())) / float(safe_page_size))) - 1)
+	var safe_current_page := clampi(current_page, 0, max_page)
+	if resolved_path == "":
+		return {
+			"found": false,
+			"missing": false,
+			"rejected": false,
+			"focus_path": "",
+			"saved_unit_focus_path": "",
+			"saved_unit_page": safe_current_page,
+			"saved_unit_selected_index": -1,
+			"saved_unit_hovered_path": "",
+			"saved_unit_hovered_index": -1,
+			"saved_unit_detail_path": "",
+			"focus_notice_key": "",
+			"focus_notice_reason": "",
+		}
+	for i in range(entries.size()):
+		if not (entries[i] is Dictionary):
+			continue
+		var entry: Dictionary = entries[i]
+		if entry_path(entry) != resolved_path:
+			continue
+		var rejection_reason := _entry_rejection_reason(entry)
+		var rejected := rejection_reason != ""
+		return {
+			"found": true,
+			"missing": false,
+			"rejected": rejected,
+			"focus_path": resolved_path,
+			"saved_unit_focus_path": resolved_path,
+			"saved_unit_page": int(floor(float(i) / float(safe_page_size))),
+			"saved_unit_selected_index": i,
+			"saved_unit_hovered_path": resolved_path,
+			"saved_unit_hovered_index": i,
+			"saved_unit_detail_path": resolved_path,
+			"entry": entry,
+			"focus_notice_key": "focus_rejected" if rejected else "",
+			"focus_notice_reason": rejection_reason,
+		}
+	return {
+		"found": false,
+		"missing": true,
+		"rejected": false,
+		"focus_path": resolved_path,
+		"saved_unit_focus_path": resolved_path,
+		"saved_unit_page": safe_current_page,
+		"saved_unit_selected_index": -1,
+		"saved_unit_hovered_path": "",
+		"saved_unit_hovered_index": -1,
+		"saved_unit_detail_path": "",
+		"focus_notice_key": "focus_missing",
+		"focus_notice_reason": "",
+	}
 
 
 func selection_state_for_filter(filter_key: String) -> Dictionary:
@@ -165,6 +224,47 @@ func delete_request_intent(candidates: Array) -> Dictionary:
 	}
 
 
+func post_delete_selection_state(entries: Array, deleted_paths: Array, previous_selected_index: int, previous_page: int, page_size: int) -> Dictionary:
+	var safe_page_size := maxi(1, page_size)
+	if entries.is_empty():
+		return {
+			"valid": true,
+			"deleted_count": deleted_paths.size(),
+			"saved_unit_page": 0,
+			"saved_unit_selected_index": -1,
+			"saved_unit_hovered_path": "",
+			"saved_unit_hovered_index": -1,
+			"saved_unit_detail_path": "",
+		}
+	var max_page := maxi(0, int(ceil(float(entries.size()) / float(safe_page_size))) - 1)
+	var preferred_index := previous_selected_index
+	if preferred_index < 0:
+		preferred_index = clampi(previous_page, 0, max_page) * safe_page_size
+	preferred_index = clampi(preferred_index, 0, entries.size() - 1)
+	var selected_index := _nearest_dictionary_index(entries, preferred_index)
+	if selected_index < 0:
+		return {
+			"valid": true,
+			"deleted_count": deleted_paths.size(),
+			"saved_unit_page": 0,
+			"saved_unit_selected_index": -1,
+			"saved_unit_hovered_path": "",
+			"saved_unit_hovered_index": -1,
+			"saved_unit_detail_path": "",
+		}
+	var entry: Dictionary = entries[selected_index]
+	var path := entry_path(entry)
+	return {
+		"valid": true,
+		"deleted_count": deleted_paths.size(),
+		"saved_unit_page": int(floor(float(selected_index) / float(safe_page_size))),
+		"saved_unit_selected_index": selected_index,
+		"saved_unit_hovered_path": path,
+		"saved_unit_hovered_index": selected_index,
+		"saved_unit_detail_path": path,
+	}
+
+
 func toggle_selection_state(entry: Dictionary, selected_paths: Array, illegal_note: String = "") -> Dictionary:
 	if bool(entry.get("canonical_rejected", false)):
 		return {"valid": false, "reason": illegal_note}
@@ -202,6 +302,31 @@ func page_action_state(action_key: String, page: int, page_size: int, entry_coun
 			return toggle_state
 		_:
 			return {"valid": false, "action": action_key}
+
+
+func _entry_rejection_reason(entry: Dictionary) -> String:
+	var reason := String(entry.get("load_rejection_reason", "")).strip_edges()
+	if reason != "":
+		return reason
+	if bool(entry.get("canonical_rejected", false)):
+		return "INVALID: stored data rejected."
+	return ""
+
+
+func _nearest_dictionary_index(entries: Array, preferred_index: int) -> int:
+	if entries.is_empty():
+		return -1
+	var safe_index := clampi(preferred_index, 0, entries.size() - 1)
+	if entries[safe_index] is Dictionary:
+		return safe_index
+	for offset in range(1, entries.size()):
+		var lower_index := safe_index - offset
+		if lower_index >= 0 and entries[lower_index] is Dictionary:
+			return lower_index
+		var upper_index := safe_index + offset
+		if upper_index < entries.size() and entries[upper_index] is Dictionary:
+			return upper_index
+	return -1
 
 
 func _entry_matches_filter(entry: Dictionary, filter_key: String, illegal_note_fn: Callable) -> bool:

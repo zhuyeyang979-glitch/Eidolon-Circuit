@@ -8,7 +8,7 @@ func _fail(message: String) -> void:
 	quit(1)
 
 
-func _make_unit(boost_momentum: float, recoil_cancel: float):
+func _make_unit(boost_momentum: float, reaction_cancel: float):
 	var unit = FighterScene.new()
 	root.add_child(unit)
 	unit.setup_unit({
@@ -21,7 +21,7 @@ func _make_unit(boost_momentum: float, recoil_cancel: float):
 			"boost_momentum": boost_momentum,
 			"thruster_momentum": boost_momentum * 0.5,
 			"boost_duration": 0.3,
-			"recoil_cancel": recoil_cancel,
+			"reaction_cancel": reaction_cancel,
 			"teamedit_runtime_topology": true,
 			"runtime_topology_segments": [{"part_kind": "torso"}],
 		},
@@ -44,7 +44,7 @@ func _init() -> void:
 		_fail("Boost momentum should provide active reaction cancel budget.")
 		return
 	if strong_cancel <= weak_cancel:
-		_fail("Higher recoil_cancel should increase active reaction cancel budget.")
+		_fail("Higher reaction_cancel should increase active reaction cancel budget.")
 		return
 	print("ATTACK_REACTION_CANCEL_PROBE ok weak=%.2f strong=%.2f" % [weak_cancel, strong_cancel])
 	quit()

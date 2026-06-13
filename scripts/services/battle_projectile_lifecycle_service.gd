@@ -248,6 +248,48 @@ func web_fire_intent(context: Dictionary) -> Dictionary:
 	}
 
 
+func explosion_request_intent(context: Dictionary) -> Dictionary:
+	var event := _dict(context.get("event", {}))
+	var damage := int(event.get("explosion_damage", 0))
+	if damage <= 0:
+		return {"applies": false, "reason": "no_damage"}
+	return {
+		"applies": true,
+		"reason": "ok",
+		"radius": maxf(0.08, float(event.get("explosion_radius", 0.0))),
+		"damage": damage,
+		"damage_type": String(event.get("explosion_damage_type", event.get("damage_type", "blunt"))),
+		"explosion_style": String(event.get("explosion_style", "explosive")),
+	}
+
+
+func explosion_center_position(context: Dictionary) -> Dictionary:
+	var attacker_position := _vec(context.get("attacker_position", Vector2.ZERO))
+	if bool(context.get("primary_target_valid", false)):
+		return {
+			"position": _vec(context.get("primary_target_position", attacker_position)),
+			"source": "primary_target",
+		}
+	return {
+		"position": attacker_position,
+		"source": "attacker",
+	}
+
+
+func explosion_initial_effect_anchor_intent(context: Dictionary) -> Dictionary:
+	if bool(context.get("primary_target_valid", false)):
+		return {"source": "primary_target"}
+	return {"source": "attacker"}
+
+
+func explosion_target_candidate_intent(context: Dictionary) -> Dictionary:
+	if not bool(context.get("target_live", false)):
+		return {"include": false, "reason": "target_gone"}
+	if bool(context.get("is_primary_target", false)):
+		return {"include": false, "reason": "primary_target"}
+	return {"include": true, "reason": "ok"}
+
+
 func explosion_damage_intent(context: Dictionary) -> Dictionary:
 	var radius := maxf(0.08, float(context.get("radius", 0.0)))
 	var target_radius := maxf(0.0, float(context.get("target_radius", 0.0)))
@@ -280,6 +322,27 @@ func explosion_damage_intent(context: Dictionary) -> Dictionary:
 			"projectile_style": style,
 		},
 	}
+
+
+func projectile_hit_block_intent(context: Dictionary) -> Dictionary:
+	if int(context.get("final_damage", 0)) <= 0:
+		return {"blocked": true, "reason": "no_damage"}
+	if bool(context.get("contact_gate_blocked", false)):
+		return {"blocked": true, "reason": "contact_gate_blocked"}
+	return {"blocked": false, "reason": "ok"}
+
+
+func projectile_reflector_candidate_intent(context: Dictionary) -> Dictionary:
+	if bool(context.get("is_self", false)):
+		return {"include": false, "reason": "self"}
+	if not bool(context.get("reflector_live", false)):
+		return {"include": false, "reason": "reflector_gone"}
+	if not bool(context.get("reflect_projectiles", false)):
+		return {"include": false, "reason": "reflection_disabled"}
+	var reflect_types: Array = Array(context.get("reflect_types", []))
+	if not reflect_types.is_empty() and not reflect_types.has(String(context.get("damage_type", "bullet"))):
+		return {"include": false, "reason": "damage_type_rejected"}
+	return {"include": true, "reason": "ok"}
 
 
 func projectile_reflection_intent(context: Dictionary) -> Dictionary:
@@ -330,6 +393,15 @@ func projectile_reflection_intent(context: Dictionary) -> Dictionary:
 	}
 
 
+func target_projectile_shield_reflects(context: Dictionary) -> bool:
+	if not bool(context.get("target_live", false)):
+		return false
+	if float(context.get("shield_timer", 0.0)) <= 0.0:
+		return false
+	var reflect_types: Array = Array(context.get("reflect_types", []))
+	return reflect_types.is_empty() or reflect_types.has(String(context.get("damage_type", "bullet")))
+
+
 func target_shield_reflection_intent(context: Dictionary) -> Dictionary:
 	if not bool(context.get("target_live", false)):
 		return {"action": "none", "reason": "target_gone"}
@@ -351,6 +423,94 @@ func target_shield_reflection_intent(context: Dictionary) -> Dictionary:
 			"direction": reflected_direction,
 		},
 	}
+
+
+func target_shield_reflected_target_intent(context: Dictionary) -> Dictionary:
+	if bool(context.get("is_attacker", false)):
+		return {"include": false, "reason": "attacker"}
+	if bool(context.get("is_source_target", false)):
+		return {"include": false, "reason": "source_target"}
+	if not bool(context.get("reflected_target_live", false)):
+		return {"include": false, "reason": "target_gone"}
+	var reflected_delta := _vec(context.get("reflected_delta", Vector2.ZERO))
+	var distance := absf(reflected_delta.x)
+	var lane_distance := absf(reflected_delta.y)
+	var target_radius := maxf(0.0, float(context.get("target_radius", 0.0)))
+	var range := float(context.get("range", 1.0))
+	var lane_range := float(context.get("lane_range", 0.2))
+	if distance > range + target_radius:
+		return {"include": false, "reason": "out_of_range", "distance": distance, "lane_distance": lane_distance}
+	if lane_distance > lane_range + target_radius * 0.6:
+		return {"include": false, "reason": "out_of_lane", "distance": distance, "lane_distance": lane_distance}
+	var reflected_direction := _normalized_or(_vec(context.get("reflected_direction", Vector2.RIGHT)), Vector2.RIGHT)
+	if reflected_delta.length() > 0.01 and reflected_direction.dot(reflected_delta.normalized()) < 0.24:
+		return {"include": false, "reason": "direction_rejected", "distance": distance, "lane_distance": lane_distance}
+	return {"include": true, "reason": "ok", "distance": distance, "lane_distance": lane_distance}
+
+
+func projectile_source_node_for_event(event: Dictionary, fallback: int = 0) -> int:
+	return int(event.get("source_gun_node", event.get("source_node_index", event.get("muscle_node", fallback))))
+
+
+func projectile_event_has_gun_source(event: Dictionary) -> bool:
+	if not bool(event.get("projectile", false)):
+		return true
+	if not event.has("muscle_node") or not event.has("collision_group"):
+		return false
+	var group_raw = event.get("collision_group", {})
+	if not (group_raw is Dictionary):
+		return false
+	var group: Dictionary = group_raw
+	if not bool(group.get("projectile", false)) and not bool(group.get("projectile_only", false)):
+		return false
+	var material_class := String(group.get("material_class", "")).to_lower()
+	if material_class in ["gun", "missile_launcher", "web_gun"]:
+		return true
+	var shape := String(group.get("shape", "")).to_lower()
+	return shape in ["gun", "rifle", "turret", "heavy_cannon", "mortar", "missile_rack", "web_gun"]
+
+
+func runtime_melee_projectile_clear_intent(_event: Dictionary = {}) -> Dictionary:
+	return {
+		"set": {
+			"projectile": false,
+			"projectile_only": false,
+			"runtime_melee_contact": true,
+		},
+		"erase": ["projectile_style", "projectile_behavior", "travel_path", "projectile_damage_type"],
+	}
+
+
+func runtime_gun_pose_clear_node(payload: Dictionary, fallback: int = -1) -> int:
+	if payload.has("source_gun_node") or payload.has("source_node_index") or payload.has("muscle_node"):
+		return projectile_source_node_for_event(payload, fallback)
+	if payload.get("binding", {}) is Dictionary:
+		var binding: Dictionary = payload.get("binding", {})
+		var target_nodes: Array = Array(binding.get("target_nodes", []))
+		if not target_nodes.is_empty():
+			return int(target_nodes[target_nodes.size() - 1])
+	var direct_nodes: Array = Array(payload.get("target_nodes", []))
+	if not direct_nodes.is_empty():
+		return int(direct_nodes[direct_nodes.size() - 1])
+	return fallback
+
+
+func group_uses_true_bullet(group: Dictionary, behavior: String) -> bool:
+	return bool(group.get("projectile", false)) and behavior == "true_bullet"
+
+
+func true_bullet_event_pending(event: Dictionary, behavior: String) -> bool:
+	if bool(event.get("true_bullet_ready", false)):
+		return false
+	if bool(event.get("non_damage", false)):
+		return false
+	if not bool(event.get("projectile", false)):
+		return false
+	return behavior == "true_bullet"
+
+
+func true_bullet_event_fired(event: Dictionary, behavior: String) -> bool:
+	return bool(event.get("projectile", false)) and bool(event.get("true_bullet_ready", false)) and behavior == "true_bullet"
 
 
 func _dict(value) -> Dictionary:

@@ -4,10 +4,12 @@ const CONTROLLER_PATH := "res://scripts/controllers/unit_editor_catalog_controll
 const MAIN_PATH := "res://scripts/main.gd"
 const UnitEditorCatalogControllerScript := preload("res://scripts/controllers/unit_editor_catalog_controller.gd")
 
+var failed := false
+
 
 func _fail(message: String) -> void:
 	push_error(message)
-	quit(1)
+	failed = true
 
 
 func _init() -> void:
@@ -18,10 +20,12 @@ func _init() -> void:
 		"class_name UnitEditorCatalogController",
 		"raw_cache_key",
 		"entries_cache_key",
-		"page_selection_key",
-		"selected_indices_for_entries",
-		"page_cache_key",
-		"state_for_slot_selection",
+			"page_selection_key",
+			"selected_indices_for_entries",
+			"page_cache_key",
+			"page_state",
+			"entry_state_for_card",
+			"state_for_slot_selection",
 		"state_for_part_group_selection",
 		"state_for_filter_selection",
 		"source_signature_for_slots",
@@ -51,9 +55,11 @@ func _init() -> void:
 		"unit_editor_catalog_controller = UnitEditorCatalogController.new()",
 		"unit_editor_catalog_controller.raw_cache_key",
 		"unit_editor_catalog_controller.entries_cache_key",
-		"unit_editor_catalog_controller.page_selection_key",
-		"unit_editor_catalog_controller.page_cache_key",
-		"unit_editor_catalog_controller.state_for_slot_selection",
+			"unit_editor_catalog_controller.page_selection_key",
+			"unit_editor_catalog_controller.page_cache_key",
+			"unit_editor_catalog_controller.page_state",
+			"unit_editor_catalog_controller.entry_state_for_card",
+			"unit_editor_catalog_controller.state_for_slot_selection",
 		"unit_editor_catalog_controller.state_for_part_group_selection",
 		"unit_editor_catalog_controller.state_for_filter_selection",
 		"unit_editor_catalog_controller.source_signature_for_slots",
@@ -106,6 +112,40 @@ func _init() -> void:
 	if page_key != "%s|page:3|size:12|lang:zh|sel:%s" % [entries_key, selection_key]:
 		_fail("page_cache_key returned unexpected key: %s" % page_key)
 	var build_slots := ["special", "limb_muscle", "muscle", "booster", "engine", "cooling", "module"]
+	if controller.has_method("page_state"):
+		var overflow_page_state: Dictionary = controller.page_state(5, 13, 6)
+		if int(overflow_page_state.get("page", -1)) != 2 or int(overflow_page_state.get("max_page", -1)) != 2 or int(overflow_page_state.get("start_index", -1)) != 12 or int(overflow_page_state.get("end_index", -1)) != 13:
+			_fail("page_state should clamp overflowing pages and preserve visible range: %s" % str(overflow_page_state))
+		var empty_page_state: Dictionary = controller.page_state(3, 0, 0)
+		if int(empty_page_state.get("page", -1)) != 0 or int(empty_page_state.get("max_page", -1)) != 0 or int(empty_page_state.get("page_size", -1)) != 1 or int(empty_page_state.get("start_index", -1)) != 0 or int(empty_page_state.get("end_index", -1)) != 0:
+			_fail("page_state should normalize empty catalogs and zero page size: %s" % str(empty_page_state))
+		var negative_page_state: Dictionary = controller.page_state(-4, 2, 8)
+		if int(negative_page_state.get("page", -1)) != 0 or int(negative_page_state.get("end_index", -1)) != 2:
+			_fail("page_state should clamp negative pages to the first page: %s" % str(negative_page_state))
+	else:
+		_fail("UnitEditorCatalogController missing page_state API.")
+	if controller.has_method("entry_state_for_card"):
+		var card_entries := [
+			{"slot": "muscle", "index": 5, "display_part": {"stable_key": "m5"}},
+			{"slot": "module", "index": 2, "display_part": {"stable_key": "mod2"}},
+			{"slot": "engine", "index": 1, "part": {"stable_key": "eng1"}},
+		]
+		var first_page_card: Dictionary = controller.entry_state_for_card(1, 0, 2, card_entries, "muscle")
+		if not bool(first_page_card.get("valid", false)) or int(first_page_card.get("absolute_index", -1)) != 1 or String(first_page_card.get("slot", "")) != "module" or int(first_page_card.get("part_index", -1)) != 2:
+			_fail("entry_state_for_card should resolve visible page entries: %s" % str(first_page_card))
+		if String(first_page_card.get("hover_key", "")).find("module:2") < 0:
+			_fail("entry_state_for_card should expose a stable hover key: %s" % str(first_page_card))
+		var clamped_page_card: Dictionary = controller.entry_state_for_card(0, 9, 2, card_entries, "muscle")
+		if not bool(clamped_page_card.get("valid", false)) or int(clamped_page_card.get("page", -1)) != 1 or int(clamped_page_card.get("absolute_index", -1)) != 2:
+			_fail("entry_state_for_card should clamp overflowing pages before resolving card entries: %s" % str(clamped_page_card))
+		var empty_card: Dictionary = controller.entry_state_for_card(1, 1, 2, card_entries, "muscle")
+		if bool(empty_card.get("valid", true)) or not bool(empty_card.get("clear_hover", false)) or String(empty_card.get("reason", "")) != "empty_card":
+			_fail("entry_state_for_card should mark empty visible card slots as hover clear: %s" % str(empty_card))
+		var out_of_page_card: Dictionary = controller.entry_state_for_card(2, 0, 2, card_entries, "muscle")
+		if bool(out_of_page_card.get("valid", true)) or String(out_of_page_card.get("reason", "")) != "card_out_of_page":
+			_fail("entry_state_for_card should reject card indices outside the page size: %s" % str(out_of_page_card))
+	else:
+		_fail("UnitEditorCatalogController missing entry_state_for_card API.")
 	var slot_state: Dictionary = controller.state_for_slot_selection(3, build_slots)
 	if int(slot_state.get("slot_index", -1)) != 3 or String(slot_state.get("part_group_mode", "")) != "software_muscle" or String(slot_state.get("part_filter_mode", "")) != "booster":
 		_fail("state_for_slot_selection returned unexpected booster state: %s" % str(slot_state))
@@ -258,6 +298,9 @@ func _init() -> void:
 	controller.clear_catalog_caches(raw_cache, entries_cache, sort_cache, card_cache, page_cache, load_cache)
 	if raw_cache.size() + entries_cache.size() + sort_cache.size() + card_cache.size() + page_cache.size() + load_cache.size() != 0:
 		_fail("clear_catalog_caches should empty all catalog-local caches.")
+	if failed:
+		quit(1)
+		return
 	print("UNIT_EDITOR_CATALOG_CONTROLLER_CONTRACT_PROBE ok")
 	quit(0)
 

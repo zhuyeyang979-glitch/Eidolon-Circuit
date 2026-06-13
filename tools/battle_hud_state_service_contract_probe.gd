@@ -36,6 +36,7 @@ func _init() -> void:
 		"victory_points": "VP",
 		"portal": "PORT",
 		"shift": "SHIFT",
+		"normal": "OK",
 	}
 	var unit_state := {
 		"live": true,
@@ -57,10 +58,38 @@ func _init() -> void:
 	if not status.contains("HERO HP 7/10") or not status.contains("HEAT 34%") or not status.contains("ACTIVE"):
 		_fail("unit_status_text mismatch: %s" % status)
 		return
+	var clamped_status := service.unit_status_text({
+		"live": true,
+		"health": -5,
+		"max_health": 10,
+		"combat_state": "",
+		"electronic_armor_hp": -2.0,
+		"electronic_armor_max": 4.0,
+		"uses_heat": true,
+		"heat_ratio": 1.45,
+	}, "HERO", terms, "HP")
+	if not clamped_status.contains("HERO HP 0/10") or not clamped_status.contains("EA0/4") or not clamped_status.contains("HEAT 100%") or not clamped_status.ends_with("OK"):
+		_fail("unit_status_text should clamp display values and use normal fallback: %s" % clamped_status)
+		return
 	var role_state := {"role_key": "hero", "role_name": "HERO", "pending": false, "unit": unit_state}
 	var bar_text := service.role_bar_text(role_state, terms)
 	if not bar_text.contains("7/10") or not bar_text.contains("EA2") or not bar_text.contains("SHIFT"):
 		_fail("role_bar_text mismatch: %s" % bar_text)
+		return
+	var clamped_bar_text := service.role_bar_text({
+		"role_key": "hero",
+		"unit": {
+			"live": true,
+			"health": 14,
+			"max_health": 10,
+			"uses_heat": true,
+			"heat_ratio": 1.5,
+			"electronic_armor_hp": -1.0,
+			"electronic_armor_max": 2.0,
+		},
+	}, terms)
+	if clamped_bar_text != "10/10 EA0  HEAT 100%":
+		_fail("role_bar_text should clamp hero HUD values: %s" % clamped_bar_text)
 		return
 	var puppet_text := service.role_bar_text({
 		"role_key": "puppet",
@@ -69,6 +98,14 @@ func _init() -> void:
 	}, terms)
 	if puppet_text != "x2 50/--%":
 		_fail("puppet role bar mismatch: %s" % puppet_text)
+		return
+	var clamped_puppet_text := service.role_bar_text({
+		"role_key": "puppet",
+		"pending": false,
+		"puppet_entries": [{"ratio": 1.5, "temporary": false}, {"ratio": -0.2, "temporary": true}],
+	}, terms)
+	if clamped_puppet_text != "x2 100/--%":
+		_fail("puppet role bar should clamp segment ratios: %s" % clamped_puppet_text)
 		return
 	var ammo_text := service.ammo_display_text({
 		"has_ammo": true,

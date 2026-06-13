@@ -20,16 +20,18 @@ func _init() -> void:
 		"filtered_cache_key",
 		"entry_path",
 		"filter_entries",
-		"absolute_index_for_card",
-		"page_for_focus_path",
-		"selection_state_for_filter",
-		"selection_state_for_card",
-		"hover_state_for_card",
+			"absolute_index_for_card",
+			"page_for_focus_path",
+			"focus_state_for_path",
+			"selection_state_for_filter",
+			"selection_state_for_card",
+			"hover_state_for_card",
 		"selected_entries",
-		"delete_candidates",
-		"delete_request_intent",
-		"toggle_selection_state",
-		"page_action_state",
+			"delete_candidates",
+			"delete_request_intent",
+			"post_delete_selection_state",
+			"toggle_selection_state",
+			"page_action_state",
 	]:
 		if controller_source.find(token) < 0:
 			_fail("SavedUnitsController missing token: %s" % token)
@@ -42,18 +44,19 @@ func _init() -> void:
 	for token in [
 		"const SavedUnitsController = preload(\"res://scripts/controllers/saved_units_controller.gd\")",
 		"var saved_units_controller: SavedUnitsController",
-		"saved_units_controller = SavedUnitsController.new()",
-		"saved_units_controller.filtered_cache_key",
-		"saved_units_controller.filter_entries",
-		"saved_units_controller.page_for_focus_path",
-		"saved_units_controller.selection_state_for_filter",
-		"saved_units_controller.selection_state_for_card",
-		"saved_units_controller.hover_state_for_card",
-		"saved_units_controller.selected_entries",
-		"saved_units_controller.delete_candidates",
-		"saved_units_controller.delete_request_intent",
-		"saved_units_controller.toggle_selection_state",
-		"saved_units_controller.page_action_state",
+			"saved_units_controller = SavedUnitsController.new()",
+			"saved_units_controller.filtered_cache_key",
+			"saved_units_controller.filter_entries",
+			"saved_units_controller.focus_state_for_path",
+			"saved_units_controller.selection_state_for_filter",
+			"saved_units_controller.selection_state_for_card",
+			"saved_units_controller.hover_state_for_card",
+			"saved_units_controller.selected_entries",
+			"saved_units_controller.delete_candidates",
+			"saved_units_controller.delete_request_intent",
+			"saved_units_controller.post_delete_selection_state",
+			"saved_units_controller.toggle_selection_state",
+			"saved_units_controller.page_action_state",
 		"_apply_saved_unit_selection_state",
 	]:
 		if main_source.find(token) < 0:
@@ -85,6 +88,20 @@ func _init() -> void:
 	var missing_state: Dictionary = controller.page_for_focus_path(entries, "missing.json", 2)
 	if bool(missing_state.get("found", true)) or int(missing_state.get("selected_index", 0)) != -1:
 		_fail("page_for_focus_path should no-op for missing paths.")
+	var rejected_focus: Dictionary = controller.focus_state_for_path(entries, "unit-d.json", 2, 7)
+	if not bool(rejected_focus.get("found", false)) or not bool(rejected_focus.get("rejected", false)) or int(rejected_focus.get("saved_unit_selected_index", -1)) != 3:
+		_fail("focus_state_for_path should select rejected focused entries: %s" % str(rejected_focus))
+	if int(rejected_focus.get("saved_unit_page", -1)) != 1 or String(rejected_focus.get("saved_unit_detail_path", "")) != "unit-d.json":
+		_fail("focus_state_for_path should keep rejected detail visible on the correct page: %s" % str(rejected_focus))
+	if String(rejected_focus.get("focus_notice_key", "")) != "focus_rejected" or String(rejected_focus.get("focus_notice_reason", "")) == "":
+		_fail("focus_state_for_path should preserve rejected focus reasons: %s" % str(rejected_focus))
+	var missing_focus: Dictionary = controller.focus_state_for_path(entries, "missing.json", 2, 7)
+	if bool(missing_focus.get("found", true)) or not bool(missing_focus.get("missing", false)):
+		_fail("focus_state_for_path should flag missing focused paths: %s" % str(missing_focus))
+	if int(missing_focus.get("saved_unit_page", -1)) != 2 or int(missing_focus.get("saved_unit_selected_index", 0)) != -1:
+		_fail("focus_state_for_path should clamp the current page and clear missing selection: %s" % str(missing_focus))
+	if String(missing_focus.get("saved_unit_hovered_path", "x")) != "" or String(missing_focus.get("saved_unit_detail_path", "x")) != "":
+		_fail("focus_state_for_path should clear stale hover/detail for missing focus: %s" % str(missing_focus))
 	var filter_state: Dictionary = controller.selection_state_for_filter("invalid")
 	if String(filter_state.get("saved_unit_filter", "")) != "invalid" or int(filter_state.get("saved_unit_page", -1)) != 0 or int(filter_state.get("saved_unit_selected_index", 0)) != -1:
 		_fail("selection_state_for_filter should reset page and selected state.")
@@ -120,6 +137,23 @@ func _init() -> void:
 	])
 	if not bool(delete_intent.get("valid", false)) or Array(delete_intent.get("pending_delete_paths", [])).size() != 5 or String(delete_intent.get("summary", "")) != "A, B, C, D...":
 		_fail("delete_request_intent should dedupe paths and summarize names: %s" % str(delete_intent))
+	var delete_repair: Dictionary = controller.post_delete_selection_state([
+		entries[0],
+		entries[2],
+		entries[3],
+	], ["unit-b.json"], 1, 0, 2)
+	if int(delete_repair.get("saved_unit_selected_index", -1)) != 1 or String(delete_repair.get("saved_unit_hovered_path", "")) != "unit-c.json":
+		_fail("post_delete_selection_state should repair selection to the next neighbor: %s" % str(delete_repair))
+	var delete_last_repair: Dictionary = controller.post_delete_selection_state([
+		entries[0],
+		entries[1],
+		entries[2],
+	], ["unit-d.json"], 3, 1, 2)
+	if int(delete_last_repair.get("saved_unit_selected_index", -1)) != 2 or int(delete_last_repair.get("saved_unit_page", -1)) != 1:
+		_fail("post_delete_selection_state should clamp deleted-last selection onto the last remaining page: %s" % str(delete_last_repair))
+	var delete_empty_repair: Dictionary = controller.post_delete_selection_state([], ["unit-a.json"], 0, 0, 2)
+	if int(delete_empty_repair.get("saved_unit_selected_index", 0)) != -1 or String(delete_empty_repair.get("saved_unit_detail_path", "x")) != "":
+		_fail("post_delete_selection_state should clear selection when no entries remain: %s" % str(delete_empty_repair))
 	var toggle_state: Dictionary = controller.toggle_selection_state({"path": "unit-a.json", "unit_name": "A"}, ["unit-b.json"])
 	if not bool(toggle_state.get("valid", false)) or Array(toggle_state.get("saved_unit_selected_paths", [])) != ["unit-b.json", "unit-a.json"] or String(toggle_state.get("saved_unit_detail_path", "x")) != "":
 		_fail("toggle_selection_state should add unselected paths and clear detail.")
