@@ -56,6 +56,8 @@ const TrainingMode = preload("res://scripts/modes/training_mode.gd")
 const TeamEditController = preload("res://scripts/controllers/team_edit_controller.gd")
 const UnitEditorCatalogController = preload("res://scripts/controllers/unit_editor_catalog_controller.gd")
 const UnitEditorBoardController = preload("res://scripts/controllers/unit_editor_board_controller.gd")
+const UnitEditorAssemblyGuideService = preload("res://scripts/services/unit_editor_assembly_guide_service.gd")
+const UnitEditorAutoConnectionService = preload("res://scripts/services/unit_editor_auto_connection_service.gd")
 const BattleController = preload("res://scripts/controllers/battle_controller.gd")
 const SavedUnitsController = preload("res://scripts/controllers/saved_units_controller.gd")
 const SettingsController = preload("res://scripts/controllers/settings_controller.gd")
@@ -8803,6 +8805,8 @@ var editor_primary_color_picker: ColorPickerButton
 var editor_accent_color_picker: ColorPickerButton
 var editor_shop_hint_label: Label
 var editor_shop_pending_label: Label
+var editor_assembly_guide_label: Label
+var editor_assembly_guide_step_index := 0
 var editor_color_picker_sync := false
 var editor_panel_mode := "parts"
 var editor_load_mode := "team"
@@ -9016,6 +9020,16 @@ var team_edit_controller: TeamEditController
 var team_edit_mode_owner: TeamEditMode
 var unit_editor_catalog_controller: UnitEditorCatalogController
 var unit_editor_board_controller: UnitEditorBoardController
+var unit_editor_assembly_guide_service: UnitEditorAssemblyGuideService
+var unit_editor_auto_connection_service: UnitEditorAutoConnectionService
+var editor_connection_evaluation := {
+	"state": "stale",
+	"note": "",
+	"topology_signature": "",
+	"repairable_nodes": [],
+	"blocked_nodes": [],
+}
+var editor_connection_last_plan := {}
 var editor_board_controller_missing_warned := false
 var battle_controller: BattleController
 var battle_mode_owner: BattleMode
@@ -9318,6 +9332,8 @@ func _initialize_hot_path_state_layer() -> void:
 	unit_editor_catalog_controller = UnitEditorCatalogController.new()
 	unit_editor_catalog_controller.bind(hot_path_profiler)
 	unit_editor_board_controller = UnitEditorBoardController.new()
+	unit_editor_assembly_guide_service = UnitEditorAssemblyGuideService.new()
+	unit_editor_auto_connection_service = UnitEditorAutoConnectionService.new()
 	battle_controller = BattleController.new()
 	battle_controller.bind(self, game_state_store, dirty_graph, derived_state_cache, hot_path_profiler, gpu_geometry_service)
 	battle_mode_owner = BattleMode.new()
@@ -24593,6 +24609,7 @@ func _finish_rigid_topology_drag(unit_bp: Dictionary, success_message: String, r
 			editor_board_hint_label.text = success_message
 		_refresh_editor_visual_views_fast_drag(changed_nodes)
 		_schedule_editor_stats_idle_refresh("drag.finish_light")
+		_mark_editor_connection_evaluation_stale("drag.finish")
 		mark_editor_dirty(EDITOR_DIRTY_ACTION_BUTTONS, "drag.finish_light")
 		flush_editor_dirty(600)
 		if hot_path_profiler != null:
@@ -24610,6 +24627,7 @@ func _finish_rigid_topology_drag(unit_bp: Dictionary, success_message: String, r
 	else:
 		if editor_board_hint_label != null:
 			editor_board_hint_label.text = success_message
+	_mark_editor_connection_evaluation_stale("drag.finish")
 	_mark_editor_board_model_dirty("drag.finish")
 	if hot_path_profiler != null:
 		hot_path_profiler.scope_end("finish_drag")
@@ -25610,6 +25628,7 @@ func _unlink_topology_edge_at_index(unit_bp: Dictionary, edge_index: int) -> boo
 	old_edges.remove_at(edge_index)
 	topology["edges"] = old_edges
 	unit_bp["custom_topology"] = topology
+	_mark_editor_connection_evaluation_stale("board.unlink_edge")
 	var focus := -1
 	if a >= 0 and a < nodes.size() and _topology_node_slot(nodes[a]) == "joint":
 		focus = a
@@ -25687,6 +25706,7 @@ func _unlink_joint_edges(unit_bp: Dictionary, joint_index: int, preferred_neighb
 		removed_count += 1
 	topology["edges"] = old_edges
 	unit_bp["custom_topology"] = topology
+	_mark_editor_connection_evaluation_stale("board.unlink_joint")
 	editor_topology_node_index = joint_index
 	editor_selected_topology_nodes = [joint_index]
 	editor_dragging_node_index = -1
@@ -25789,6 +25809,7 @@ func _finalize_topology_link_success(unit_bp: Dictionary, child_index: int, pare
 	_clear_cached_board_socket_candidate()
 	_refresh_editor_visual_views_fast_drag(changed)
 	_schedule_editor_stats_idle_refresh(reason)
+	_mark_editor_connection_evaluation_stale(reason)
 	mark_editor_dirty(EDITOR_DIRTY_ACTION_BUTTONS | EDITOR_DIRTY_BOARD_UI, reason)
 	flush_editor_dirty(600)
 
@@ -26170,6 +26191,49 @@ func _apply_editor_slot_catalog_defaults(role_key: String, unit_bp: Dictionary, 
 	editor_weapon_filter_subtype = "all"
 
 
+func _sync_editor_assembly_guide_to_catalog() -> void:
+	if unit_editor_assembly_guide_service == null:
+		return
+	var role_key: String = ROLE_ORDER[editor_role_index]
+	editor_assembly_guide_step_index = unit_editor_assembly_guide_service.step_index_for_catalog_state(
+		role_key,
+		editor_part_group_mode,
+		editor_part_filter_mode,
+		editor_assembly_guide_step_index
+	)
+
+
+func _select_editor_assembly_guide_step(step_index: int, show_instruction: bool = true) -> void:
+	if unit_editor_assembly_guide_service == null:
+		return
+	var role_key: String = ROLE_ORDER[editor_role_index]
+	var requested_index := unit_editor_assembly_guide_service.clamp_step_index(role_key, step_index)
+	var current_model: Dictionary = unit_editor_assembly_guide_service.step_model(role_key, editor_assembly_guide_step_index, _ui_is_zh())
+	if String(current_model.get("key", "")) == "connection" and requested_index > editor_assembly_guide_step_index and not _editor_connection_evaluation_passed():
+		if editor_board_hint_label != null:
+			editor_board_hint_label.text = "请先运行自动连接并通过连接评估，再进入下一步。" if _ui_is_zh() else "Run Auto Connect and pass Evaluate Connection before the next step."
+		mark_editor_dirty(EDITOR_DIRTY_ACTION_BUTTONS | EDITOR_DIRTY_BOARD_UI, "guide.connection_gate")
+		flush_editor_dirty(600)
+		return
+	editor_assembly_guide_step_index = requested_index
+	var state: Dictionary = unit_editor_assembly_guide_service.catalog_state_for_step(role_key, editor_assembly_guide_step_index, BUILD_SLOTS)
+	if not bool(state.get("valid", false)):
+		return
+	editor_panel_mode = "parts"
+	editor_sort_menu_open = false
+	if String(state.get("action_key", "")) == "auto_connect":
+		_set_editor_board_tool("layout")
+	else:
+		_apply_editor_catalog_selection_state(state)
+		editor_catalog_page = 0
+		_invalidate_editor_catalog_cache()
+	_clear_editor_hover_card()
+	_update_editor_ui()
+	if show_instruction and editor_summary_label != null:
+		var model: Dictionary = unit_editor_assembly_guide_service.step_model(role_key, editor_assembly_guide_step_index, _ui_is_zh())
+		editor_summary_label.text = "%s\n%s" % [String(model.get("instruction", "")), String(model.get("custom_order_note", ""))]
+
+
 func _select_editor_slot(slot_index: int) -> void:
 	if unit_editor_catalog_controller != null:
 		var state := unit_editor_catalog_controller.state_for_slot_selection(slot_index, BUILD_SLOTS)
@@ -26183,6 +26247,7 @@ func _select_editor_slot(slot_index: int) -> void:
 	_apply_editor_slot_catalog_defaults(role_key, unit_bp, String(BUILD_SLOTS[editor_slot_index]))
 	editor_catalog_page = 0
 	_invalidate_editor_catalog_cache()
+	_sync_editor_assembly_guide_to_catalog()
 	_clear_editor_hover_card()
 	_update_editor_ui()
 
@@ -26216,6 +26281,7 @@ func _select_editor_part_group(group_key: String) -> void:
 	editor_sort_menu_open = false
 	_invalidate_editor_catalog_cache()
 	editor_catalog_page = 0
+	_sync_editor_assembly_guide_to_catalog()
 	_clear_editor_hover_card()
 	_update_editor_ui()
 
@@ -26244,6 +26310,7 @@ func _select_editor_part_filter(filter_index: int) -> void:
 			editor_slot_index = 0
 	editor_catalog_page = 0
 	_invalidate_editor_catalog_cache()
+	_sync_editor_assembly_guide_to_catalog()
 	_clear_editor_hover_card()
 	_update_editor_ui()
 
@@ -28164,6 +28231,12 @@ func _editor_action(action_key: String) -> void:
 				editor_catalog_buttons_revision_key = ""
 				mark_editor_dirty(EDITOR_DIRTY_CATALOG | EDITOR_DIRTY_ACTION_BUTTONS, "catalog.next_page")
 				flush_editor_dirty(1200)
+		"assembly_guide_prev":
+			_select_editor_assembly_guide_step(editor_assembly_guide_step_index - 1)
+		"assembly_guide_apply":
+			_select_editor_assembly_guide_step(editor_assembly_guide_step_index)
+		"assembly_guide_next":
+			_select_editor_assembly_guide_step(editor_assembly_guide_step_index + 1)
 		"toggle_templates":
 			editor_template_menu_open = not editor_template_menu_open
 			_update_editor_ui()
@@ -28190,6 +28263,12 @@ func _editor_action(action_key: String) -> void:
 			_add_topology_node()
 		"link_node":
 			_link_topology_node()
+		"auto_connect":
+			_auto_connect_editor_topology()
+		"evaluate_connection":
+			_evaluate_editor_connection()
+		"restore_suggested_connection":
+			_restore_suggested_editor_connection()
 		"toggle_barrier_grid":
 			editor_barrier_grid_guides_enabled = not editor_barrier_grid_guides_enabled
 			_mark_editor_board_overlay_dirty("barrier.grid_guides")
@@ -28252,6 +28331,7 @@ func _clear_editor_canvas() -> void:
 		unit_bp.erase("groups")
 		unit_bp["archetype"] = "custom"
 		unit_bp["custom_topology"] = _blank_free_canvas_topology()
+		_mark_editor_connection_evaluation_stale("clear_canvas")
 	_cancel_editor_pose_drag(false)
 	editor_topology_node_index = 0
 	editor_selected_barrier_cell = -1
@@ -28360,6 +28440,7 @@ func _delete_selected_canvas_part() -> void:
 	topology["edges"] = edges
 	unit_bp["custom_topology"] = topology
 	unit_bp["blank_canvas"] = nodes.is_empty()
+	_mark_editor_connection_evaluation_stale("board.delete_node")
 	editor_topology_node_index = clampi(removed_index, 0, maxi(0, nodes.size() - 1))
 	editor_selected_topology_nodes = []
 	if editor_open_torso_node_index == removed_index or nodes.is_empty():
@@ -28717,6 +28798,7 @@ func _cut_selected_topology_nodes() -> bool:
 	_record_editor_undo_state("剪切拓扑片段" if _ui_is_zh() else "cut topology fragment")
 	if not _delete_topology_nodes_from_unit(unit_bp, selected_indices):
 		return false
+	_mark_editor_connection_evaluation_stale("cut.nodes")
 	editor_topology_node_index = clampi(int(selected_indices[0]), 0, maxi(0, Array(Dictionary(unit_bp.get("custom_topology", {})).get("nodes", [])).size() - 1))
 	editor_selected_topology_nodes = []
 	editor_open_torso_node_index = -1
@@ -28829,6 +28911,7 @@ func _paste_topology_clipboard() -> bool:
 	topology["edge_snap_version"] = TOPOLOGY_SNAP_VERSION
 	unit_bp["custom_topology"] = topology
 	unit_bp["blank_canvas"] = nodes.is_empty()
+	_mark_editor_connection_evaluation_stale("paste.nodes")
 	_append_clipboard_payloads_and_bindings(unit_bp, clip_to_new)
 	_topology_update_local_pose_fields(role_key, unit_bp)
 	_store_entry_pose_from_topology(unit_bp)
@@ -28940,6 +29023,206 @@ func _node_position_for_index(index: int) -> Vector2:
 	return _clamp_topology_position(Vector2(0.5 + cos(angle) * radius, 0.5 + sin(angle) * radius))
 
 
+func _editor_connection_topology_signature(unit_bp: Dictionary) -> String:
+	if unit_editor_auto_connection_service == null or not unit_bp.has("custom_topology"):
+		return ""
+	var topology: Dictionary = unit_bp.get("custom_topology", {})
+	return unit_editor_auto_connection_service.topology_signature(Array(topology.get("nodes", [])), Array(topology.get("edges", [])))
+
+
+func _mark_editor_connection_evaluation_stale(reason: String = "connection.changed") -> void:
+	editor_connection_evaluation["state"] = "stale"
+	editor_connection_evaluation["note"] = "连接已改动，请重新评估。" if _ui_is_zh() else "Connection changed; evaluate again."
+	editor_connection_evaluation["topology_signature"] = ""
+	editor_connection_evaluation["reason"] = reason
+	mark_editor_dirty(EDITOR_DIRTY_ACTION_BUTTONS | EDITOR_DIRTY_BOARD_UI, reason)
+
+
+func _topology_socket_occupied_count(edges: Array, node_index: int, socket_id: String) -> int:
+	var count := 0
+	var canonical := _topology_canonical_socket_id(socket_id)
+	for edge in edges:
+		if not _topology_edge_has_node(edge, node_index):
+			continue
+		if _topology_canonical_socket_id(_topology_edge_socket_for_node(edge, node_index)) == canonical:
+			count += 1
+	return count
+
+
+func _editor_connection_node_fact(role_key: String, unit_bp: Dictionary, nodes: Array, edges: Array, node_index: int) -> Dictionary:
+	var node: Dictionary = nodes[node_index]
+	var slot_key := _topology_node_slot(node)
+	var part := _topology_node_part(role_key, node, unit_bp)
+	var sockets: Array = []
+	for socket_id in _topology_socket_ids_for_node(role_key, node, unit_bp):
+		var canonical_id := _topology_canonical_socket_id(String(socket_id))
+		sockets.append({
+			"id": canonical_id,
+			"pos": _topology_socket_position_by_id(role_key, unit_bp, nodes, edges, node_index, canonical_id, -1),
+			"occupied": _topology_socket_occupied_count(edges, node_index, canonical_id) > 0,
+		})
+	return {
+		"index": node_index,
+		"slot_key": slot_key,
+		"pos": _topology_node_position(node),
+		"is_component": _topology_node_is_component(node),
+		"is_torso": _topology_node_is_torso(role_key, node, unit_bp),
+		"is_terminal_weapon": _part_counts_as_terminal_weapon(part, slot_key) or bool(part.get("terminal_weapon", false)) or int(part.get("connection_ends", 2)) <= 1,
+		"size_rank": _size_tier_rank(_part_size_tier_label(part, slot_key)),
+		"edge_count": _topology_node_edge_count(edges, node_index),
+		"sockets": sockets,
+	}
+
+
+func _editor_connection_context(unit_bp: Dictionary, role_key: String) -> Dictionary:
+	var topology: Dictionary = unit_bp.get("custom_topology", {})
+	var nodes: Array = Array(topology.get("nodes", []))
+	var edges: Array = Array(topology.get("edges", []))
+	var facts: Array = []
+	var unconnected_nodes: Array = []
+	var torso_count := 0
+	for i in range(nodes.size()):
+		if not (nodes[i] is Dictionary) or not _topology_node_is_component(nodes[i]):
+			continue
+		var fact := _editor_connection_node_fact(role_key, unit_bp, nodes, edges, i)
+		facts.append(fact)
+		if bool(fact.get("is_torso", false)):
+			torso_count += 1
+		elif int(fact.get("edge_count", 0)) <= 0:
+			unconnected_nodes.append(i)
+	var plan := unit_editor_auto_connection_service.plan_auto_connections({
+		"node_facts": facts,
+		"edges": edges,
+	})
+	var repairable_nodes: Array = []
+	if not Array(plan.get("intents", [])).is_empty():
+		repairable_nodes = unconnected_nodes.duplicate()
+	else:
+		repairable_nodes = Array(plan.get("unresolved_nodes", [])).duplicate()
+	return {
+		"node_facts": facts,
+		"edges": edges,
+		"nodes": nodes,
+		"topology_signature": _editor_connection_topology_signature(unit_bp),
+		"last_signature": String(editor_connection_evaluation.get("topology_signature", "")),
+		"topology_note": _topology_rule_note(unit_bp, role_key, {}),
+		"node_count": facts.size(),
+		"edge_count": edges.size(),
+		"torso_count": torso_count,
+		"unconnected_nodes": unconnected_nodes,
+		"repairable_nodes": repairable_nodes,
+		"plan": plan,
+	}
+
+
+func _remove_auto_connection_conflict_edges(edges: Array, child: int, child_socket: String) -> Array:
+	var result: Array = []
+	var canonical_child_socket := _topology_canonical_socket_id(child_socket)
+	for edge in edges:
+		if _topology_edge_has_node(edge, child) and _topology_canonical_socket_id(_topology_edge_socket_for_node(edge, child)) == canonical_child_socket:
+			continue
+		result.append(edge)
+	return result
+
+
+func _apply_editor_auto_connection_plan(replace_conflicts: bool, reason: String) -> Dictionary:
+	var role_key: String = ROLE_ORDER[editor_role_index]
+	var unit_bp: Dictionary = _editor_current_blueprint()
+	if unit_editor_auto_connection_service == null or not _role_uses_body_board(role_key) or not unit_bp.has("custom_topology"):
+		return {"applied": 0, "unresolved_nodes": []}
+	var context := _editor_connection_context(unit_bp, role_key)
+	var plan: Dictionary = context.get("plan", {})
+	var intents: Array = Array(plan.get("intents", []))
+	editor_connection_last_plan = plan
+	if intents.is_empty():
+		return {"applied": 0, "unresolved_nodes": Array(plan.get("unresolved_nodes", []))}
+	_record_editor_undo_state("自动连接" if _ui_is_zh() else "auto connect")
+	var topology: Dictionary = unit_bp.get("custom_topology", {})
+	var nodes: Array = Array(topology.get("nodes", [])).duplicate(true)
+	var edges: Array = Array(topology.get("edges", [])).duplicate(true)
+	var changed_nodes: Array = []
+	var applied := 0
+	for raw_intent in intents:
+		if not (raw_intent is Dictionary):
+			continue
+		var intent: Dictionary = raw_intent
+		var child := int(intent.get("child", -1))
+		var parent := int(intent.get("parent", -1))
+		var child_socket := String(intent.get("child_socket", ""))
+		var parent_socket := String(intent.get("parent_socket", ""))
+		if child < 0 or parent < 0 or child >= nodes.size() or parent >= nodes.size():
+			continue
+		if replace_conflicts:
+			edges = _remove_auto_connection_conflict_edges(edges, child, child_socket)
+		if _topology_edge_exists(edges, child, parent):
+			continue
+		var connect_result := _topology_try_connect_sockets(role_key, unit_bp, nodes, edges, child, child_socket, parent, parent_socket)
+		if not bool(connect_result.get("ok", false)):
+			continue
+		var target_pos := _topology_socket_position_by_id(role_key, unit_bp, nodes, edges, parent, parent_socket, child)
+		var child_node: Dictionary = nodes[child]
+		child_node = _topology_apply_socket_alignment(role_key, unit_bp, nodes, edges, child, child_socket, target_pos, _topology_node_position(child_node))
+		nodes[child] = child_node
+		for index in [child, parent]:
+			if not changed_nodes.has(index):
+				changed_nodes.append(index)
+		applied += 1
+	topology["nodes"] = nodes
+	topology["edges"] = edges
+	unit_bp["custom_topology"] = topology
+	_topology_update_local_pose_fields(role_key, unit_bp)
+	editor_connection_last_plan = plan
+	if applied > 0:
+		_mark_editor_connection_evaluation_stale(reason)
+		_clear_cached_board_socket_candidate()
+		_refresh_editor_visual_views_fast_drag(changed_nodes)
+		_schedule_editor_stats_idle_refresh(reason)
+		_play_sfx_wave("clack", 720.0, 0.055, -17.0)
+	return {"applied": applied, "unresolved_nodes": Array(plan.get("unresolved_nodes", []))}
+
+
+func _auto_connect_editor_topology() -> void:
+	var result := _apply_editor_auto_connection_plan(false, "board.auto_connect")
+	var applied := int(result.get("applied", 0))
+	if editor_board_hint_label != null:
+		if applied > 0:
+			editor_board_hint_label.text = "自动连接已应用 %d 条建议；请评估连接。" % applied if _ui_is_zh() else "Auto Connect applied %d suggestion(s); evaluate connection." % applied
+		else:
+			editor_board_hint_label.text = "没有可自动连接的安全建议；请手动调整后评估。" if _ui_is_zh() else "No safe auto-connection suggestion; adjust manually and evaluate."
+	mark_editor_dirty(EDITOR_DIRTY_ACTION_BUTTONS | EDITOR_DIRTY_BOARD_UI, "board.auto_connect")
+	flush_editor_dirty(600)
+
+
+func _evaluate_editor_connection() -> void:
+	var role_key: String = ROLE_ORDER[editor_role_index]
+	var unit_bp: Dictionary = _editor_current_blueprint()
+	if unit_editor_auto_connection_service == null or not _role_uses_body_board(role_key) or not unit_bp.has("custom_topology"):
+		return
+	var context := _editor_connection_context(unit_bp, role_key)
+	var evaluation: Dictionary = unit_editor_auto_connection_service.evaluate_connection(context)
+	editor_connection_evaluation = evaluation
+	if editor_board_hint_label != null:
+		editor_board_hint_label.text = String(evaluation.get("note", ""))
+	mark_editor_dirty(EDITOR_DIRTY_ACTION_BUTTONS | EDITOR_DIRTY_BOARD_UI, "board.evaluate_connection")
+	flush_editor_dirty(600)
+
+
+func _restore_suggested_editor_connection() -> void:
+	var result := _apply_editor_auto_connection_plan(true, "board.restore_suggested_connection")
+	var applied := int(result.get("applied", 0))
+	if editor_board_hint_label != null:
+		editor_board_hint_label.text = "已恢复建议连接 %d 条；请重新评估。" % applied if _ui_is_zh() else "Restored %d suggested link(s); evaluate again." % applied
+	mark_editor_dirty(EDITOR_DIRTY_ACTION_BUTTONS | EDITOR_DIRTY_BOARD_UI, "board.restore_suggested_connection")
+	flush_editor_dirty(600)
+
+
+func _editor_connection_evaluation_passed() -> bool:
+	return (
+		String(editor_connection_evaluation.get("state", "")) == "passed"
+		and String(editor_connection_evaluation.get("topology_signature", "")) == _editor_connection_topology_signature(_editor_current_blueprint())
+	)
+
+
 func _add_topology_node_at(local_position: Vector2) -> int:
 	var player_id := _editor_player()
 	var role_key: String = ROLE_ORDER[editor_role_index]
@@ -29014,6 +29297,7 @@ func _add_topology_node_at(local_position: Vector2) -> int:
 		hot_path_profiler.scope_begin("drop.mark_dirty")
 	ai_team_manual_lock[player_id] = true
 	_mark_editor_board_model_dirty("board.add_node", false)
+	_mark_editor_connection_evaluation_stale("board.add_node")
 	if hot_path_profiler != null:
 		hot_path_profiler.scope_end("drop.mark_dirty")
 	return index
@@ -29730,6 +30014,7 @@ func flush_editor_dirty(budget_usec: int = 0) -> void:
 	if (flags & EDITOR_DIRTY_ACTION_BUTTONS) != 0:
 		if hot_path_profiler != null:
 			hot_path_profiler.scope_begin("teamedit.flush.actions")
+		_refresh_editor_assembly_guide_ui(editor_panel_mode == "parts", role_key)
 		_refresh_editor_module_binding_buttons()
 		if hot_path_profiler != null:
 			hot_path_profiler.scope_end("teamedit.flush.actions")
@@ -50185,6 +50470,23 @@ func _build_editor_ui() -> void:
 		panel_button.pressed.connect(_editor_action.bind("panel_%s" % String(panel_specs[i][0])))
 		root.add_child(panel_button)
 		editor_panel_buttons[String(panel_specs[i][0])] = panel_button
+	editor_assembly_guide_label = _make_label(root, "AssemblyGuideLabel", "", Vector2(936.0, 118.0), Vector2(160.0, 22.0), 11, Color(1.0, 0.88, 0.30, 1.0), HORIZONTAL_ALIGNMENT_LEFT)
+	editor_assembly_guide_label.autowrap_mode = TextServer.AUTOWRAP_OFF
+	var guide_actions := [
+		["assembly_guide_prev", "<", Vector2(1100.0, 118.0), Vector2(24.0, 22.0)],
+		["assembly_guide_apply", "前往", Vector2(1128.0, 118.0), Vector2(48.0, 22.0)],
+		["assembly_guide_next", ">", Vector2(1180.0, 118.0), Vector2(26.0, 22.0)],
+	]
+	for spec in guide_actions:
+		var guide_button := Button.new()
+		guide_button.name = String(spec[0]).capitalize()
+		guide_button.text = String(spec[1])
+		guide_button.position = spec[2]
+		guide_button.size = spec[3]
+		guide_button.focus_mode = Control.FOCUS_NONE
+		guide_button.pressed.connect(_editor_action.bind(String(spec[0])))
+		root.add_child(guide_button)
+		editor_action_buttons[String(spec[0])] = guide_button
 	for i in range(ROLE_ORDER.size()):
 		var role_key: String = ROLE_ORDER[i]
 		var role_button := Button.new()
@@ -50574,6 +50876,9 @@ func _build_editor_ui() -> void:
 		["board_tool_pose", "姿态"],
 		["add_node", "+ 节点"],
 		["link_node", "连接上个"],
+		["auto_connect", "自动连接"],
+		["evaluate_connection", "评估连接"],
+		["restore_suggested_connection", "恢复建议"],
 		["copy_selection", "复制"],
 		["cut_selection", "剪切"],
 		["paste_selection", "粘贴"],
@@ -52087,7 +52392,7 @@ func _update_editor_ui(force_now: bool = false) -> void:
 	if hot_path_profiler != null:
 		hot_path_profiler.scope_begin("teamedit.update_ui")
 	var current_frame := Engine.get_process_frames()
-	var ui_state_signature := "%s|%s|%d|%d|%s|%s|%d|%d|%d|%s|%d|%s" % [
+	var ui_state_signature := "%s|%s|%d|%d|%s|%s|%d|%d|%d|%s|%d|%s|%d|%s|%s" % [
 		editor_panel_mode,
 		editor_load_mode,
 		editor_role_index,
@@ -52100,6 +52405,9 @@ func _update_editor_ui(force_now: bool = false) -> void:
 		editor_board_tool,
 		editor_pending_orientation_node_index,
 		ui_language,
+		editor_assembly_guide_step_index,
+		String(editor_connection_evaluation.get("state", "")),
+		String(editor_connection_evaluation.get("topology_signature", "")),
 	]
 	if not force_now and editor_update_ui_last_frame == current_frame and ui_state_signature == editor_update_ui_last_state_signature:
 		editor_update_ui_deferred_count += 1
@@ -52464,6 +52772,65 @@ func _update_editor_load_card_buttons(role_key: String) -> void:
 		_set_canvas_item_modulate_if_changed(button, Color(0.38, 0.96, 1.0, 1.0) if bool(entry.get("unit_library", false)) else (Color(1.0, 0.86, 0.28, 1.0) if (editor_load_mode == "unit" and entry_index == int(editor_unit_indices.get(entry_role, 0))) else Color(0.84, 0.9, 0.94, 1.0)))
 
 
+func _refresh_editor_assembly_guide_ui(parts_visible: bool, role_key: String) -> void:
+	var show_guide := parts_visible and unit_editor_assembly_guide_service != null
+	if editor_assembly_guide_label != null:
+		_set_canvas_item_visible_if_changed(editor_assembly_guide_label, show_guide)
+	for action_key in ["assembly_guide_prev", "assembly_guide_apply", "assembly_guide_next"]:
+		if editor_action_buttons.has(action_key):
+			var action_button: Button = editor_action_buttons[action_key]
+			_set_canvas_item_visible_if_changed(action_button, show_guide)
+			_set_button_disabled_if_changed(action_button, not show_guide)
+	if not show_guide:
+		return
+	editor_assembly_guide_step_index = unit_editor_assembly_guide_service.clamp_step_index(role_key, editor_assembly_guide_step_index)
+	var model: Dictionary = unit_editor_assembly_guide_service.step_model(role_key, editor_assembly_guide_step_index, _ui_is_zh())
+	if editor_assembly_guide_label != null:
+		_set_control_position_if_changed(editor_assembly_guide_label, Vector2(936.0, 118.0))
+		_set_control_size_if_changed(editor_assembly_guide_label, Vector2(160.0, 22.0))
+		_set_control_text_if_changed(editor_assembly_guide_label, ("推荐 %s" if _ui_is_zh() else "GUIDE %s") % String(model.get("short_label", "")))
+		_set_control_tooltip_if_changed(editor_assembly_guide_label, String(model.get("tooltip_text", "")))
+		_set_canvas_item_modulate_if_changed(editor_assembly_guide_label, Color(1.0, 0.88, 0.30, 1.0))
+	if editor_action_buttons.has("assembly_guide_prev"):
+		var prev_button: Button = editor_action_buttons["assembly_guide_prev"]
+		_set_control_position_if_changed(prev_button, Vector2(1100.0, 118.0))
+		_set_control_size_if_changed(prev_button, Vector2(24.0, 22.0))
+		_set_control_text_if_changed(prev_button, "<")
+		_set_control_tooltip_if_changed(prev_button, "上一推荐步骤" if _ui_is_zh() else "Previous recommended step")
+		_set_button_disabled_if_changed(prev_button, not bool(model.get("can_prev", false)))
+		_set_canvas_item_modulate_if_changed(prev_button, Color(0.84, 0.94, 1.0, 1.0) if bool(model.get("can_prev", false)) else Color(0.54, 0.62, 0.68, 0.7))
+	if editor_action_buttons.has("assembly_guide_apply"):
+		var apply_button: Button = editor_action_buttons["assembly_guide_apply"]
+		_set_control_position_if_changed(apply_button, Vector2(1128.0, 118.0))
+		_set_control_size_if_changed(apply_button, Vector2(48.0, 22.0))
+		_set_control_text_if_changed(apply_button, "前往" if _ui_is_zh() else "GO")
+		_set_control_tooltip_if_changed(apply_button, "跳到当前推荐步骤；不会自动安装零件。" if _ui_is_zh() else "Jump to this step; no parts are installed automatically.")
+		_set_button_disabled_if_changed(apply_button, false)
+		_set_canvas_item_modulate_if_changed(apply_button, Color(1.0, 0.86, 0.28, 1.0))
+	if editor_action_buttons.has("assembly_guide_next"):
+		var next_button: Button = editor_action_buttons["assembly_guide_next"]
+		var connection_gate_active := String(model.get("key", "")) == "connection" and not _editor_connection_evaluation_passed()
+		var can_next := bool(model.get("can_next", false)) and not connection_gate_active
+		_set_control_position_if_changed(next_button, Vector2(1180.0, 118.0))
+		_set_control_size_if_changed(next_button, Vector2(26.0, 22.0))
+		_set_control_text_if_changed(next_button, ">")
+		_set_control_tooltip_if_changed(next_button, ("先通过连接评估" if _ui_is_zh() else "Pass connection evaluation first") if connection_gate_active else ("下一推荐步骤" if _ui_is_zh() else "Next recommended step"))
+		_set_button_disabled_if_changed(next_button, not can_next)
+		_set_canvas_item_modulate_if_changed(next_button, Color(0.84, 0.94, 1.0, 1.0) if can_next else Color(0.54, 0.62, 0.68, 0.7))
+
+
+func _editor_connection_state_color() -> Color:
+	match String(editor_connection_evaluation.get("state", "stale")):
+		"passed":
+			return Color(0.42, 1.0, 0.62, 1.0)
+		"repairable":
+			return Color(1.0, 0.86, 0.28, 1.0)
+		"blocked":
+			return Color(1.0, 0.38, 0.32, 1.0)
+		_:
+			return Color(0.82, 0.9, 1.0, 0.82)
+
+
 func _apply_editor_panel_visibility(role_key: String, unit_bp: Dictionary) -> void:
 	var body_board_enabled := _role_uses_body_board(role_key)
 	var barrier_screen_board := role_key == "barrier" and _barrier_uses_screen_board(unit_bp)
@@ -52493,6 +52860,7 @@ func _apply_editor_panel_visibility(role_key: String, unit_bp: Dictionary) -> vo
 		_set_control_size_if_changed(role_button, Vector2(86.0, 24.0 if parts_visible else 32.0))
 		_set_control_text_if_changed(role_button, ("身份:%s" if _ui_is_zh() else "ROLE:%s") % _role_short(String(role_key_button)))
 		_set_canvas_item_modulate_if_changed(role_button, Color(0.35, 0.95, 1.0, 1.0) if String(role_key_button) == role_key else Color(0.84, 0.9, 0.94, 1.0))
+	_refresh_editor_assembly_guide_ui(parts_visible, role_key)
 	for group_key in editor_part_group_buttons.keys():
 		var group_button: Button = editor_part_group_buttons[group_key]
 		var group_index := EDITOR_PART_GROUP_ORDER.find(String(group_key))
@@ -52555,9 +52923,10 @@ func _apply_editor_panel_visibility(role_key: String, unit_bp: Dictionary) -> vo
 	var unit_action_keys := ["load_unit"]
 	if editor_load_mode == "unit":
 		unit_action_keys.append_array(["duplicate", "delete"])
+	var assembly_guide_action_keys := ["assembly_guide_prev", "assembly_guide_apply", "assembly_guide_next"]
 	var board_primary_action_keys := ["save_canvas", "training_import", "open_saved_units"]
 	var unit_page_action_keys := ["prev_unit", "next_unit"]
-	var canvas_action_keys := ["blank_canvas", "board_tool_layout", "board_tool_pose", "add_node", "link_node", "copy_selection", "cut_selection", "paste_selection", "delete_selected_part", "undo_canvas", "clear_canvas", "toggle_barrier_grid", "board_zoom_out", "board_zoom_in", "board_zoom_reset"]
+	var canvas_action_keys := ["blank_canvas", "board_tool_layout", "board_tool_pose", "add_node", "link_node", "auto_connect", "evaluate_connection", "restore_suggested_connection", "copy_selection", "cut_selection", "paste_selection", "delete_selected_part", "undo_canvas", "clear_canvas", "toggle_barrier_grid", "board_zoom_out", "board_zoom_in", "board_zoom_reset"]
 	var orientation_action_keys := ["set_handedness_left", "set_handedness_right", "flip_handedness"]
 	var orientation_choice_active := custom_board_enabled and _orientation_choice_is_active(unit_bp)
 	var selected_handedness_active := custom_board_enabled and _selected_node_supports_visual_handedness(unit_bp)
@@ -52566,6 +52935,8 @@ func _apply_editor_panel_visibility(role_key: String, unit_bp: Dictionary) -> vo
 	var visible_unit_action_index := 0
 	for action_key in editor_action_buttons.keys():
 		var action_button: Button = editor_action_buttons[action_key]
+		if assembly_guide_action_keys.has(String(action_key)):
+			continue
 		if board_primary_action_keys.has(String(action_key)):
 			_set_canvas_item_visible_if_changed(action_button, true)
 			_set_button_disabled_if_changed(action_button, false)
@@ -52594,7 +52965,7 @@ func _apply_editor_panel_visibility(role_key: String, unit_bp: Dictionary) -> vo
 		elif canvas_action_keys.has(String(action_key)):
 			var canvas_key := String(action_key)
 			var show_canvas_action := true
-			if canvas_key in ["board_tool_layout", "board_tool_pose", "add_node", "link_node", "copy_selection", "cut_selection", "paste_selection"]:
+			if canvas_key in ["board_tool_layout", "board_tool_pose", "add_node", "link_node", "auto_connect", "evaluate_connection", "restore_suggested_connection", "copy_selection", "cut_selection", "paste_selection"]:
 				show_canvas_action = not barrier_screen_board
 			elif canvas_key == "toggle_barrier_grid":
 				show_canvas_action = barrier_screen_board
@@ -52625,6 +52996,18 @@ func _apply_editor_panel_visibility(role_key: String, unit_bp: Dictionary) -> vo
 			elif canvas_key == "board_tool_pose":
 				_set_control_text_if_changed(action_button, "姿态" if _ui_is_zh() else "POSE")
 				_set_canvas_item_modulate_if_changed(action_button, Color(1.0, 0.86, 0.28, 1.0) if editor_board_tool == "pose" else Color(0.78, 0.9, 1.0, 0.82))
+			elif canvas_key == "auto_connect":
+				_set_control_text_if_changed(action_button, "自动连接" if _ui_is_zh() else "AUTO")
+				_set_control_tooltip_if_changed(action_button, "按当前部件位置生成最合理的安全连接。" if _ui_is_zh() else "Create safe suggested links for the current parts.")
+				_set_canvas_item_modulate_if_changed(action_button, Color(0.42, 1.0, 0.82, 1.0))
+			elif canvas_key == "evaluate_connection":
+				_set_control_text_if_changed(action_button, "评估连接" if _ui_is_zh() else "EVAL")
+				_set_control_tooltip_if_changed(action_button, "检查连接是否可以进入入场姿态。" if _ui_is_zh() else "Check whether connection is ready for entry pose.")
+				_set_canvas_item_modulate_if_changed(action_button, _editor_connection_state_color())
+			elif canvas_key == "restore_suggested_connection":
+				_set_control_text_if_changed(action_button, "恢复建议" if _ui_is_zh() else "RESTORE")
+				_set_control_tooltip_if_changed(action_button, "重新应用系统建议的安全连接。" if _ui_is_zh() else "Reapply the system's safe suggested links.")
+				_set_canvas_item_modulate_if_changed(action_button, Color(0.78, 0.9, 1.0, 0.82))
 			elif canvas_key == "toggle_barrier_grid":
 				_set_control_text_if_changed(action_button, "辅助线" if _ui_is_zh() else "GRID")
 				_set_canvas_item_modulate_if_changed(action_button, Color(1.0, 0.86, 0.28, 1.0) if editor_barrier_grid_guides_enabled else Color(0.78, 0.9, 1.0, 0.72))

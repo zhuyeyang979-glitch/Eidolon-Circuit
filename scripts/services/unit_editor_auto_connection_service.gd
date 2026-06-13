@@ -207,25 +207,35 @@ func _candidate_rank(child: Dictionary, child_socket: Dictionary, parent: Dictio
 	var parent_pos := _vector2_value(parent_socket.get("pos", parent.get("pos", Vector2.ZERO)), _vector2_value(parent.get("pos", Vector2.ZERO)))
 	var distance := child_pos.distance_to(parent_pos)
 	var size_delta := absf(float(child.get("size_rank", 2)) - float(parent.get("size_rank", 2)))
+	var parent_socket_id := String(parent_socket.get("id", ""))
+	var parent_is_torso := bool(parent.get("is_torso", false))
+	var child_is_terminal := bool(child.get("is_terminal_weapon", false))
+	var parent_preference := 0
+	if child_is_terminal:
+		parent_preference = 0 if not parent_is_torso and parent_socket_id == PARENT_SOCKET_DISTAL else 1
 	return {
+		"parent_preference": parent_preference,
 		"distance": distance,
 		"size_delta": size_delta,
-		"parent_role": 0 if bool(parent.get("is_torso", false)) else 1,
 		"child_priority": _child_priority(child),
 		"parent_index": int(parent.get("index", -1)),
-		"parent_socket": String(parent_socket.get("id", "")),
+		"parent_socket": parent_socket_id,
 		"child_index": int(child.get("index", -1)),
 	}
 
 
 func _candidate_rank_less(a: Dictionary, b: Dictionary) -> bool:
+	var a_preference := int(a.get("parent_preference", 0))
+	var b_preference := int(b.get("parent_preference", 0))
+	if a_preference != b_preference:
+		return a_preference < b_preference
 	var distance_delta := float(a.get("distance", INF)) - float(b.get("distance", INF))
 	if absf(distance_delta) > 0.0001:
 		return distance_delta < 0.0
 	var size_delta := float(a.get("size_delta", INF)) - float(b.get("size_delta", INF))
 	if absf(size_delta) > 0.0001:
 		return size_delta < 0.0
-	var int_keys := ["parent_role", "child_priority", "parent_index", "child_index"]
+	var int_keys := ["child_priority", "parent_index", "child_index"]
 	for key in int_keys:
 		var a_value := int(a.get(key, 0))
 		var b_value := int(b.get(key, 0))
