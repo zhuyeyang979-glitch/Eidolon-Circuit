@@ -16,7 +16,6 @@ func plan_auto_connections(context: Dictionary) -> Dictionary:
 	var edges := Array(context.get("edges", []))
 	var occupied := _occupied_socket_map(facts, edges)
 	var intents: Array = []
-	var unresolved: Array = []
 	var connected := _initial_connected_nodes(facts, edges)
 	var pending := _pending_child_nodes(facts, connected)
 	var guard := 0
@@ -30,9 +29,7 @@ func plan_auto_connections(context: Dictionary) -> Dictionary:
 		_mark_socket_occupied(occupied, int(best.get("parent", -1)), String(best.get("parent_socket", "")))
 		connected[int(best.get("child", -1))] = true
 		_remove_pending_child(pending, int(best.get("child", -1)))
-	for raw_fact in pending:
-		if raw_fact is Dictionary:
-			unresolved.append(int(Dictionary(raw_fact).get("index", -1)))
+	var unresolved := _unresolved_nodes(facts, connected)
 	return {
 		"intents": intents,
 		"unresolved_nodes": _sorted_ints(unresolved),
@@ -157,9 +154,22 @@ func _initial_connected_nodes(facts: Array, edges: Array) -> Dictionary:
 	return result
 
 
+func _unresolved_nodes(facts: Array, connected: Dictionary) -> Array:
+	var result: Array = []
+	for raw_fact in facts:
+		var fact: Dictionary = raw_fact
+		var index := int(fact.get("index", -1))
+		if bool(fact.get("is_torso", false)):
+			continue
+		if connected.has(index):
+			continue
+		result.append(index)
+	return _sorted_ints(result)
+
+
 func _best_candidate(pending: Array, facts: Array, connected: Dictionary, occupied: Dictionary) -> Dictionary:
 	var best := {}
-	var best_score := INF
+	var best_rank := {}
 	for raw_child in pending:
 		var child: Dictionary = raw_child
 		var child_index := int(child.get("index", -1))
@@ -179,27 +189,49 @@ func _best_candidate(pending: Array, facts: Array, connected: Dictionary, occupi
 					continue
 				if _socket_is_occupied(occupied, parent_index, parent_socket_id):
 					continue
-				var score := _candidate_score(child, child_socket, parent, parent_socket)
-				if score < best_score:
-					best_score = score
+				var rank := _candidate_rank(child, child_socket, parent, parent_socket)
+				if best_rank.is_empty() or _candidate_rank_less(rank, best_rank):
+					best_rank = rank
 					best = {
 						"child": child_index,
 						"child_socket": CHILD_SOCKET,
 						"parent": parent_index,
 						"parent_socket": parent_socket_id,
-						"score": score,
+						"score": float(rank.get("distance", 0.0)),
 					}
 	return best
 
 
-func _candidate_score(child: Dictionary, child_socket: Dictionary, parent: Dictionary, parent_socket: Dictionary) -> float:
+func _candidate_rank(child: Dictionary, child_socket: Dictionary, parent: Dictionary, parent_socket: Dictionary) -> Dictionary:
 	var child_pos := _vector2_value(child_socket.get("pos", child.get("pos", Vector2.ZERO)), _vector2_value(child.get("pos", Vector2.ZERO)))
 	var parent_pos := _vector2_value(parent_socket.get("pos", parent.get("pos", Vector2.ZERO)), _vector2_value(parent.get("pos", Vector2.ZERO)))
 	var distance := child_pos.distance_to(parent_pos)
 	var size_delta := absf(float(child.get("size_rank", 2)) - float(parent.get("size_rank", 2)))
-	var terminal_penalty := 0.35 if bool(child.get("is_terminal_weapon", false)) else 0.0
-	var torso_bonus := -0.20 if bool(parent.get("is_torso", false)) else 0.0
-	return distance + size_delta * 0.05 + terminal_penalty + torso_bonus + float(int(child.get("index", 0))) * 0.0001
+	return {
+		"distance": distance,
+		"size_delta": size_delta,
+		"parent_role": 0 if bool(parent.get("is_torso", false)) else 1,
+		"child_priority": _child_priority(child),
+		"parent_index": int(parent.get("index", -1)),
+		"parent_socket": String(parent_socket.get("id", "")),
+		"child_index": int(child.get("index", -1)),
+	}
+
+
+func _candidate_rank_less(a: Dictionary, b: Dictionary) -> bool:
+	var distance_delta := float(a.get("distance", INF)) - float(b.get("distance", INF))
+	if absf(distance_delta) > 0.0001:
+		return distance_delta < 0.0
+	var size_delta := float(a.get("size_delta", INF)) - float(b.get("size_delta", INF))
+	if absf(size_delta) > 0.0001:
+		return size_delta < 0.0
+	var int_keys := ["parent_role", "child_priority", "parent_index", "child_index"]
+	for key in int_keys:
+		var a_value := int(a.get(key, 0))
+		var b_value := int(b.get(key, 0))
+		if a_value != b_value:
+			return a_value < b_value
+	return String(a.get("parent_socket", "")) < String(b.get("parent_socket", ""))
 
 
 func _child_priority(fact: Dictionary) -> int:

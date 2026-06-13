@@ -85,6 +85,35 @@ func _init() -> void:
 	})
 	if not Array(occupied_plan.get("unresolved_nodes", [])).has(1):
 		_fail("Occupied child root should leave limb unresolved.")
+	var upstream := _fact(1, "limb_muscle", Vector2(0.78, 0.50), [
+		_socket("root_joint", Vector2(0.72, 0.50), true),
+		_socket("distal", Vector2(0.82, 0.50)),
+	], false, false, 2, 1)
+	var close_child := _fact(2, "muscle", Vector2(0.93, 0.50), [
+		_socket("root_joint", Vector2(0.90, 0.50)),
+		_socket("distal", Vector2(0.98, 0.50)),
+	], false, false, 2)
+	var distance_plan: Dictionary = service.plan_auto_connections({
+		"node_facts": [
+			_fact(0, "muscle", Vector2(0.50, 0.50), [
+				_socket("torso_port:0", Vector2(0.68, 0.50)),
+			], true, false, 3),
+			upstream,
+			close_child,
+		],
+		"edges": [],
+	})
+	if _plan_edges(distance_plan) != ["2:root_joint>1:distal"]:
+		_fail("Nearest parent socket should win before role tie-breakers, got %s." % str(_plan_edges(distance_plan)))
+	var no_root_weapon := _fact(1, "muscle", Vector2(0.66, 0.50), [
+		_socket("blade_tip", Vector2(0.72, 0.50)),
+	], false, true, 2)
+	var no_root_plan: Dictionary = service.plan_auto_connections({
+		"node_facts": [torso, no_root_weapon],
+		"edges": [],
+	})
+	if not Array(no_root_plan.get("unresolved_nodes", [])).has(1):
+		_fail("Unconnected child without root_joint should be unresolved, got %s." % str(no_root_plan))
 	var reversed_plan: Dictionary = service.plan_auto_connections({
 		"node_facts": [weapon, limb, torso],
 		"edges": [],
