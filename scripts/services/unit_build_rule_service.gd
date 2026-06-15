@@ -61,11 +61,11 @@ func audit(context: Dictionary) -> Dictionary:
 	var heat_core: Dictionary = heat_doctrine.build_profile(heat_peak_ratio)
 	heat_core["applicable"] = heat_peak_applicable
 	if heat_peak_applicable and heat_peak_ratio >= HEAT_PEAK_WARN_RATIO:
-		warnings.append("WARN: heat peak %.0f%% creates a %s heat core; plan an attack, disengage, stop, or active-cooling window." % [heat_peak_ratio * 100.0, String(heat_core.get("label", ""))])
+		warnings.append("WARN: heat peak %.0f%% creates a %s heat core; plan a burst window, then attack, disengage, stop, or active-cool." % [heat_peak_ratio * 100.0, String(heat_core.get("label", ""))])
 	elif heat_peak_applicable and heat_peak_ratio >= HEAT_PEAK_CAUTION_RATIO:
-		score_notes.append("HEAT CORE: %s at %.0f%%; the next sequence should be chosen deliberately." % [String(heat_core.get("label", "")), heat_peak_ratio * 100.0])
+		score_notes.append("HEAT CORE: %s at %.0f%%; choose the next burst window deliberately." % [String(heat_core.get("label", "")), heat_peak_ratio * 100.0])
 	elif heat_peak_applicable:
-		score_notes.append("HEAT CORE: %s at %.0f%%; heat defines the expected combat rhythm." % [String(heat_core.get("label", "")), heat_peak_ratio * 100.0])
+		score_notes.append("HEAT CORE: %s at %.0f%%; heat defines the expected combat rhythm without forcing a fixed style." % [String(heat_core.get("label", "")), heat_peak_ratio * 100.0])
 
 	var plugin_pressure := _metric(metrics, "plugin_pressure", 0.0)
 	if plugin_pressure_applicable and plugin_pressure > PLUGIN_PRESSURE_WARN_RATIO:

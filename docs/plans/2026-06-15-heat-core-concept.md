@@ -23,6 +23,19 @@ The unit-design side also describes an expected heat profile:
 - `pressure`: planned sequences reach or cross the heat buffer.
 - `redline`: repeated high-output actions require explicit retreat or vent windows.
 
+## Burst Window Logic
+
+Heat makes battle emphasize burst windows rather than infinite continuous attacks. A player should feel that every strong sequence asks a follow-up question: keep attacking, disengage, stop to cool, or commit to active cooling.
+
+This logic should not collapse the meta into one correct answer. The heat profile exposes playstyle hooks for future content:
+
+- `low_heat_endurance`: low-heat heroes can keep acting longer and treat burst windows as optional pressure, not forced recovery.
+- `short_burst_rotation`: balanced attackers spend a short window, move or cool, then re-enter.
+- `pressure_loop`: pressure builds skim the heat buffer and repeatedly choose whether to continue or reset.
+- `redline_overlimit`: overlimit/red-temperature builds intentionally touch dangerous heat in exchange for stronger timing, then must retreat, stop, vent, or accept overheat risk.
+- `cooling_window`: manual/active cooling, barriers, terrain, or future support systems can protect, fake, punish, or modify vent timing.
+- `future_heat_traits`: later parts may add heat conversion, heat shields, conditional vents, redline bonuses, or low-heat precision traits without changing the core contract.
+
 ## Implementation
 
 1. Add a pure `HeatDoctrineService` as the shared stage/profile vocabulary.
@@ -38,6 +51,7 @@ The unit-design side also describes an expected heat profile:
 - No fixed power score is introduced.
 - The live HUD stays compact; detailed reasoning remains in editor guidance and training reports.
 - Active cooling remains a punishable commitment rather than a free reset.
+- Low-heat endurance and redline overlimit are both supported playstyle interfaces, not special-case exceptions.
 
 ## Verification
 

@@ -233,7 +233,11 @@ Aim behavior is action-module driven:
 
 Heat is the combat-tempo core / 热量是战斗节奏的核心. It is not a fixed power score or a legality gate: a player-designed unit may pursue sustained pressure, short burst strings, deliberate redline play, or active-cooling traps. The editor, live HUD, and training report use a shared rhythm language so new players can connect design choices to battle decisions.
 
+This makes combat emphasize burst windows rather than infinite continuous attacks / 爆发窗口，而不是无限连续攻击. The heat system should expose hooks for different player-authored styles: low-heat endurance heroes, short-burst rotations, pressure loops that skim the buffer, and redline overlimit builds that intentionally touch danger before retreating or venting.
+
 The live heat rhythm moves through `STABLE`, `PRESSURE`, `DECIDE`, `VENT`, and `OVERHEAT`. As heat rises, the player chooses whether to continue attacking, disengage, stop acting for natural cooling, or commit to active cooling. These are suggestions and tactical information, not forced corrections to the player's build.
+
+Design profiles use these extension keys for future rules and content: `low_heat_endurance`, `short_burst_rotation`, `pressure_loop`, `redline_overlimit`, `cooling_window`, and `future_heat_traits`.
 
 The battle HUD places all three role resources in the corners: P1 health bars live in the upper-left and P1 heat bars in the lower-left; P2 health bars live in the upper-right and P2 heat bars in the lower-right. Each side has separate bars for hero, puppet group, and barrier.
 

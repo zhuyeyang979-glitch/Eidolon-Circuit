@@ -100,6 +100,7 @@ func report_text(report_data: Dictionary, language: String = "zh") -> String:
 		lines.append("%s：%s" % ["玩家目标" if intent_source == "player" else "系统观察", _intent_label(intent_key, "zh")])
 		lines.append("提示只作为建议，不会阻止保存或出战。")
 		lines.append("核心概念：热量决定进攻、撤退、停止行动和主动散热的战斗节奏。")
+		lines.append("战斗逻辑：输出应形成爆发窗口，不是无限连续攻击；低热量英雄、短爆发循环、压线循环和红温超限都可以成为玩法方向。")
 		if _runtime_sample_has_values(runtime):
 			lines.append("训练样本：%.1fs / 开火 %d / 命中 %d / 伤害 %.0f / 热峰 %.0f%% / 弹余 %s / Boost %d / 移动 %.1fm" % [
 				float(runtime.get("seconds", 0.0)),
@@ -118,6 +119,7 @@ func report_text(report_data: Dictionary, language: String = "zh") -> String:
 		lines.append("%s: %s" % ["Player Goal" if intent_source == "player" else "Observed Intent", _intent_label(intent_key, "en")])
 		lines.append("Advisory only; this report never blocks save or sortie.")
 		lines.append("Core concept: heat sets the combat rhythm between attack, disengage, stop, and active cooling.")
+		lines.append("Combat logic: offense forms burst windows rather than infinite continuous attacks; low-heat endurance, short-burst loops, pressure loops, and redline overlimit can all be valid playstyle directions.")
 		if _runtime_sample_has_values(runtime):
 			lines.append("Training sample: %.1fs / shots %d / hits %d / damage %.0f / heat peak %.0f%% / ammo left %s / Boost %d / moved %.1fm" % [
 				float(runtime.get("seconds", 0.0)),
@@ -338,8 +340,8 @@ func _add_heat_rhythm_observation(entries: Array, metrics: Dictionary, runtime: 
 	entries.append(_entry(
 		KIND_OBSERVE,
 		"heat:rhythm",
-		"热量是战斗节奏的核心；当前热峰约 %.0f%%，处于“%s”阶段。继续进攻、撤退、停止行动或主动散热都可以，但应服务于构筑意图。" % [heat_peak_ratio * 100.0, String(labels_zh.get(stage, stage))],
-		"Heat is the combat-tempo core; the current %.0f%% peak reaches the %s stage. Attack, disengage, stop, or active cooling are all valid when they serve the build intent." % [heat_peak_ratio * 100.0, String(labels_en.get(stage, stage))]
+		"热量是战斗节奏的核心；当前热峰约 %.0f%%，处于“%s”阶段。它把输出切成爆发窗口，而不是无限连续攻击；继续进攻、撤退、停止行动或主动散热都可以，但应服务于构筑意图。" % [heat_peak_ratio * 100.0, String(labels_zh.get(stage, stage))],
+		"Heat is the combat-tempo core; the current %.0f%% peak reaches the %s stage. It slices offense into burst windows rather than infinite continuous attacks; attack, disengage, stop, or active cooling are all valid when they serve the build intent." % [heat_peak_ratio * 100.0, String(labels_en.get(stage, stage))]
 	))
 
 
