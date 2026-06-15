@@ -164,6 +164,14 @@ Low-frequency tactical commands are intentionally smaller. The player can Cycle 
 
 Puppet and barrier control is not direct micromanagement during battle. Puppet Source Code and barrier Ether logic are authored before battle, then evaluated locally from the current battle state. Runtime input chooses when and where to commit those prepared tools; it does not add separate puppet-move, puppet-attack, barrier-move, or barrier-attack controls.
 
+## Cognitive Load Guardrails
+
+The battle input model treats the hero as the only high-frequency direct-control focus. Aiming can temporarily reserve the turn keys, but it must not create a second real-time control layer for puppets or barriers.
+
+Puppets and barriers are tactical commitments, not extra hands. New features for those roles should prefer build-time authoring, source-code routines, ether logic, deployment timing, placement choice, buffered confirmation, or delayed execution. They should not add continuous puppet movement axes, puppet attack buttons, barrier movement axes, barrier attack buttons, or separate role-camera micromanagement.
+
+If a new mechanic asks the player to aim, move, attack, and maintain a support unit at the same time, it should be redesigned into a hero action, a preauthored puppet/barrier rule, or a low-frequency deployment decision. The goal is to keep difficulty in construction, timing, matchup reading, and commitment, not in overloading the player's attention.
+
 The default hero is now a crab-style mech built around a torso chassis. Each claw is not a single pincer part: it is represented as two opposing scythe blades connected by a joint and driven by a rod-clamp module. The front two legs mount bullet guns with swing-aim modules, and the rear two legs mount scythes with chain-swing modules.
 
 Team Edit includes a first-pass assembly board. Select a crab body part, then use the shop buttons to install a joint, muscle, or action module for that part. Action modules are software and add no body volume. If multiple body parts use the same action module, those parts must also use identical joint and muscle materials; otherwise the board marks the parts with `!` and the roster becomes invalid.

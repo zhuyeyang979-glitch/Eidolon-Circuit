@@ -51,7 +51,7 @@ func _init() -> void:
 		_fail("BattleInputService missing tactical_input_contract().")
 	else:
 		var contract: Dictionary = service.tactical_input_contract()
-		for key in ["high_frequency_hero", "mid_frequency_tactical", "low_frequency_preset", "forbidden_runtime_micro"]:
+		for key in ["high_frequency_hero", "mid_frequency_tactical", "low_frequency_preset", "forbidden_runtime_micro", "cognitive_load_guardrails"]:
 			if not contract.has(key):
 				_fail("Tactical input contract missing key: %s" % key)
 		var high := PackedStringArray(contract.get("high_frequency_hero", []))
@@ -70,6 +70,13 @@ func _init() -> void:
 		for blocked in ["puppet_direct_move", "puppet_direct_attack", "barrier_direct_move", "barrier_direct_attack"]:
 			if not forbidden.has(blocked):
 				_fail("Forbidden runtime micro contract missing %s." % blocked)
+		var guardrails: Dictionary = contract.get("cognitive_load_guardrails", {})
+		if String(guardrails.get("primary_runtime_focus", "")) != "hero":
+			_fail("Cognitive load guardrails should keep hero as the primary runtime focus.")
+		if int(guardrails.get("max_simultaneous_direct_control_roles", 0)) != 1:
+			_fail("Cognitive load guardrails should limit high-frequency direct control to one role.")
+		if PackedStringArray(guardrails.get("direct_control_roles", [])).has("puppet") or PackedStringArray(guardrails.get("direct_control_roles", [])).has("barrier"):
+			_fail("Puppets and barriers should not become high-frequency direct-control roles.")
 		var action_names := PackedStringArray(service.battle_action_names(["p1"], 6))
 		for blocked_action in ["p1_puppet_move", "p1_puppet_attack", "p1_barrier_move", "p1_barrier_attack"]:
 			if action_names.has(blocked_action):

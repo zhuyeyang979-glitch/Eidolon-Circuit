@@ -39,6 +39,47 @@ func tactical_input_contract() -> Dictionary:
 			"barrier_direct_move",
 			"barrier_direct_attack",
 		],
+		"cognitive_load_guardrails": cognitive_load_contract(),
+	}
+
+
+func cognitive_load_contract() -> Dictionary:
+	return {
+		"primary_runtime_focus": "hero",
+		"max_simultaneous_direct_control_roles": 1,
+		"direct_control_roles": [
+			"hero",
+		],
+		"tactical_commit_roles": [
+			"puppet",
+			"barrier",
+		],
+		"tactical_command_style": [
+			"cycle_portal",
+			"pair_summon_chord",
+			"deploy_prebuilt_slot",
+		],
+		"conflict_resolution": [
+			"hero_aim_reserves_turn_keys",
+			"attack_window_blocks_pair_summon",
+			"movement_remains_on_wasd_during_aim",
+			"puppet_barrier_runtime_logic_is_preset",
+		],
+		"forbidden_runtime_micro": [
+			"puppet_direct_move",
+			"puppet_direct_attack",
+			"puppet_direct_aim",
+			"barrier_direct_move",
+			"barrier_direct_attack",
+			"barrier_direct_aim",
+			"role_camera_micro_cycle",
+		],
+		"new_feature_gate": [
+			"no_new_continuous_puppet_axis",
+			"no_new_continuous_barrier_axis",
+			"prefer_authoring_or_deploy_commit",
+			"prefer_buffered_or_delayed_tactical_confirmation",
+		],
 	}
 
 
