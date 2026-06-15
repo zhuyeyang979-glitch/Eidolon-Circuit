@@ -52,6 +52,14 @@ const BATTLE_RUNTIME_TITLE_RECT := Rect2(Vector2(18.0, 12.0), Vector2(294.0, 28.
 const BATTLE_RUNTIME_BUTTON_ORIGIN := Vector2(24.0, 52.0)
 const BATTLE_RUNTIME_BUTTON_SIZE := Vector2(282.0, 28.0)
 const BATTLE_RUNTIME_BUTTON_ROW_GAP := 6.0
+const POST_BATTLE_REVIEW_RECT := Rect2(Vector2(326.0, 178.0), Vector2(628.0, 326.0))
+const POST_BATTLE_REVIEW_ACCENT_RECT := Rect2(Vector2(32.0, 54.0), Vector2(564.0, 3.0))
+const POST_BATTLE_REVIEW_TITLE_RECT := Rect2(Vector2(32.0, 16.0), Vector2(564.0, 34.0))
+const POST_BATTLE_REVIEW_SUMMARY_RECT := Rect2(Vector2(42.0, 66.0), Vector2(544.0, 34.0))
+const POST_BATTLE_REVIEW_HINT_RECT := Rect2(Vector2(42.0, 104.0), Vector2(544.0, 58.0))
+const POST_BATTLE_REVIEW_BUTTON_ORIGIN := Vector2(46.0, 180.0)
+const POST_BATTLE_REVIEW_BUTTON_SIZE := Vector2(252.0, 36.0)
+const POST_BATTLE_REVIEW_BUTTON_GAP := Vector2(32.0, 12.0)
 
 const FORMAT_SELECT_PANEL_SIZE := Vector2(708.0, 360.0)
 const FORMAT_SELECT_ACCENT_RECT := Rect2(Vector2(40.0, 64.0), Vector2(628.0, 3.0))
@@ -209,6 +217,30 @@ static func page_options_rect() -> Rect2:
 
 static func battle_runtime_options_rect() -> Rect2:
 	return BATTLE_RUNTIME_OPTIONS_RECT
+
+
+static func post_battle_review_rect() -> Rect2:
+	return POST_BATTLE_REVIEW_RECT
+
+
+static func post_battle_review_accent_rect() -> Rect2:
+	return POST_BATTLE_REVIEW_ACCENT_RECT
+
+
+static func post_battle_review_title_rect() -> Rect2:
+	return POST_BATTLE_REVIEW_TITLE_RECT
+
+
+static func post_battle_review_summary_rect() -> Rect2:
+	return POST_BATTLE_REVIEW_SUMMARY_RECT
+
+
+static func post_battle_review_hint_rect() -> Rect2:
+	return POST_BATTLE_REVIEW_HINT_RECT
+
+
+static func post_battle_review_button_rect(index: int) -> Rect2:
+	return grid_rect(POST_BATTLE_REVIEW_BUTTON_ORIGIN, POST_BATTLE_REVIEW_BUTTON_SIZE, index, 2, POST_BATTLE_REVIEW_BUTTON_GAP.x, POST_BATTLE_REVIEW_BUTTON_GAP.y)
 
 
 static func row_rect(origin: Vector2, item_size: Vector2, index: int, gap_y: float = 0.0) -> Rect2:

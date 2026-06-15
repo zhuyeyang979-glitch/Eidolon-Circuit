@@ -7,6 +7,7 @@ signal main_menu_gui_input(event: InputEvent, index: int)
 signal ai_seat_pressed(seat: int)
 signal page_option_pressed(action_key: String)
 signal battle_runtime_pressed(action_key: String)
+signal post_battle_review_pressed(action_key: String)
 
 const MenuControllerModel = preload("res://scripts/controllers/menu_controller.gd")
 const UILayoutTokens = preload("res://scripts/ui_layout_tokens.gd")
@@ -26,6 +27,8 @@ var page_options_buttons := {}
 var page_options_context := ""
 var battle_runtime_menu_panel: Control
 var battle_runtime_menu_buttons := {}
+var post_battle_review_panel: Control
+var post_battle_review_buttons := {}
 
 
 func set_viewport_size(next_viewport_size: Vector2) -> void:
@@ -205,6 +208,34 @@ func build_battle_runtime_menu(root: Control, next_viewport_size: Vector2 = UILa
 	return battle_runtime_menu_panel
 
 
+func build_post_battle_review(root: Control, next_viewport_size: Vector2 = UILayoutTokens.DESIGN_SIZE) -> Control:
+	set_viewport_size(next_viewport_size)
+	post_battle_review_panel = Control.new()
+	post_battle_review_panel.name = "PostBattleReviewPanel"
+	_apply_rect(post_battle_review_panel, UILayoutTokens.post_battle_review_rect())
+	post_battle_review_panel.visible = false
+	post_battle_review_panel.z_index = 80
+	root.add_child(post_battle_review_panel)
+	_add_rect(post_battle_review_panel, "PostBattleReviewBack", UILayoutTokens.local_rect(UILayoutTokens.post_battle_review_rect().size), Color(0.01, 0.018, 0.026, 0.94))
+	_add_rect(post_battle_review_panel, "PostBattleReviewAccent", UILayoutTokens.post_battle_review_accent_rect(), Color(1.0, 0.86, 0.26, 0.92))
+	_add_label(post_battle_review_panel, "PostBattleReviewTitle", "", UILayoutTokens.post_battle_review_title_rect(), 24, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER)
+	var summary := _add_label(post_battle_review_panel, "PostBattleReviewSummary", "", UILayoutTokens.post_battle_review_summary_rect(), 17, Color(1.0, 0.9, 0.38, 1.0), HORIZONTAL_ALIGNMENT_CENTER)
+	summary.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	var hint := _add_label(post_battle_review_panel, "PostBattleReviewHint", "", UILayoutTokens.post_battle_review_hint_rect(), 15, Color(0.84, 0.9, 0.96, 1.0), HORIZONTAL_ALIGNMENT_CENTER)
+	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	for i in range(MenuControllerModel.POST_BATTLE_REVIEW_SPECS.size()):
+		var spec: Dictionary = MenuControllerModel.POST_BATTLE_REVIEW_SPECS[i]
+		var key := String(spec.get("key", ""))
+		var button := Button.new()
+		button.name = "PostBattleReview%s" % key
+		_apply_local_rect(button, UILayoutTokens.post_battle_review_button_rect(i))
+		button.focus_mode = Control.FOCUS_NONE
+		button.pressed.connect(_emit_post_battle_review_pressed.bind(key))
+		post_battle_review_panel.add_child(button)
+		post_battle_review_buttons[key] = button
+	return post_battle_review_panel
+
+
 func toggle_battle_runtime() -> bool:
 	if battle_runtime_menu_panel == null:
 		return false
@@ -228,6 +259,35 @@ func update_battle_runtime(model: Dictionary) -> void:
 		var item: Dictionary = raw_item
 		var key := String(item.get("key", ""))
 		var button: Button = battle_runtime_menu_buttons.get(key, null)
+		if button == null:
+			continue
+		button.text = String(item.get("label", ""))
+		button.disabled = bool(item.get("disabled", false))
+
+
+func show_post_battle_review() -> void:
+	if post_battle_review_panel != null:
+		post_battle_review_panel.visible = true
+
+
+func hide_post_battle_review() -> void:
+	if post_battle_review_panel != null:
+		post_battle_review_panel.visible = false
+
+
+func update_post_battle_review(model: Dictionary) -> void:
+	if post_battle_review_panel == null:
+		return
+	_set_named_label(post_battle_review_panel, "PostBattleReviewTitle", String(model.get("title", "")))
+	_set_named_label(post_battle_review_panel, "PostBattleReviewSummary", String(model.get("summary", "")))
+	_set_named_label(post_battle_review_panel, "PostBattleReviewHint", String(model.get("hint", "")))
+	var items: Array = model.get("items", [])
+	for raw_item in items:
+		if not (raw_item is Dictionary):
+			continue
+		var item: Dictionary = raw_item
+		var key := String(item.get("key", ""))
+		var button: Button = post_battle_review_buttons.get(key, null)
 		if button == null:
 			continue
 		button.text = String(item.get("label", ""))
@@ -273,7 +333,7 @@ func _apply_local_rect(control: Control, rect: Rect2) -> void:
 
 
 func _apply_parent_rect(control: Control, rect: Rect2, parent: Node) -> void:
-	if parent == page_options_panel or parent == battle_runtime_menu_panel:
+	if parent == page_options_panel or parent == battle_runtime_menu_panel or parent == post_battle_review_panel:
 		_apply_local_rect(control, rect)
 	else:
 		_apply_rect(control, rect)
@@ -313,3 +373,7 @@ func _emit_page_option_pressed(action_key: String) -> void:
 
 func _emit_battle_runtime_pressed(action_key: String) -> void:
 	battle_runtime_pressed.emit(action_key)
+
+
+func _emit_post_battle_review_pressed(action_key: String) -> void:
+	post_battle_review_pressed.emit(action_key)

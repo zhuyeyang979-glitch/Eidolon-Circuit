@@ -120,6 +120,14 @@ class MobiusStripSurfaceView:
 	var world_grid_last_anchor_coord := Vector2.ZERO
 	var world_grid_last_cell_world := 0.0
 	var world_grid_last_line_count := 0
+	var linear_elevation_visual_enabled := false
+	var linear_elevation_band_count := 0
+	var linear_elevation_contour_count := 0
+	var linear_elevation_last_drawn_band_count := 0
+	var linear_elevation_last_drawn_contour_count := 0
+	var linear_elevation_last_sample_count := 0
+	var linear_elevation_last_alpha_span := 0.0
+	var linear_elevation_last_width_span := 0.0
 
 	func set_surface_texture(texture: Texture2D) -> void:
 		surface_texture = texture
@@ -137,6 +145,14 @@ class MobiusStripSurfaceView:
 		surface_field_kind = String(config.get("surface_field_kind", surface_field_kind))
 		surface_grid_cell_px = maxf(1.0, float(config.get("surface_grid_cell_px", surface_grid_cell_px)))
 		surface_lane_guides_enabled = bool(config.get("surface_lane_guides_enabled", surface_lane_guides_enabled))
+		linear_elevation_visual_enabled = bool(config.get("linear_elevation_visual_enabled", linear_elevation_visual_enabled))
+		linear_elevation_band_count = clampi(int(config.get("linear_elevation_band_count", 9)), 0, 18) if linear_elevation_visual_enabled else 0
+		linear_elevation_contour_count = clampi(int(config.get("linear_elevation_contour_count", 7)), 0, 14) if linear_elevation_visual_enabled else 0
+		linear_elevation_last_drawn_band_count = 0
+		linear_elevation_last_drawn_contour_count = 0
+		linear_elevation_last_sample_count = 0
+		linear_elevation_last_alpha_span = maxf(0.0, float(config.get("linear_elevation_high_alpha", 0.135)) - float(config.get("linear_elevation_low_alpha", 0.026))) if linear_elevation_visual_enabled else 0.0
+		linear_elevation_last_width_span = maxf(0.0, float(config.get("linear_elevation_high_width", 2.25)) - float(config.get("linear_elevation_low_width", 0.85))) if linear_elevation_visual_enabled else 0.0
 		stardust_band_enabled = bool(config.get("stardust_band_enabled", stardust_band_enabled))
 		stardust_alpha_max = clampf(float(config.get("stardust_alpha_max", stardust_alpha_max)), 0.0, 0.32)
 		stardust_width_min = maxf(0.1, float(config.get("stardust_width_min", stardust_width_min)))
@@ -240,6 +256,72 @@ class MobiusStripSurfaceView:
 			draw_polyline(points, color, width, true)
 			world_grid_last_line_count += 1
 
+	func _linear_elevation_color(height01: float) -> Color:
+		var low_color: Color = config.get("linear_elevation_low_color", Color(0.08, 0.16, 0.22, 1.0))
+		var high_color: Color = config.get("linear_elevation_high_color", Color(0.95, 0.72, 0.24, 1.0))
+		return low_color.lerp(high_color, clampf(height01, 0.0, 1.0))
+
+	func _draw_linear_elevation_overlay(draw_config: Dictionary, span_s: float, half_width: float, segment_count_s: int) -> void:
+		linear_elevation_last_drawn_band_count = 0
+		linear_elevation_last_drawn_contour_count = 0
+		linear_elevation_last_sample_count = 0
+		if not linear_elevation_visual_enabled:
+			return
+		var band_count := clampi(linear_elevation_band_count, 3, 18)
+		var contour_count := clampi(linear_elevation_contour_count, 3, 14)
+		var low_alpha := clampf(float(config.get("linear_elevation_low_alpha", 0.026)), 0.0, 0.12)
+		var high_alpha := clampf(float(config.get("linear_elevation_high_alpha", 0.135)), low_alpha, 0.20)
+		var low_width := maxf(0.2, float(config.get("linear_elevation_low_width", 0.85)))
+		var high_width := maxf(low_width, float(config.get("linear_elevation_high_width", 2.25)))
+		linear_elevation_last_alpha_span = high_alpha - low_alpha
+		linear_elevation_last_width_span = high_width - low_width
+		for band_index in range(band_count):
+			var start_t := float(band_index) / float(band_count)
+			var end_t := float(band_index + 1) / float(band_count)
+			var height01 := (start_t + end_t) * 0.5
+			var lane_start := lerpf(-half_width, half_width, start_t)
+			var lane_end := lerpf(-half_width, half_width, end_t)
+			var polygon := PackedVector2Array()
+			for sample_index in range(segment_count_s + 1):
+				var ratio := float(sample_index) / float(segment_count_s)
+				var coord := Vector2(lerpf(camera_coord.x - span_s, camera_coord.x + span_s, ratio), lane_start)
+				var projection := MobiusWorld.project_to_screen(coord, camera_coord, draw_config, rotation_state)
+				polygon.append(projection.get("position", Vector2.ZERO))
+			for sample_index in range(segment_count_s, -1, -1):
+				var ratio := float(sample_index) / float(segment_count_s)
+				var coord := Vector2(lerpf(camera_coord.x - span_s, camera_coord.x + span_s, ratio), lane_end)
+				var projection := MobiusWorld.project_to_screen(coord, camera_coord, draw_config, rotation_state)
+				polygon.append(projection.get("position", Vector2.ZERO))
+			if polygon.size() >= 4:
+				var band_color := _linear_elevation_color(height01)
+				band_color.a = lerpf(low_alpha, high_alpha, height01)
+				draw_colored_polygon(polygon, band_color)
+				linear_elevation_last_drawn_band_count += 1
+				linear_elevation_last_sample_count += polygon.size()
+		var dash_count := clampi(int(config.get("linear_elevation_dash_count", 14)), 6, 30)
+		var dash_ratio := clampf(float(config.get("linear_elevation_dash_ratio", 0.56)), 0.30, 0.82)
+		for contour_index in range(contour_count):
+			var height01 := (float(contour_index) + 0.5) / float(contour_count)
+			var lane_v := lerpf(-half_width, half_width, height01)
+			var contour_color := _linear_elevation_color(height01)
+			contour_color.a = lerpf(low_alpha * 1.35, high_alpha * 1.22, height01)
+			var width := lerpf(low_width, high_width, height01)
+			for dash_index in range(dash_count):
+				if (dash_index + contour_index) % 5 == 3:
+					continue
+				var dash_start := float(dash_index) / float(dash_count)
+				var dash_end := minf(dash_start + dash_ratio / float(dash_count), 1.0)
+				var coords := PackedVector2Array()
+				for sample_index in range(4):
+					var sample_ratio := float(sample_index) / 3.0
+					var t := lerpf(dash_start, dash_end, sample_ratio)
+					coords.append(Vector2(lerpf(camera_coord.x - span_s, camera_coord.x + span_s, t), lane_v))
+				var points := _project_world_grid_polyline(coords, draw_config)
+				if points.size() >= 2:
+					draw_polyline(points, contour_color, width, true)
+					linear_elevation_last_drawn_contour_count += 1
+					linear_elevation_last_sample_count += points.size()
+
 	func _draw_world_grid_surface() -> void:
 		world_grid_last_line_count = 0
 		var draw_config := _world_grid_projection_config()
@@ -260,6 +342,7 @@ class MobiusStripSurfaceView:
 		var v_end: float = camera_coord.y + span_v
 		var segment_count_s := clampi(int(ceil((span_s * 2.0) / maxf(grid_cell_world, 0.001))) * 2, 18, 140)
 		var segment_count_v := clampi(int(ceil((span_v * 2.0) / maxf(grid_cell_world, 0.001))) * 2, 8, 80)
+		_draw_linear_elevation_overlay(draw_config, span_s, half_width, segment_count_s)
 		var s: float = s_start
 		while s <= s_end + 0.001:
 			var coords := PackedVector2Array()
@@ -387,6 +470,15 @@ class MobiusStripSurfaceView:
 			"world_grid_anchor_coord": world_grid_last_anchor_coord,
 			"world_grid_cell_world": world_grid_last_cell_world,
 			"world_grid_line_count": world_grid_last_line_count,
+			"linear_elevation_visual_enabled": linear_elevation_visual_enabled,
+			"linear_elevation_band_count": linear_elevation_band_count,
+			"linear_elevation_contour_count": linear_elevation_contour_count,
+			"linear_elevation_drawn_band_count": linear_elevation_last_drawn_band_count,
+			"linear_elevation_drawn_contour_count": linear_elevation_last_drawn_contour_count,
+			"linear_elevation_sample_count": linear_elevation_last_sample_count,
+			"linear_elevation_alpha_span": linear_elevation_last_alpha_span,
+			"linear_elevation_width_span": linear_elevation_last_width_span,
+			"linear_elevation_mode": String(config.get("linear_elevation_mode", "lane_height_gradient")),
 			"surface_alpha_gain": float(config.get("surface_alpha_gain", 1.0)),
 			"surface_alpha_max": float(config.get("surface_alpha_max", 0.18)),
 			"surface_color_gain": float(config.get("surface_color_gain", 1.0)),
@@ -9206,6 +9298,10 @@ var window_size_setting := WINDOW_SIZE_DEFAULT
 var training_dummy_state := "idle_brake"
 var battle_runtime_menu_panel: Control
 var battle_runtime_menu_buttons := {}
+var post_battle_review_panel: Control
+var post_battle_review_buttons := {}
+var post_battle_review_winner_id := 0
+var post_battle_review_reason := ""
 var battle_input_buttons := {}
 var battle_input_binding_specs: Array = []
 var battle_last_move_input_vectors := {1: Vector2.ZERO, 2: Vector2.ZERO}
@@ -15979,6 +16075,7 @@ func _cleanup_battle_runtime(preserve_for_return: bool = false) -> void:
 		if hot_path_profiler != null:
 			hot_path_profiler.count("battle.cleanup.preserved")
 		return
+	_hide_post_battle_review()
 	if bool(cleanup_intent.get("hide_runtime_menu", true)):
 		_hide_battle_runtime_menu()
 	if bool(cleanup_intent.get("hide_aim_lines", true)):
@@ -16722,8 +16819,8 @@ func _combat_state_name(state_key: String) -> String:
 
 func _battle_help_text() -> String:
 	if _ui_is_zh():
-		return "Esc/选项：训练菜单。WASD 移动，Q/E 转向，方向双击 Boost。U/I/O/J/K/L 打开行动模块窗口。"
-	return "Esc/OPTIONS: training menu. WASD move, Q/E turn, double-tap direction to Boost. U/I/O/J/K/L open module windows."
+		return "Esc/选项：训练菜单。英雄高频：WASD移动，Q/E转向，双击Boost，U/I/O/J/K/L攻击，G冷却。战术低频：Tab选入口，双攻击键部署出击槽。"
+	return "Esc/OPTIONS: training menu. High-frequency hero: WASD move, Q/E turn, double-tap Boost, U/I/O/J/K/L attack, G cool. Low-frequency tactics: Tab portal, paired attack buttons deploy sortie slots."
 
 
 func _find_control_by_name(root: Node, target_name: String) -> Control:
@@ -16986,6 +17083,8 @@ func _apply_language_to_existing_ui() -> void:
 		_set_named_label(hud_layer, "BattleMenuButton", "选项" if _ui_is_zh() else "OPTIONS")
 		_set_named_label(hud_layer, "BattleHelp", _battle_help_text())
 		_update_battle_runtime_menu_ui()
+		if post_battle_review_panel != null and post_battle_review_panel.visible and post_battle_review_winner_id > 0:
+			_show_post_battle_review(post_battle_review_winner_id, post_battle_review_reason)
 		for player_id in [1, 2]:
 			for role_key in ROLE_ORDER:
 				_set_named_label(hud_layer, "P%d%sHPLabel" % [player_id, role_key], _role_name(role_key))
@@ -17905,7 +18004,10 @@ func _begin_battle(mode: String, preloaded: bool = false, reason: String = "") -
 	battle_mode = String(show_intent.get("battle_mode", mode))
 	_commit_battle_mode_show_intent(show_intent)
 	_transition_page(STATE_BATTLE, String(show_intent.get("reason", nav_reason)), Dictionary(show_intent.get("payload", {"mode": battle_mode})))
+	_hide_post_battle_review()
 	game_over = false
+	post_battle_review_winner_id = 0
+	post_battle_review_reason = ""
 	camera_center = 0.0
 	camera_lane_center = 0.0
 	camera_mobius_s = 0.0
@@ -19206,6 +19308,7 @@ func _battle_input_specs() -> Array:
 	var specs: Array = []
 	for prefix in ["p1", "p2"]:
 		var player_label := "P1" if prefix == "p1" else "P2"
+		specs.append({"info": true, "group_title_zh": "%s 英雄高频操作 / Hero" % player_label, "group_title_en": "%s HIGH-FREQUENCY HERO" % player_label})
 		specs.append({"info": true, "group_title_zh": "%s 方向 / Direction" % player_label, "group_title_en": "%s DIRECTION" % player_label})
 		specs.append({"action": "%s_up" % prefix, "group": "%s_direction" % prefix, "zh": "%s 上" % player_label, "en": "%s Up" % player_label})
 		specs.append({"action": "%s_down" % prefix, "group": "%s_direction" % prefix, "zh": "%s 下" % player_label, "en": "%s Down" % player_label})
@@ -19215,6 +19318,7 @@ func _battle_input_specs() -> Array:
 		specs.append({"info": true, "group_title_zh": "%s 转向 / Turn" % player_label, "group_title_en": "%s TURN" % player_label})
 		specs.append({"action": "%s_face_left" % prefix, "group": "%s_turn" % prefix, "zh": "%s 左转" % player_label, "en": "%s Turn Left" % player_label})
 		specs.append({"action": "%s_face_right" % prefix, "group": "%s_turn" % prefix, "zh": "%s 右转" % player_label, "en": "%s Turn Right" % player_label})
+		specs.append({"action": "%s_cool" % prefix, "group": "%s_hero_system" % prefix, "zh": "%s 手动冷却" % player_label, "en": "%s Manual Cooling" % player_label})
 		specs.append({"info": true, "group_title_zh": "%s 攻击 / Attack" % player_label, "group_title_en": "%s ATTACK" % player_label})
 		for attack_index in range(1, ATTACK_GROUP_COUNT + 1):
 			specs.append({
@@ -19223,6 +19327,9 @@ func _battle_input_specs() -> Array:
 				"zh": "%s 攻击%d" % [player_label, attack_index],
 				"en": "%s Attack %d" % [player_label, attack_index],
 			})
+		specs.append({"info": true, "group_title_zh": "%s 战术低频：入口与双攻击键部署" % player_label, "group_title_en": "%s LOW-FREQUENCY TACTICS: portal and pair-summon" % player_label})
+		specs.append({"action": "%s_portal" % prefix, "group": "%s_tactics" % prefix, "zh": "%s 切换入场点" % player_label, "en": "%s Tactical Portal" % player_label})
+		specs.append({"info": true, "group_title_zh": "%s 出击槽部署由队伍预设的双攻击键触发；傀儡/屏障不开放运行时直接微操。" % player_label, "group_title_en": "%s sortie slots deploy through preset paired attack buttons; puppets/barriers have no runtime direct micro." % player_label})
 	return specs
 
 
@@ -31686,7 +31793,7 @@ func _battle_input_action_names() -> Array:
 		return battle_input_service.battle_action_names(["p1", "p2"], ATTACK_GROUP_COUNT)
 	var actions: Array = ["battle_pause"]
 	for prefix in ["p1", "p2"]:
-		for suffix in ["left", "right", "up", "down", "face_left", "face_right", "portal"]:
+		for suffix in ["left", "right", "up", "down", "face_left", "face_right", "cool", "portal"]:
 			actions.append("%s_%s" % [prefix, suffix])
 		for attack_index in range(ATTACK_GROUP_COUNT):
 			actions.append("%s_attack_%d" % [prefix, attack_index + 1])
@@ -32871,6 +32978,8 @@ func _handle_player_battle_input(player_id: int, delta: float, prefix: String) -
 	var hero = active_units[player_id]["hero"]
 	if not _is_live_unit(hero):
 		return
+	if Input.is_action_pressed("%s_cool" % prefix) and hero.has_method("manual_cool"):
+		hero.manual_cool(delta)
 	if float(hero.get_meta("active_cool_lock", 0.0)) > 0.0:
 		hero.set_meta("movement_gate_reason", "active_cool_lock")
 		hero.velocity = Vector2.ZERO
@@ -43079,9 +43188,11 @@ func _blind_escape_vector(unit) -> Vector2:
 	return escape.limit_length(1.0)
 
 
-func _end_battle(winner_id: int) -> void:
+func _end_battle(winner_id: int, reason: String = "victory") -> void:
 	game_over = true
-	_show_battle_message("P%d wins. Press confirm to return to main menu." % winner_id, 999.0)
+	var message := "P%d 获胜。可复盘、调整配置、再战或返回主菜单。" % winner_id if _ui_is_zh() else "P%d wins. Review, adjust, rematch, or return to main menu." % winner_id
+	_show_battle_message(message, 999.0)
+	_show_post_battle_review(winner_id, reason)
 
 
 func _resolve_timeout() -> void:
@@ -43094,8 +43205,7 @@ func _resolve_timeout() -> void:
 		var score_1 := _remaining_health_score(1)
 		var score_2 := _remaining_health_score(2)
 		winner = 2 if score_2 > score_1 else 1
-	_show_battle_message("TIME OUT. P%d wins by points." % winner, 999.0)
-	_end_battle(winner)
+	_end_battle(winner, "timeout")
 
 
 func _remaining_health_score(player_id: int) -> float:
@@ -51021,6 +51131,8 @@ func _connect_menu_view_signals() -> void:
 		menu_view.page_option_pressed.connect(_page_options_action)
 	if not menu_view.battle_runtime_pressed.is_connected(_battle_runtime_menu_action):
 		menu_view.battle_runtime_pressed.connect(_battle_runtime_menu_action)
+	if not menu_view.post_battle_review_pressed.is_connected(_post_battle_review_action):
+		menu_view.post_battle_review_pressed.connect(_post_battle_review_action)
 
 
 func _build_saved_units_ui() -> void:
@@ -52197,7 +52309,7 @@ func _build_settings_ui() -> void:
 	settings_list_container.name = "BattleInputSettingsList"
 	settings_list_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	settings_scroll_container.add_child(settings_list_container)
-	settings_rebind_status_label = _make_layout_label(root, "ControllerInfo", "点击一项后按键盘键或手柄输入来重绑定。Boost 默认由方向键双击触发。", UILayoutTokens.settings_status_rect(), 16, Color(0.86, 0.92, 0.98, 1.0), HORIZONTAL_ALIGNMENT_LEFT)
+	settings_rebind_status_label = _make_layout_label(root, "ControllerInfo", "点击一项后按键盘键或手柄输入来重绑定。英雄即时操作与战术入口分开配置。", UILayoutTokens.settings_status_rect(), 16, Color(0.86, 0.92, 0.98, 1.0), HORIZONTAL_ALIGNMENT_LEFT)
 	settings_rebind_status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	settings_reset_button = Button.new()
 	settings_reset_button.name = "SettingsResetBattleInput"
@@ -52325,6 +52437,7 @@ func _build_battle_ui() -> void:
 	battle_menu_button.pressed.connect(_toggle_battle_runtime_menu)
 	hud.add_child(battle_menu_button)
 	_build_battle_runtime_menu(hud)
+	_build_post_battle_review_ui(hud)
 	_make_token_label(hud, "BattleHelp", _battle_help_text(), "battle_help", 14, Color(0.84, 0.88, 0.94, 1.0), HORIZONTAL_ALIGNMENT_CENTER)
 
 
@@ -52332,6 +52445,12 @@ func _build_battle_runtime_menu(root: Control) -> void:
 	_ensure_menu_view()
 	battle_runtime_menu_panel = menu_view.build_battle_runtime_menu(root, _ui_viewport_size())
 	battle_runtime_menu_buttons = menu_view.battle_runtime_menu_buttons
+
+
+func _build_post_battle_review_ui(root: Control) -> void:
+	_ensure_menu_view()
+	post_battle_review_panel = menu_view.build_post_battle_review(root, _ui_viewport_size())
+	post_battle_review_buttons = menu_view.post_battle_review_buttons
 
 
 func _toggle_battle_runtime_menu() -> void:
@@ -52351,7 +52470,7 @@ func _hide_battle_runtime_menu() -> void:
 func _update_battle_runtime_menu_ui() -> void:
 	if battle_runtime_menu_panel == null or menu_controller == null or menu_view == null:
 		return
-	menu_view.update_battle_runtime(menu_controller.battle_runtime_model(ui_language, battle_mode, MODE_TRAINING, training_dummy_state))
+	menu_view.update_battle_runtime(menu_controller.battle_runtime_model(ui_language, battle_mode, MODE_TRAINING, training_dummy_state, game_over))
 
 
 func _battle_runtime_menu_action(action_key: String) -> void:
@@ -52359,6 +52478,9 @@ func _battle_runtime_menu_action(action_key: String) -> void:
 	match String(action.get("action", action_key)):
 		"continue":
 			_hide_battle_runtime_menu()
+		"post_review":
+			_hide_battle_runtime_menu()
+			_show_post_battle_review(post_battle_review_winner_id, post_battle_review_reason)
 		"battle_reset":
 			_hide_battle_runtime_menu()
 			_begin_battle(battle_mode, false, "battle_reset")
@@ -52383,6 +52505,41 @@ func _battle_runtime_menu_action(action_key: String) -> void:
 			_show_training_config(false)
 		"main_menu":
 			_hide_battle_runtime_menu()
+			_show_menu()
+
+
+func _show_post_battle_review(winner_id: int, reason: String = "victory") -> void:
+	post_battle_review_winner_id = winner_id
+	post_battle_review_reason = reason
+	if menu_view == null or menu_controller == null:
+		return
+	menu_view.update_post_battle_review(menu_controller.post_battle_review_model(ui_language, winner_id, victory_points, match_time_remaining, battle_mode))
+	menu_view.show_post_battle_review()
+
+
+func _hide_post_battle_review() -> void:
+	if menu_view != null:
+		menu_view.hide_post_battle_review()
+	elif post_battle_review_panel != null:
+		post_battle_review_panel.visible = false
+
+
+func _post_battle_review_action(action_key: String) -> void:
+	var action := menu_controller.post_battle_review_action(action_key) if menu_controller != null else {"action": action_key}
+	match String(action.get("action", action_key)):
+		"review":
+			_hide_post_battle_review()
+		"adjust_sortie":
+			_hide_post_battle_review()
+			_show_scout(battle_mode, true)
+		"edit_units":
+			_hide_post_battle_review()
+			_show_editor_preserve_canvas(true)
+		"rematch":
+			_hide_post_battle_review()
+			_begin_battle(battle_mode, true, "post_battle_rematch")
+		"main_menu":
+			_hide_post_battle_review()
 			_show_menu()
 
 
@@ -57789,7 +57946,7 @@ func _update_settings_ui() -> void:
 	if settings_rebind_status_label != null and settings_rebind_action == "":
 		var status_text := ""
 		if settings_category == "input":
-			status_text = "点击一项后按键盘键或手柄输入来重绑定。Boost 默认由方向键双击触发。" if _ui_is_zh() else "Click an item, then press a keyboard or controller input. Boost is direction double-tap by default."
+			status_text = "点击一项后按键盘键或手柄输入来重绑定。英雄即时操作、Tab入口和双攻击键部署分层使用。" if _ui_is_zh() else "Click an item, then press a keyboard or controller input. Hero actions, Tab portal, and paired-attack deployment use separate layers."
 		elif settings_category == "video":
 			status_text = _runtime_quality_summary()
 		else:
@@ -58515,6 +58672,18 @@ func _mobius_config() -> Dictionary:
 	config["surface_lane_guides_enabled"] = false
 	config["surface_projection_mode"] = "world_grid"
 	config["surface_world_grid_stable"] = true
+	config["linear_elevation_visual_enabled"] = true
+	config["linear_elevation_mode"] = "lane_height_gradient"
+	config["linear_elevation_band_count"] = 9
+	config["linear_elevation_contour_count"] = 7
+	config["linear_elevation_dash_count"] = 14
+	config["linear_elevation_dash_ratio"] = 0.56
+	config["linear_elevation_low_alpha"] = 0.026
+	config["linear_elevation_high_alpha"] = 0.135
+	config["linear_elevation_low_width"] = 0.85
+	config["linear_elevation_high_width"] = 2.25
+	config["linear_elevation_low_color"] = Color(0.08, 0.16, 0.22, 1.0)
+	config["linear_elevation_high_color"] = Color(0.95, 0.72, 0.24, 1.0)
 	config["stardust_band_enabled"] = false
 	config["stardust_alpha_max"] = 0.28
 	config["stardust_width_min"] = 2.4
@@ -58674,6 +58843,18 @@ func _refresh_mobius_surface_view() -> void:
 	surface_config["surface_world_grid_stable"] = true
 	surface_config["surface_grid_cell_px"] = 56.0
 	surface_config["surface_lane_guides_enabled"] = true
+	surface_config["linear_elevation_visual_enabled"] = true
+	surface_config["linear_elevation_mode"] = "lane_height_gradient"
+	surface_config["linear_elevation_band_count"] = 9
+	surface_config["linear_elevation_contour_count"] = 7
+	surface_config["linear_elevation_dash_count"] = 14
+	surface_config["linear_elevation_dash_ratio"] = 0.56
+	surface_config["linear_elevation_low_alpha"] = 0.026
+	surface_config["linear_elevation_high_alpha"] = 0.135
+	surface_config["linear_elevation_low_width"] = 0.85
+	surface_config["linear_elevation_high_width"] = 2.25
+	surface_config["linear_elevation_low_color"] = Color(0.08, 0.16, 0.22, 1.0)
+	surface_config["linear_elevation_high_color"] = Color(0.95, 0.72, 0.24, 1.0)
 	surface_config["local_rectangular_projection"] = true
 	surface_config["width_segments"] = max(11, int(surface_config.get("width_segments", 7)))
 	surface_config["near_alpha"] = 0.34
@@ -59579,7 +59760,7 @@ func _register_inputs() -> void:
 
 
 func _bind_player_inputs(prefix: String, device: int, include_keyboard: bool) -> void:
-	for base_action in ["left", "right", "up", "down", "face_left", "face_right", "portal"]:
+	for base_action in ["left", "right", "up", "down", "face_left", "face_right", "cool", "portal"]:
 		_clear_input_action("%s_%s" % [prefix, base_action])
 	for attack_key_index in range(1, ATTACK_GROUP_COUNT + 1):
 		_clear_input_action("%s_attack_%d" % [prefix, attack_key_index])
@@ -59590,6 +59771,7 @@ func _bind_player_inputs(prefix: String, device: int, include_keyboard: bool) ->
 		_bind_key("%s_down" % prefix, KEY_S)
 		_bind_key("%s_face_left" % prefix, KEY_Q)
 		_bind_key("%s_face_right" % prefix, KEY_E)
+		_bind_key("%s_cool" % prefix, KEY_G)
 		_bind_key("%s_portal" % prefix, KEY_TAB)
 		for attack_key_index in range(1, ATTACK_GROUP_COUNT + 1):
 			var action_name := "%s_attack_%d" % [prefix, attack_key_index]
@@ -59612,8 +59794,9 @@ func _bind_player_inputs(prefix: String, device: int, include_keyboard: bool) ->
 	_bind_joy_button("%s_attack_4" % prefix, JOY_BUTTON_B, device)
 	_bind_joy_button("%s_attack_5" % prefix, JOY_BUTTON_LEFT_SHOULDER, device)
 	_bind_joy_button("%s_attack_6" % prefix, JOY_BUTTON_RIGHT_SHOULDER, device)
+	_bind_joy_button("%s_cool" % prefix, JOY_BUTTON_GUIDE, device)
 	_bind_joy_button("%s_portal" % prefix, JOY_BUTTON_BACK, device)
-	for removed_action in ["%s_cool" % prefix, "%s_active" % prefix, "%s_armor" % prefix]:
+	for removed_action in ["%s_active" % prefix, "%s_armor" % prefix]:
 		_clear_input_action(removed_action)
 
 

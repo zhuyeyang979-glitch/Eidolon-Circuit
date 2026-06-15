@@ -21,12 +21,21 @@ const PAGE_OPTION_SPECS := [
 
 const BATTLE_RUNTIME_OPTION_SPECS := [
 	{"key": "continue", "zh": "继续", "en": "CONTINUE"},
+	{"key": "post_review", "zh": "赛后复盘", "en": "POST REVIEW", "game_over_only": true},
 	{"key": "reset_positions", "zh": "重置位置", "en": "RESET POS"},
 	{"key": "reset_resources", "zh": "重置 HP/护盾/弹药", "en": "RESET HP/AMMO"},
 	{"key": "dummy_state", "zh": "靶机：静止待机", "en": "DUMMY: IDLE", "training_only": true},
 	{"key": "input", "zh": "输入设置", "en": "INPUTS"},
 	{"key": "settings", "zh": "画面/声音", "en": "VIDEO/SOUND"},
 	{"key": "training_config", "zh": "返回训练配置", "en": "TRAINING CFG", "training_only": true},
+	{"key": "main_menu", "zh": "主菜单", "en": "MAIN MENU"},
+]
+
+const POST_BATTLE_REVIEW_SPECS := [
+	{"key": "review", "zh": "留在战场复盘", "en": "REVIEW FIELD"},
+	{"key": "adjust_sortie", "zh": "调整出战配置", "en": "ADJUST SORTIE"},
+	{"key": "edit_units", "zh": "编辑单位构筑", "en": "UNIT EDIT"},
+	{"key": "rematch", "zh": "立即再战", "en": "REMATCH"},
 	{"key": "main_menu", "zh": "主菜单", "en": "MAIN MENU"},
 ]
 
@@ -91,6 +100,8 @@ func page_option_action(action_key: String, route_action: Dictionary) -> Diction
 
 func battle_runtime_action(action_key: String) -> Dictionary:
 	match action_key:
+		"post_review":
+			return {"action": "post_review", "key": action_key}
 		"reset_positions", "reset_resources":
 			return {"action": "battle_reset", "key": action_key}
 		"dummy_state":
@@ -101,6 +112,21 @@ func battle_runtime_action(action_key: String) -> Dictionary:
 			return {"action": "settings", "key": action_key}
 		"training_config":
 			return {"action": "training_config", "key": action_key}
+		"main_menu":
+			return {"action": "main_menu", "key": action_key}
+	return {"action": action_key, "key": action_key}
+
+
+func post_battle_review_action(action_key: String) -> Dictionary:
+	match action_key:
+		"review":
+			return {"action": "review", "key": action_key}
+		"adjust_sortie":
+			return {"action": "adjust_sortie", "key": action_key}
+		"edit_units":
+			return {"action": "edit_units", "key": action_key}
+		"rematch":
+			return {"action": "rematch", "key": action_key}
 		"main_menu":
 			return {"action": "main_menu", "key": action_key}
 	return {"action": action_key, "key": action_key}
@@ -135,7 +161,7 @@ func page_options_model(language: String) -> Dictionary:
 	}
 
 
-func battle_runtime_model(language: String, battle_mode: String, training_mode: String, dummy_state: String) -> Dictionary:
+func battle_runtime_model(language: String, battle_mode: String, training_mode: String, dummy_state: String, game_over: bool = false) -> Dictionary:
 	var zh := language == "zh"
 	var is_training := battle_mode == training_mode
 	var items := _localized_specs(BATTLE_RUNTIME_OPTION_SPECS, zh, false)
@@ -157,10 +183,31 @@ func battle_runtime_model(language: String, battle_mode: String, training_mode: 
 			item["label"] = ("靶机：%s" % state_label) if zh else ("DUMMY: %s" % state_label_en)
 		if bool(item.get("training_only", false)):
 			item["disabled"] = not is_training
+		if bool(item.get("game_over_only", false)):
+			item["disabled"] = not game_over
 		items[i] = item
 	return {
 		"title": ("训练选项" if zh else "TRAINING OPTIONS") if is_training else ("战斗选项" if zh else "BATTLE OPTIONS"),
 		"items": items,
+	}
+
+
+func post_battle_review_model(language: String, winner_id: int, victory_points: Dictionary, match_time_remaining: float, battle_mode: String) -> Dictionary:
+	var zh := language == "zh"
+	var p1_points := int(victory_points.get(1, 0))
+	var p2_points := int(victory_points.get(2, 0))
+	var minutes := int(floorf(maxf(0.0, match_time_remaining) / 60.0))
+	var seconds := int(floorf(fmod(maxf(0.0, match_time_remaining), 60.0)))
+	var mode_label := String({
+		"training": "训练" if zh else "TRAINING",
+		"ai": "电脑对战" if zh else "COMPUTER BATTLE",
+		"pvp": "本地双人" if zh else "LOCAL VERSUS",
+	}.get(battle_mode, battle_mode.to_upper()))
+	return {
+		"title": "战斗复盘" if zh else "POST-BATTLE REVIEW",
+		"summary": ("P%d 胜利  |  VP %d:%d  |  剩余 %02d:%02d  |  %s" if zh else "P%d wins  |  VP %d:%d  |  %02d:%02d left  |  %s") % [winner_id, p1_points, p2_points, minutes, seconds, mode_label],
+		"hint": "复盘和改构筑是玩家自主选择：可以先留在战场观察，也可以回到出战配置或单位编辑后再战。" if zh else "Review and build changes are player-chosen: inspect the frozen field, adjust sortie, edit units, or rematch.",
+		"items": _localized_specs(POST_BATTLE_REVIEW_SPECS, zh, false),
 	}
 
 

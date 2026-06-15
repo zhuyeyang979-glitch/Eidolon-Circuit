@@ -32,7 +32,9 @@ func _init() -> void:
 	var required_actions := [
 		"p1_up", "p1_down", "p1_left", "p1_right",
 		"p1_face_left", "p1_face_right",
+		"p1_cool", "p1_portal",
 		"p1_attack_1", "p1_attack_2", "p1_attack_3", "p1_attack_4", "p1_attack_5", "p1_attack_6",
+		"p2_cool", "p2_portal",
 	]
 	for action_name in required_actions:
 		if not InputMap.has_action(action_name):
@@ -43,6 +45,10 @@ func _init() -> void:
 	for i in range(expected.size()):
 		if not _has_key("p1_attack_%d" % (i + 1), int(expected[i])):
 			_fail("P1 attack %d lost default UIOJKL binding." % (i + 1))
+	if not _has_key("p1_cool", KEY_G):
+		_fail("P1 manual cooling lost default G binding.")
+	if not _has_key("p1_portal", KEY_TAB):
+		_fail("P1 tactical portal lost default Tab binding.")
 	if failed:
 		quit(1)
 		return

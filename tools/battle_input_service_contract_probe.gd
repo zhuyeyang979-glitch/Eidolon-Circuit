@@ -61,7 +61,7 @@ func _init() -> void:
 			return
 	var service = BattleInputServiceScript.new()
 	var actions: Array = service.battle_action_names(["p1", "p2"], 6)
-	for action_name in ["battle_pause", "p1_left", "p1_right", "p1_up", "p1_down", "p1_face_left", "p1_face_right", "p1_portal", "p1_attack_6", "p2_attack_6"]:
+	for action_name in ["battle_pause", "p1_left", "p1_right", "p1_up", "p1_down", "p1_face_left", "p1_face_right", "p1_cool", "p1_portal", "p1_attack_6", "p2_cool", "p2_attack_6"]:
 		if not actions.has(action_name):
 			_fail("battle_action_names missing action: %s in %s" % [action_name, str(actions)])
 			return

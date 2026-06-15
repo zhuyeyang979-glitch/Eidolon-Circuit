@@ -6,11 +6,40 @@ func battle_action_names(prefixes: Array, attack_group_count: int) -> Array:
 	var actions: Array = ["battle_pause"]
 	for raw_prefix in prefixes:
 		var prefix := String(raw_prefix)
-		for suffix in ["left", "right", "up", "down", "face_left", "face_right", "portal"]:
+		for suffix in ["left", "right", "up", "down", "face_left", "face_right", "cool", "portal"]:
 			actions.append("%s_%s" % [prefix, suffix])
 		for attack_index in range(maxi(0, attack_group_count)):
 			actions.append("%s_attack_%d" % [prefix, attack_index + 1])
 	return actions
+
+
+func tactical_input_contract() -> Dictionary:
+	return {
+		"high_frequency_hero": [
+			"move",
+			"turn",
+			"boost",
+			"attack",
+			"manual_cooling",
+		],
+		"mid_frequency_tactical": [
+			"cycle_portal",
+			"pair_summon",
+			"deploy_hero",
+			"deploy_puppet",
+			"deploy_barrier",
+		],
+		"low_frequency_preset": [
+			"puppet_source_code",
+			"barrier_ether_logic",
+		],
+		"forbidden_runtime_micro": [
+			"puppet_direct_move",
+			"puppet_direct_attack",
+			"barrier_direct_move",
+			"barrier_direct_attack",
+		],
+	}
 
 
 func capture_edge_frame(action_names: Array, pending_pressed: Dictionary, pending_released: Dictionary, just_pressed_fn: Callable, just_released_fn: Callable) -> Dictionary:

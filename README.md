@@ -122,20 +122,26 @@ Computer Battle:
 - P3 can watch a computer-versus-computer match with the spectator camera.
 - No large language model or external model service is involved.
 
+## Battle Space Visuals
+
+The battle arena still uses a top-down horizontal field with left and right wrapping. The codebase has Mobius projection and surface-rendering infrastructure, but the current battle view deliberately keeps combat projection locally rectangular so attacks, hitboxes, and map references remain readable.
+
+Because a Mobius space has little design value if players cannot see or feel it, the current runtime presents a temporary linear elevation cue instead of a full twist: the world-grid surface gains subtle low-to-high lane bands and dashed height contours. This is visual-only. It does not change collision, projectile paths, target queries, or the local battle coordinate contract.
+
+This leaves a clear extension point for a later full Mobius treatment: visual twist, authored terrain height, barrier/terrain interaction, and topology-aware local battle events can be added without mixing those ideas into today's combat geometry.
+
 ## Battle Controls
 
 P1 keyboard:
 
 - Move hero: `W` / `A` / `S` / `D`
 - Boost: double-tap a direction
-- Six crab attack groups: `F` left claw, `R` right claw, `T` front-left leg, `C` front-right leg, `V` rear-left leg, `B` rear-right leg
+- Six attack groups: `U` / `I` / `O` / `J` / `K` / `L`
 - Manual cooling: hold `G`
-- Command module: direction input then `Y`
-- Melee command attack: `236+F` becomes armor-state, `214+F` becomes active-state
-- Cycle summon portal: `Q`
-- Buy/deploy Hero: `1`
-- Buy/deploy Puppet group: `2`
-- Buy/deploy Barrier: `3`
+- Command module: directional command plus an attack button
+- Melee command attack: `236+attack` becomes armor-state, `214+attack` becomes active-state
+- Cycle summon portal: `Tab`
+- Pair-summon sortie slot: press the slot's assigned two attack buttons together; held direction chooses a lane, otherwise the current portal is used
 
 Controller:
 
@@ -144,13 +150,19 @@ Controller:
 - Six attack groups: face buttons plus left/right shoulder
 - Manual cooling: guide button
 - Cycle summon portal: back button
-- Buy/deploy Hero: start button
-- Buy/deploy Puppet group: left stick press
-- Buy/deploy Barrier: right stick press
+- Pair-summon sortie slot: press the slot's assigned two attack buttons together; held direction chooses a lane, otherwise the current portal is used
 
 Normal attacks are always normal state. Armor and active states only appear through action modules or source-code puppet sequences. Gun-like muscle components can fire bullet, chemical, or laser projectiles and add a sharp heat spike when used.
 
 The command notation is fighting-game numpad notation, not number keys. In this prototype `236` is recognized as down then forward, and `214` as down then back, relative to the hero's facing direction. Any melee attack button can be combined with these: `236+attack` is armor-state, `214+attack` is active-state.
+
+## Tactical Input Model
+
+High-frequency hero control is the part that feels closest to a fighting game: movement, facing, Boost, attack buttons, aiming holds, command inputs, and manual cooling all stay on the hero and are expected to be used moment to moment.
+
+Low-frequency tactical commands are intentionally smaller. The player can Cycle summon portal: `Tab`, then deploy a prepared sortie slot by pressing its paired attack buttons together. The deployed slot may be a hero, puppet group, or barrier depending on the team setup and current resource gate.
+
+Puppet and barrier control is not direct micromanagement during battle. Puppet Source Code and barrier Ether logic are authored before battle, then evaluated locally from the current battle state. Runtime input chooses when and where to commit those prepared tools; it does not add separate puppet-move, puppet-attack, barrier-move, or barrier-attack controls.
 
 The default hero is now a crab-style mech built around a torso chassis. Each claw is not a single pincer part: it is represented as two opposing scythe blades connected by a joint and driven by a rod-clamp module. The front two legs mount bullet guns with swing-aim modules, and the rear two legs mount scythes with chain-swing modules.
 
@@ -206,3 +218,9 @@ The battle HUD places all three role resources in the corners: P1 health bars li
 - If the opponent has no units in play, the battle ends immediately.
 - First to `7` victory points wins.
 - Matches target roughly `10` minutes; timeout resolves by victory points, then remaining health.
+
+## Post-Battle Review Loop
+
+Battle end does not force the player into editing. The result freezes into a post-battle review panel where the player can stay on the field, inspect the score, adjust the current sortie configuration, open Unit Edit, rematch, or return to the main menu.
+
+This is the deck-building loop for Eidolon Circuit: design a roster, test it in training, take it into formal battle, then choose whether the current configuration needs changes. The system offers the loop, but the player decides when to revise the build.
