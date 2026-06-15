@@ -52,12 +52,13 @@ const BATTLE_RUNTIME_TITLE_RECT := Rect2(Vector2(18.0, 12.0), Vector2(294.0, 28.
 const BATTLE_RUNTIME_BUTTON_ORIGIN := Vector2(24.0, 52.0)
 const BATTLE_RUNTIME_BUTTON_SIZE := Vector2(282.0, 28.0)
 const BATTLE_RUNTIME_BUTTON_ROW_GAP := 6.0
-const POST_BATTLE_REVIEW_RECT := Rect2(Vector2(326.0, 178.0), Vector2(628.0, 326.0))
-const POST_BATTLE_REVIEW_ACCENT_RECT := Rect2(Vector2(32.0, 54.0), Vector2(564.0, 3.0))
-const POST_BATTLE_REVIEW_TITLE_RECT := Rect2(Vector2(32.0, 16.0), Vector2(564.0, 34.0))
-const POST_BATTLE_REVIEW_SUMMARY_RECT := Rect2(Vector2(42.0, 66.0), Vector2(544.0, 34.0))
-const POST_BATTLE_REVIEW_HINT_RECT := Rect2(Vector2(42.0, 104.0), Vector2(544.0, 58.0))
-const POST_BATTLE_REVIEW_BUTTON_ORIGIN := Vector2(46.0, 180.0)
+const POST_BATTLE_REVIEW_RECT := Rect2(Vector2(306.0, 146.0), Vector2(668.0, 430.0))
+const POST_BATTLE_REVIEW_ACCENT_RECT := Rect2(Vector2(32.0, 54.0), Vector2(604.0, 3.0))
+const POST_BATTLE_REVIEW_TITLE_RECT := Rect2(Vector2(32.0, 16.0), Vector2(604.0, 34.0))
+const POST_BATTLE_REVIEW_SUMMARY_RECT := Rect2(Vector2(42.0, 66.0), Vector2(584.0, 34.0))
+const POST_BATTLE_REVIEW_HINT_RECT := Rect2(Vector2(42.0, 104.0), Vector2(584.0, 48.0))
+const POST_BATTLE_REVIEW_COMMAND_LOG_RECT := Rect2(Vector2(42.0, 160.0), Vector2(584.0, 92.0))
+const POST_BATTLE_REVIEW_BUTTON_ORIGIN := Vector2(46.0, 270.0)
 const POST_BATTLE_REVIEW_BUTTON_SIZE := Vector2(252.0, 36.0)
 const POST_BATTLE_REVIEW_BUTTON_GAP := Vector2(32.0, 12.0)
 
@@ -237,6 +238,10 @@ static func post_battle_review_summary_rect() -> Rect2:
 
 static func post_battle_review_hint_rect() -> Rect2:
 	return POST_BATTLE_REVIEW_HINT_RECT
+
+
+static func post_battle_review_command_log_rect() -> Rect2:
+	return POST_BATTLE_REVIEW_COMMAND_LOG_RECT
 
 
 static func post_battle_review_button_rect(index: int) -> Rect2:

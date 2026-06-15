@@ -192,7 +192,7 @@ func battle_runtime_model(language: String, battle_mode: String, training_mode: 
 	}
 
 
-func post_battle_review_model(language: String, winner_id: int, victory_points: Dictionary, match_time_remaining: float, battle_mode: String) -> Dictionary:
+func post_battle_review_model(language: String, winner_id: int, victory_points: Dictionary, match_time_remaining: float, battle_mode: String, command_log_text: String = "") -> Dictionary:
 	var zh := language == "zh"
 	var p1_points := int(victory_points.get(1, 0))
 	var p2_points := int(victory_points.get(2, 0))
@@ -207,6 +207,7 @@ func post_battle_review_model(language: String, winner_id: int, victory_points: 
 		"title": "战斗复盘" if zh else "POST-BATTLE REVIEW",
 		"summary": ("P%d 胜利  |  VP %d:%d  |  剩余 %02d:%02d  |  %s" if zh else "P%d wins  |  VP %d:%d  |  %02d:%02d left  |  %s") % [winner_id, p1_points, p2_points, minutes, seconds, mode_label],
 		"hint": "复盘和改构筑是玩家自主选择：可以先留在战场观察，也可以回到出战配置或单位编辑后再战。" if zh else "Review and build changes are player-chosen: inspect the frozen field, adjust sortie, edit units, or rematch.",
+		"command_log": command_log_text,
 		"items": _localized_specs(POST_BATTLE_REVIEW_SPECS, zh, false),
 	}
 

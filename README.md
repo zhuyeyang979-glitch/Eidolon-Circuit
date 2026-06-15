@@ -173,6 +173,14 @@ The six attack groups have a dedicated battle HUD strip so the player can tell w
 - The controlled unit highlights the corresponding runtime segment for the same flash window. Successful fire is warm, aim and lock are cool or gold, and blocked or empty inputs are red.
 - The small bars under each slot link to recovery, heat, and ammo where available. They are advisory feedback only; they do not force the player to change a build or prescribe a single "correct" combo.
 
+## Command Review Log
+
+Directional command cache messages such as armor command cached or active command cached are not shown as live HUD text. They are recorded silently for post-battle review so combat stays focused on hero movement and attack feedback.
+
+- The log records command cache, consume, and special-module match events with player, timestamp, command text, state, and source.
+- The post-battle review panel shows the latest entries for players and developers to inspect input timing, command consumption, and build execution after the round.
+- This log is diagnostic and advisory. It helps explain why a build did or did not execute a planned command, but it does not interrupt battle or force a player to change the current configuration.
+
 ## Cognitive Load Guardrails
 
 The battle input model treats the hero as the only high-frequency direct-control focus. Aiming can temporarily reserve the turn keys, but it must not create a second real-time control layer for puppets or barriers.

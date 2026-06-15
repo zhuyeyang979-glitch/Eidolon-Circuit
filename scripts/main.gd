@@ -7712,6 +7712,7 @@ const ARCHETYPE_PART_NAMES = {
 const ATTACK_GROUP_COUNT = 6
 const ATTACK_KEY_LABELS = ["U", "I", "O", "J", "K", "L"]
 const ATTACK_GROUP_FALLBACK = ["LEFT CLAW", "RIGHT CLAW", "FRONT LEFT LEG", "FRONT RIGHT LEG", "REAR LEFT LEG", "REAR RIGHT LEG"]
+const BATTLE_COMMAND_LOG_LIMIT = 48
 const BURST_ATTACK_CHORD = [0, 1, 2]
 const ROMANCE_CANCEL_CHORD = [3, 4, 5]
 const COMBO_SCALING_MAX_HITS = 24
@@ -8750,6 +8751,8 @@ var training_respawn_timer := 0.0
 var muscle_selection := {1: 0, 2: 0}
 var command_buffers := {1: [], 2: []}
 var command_timers := {1: 0.0, 2: 0.0}
+var battle_command_log: Array = []
+var battle_command_log_last_cache := {1: "", 2: ""}
 var attack_command_windows := {1: {}, 2: {}}
 var pending_deploys := {}
 var pending_deploy_data := {}
@@ -16107,6 +16110,8 @@ func _cleanup_battle_runtime(preserve_for_return: bool = false) -> void:
 		gun_activation_state = {1: {}, 2: {}}
 		held_melee_activation_state = {1: {}, 2: {}}
 		battle_attack_feedback_events = {1: {}, 2: {}}
+		battle_command_log.clear()
+		battle_command_log_last_cache = {1: "", 2: ""}
 	_commit_battle_cleanup_intent(cleanup_intent)
 
 
@@ -18047,6 +18052,8 @@ func _begin_battle(mode: String, preloaded: bool = false, reason: String = "") -
 	match_time_remaining = MATCH_TARGET_SECONDS
 	command_buffers = {1: [], 2: []}
 	command_timers = {1: 0.0, 2: 0.0}
+	battle_command_log.clear()
+	battle_command_log_last_cache = {1: "", 2: ""}
 	attack_command_windows = {1: {}, 2: {}}
 	pending_deploys = {
 		1: {"hero": 0.0, "puppet": 0.0, "barrier": 0.0},
@@ -18066,6 +18073,8 @@ func _begin_battle(mode: String, preloaded: bool = false, reason: String = "") -
 	gun_activation_state = {1: {}, 2: {}}
 	held_melee_activation_state = {1: {}, 2: {}}
 	battle_attack_feedback_events = {1: {}, 2: {}}
+	battle_command_log.clear()
+	battle_command_log_last_cache = {1: "", 2: ""}
 	salvo_landing_preview_effects.clear()
 	_apply_ai_side_roster_mapping(mode)
 	_initialize_sortie_price_state()
@@ -33238,7 +33247,9 @@ func _start_or_fire_attack_button(player_id: int, prefix: String, input_vector: 
 	var aim_mode := _battle_action_event_service().attack_button_aim_mode(String(group.get("aim_mode", hero.stats.get("aim_mode", "fixed"))), _group_uses_true_bullet(group))
 	var command_state_intent := _battle_action_event_service().attack_button_command_state_intent(requested_state, String(group.get("module_action_profile", "")))
 	if bool(command_state_intent.get("clear_buffer", false)):
+		_record_battle_command_log(player_id, "consume", _command_text(player_id), requested_state, "attack_button", attack_index, true)
 		command_buffers[player_id] = []
+		battle_command_log_last_cache[player_id] = ""
 	elif bool(command_state_intent.get("consume_melee_state", false)):
 		_consume_melee_state_command(player_id, hero, String(command_state_intent.get("requested_state", requested_state)), input_vector)
 	if aim_mode == "fixed":
@@ -33416,6 +33427,124 @@ func _record_command_input(player_id: int, prefix: String, delta: float = BATTLE
 	)
 	command_buffers[player_id] = Array(intent.get("buffer", []))
 	command_timers[player_id] = float(intent.get("timer", 0.0))
+	if bool(intent.get("added_input", false)):
+		_note_battle_command_cache(player_id)
+
+
+func _note_battle_command_cache(player_id: int) -> void:
+	var command_text := _command_text(player_id)
+	if command_text == "":
+		return
+	var cached_state := ""
+	if bool(_battle_action_event_service().command_match_intent(command_text, "236").get("matched", false)):
+		cached_state = "armor"
+	elif bool(_battle_action_event_service().command_match_intent(command_text, "214").get("matched", false)):
+		cached_state = "active"
+	if cached_state == "":
+		return
+	var signature := "%s:%s" % [command_text, cached_state]
+	if String(battle_command_log_last_cache.get(player_id, "")) == signature:
+		return
+	battle_command_log_last_cache[player_id] = signature
+	_record_battle_command_log(player_id, "cache", command_text, cached_state, "direction_buffer")
+
+
+func _record_battle_command_log(player_id: int, event_kind: String, command_text: String, command_state: String, source: String = "", attack_index: int = -1, consumed: bool = false) -> void:
+	if player_id <= 0:
+		return
+	var clean_command := String(command_text).strip_edges()
+	if clean_command == "":
+		return
+	var state := String(command_state).strip_edges()
+	if state == "":
+		state = "command"
+	var elapsed := maxf(0.0, MATCH_TARGET_SECONDS - match_time_remaining)
+	battle_command_log.append({
+		"time": elapsed,
+		"player_id": player_id,
+		"kind": event_kind,
+		"command": clean_command,
+		"state": state,
+		"source": source,
+		"attack_index": attack_index,
+		"consumed": consumed,
+	})
+	while battle_command_log.size() > BATTLE_COMMAND_LOG_LIMIT:
+		battle_command_log.pop_front()
+
+
+func _battle_command_log_summary_text(max_lines: int = 6) -> String:
+	var zh := _ui_is_zh()
+	if battle_command_log.is_empty():
+		return "指令日志：本局未记录装甲、主动或特殊指令。" if zh else "Command log: no armor, active, or special commands recorded this match."
+	var lines := PackedStringArray()
+	lines.append("指令日志（最近 %d 条）" % mini(max_lines, battle_command_log.size()) if zh else "Command log (latest %d)" % mini(max_lines, battle_command_log.size()))
+	var start := maxi(0, battle_command_log.size() - maxi(1, max_lines))
+	for i in range(start, battle_command_log.size()):
+		if battle_command_log[i] is Dictionary:
+			lines.append(_battle_command_log_line(Dictionary(battle_command_log[i]), zh))
+	return "\n".join(lines)
+
+
+func _battle_command_log_line(entry: Dictionary, zh: bool) -> String:
+	var player_id := int(entry.get("player_id", 0))
+	var stamp := "%.1fs" % float(entry.get("time", 0.0))
+	var kind_label := _battle_command_log_kind_label(String(entry.get("kind", "")), zh)
+	var state_label := _battle_command_log_state_label(String(entry.get("state", "")), zh)
+	var command_text := String(entry.get("command", ""))
+	var source_label := _battle_command_log_source_label(String(entry.get("source", "")), zh)
+	var attack_index := int(entry.get("attack_index", -1))
+	var attack_label := ""
+	if attack_index >= 0:
+		attack_label = " #%d" % [attack_index + 1]
+	if zh:
+		return "P%d %s %s %s %s%s · %s" % [player_id, stamp, kind_label, state_label, command_text, attack_label, source_label]
+	return "P%d %s %s %s %s%s · %s" % [player_id, stamp, kind_label, state_label, command_text, attack_label, source_label]
+
+
+func _battle_command_log_kind_label(event_kind: String, zh: bool) -> String:
+	match event_kind:
+		"cache":
+			return "缓存" if zh else "CACHE"
+		"consume":
+			return "消耗" if zh else "USE"
+		"match":
+			return "匹配" if zh else "MATCH"
+	return "记录" if zh else "LOG"
+
+
+func _battle_command_log_state_label(command_state: String, zh: bool) -> String:
+	match command_state:
+		"armor":
+			return "装甲" if zh else "ARMOR"
+		"active":
+			return "主动" if zh else "ACTIVE"
+		"special":
+			return "特殊" if zh else "SPECIAL"
+		"normal":
+			return "通常" if zh else "NORMAL"
+	return "指令" if zh else "COMMAND"
+
+
+func _battle_command_log_source_label(source: String, zh: bool) -> String:
+	match source:
+		"direction_buffer":
+			return "方向缓冲" if zh else "BUFFER"
+		"melee_attack":
+			return "近战攻击" if zh else "MELEE"
+		"melee_state":
+			return "状态攻击" if zh else "STATE"
+		"attack_button":
+			return "攻击键" if zh else "ATTACK"
+		"runtime_module_attack":
+			return "行动模块" if zh else "MODULE"
+		"command_skill":
+			return "特殊模块" if zh else "SPECIAL"
+		"trap_control":
+			return "陷阱控制" if zh else "TRAP CTRL"
+		"trap_field":
+			return "陷阱场" if zh else "TRAP FIELD"
+	return "系统" if zh else "SYSTEM"
 
 
 func _begin_unit_module_action(unit, action_kind: String, group: Dictionary, attack_index: int) -> Dictionary:
@@ -34237,7 +34366,9 @@ func _hero_runtime_module_attack(player_id: int, prefix: String, input_vector: V
 	if runtime_variant != "":
 		runtime_binding["runtime_command_variant"] = runtime_variant
 	if _battle_action_event_service().command_window_should_clear_buffer(action_state, runtime_profile, _runtime_command_buffer_clear_profiles()):
+		_record_battle_command_log(player_id, "consume", _command_text(player_id), action_state, "runtime_module_attack", attack_index, true)
 		command_buffers[player_id] = []
+		battle_command_log_last_cache[player_id] = ""
 	var direction := _battle_action_event_service().runtime_module_direction(input_vector, _unit_forward_vector(hero))
 	var event: Dictionary = {}
 	if hero.has_method("begin_runtime_module_action"):
@@ -34291,7 +34422,7 @@ func _hero_normal_attack(player_id: int, prefix: String, input_vector: Vector2, 
 			return
 	if String(group.get("module_effect", "")) == "trap_control":
 		var command := String(group.get("command", "236"))
-		if not _command_matches(player_id, command):
+		if not _command_matches(player_id, command, "trap_control"):
 			_record_attack_feedback(player_id, attack_index, "block", "command miss", 0.9, 0.86)
 			_show_battle_message("Trap link command miss. Try %s + attack %d." % [command, attack_index + 1], 0.65)
 			return
@@ -34396,7 +34527,7 @@ func _hero_command_skill(player_id: int, prefix: String, input_vector: Vector2, 
 	if not _is_live_unit(hero):
 		return
 	var command: String = String(hero.stats.get("command", "236"))
-	if not _command_matches(player_id, command):
+	if not _command_matches(player_id, command, "command_skill"):
 		_show_battle_message("Command miss. Try %s + %s." % [command, requested_state.to_upper()], 0.65)
 		return
 	if String(hero.stats.get("role_switch", "")) != "":
@@ -34795,18 +34926,25 @@ func _attack_state_for_group(player_id: int, hero, group: Dictionary, input_vect
 
 
 func _melee_command_attack_kind(player_id: int, hero, consume: bool = true, input_vector: Vector2 = Vector2.ZERO) -> String:
+	var before_text := _command_text(player_id)
 	var intent := _battle_action_event_service().melee_command_attack_intent(input_vector, _latest_command_direction(player_id), _unit_forward_vector(hero), consume)
+	var attack_state := String(intent.get("attack_state", "normal"))
 	if bool(intent.get("clear_buffer", false)):
+		_record_battle_command_log(player_id, "consume", before_text, attack_state, "melee_attack", -1, true)
 		command_buffers[player_id] = []
-	return String(intent.get("attack_state", "normal"))
+		battle_command_log_last_cache[player_id] = ""
+	return attack_state
 
 
 func _consume_melee_state_command(player_id: int, hero, requested_state: String, input_vector: Vector2 = Vector2.ZERO) -> bool:
+	var before_text := _command_text(player_id)
 	var intent := _battle_action_event_service().consume_melee_state_intent(input_vector, _latest_command_direction(player_id), _unit_forward_vector(hero), requested_state)
 	if not bool(intent.get("matched", false)):
 		return false
 	if bool(intent.get("clear_buffer", false)):
+		_record_battle_command_log(player_id, "consume", before_text, requested_state, "melee_state", -1, true)
 		command_buffers[player_id] = []
+		battle_command_log_last_cache[player_id] = ""
 	return true
 
 
@@ -34838,10 +34976,13 @@ func _attack_direction(hero, input_vector: Vector2) -> Vector2:
 	return _battle_action_event_service().attack_direction(input_vector, _unit_forward_vector(hero))
 
 
-func _command_matches(player_id: int, command: String) -> bool:
-	var intent := _battle_action_event_service().command_match_intent(_command_text(player_id), command)
+func _command_matches(player_id: int, command: String, source: String = "command") -> bool:
+	var before_text := _command_text(player_id)
+	var intent := _battle_action_event_service().command_match_intent(before_text, command)
 	if bool(intent.get("matched", false)):
+		_record_battle_command_log(player_id, "match", before_text if before_text != "" else command, "special", source, -1, true)
 		command_buffers[player_id] = []
+		battle_command_log_last_cache[player_id] = ""
 		return true
 	return false
 
@@ -36995,7 +37136,7 @@ func _try_trigger_trap_fields(player_id: int, link_filter: String = "", input_ve
 		var link_matches := link_filter == "" or link_filter == "all" or trap_link == link_filter
 		var command_matched := command_already_matched
 		if not jammed and cooldown <= 0.0 and link_matches and not targets.is_empty() and not command_matched:
-			command_matched = _command_matches(player_id, command)
+			command_matched = _command_matches(player_id, command, "trap_field")
 		var intent := _battle_field_runtime_service().trap_trigger_intent({
 			"jammed": jammed,
 			"cooldown": cooldown,
@@ -52553,7 +52694,7 @@ func _show_post_battle_review(winner_id: int, reason: String = "victory") -> voi
 	post_battle_review_reason = reason
 	if menu_view == null or menu_controller == null:
 		return
-	menu_view.update_post_battle_review(menu_controller.post_battle_review_model(ui_language, winner_id, victory_points, match_time_remaining, battle_mode))
+	menu_view.update_post_battle_review(menu_controller.post_battle_review_model(ui_language, winner_id, victory_points, match_time_remaining, battle_mode, _battle_command_log_summary_text(5)))
 	menu_view.show_post_battle_review()
 
 
