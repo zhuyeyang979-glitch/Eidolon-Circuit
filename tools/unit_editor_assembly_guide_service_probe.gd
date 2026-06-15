@@ -41,10 +41,10 @@ func _init() -> void:
 	var hero_steps: Array = service.steps_for_role("hero")
 	if hero_steps.size() != 9:
 		_fail("Hero guide should expose nine recommended assembly steps, got %d." % hero_steps.size())
-	var expected_zh := ["躯干", "关节/肌肉", "武器", "连接", "引擎", "散热", "推进", "英魂", "行动模块"]
+	var expected_zh := ["躯干", "关节/肌肉", "武器", "连接", "引擎", "热量/散热", "推进", "英魂", "行动模块"]
 	if _titles(hero_steps, true) != expected_zh:
 		_fail("Hero guide should use the beginner-friendly order: %s." % str(_titles(hero_steps, true)))
-	var expected_en := ["TORSO", "JOINT/MUSCLE", "WEAPON", "CONNECT", "ENGINE", "COOLING", "BOOSTER", "SOUL", "ACTION"]
+	var expected_en := ["TORSO", "JOINT/MUSCLE", "WEAPON", "CONNECT", "ENGINE", "HEAT/COOLING", "BOOSTER", "SOUL", "ACTION"]
 	if _titles(hero_steps, false) != expected_en:
 		_fail("Hero guide English labels should be compact and ordered: %s." % str(_titles(hero_steps, false)))
 	var connection_model: Dictionary = service.step_model("hero", 3, true)

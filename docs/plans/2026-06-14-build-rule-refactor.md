@@ -71,7 +71,7 @@ Use these initial thresholds:
 - Weapon utilization hard invalid: `weapon_utilization_ratio < 0.15` when `weapon_mass >= 6.0`, warning at `< 0.30`.
 - Dominant role warning: `dominant_role_ratio < 0.35` when at least two role contribution buckets are nonzero.
 - Drive peak hard invalid: `drive_peak_ratio > 1.35`, warning at `> 1.0`.
-- Heat peak warning: `heat_peak_ratio > 1.60`, caution at `> 1.20`; not a hard invalid in V1.
+- Heat peak was initially planned as a warning above `1.60` and caution above `1.20`; this threshold model is superseded by `2026-06-15-heat-core-concept.md`, which warns earlier and treats heat as an advisory combat-rhythm profile rather than a hard invalid.
 - Plugin pressure warning at `> 0.85`; hard invalid remains owned by existing slot compatibility checks.
 - Apply idle-material and action-bound weapon rules only to roles where those concepts are meaningful; barrier canvas material is functional structure and is exempt from idle-mass rejection.
 

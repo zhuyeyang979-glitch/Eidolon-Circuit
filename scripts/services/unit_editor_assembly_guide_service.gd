@@ -74,13 +74,14 @@ const BODY_STEPS := [
 	},
 	{
 		"key": "cooling",
+		"core_concept": "heat",
 		"slot_key": "cooling",
 		"part_group_mode": "software_muscle",
 		"part_filter_mode": "cooling",
-		"zh_title": "散热",
-		"en_title": "COOLING",
-		"zh_instruction": "加入散热器，给连招、开火和推进留下热量余地。",
-		"en_instruction": "Add cooling so attacks, fire, and boosts can be sustained.",
+		"zh_title": "热量/散热",
+		"en_title": "HEAT/COOLING",
+		"zh_instruction": "热量是战斗节奏的核心；加入散热器，并为进攻、撤退、停止行动和主动散热预留窗口。",
+		"en_instruction": "Heat is the combat-tempo core; add cooling and plan attack, disengage, stop, and active-cooling windows.",
 	},
 	{
 		"key": "booster",
@@ -109,8 +110,8 @@ const BODY_STEPS := [
 		"part_filter_mode": "module",
 		"zh_title": "行动模块",
 		"en_title": "ACTION",
-		"zh_instruction": "最后装行动模块并绑定目标；完成后可保存或进入训练测试。",
-		"en_instruction": "Finish with an action module and target binding; then save or test.",
+		"zh_instruction": "最后装行动模块并绑定目标；完成后检查热节奏，再保存或进入训练测试。",
+		"en_instruction": "Finish with an action module and target binding; review heat rhythm, then save or test.",
 	},
 ]
 
@@ -147,13 +148,14 @@ const BARRIER_STEPS := [
 	},
 	{
 		"key": "cooling",
+		"core_concept": "heat",
 		"slot_key": "cooling",
 		"part_group_mode": "software_muscle",
 		"part_filter_mode": "cooling",
-		"zh_title": "散热",
-		"en_title": "COOLING",
-		"zh_instruction": "有持续效果或高热模块时补散热。",
-		"en_instruction": "Add cooling for sustained effects or high-heat modules.",
+		"zh_title": "热量/散热",
+		"en_title": "HEAT/COOLING",
+		"zh_instruction": "热量是持续效果的节奏核心；为高热模块补散热并规划停止或主动散热窗口。",
+		"en_instruction": "Heat is the tempo core for sustained effects; add cooling and plan stop or active-cooling windows.",
 	},
 	{
 		"key": "module",

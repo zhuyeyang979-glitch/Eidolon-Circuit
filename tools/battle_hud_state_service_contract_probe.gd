@@ -30,6 +30,11 @@ func _init() -> void:
 		"support_armor": "ARM",
 		"electronic_armor": "EA",
 		"heat": "HEAT",
+		"heat_stable": "STABLE",
+		"heat_pressure": "PRESSURE",
+		"heat_decision": "DECIDE",
+		"heat_vent": "VENT",
+		"heat_overheat": "OVERHEAT",
 		"deploy": "DEP",
 		"ammo": "AMMO",
 		"resource": "RES",
@@ -88,7 +93,7 @@ func _init() -> void:
 			"electronic_armor_max": 2.0,
 		},
 	}, terms)
-	if clamped_bar_text != "10/10 EA0  HEAT 100%":
+	if clamped_bar_text != "10/10 EA0  HEAT 100% OVERHEAT":
 		_fail("role_bar_text should clamp hero HUD values: %s" % clamped_bar_text)
 		return
 	var puppet_text := service.role_bar_text({

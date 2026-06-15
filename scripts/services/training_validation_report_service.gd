@@ -1,6 +1,8 @@
 extends RefCounted
 class_name TrainingValidationReportService
 
+const HeatDoctrineService = preload("res://scripts/services/heat_doctrine_service.gd")
+
 const KIND_OBSERVE := "OBSERVE"
 const KIND_RISK := "RISK"
 const KIND_COUNTER := "COUNTER"
@@ -47,6 +49,8 @@ const KIND_LABELS_EN := {
 	KIND_SUGGEST: "SUGGEST",
 }
 
+var heat_doctrine = HeatDoctrineService.new()
+
 
 func report(context: Dictionary) -> Dictionary:
 	var units: Array = Array(context.get("units", []))
@@ -56,6 +60,7 @@ func report(context: Dictionary) -> Dictionary:
 	var intent_source := "player" if String(context.get("intent_key", "")).strip_edges() != "" else String(context.get("intent_source", "auto"))
 	var entries: Array = []
 	_add_observation(entries, intent_key, metrics)
+	_add_heat_rhythm_observation(entries, metrics, runtime)
 	_add_static_risks(entries, intent_key, metrics)
 	_add_runtime_risks(entries, runtime)
 	_add_counter(entries, intent_key, metrics)
@@ -75,6 +80,7 @@ func report(context: Dictionary) -> Dictionary:
 		"intent_label_zh": _intent_label(intent_key, "zh"),
 		"intent_label_en": _intent_label(intent_key, "en"),
 		"metrics": metrics,
+		"heat_core": heat_doctrine.build_profile(maxf(float(metrics.get("max_heat_ratio", 0.0)), float(runtime.get("heat_peak_ratio", 0.0)))),
 		"runtime": runtime.duplicate(true),
 		"entries": entries,
 	}
@@ -93,6 +99,7 @@ func report_text(report_data: Dictionary, language: String = "zh") -> String:
 		lines.append("训练验证报告")
 		lines.append("%s：%s" % ["玩家目标" if intent_source == "player" else "系统观察", _intent_label(intent_key, "zh")])
 		lines.append("提示只作为建议，不会阻止保存或出战。")
+		lines.append("核心概念：热量决定进攻、撤退、停止行动和主动散热的战斗节奏。")
 		if _runtime_sample_has_values(runtime):
 			lines.append("训练样本：%.1fs / 开火 %d / 命中 %d / 伤害 %.0f / 热峰 %.0f%% / 弹余 %s / Boost %d / 移动 %.1fm" % [
 				float(runtime.get("seconds", 0.0)),
@@ -110,6 +117,7 @@ func report_text(report_data: Dictionary, language: String = "zh") -> String:
 		lines.append("TRAINING VALIDATION")
 		lines.append("%s: %s" % ["Player Goal" if intent_source == "player" else "Observed Intent", _intent_label(intent_key, "en")])
 		lines.append("Advisory only; this report never blocks save or sortie.")
+		lines.append("Core concept: heat sets the combat rhythm between attack, disengage, stop, and active cooling.")
 		if _runtime_sample_has_values(runtime):
 			lines.append("Training sample: %.1fs / shots %d / hits %d / damage %.0f / heat peak %.0f%% / ammo left %s / Boost %d / moved %.1fm" % [
 				float(runtime.get("seconds", 0.0)),
@@ -320,6 +328,19 @@ func _add_observation(entries: Array, intent_key: String, metrics: Dictionary) -
 				"当前设计意图还不够尖锐，训练时优先观察距离、动作、热量和命中反馈。",
 				"Current intent is broad; prioritize observing range, actions, heat, and hit feedback."
 			))
+
+
+func _add_heat_rhythm_observation(entries: Array, metrics: Dictionary, runtime: Dictionary) -> void:
+	var heat_peak_ratio := maxf(float(metrics.get("max_heat_ratio", 0.0)), float(runtime.get("heat_peak_ratio", 0.0)))
+	var stage := heat_doctrine.rhythm_stage({"heat_ratio": heat_peak_ratio, "overheated": int(runtime.get("overheat_count", 0)) > 0})
+	var labels_zh := {"stable": "稳定", "pressure": "升压", "decision": "决策", "vent": "排热", "overheat": "过热"}
+	var labels_en := {"stable": "stable", "pressure": "pressure", "decision": "decision", "vent": "vent", "overheat": "overheat"}
+	entries.append(_entry(
+		KIND_OBSERVE,
+		"heat:rhythm",
+		"热量是战斗节奏的核心；当前热峰约 %.0f%%，处于“%s”阶段。继续进攻、撤退、停止行动或主动散热都可以，但应服务于构筑意图。" % [heat_peak_ratio * 100.0, String(labels_zh.get(stage, stage))],
+		"Heat is the combat-tempo core; the current %.0f%% peak reaches the %s stage. Attack, disengage, stop, or active cooling are all valid when they serve the build intent." % [heat_peak_ratio * 100.0, String(labels_en.get(stage, stage))]
+	))
 
 
 func _add_static_risks(entries: Array, intent_key: String, metrics: Dictionary) -> void:

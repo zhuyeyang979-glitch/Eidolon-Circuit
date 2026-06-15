@@ -16771,6 +16771,11 @@ func _ui_term(term_key: String) -> String:
 		"offline": "离线",
 		"blind": "致盲",
 		"overheat": "过热",
+		"heat_stable": "稳定",
+		"heat_pressure": "升压",
+		"heat_decision": "决策",
+		"heat_vent": "排热",
+		"heat_overheat": "过热",
 		"stagger": "硬直",
 		"normal": "普通",
 		"armor": "护甲",
@@ -16799,6 +16804,11 @@ func _ui_term(term_key: String) -> String:
 		"offline": "OFFLINE",
 		"blind": "BLIND",
 		"overheat": "OVERHEAT",
+		"heat_stable": "STABLE",
+		"heat_pressure": "PRESSURE",
+		"heat_decision": "DECIDE",
+		"heat_vent": "VENT",
+		"heat_overheat": "OVERHEAT",
 		"stagger": "STAGGER",
 		"normal": "NORMAL",
 		"armor": "ARMOR",
@@ -16831,8 +16841,8 @@ func _combat_state_name(state_key: String) -> String:
 
 func _battle_help_text() -> String:
 	if _ui_is_zh():
-		return "Esc/选项：训练菜单。英雄高频：WASD移动，Q/E转向，双击Boost，U/I/O/J/K/L攻击，G冷却。战术低频：Tab选入口，双攻击键部署出击槽。"
-	return "Esc/OPTIONS: training menu. High-frequency hero: WASD move, Q/E turn, double-tap Boost, U/I/O/J/K/L attack, G cool. Low-frequency tactics: Tab portal, paired attack buttons deploy sortie slots."
+		return "热量核心：进攻/撤退/停手/G主动散热。WASD移动，Q/E转向，双击Boost，U/I/O/J/K/L攻击；Tab选入口；Esc选项。"
+	return "HEAT CORE: attack / disengage / stop / G cool. WASD move; Q/E turn; double-tap Boost; U-I-O-J-K-L attack; Tab portal; Esc options."
 
 
 func _find_control_by_name(root: Node, target_name: String) -> Control:
@@ -57390,6 +57400,11 @@ func _refresh_editor_stats_rail(current_stats: Dictionary, preview_stats: Dictio
 	var active_preview_summary := preview_summary if has_preview and not preview_summary.is_empty() else summary
 	var active_preview_bp := preview_bp if has_preview and not preview_bp.is_empty() else unit_bp
 	var flags := _editor_rule_flags(role_key, active_preview_bp, active_preview_stats, active_preview_summary)
+	var current_heat_core: Dictionary = Dictionary(_unit_build_rule_audit(role_key, unit_bp, current_stats).get("heat_core", {}))
+	var preview_heat_core: Dictionary = Dictionary(_unit_build_rule_audit(role_key, active_preview_bp, active_preview_stats).get("heat_core", current_heat_core))
+	flags["heat_core_label"] = _editor_heat_core_profile_label(String(preview_heat_core.get("key", "endurance")))
+	flags["heat_peak_ratio_current"] = float(current_heat_core.get("heat_peak_ratio", 0.0))
+	flags["heat_peak_ratio_preview"] = float(preview_heat_core.get("heat_peak_ratio", flags["heat_peak_ratio_current"]))
 	var entries := _editor_stats_entries(current_stats, active_preview_stats, summary, active_preview_summary, flags)
 	var header := "构筑仪表" if _ui_is_zh() else "BUILD METER"
 	if hover_title != "":
@@ -57397,6 +57412,12 @@ func _refresh_editor_stats_rail(current_stats: Dictionary, preview_stats: Dictio
 	editor_stats_rail_view.visible = true
 	editor_stats_rail_view.set_stats(entries, header, _editor_rule_status_note(flags), has_preview, ui_language)
 	_refresh_engine_allocation_dashboard_summary()
+
+
+func _editor_heat_core_profile_label(profile_key: String) -> String:
+	var labels_zh := {"endurance": "续航", "burst": "爆发", "pressure": "压线", "redline": "红线"}
+	var labels_en := {"endurance": "ENDURANCE", "burst": "BURST", "pressure": "PRESSURE", "redline": "REDLINE"}
+	return String((labels_zh if _ui_is_zh() else labels_en).get(profile_key, profile_key.to_upper()))
 
 
 func _editor_rule_flags(role_key: String, unit_bp: Dictionary, stats: Dictionary, summary: Dictionary) -> Dictionary:
@@ -57503,6 +57524,7 @@ func _editor_stats_entries(current_stats: Dictionary, preview_stats: Dictionary,
 	if String(current_stats.get("role", "")) == "hero":
 		_append_editor_stat(entries, "热池" if _ui_is_zh() else "Heat Pool", "heat_capacity", current_stats, preview_stats, 260.0, "", false)
 		_append_editor_stat(entries, "Boost事件热" if _ui_is_zh() else "Boost Event Heat", "boost_heat", current_stats, preview_stats, 40.0, "", false)
+		_append_editor_stat_from_values(entries, ("预计热节奏·%s" if _ui_is_zh() else "Heat Rhythm %s") % String(flags.get("heat_core_label", "")), float(flags.get("heat_peak_ratio_current", 0.0)) * 100.0, float(flags.get("heat_peak_ratio_preview", 0.0)) * 100.0, 160.0, "%", false)
 	_append_editor_section(entries, "机动" if _ui_is_zh() else "MOTION", Color(0.42, 0.92, 1.0, 0.92))
 	_append_editor_stat(entries, "机体速度" if _ui_is_zh() else "Body Speed", "move_speed", current_stats, preview_stats, 8.0, "m/s", false)
 	_append_editor_stat(entries, "Boost速度" if _ui_is_zh() else "Boost Speed", "boost_speed", current_stats, preview_stats, 9.0, "m/s", false)
@@ -59143,6 +59165,11 @@ func _battle_hud_terms() -> Dictionary:
 		"offline": _ui_term("offline"),
 		"blind": _ui_term("blind"),
 		"overheat": _ui_term("overheat"),
+		"heat_stable": _ui_term("heat_stable"),
+		"heat_pressure": _ui_term("heat_pressure"),
+		"heat_decision": _ui_term("heat_decision"),
+		"heat_vent": _ui_term("heat_vent"),
+		"heat_overheat": _ui_term("heat_overheat"),
 		"stagger": _ui_term("stagger"),
 		"normal": _ui_term("normal"),
 		"support_armor": _ui_term("support_armor"),
@@ -59188,6 +59215,8 @@ func _battle_hud_role_state(player_id: int, role_key: String) -> Dictionary:
 func _unit_hud_state(unit) -> Dictionary:
 	if not _is_live_unit(unit):
 		return {"live": false}
+	var cooling_exposed := float(unit.get("cooling_exposed_timer")) > 0.0 if unit.get("cooling_exposed_timer") != null else false
+	cooling_exposed = cooling_exposed or float(unit.get_meta("active_cool_lock", 0.0)) > 0.0
 	return {
 		"live": true,
 		"health": int(unit.health),
@@ -59204,6 +59233,7 @@ func _unit_hud_state(unit) -> Dictionary:
 		"electronic_armor_max": float(unit.get_meta("electronic_armor_max", unit.stats.get("electronic_armor_max", 0.0))),
 		"uses_heat": _unit_uses_heat(unit),
 		"heat_ratio": unit.heat_ratio() if _unit_uses_heat(unit) else 0.0,
+		"cooling_exposed": cooling_exposed,
 		"has_role_switch": String(unit.stats.get("role_switch", "")) != "",
 	}
 

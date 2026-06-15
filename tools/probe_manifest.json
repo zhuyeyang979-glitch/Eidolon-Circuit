@@ -94,6 +94,7 @@
     "battle_attack_feedback_probe",
     "battle_command_review_log_probe",
     "active_cooling_mindgame_probe",
+    "heat_core_concept_probe",
     "attack_rule_explanation_probe",
     "post_battle_review_loop_probe",
     "philosophy_muscle_live_catalog_probe",

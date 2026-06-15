@@ -1,6 +1,10 @@
 extends RefCounted
 class_name BattleHudStateService
 
+const HeatDoctrineService = preload("res://scripts/services/heat_doctrine_service.gd")
+
+var heat_doctrine = HeatDoctrineService.new()
+
 
 func timer_text(match_time_remaining: float) -> String:
 	var safe_time := maxf(0.0, match_time_remaining)
@@ -29,6 +33,14 @@ func _display_ratio(value) -> float:
 
 func _display_ratio_percent(value) -> int:
 	return int(roundf(_display_ratio(value) * 100.0))
+
+
+func heat_rhythm_stage(unit_state: Dictionary) -> String:
+	return heat_doctrine.rhythm_stage(unit_state)
+
+
+func heat_rhythm_label(unit_state: Dictionary, terms: Dictionary) -> String:
+	return heat_doctrine.rhythm_label(heat_rhythm_stage(unit_state), terms)
 
 
 func _display_combat_state(unit_state: Dictionary, terms: Dictionary) -> String:
@@ -62,7 +74,7 @@ func unit_status_text(unit_state: Dictionary, fallback: String, terms: Dictionar
 		]
 	var heat_text := ""
 	if bool(unit_state.get("uses_heat", false)):
-		heat_text = "  %s %d%%" % [String(terms.get("heat", "heat")), _display_ratio_percent(unit_state.get("heat_ratio", 0.0))]
+		heat_text = "  %s %d%% %s" % [String(terms.get("heat", "heat")), _display_ratio_percent(unit_state.get("heat_ratio", 0.0)), heat_rhythm_label(unit_state, terms)]
 	return "%s %s %d/%d%s%s%s  %s" % [
 		fallback,
 		hp_label,
@@ -246,12 +258,13 @@ func role_bar_text(role_state: Dictionary, terms: Dictionary) -> String:
 	if maxf(0.0, float(unit_state.get("electronic_armor_max", 0.0))) > 0.0:
 		electronic_armor_tag = " %s%.0f" % [String(terms.get("electronic_armor", "shield")), _display_armor_hp(unit_state, "electronic_armor_hp", "electronic_armor_max")]
 	if role_key == "hero" and bool(unit_state.get("uses_heat", false)):
-		return "%d/%d%s  %s %.0f%%%s" % [
+		return "%d/%d%s  %s %.0f%% %s%s" % [
 			_display_health(unit_state),
 			_display_max_int(unit_state.get("max_health", 0)),
 			electronic_armor_tag,
 			String(terms.get("heat", "heat")),
 			float(_display_ratio_percent(unit_state.get("heat_ratio", 0.0))),
+			heat_rhythm_label(unit_state, terms),
 			switch_tag,
 		]
 	return "%d/%d%s%s" % [_display_health(unit_state), _display_max_int(unit_state.get("max_health", 0)), electronic_armor_tag, switch_tag]

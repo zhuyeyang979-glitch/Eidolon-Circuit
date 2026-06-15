@@ -1,6 +1,8 @@
 extends RefCounted
 class_name UnitBuildRuleService
 
+const HeatDoctrineService = preload("res://scripts/services/heat_doctrine_service.gd")
+
 const IDLE_MASS_WARN_RATIO := 0.40
 const IDLE_MASS_HARD_RATIO := 0.55
 const WEAPON_MASS_MIN_FOR_UTILIZATION := 6.0
@@ -9,9 +11,11 @@ const WEAPON_UTILIZATION_HARD_RATIO := 0.15
 const DOMINANT_ROLE_WARN_RATIO := 0.35
 const DRIVE_PEAK_WARN_RATIO := 1.0
 const DRIVE_PEAK_HARD_RATIO := 1.35
-const HEAT_PEAK_CAUTION_RATIO := 1.20
-const HEAT_PEAK_WARN_RATIO := 1.60
+const HEAT_PEAK_CAUTION_RATIO := 0.75
+const HEAT_PEAK_WARN_RATIO := 1.00
 const PLUGIN_PRESSURE_WARN_RATIO := 0.85
+
+var heat_doctrine = HeatDoctrineService.new()
 
 
 func audit(context: Dictionary) -> Dictionary:
@@ -54,10 +58,14 @@ func audit(context: Dictionary) -> Dictionary:
 		warnings.append("WARN: drive peak %.0f%% exceeds available engine output; attacks or boost will suffer." % [drive_peak_ratio * 100.0])
 
 	var heat_peak_ratio := _metric(metrics, "heat_peak_ratio", 0.0)
-	if heat_peak_applicable and heat_peak_ratio > HEAT_PEAK_WARN_RATIO:
-		warnings.append("WARN: heat peak %.0f%% exceeds heat buffer; high-output loops will overheat." % [heat_peak_ratio * 100.0])
-	elif heat_peak_applicable and heat_peak_ratio > HEAT_PEAK_CAUTION_RATIO:
-		score_notes.append("CAUTION: heat peak %.0f%% is near the heat buffer." % [heat_peak_ratio * 100.0])
+	var heat_core: Dictionary = heat_doctrine.build_profile(heat_peak_ratio)
+	heat_core["applicable"] = heat_peak_applicable
+	if heat_peak_applicable and heat_peak_ratio >= HEAT_PEAK_WARN_RATIO:
+		warnings.append("WARN: heat peak %.0f%% creates a %s heat core; plan an attack, disengage, stop, or active-cooling window." % [heat_peak_ratio * 100.0, String(heat_core.get("label", ""))])
+	elif heat_peak_applicable and heat_peak_ratio >= HEAT_PEAK_CAUTION_RATIO:
+		score_notes.append("HEAT CORE: %s at %.0f%%; the next sequence should be chosen deliberately." % [String(heat_core.get("label", "")), heat_peak_ratio * 100.0])
+	elif heat_peak_applicable:
+		score_notes.append("HEAT CORE: %s at %.0f%%; heat defines the expected combat rhythm." % [String(heat_core.get("label", "")), heat_peak_ratio * 100.0])
 
 	var plugin_pressure := _metric(metrics, "plugin_pressure", 0.0)
 	if plugin_pressure_applicable and plugin_pressure > PLUGIN_PRESSURE_WARN_RATIO:
@@ -69,6 +77,7 @@ func audit(context: Dictionary) -> Dictionary:
 		"warnings": warnings,
 		"score_notes": score_notes,
 		"metrics": metrics,
+		"heat_core": heat_core,
 	}
 
 

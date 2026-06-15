@@ -231,6 +231,10 @@ Aim behavior is action-module driven:
 
 ## Heat Rules
 
+Heat is the combat-tempo core / 热量是战斗节奏的核心. It is not a fixed power score or a legality gate: a player-designed unit may pursue sustained pressure, short burst strings, deliberate redline play, or active-cooling traps. The editor, live HUD, and training report use a shared rhythm language so new players can connect design choices to battle decisions.
+
+The live heat rhythm moves through `STABLE`, `PRESSURE`, `DECIDE`, `VENT`, and `OVERHEAT`. As heat rises, the player chooses whether to continue attacking, disengage, stop acting for natural cooling, or commit to active cooling. These are suggestions and tactical information, not forced corrections to the player's build.
+
 The battle HUD places all three role resources in the corners: P1 health bars live in the upper-left and P1 heat bars in the lower-left; P2 health bars live in the upper-right and P2 heat bars in the lower-right. Each side has separate bars for hero, puppet group, and barrier.
 
 - Skills add a large amount of heat.
