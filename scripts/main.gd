@@ -33537,6 +33537,8 @@ func _battle_command_log_kind_label(event_kind: String, zh: bool) -> String:
 			return "消耗" if zh else "USE"
 		"match":
 			return "匹配" if zh else "MATCH"
+		"cool":
+			return "散热" if zh else "VENT"
 	return "记录" if zh else "LOG"
 
 
@@ -33548,6 +33550,8 @@ func _battle_command_log_state_label(command_state: String, zh: bool) -> String:
 			return "主动" if zh else "ACTIVE"
 		"special":
 			return "特殊" if zh else "SPECIAL"
+		"cooling":
+			return "冷却" if zh else "COOL"
 		"normal":
 			return "通常" if zh else "NORMAL"
 	return "指令" if zh else "COMMAND"
@@ -33567,6 +33571,8 @@ func _battle_command_log_source_label(source: String, zh: bool) -> String:
 			return "行动模块" if zh else "MODULE"
 		"command_skill":
 			return "特殊模块" if zh else "SPECIAL"
+		"active_cool":
+			return "主动散热" if zh else "ACTIVE COOL"
 		"trap_control":
 			return "陷阱控制" if zh else "TRAP CTRL"
 		"trap_field":
@@ -34588,7 +34594,7 @@ func _hero_command_skill(player_id: int, prefix: String, input_vector: Vector2, 
 		_try_racket_serve(hero, input_vector)
 		return
 	if String(hero.stats.get("module_effect", "")) == "active_cool":
-		_try_active_cooling_module(hero)
+		_try_active_cooling_module(hero, player_id)
 		return
 	if String(hero.stats.get("module_effect", "")) == "projectile_shield":
 		if not _try_consume_command_heat(hero, requested_state):
@@ -34798,15 +34804,20 @@ func _restore_combine_partner_snapshot(owner: int, lead_unit, snapshot: Dictiona
 	_spawn_hit_effect(restored, 1, "laser", false, "guided")
 
 
-func _try_active_cooling_module(unit) -> bool:
+func _try_active_cooling_module(unit, player_id: int = 0) -> bool:
 	if not _is_live_unit(unit) or not _unit_uses_heat(unit):
 		return false
 	var burst := maxf(1.0, float(unit.stats.get("cool_burst", 40.0)))
 	_cool_unit_heat(unit, burst, 0.72 if bool(unit.stats.get("cool_overheat_clear", false)) else 0.42)
-	unit.set_meta("active_cool_lock", maxf(0.1, float(unit.stats.get("cool_lock", 0.42))))
+	var lock_duration := maxf(0.1, float(unit.stats.get("cool_lock", 0.42)))
+	unit.set_meta("active_cool_lock", lock_duration)
+	if unit.has_method("begin_cooling_exposure"):
+		unit.begin_cooling_exposure(lock_duration, "active")
 	unit.velocity = unit.velocity.move_toward(Vector2.ZERO, 999.0)
 	_spawn_hit_effect(unit, 1, "chemical", false, "shield")
 	_play_sfx_wave("chemical", 220.0, 0.3, -9.0)
+	if player_id > 0:
+		_record_battle_command_log(player_id, "cool", String(unit.stats.get("command", "active_cool")), "cooling", "active_cool", -1, true)
 	_show_battle_message("%s 主动散热 -%.0f 热力" % [unit.unit_name, burst] if _ui_is_zh() else "%s ACTIVE COOL -%.0f HEAT" % [unit.unit_name, burst], 0.72)
 	return true
 

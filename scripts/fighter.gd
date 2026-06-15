@@ -57,6 +57,7 @@ const BRAKE_REVERSE_READY_SECONDS = 0.9
 const BRAKE_REVERSE_DIR_DOT = 0.82
 const REAR_BRAKE_HALF_ANGLE_DEGREES = 50.0
 const BOOST_COOLDOWN_DEFAULT = 0.5
+const COOLING_EXPOSED_DAMAGE_MULT = 1.08
 const MOBIUS_VISUAL_SCALE_MIN = 0.05
 const MOBIUS_VISUAL_SCALE_MAX_STEP = 0.045
 const MOBIUS_VISUAL_SCALE_MAX_RATE = MOBIUS_VISUAL_SCALE_MAX_STEP * 120.0
@@ -105,6 +106,9 @@ var moved_this_frame := false
 var manual_cooling := false
 var cooling_lock_timer := 0.0
 var forced_cooling_timer := 0.0
+var cooling_exposed_timer := 0.0
+var cooling_exposed_duration := 0.0
+var cooling_exposed_kind := ""
 var smoke_timer := 0.0
 var boost_flash_timer := 0.0
 var thruster_visual_timer := 0.0
@@ -321,6 +325,9 @@ func deploy(spawn_ring_pos: float, spawn_lane: float) -> void:
 	manual_cooling = false
 	cooling_lock_timer = 0.0
 	forced_cooling_timer = 0.0
+	cooling_exposed_timer = 0.0
+	cooling_exposed_duration = 0.0
+	cooling_exposed_kind = ""
 	smoke_timer = 0.0
 	boost_flash_timer = 0.0
 	thruster_visual_timer = 0.0
@@ -409,6 +416,12 @@ func tick(delta: float, ring_length: float) -> void:
 		forced_cooling_timer = maxf(0.0, forced_cooling_timer - delta)
 		manual_cooling = true
 		smoke_timer = maxf(smoke_timer, 0.18)
+	cooling_exposed_timer = maxf(0.0, cooling_exposed_timer - delta)
+	if cooling_exposed_timer <= 0.0:
+		cooling_exposed_duration = 0.0
+		cooling_exposed_kind = ""
+		set_meta("cooling_exposed_kind", "")
+	set_meta("cooling_exposed_timer", cooling_exposed_timer)
 	smoke_timer = maxf(0.0, smoke_timer - delta)
 	boost_flash_timer = maxf(0.0, boost_flash_timer - delta)
 	thruster_visual_timer = maxf(0.0, thruster_visual_timer - delta)
@@ -4571,10 +4584,25 @@ func manual_cool(delta: float) -> void:
 	manual_cooling = bool(intent.get("manual_cooling", true))
 	smoke_timer = float(intent.get("smoke_timer", 0.18))
 	cooling_lock_timer = float(intent.get("cooling_lock_timer", maxf(cooling_lock_timer, 0.4)))
+	begin_cooling_exposure(maxf(0.4, cooling_lock_timer), "manual")
 	velocity = velocity.move_toward(Vector2.ZERO, 9.0 * delta)
 	heat = float(intent.get("heat", heat))
 	overheated = bool(intent.get("overheated", overheated))
 	_refresh_visuals()
+
+
+func begin_cooling_exposure(duration: float, kind: String = "manual") -> void:
+	var safe_duration := maxf(0.0, duration)
+	if safe_duration <= 0.0:
+		return
+	cooling_exposed_timer = maxf(cooling_exposed_timer, safe_duration)
+	cooling_exposed_duration = maxf(cooling_exposed_duration, cooling_exposed_timer)
+	cooling_exposed_kind = kind
+	smoke_timer = maxf(smoke_timer, minf(0.62, safe_duration + 0.12))
+	set_meta("cooling_exposed_timer", cooling_exposed_timer)
+	set_meta("cooling_exposed_duration", cooling_exposed_duration)
+	set_meta("cooling_exposed_kind", cooling_exposed_kind)
+	set_meta("cooling_exposed_damage_mult", float(stats.get("cooling_exposed_damage_mult", COOLING_EXPOSED_DAMAGE_MULT)))
 
 
 func boost(direction: Vector2, ring_length: float) -> bool:
@@ -4635,6 +4663,7 @@ func trigger_overheat_shutdown(reason: String = "") -> void:
 	manual_cooling = bool(intent.get("manual_cooling", true))
 	smoke_timer = float(intent.get("smoke_timer", smoke_timer))
 	velocity *= float(intent.get("motion_mult", 0.82))
+	begin_cooling_exposure(maxf(forced_cooling_timer, cooling_lock_timer), "overheat")
 
 
 func add_heat(amount: float, reason: String = "") -> void:
@@ -4857,6 +4886,9 @@ func take_hit(damage: int, source_state: String, attacker_owner: int, damage_typ
 	final_damage = max(1, final_damage)
 	if overheated and role == "hero":
 		final_damage = max(1, int(roundf(float(final_damage) * 1.15)))
+	if role == "hero" and cooling_exposed_timer > 0.0:
+		var exposure_mult := clampf(float(stats.get("cooling_exposed_damage_mult", COOLING_EXPOSED_DAMAGE_MULT)), 1.0, 1.35)
+		final_damage = max(1, int(roundf(float(final_damage) * exposure_mult)))
 	final_damage = _apply_electronic_armor_absorb(final_damage, damage_type)
 	if final_damage <= 0:
 		state_timer = maxf(state_timer, 0.06)
@@ -5080,6 +5112,7 @@ func _draw_training_ball_dummy() -> void:
 func _build_visuals() -> void:
 	state_flash = _make_poly("StateFlash", [], Color(1.0, 1.0, 1.0, 0.3))
 	smoke_cloud = _make_poly("CoolingSmoke", [], Color(0.76, 0.8, 0.78, 0.32))
+	smoke_cloud.z_index = 6
 	boost_flash = _make_poly("BoostFlash", [], Color(1.0, 0.55, 0.15, 0.4))
 	boost_flash.z_index = -5
 	for i in range(4):
@@ -5107,16 +5140,47 @@ func _refresh_visuals() -> void:
 		var runtime_material_color := _team_material_color()
 		state_flash.visible = false
 		_refresh_part_visuals(runtime_material_color)
-		smoke_cloud.visible = smoke_timer > 0.0
+		_refresh_cooling_smoke()
 		_refresh_thruster_flames()
 		_set_heat_fill()
 		return
 
 	_refresh_part_visuals(_team_material_color())
 	state_flash.visible = false
-	smoke_cloud.visible = smoke_timer > 0.0
+	_refresh_cooling_smoke()
 	_refresh_thruster_flames()
 	_set_heat_fill()
+
+
+func _refresh_cooling_smoke() -> void:
+	if smoke_cloud == null:
+		return
+	var venting := smoke_timer > 0.0 or cooling_exposed_timer > 0.0 or manual_cooling or forced_cooling_timer > 0.0
+	smoke_cloud.visible = venting
+	if not venting:
+		smoke_cloud.polygon = PackedVector2Array()
+		return
+	var body_radius: float = clampf(float(stats.get("radius", 0.28)), 0.08, 3.2)
+	var body_length: float = clampf(float(stats.get("length", 1.0)), 0.16, 4.5)
+	var lock_ratio := clampf(cooling_exposed_timer / maxf(0.1, cooling_exposed_duration), 0.0, 1.0)
+	var pulse := 0.5 + sin(Time.get_ticks_msec() * 0.018) * 0.5
+	var rx := maxf(26.0, body_length * PART_VISUAL_SCALE * (0.58 + lock_ratio * 0.1 + pulse * 0.025))
+	var ry := maxf(18.0, body_radius * PART_VISUAL_SCALE * (1.25 + lock_ratio * 0.18 + pulse * 0.05))
+	var points := PackedVector2Array()
+	for i in range(18):
+		var angle := TAU * float(i) / 18.0
+		var wobble := 1.0 + sin(angle * 3.0 + Time.get_ticks_msec() * 0.011) * 0.06
+		points.append(Vector2(cos(angle) * rx * wobble, sin(angle) * ry * wobble))
+	smoke_cloud.polygon = points
+	var base := Color(0.52, 0.96, 1.0, 0.30)
+	if cooling_exposed_kind == "active":
+		base = Color(0.38, 1.0, 0.86, 0.34)
+	elif cooling_exposed_kind == "overheat":
+		base = Color(1.0, 0.38, 0.18, 0.36)
+	elif cooling_exposed_kind == "manual":
+		base = Color(0.62, 0.92, 1.0, 0.30)
+	base.a = clampf(base.a + lock_ratio * 0.18 + pulse * 0.04, 0.18, 0.58)
+	smoke_cloud.color = base
 
 
 func _refresh_thruster_flames() -> void:
@@ -5329,6 +5393,14 @@ func _set_heat_fill() -> void:
 	var ratio: float = clampf(heat / heat_capacity, 0.0, 1.0)
 	var width: float = 76.0 * ratio
 	var y_base: float = 48.0 * clampf(float(stats.get("radius", 0.28)), 0.08, 3.2) + 20.0
+	if cooling_exposed_timer > 0.0:
+		heat_bar_fill.color = Color(0.38, 1.0, 0.9, 0.96)
+	elif overheated:
+		heat_bar_fill.color = Color(1.0, 0.12, 0.06, 0.98)
+	elif ratio >= 0.82:
+		heat_bar_fill.color = Color(1.0, 0.74, 0.10, 0.96)
+	else:
+		heat_bar_fill.color = Color(1.0, 0.35, 0.14, 0.9)
 	heat_bar_fill.polygon = PackedVector2Array([
 		Vector2(-38.0, y_base),
 		Vector2(-38.0 + width, y_base),

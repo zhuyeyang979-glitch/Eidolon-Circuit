@@ -232,6 +232,9 @@ The battle HUD places all three role resources in the corners: P1 health bars li
 - If cooling is weak, ordinary movement also accumulates heat.
 - Stopping and not acting lowers heat faster.
 - Holding manual cooling locks the hero in place for at least `0.4` seconds and vents smoke while rapidly lowering heat.
+- Manual cooling and active cooling modules now create a readable active cooling window / 散热窗口: the unit vents a visible cyan heat cloud, its heat bar shifts color, and movement is locked while the commitment is live.
+- Active cooling modules trade a larger heat dump for a larger punish window. Hits during the cooling exposure window deal a small extra damage bonus, so opponents can chase, pre-aim, or force unsafe vent timing instead of treating cooling as a free reset.
+- Active cooling module use is also written to the post-battle review log so players and developers can inspect when a build chose to stop, vent, and re-enter pressure.
 - Boosting adds a large heat spike.
 - At full heat, a hero enters Overheat.
 - While overheated, skills are locked, hero actions slow down, and incoming damage is increased by `15%`.

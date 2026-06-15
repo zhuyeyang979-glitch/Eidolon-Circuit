@@ -93,6 +93,7 @@
     "summon_portal_deploy_logic_probe",
     "battle_attack_feedback_probe",
     "battle_command_review_log_probe",
+    "active_cooling_mindgame_probe",
     "post_battle_review_loop_probe",
     "philosophy_muscle_live_catalog_probe",
     "philosophy_muscle_editor_runtime_probe",
