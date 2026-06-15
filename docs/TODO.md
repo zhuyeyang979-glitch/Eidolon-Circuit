@@ -1,0 +1,46 @@
+# Project TODO
+
+## Online Battle / Deferred
+
+Status: planned after the local two-player formal battle feels complete.
+
+- Prioritize local two-player formal battle first: two controllers, deterministic round start, clear seat ownership, stable resource reset, and readable post-match state.
+- Preserve network-ready interfaces while keeping implementation local: fixed battle tick, deterministic input frames, replay seed capture, seat-to-player abstraction, and a battle-start payload that can later accept remote inputs.
+- Keep computer-controlled matches as local authored-rule opponents for testing and accessibility; they are not a replacement for the local versus priority.
+- Defer matchmaking, lobby, rollback, reconnection, anti-cheat, and cloud profile synchronization until local battle rules, team selection, and spectator behavior are stable.
+- Add future probes for identical local replay results, seat abstraction compatibility, and deterministic input-frame serialization before online work begins.
+
+## Barrier-Terrain Integration
+
+Status: high-priority planned extension. Current barriers already create runtime collision, projectile occlusion, walls, lanes, triggers, and local fields, but the arena has no independent authored-terrain layer for barriers to query or modify.
+
+- Introduce a normalized terrain-feature contract containing stable feature ID, terrain kind, collider geometry, orientation, surface tags, ownership, destructibility, anchor points, and effect channels.
+- Keep saved barrier blueprints map-independent. Resolve terrain attachment and interaction only when previewing or deploying into a specific arena.
+- Add a placement query that returns explicit outcomes such as `free`, `attach`, `bridge`, `overlap`, `replace`, or `blocked`, with a player-readable reason.
+- Define barrier interactions with map walls, floors, gaps, hazards, cover, traversal lanes, portals, and scripted arena mechanisms.
+- Allow appropriate barrier panels to attach to terrain anchors, bridge valid gaps, reinforce or breach destructible terrain, and inherit a wall or lane orientation.
+- Route projectile occlusion, line of sight, collision, target awareness, and later path planning through a combined terrain-plus-barrier spatial query.
+- Let local fields react to terrain tags where designed: gravity may follow a surface vector, heat/coolant may be amplified or damped, and speed lanes may connect to authored routes.
+- Define cleanup and restoration behavior when either the supporting terrain or attached barrier component is destroyed, transformed, or removed.
+- Preserve deterministic, replayable results from map state and authored rules; this feature does not require a large language model or external model service.
+- Add focused probes for attachment legality, combined occlusion, destruction invalidation, map-independent saves, and identical replay results.
+
+Suggested future ownership boundary:
+
+- `BattleTerrainService`: exposes immutable arena terrain snapshots and spatial queries.
+- `BarrierTerrainInteractionService`: evaluates placement and produces terrain interaction intents.
+- Battle runtime: applies accepted intents and owns temporary collision/effect instances.
+- Editor and scout UI: preview interaction outcomes without mutating the arena.
+
+## Player-Bound Unit Library
+
+Status: planned, deferred until persistent player profiles are introduced.
+
+- Introduce a persistent `profile_id` that is separate from local P1/P2 battle seat IDs.
+- Store units under `user://profiles/<profile_id>/saved_units/<unit_id>.json`.
+- Add `owner_profile_id`, stable `unit_id`, `created_at`, `updated_at`, and `revision` to saved-unit payloads.
+- Provide a repository API: `list(profile_id)`, `load(profile_id, unit_id)`, `save(profile_id, unit)`, `delete(profile_id, unit_id)`, and `duplicate(profile_id, unit_id)`.
+- Make Save overwrite by `profile_id + unit_id`; make Save As generate a new `unit_id`.
+- Migrate existing files from the shared `user://saved_units` directory without deleting rejected or legacy-visible entries.
+- Add ownership and component-unlock eligibility to the unit-library legality audit.
+- Define local profile switching, backup/restore, and conflict behavior before adding cloud synchronization.

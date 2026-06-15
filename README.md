@@ -1,6 +1,6 @@
 # 星魂回环 / Eidolon Circuit
 
-Eidolon Circuit is a topology-construction fighting prototype with a single-player-first flow.
+Eidolon Circuit is a topology-construction fighting prototype with a local-versus-first formal battle flow.
 
 ## Current Governance Baseline
 
@@ -18,8 +18,8 @@ The game now opens to a main menu:
 
 - Team Edit
 - Training
-- AI Battle
-- PVP
+- PVP / Local Versus
+- Computer Battle
 - Settings
 
 The UI direction is closer to modern fighting-game front ends: big mode entries, a strong title block, an information panel, and a separate team edit lab with component art and stat readouts.
@@ -29,8 +29,10 @@ The UI direction is closer to modern fighting-game front ends: big mode entries,
 Each team owns a roster of mutually exclusive unit roles:
 
 - Hero: contains a Soul component and is the directly controlled unit.
-- Puppet: contains Source Code and deploys as a shared-code puppet group.
+- Puppet: contains Source Code and deploys as a group governed by deterministic conditions, target priorities, movement routines, and action sequences.
 - Barrier: contains Ether and behaves as a fixed space/topology.
+
+The project does not connect puppets or opponents to a large language model. Source Code behavior is evaluated locally from authored rules and the current battle state; it does not learn or generate decisions through an external model service.
 
 Every role uses the same common component categories:
 
@@ -97,7 +99,7 @@ Team Edit controls:
 - Duplicate current unit: `N`
 - Remove current unit: `Delete`
 - Set current role as initial deployment: `L`
-- Copy P1 team to P2/AI: `C`
+- Copy P1 team to P2/computer: `C`
 - Return to menu: `Enter` or `Esc`
 
 ## Modes
@@ -105,16 +107,20 @@ Team Edit controls:
 Training:
 - P1 fights a passive dummy.
 - Good for testing reach, heat, overheat, and component stats.
+- The dummy can be replaced by a deterministic computer sparring unit for movement, aiming, defense, and pressure testing. It uses local authored combat rules, not a large language model.
 
-AI Battle:
-- P1 fights an automated opponent.
-- AI buys and deploys hero, puppet group, and barrier from its team.
-
-PVP:
+PVP / Local Versus:
+- This is the formal battle priority for the initial playable model.
 - Two-controller local versus.
 - P1 uses controller 1.
 - P2 uses controller 2.
 - Keyboard remains a P1 fallback only.
+
+Computer Battle:
+- P1 fights a deterministic computer-controlled opponent.
+- The opponent follows authored rules to buy and deploy its hero, puppet group, and barrier.
+- P3 can watch a computer-versus-computer match with the spectator camera.
+- No large language model or external model service is involved.
 
 ## Battle Controls
 
@@ -152,7 +158,7 @@ Team Edit includes a first-pass assembly board. Select a crab body part, then us
 
 The editor now uses self-drawn component art for each part class rather than plain text-only previews. Guns, scythes, spikes, gloves, wood stakes, joints, boosters, engines, cooling units, modules, and torso chassis all have separate silhouettes and color language.
 
-Puppet source code now has distinct behavior systems:
+Puppet Source Code defines deterministic behavior routines:
 
 - `CODE: GUARD ORBIT` circles the friendly hero and intercepts close approaches.
 - `CODE: PINCER` splits a puppet pair high/low and collapses from both lanes.
@@ -165,6 +171,8 @@ Barrier ether now supports space-control logic:
 - `ETHER: COOLANT VEIL` cools allied units inside its area.
 - `ETHER: DRAG NET` damps enemy velocity inside its area.
 - `ETHER: RIPOSTE MIRROR` pulses only when enemies enter its area.
+
+Barrier tiles currently act as player-deployed terrain-like objects: they can provide collision, projectile occlusion, walls, lanes, triggers, and local fields. The arena does not yet expose an independent authored-terrain layer, so barriers cannot currently attach to, read, transform, or inherit properties from native map terrain. This is a planned high-priority extension tracked in `docs/TODO.md`.
 
 The arena is now treated as a horizontal bullet-hell top-down strip: left and right wrap, top and bottom are the paper strip's width, and the camera eases around the ring while keeping both heroes readable.
 

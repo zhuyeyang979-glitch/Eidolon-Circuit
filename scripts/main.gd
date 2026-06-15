@@ -43,6 +43,9 @@ const GunActivationService = preload("res://scripts/services/gun_activation_serv
 const HeldMeleeActivationService = preload("res://scripts/services/held_melee_activation_service.gd")
 const DriveSystemService = preload("res://scripts/services/drive_system_service.gd")
 const UnitBlueprintValidator = preload("res://scripts/services/unit_blueprint_validator.gd")
+const UnitBuildRuleService = preload("res://scripts/services/unit_build_rule_service.gd")
+const TeamLegalityService = preload("res://scripts/services/team_legality_service.gd")
+const TrainingValidationReportService = preload("res://scripts/services/training_validation_report_service.gd")
 const DataRuleService = preload("res://scripts/services/data_rule_service.gd")
 const UILifecycleService = preload("res://scripts/services/ui_lifecycle_service.gd")
 const LoadingLifecycleService = preload("res://scripts/services/loading_lifecycle_service.gd")
@@ -7862,14 +7865,14 @@ const SLOT_NAMES_EN = {
 const SOFTWARE_MANUFACTURERS = ["NULL SOFTWARE", "BOOTLEG GHOST"]
 const UI_LANGUAGE_ZH = "zh"
 const UI_LANGUAGE_EN = "en"
-const MENU_ITEMS = ["开始训练", "已保存单位", "单位编辑", "AI 对战", "本地对战", "设置", "退出"]
-const MENU_ITEMS_EN = ["TRAINING", "SAVED UNITS", "UNIT EDIT", "AI BATTLE", "PVP", "SETTINGS", "QUIT"]
+const MENU_ITEMS = ["开始训练", "已保存单位", "单位编辑", "本地双人", "电脑对战", "设置", "退出"]
+const MENU_ITEMS_EN = ["TRAINING", "SAVED UNITS", "UNIT EDIT", "LOCAL VERSUS", "COMPUTER BATTLE", "SETTINGS", "QUIT"]
 const MENU_DESCRIPTIONS = [
 	"先选择训练单位、席位和靶机状态，再进入训练场。",
 	"查看已保存的单个单位，载入编辑，或单选/多选直接导入训练场。",
 	"空白画布优先：编辑单个单位，保存后再编成队伍。",
-	"选择 AI 对战席位：P1 左侧、P2 右侧，或 P3 观战两个 AI 队伍。",
-	"双控制器本地对战。P1 使用控制器 1，P2 使用控制器 2。",
+	"正式战斗优先设计对象：双控制器本地对战，P1/P2 各自操作。",
+	"选择电脑对战席位：P1 左侧、P2 右侧，或 P3 观战双方规则队伍。",
 	"声音、画面、语言和战斗按键绑定。",
 	"退出游戏。",
 ]
@@ -7877,8 +7880,8 @@ const MENU_DESCRIPTIONS_EN = [
 	"Choose training units, seat, and dummy behavior before entering the arena.",
 	"Browse saved units, load one back into Unit Edit, compose teams, or send units into Training.",
 	"Blank-canvas first: edit one unit, save it, then compose teams.",
-	"Choose an AI Battle seat: P1 left, P2 right, or P3 spectator watching two AI teams.",
-	"Local versus for two controllers. P1 uses controller 1, P2 uses controller 2.",
+	"Formal battle priority: local two-controller versus, with P1/P2 controlling their own sides.",
+	"Choose a Computer Battle seat: P1 left, P2 right, or P3 watching two rule-driven sides.",
 	"Sound, video, language, and battle input bindings.",
 	"Quit the game.",
 ]
@@ -8168,7 +8171,7 @@ const COMMON_CATALOG = {
 		{"name": "BULL RAM TORSO", "cost": 128, "hp": 70, "mass": 24, "length": 0.86, "heat_capacity": 22, "damage_type": "blunt", "material_class": "torso", "connection_ends": 6, "is_torso": true, "archetype": "bull", "joint_ports": 6, "weapon_bays": 6, "engine_slots": 1, "booster_slots": 2, "cooling_slots": 1, "module_slots": 6, "shape": "bull", "radius": 0.28, "counter_tiers": {"bullet": 2, "chemical": 0, "laser": 1, "blunt": 3, "pierce": 1, "tear": 0}, "resist": {"bullet": 0.94, "chemical": 1.16, "laser": 1.02, "blunt": 0.88, "pierce": 1.0, "tear": 1.12}, "summary": "Heavy bull chassis for charge and shield-strike builds."},
 		{"name": "RAM HORN LANCE", "cost": 70, "hp": 30, "mass": 8, "length": 0.58, "range": 0.22, "normal_damage": 14, "active_damage": 15, "damage_type": "pierce", "material_class": "weapon", "connection_ends": 1, "shape": "horn", "radius": 0.08, "recoil": 0.12, "counter_tiers": {"bullet": 1, "chemical": 0, "laser": 1, "blunt": 1, "pierce": 2, "tear": 0}, "resist": {"bullet": 1.0, "chemical": 1.1, "laser": 1.0, "blunt": 1.02, "pierce": 0.94, "tear": 1.08}, "summary": "Curved horn lance for bull head assemblies."},
 		{"name": "HOOF PISTON HAMMER", "cost": 66, "hp": 34, "mass": 11, "length": 0.46, "normal_damage": 13, "armor_damage": 15, "damage_type": "blunt", "material_class": "weapon", "connection_ends": 1, "shape": "hoof", "radius": 0.12, "recoil": 0.13, "counter_tiers": {"bullet": 1, "chemical": 0, "laser": 0, "blunt": 2, "pierce": 1, "tear": 0}, "resist": {"bullet": 1.0, "chemical": 1.1, "laser": 1.08, "blunt": 0.92, "pierce": 1.02, "tear": 1.12}, "summary": "Hoof-like blunt piston for charge recoil control."},
-		{"name": "HOUND SPINE CHASSIS", "cost": 112, "hp": 48, "mass": 13, "length": 0.9, "heat_capacity": 24, "damage_type": "pierce", "material_class": "torso", "connection_ends": 6, "is_torso": true, "archetype": "hound", "joint_ports": 6, "weapon_bays": 6, "engine_slots": 1, "booster_slots": 4, "cooling_slots": 2, "module_slots": 7, "shape": "hound", "radius": 0.18, "counter_tiers": {"bullet": 0, "chemical": 1, "laser": 1, "blunt": 0, "pierce": 2, "tear": 1}, "resist": {"bullet": 1.1, "chemical": 1.0, "laser": 1.0, "blunt": 1.14, "pierce": 0.94, "tear": 1.0}, "summary": "Lean dog chassis for pursuit, pincer, and guard AI."},
+		{"name": "HOUND SPINE CHASSIS", "cost": 112, "hp": 48, "mass": 13, "length": 0.9, "heat_capacity": 24, "damage_type": "pierce", "material_class": "torso", "connection_ends": 6, "is_torso": true, "archetype": "hound", "joint_ports": 6, "weapon_bays": 6, "engine_slots": 1, "booster_slots": 4, "cooling_slots": 2, "module_slots": 7, "shape": "hound", "radius": 0.18, "counter_tiers": {"bullet": 0, "chemical": 1, "laser": 1, "blunt": 0, "pierce": 2, "tear": 1}, "resist": {"bullet": 1.1, "chemical": 1.0, "laser": 1.0, "blunt": 1.14, "pierce": 0.94, "tear": 1.0}, "summary": "Lean dog chassis for pursuit, pincer, and guard routines."},
 		{"name": "BITE JAW CLAMP", "cost": 74, "hp": 28, "mass": 7, "length": 0.48, "normal_damage": 12, "armor_damage": 14, "damage_type": "tear", "material_class": "weapon", "connection_ends": 1, "shape": "jaw", "radius": 0.1, "recoil": 0.07, "counter_tiers": {"bullet": 1, "chemical": 0, "laser": 0, "blunt": 1, "pierce": 1, "tear": 2}, "resist": {"bullet": 1.0, "chemical": 1.08, "laser": 1.1, "blunt": 1.04, "pierce": 1.0, "tear": 0.92}, "summary": "Paired jaw clamp for dog and dinosaur heads."},
 		{"name": "PAW SPIKE PAD", "cost": 52, "hp": 22, "mass": 5, "length": 0.4, "normal_damage": 10, "active_damage": 11, "damage_type": "pierce", "material_class": "weapon", "connection_ends": 1, "shape": "paw", "radius": 0.08, "recoil": 0.055, "counter_tiers": {"bullet": 0, "chemical": 0, "laser": 1, "blunt": 1, "pierce": 2, "tear": 0}, "resist": {"bullet": 1.1, "chemical": 1.08, "laser": 1.0, "blunt": 1.02, "pierce": 0.94, "tear": 1.1}, "summary": "Spike paw pad for fast four-legged frames."},
 		{"name": "LIZARD REACTOR TORSO", "cost": 118, "hp": 52, "mass": 15, "length": 0.88, "heat_capacity": 30, "damage_type": "tear", "material_class": "torso", "connection_ends": 6, "is_torso": true, "archetype": "lizard", "joint_ports": 6, "weapon_bays": 6, "engine_slots": 1, "booster_slots": 3, "cooling_slots": 3, "module_slots": 7, "shape": "lizard", "radius": 0.2, "counter_tiers": {"bullet": 1, "chemical": 2, "laser": 0, "blunt": 1, "pierce": 1, "tear": 2}, "resist": {"bullet": 1.0, "chemical": 0.94, "laser": 1.14, "blunt": 1.0, "pierce": 1.0, "tear": 0.94}, "summary": "Low heat lizard chassis with tail weapon capacity."},
@@ -8496,9 +8499,9 @@ const COMMON_CATALOG = {
 		{"name": "FORM SHIFT: MECH/BARRIER GATE", "cost": 136, "mass": 0, "aim_mode": "fixed", "motion": "role_form_shift", "command": "214236", "skill_state": "active", "module_effect": "role_form_shift", "role_form_target_role": "cycle_mech_barrier", "role_form_mech_role": "puppet", "role_form_shape": "", "switch_cooldown": 2.2, "summary": "Topology command: the unit changes its own legal identity between mech and barrier without needing a second live exchanger"},
 		{"name": "COMBINE: TRIAD DOCK", "cost": 236, "mass": 0, "aim_mode": "auto", "motion": "combine", "command": "236236", "skill_state": "active", "module_effect": "combine", "combine_range": 0.84, "combine_partner_count": 2, "combine_max_partners": 2, "combine_bonus_hp": 92, "combine_shape": "crab", "summary": "Three-unit docking module. Requires two nearby allied combine units; trigger again to split them back out"},
 		{"name": "COMBINE: FIELD PARADE LINK", "maker": "FOLD PARADE", "cost": 268, "mass": 0, "aim_mode": "fixed", "motion": "combine", "command": "214236", "skill_state": "armor", "module_effect": "combine", "combine_range": 0.96, "combine_partner_count": 3, "combine_max_partners": 3, "combine_bonus_hp": 126, "combine_shape": "tank", "summary": "Four-unit parade docking module for squad-to-fortress plans. Separation restores the stored partner units around the lead body"},
-		{"name": "PUPPET AI: THREAT MEMORY", "cost": 42, "mass": 0, "aim_mode": "fixed", "motion": "puppet_behavior", "puppet_behavior_module": true, "puppet_only_module": true, "puppet_behavior_trait": "threat_memory", "source_target_policy": "protect_puppet_group", "source_threat_override_range": 0.92, "source_close_response": "intercept", "summary": "Puppet-only behavior module. Heroes can equip it but gain no direct control effect; puppets remember enemies that threaten their group and reprioritize interception"},
-		{"name": "PUPPET AI: RETREAT COVER ROUTE", "cost": 58, "mass": 0, "aim_mode": "fixed", "motion": "puppet_behavior", "puppet_behavior_module": true, "puppet_only_module": true, "puppet_behavior_trait": "cover_retreat", "source_attack_preference": "melee_first", "source_close_response": "intercept", "source_keep_range": 0.58, "summary": "Puppet-only behavior module. Adds richer guard movement: the puppet moves between attackers and damaged allies instead of chasing blindly"},
-		{"name": "PUPPET AI: PACK FLANK VARIANCE", "cost": 64, "mass": 0, "aim_mode": "fixed", "motion": "puppet_behavior", "puppet_behavior_module": true, "puppet_only_module": true, "puppet_behavior_trait": "pack_flank_variance", "flank_width": 0.72, "orbit_radius": 0.6, "summary": "Puppet-only behavior module. Adds lane variance and orbit offsets to source-code packs so multiple puppets stop stacking on one line"},
+		{"name": "PUPPET ROUTINE: THREAT MEMORY", "cost": 42, "mass": 0, "aim_mode": "fixed", "motion": "puppet_behavior", "puppet_behavior_module": true, "puppet_only_module": true, "puppet_behavior_trait": "threat_memory", "source_target_policy": "protect_puppet_group", "source_threat_override_range": 0.92, "source_close_response": "intercept", "summary": "Deterministic puppet behavior module. Heroes can equip it but gain no direct control effect; puppets remember enemies that threaten their group and reprioritize interception"},
+		{"name": "PUPPET ROUTINE: RETREAT COVER", "cost": 58, "mass": 0, "aim_mode": "fixed", "motion": "puppet_behavior", "puppet_behavior_module": true, "puppet_only_module": true, "puppet_behavior_trait": "cover_retreat", "source_attack_preference": "melee_first", "source_close_response": "intercept", "source_keep_range": 0.58, "summary": "Deterministic puppet behavior module. The puppet moves between attackers and damaged allies instead of chasing blindly"},
+		{"name": "PUPPET ROUTINE: PACK FLANK", "cost": 64, "mass": 0, "aim_mode": "fixed", "motion": "puppet_behavior", "puppet_behavior_module": true, "puppet_only_module": true, "puppet_behavior_trait": "pack_flank_variance", "flank_width": 0.72, "orbit_radius": 0.6, "summary": "Deterministic puppet behavior module. Adds lane variance and orbit offsets to source-code packs so multiple puppets stop stacking on one line"},
 		{"name": "来复枪点射启动 / RIFLE BURST ACTIVATE", "maker": "LONGSIGHT AEGIS", "cost": 78, "mass": 0, "aim_mode": "manual", "motion": "gun_activate", "requires_bound_key": true, "module_target_kind": "gun_terminal", "module_action_profile": "rifle_burst_activate", "gun_activation": "rifle_burst_activate", "hold_to_activate": true, "gun_rotate_speed": 0.0, "summary": "按住绑定键启动来复枪点射；只绑定 rifle + bullet 枪械末端，立即按射速发射可见 bullet-hell 子弹，松开停止。"},
 		{"name": "榴弹弧射启动 / GRENADE ARC ACTIVATE", "maker": "REDLINE ARMS", "cost": 96, "mass": 0, "aim_mode": "manual", "motion": "gun_activate", "requires_bound_key": true, "module_target_kind": "gun_terminal", "module_action_profile": "grenade_arc_activate", "gun_activation": "grenade_arc_activate", "hold_to_activate": true, "gun_rotate_speed": 0.0, "summary": "按住绑定键启动榴弹弧射；只绑定 grenade_launcher + explosive 枪械末端，低频发射可见 U 弧爆炸弹，不进入狙击锁定。"},
 	],
@@ -9022,6 +9025,9 @@ var unit_editor_catalog_controller: UnitEditorCatalogController
 var unit_editor_board_controller: UnitEditorBoardController
 var unit_editor_assembly_guide_service: UnitEditorAssemblyGuideService
 var unit_editor_auto_connection_service: UnitEditorAutoConnectionService
+var unit_build_rule_service: UnitBuildRuleService
+var team_legality_service: TeamLegalityService
+var training_validation_report_service: TrainingValidationReportService
 var editor_connection_evaluation := {
 	"state": "stale",
 	"note": "",
@@ -9126,7 +9132,7 @@ var editor_ammo_size_title_label: Label
 var editor_ammo_size_value_label: Label
 var editor_ammo_size_tick_labels: Array = []
 var editor_sort_menu_open := false
-var editor_match_format := "standard"
+var editor_match_format := "light"
 var editor_hover_slot_key := ""
 var editor_hover_part_index := -1
 var editor_hover_pinned := false
@@ -9184,6 +9190,9 @@ var training_test_roster_cache := {}
 var training_test_loadout_cache: Array = []
 var training_test_initial_slot_cache := 0
 var training_test_initial_role_cache := "hero"
+var training_intent_key := ""
+var training_validation_sample := {}
+var training_validation_sample_last_positions := {}
 var settings_labels: Array = []
 var settings_scroll_container: ScrollContainer
 var settings_list_container: VBoxContainer
@@ -9223,6 +9232,8 @@ var scout_dummy_radius_slider: HSlider
 var scout_dummy_radius_minus_button: Button
 var scout_dummy_radius_plus_button: Button
 var scout_dummy_radius_reset_button: Button
+var scout_dummy_state_buttons: Array = []
+var scout_training_intent_buttons: Array = []
 var scout_selected_entry := {"role": "hero", "index": 0}
 var scout_selected_player_id := 2
 var scout_opponent_thumb_views: Array = []
@@ -9322,6 +9333,9 @@ func _initialize_hot_path_state_layer() -> void:
 	action_profile_registry = ActionProfileRegistry.new()
 	drive_system_service = DriveSystemService.new()
 	unit_blueprint_validator = UnitBlueprintValidator.new()
+	unit_build_rule_service = UnitBuildRuleService.new()
+	team_legality_service = TeamLegalityService.new()
+	training_validation_report_service = TrainingValidationReportService.new()
 	data_rule_service = DataRuleService.new()
 	navigation_service = NavigationService.new()
 	navigation_service.commit_transition(game_state, "ready")
@@ -10144,8 +10158,13 @@ func _blank_player_roster() -> Dictionary:
 
 func _default_free_canvas_topology(profile: String = "scout") -> Dictionary:
 	var role_key := "puppet" if profile == "puppet" else ("barrier" if profile == "barrier" else "hero")
+	var torso_index := 14
+	if role_key == "puppet":
+		torso_index = _component_index_by_name("puppet", "muscle", "FLOATING BIT CORE", 0)
+	elif role_key == "hero":
+		torso_index = _component_index_by_name("hero", "muscle", "SCOUT CORE TORSO", 0)
 	var unit_bp := {
-		"muscle": 95 if profile == "puppet" else (14 if profile == "barrier" else 85),
+		"muscle": torso_index,
 		"limb_muscle": 0,
 		"module": 5,
 	}
@@ -11128,6 +11147,37 @@ func _latest_saved_unit_named_for_role(unit_name: String, role_key: String) -> D
 	return best_entry
 
 
+func _unit_library_save_audit(player_id: int, role_key: String, unit_bp: Dictionary, payload: Dictionary) -> Dictionary:
+	var storage_reason := _saved_unit_payload_rejection_reason(payload)
+	if storage_reason != "":
+		return {
+			"accepted": false,
+			"storage_valid": false,
+			"deployable": false,
+			"blocking_note": storage_reason,
+			"warnings": [],
+			"score_notes": [],
+			"build_audit": {},
+		}
+	var candidate := unit_bp.duplicate(true)
+	candidate["role"] = role_key
+	if _role_uses_body_board(role_key):
+		_normalize_unit_to_component_topology(role_key, candidate)
+		_apply_entry_pose_to_blueprint(candidate)
+	var stats := _compute_unit_stats(player_id, role_key, -1, candidate)
+	var build_audit := _unit_build_rule_audit(role_key, candidate, stats)
+	var build_note := _training_blueprint_illegal_note(player_id, role_key, candidate)
+	return {
+		"accepted": build_note == "",
+		"storage_valid": true,
+		"deployable": build_note == "",
+		"blocking_note": build_note,
+		"warnings": Array(build_audit.get("warnings", [])).duplicate(),
+		"score_notes": Array(build_audit.get("score_notes", [])).duplicate(),
+		"build_audit": build_audit,
+	}
+
+
 func _save_editor_current_unit_to_library_named(unit_name_override: String = "", path: String = "", save_as_new: bool = false) -> String:
 	var role_key: String = ROLE_ORDER[editor_role_index]
 	var unit_bp := _unit_blueprint_for_library(role_key, _editor_current_blueprint())
@@ -11153,9 +11203,9 @@ func _save_editor_current_unit_to_library_named(unit_name_override: String = "",
 		"team_color": unit_bp.get("team_color", {}),
 		"blueprint": _json_safe_value(unit_bp),
 	}
-	var preflight_reason := _saved_unit_payload_rejection_reason(payload)
-	if preflight_reason != "":
-		_set_save_unit_failure_feedback(preflight_reason)
+	var save_audit := _unit_library_save_audit(_editor_player(), role_key, unit_bp, payload)
+	if not bool(save_audit.get("accepted", false)):
+		_set_save_unit_failure_feedback(String(save_audit.get("blocking_note", "unit is not eligible for the library")))
 		return ""
 	var file := FileAccess.open(export_path, FileAccess.WRITE)
 	if file == null:
@@ -11168,7 +11218,15 @@ func _save_editor_current_unit_to_library_named(unit_name_override: String = "",
 	var readback_reason := _saved_unit_rejection_reason_from_file(export_path) if readback.is_empty() or bool(readback.get("canonical_rejected", false)) else ""
 	var readback_status := saved_unit_library_service.readback_status(readback, readback_reason) if saved_unit_library_service != null else {"ok": not readback.is_empty() and not bool(readback.get("canonical_rejected", false)), "reason": readback_reason if readback_reason != "" else "saved file cannot be read back by the unit library"}
 	if not bool(readback_status.get("ok", false)):
+		_remove_user_json_file(export_path)
+		_invalidate_saved_unit_library_cache()
 		_set_save_unit_failure_feedback(String(readback_status.get("reason", "saved file cannot be read back by the unit library")))
+		return ""
+	var readback_legality_note := _saved_unit_entry_illegal_note(readback)
+	if readback_legality_note != "":
+		_remove_user_json_file(export_path)
+		_invalidate_saved_unit_library_cache()
+		_set_save_unit_failure_feedback(readback_legality_note)
 		return ""
 	editor_working_blueprint = unit_bp.duplicate(true)
 	editor_canvas_mode = "blank"
@@ -11726,7 +11784,19 @@ func _training_dummy_unit4_entry() -> Dictionary:
 
 
 func _training_dummy_unit2_entry() -> Dictionary:
+	if training_dummy_state == "sparring":
+		return _training_sparring_opponent_entry()
 	return _training_ball_dummy_entry()
+
+
+func _training_sparring_opponent_entry() -> Dictionary:
+	var unit_bp := _ai_starter_unit("Training Sparring")
+	_ai_install_required_payloads("hero", unit_bp)
+	unit_bp["role"] = "hero"
+	unit_bp["name"] = "规则陪练机" if _ui_is_zh() else "Rule Sparring Unit"
+	unit_bp["unit_name"] = String(unit_bp["name"])
+	unit_bp["training_sparring_opponent"] = true
+	return {"role": "hero", "blueprint": unit_bp}
 
 
 func _repair_saved_unit4_for_training_dummy() -> Dictionary:
@@ -12458,13 +12528,14 @@ func _update_saved_units_hover(mouse_position: Vector2) -> void:
 
 
 func _toggle_saved_unit_selection(entry: Dictionary) -> void:
-	if bool(entry.get("canonical_rejected", false)):
+	var illegal_note := _saved_unit_entry_illegal_note(entry)
+	if illegal_note != "":
 		if saved_unit_hint_label != null:
-			saved_unit_hint_label.text = _localized_system_text(_saved_unit_entry_illegal_note(entry)) if _ui_is_zh() else _saved_unit_entry_illegal_note(entry)
+			saved_unit_hint_label.text = _localized_system_text(illegal_note) if _ui_is_zh() else illegal_note
 		_play_sfx_wave("alarm", 170.0, 0.08, -16.0)
 		return
 	if saved_units_controller != null:
-		var state: Dictionary = saved_units_controller.toggle_selection_state(entry, saved_unit_selected_paths)
+		var state: Dictionary = saved_units_controller.toggle_selection_state(entry, saved_unit_selected_paths, illegal_note)
 		if not bool(state.get("valid", false)):
 			return
 		_apply_saved_unit_selection_state(state)
@@ -12571,13 +12642,7 @@ func _saved_units_action(action_key: String) -> void:
 				var toggle_entry := _saved_unit_entry_at_absolute_index(saved_unit_selected_index)
 				if toggle_entry.is_empty():
 					return
-				if bool(toggle_entry.get("canonical_rejected", false)):
-					_toggle_saved_unit_selection(toggle_entry)
-					return
-				var toggle_state: Dictionary = saved_units_controller.page_action_state(action_key, saved_unit_page, saved_unit_buttons.size(), entries.size(), saved_unit_selected_index, saved_unit_selected_paths, toggle_entry)
-				if bool(toggle_state.get("valid", false)):
-					_apply_saved_unit_selection_state(toggle_state)
-					_update_saved_units_ui()
+				_toggle_saved_unit_selection(toggle_entry)
 				return
 	match action_key:
 		"prev":
@@ -12672,7 +12737,7 @@ func _show_saved_unit_detail(entry: Dictionary) -> void:
 		("操作：点击查看；右键或按钮加入队伍草稿；可载入编辑、训练或删除。" if _ui_is_zh() else "Actions: click inspect; right-click/button add to team draft; edit, train, or delete."),
 	]
 	if _saved_entry_is_puppet_group(entry):
-		detail_lines.insert(1, ("傀儡组：%d 个成员 / AI %s / source %s" if _ui_is_zh() else "Puppet group: %d members / AI %s / source %s") % [
+		detail_lines.insert(1, ("傀儡组：%d 个成员 / 行为模板 %s / 目标规则 %s" if _ui_is_zh() else "Puppet group: %d members / routine %s / target rule %s") % [
 			int(entry.get("group_count", stats.get("group_count", 1))),
 			String(stats.get("ai", "direct")),
 			String(stats.get("source_target_policy", "")),
@@ -12858,7 +12923,7 @@ func _update_saved_units_ui() -> void:
 			"toggle":
 				action_button.text = "加入/移除" if _ui_is_zh() else "TOGGLE"
 				var toggle_entry := _saved_unit_entry_at_absolute_index(saved_unit_selected_index)
-				action_button.disabled = not has_selected or bool(toggle_entry.get("canonical_rejected", false))
+				action_button.disabled = not has_selected or _saved_unit_entry_illegal_note(toggle_entry) != ""
 			"clear":
 				action_button.text = "清空选择" if _ui_is_zh() else "CLEAR"
 				action_button.disabled = not has_multi
@@ -12879,7 +12944,7 @@ func _update_saved_units_ui() -> void:
 			"save_team":
 				action_button.text = "保存队伍" if _ui_is_zh() else "SAVE TEAM"
 				var draft_entries := _saved_units_team_selection_entries()
-				action_button.disabled = draft_entries.is_empty() or draft_entries.size() > _current_roster_cap()
+				action_button.disabled = not bool(_saved_units_team_legality_summary(draft_entries).get("valid", false))
 			"save_puppet_group":
 				action_button.text = "保存傀儡组" if _ui_is_zh() else "SAVE P-GRP"
 				action_button.disabled = not bool(_saved_units_puppet_group_selection_note(_saved_unit_selected_entries()).get("valid", false))
@@ -13037,6 +13102,7 @@ func _saved_teams_entries(force: bool = false) -> Array:
 		var payload: Dictionary = parsed
 		if not _is_current_saved_team_payload(payload):
 			continue
+		var saved_profile := team_legality_service.profile_for_saved_payload(payload) if team_legality_service != null else {}
 		var slots: Array = Array(payload.get("slots", []))
 		var non_empty := 0
 		for raw_slot in slots:
@@ -13048,6 +13114,8 @@ func _saved_teams_entries(force: bool = false) -> Array:
 			"team_name": String(payload.get("team_name", path.get_file().get_basename())),
 			"slot_count": slots.size(),
 			"unit_count": non_empty,
+			"rule_id": String(saved_profile.get("rule_id", payload.get("rule_id", ""))),
+			"supported": not saved_profile.is_empty(),
 		})
 	if saved_team_selected_index >= entries.size():
 		saved_team_selected_index = entries.size() - 1
@@ -13061,47 +13129,129 @@ func _saved_teams_entries(force: bool = false) -> Array:
 	return saved_team_entries_cache
 
 
-func _saved_units_team_legality_summary(selection: Array) -> Dictionary:
-	var role_counts := {"hero": 0, "puppet": 0, "barrier": 0}
-	var total_cost := 0
-	var invalid_notes: Array = []
-	for raw_entry in selection:
-		if not (raw_entry is Dictionary):
-			continue
-		var entry: Dictionary = raw_entry
-		var role_key := String(entry.get("role", "hero"))
-		role_counts[role_key] = int(role_counts.get(role_key, 0)) + 1
-		total_cost += int(_saved_unit_entry_stats(entry).get("cost", 0))
-		var note := _saved_unit_entry_illegal_note(entry)
-		if note != "":
-			invalid_notes.append(note)
-	var roster_cap := _current_roster_cap()
-	var valid := not selection.is_empty() and selection.size() <= roster_cap and int(role_counts.get("hero", 0)) > 0 and invalid_notes.is_empty() and total_cost <= START_BUDGET
-	var note := ""
-	if selection.is_empty():
-		note = "先勾选单位组成队伍。" if _ui_is_zh() else "Select units to compose a team."
-	elif selection.size() > roster_cap:
-		note = ("超过队伍上限 %d。" if _ui_is_zh() else "Over team cap %d.") % roster_cap
-	elif int(role_counts.get("hero", 0)) <= 0:
-		note = "队伍至少需要 1 个英雄单位。" if _ui_is_zh() else "Team needs at least one hero unit."
-	elif total_cost > START_BUDGET:
-		note = ("总价 %d 超过预算 %d。" if _ui_is_zh() else "Cost %d exceeds budget %d.") % [total_cost, START_BUDGET]
-	elif not invalid_notes.is_empty():
-		note = _localized_system_text(String(invalid_notes[0])) if _ui_is_zh() else String(invalid_notes[0])
-	else:
-		note = "队伍合法。" if _ui_is_zh() else "Team legal."
+func _team_legality_saved_entry(entry: Dictionary, fallback_index: int = -1) -> Dictionary:
+	var stats := _saved_unit_entry_stats(entry)
+	var illegal_note := _saved_unit_entry_illegal_note(entry)
+	var entry_id := _saved_unit_entry_path(entry)
+	if entry_id == "":
+		entry_id = String(entry.get("unit_id", "saved:%d" % fallback_index))
 	return {
-		"valid": valid,
-		"note": note,
-		"role_counts": role_counts,
-		"cost": total_cost,
-		"count": selection.size(),
+		"entry_id": entry_id,
+		"role": String(entry.get("role", "hero")),
+		"cost": int(stats.get("cost", 0)),
+		"deploy_cost": int(stats.get("deploy_cost", stats.get("cost", 0))),
+		"length": float(stats.get("length", 0.0)),
+		"legal": illegal_note == "",
+		"illegal_note": illegal_note,
+	}
+
+
+func _team_legality_saved_entries(selection: Array) -> Array:
+	var entries: Array = []
+	for i in range(selection.size()):
+		if selection[i] is Dictionary:
+			entries.append(_team_legality_saved_entry(Dictionary(selection[i]), i))
+	return entries
+
+
+func _team_legality_code_note(code: String, report: Dictionary) -> String:
+	var metrics: Dictionary = report.get("metrics", {})
+	var role_key := code.get_slice(":", 1)
+	if _ui_is_zh():
+		match code.get_slice(":", 0):
+			"roster_count":
+				return "正式队伍需要恰好 %d 个单位（当前 %d/%d）。" % [_current_roster_cap(), int(metrics.get("roster_count", 0)), _current_roster_cap()]
+			"roster_over_cap":
+				return "队伍草稿超过 %d 个单位上限。" % _current_roster_cap()
+			"duplicate_roster_entry":
+				return "同一个单位库记录不能重复加入队伍。"
+			"illegal_roster_unit":
+				return "队伍中存在不可部署单位。"
+			"team_budget":
+				return "队伍总价 %d 超过预算 %d。" % [int(metrics.get("team_cost", 0)), int(_team_rule_profile().get("team_budget_cap", START_BUDGET))]
+			"roster_missing_role":
+				return "正式队伍至少需要 1 个%s单位。" % _role_name(role_key)
+			"unit_length":
+				return "队伍中存在长度超过 4.5 的单位。"
+			"length_band":
+				return "队伍体型分布超过长度 %s 档位限制。" % role_key
+			"sortie_count":
+				return "本场必须从五人队伍中选择恰好 %d 个出战单位。" % _current_sortie_cap()
+			"duplicate_sortie_entry":
+				return "同一个单位不能重复出战。"
+			"illegal_sortie_unit":
+				return "出战选择中存在不可部署单位。"
+			"sortie_not_in_roster":
+				return "出战单位必须来自当前五人队伍。"
+			"sortie_missing_role":
+				return "三人出战必须包含 1 个%s单位。" % _role_name(role_key)
+			"starter_missing":
+				return "请从三个出战单位中指定首发。"
+			"starter_not_in_sortie":
+				return "首发单位必须属于本场三人出战。"
+			"starter_deploy_cost":
+				return "首发入场价 %d 超过上限 %d。" % [int(metrics.get("starter_deploy_cost", 0)), int(_team_rule_profile().get("starter_deploy_cost_cap", INITIAL_ENTRY_COST_CAP))]
+		return code
+	match code.get_slice(":", 0):
+		"roster_count":
+			return "Formal roster requires exactly %d units (%d/%d)." % [_current_roster_cap(), int(metrics.get("roster_count", 0)), _current_roster_cap()]
+		"roster_over_cap":
+			return "Team draft exceeds the %d-unit cap." % _current_roster_cap()
+		"duplicate_roster_entry":
+			return "The same saved-unit entry cannot appear twice."
+		"illegal_roster_unit":
+			return "The roster contains an undeployable unit."
+		"team_budget":
+			return "Team cost %d exceeds budget %d." % [int(metrics.get("team_cost", 0)), int(_team_rule_profile().get("team_budget_cap", START_BUDGET))]
+		"roster_missing_role":
+			return "Formal roster needs at least one %s." % String(ROLE_NAMES_EN.get(role_key, role_key))
+		"unit_length":
+			return "The roster contains a unit longer than 4.5."
+		"length_band":
+			return "Roster size distribution exceeds the %s length band." % role_key
+		"sortie_count":
+			return "Choose exactly %d units from the five-unit roster." % _current_sortie_cap()
+		"duplicate_sortie_entry":
+			return "The same unit cannot appear twice in the sortie."
+		"illegal_sortie_unit":
+			return "The sortie contains an undeployable unit."
+		"sortie_not_in_roster":
+			return "Every sortie unit must belong to the current roster."
+		"sortie_missing_role":
+			return "The sortie needs one %s." % String(ROLE_NAMES_EN.get(role_key, role_key))
+		"starter_missing":
+			return "Choose a starter from the three sortie units."
+		"starter_not_in_sortie":
+			return "The starter must belong to the sortie."
+		"starter_deploy_cost":
+			return "Starter deploy cost %d exceeds cap %d." % [int(metrics.get("starter_deploy_cost", 0)), int(_team_rule_profile().get("starter_deploy_cost_cap", INITIAL_ENTRY_COST_CAP))]
+	return code
+
+
+func _team_legality_first_note(report: Dictionary, code_key: String, ready_note_zh: String, ready_note_en: String) -> String:
+	var codes: Array = Array(report.get(code_key, []))
+	if codes.is_empty():
+		return ready_note_zh if _ui_is_zh() else ready_note_en
+	return _team_legality_code_note(String(codes[0]), report)
+
+
+func _saved_units_team_legality_summary(selection: Array) -> Dictionary:
+	var audit := team_legality_service.audit(_team_rule_profile(), _team_legality_saved_entries(selection)) if team_legality_service != null else {}
+	var metrics: Dictionary = audit.get("metrics", {})
+	return {
+		"valid": bool(audit.get("roster_ready", false)),
+		"draft_valid": bool(audit.get("draft_valid", false)),
+		"note": _team_legality_first_note(audit, "roster_blocking_codes", "队伍合法，可保存。", "Team ready to save."),
+		"role_counts": Dictionary(metrics.get("roster_role_counts", {})).duplicate(true),
+		"cost": int(metrics.get("team_cost", 0)),
+		"count": int(metrics.get("roster_count", selection.size())),
+		"audit": audit,
 	}
 
 
 func _save_team_from_saved_unit_selection(team_name: String, selection: Array) -> String:
 	var summary := _saved_units_team_legality_summary(selection)
-	if selection.is_empty() or selection.size() > _current_roster_cap():
+	if not bool(summary.get("valid", false)):
 		if saved_unit_hint_label != null:
 			saved_unit_hint_label.text = String(summary.get("note", ""))
 		_play_sfx_wave("alarm", 170.0, 0.08, -16.0)
@@ -13133,7 +13283,8 @@ func _save_team_from_saved_unit_selection(team_name: String, selection: Array) -
 	var payload := {
 		"schema_version": SAVED_TEAM_SCHEMA_VERSION,
 		"team_name": clean_name,
-		"match_format": editor_match_format,
+		"rule_id": String(_team_rule_profile().get("rule_id", "")),
+		"match_format": "light",
 		"roster_cap": _current_roster_cap(),
 		"sortie_cap": _current_sortie_cap(),
 		"team_color_index": int(team_color_indices.get(player_id, 0)),
@@ -13180,8 +13331,16 @@ func _load_saved_team_to_current_roster(path: String) -> bool:
 		if saved_unit_hint_label != null:
 			saved_unit_hint_label.text = "载入队伍失败：旧队伍数据已废弃。" if _ui_is_zh() else "Load team failed: old team schema is obsolete."
 		return false
+	var saved_profile := team_legality_service.profile_for_saved_payload(payload) if team_legality_service != null else {}
+	if saved_profile.is_empty():
+		if saved_unit_hint_label != null:
+			saved_unit_hint_label.text = "载入队伍失败：该队伍规则暂未开放，文件已保留。" if _ui_is_zh() else "Load team failed: this team rule is not active yet; the file was preserved."
+		return false
 	var imported := _blank_player_roster()
-	for raw_slot in Array(payload.get("slots", [])):
+	var normalized_entries: Array = []
+	var slots: Array = Array(payload.get("slots", []))
+	for slot_index in range(slots.size()):
+		var raw_slot = slots[slot_index]
 		if not (raw_slot is Dictionary):
 			continue
 		var slot: Dictionary = raw_slot
@@ -13196,13 +13355,34 @@ func _load_saved_team_to_current_roster(path: String) -> bool:
 		unit_bp["role"] = role_key
 		if _role_uses_body_board(role_key):
 			_normalize_unit_to_component_topology(role_key, unit_bp)
+			_apply_entry_pose_to_blueprint(unit_bp)
 		imported[role_key].append(unit_bp)
+		var stats := _compute_unit_stats(_editor_player(), role_key, -1, unit_bp)
+		var illegal_note := _training_blueprint_illegal_note(_editor_player(), role_key, unit_bp)
+		var entry_id := String(slot.get("source_path", "")).strip_edges()
+		if entry_id == "":
+			entry_id = "slot:%d" % slot_index
+		normalized_entries.append({
+			"entry_id": entry_id,
+			"role": role_key,
+			"cost": int(stats.get("cost", 0)),
+			"deploy_cost": int(stats.get("deploy_cost", stats.get("cost", 0))),
+			"length": float(stats.get("length", 0.0)),
+			"legal": illegal_note == "",
+			"illegal_note": illegal_note,
+		})
+	var load_audit := team_legality_service.audit(saved_profile, normalized_entries) if team_legality_service != null else {}
+	if not bool(load_audit.get("roster_ready", false)):
+		if saved_unit_hint_label != null:
+			saved_unit_hint_label.text = ("载入队伍失败：%s" if _ui_is_zh() else "Load team failed: %s") % _team_legality_first_note(load_audit, "roster_blocking_codes", "队伍合法。", "Team ready.")
+		return false
 	var player_id := _editor_player()
 	blueprints[player_id] = imported
 	active_roster_indices[player_id] = {"hero": 0, "puppet": 0, "barrier": 0}
 	sortie_loadouts[player_id] = []
 	initial_sortie_slot[player_id] = 0
 	initial_role[player_id] = "hero"
+	editor_match_format = "light"
 	team_color_indices[player_id] = int(payload.get("team_color_index", team_color_indices.get(player_id, 0)))
 	ai_team_manual_lock[player_id] = true
 	if saved_unit_hint_label != null:
@@ -13288,6 +13468,11 @@ func _team_export_slots(player_id: int) -> Array:
 
 func _export_editor_team(path: String = "") -> String:
 	var player_id := _editor_player()
+	var roster_audit := _team_legality_live_roster_audit(player_id)
+	if not bool(roster_audit.get("roster_ready", false)):
+		if editor_summary_label != null:
+			editor_summary_label.text = ("导出失败：%s" if _ui_is_zh() else "Export failed: %s") % _team_legality_first_note(roster_audit, "roster_blocking_codes", "队伍合法。", "Team ready.")
+		return ""
 	_ensure_saved_teams_dir()
 	var export_path := path
 	if export_path == "":
@@ -13295,7 +13480,8 @@ func _export_editor_team(path: String = "") -> String:
 	var payload := {
 		"schema_version": SAVED_TEAM_SCHEMA_VERSION,
 		"team_name": "P%d Team" % player_id,
-		"match_format": editor_match_format,
+		"rule_id": String(_team_rule_profile().get("rule_id", "")),
+		"match_format": "light",
 		"roster_cap": _current_roster_cap(),
 		"sortie_cap": _current_sortie_cap(),
 		"team_color_index": int(team_color_indices.get(player_id, 0)),
@@ -13359,13 +13545,18 @@ func _import_editor_team(path: String = "") -> bool:
 		_remove_user_json_file(import_path)
 		editor_summary_label.text = "导入失败：旧队伍动力链数据已删除，请用 TeamEdit 重新保存。" if _ui_is_zh() else "Import failed: old momentum-chain team data was deleted; rebuild it in TeamEdit."
 		return false
-	var slots: Array = Array(payload.get("slots", []))
-	if not [5, ROSTER_UNIT_CAP].has(slots.size()):
-		editor_summary_label.text = "导入失败：队伍文件必须包含 5 个或 10 个槽位。" if _ui_is_zh() else "Import failed: team file must contain exactly 5 or 10 slots."
+	var saved_profile := team_legality_service.profile_for_saved_payload(payload) if team_legality_service != null else {}
+	if saved_profile.is_empty():
+		editor_summary_label.text = "导入失败：该队伍规则暂未开放，文件已保留。" if _ui_is_zh() else "Import failed: this team rule is not active yet; the file was preserved."
 		return false
-	editor_match_format = "light" if slots.size() == 5 or String(payload.get("match_format", "")) == "light" else "standard"
+	var slots: Array = Array(payload.get("slots", []))
+	if slots.size() != int(saved_profile.get("roster_size", 5)):
+		editor_summary_label.text = "导入失败：当前规则要求恰好 5 个槽位。" if _ui_is_zh() else "Import failed: the active rule requires exactly five slots."
+		return false
 	var imported := _blank_player_roster()
-	for raw_slot in slots:
+	var normalized_entries: Array = []
+	for slot_index in range(slots.size()):
+		var raw_slot = slots[slot_index]
 		if not (raw_slot is Dictionary):
 			editor_summary_label.text = "导入失败：槽位数据损坏。" if _ui_is_zh() else "Import failed: damaged slot data."
 			return false
@@ -13380,8 +13571,28 @@ func _import_editor_team(path: String = "") -> bool:
 		unit_bp["role"] = role_key
 		if _role_uses_body_board(role_key):
 			_normalize_unit_to_component_topology(role_key, unit_bp)
+			_apply_entry_pose_to_blueprint(unit_bp)
 		imported[role_key].append(unit_bp)
+		var stats := _compute_unit_stats(_editor_player(), role_key, -1, unit_bp)
+		var illegal_note := _training_blueprint_illegal_note(_editor_player(), role_key, unit_bp)
+		var entry_id := String(slot.get("source_path", "")).strip_edges()
+		if entry_id == "":
+			entry_id = "slot:%d" % slot_index
+		normalized_entries.append({
+			"entry_id": entry_id,
+			"role": role_key,
+			"cost": int(stats.get("cost", 0)),
+			"deploy_cost": int(stats.get("deploy_cost", stats.get("cost", 0))),
+			"length": float(stats.get("length", 0.0)),
+			"legal": illegal_note == "",
+			"illegal_note": illegal_note,
+		})
+	var import_audit := team_legality_service.audit(saved_profile, normalized_entries) if team_legality_service != null else {}
+	if not bool(import_audit.get("roster_ready", false)):
+		editor_summary_label.text = ("导入失败：%s" if _ui_is_zh() else "Import failed: %s") % _team_legality_first_note(import_audit, "roster_blocking_codes", "队伍合法。", "Team ready.")
+		return false
 	var player_id := _editor_player()
+	editor_match_format = "light"
 	blueprints[player_id] = imported
 	active_roster_indices[player_id] = {"hero": 0, "puppet": 0, "barrier": 0}
 	sortie_loadouts[player_id] = []
@@ -13702,24 +13913,26 @@ func _roster_unit_total(player_id: int) -> int:
 	return _battle_actor_command_service().roster_unit_total(_roster_sizes_for_player(player_id), ROLE_ORDER)
 
 
+func _team_rule_profile() -> Dictionary:
+	if team_legality_service == null:
+		team_legality_service = TeamLegalityService.new()
+	return team_legality_service.active_profile()
+
+
 func _current_roster_cap() -> int:
-	return 5 if editor_match_format == "light" else ROSTER_UNIT_CAP
+	return int(_team_rule_profile().get("roster_size", 5))
 
 
 func _current_sortie_cap() -> int:
-	return 3 if editor_match_format == "light" else SORTIE_UNIT_CAP
+	return int(_team_rule_profile().get("sortie_size", 3))
 
 
 func _match_format_name() -> String:
-	if editor_match_format == "light":
-		return "轻型 5选3" if _ui_is_zh() else "LIGHT 5 PICK 3"
-	return "标准 10选6" if _ui_is_zh() else "STANDARD 10 PICK 6"
+	return "轻型 5选3" if _ui_is_zh() else "LIGHT 5 PICK 3"
 
 
 func _match_format_short() -> String:
-	if editor_match_format == "light":
-		return "轻5/3" if _ui_is_zh() else "5/3"
-	return "标准10/6" if _ui_is_zh() else "10/6"
+	return "轻5/3" if _ui_is_zh() else "5/3"
 
 
 func _role_short(role_key: String) -> String:
@@ -13808,9 +14021,9 @@ func _legalize_ai_player_roster(player_id: int, force_generate: bool = false) ->
 	if force_generate or not blueprints.has(player_id):
 		blueprints[player_id] = _smart_ai_roster(player_id)
 	_ensure_ai_roster_roles(player_id)
-	_repair_ai_roster_topology(player_id)
 	_ensure_ai_cheap_starter(player_id)
 	_fit_ai_roster_to_rules(player_id)
+	_repair_ai_roster_topology(player_id)
 	sortie_loadouts[player_id] = _build_ai_sortie_loadout(player_id)
 	_normalize_initial_sortie_for_cost(player_id)
 	_set_active_indices_from_loadout(player_id)
@@ -13823,13 +14036,14 @@ func _legalize_ai_player_roster(player_id: int, force_generate: bool = false) ->
 	ai_roster_stats_cache.clear()
 	active_roster_indices[player_id] = {"hero": 0, "puppet": 0, "barrier": 0}
 	initial_role[player_id] = "hero"
-	_repair_ai_roster_topology(player_id)
 	_ensure_ai_cheap_starter(player_id)
 	_fit_ai_roster_to_rules(player_id)
+	_repair_ai_roster_topology(player_id)
 	sortie_loadouts[player_id] = _build_ai_sortie_loadout(player_id)
 	_normalize_initial_sortie_for_cost(player_id)
 	_set_active_indices_from_loadout(player_id)
 	_ensure_summon_pair_bindings(player_id)
+	_repair_ai_roster_topology(player_id)
 	ai_roster_stats_cache.clear()
 
 
@@ -13872,9 +14086,29 @@ func _ai_install_required_payloads(role_key: String, unit_bp: Dictionary) -> voi
 	var special_index := int(unit_bp.get("special", 0))
 	payloads.append({"kind": "special", "special": special_index})
 	if role_key != "barrier":
-		payloads.append({"kind": "engine", "engine": clampi(int(unit_bp.get("engine", 0)), 0, maxi(0, _catalog_for(role_key, "engine").size() - 1))})
-		payloads.append({"kind": "cooling", "cooling": clampi(int(unit_bp.get("cooling", 0)), 0, maxi(0, _catalog_for(role_key, "cooling").size() - 1))})
+		var engine_index := _ai_compact_payload_index(role_key, "engine")
+		var cooling_index := _ai_compact_payload_index(role_key, "cooling")
+		unit_bp["engine"] = engine_index
+		unit_bp["cooling"] = cooling_index
+		payloads.append({"kind": "engine", "engine": engine_index})
+		payloads.append({"kind": "cooling", "cooling": cooling_index})
 	unit_bp["slot_payloads"] = payloads
+
+
+func _ai_compact_payload_index(role_key: String, slot_key: String) -> int:
+	var catalog := _catalog_for(role_key, slot_key)
+	for i in range(catalog.size()):
+		var part: Dictionary = catalog[i]
+		var payload := {"kind": slot_key}
+		payload[slot_key] = i
+		if _payload_slot_volume_rank(slot_key, part, payload, slot_key) > 2.0:
+			continue
+		if slot_key == "engine" and _engine_momentum_output_for_part(part) <= 0.0:
+			continue
+		if slot_key == "cooling" and _cooling_heat_capacity_for_part(part) <= 0.0:
+			continue
+		return i
+	return 0
 
 
 func _ai_teamedit_generated_roster(player_id: int) -> Dictionary:
@@ -13911,7 +14145,7 @@ func _ai_team_template_roster(template_key: String, player_id: int) -> Dictionar
 
 
 func _ai_starter_unit(side_tag: String) -> Dictionary:
-	var starter := {"name": "%s AI Starter Core" % side_tag, "archetype": "custom", "special": 3, "limb_muscle": 0, "muscle": 85, "booster": 0, "engine": 3, "cooling": 5, "module": 5, "custom_topology": _default_free_canvas_topology("starter")}
+	var starter := {"name": "%s Computer Starter Core" % side_tag, "archetype": "custom", "special": 3, "limb_muscle": 0, "muscle": 85, "booster": 0, "engine": 3, "cooling": 5, "module": 5, "custom_topology": _default_free_canvas_topology("starter")}
 	_snap_all_topology_edges("hero", starter)
 	return starter
 
@@ -14165,7 +14399,7 @@ func _fill_ai_roster_to_cap(player_id: int) -> void:
 		var spec: Dictionary = fillers[cursor % fillers.size()]
 		var role_key := String(spec.get("role", "puppet"))
 		var candidate: Dictionary = Dictionary(spec.get("unit", {})).duplicate(true)
-		candidate["name"] = "%s %d" % [String(candidate.get("name", "AI Reserve")), cursor + 1]
+		candidate["name"] = "%s %d" % [String(candidate.get("name", "Computer Reserve")), cursor + 1]
 		var roster: Array = blueprints[player_id].get(role_key, [])
 		roster.append(candidate)
 		blueprints[player_id][role_key] = roster
@@ -14217,8 +14451,61 @@ func _repair_ai_roster_topology(player_id: int) -> void:
 			var unit_bp: Dictionary = Dictionary(roster[i]).duplicate(true)
 			_normalize_unit_to_component_topology(role_key, unit_bp)
 			_repair_ai_custom_topology(role_key, unit_bp)
+			_ai_install_required_payloads(role_key, unit_bp)
+			_ensure_ai_execution_binding(role_key, unit_bp)
 			roster[i] = unit_bp
 		blueprints[player_id][role_key] = roster
+
+
+func _ensure_ai_execution_binding(role_key: String, unit_bp: Dictionary) -> void:
+	var topology: Dictionary = unit_bp.get("custom_topology", {})
+	var nodes: Array = Array(topology.get("nodes", []))
+	var torso_index := -1
+	var root_index := -1
+	var module_index := -1
+	var target_nodes: Array = []
+	for i in range(nodes.size()):
+		if not (nodes[i] is Dictionary):
+			continue
+		var node: Dictionary = nodes[i]
+		if _topology_node_is_torso(role_key, node, unit_bp):
+			torso_index = i
+			continue
+		var module_indices: Array = Array(node.get("modules", [])).duplicate()
+		if module_indices.is_empty() and node.has("module"):
+			module_indices.append(int(node.get("module", -1)))
+		if root_index < 0 and not module_indices.is_empty():
+			root_index = i
+			module_index = int(module_indices[0])
+	if root_index < 0 or module_index < 0:
+		return
+	target_nodes.append(root_index)
+	var connected_indices := _topology_connected_component_indices(Array(topology.get("edges", [])), nodes.size(), [root_index])
+	for raw_index in connected_indices:
+		var i := int(raw_index)
+		if i != root_index and i != torso_index and i >= 0 and i < nodes.size() and nodes[i] is Dictionary and not target_nodes.has(i):
+			target_nodes.append(i)
+	var payloads: Array = Array(unit_bp.get("slot_payloads", [])).duplicate(true)
+	var payload_index := -1
+	for i in range(payloads.size()):
+		if payloads[i] is Dictionary and String(Dictionary(payloads[i]).get("kind", "")) == "module":
+			payload_index = i
+			payloads[i] = {"kind": "module", "module": module_index, "torso_node": maxi(0, torso_index)}
+			break
+	if payload_index < 0:
+		payload_index = payloads.size()
+		payloads.append({"kind": "module", "module": module_index, "torso_node": maxi(0, torso_index)})
+	unit_bp["slot_payloads"] = payloads
+	var module_part := _selected_component(role_key, "module", module_index)
+	unit_bp["module_bindings"] = [{
+		"software_slot_index": payload_index,
+		"module_index": module_index,
+		"attack_key": clampi(int(Dictionary(nodes[root_index]).get("attack_key", 1)), 1, ATTACK_GROUP_COUNT),
+		"target_kind": String(module_part.get("module_target_kind", "limb")),
+		"root_index": root_index,
+		"target_nodes": target_nodes,
+		"target_torso_node": torso_index,
+	}]
 
 
 func _repair_ai_custom_topology(role_key: String, unit_bp: Dictionary) -> void:
@@ -14259,6 +14546,12 @@ func _repair_ai_custom_topology(role_key: String, unit_bp: Dictionary) -> void:
 	topology["nodes"] = nodes
 	unit_bp["custom_topology"] = topology
 	_snap_all_topology_edges(role_key, unit_bp)
+	var repaired_topology: Dictionary = unit_bp.get("custom_topology", {})
+	var repaired_nodes: Array = Array(repaired_topology.get("nodes", []))
+	var repaired_edges: Array = Array(repaired_topology.get("edges", []))
+	if role_key != "barrier" and repaired_nodes.size() > 1 and not _topology_connected(repaired_nodes.size(), repaired_edges):
+		unit_bp["custom_topology"] = _default_free_canvas_topology(role_key)
+		_snap_all_topology_edges(role_key, unit_bp)
 
 
 func _joint_index_for_muscle(role_key: String, muscle_index: int, preferred_joint: int) -> int:
@@ -14565,71 +14858,57 @@ func _set_sortie_starter_entry(player_id: int, entry: Dictionary) -> String:
 	return ""
 
 
-func _team_battle_entry_summary(player_id: int) -> Dictionary:
-	var loadout := _team_sortie_order(player_id)
-	var invalid := false
-	var notes: Array = []
-	var roster_summary := _team_summary(player_id)
-	var roster_total := _roster_unit_total(player_id)
-	if roster_total != _current_roster_cap():
-		invalid = true
-		notes.append("roster %d/%d" % [roster_total, _current_roster_cap()])
-	if not bool(roster_summary.get("length_valid", false)):
-		invalid = true
-		notes.append("roster topology/length")
-	if not bool(roster_summary.get("budget_valid", true)):
-		invalid = true
-		notes.append("team cost %d/%d" % [int(roster_summary.get("cost", 0)), START_BUDGET])
-	if loadout.is_empty():
-		notes.append("no sortie unit selected")
-		return {"valid": false, "note": "; ".join(notes)}
-	if loadout.size() != _current_sortie_cap():
-		invalid = true
-		notes.append("sortie %d/%d" % [loadout.size(), _current_sortie_cap()])
-	var role_counts := _sortie_role_counts(loadout)
-	for required_role in ROLE_ORDER:
-		if int(role_counts.get(required_role, 0)) <= 0:
-			invalid = true
-			notes.append("missing %s" % String(ROLE_NAMES_EN.get(required_role, required_role)))
-	var starter := _starter_sortie_entry(player_id)
-	var starter_valid := _starter_cost_valid(player_id, starter)
-	if not starter_valid:
-		var starter_stats := _compute_unit_stats(player_id, String(starter.get("role", "hero")), int(starter.get("index", 0))) if _valid_roster_entry(player_id, starter) else {}
-		invalid = true
-		notes.append("starter deploy %d/%d" % [int(starter_stats.get("deploy_cost", starter_stats.get("cost", 9999))), INITIAL_ENTRY_COST_CAP])
-	for entry in loadout:
-		if not _valid_roster_entry(player_id, entry):
-			invalid = true
-			notes.append("missing unit")
-			continue
-		var role_key := String(entry.get("role", "hero"))
-		var unit_index := int(entry.get("index", 0))
+func _team_legality_live_entry(player_id: int, entry: Dictionary) -> Dictionary:
+	var role_key := String(entry.get("role", "hero"))
+	var unit_index := int(entry.get("index", -1))
+	var valid_roster := _valid_roster_entry(player_id, entry)
+	var stats := {}
+	var illegal_note := "INVALID: missing roster unit."
+	if valid_roster:
 		var unit_bp := _blueprint_for(player_id, role_key, unit_index)
-		var stats := _compute_unit_stats(player_id, role_key, unit_index)
-		var unit_label := "%s#%d" % [ROLE_NAMES.get(role_key, role_key.to_upper()), unit_index + 1]
-		if float(stats.get("length", 0.0)) > 4.5:
-			invalid = true
-			notes.append("%s length" % unit_label)
-		if _role_uses_body_board(role_key) and not _module_material_rule_valid(unit_bp):
-			invalid = true
-			notes.append("%s material group" % unit_label)
-		var topology_note := _topology_rule_note(unit_bp, role_key, stats)
-		if topology_note.begins_with("INVALID"):
-			invalid = true
-			notes.append("%s topology" % unit_label)
-		for note_key in ["joint_momentum_note", "slot_payload_note", "drive_note", "stiffness_note"]:
-			if role_key == "barrier" and note_key in ["slot_payload_note", "drive_note"]:
-				continue
-			if String(stats.get(note_key, "")).begins_with("INVALID"):
-				invalid = true
-				notes.append("%s %s" % [unit_label, note_key.replace("_note", "")])
-				break
+		stats = _compute_unit_stats(player_id, role_key, unit_index)
+		illegal_note = _training_blueprint_illegal_note(player_id, role_key, unit_bp)
 	return {
-		"valid": not invalid,
-		"note": "OK" if notes.is_empty() else "; ".join(notes),
-		"sortie_count": loadout.size(),
-		"starter_valid": starter_valid,
+		"entry_id": _entry_ref(entry),
+		"role": role_key,
+		"cost": int(stats.get("cost", 0)),
+		"deploy_cost": int(stats.get("deploy_cost", stats.get("cost", 0))),
+		"length": float(stats.get("length", 0.0)),
+		"legal": valid_roster and illegal_note == "",
+		"illegal_note": illegal_note,
 	}
+
+
+func _team_legality_live_entries(player_id: int, entries: Array) -> Array:
+	var normalized: Array = []
+	for raw_entry in entries:
+		if raw_entry is Dictionary:
+			normalized.append(_team_legality_live_entry(player_id, Dictionary(raw_entry)))
+	return normalized
+
+
+func _team_legality_live_roster_audit(player_id: int) -> Dictionary:
+	var roster_entries := _team_legality_live_entries(player_id, _all_roster_order(player_id))
+	return team_legality_service.audit(_team_rule_profile(), roster_entries) if team_legality_service != null else {}
+
+
+func _team_legality_live_audit(player_id: int) -> Dictionary:
+	var roster_entries := _team_legality_live_entries(player_id, _all_roster_order(player_id))
+	var sortie_entries := _team_legality_live_entries(player_id, _team_sortie_order(player_id))
+	var starter_raw := _starter_sortie_entry(player_id)
+	var starter_entry := _team_legality_live_entry(player_id, starter_raw) if not starter_raw.is_empty() else {}
+	return team_legality_service.audit(_team_rule_profile(), roster_entries, sortie_entries, starter_entry) if team_legality_service != null else {}
+
+
+func _team_battle_entry_summary(player_id: int) -> Dictionary:
+	var audit := _team_legality_live_audit(player_id)
+	var result := audit.duplicate(true)
+	result["audit"] = audit
+	result["valid"] = bool(audit.get("battle_ready", false))
+	result["note"] = _team_legality_first_note(audit, "blocking_codes", "OK", "OK")
+	result["sortie_count"] = int(Dictionary(audit.get("metrics", {})).get("sortie_count", 0))
+	result["starter_valid"] = Array(audit.get("battle_blocking_codes", [])).is_empty()
+	return result
 
 
 func _set_active_index_from_sortie_entry(player_id: int, entry: Dictionary) -> void:
@@ -16055,7 +16334,7 @@ func _hide_match_format_select() -> void:
 
 
 func _choose_editor_match_format(format_key: String) -> void:
-	editor_match_format = "light" if format_key == "light" else "standard"
+	editor_match_format = "light"
 	for player_id in [1, 2]:
 		sortie_loadouts[player_id] = []
 		initial_sortie_slot[player_id] = 0
@@ -16070,17 +16349,18 @@ func _update_match_format_select_ui() -> void:
 	_set_named_label(format_select_layer, "FormatTitle", "选择单位编辑规则" if _ui_is_zh() else "Choose Unit Edit Format")
 	_set_named_label(format_select_layer, "FormatHint", "单位编辑只编辑单个单位；队伍编成在已保存单位页完成。" if _ui_is_zh() else "Unit Edit edits one unit; compose teams from Saved Units.")
 	var texts := [
-		["标准队伍 10选6", "构筑十个单位，赛前公开双方队伍后选择六个出战。"],
-		["轻量队伍 5选3", "构筑五个单位，赛前选择三个出战；适合快速测试构筑。"],
+		["标准队伍 10选6（暂未开放）", "旧队伍文件会保留，但初期版本只启用轻量规则。"],
+		["轻量队伍 5选3", "构筑五个单位，赛前选择英雄、傀儡、屏障各一个出战。"],
 		["返回主菜单", "暂不进入单位编辑。"],
 	] if _ui_is_zh() else [
-		["STANDARD 10 PICK 6", "Build ten units; after scouting both rosters, choose six for the match."],
-		["LIGHT 5 PICK 3", "Build five units and choose three before battle; useful for fast build tests."],
+		["STANDARD 10 PICK 6 (UNAVAILABLE)", "Legacy team files are preserved, but the initial release only enables Light rules."],
+		["LIGHT 5 PICK 3", "Build five units, then field one hero, one puppet, and one barrier."],
 		["BACK TO MENU", "Do not enter Unit Edit yet."],
 	]
 	for i in range(mini(format_select_buttons.size(), texts.size())):
 		var button: Button = format_select_buttons[i]
 		button.text = "%s\n%s" % [String(texts[i][0]), String(texts[i][1])]
+		button.disabled = i == 0
 
 
 func _show_settings(preloaded: bool = false, category_key: String = "root") -> void:
@@ -16151,7 +16431,7 @@ func _show_scout(mode: String, preloaded: bool = false) -> void:
 			scout_hint_label.text = _ai_battle_seat_hint()
 		elif mode == MODE_TRAINING:
 			var readiness_hint := _training_readiness_status_text()
-			scout_hint_label.text = readiness_hint if readiness_hint != "" else ("请先选择 P1/P2/P3。专用球体靶机会出现在对手侧，可在下方调整体积。" if _ui_is_zh() else "Choose P1/P2/P3 first. A dedicated ball dummy spawns opposite; adjust its size below.")
+			scout_hint_label.text = readiness_hint if readiness_hint != "" else ("请先选择 P1/P2/P3。专用球体靶机会出现在对手侧，可在下方调整体积和状态。" if _ui_is_zh() else "Choose P1/P2/P3 first. A dedicated ball dummy spawns opposite; adjust size and behavior below.")
 		elif mode == MODE_PVP:
 			scout_hint_label.text = "选择当前屏幕视角 P1/P2/P3；双方仍按出战规则入场。" if _ui_is_zh() else "Choose this screen's P1/P2/P3 view; both sides still enter by sortie rules."
 		else:
@@ -16193,13 +16473,13 @@ func _ai_battle_seat_hint() -> String:
 			2:
 				return "P2右侧：侦查后按%s选出战。" % _match_format_short()
 			3:
-				return "P3观战：双方AI自动选出战。"
+				return "P3观战：双方电脑按规则自动选出战。"
 		return "P1左侧：侦查后按%s选出战。" % _match_format_short()
 	match ai_battle_seat:
 		2:
 			return "P2 right: inspect, pick %s." % _match_format_short()
 		3:
-			return "P3 watch: AIs auto-pick."
+			return "P3 watch: computer sides auto-pick."
 	return "P1 left: inspect, pick %s." % _match_format_short()
 
 
@@ -16247,7 +16527,7 @@ func _select_ai_battle_seat(seat: int) -> void:
 		scout_sortie_player_id = int(intent.get("scout_sortie_player_id", scout_sortie_player_id))
 	if scout_hint_label != null:
 		if pending_battle_mode == MODE_TRAINING:
-			scout_hint_label.text = "训练席位：%s。开始后球体靶机在对手侧待测。" % _battle_seat_label(ai_battle_seat) if _ui_is_zh() else "Training seat: %s. The ball dummy will wait on the opposite side." % _battle_seat_label(ai_battle_seat)
+			scout_hint_label.text = "训练席位：%s；靶机：%s。开始后球体靶机在对手侧待测。" % [_battle_seat_label(ai_battle_seat), _training_dummy_state_label(training_dummy_state)] if _ui_is_zh() else "Training seat: %s; dummy: %s. The ball dummy will wait on the opposite side." % [_battle_seat_label(ai_battle_seat), _training_dummy_state_label(training_dummy_state)]
 		else:
 			scout_hint_label.text = _ai_battle_seat_hint()
 	if bool(intent.get("update_scout_ui", true)):
@@ -16344,6 +16624,15 @@ func _menu_description(index: int) -> String:
 	return String(descriptions[clampi(index, 0, descriptions.size() - 1)])
 
 
+func _menu_index_for_action(action_key: String) -> int:
+	for i in range(MenuController.MAIN_MENU_SPECS.size()):
+		var spec: Dictionary = MenuController.MAIN_MENU_SPECS[i]
+		if String(spec.get("key", "")) == action_key:
+			return i
+	var fallback_keys := ["training_config", "saved_units", "unit_edit", "pvp", "show_ai_seat_panel", "settings", "quit"]
+	return fallback_keys.find(action_key)
+
+
 func _role_name(role_key: String) -> String:
 	return String((ROLE_NAMES if _ui_is_zh() else ROLE_NAMES_EN).get(role_key, role_key))
 
@@ -16382,7 +16671,7 @@ func _ui_term(term_key: String) -> String:
 		"electronic_armor": "护盾",
 		"support_armor": "护甲",
 		"shift": "切换",
-		"ai_battle": "AI 对战",
+		"ai_battle": "电脑对战",
 		"p1_left": "P1 左侧席位",
 		"p2_right": "P2 右侧席位",
 		"p3_spectator": "P3 观战席",
@@ -16410,7 +16699,7 @@ func _ui_term(term_key: String) -> String:
 		"electronic_armor": "SH",
 		"support_armor": "A",
 		"shift": "SHIFT",
-		"ai_battle": "AI BATTLE",
+		"ai_battle": "COMPUTER BATTLE",
 		"p1_left": "P1 LEFT SEAT",
 		"p2_right": "P2 RIGHT SEAT",
 		"p3_spectator": "P3 SPECTATOR",
@@ -16685,7 +16974,7 @@ func _apply_language_to_existing_ui() -> void:
 		_set_named_label(scout_layer, "ScoutMenuButton", "选项" if _ui_is_zh() else "OPTIONS")
 		_set_named_label(scout_layer, "ScoutHint", ("查看双方队伍；按%s选出战。" if _ui_is_zh() else "Inspect rosters; pick by %s.") % _match_format_short())
 		_set_named_label(scout_layer, "ScoutColorLabel", "队伍颜色" if _ui_is_zh() else "TEAM COLOR")
-		_set_named_label(scout_layer, "ScoutSeatLabel", "AI 对战席位" if _ui_is_zh() else "AI BATTLE SEAT")
+		_set_named_label(scout_layer, "ScoutSeatLabel", "电脑对战席位" if _ui_is_zh() else "COMPUTER BATTLE SEAT")
 		_set_named_label(scout_layer, "ScoutEnemyTitle", "对手队伍" if _ui_is_zh() else "OPPONENT")
 		_set_named_label(scout_layer, "ScoutDetailTitle", "所选单位详情" if _ui_is_zh() else "SELECTED UNIT DETAIL")
 		_set_named_label(scout_layer, "ScoutPlayerTitle", "出战选择" if _ui_is_zh() else "SORTIE")
@@ -16733,6 +17022,88 @@ func _reset_training_ball_dummy_radius() -> void:
 	_set_training_ball_dummy_radius(TRAINING_DUMMY_RADIUS_DEFAULT)
 
 
+func _training_dummy_state_specs() -> Array:
+	return [
+		{"state": "idle_brake", "zh": "静止待机", "en": "IDLE", "node_suffix": "IdleBrake"},
+		{"state": "free_physics", "zh": "自由物理", "en": "FREE", "node_suffix": "FreePhysics"},
+		{"state": "fixed", "zh": "固定位置", "en": "FIXED", "node_suffix": "Fixed"},
+		{"state": "sparring", "zh": "电脑陪练", "en": "SPAR", "node_suffix": "Sparring"},
+	]
+
+
+func _training_dummy_state_label(state_key: String, compact: bool = false) -> String:
+	for raw_spec in _training_dummy_state_specs():
+		var spec: Dictionary = raw_spec
+		if String(spec.get("state", "")) == state_key:
+			if _ui_is_zh():
+				return String(spec.get("zh", state_key))
+			return String(spec.get("en", state_key.to_upper())) if compact else String(spec.get("en", state_key.to_upper()))
+	return state_key.to_upper()
+
+
+func _training_intent_specs() -> Array:
+	return [
+		{"intent": "", "zh": "自动", "en": "AUTO", "node_suffix": "Auto"},
+		{"intent": "ranged_pressure", "zh": "远程", "en": "RANGE", "node_suffix": "RangedPressure"},
+		{"intent": "close_burst", "zh": "爆发", "en": "BURST", "node_suffix": "CloseBurst"},
+		{"intent": "mobile_pick", "zh": "机动", "en": "MOB", "node_suffix": "MobilePick"},
+		{"intent": "barrier_anchor", "zh": "阵地", "en": "ZONE", "node_suffix": "BarrierAnchor"},
+		{"intent": "summon_expand", "zh": "召唤", "en": "SUM", "node_suffix": "SummonExpand"},
+	]
+
+
+func _training_intent_label(intent_key: String) -> String:
+	for raw_spec in _training_intent_specs():
+		var spec: Dictionary = raw_spec
+		if String(spec.get("intent", "")) == intent_key:
+			return String(spec.get("zh", "自动")) if _ui_is_zh() else String(spec.get("en", "AUTO"))
+	return intent_key.to_upper()
+
+
+func _valid_training_intent_key(intent_key: String) -> String:
+	for raw_spec in _training_intent_specs():
+		if raw_spec is Dictionary and String(Dictionary(raw_spec).get("intent", "")) == intent_key:
+			return intent_key
+	return ""
+
+
+func _set_training_dummy_state(state_key: String) -> void:
+	var valid_states := []
+	for raw_spec in _training_dummy_state_specs():
+		if raw_spec is Dictionary:
+			valid_states.append(String(Dictionary(raw_spec).get("state", "")))
+	if not valid_states.has(state_key):
+		state_key = "idle_brake"
+	training_dummy_state = state_key
+	_update_training_dummy_radius_ui()
+	_update_battle_runtime_menu_ui()
+
+
+func _set_training_intent_key(intent_key: String) -> void:
+	training_intent_key = _valid_training_intent_key(intent_key)
+	_update_training_dummy_radius_ui()
+
+
+func _select_training_intent_key(intent_key: String) -> void:
+	_set_training_intent_key(intent_key)
+	if pending_battle_mode == MODE_TRAINING:
+		if scout_hint_label != null:
+			if training_intent_key == "":
+				scout_hint_label.text = "训练目标：自动判断。系统会根据单位数据给出建议。" if _ui_is_zh() else "Training goal: auto. The system will infer advisory intent from unit data."
+			else:
+				scout_hint_label.text = ("训练目标：%s。报告只给建议，不强制修改。" if _ui_is_zh() else "Training goal: %s. The report gives advice only.") % _training_intent_label(training_intent_key)
+		_update_scout_ui()
+
+
+func _select_training_dummy_state(state_key: String) -> void:
+	_set_training_dummy_state(state_key)
+	if scout_hint_label != null and pending_battle_mode == MODE_TRAINING:
+		if training_dummy_state == "sparring":
+			scout_hint_label.text = "对手状态：电脑陪练。将使用本地确定性规则移动和攻击；选择席位后开始训练。" if _ui_is_zh() else "Opponent state: computer sparring. It moves and attacks through local deterministic rules; choose a seat to begin."
+		else:
+			scout_hint_label.text = ("靶机状态：%s。选择席位后开始训练。" if _ui_is_zh() else "Dummy state: %s. Choose a seat, then start training.") % _training_dummy_state_label(training_dummy_state)
+
+
 func _training_ball_dummy_radius_summary() -> String:
 	var radius := _training_ball_dummy_radius()
 	var diameter := radius * 2.0
@@ -16759,10 +17130,22 @@ func _update_training_dummy_radius_ui() -> void:
 		control.visible = visible_dummy_controls
 		if control is BaseButton:
 			control.disabled = not visible_dummy_controls
+	for raw_button in scout_dummy_state_buttons:
+		if not (raw_button is Button):
+			continue
+		var button: Button = raw_button
+		button.visible = visible_dummy_controls
+		button.disabled = not visible_dummy_controls
+	for raw_button in scout_training_intent_buttons:
+		if not (raw_button is Button):
+			continue
+		var button: Button = raw_button
+		button.visible = visible_dummy_controls
+		button.disabled = not visible_dummy_controls
 	if not visible_dummy_controls:
 		return
 	if scout_dummy_title_label != null:
-		scout_dummy_title_label.text = "靶机体积" if _ui_is_zh() else "DUMMY SIZE"
+		scout_dummy_title_label.text = "靶机设置" if _ui_is_zh() else "DUMMY SETUP"
 	if scout_dummy_radius_reset_button != null:
 		scout_dummy_radius_reset_button.text = "默认" if _ui_is_zh() else "RESET"
 	if scout_dummy_value_label != null:
@@ -16774,6 +17157,28 @@ func _update_training_dummy_radius_ui() -> void:
 		scout_dummy_radius_slider.step = TRAINING_DUMMY_RADIUS_STEP
 		scout_dummy_radius_slider.value = _training_ball_dummy_radius()
 		training_dummy_radius_ui_sync = false
+	var specs := _training_dummy_state_specs()
+	for i in range(scout_dummy_state_buttons.size()):
+		var button: Button = scout_dummy_state_buttons[i]
+		if i >= specs.size() or not (specs[i] is Dictionary):
+			button.visible = false
+			continue
+		var spec: Dictionary = specs[i]
+		var state_key := String(spec.get("state", "idle_brake"))
+		var selected := training_dummy_state == state_key
+		button.text = _training_dummy_state_label(state_key, true)
+		button.modulate = Color(0.35, 0.95, 1.0, 1.0) if selected else Color(0.86, 0.9, 0.94, 1.0)
+	var intent_specs := _training_intent_specs()
+	for i in range(scout_training_intent_buttons.size()):
+		var button: Button = scout_training_intent_buttons[i]
+		if i >= intent_specs.size() or not (intent_specs[i] is Dictionary):
+			button.visible = false
+			continue
+		var spec: Dictionary = intent_specs[i]
+		var intent_key := String(spec.get("intent", ""))
+		var intent_selected := training_intent_key == intent_key
+		button.text = String(spec.get("zh", "自动")) if _ui_is_zh() else String(spec.get("en", "AUTO"))
+		button.modulate = Color(0.35, 0.95, 1.0, 1.0) if intent_selected else Color(0.86, 0.9, 0.94, 1.0)
 
 
 func _select_editor_team_color(color_index: int) -> void:
@@ -16823,7 +17228,7 @@ func _start_ai_battle_from_menu(seat: int) -> void:
 	if game_state != STATE_MENU:
 		return
 	ai_battle_seat = clampi(seat, 1, 3)
-	menu_index = 3
+	menu_index = maxi(0, _menu_index_for_action("show_ai_seat_panel"))
 	_update_menu_ui()
 	_start_battle(MODE_AI)
 
@@ -16976,6 +17381,349 @@ func _legacy_training_loadout_from_imports(imports: Array) -> Dictionary:
 	}
 
 
+func _unit_build_rule_audit(role_key: String, unit_bp: Dictionary, stats: Dictionary) -> Dictionary:
+	if unit_build_rule_service == null:
+		unit_build_rule_service = UnitBuildRuleService.new()
+	var mobile_body_rules := role_key != "barrier" and _role_uses_body_board(role_key)
+	return unit_build_rule_service.audit({
+		"role_key": role_key,
+		"metrics": _unit_build_rule_metrics(role_key, unit_bp, stats),
+		"applicability": {
+			"idle_mass": mobile_body_rules,
+			"weapon_utilization": mobile_body_rules,
+			"drive_peak": role_key != "barrier",
+			"heat_peak": role_key != "barrier",
+			"plugin_pressure": role_key != "barrier",
+		},
+	})
+
+
+func _unit_build_rule_metrics(role_key: String, unit_bp: Dictionary, stats: Dictionary) -> Dictionary:
+	var topology_metrics := _unit_build_rule_topology_metrics(role_key, unit_bp, stats)
+	var mass := maxf(0.0, float(stats.get("mass", 0.0)))
+	var explicit_idle_mass := -1.0
+	if stats.has("idle_mass"):
+		explicit_idle_mass = maxf(0.0, float(stats.get("idle_mass", 0.0)))
+	elif stats.has("unbound_mass"):
+		explicit_idle_mass = maxf(0.0, float(stats.get("unbound_mass", 0.0)))
+	var idle_mass := explicit_idle_mass if explicit_idle_mass >= 0.0 else maxf(0.0, float(topology_metrics.get("idle_mass", 0.0)))
+	var idle_mass_ratio := idle_mass / maxf(1.0, mass) if mass > 0.0 else 0.0
+
+	var weapon_mass := maxf(0.0, float(stats.get("weapon_mass", topology_metrics.get("weapon_mass", 0.0))))
+	if weapon_mass <= 0.0:
+		weapon_mass = maxf(0.0, float(stats.get("terminal_weapon_mass", 0.0)))
+	var bound_weapon_mass := maxf(0.0, float(stats.get("action_bound_weapon_mass", topology_metrics.get("action_bound_weapon_mass", weapon_mass))))
+	var weapon_utilization_ratio := 1.0
+	if stats.has("weapon_utilization_ratio"):
+		weapon_utilization_ratio = clampf(float(stats.get("weapon_utilization_ratio", 1.0)), 0.0, 1.0)
+	elif weapon_mass > 0.0:
+		weapon_utilization_ratio = clampf(bound_weapon_mass / weapon_mass, 0.0, 1.0)
+
+	var drive_output := maxf(0.0, float(stats.get("drive_output_total", stats.get("engine_momentum_output", stats.get("engine_momentum_budget", 0.0)))))
+	var drive_demand := maxf(0.0, float(stats.get("drive_demand_total", stats.get("engine_momentum_required", 0.0))))
+	var drive_peak_ratio := 0.0
+	if drive_demand > 0.0:
+		drive_peak_ratio = drive_demand / drive_output if drive_output > 0.0 else 9.0
+
+	var heat_peak := maxf(
+		maxf(float(stats.get("normal_heat", 0.0)), float(stats.get("armor_heat", 0.0))),
+		float(stats.get("active_heat", 0.0))
+	) + maxf(0.0, float(stats.get("boost_heat", 0.0)))
+	var heat_capacity := maxf(
+		maxf(float(stats.get("heat_capacity", 0.0)), float(stats.get("cooling_heat_capacity", 0.0))),
+		maxf(float(stats.get("thermal_load_pool", 0.0)), float(stats.get("cooling_pool", 0.0)))
+	)
+	var heat_peak_ratio := 0.0
+	if heat_peak > 0.0:
+		heat_peak_ratio = heat_peak / heat_capacity if heat_capacity > 0.0 else 9.0
+
+	var slot_cap := int(stats.get("torso_slots", 0))
+	if slot_cap <= 0:
+		slot_cap = int(stats.get("engine_slots", 0)) + int(stats.get("cooling_slots", 0)) + int(stats.get("booster_slots", 0)) + int(stats.get("spare_weapon_slots", 0))
+	var plugin_rank_budget := maxf(1.0, float(maxi(1, slot_cap)) * 3.0)
+	var plugin_pressure := maxf(0.0, float(stats.get("slot_payload_volume_rank", 0.0))) / plugin_rank_budget
+	if stats.has("plugin_pressure"):
+		plugin_pressure = maxf(0.0, float(stats.get("plugin_pressure", plugin_pressure)))
+
+	var role_metrics := _unit_build_rule_role_metrics(stats)
+	return {
+		"idle_mass_ratio": clampf(idle_mass_ratio, 0.0, 1.0),
+		"idle_mass": idle_mass,
+		"weapon_utilization_ratio": weapon_utilization_ratio,
+		"weapon_mass": weapon_mass,
+		"action_bound_weapon_mass": bound_weapon_mass,
+		"dominant_role_ratio": float(role_metrics.get("dominant_role_ratio", 1.0)),
+		"role_bucket_count": int(role_metrics.get("role_bucket_count", 0)),
+		"drive_peak_ratio": drive_peak_ratio,
+		"heat_peak_ratio": heat_peak_ratio,
+		"plugin_pressure": plugin_pressure,
+	}
+
+
+func _unit_build_rule_topology_metrics(role_key: String, unit_bp: Dictionary, stats: Dictionary) -> Dictionary:
+	var result := {
+		"idle_mass": 0.0,
+		"weapon_mass": 0.0,
+		"action_bound_weapon_mass": 0.0,
+		"total_node_mass": 0.0,
+	}
+	if not unit_bp.has("custom_topology"):
+		return result
+	var topology: Dictionary = unit_bp.get("custom_topology", {})
+	var nodes: Array = Array(topology.get("nodes", []))
+	var bound_nodes := {}
+	for raw_binding in Array(stats.get("runtime_module_bindings", [])):
+		if not (raw_binding is Dictionary):
+			continue
+		var binding: Dictionary = raw_binding
+		if not bool(binding.get("runtime_valid", true)):
+			continue
+		for raw_node in Array(binding.get("target_nodes", [])):
+			bound_nodes[int(raw_node)] = true
+		var root_index := int(binding.get("root_index", -1))
+		if root_index >= 0:
+			bound_nodes[root_index] = true
+	for i in range(nodes.size()):
+		if not (nodes[i] is Dictionary) or not _topology_node_is_component(nodes[i]):
+			continue
+		var node: Dictionary = nodes[i]
+		var slot_key := _topology_node_slot(node)
+		var part := _topology_node_part(role_key, node, unit_bp)
+		var node_mass := maxf(0.0, float(part.get("mass", 0.0)))
+		result["total_node_mass"] = float(result["total_node_mass"]) + node_mass
+		var is_torso := _topology_node_is_torso(role_key, node, unit_bp)
+		var is_terminal_weapon := _part_counts_as_terminal_weapon(part, slot_key) or bool(part.get("terminal_weapon", false)) or bool(part.get("projectile", false))
+		if is_terminal_weapon:
+			var terminal_mass := maxf(node_mass, float(part.get("terminal_weapon_mass", 0.0)))
+			result["weapon_mass"] = float(result["weapon_mass"]) + terminal_mass
+			if bool(bound_nodes.get(i, false)):
+				result["action_bound_weapon_mass"] = float(result["action_bound_weapon_mass"]) + terminal_mass
+		elif not is_torso and not bool(bound_nodes.get(i, false)) and Array(node.get("modules", [])).is_empty():
+			result["idle_mass"] = float(result["idle_mass"]) + node_mass
+	return result
+
+
+func _unit_build_rule_role_metrics(stats: Dictionary) -> Dictionary:
+	var buckets := {
+		"damage": maxf(0.0, float(stats.get("normal_damage", 0.0)) + float(stats.get("armor_damage", 0.0)) + float(stats.get("active_damage", 0.0)) + float(stats.get("projectile_momentum", 0.0)) * 0.02),
+		"survival": maxf(0.0, float(stats.get("health", 0.0)) * 0.08 + float(stats.get("shield_max", 0.0)) * 0.08 + float(stats.get("stiffness", 0.0)) * 0.015),
+		"mobility": maxf(0.0, float(stats.get("speed", 0.0)) * 24.0 + float(stats.get("move_momentum", 0.0)) * 0.04 + float(stats.get("boost_momentum", 0.0)) * 0.025),
+		"control": maxf(0.0, float(stats.get("aura_range", 0.0)) * 10.0 + float(stats.get("slow_power", 0.0)) * 18.0 + float(stats.get("support_amount", 0.0)) * 0.12 + float(stats.get("takeover_power", 1.0)) - 1.0),
+	}
+	var total := 0.0
+	var max_value := 0.0
+	var active_count := 0
+	for raw_value in buckets.values():
+		var value := maxf(0.0, float(raw_value))
+		if value > 0.001:
+			active_count += 1
+			total += value
+			max_value = maxf(max_value, value)
+	return {
+		"dominant_role_ratio": max_value / total if total > 0.0 else 1.0,
+		"role_bucket_count": active_count,
+	}
+
+
+func _training_validation_unit_summary(role_key: String, unit_bp: Dictionary, unit_index: int = 0) -> Dictionary:
+	var candidate := unit_bp.duplicate(true)
+	candidate["role"] = role_key
+	if _role_uses_body_board(role_key):
+		_normalize_unit_to_component_topology(role_key, candidate)
+		_apply_entry_pose_to_blueprint(candidate)
+	var stats := _compute_unit_stats(1, role_key, -1, candidate)
+	var build_audit := _unit_build_rule_audit(role_key, candidate, stats)
+	return {
+		"role": role_key,
+		"index": unit_index,
+		"name": String(stats.get("unit_name", stats.get("name", candidate.get("unit_name", candidate.get("name", ""))))),
+		"stats": stats,
+		"build_audit": build_audit,
+	}
+
+
+func _training_validation_units_from_cache() -> Array:
+	var units: Array = []
+	var roster: Dictionary = Dictionary(training_test_roster_cache)
+	if roster.is_empty():
+		roster = Dictionary(blueprints.get(1, {}))
+	var loadout: Array = Array(training_test_loadout_cache)
+	if loadout.is_empty():
+		for raw_role in ROLE_ORDER:
+			var role_key := String(raw_role)
+			var role_roster: Array = Array(roster.get(role_key, []))
+			for i in range(role_roster.size()):
+				if role_roster[i] is Dictionary:
+					units.append(_training_validation_unit_summary(role_key, Dictionary(role_roster[i]), i))
+		return units
+	for raw_entry in loadout:
+		if not (raw_entry is Dictionary):
+			continue
+		var entry: Dictionary = raw_entry
+		var role_key := String(entry.get("role", "hero"))
+		var unit_index := int(entry.get("index", 0))
+		var role_roster: Array = Array(roster.get(role_key, []))
+		if unit_index < 0 or unit_index >= role_roster.size() or not (role_roster[unit_index] is Dictionary):
+			continue
+		units.append(_training_validation_unit_summary(role_key, Dictionary(role_roster[unit_index]), unit_index))
+	return units
+
+
+func _empty_training_validation_sample() -> Dictionary:
+	return {
+		"seconds": 0.0,
+		"shots_fired": 0,
+		"hits": 0,
+		"damage_dealt": 0.0,
+		"heat_peak_ratio": 0.0,
+		"overheat_count": 0,
+		"ammo_spent": 0,
+		"ammo_remaining": -1,
+		"boost_count": 0,
+		"distance_moved": 0.0,
+		"overheated_players": {},
+	}
+
+
+func _reset_training_validation_sample() -> void:
+	training_validation_sample = _empty_training_validation_sample()
+	training_validation_sample_last_positions = {}
+
+
+func _training_validation_sample_player_id() -> int:
+	if battle_mode != MODE_TRAINING:
+		return 0
+	return 2 if ai_battle_seat == 2 else 1
+
+
+func _training_validation_sample_accepts_player(player_id: int) -> bool:
+	return battle_mode == MODE_TRAINING and player_id == _training_validation_sample_player_id()
+
+
+func _ensure_training_validation_sample() -> void:
+	if training_validation_sample.is_empty():
+		_reset_training_validation_sample()
+
+
+func _training_validation_sample_record_shot(player_id: int, _event: Dictionary = {}) -> void:
+	if not _training_validation_sample_accepts_player(player_id):
+		return
+	if bool(_event.get("training_validation_shot_recorded", false)):
+		return
+	_event["training_validation_shot_recorded"] = true
+	_ensure_training_validation_sample()
+	training_validation_sample["shots_fired"] = int(training_validation_sample.get("shots_fired", 0)) + 1
+
+
+func _training_validation_sample_record_hit(player_id: int, damage: float, _event: Dictionary = {}) -> void:
+	if not _training_validation_sample_accepts_player(player_id):
+		return
+	_ensure_training_validation_sample()
+	if bool(_event.get("projectile", false)):
+		training_validation_sample["hits"] = int(training_validation_sample.get("hits", 0)) + 1
+	training_validation_sample["damage_dealt"] = float(training_validation_sample.get("damage_dealt", 0.0)) + maxf(0.0, damage)
+
+
+func _training_validation_sample_record_ammo_spent(player_id: int, _ammo_type: String, amount: int = 1) -> void:
+	if not _training_validation_sample_accepts_player(player_id):
+		return
+	_ensure_training_validation_sample()
+	training_validation_sample["ammo_spent"] = int(training_validation_sample.get("ammo_spent", 0)) + maxi(0, amount)
+
+
+func _training_validation_sample_record_boost(player_id: int) -> void:
+	if not _training_validation_sample_accepts_player(player_id):
+		return
+	_ensure_training_validation_sample()
+	training_validation_sample["boost_count"] = int(training_validation_sample.get("boost_count", 0)) + 1
+
+
+func _training_validation_sample_record_motion(player_id: int, distance: float) -> void:
+	if not _training_validation_sample_accepts_player(player_id):
+		return
+	_ensure_training_validation_sample()
+	training_validation_sample["distance_moved"] = float(training_validation_sample.get("distance_moved", 0.0)) + maxf(0.0, distance)
+
+
+func _training_validation_sample_record_heat(player_id: int, heat: float, heat_capacity: float, overheated: bool) -> void:
+	if not _training_validation_sample_accepts_player(player_id):
+		return
+	_ensure_training_validation_sample()
+	var capacity := maxf(0.001, heat_capacity)
+	training_validation_sample["heat_peak_ratio"] = maxf(float(training_validation_sample.get("heat_peak_ratio", 0.0)), maxf(0.0, heat) / capacity)
+	var overheat_latches: Dictionary = Dictionary(training_validation_sample.get("overheated_players", {}))
+	var player_key := str(player_id)
+	var was_overheated := bool(overheat_latches.get(player_key, false))
+	if overheated and not was_overheated:
+		training_validation_sample["overheat_count"] = int(training_validation_sample.get("overheat_count", 0)) + 1
+	overheat_latches[player_key] = overheated
+	training_validation_sample["overheated_players"] = overheat_latches
+
+
+func _training_validation_sample_tick(delta: float) -> void:
+	if battle_mode != MODE_TRAINING:
+		return
+	_ensure_training_validation_sample()
+	training_validation_sample["seconds"] = float(training_validation_sample.get("seconds", 0.0)) + maxf(0.0, delta)
+
+
+func _tick_training_validation_sample(delta: float) -> void:
+	if battle_mode != MODE_TRAINING:
+		return
+	_training_validation_sample_tick(delta)
+	var player_id := _training_validation_sample_player_id()
+	var unit = active_units[player_id]["hero"] if active_units.has(player_id) and active_units[player_id] is Dictionary else null
+	if not _is_live_unit(unit):
+		return
+	var heat_capacity := maxf(
+		maxf(float(unit.stats.get("heat_capacity", 0.0)), float(unit.stats.get("cooling_heat_capacity", 0.0))),
+		maxf(float(unit.stats.get("thermal_load_pool", 0.0)), float(unit.stats.get("cooling_pool", 0.0)))
+	)
+	_training_validation_sample_record_heat(player_id, float(unit.heat), heat_capacity, bool(unit.overheated))
+	training_validation_sample["ammo_remaining"] = int(_live_unit_ammo_summary(unit).get("current", -1))
+	var position := _unit_combat_coord(unit)
+	var previous = training_validation_sample_last_positions.get(player_id, null)
+	if previous is Vector2:
+		var distance := 0.0
+		if mobius_enabled:
+			distance = _mobius_delta_points((previous as Vector2).x, (previous as Vector2).y, position.x, position.y).length()
+		else:
+			distance = (previous as Vector2).distance_to(position)
+		_training_validation_sample_record_motion(player_id, distance)
+	training_validation_sample_last_positions[player_id] = position
+
+
+func _training_validation_sample_runtime_metrics() -> Dictionary:
+	if training_validation_sample.is_empty():
+		return {}
+	var runtime := training_validation_sample.duplicate(true)
+	runtime.erase("overheated_players")
+	return runtime
+
+
+func _training_validation_report_for_current_training(intent_key: String = "") -> Dictionary:
+	if training_validation_report_service == null:
+		training_validation_report_service = TrainingValidationReportService.new()
+	var resolved_intent := _valid_training_intent_key(intent_key if intent_key != "" else training_intent_key)
+	return training_validation_report_service.report({
+		"intent_key": resolved_intent,
+		"intent_source": "player" if training_intent_key != "" else "auto",
+		"units": _training_validation_units_from_cache(),
+		"runtime": _training_validation_sample_runtime_metrics(),
+		"training_dummy_state": training_dummy_state,
+		"dummy_radius": _training_ball_dummy_radius(),
+	})
+
+
+func _training_validation_report_text(report_data: Dictionary = {}) -> String:
+	if training_validation_report_service == null:
+		training_validation_report_service = TrainingValidationReportService.new()
+	var report_data_to_render := report_data
+	if report_data_to_render.is_empty():
+		report_data_to_render = _training_validation_report_for_current_training()
+	return training_validation_report_service.report_text(report_data_to_render, ui_language)
+
+
 func _training_blueprint_illegal_note(player_id: int, role_key: String, unit_bp: Dictionary) -> String:
 	if not ROLE_ORDER.has(role_key):
 		return "INVALID: unknown unit role."
@@ -17009,6 +17757,10 @@ func _training_blueprint_illegal_note(player_id: int, role_key: String, unit_bp:
 	var topology_note := _topology_rule_note(candidate, role_key, stats)
 	if topology_note.begins_with("INVALID"):
 		return topology_note
+	var build_rule_audit := _unit_build_rule_audit(role_key, candidate, stats)
+	var build_rule_note := unit_build_rule_service.first_hard_invalid_note(build_rule_audit) if unit_build_rule_service != null else ""
+	if build_rule_note.begins_with("INVALID"):
+		return build_rule_note
 	for note_key in ["joint_momentum_note", "slot_payload_note", "drive_note", "stiffness_note"]:
 		if role_key == "barrier" and note_key in ["slot_payload_note", "drive_note"]:
 			continue
@@ -17219,6 +17971,7 @@ func _begin_battle(mode: String, preloaded: bool = false, reason: String = "") -
 	_summon_role(1, String(p1_starter.get("role", "hero")), true, true)
 	_summon_role(2, String(p2_starter.get("role", "hero")), true, true)
 	if mode == MODE_TRAINING:
+		_reset_training_validation_sample()
 		runtime_resource[1] = 999.0
 		runtime_resource[2] = 0.0
 		var training_player := 2 if ai_battle_seat == 2 else 1
@@ -17227,7 +17980,8 @@ func _begin_battle(mode: String, preloaded: bool = false, reason: String = "") -
 		runtime_resource[training_dummy_player] = 0.0
 		var training_dummy = active_units[training_dummy_player]["hero"]
 		if _is_live_unit(training_dummy):
-			training_dummy.set_meta("training_static_dummy", true)
+			training_dummy.set_meta("training_static_dummy", training_dummy_state != "sparring")
+			training_dummy.set_meta("training_sparring_opponent", training_dummy_state == "sparring")
 			training_dummy.velocity = Vector2.ZERO
 			training_dummy.angular_velocity = 0.0
 		var training_hero = active_units[training_player]["hero"]
@@ -17236,17 +17990,24 @@ func _begin_battle(mode: String, preloaded: bool = false, reason: String = "") -
 			if float(hero_stats.get("thruster_effective_drive_demand", 0.0)) <= 0.0001:
 				_show_battle_message("训练：该英雄无推进器，无法主动移动/转向。" if _ui_is_zh() else "TRAINING: this hero has no thrusters, so it cannot actively move or turn.", 3.0)
 			else:
-				_show_battle_message("训练%s：WASD 移动，Q/E 转向，U/I/O/J/K/L 触发已绑定行动模块。" % _battle_seat_label(ai_battle_seat) if _ui_is_zh() else "TRAINING %s: WASD move, Q/E turn, U/I/O/J/K/L trigger bound modules." % _battle_seat_label(ai_battle_seat), 2.8)
+				if training_dummy_state == "sparring":
+					_show_battle_message("训练%s：电脑陪练已启用。其行动由本地确定性规则驱动。" % _battle_seat_label(ai_battle_seat) if _ui_is_zh() else "TRAINING %s: computer sparring enabled with local deterministic rules." % _battle_seat_label(ai_battle_seat), 2.8)
+				else:
+					_show_battle_message("训练%s：WASD 移动，Q/E 转向，U/I/O/J/K/L 触发已绑定行动模块。" % _battle_seat_label(ai_battle_seat) if _ui_is_zh() else "TRAINING %s: WASD move, Q/E turn, U/I/O/J/K/L trigger bound modules." % _battle_seat_label(ai_battle_seat), 2.8)
 			_show_training_entry_intro(training_player, training_dummy_player)
 		else:
 			_show_battle_message("训练：未导入英雄，进入观察/结构测试模式。" if _ui_is_zh() else "TRAINING: no hero imported, observation/structure test mode.", 2.8)
 	elif mode == MODE_AI:
+		training_validation_sample = {}
+		training_validation_sample_last_positions = {}
 		if ai_battle_seat == 3:
-			_show_battle_message("AI 对战 P3：WASD 自由移动镜头，Q/E 循环视角，F/R/T 切 P1/P2/中点。" if _ui_is_zh() else "AI BATTLE P3: WASD free pan, Q/E cycle, F/R/T P1/P2/MID.", 3.2)
+			_show_battle_message("电脑对战 P3：WASD 自由移动镜头，Q/E 循环视角，F/R/T 切 P1/P2/中点。" if _ui_is_zh() else "COMPUTER BATTLE P3: WASD free pan, Q/E cycle, F/R/T P1/P2/MID.", 3.2)
 		else:
 			var side_name := "左侧" if ai_battle_seat == 1 else "右侧"
-			_show_battle_message("AI 对战 P%d：你控制%s。" % [ai_battle_seat, side_name] if _ui_is_zh() else "AI BATTLE P%d: you control the %s side." % [ai_battle_seat, "left" if ai_battle_seat == 1 else "right"], 2.2)
+			_show_battle_message("电脑对战 P%d：你控制%s。" % [ai_battle_seat, side_name] if _ui_is_zh() else "COMPUTER BATTLE P%d: you control the %s side." % [ai_battle_seat, "left" if ai_battle_seat == 1 else "right"], 2.2)
 	else:
+		training_validation_sample = {}
+		training_validation_sample_last_positions = {}
 		_show_battle_message("PVP：双控制器启用。键盘保留为 P1 练习备用。" if _ui_is_zh() else "PVP: two controllers active. Keyboard remains P1 practice fallback.", 2.2)
 	_refresh_battle_camera_projection_now()
 	_update_battle_ui()
@@ -18203,7 +18964,7 @@ func _activate_menu_item(index: int) -> void:
 		"unit_edit":
 			_show_editor()
 		"show_ai_seat_panel":
-			menu_index = 3
+			menu_index = maxi(0, _menu_index_for_action("show_ai_seat_panel"))
 			_update_menu_ui()
 		"pvp":
 			_start_battle(MODE_PVP)
@@ -18348,7 +19109,7 @@ func _handle_editor_input() -> void:
 		initial_sortie_slot[target_player] = 0
 		summon_pair_bindings[target_player] = summon_pair_bindings[source_player].duplicate(true)
 		ai_team_manual_lock[target_player] = true
-		editor_summary_label.text = "已将 P%d 队伍编辑配置复制到 P%d/AI。" % [source_player, target_player] if _ui_is_zh() else "Copied P%d TeamEdit roster to P%d/AI loadout." % [source_player, target_player]
+		editor_summary_label.text = "已将 P%d 队伍编辑配置复制到 P%d/电脑配置。" % [source_player, target_player] if _ui_is_zh() else "Copied P%d TeamEdit roster to P%d/computer loadout." % [source_player, target_player]
 		return
 	for attack_key in range(1, ATTACK_GROUP_COUNT + 1):
 		if Input.is_action_just_pressed("p1_attack_%d" % attack_key):
@@ -28175,10 +28936,10 @@ func _editor_action(action_key: String) -> void:
 		"clear_team":
 			_clear_editor_team()
 		"toggle_match_format":
-			editor_match_format = "light" if editor_match_format != "light" else "standard"
+			editor_match_format = "light"
 			sortie_loadouts[_editor_player()] = []
 			summon_pair_bindings[_editor_player()] = _default_summon_pair_bindings()
-			editor_summary_label.text = "对战规则已切换为：%s。队伍草稿不会自动补单位，出战前再选择对应数量。" % _match_format_name() if _ui_is_zh() else "Match format switched to: %s. Draft roster is not auto-filled; pick the sortie count before battle." % _match_format_name()
+			editor_summary_label.text = "初期版本仅启用：%s。" % _match_format_name() if _ui_is_zh() else "The initial release only enables: %s." % _match_format_name()
 			_update_editor_ui()
 		"prev_unit":
 			_select_adjacent_editor_unit_page(-1)
@@ -28200,7 +28961,7 @@ func _editor_action(action_key: String) -> void:
 			initial_sortie_slot[target_player] = 0
 			summon_pair_bindings[target_player] = summon_pair_bindings[source_player].duplicate(true)
 			ai_team_manual_lock[target_player] = true
-			editor_summary_label.text = "已将 P%d 队伍编辑配置复制到 P%d/AI。" % [source_player, target_player] if _ui_is_zh() else "Copied P%d TeamEdit roster to P%d/AI loadout." % [source_player, target_player]
+			editor_summary_label.text = "已将 P%d 队伍编辑配置复制到 P%d/电脑配置。" % [source_player, target_player] if _ui_is_zh() else "Copied P%d TeamEdit roster to P%d/computer loadout." % [source_player, target_player]
 		"sortie_toggle":
 			editor_summary_label.text = "出战选择已移到赛前界面：先完成%s队伍，再进入战斗前选择本场单位。" % _match_format_name() if _ui_is_zh() else "Sortie selection moved to the pre-battle screen: build the %s roster here, then choose match units before battle." % _match_format_name()
 		"sortie_up":
@@ -31264,6 +32025,7 @@ func _tick_battle_simulation(delta: float, _input_frame: Dictionary = {}) -> voi
 				_update_barriers(delta)
 			BattleFrameOrchestratorService.PHASE_UNIT_PHYSICS:
 				_update_units(delta, false)
+				_tick_training_validation_sample(delta)
 			BattleFrameOrchestratorService.PHASE_CAMERA_MOBIUS:
 				_update_camera_center(delta)
 				_tick_mobius_visual_twist(delta)
@@ -32429,6 +33191,7 @@ func _handle_direction_taps(player_id: int, prefix: String, delta: float = BATTL
 				var boost_vectors := _battle_movement_vector_for_unit(hero, boost_dir)
 				boost_dir = boost_vectors.get("actual", Vector2.ZERO)
 				if _is_live_unit(hero) and hero.boost(boost_dir, RING_LENGTH):
+					_training_validation_sample_record_boost(player_id)
 					_refresh_boost_visibility_after_start(hero)
 					_show_battle_message("P%d BOOST %s" % [player_id, String(name).to_upper()], 0.35)
 			last_direction_taps[player_id][name] = now
@@ -32454,6 +33217,7 @@ func _handle_face_chord_boost(player_id: int, prefix: String, input_vector: Vect
 		var boost_vectors := _battle_movement_vector_for_unit(hero, boost_dir)
 		boost_dir = boost_vectors.get("actual", Vector2.ZERO)
 	if hero.boost(boost_dir, RING_LENGTH):
+		_training_validation_sample_record_boost(player_id)
 		_refresh_boost_visibility_after_start(hero)
 		_show_battle_message("P%d BOOST CHORD" % player_id, 0.35)
 
@@ -34307,6 +35071,11 @@ func _update_training_dummy(delta: float) -> void:
 	var dummy_player := 1 if ai_battle_seat == 2 else 2
 	var dummy = active_units[dummy_player]["hero"]
 	if _is_live_unit(dummy):
+		if training_dummy_state == "sparring":
+			dummy.set_meta("training_static_dummy", false)
+			dummy.set_meta("training_sparring_opponent", true)
+			_update_ai_player(dummy_player, delta)
+			return
 		dummy.set_meta("training_static_dummy", true)
 		if training_dummy_state == "fixed":
 			dummy.velocity = Vector2.ZERO
@@ -34320,7 +35089,12 @@ func _update_training_dummy(delta: float) -> void:
 	training_respawn_timer -= delta
 	if training_respawn_timer <= 0.0:
 		_summon_role(dummy_player, "hero", true)
-		_show_battle_message("训练球体靶机已恢复。" if _ui_is_zh() else "Training ball dummy restored.", 1.0)
+		_show_battle_message(
+			("电脑陪练机已恢复。" if _ui_is_zh() else "Computer sparring unit restored.")
+			if training_dummy_state == "sparring"
+			else ("训练球体靶机已恢复。" if _ui_is_zh() else "Training ball dummy restored."),
+			1.0
+		)
 
 
 func _apply_training_dummy_auto_brake(dummy, delta: float) -> void:
@@ -35090,6 +35864,7 @@ func _consume_ammo_for_event(attacker, event: Dictionary) -> bool:
 		_show_battle_message("%s %s AMMO EMPTY" % [attacker.unit_name, ammo_type.to_upper()], 0.62)
 		return false
 	unit_set_ammo(attacker, ammo_type, current - 1)
+	_training_validation_sample_record_ammo_spent(int(attacker.owner_id), ammo_type, 1)
 	return true
 
 
@@ -39559,6 +40334,7 @@ func _resolve_attack(attacker, event: Dictionary) -> void:
 		if not bool(event.get("ammo_consumed", false)) and not _consume_ammo_for_event(attacker, event):
 			return
 		event["ammo_consumed"] = true
+		_training_validation_sample_record_shot(int(attacker.owner_id), event)
 	_mark_unit_attack_executed(attacker)
 	var attacker_blind := _unit_blind_strength(attacker)
 	if event.has("direction") and attacker_blind > 0.01 and not bool(event.get("aim_locked", false)):
@@ -39774,7 +40550,9 @@ func _resolve_attack(attacker, event: Dictionary) -> void:
 					_apply_hitstop(damage_type, counter_tier, int(post_intent.get("damage", damage)))
 				"take_hit":
 					var unit_damage := _unit_damage_after_part_absorption(event, damage)
+					var health_before := int(target.health)
 					killed = target.take_hit(unit_damage, String(event.get("state", "normal")), int(attacker.owner_id), damage_type, material_class)
+					_training_validation_sample_record_hit(int(attacker.owner_id), float(maxi(0, health_before - int(target.health))), event)
 				"chemical_dot":
 					if not killed:
 						_apply_chemical_dot_status(attacker, target, event, chemical_dot_total)
@@ -48863,7 +49641,7 @@ func _format_unit_stats(stats: Dictionary) -> String:
 		float(stats.get("boost_momentum", 0.0)),
 	]
 	var stiffness_line := String(stats.get("stiffness_note", ""))
-	return "HP %d  MASS %.0f  DRIVE %.0f  DEMAND %.0f  LEFT %.0f  LEN %.2f  RAD %.2f  SPD %.2f  TURN %.2f  SEC %.2f\n%s\n%s\n%s\n%s\n%s\n%s\nDMG %s normal/front/rear %d/%d/%d  RNG %.2f/%.2f/%.2f  MOVE %.0f / BOOST %.0f %s\nAI %s  FIELD %s  MAT %s  SIZE %s  PORT/BAY/SOFT %d/%d/%d\n%s  %s\n%s\n%s  %s\nMELEE TAKEN x B/P/T %.2f/%.2f/%.2f  CTR %d/%d/%d" % [
+	return "HP %d  MASS %.0f  DRIVE %.0f  DEMAND %.0f  LEFT %.0f  LEN %.2f  RAD %.2f  SPD %.2f  TURN %.2f  SEC %.2f\n%s\n%s\n%s\n%s\n%s\n%s\nDMG %s normal/front/rear %d/%d/%d  RNG %.2f/%.2f/%.2f  MOVE %.0f / BOOST %.0f %s\nPUPPET ROUTINE %s  FIELD %s  MAT %s  SIZE %s  PORT/BAY/SOFT %d/%d/%d\n%s  %s\n%s\n%s  %s\nMELEE TAKEN x B/P/T %.2f/%.2f/%.2f  CTR %d/%d/%d" % [
 		int(stats["health"]),
 		float(stats["mass"]),
 		float(stats.get("drive_output_total", 0.0)),
@@ -48952,7 +49730,7 @@ func _format_unit_stats_zh(stats: Dictionary) -> String:
 	]
 	momentum_line = "%s\n%s\n%s" % [momentum_line, _localized_system_text(String(stats.get("joint_slot_note", ""))), _localized_system_text(String(stats.get("swept_collision_note", "")))]
 	var stiffness_line := _localized_system_text(String(stats.get("stiffness_note", "")))
-	return "生命 %d  质量 %.0f  动力输出 %.0f  需求 %.0f  余量 %.0f  长 %.2f  半径 %.2f  速度 %.2f  转向 %.2f  信息安全 %.2f\n%s\n%s\n%s\n%s\n%s\n%s\n伤害 %s 普通/正面护甲/背面激活 %d/%d/%d  射程 %.2f/%.2f/%.2f  移动动量 %.0f / Boost动量 %.0f %s\n傀儡AI %s  结界逻辑 %s  材料 %s  尺寸 %s  接口/武器/软件槽 %d/%d/%d\n%s  %s\n%s\n%s  %s\n承受近战 钝/刺/斩 %.2f/%.2f/%.2f  克制 %d/%d/%d" % [
+	return "生命 %d  质量 %.0f  动力输出 %.0f  需求 %.0f  余量 %.0f  长 %.2f  半径 %.2f  速度 %.2f  转向 %.2f  信息安全 %.2f\n%s\n%s\n%s\n%s\n%s\n%s\n伤害 %s 普通/正面护甲/背面激活 %d/%d/%d  射程 %.2f/%.2f/%.2f  移动动量 %.0f / Boost动量 %.0f %s\n傀儡行为 %s  结界逻辑 %s  材料 %s  尺寸 %s  接口/武器/软件槽 %d/%d/%d\n%s  %s\n%s\n%s  %s\n承受近战 钝/刺/斩 %.2f/%.2f/%.2f  克制 %d/%d/%d" % [
 		int(stats.get("health", 0)),
 		float(stats.get("mass", 0.0)),
 		float(stats.get("drive_output_total", 0.0)),
@@ -50563,7 +51341,7 @@ func _build_editor_ui() -> void:
 		["bind_prev", "绑定<"],
 		["bind_next", "绑定>"],
 		["bind_clear", "解绑"],
-		["copy_ai", "复制AI"],
+		["copy_ai", "复制电脑"],
 	]
 	for i in range(actions.size()):
 		var action_button := Button.new()
@@ -51227,7 +52005,7 @@ func _build_scout_ui() -> void:
 		color_button.pressed.connect(_select_scout_team_color.bind(i))
 		root.add_child(color_button)
 		scout_color_buttons.append(color_button)
-	scout_seat_label = _make_label(root, "ScoutSeatLabel", "AI 对战席位", Vector2(650.0, 112.0), Vector2(130.0, 18.0), 12, Color(1.0, 0.88, 0.32, 1.0), HORIZONTAL_ALIGNMENT_LEFT)
+	scout_seat_label = _make_label(root, "ScoutSeatLabel", "电脑对战席位", Vector2(650.0, 112.0), Vector2(130.0, 18.0), 12, Color(1.0, 0.88, 0.32, 1.0), HORIZONTAL_ALIGNMENT_LEFT)
 	var seat_specs := [
 		[1, "P1 LEFT"],
 		[2, "P2 RIGHT"],
@@ -51243,10 +52021,10 @@ func _build_scout_ui() -> void:
 		root.add_child(seat_button)
 		scout_seat_buttons.append(seat_button)
 	var ai_team_specs := [
-		["p1_auto", "P1 AI AUTO", 1, "random", false],
+		["p1_auto", "P1 COMP AUTO", 1, "random", false],
 		["p1_template", "P1 TEMPLATE", 1, "cycle", true],
 		["p1_edit", "EDIT P1", 1, "edit", true],
-		["p2_auto", "P2 AI AUTO", 2, "random", false],
+		["p2_auto", "P2 COMP AUTO", 2, "random", false],
 		["p2_template", "P2 TEMPLATE", 2, "cycle", true],
 		["p2_edit", "EDIT P2", 2, "edit", true],
 	]
@@ -51294,6 +52072,28 @@ func _build_scout_ui() -> void:
 	scout_dummy_radius_reset_button.pressed.connect(_reset_training_ball_dummy_radius)
 	root.add_child(scout_dummy_radius_reset_button)
 	scout_dummy_value_label = _make_layout_label(root, "ScoutDummyValue", "", UILayoutTokens.SCOUT_DUMMY_VALUE_RECT, 12, Color(0.82, 0.9, 0.96, 1.0), HORIZONTAL_ALIGNMENT_LEFT)
+	for i in range(_training_dummy_state_specs().size()):
+		var spec: Dictionary = _training_dummy_state_specs()[i]
+		var state_button := Button.new()
+		state_button.name = "ScoutDummyState%s" % String(spec.get("node_suffix", "IdleBrake"))
+		state_button.text = _training_dummy_state_label(String(spec.get("state", "idle_brake")), true)
+		state_button.position = UILayoutTokens.SCOUT_DUMMY_STATE_ORIGIN + Vector2(float(i) * (UILayoutTokens.SCOUT_DUMMY_STATE_SIZE.x + UILayoutTokens.SCOUT_DUMMY_STATE_GAP.x), 0.0)
+		state_button.size = UILayoutTokens.SCOUT_DUMMY_STATE_SIZE
+		state_button.focus_mode = Control.FOCUS_NONE
+		state_button.pressed.connect(_select_training_dummy_state.bind(String(spec.get("state", "idle_brake"))))
+		root.add_child(state_button)
+		scout_dummy_state_buttons.append(state_button)
+	for i in range(_training_intent_specs().size()):
+		var spec: Dictionary = _training_intent_specs()[i]
+		var intent_button := Button.new()
+		intent_button.name = "ScoutIntent%s" % String(spec.get("node_suffix", "Auto"))
+		intent_button.text = String(spec.get("zh", "自动"))
+		intent_button.position = UILayoutTokens.SCOUT_TRAINING_INTENT_ORIGIN + Vector2(float(i) * (UILayoutTokens.SCOUT_TRAINING_INTENT_SIZE.x + UILayoutTokens.SCOUT_TRAINING_INTENT_GAP.x), 0.0)
+		intent_button.size = UILayoutTokens.SCOUT_TRAINING_INTENT_SIZE
+		intent_button.focus_mode = Control.FOCUS_NONE
+		intent_button.pressed.connect(_select_training_intent_key.bind(String(spec.get("intent", ""))))
+		root.add_child(intent_button)
+		scout_training_intent_buttons.append(intent_button)
 	_make_label(root, "ScoutEnemyTitle", "对手队伍 / 点击单位查看完整配置", Vector2(64.0, 136.0), Vector2(520.0, 24.0), 16, Color(1.0, 0.52, 0.62, 1.0), HORIZONTAL_ALIGNMENT_LEFT)
 	_add_ui_rect(root, "ScoutEnemyPanel", Vector2(52.0, 160.0), Vector2(566.0, 398.0), Color(0.01, 0.018, 0.035, 0.58))
 	for i in range(ROSTER_UNIT_CAP):
@@ -51563,10 +52363,15 @@ func _battle_runtime_menu_action(action_key: String) -> void:
 			_hide_battle_runtime_menu()
 			_begin_battle(battle_mode, false, "battle_reset")
 		"cycle_dummy_state":
-			var order := ["idle_brake", "free_physics", "fixed"]
+			var order := ["idle_brake", "free_physics", "fixed", "sparring"]
 			var index := order.find(training_dummy_state)
-			training_dummy_state = String(order[_wrapped_index(index + 1, order.size())])
-			_update_battle_runtime_menu_ui()
+			var previous_state := training_dummy_state
+			var next_state := String(order[_wrapped_index(index + 1, order.size())])
+			_set_training_dummy_state(next_state)
+			if battle_mode == MODE_TRAINING and ((previous_state == "sparring") != (next_state == "sparring")):
+				if _configure_training_sides_for_seat():
+					_hide_battle_runtime_menu()
+					_begin_battle(MODE_TRAINING, true, "training_opponent_state_switch")
 		"settings_input":
 			_hide_battle_runtime_menu()
 			_show_settings(false, "input")
@@ -51652,7 +52457,7 @@ func _show_context_help(context: String) -> void:
 			"saved_units":
 				text = "已保存单位：卡片可 hover 查看详情；勾选单位组成队伍，也可载入单位继续编辑。"
 			"scout":
-				text = "训练配置/赛前侦查：先选 P1/P2/P3 席位，再开始。训练靶机默认只刹车不主动攻击。"
+				text = "训练配置/赛前侦查：先选 P1/P2/P3 席位，再设置靶机体积与状态后开始。"
 			"settings":
 				text = "设置分为声音、画面、系统语言和按键绑定；返回请使用页面按钮，Esc 仅关闭详情或取消按键监听。"
 			_:
@@ -51664,7 +52469,7 @@ func _show_context_help(context: String) -> void:
 			"saved_units":
 				text = "Saved Units: hover cards for details; select one or multiple units for Training."
 			"scout":
-				text = "Training Config / Scout: choose P1/P2/P3 before starting. The default dummy only brakes; it does not attack."
+				text = "Training Config / Scout: choose P1/P2/P3, then set dummy size and behavior before starting."
 			"settings":
 				text = "Settings are split into sound, video, language, and input pages. Use page buttons to go back; Esc only closes details or cancels input listening."
 			_:
@@ -52033,10 +52838,12 @@ func _update_scout_ui() -> void:
 	if pending_battle_mode == MODE_TRAINING:
 		_set_named_label(scout_layer, "ScoutTitle", "训练配置" if _ui_is_zh() else "TRAINING CONFIG")
 		_set_named_label(scout_layer, "ScoutStartButton", "开始训练" if _ui_is_zh() else "START TRAINING")
-		scout_timer_label.text = "选择席位/靶机体积后开始" if _ui_is_zh() else "CHOOSE SEAT / DUMMY SIZE"
+		_set_named_label(scout_layer, "ScoutDetailTitle", "训练验证报告" if _ui_is_zh() else "TRAINING VALIDATION")
+		scout_timer_label.text = "选择席位/靶机设置后开始" if _ui_is_zh() else "CHOOSE SEAT / DUMMY SETUP"
 	else:
 		_set_named_label(scout_layer, "ScoutTitle", "赛前侦查" if _ui_is_zh() else "MATCHUP SCOUT")
 		_set_named_label(scout_layer, "ScoutStartButton", "立即开始" if _ui_is_zh() else "START NOW")
+		_set_named_label(scout_layer, "ScoutDetailTitle", "所选单位详情" if _ui_is_zh() else "SELECTED UNIT DETAIL")
 		scout_timer_label.text = ("%s  选出战后开始" if _ui_is_zh() else "%s  PICK THEN START") % _match_format_short()
 	_update_training_dummy_radius_ui()
 	var seat_visible := pending_battle_mode in [MODE_AI, MODE_TRAINING, MODE_PVP]
@@ -52114,16 +52921,22 @@ func _update_scout_ui() -> void:
 			thumb.set_entry(opponent_player_id, i, entry, stats, "pending" if opponent_pos >= 0 else "reserve", ui_language)
 	if enemy_order.is_empty():
 		if scout_detail_view != null:
-			scout_detail_view.clear("没有对手队伍数据。" if _ui_is_zh() else "No opponent roster data.")
+			if pending_battle_mode == MODE_TRAINING:
+				scout_detail_view.clear(_training_validation_report_text())
+			else:
+				scout_detail_view.clear("没有对手队伍数据。" if _ui_is_zh() else "No opponent roster data.")
 		return
 	if not _valid_roster_entry(scout_selected_player_id, scout_selected_entry):
 		scout_selected_player_id = opponent_player_id
 		scout_selected_entry = Dictionary(enemy_order[0]).duplicate(true)
 	if scout_detail_view != null:
-		var detail_role := String(scout_selected_entry.get("role", "hero"))
-		var detail_index := int(scout_selected_entry.get("index", 0))
-		var detail_stats := _compute_unit_stats(scout_selected_player_id, detail_role, detail_index)
-		scout_detail_view.set_unit(scout_selected_player_id, scout_selected_entry, detail_stats, _scout_unit_detail(scout_selected_player_id, scout_selected_entry), ui_language)
+		if pending_battle_mode == MODE_TRAINING:
+			scout_detail_view.clear(_training_validation_report_text())
+		else:
+			var detail_role := String(scout_selected_entry.get("role", "hero"))
+			var detail_index := int(scout_selected_entry.get("index", 0))
+			var detail_stats := _compute_unit_stats(scout_selected_player_id, detail_role, detail_index)
+			scout_detail_view.set_unit(scout_selected_player_id, scout_selected_entry, detail_stats, _scout_unit_detail(scout_selected_player_id, scout_selected_entry), ui_language)
 	for i in range(scout_sortie_side_buttons.size()):
 		var side_button: Button = scout_sortie_side_buttons[i]
 		var side := i + 1
@@ -52243,7 +53056,7 @@ func _scout_unit_detail(player_id: int, entry: Dictionary) -> String:
 
 	var special_lines: Array = []
 	if role_key == "puppet":
-		special_lines.append("SOURCE: %d bodies / AI %s / conditions %d / sequence limit %d" % [int(stats.get("group_count", 1)), String(stats.get("ai", "direct")), int(stats.get("condition_slots", 1)), int(stats.get("module_sequence_limit", 1))])
+		special_lines.append("SOURCE: %d bodies / routine %s / conditions %d / sequence limit %d" % [int(stats.get("group_count", 1)), String(stats.get("ai", "direct")), int(stats.get("condition_slots", 1)), int(stats.get("module_sequence_limit", 1))])
 		special_lines.append("SOURCE GROUP: every spawned puppet body carries this same source-code action module")
 		if String(stats.get("source_target_policy", "")) != "" or String(stats.get("source_attack_preference", "")) != "":
 			special_lines.append("SOURCE LOGIC: target %s / attack %s / close %s / keep %.2f" % [
@@ -55684,7 +56497,7 @@ func _hover_card_player_detail_lines(slot_key: String, part: Dictionary, context
 				"soul":
 					lines.append_array(_hover_card_soul_detail_lines(part, zh))
 				"code":
-					lines.append(("源代码：%d 机小队 AI，策略 %s。" if zh else "Code: %d-unit squad AI, policy %s.") % [int(part.get("group_count", 1)), String(part.get("source_target_policy", part.get("ai", "")))])
+					lines.append(("源代码：%d 机小队；行为模板 %s。" if zh else "Code: %d-unit squad; routine %s.") % [int(part.get("group_count", 1)), String(part.get("source_target_policy", part.get("ai", "")))])
 				"ether":
 					lines.append("以太：给结界材料提供空间许可或场域规则。" if zh else "Ether: grants barrier space permission or field rules.")
 				_:

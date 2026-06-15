@@ -1,6 +1,7 @@
 extends SceneTree
 
 const MainScene := preload("res://scripts/main.gd")
+const LegalStarterBlueprintFixture := preload("res://tools/fixtures/legal_starter_blueprint_fixture.gd")
 
 
 func _fail(message: String) -> void:
@@ -22,10 +23,13 @@ func _init() -> void:
 	main.loading_auto_transitions_enabled = false
 	main._show_editor(true)
 	var unit_name := "Real UI Save Probe %d" % int(Time.get_ticks_msec())
-	var bp: Dictionary = main._editor_current_blueprint()
-	bp["custom_topology"] = main._default_free_canvas_topology("hero")
-	bp["blank_canvas"] = false
-	bp["unit_name"] = unit_name
+	var bp := LegalStarterBlueprintFixture.build(main, unit_name)
+	if bp.is_empty():
+		_fail("Could not build legal save fixture.")
+		return
+	main.editor_working_blueprint = bp
+	main.editor_working_role_key = "hero"
+	main.editor_canvas_mode = "blank"
 	if not main.editor_action_buttons.has("save_canvas"):
 		_fail("Save Unit button missing.")
 		return

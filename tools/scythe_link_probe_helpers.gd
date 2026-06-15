@@ -11,6 +11,32 @@ static func first_torso(main: Node) -> int:
 	return -1
 
 
+static func deployable_torso(main: Node) -> int:
+	var catalog: Array = main._catalog_for("hero", "muscle")
+	for i in range(catalog.size()):
+		var part: Dictionary = main._selected_component("hero", "muscle", i)
+		if main._component_is_torso(part) \
+			and main._torso_plugin_capacity_for_part(part) >= 3 \
+			and main._torso_software_capacity_for_part(part) >= 1:
+			return i
+	return -1
+
+
+static func deployable_payload_index(main: Node, slot_key: String) -> int:
+	var best_index := -1
+	var best_value := -1.0
+	var catalog: Array = main._catalog_for("hero", slot_key)
+	for i in range(catalog.size()):
+		var part: Dictionary = main._selected_component("hero", slot_key, i)
+		if main._payload_slot_volume_rank(slot_key, part, {"kind": slot_key}, slot_key) > 2.0:
+			continue
+		var value: float = float(main._engine_momentum_output_for_part(part)) if slot_key == "engine" else float(main._cooling_heat_capacity_for_part(part))
+		if value > best_value:
+			best_value = value
+			best_index = i
+	return best_index
+
+
 static func first_limb(main: Node) -> int:
 	return 0 if main._catalog_for("hero", "limb_muscle").size() > 0 else -1
 
@@ -91,6 +117,34 @@ static func build_torso_limb_scythe_module(main: Node, visual_side: String = "ri
 	setup["scythe"] = scythe
 	setup["module"] = module_index
 	return setup
+
+
+static func make_scythe_module_deployable(main: Node, setup: Dictionary) -> bool:
+	if setup.is_empty():
+		return false
+	var unit_bp: Dictionary = setup.get("unit_bp", {})
+	var topology: Dictionary = unit_bp.get("custom_topology", {})
+	var nodes: Array = Array(topology.get("nodes", [])).duplicate(true)
+	var torso: int = int(setup.get("torso", -1))
+	var torso_part: int = deployable_torso(main)
+	var engine_index: int = deployable_payload_index(main, "engine")
+	var cooling_index: int = deployable_payload_index(main, "cooling")
+	if torso < 0 or torso >= nodes.size() or torso_part < 0 or engine_index < 0 or cooling_index < 0:
+		return false
+	var torso_node: Dictionary = Dictionary(nodes[torso]).duplicate(true)
+	torso_node["part_index"] = torso_part
+	nodes[torso] = torso_node
+	topology["nodes"] = nodes
+	unit_bp["custom_topology"] = topology
+	var module_index := int(setup.get("module", -1))
+	unit_bp["slot_payloads"] = [
+		{"kind": "module", "module": module_index, "torso_node": torso},
+		{"kind": "engine", "engine": engine_index, "torso_node": torso},
+		{"kind": "cooling", "cooling": cooling_index, "torso_node": torso},
+	]
+	main.editor_working_blueprint = unit_bp
+	setup["unit_bp"] = unit_bp
+	return true
 
 
 static func select_scythe_binding_target(main: Node, unit_bp: Dictionary, scythe: int, module_index: int) -> bool:

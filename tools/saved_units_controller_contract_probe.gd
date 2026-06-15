@@ -163,6 +163,9 @@ func _init() -> void:
 	var rejected_toggle: Dictionary = controller.toggle_selection_state({"path": "unit-d.json", "canonical_rejected": true}, ["unit-a.json"], "bad unit")
 	if bool(rejected_toggle.get("valid", true)) or String(rejected_toggle.get("reason", "")) != "bad unit":
 		_fail("toggle_selection_state should reject canonical-rejected entries with reason.")
+	var undeployable_toggle: Dictionary = controller.toggle_selection_state({"path": "unit-b.json"}, ["unit-a.json"], "INVALID: undeployable")
+	if bool(undeployable_toggle.get("valid", true)) or String(undeployable_toggle.get("reason", "")) != "INVALID: undeployable":
+		_fail("toggle_selection_state should reject every undeployable entry.")
 	var next_page: Dictionary = controller.page_action_state("next", 0, 2, 5, 0, [])
 	if int(next_page.get("saved_unit_page", -1)) != 1:
 		_fail("page_action_state(next) should increment within max page.")
@@ -175,6 +178,9 @@ func _init() -> void:
 	var page_toggle: Dictionary = controller.page_action_state("toggle", 0, 2, 5, 0, ["unit-a.json"], {"path": "unit-b.json", "unit_name": "B"})
 	if not bool(page_toggle.get("valid", false)) or Array(page_toggle.get("saved_unit_selected_paths", [])) != ["unit-a.json", "unit-b.json"]:
 		_fail("page_action_state(toggle) should delegate selection toggling.")
+	var blocked_page_toggle: Dictionary = controller.page_action_state("toggle", 0, 2, 5, 0, ["unit-a.json"], {"path": "unit-b.json", "unit_name": "B"}, "INVALID: undeployable")
+	if bool(blocked_page_toggle.get("valid", true)):
+		_fail("page_action_state(toggle) should preserve delegated legality rejection.")
 	if controller.absolute_index_for_card(3, 2, 0) != 5:
 		_fail("absolute_index_for_card should clamp zero page size to one.")
 	var fallback_entry_path := controller.entry_path({"unit_id": "id-a", "unit_name": "name-a"})

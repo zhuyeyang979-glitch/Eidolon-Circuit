@@ -8,41 +8,38 @@ func _fail(message: String) -> void:
 	quit(1)
 
 
-func _find(main, slot: String, predicate: Callable) -> int:
-	for i in range(main._catalog_for("hero", slot).size()):
-		if bool(predicate.call(Dictionary(main._catalog_for("hero", slot)[i]))):
-			return i
-	return -1
-
-
-func _build_current_unit(main) -> Dictionary:
-	var unit: Dictionary = main._make_editor_blank_blueprint("hero")
-	var torso_index := _find(main, "muscle", func(part: Dictionary) -> bool: return main._component_is_torso(part))
-	var engine_index := _find(main, "engine", func(part: Dictionary) -> bool: return main._engine_momentum_output_for_part(part) > 0.0)
-	var booster_index := _find(main, "booster", func(part: Dictionary) -> bool: return main._thruster_allocated_momentum_for_part(part) > 0.0)
-	var nodes: Array = []
-	var edges: Array = []
-	var torso: int = main._append_component_root_node(nodes, "CORE", Vector2(0.42, 0.5), torso_index)
-	unit["blank_canvas"] = false
-	unit["slot_payloads"] = [
-		{"kind": "engine", "engine": engine_index, "torso_node": torso},
-		{"kind": "booster", "booster": booster_index, "torso_node": torso},
-	]
-	unit["custom_topology"] = {"nodes": nodes, "edges": edges, "edge_snap_version": MainScene.TOPOLOGY_SNAP_VERSION}
-	main._topology_update_local_pose_fields("hero", unit)
-	return unit
+func _saved_entries_from_roster(main, player_id: int) -> Array:
+	var entries: Array = []
+	for raw_entry in main._all_roster_order(player_id):
+		var roster_entry: Dictionary = raw_entry
+		var role_key := String(roster_entry.get("role", "hero"))
+		var unit_index := int(roster_entry.get("index", 0))
+		var bp: Dictionary = main._blueprint_for(player_id, role_key, unit_index).duplicate(true)
+		var unit_name := "Probe %s %d" % [role_key, unit_index]
+		bp["unit_name"] = unit_name
+		entries.append({
+			"unit_library": true,
+			"path": "probe://saved-team/%s/%d" % [role_key, unit_index],
+			"role": role_key,
+			"blueprint": bp,
+			"unit_name": unit_name,
+		})
+	return entries
 
 
 func _init() -> void:
 	var main = MainScene.new()
 	root.add_child(main)
 	main._ready()
-	var bp: Dictionary = _build_current_unit(main)
-	bp["unit_name"] = "Probe Saved Team Unit"
-	var entry := {"unit_library": true, "path": "probe://saved_team_unit", "role": "hero", "blueprint": bp, "unit_name": "Probe Saved Team Unit"}
-	var team_path: String = main._save_team_from_saved_unit_selection("Probe Saved Team", [entry])
+	main._legalize_ai_player_roster(1, true)
+	var selected := _saved_entries_from_roster(main, 1)
+	if selected.size() != 5:
+		_fail("Probe should build exactly five saved-unit entries.")
+		return
+	var team_path: String = main._save_team_from_saved_unit_selection("Probe Saved Team", selected)
 	if team_path == "":
 		_fail("Failed to save team from selected saved units.")
+		return
 	var teams := main._saved_teams_entries(true)
 	var found := false
 	for raw_team in teams:
@@ -51,7 +48,13 @@ func _init() -> void:
 			break
 	if not found:
 		_fail("Saved team should appear in saved team entries.")
+		return
 	if not main._load_saved_team_to_current_roster(team_path):
 		_fail("Saved team should load into current roster.")
+		return
+	if main._roster_unit_total(1) != 5:
+		_fail("Loaded saved team should restore exactly five units.")
+		return
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(team_path))
 	print("SAVED_UNITS_SAVED_TEAM_VIEW_PROBE ok path=%s" % team_path)
 	quit()

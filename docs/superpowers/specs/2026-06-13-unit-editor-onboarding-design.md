@@ -47,7 +47,7 @@ This design must not change the game's core rules or editing philosophy.
 - Do not change topology legality, unit legality, save schema, battle rules, damage rules, or balance numbers.
 - Do not auto-create, auto-place, auto-bind, or auto-save parts for the player.
 - Do not force the player to choose only recommended parts.
-- Do not combine this with Training, AI Battle, or PVP tutorials.
+- Do not combine this with Training, Computer Battle, or PVP tutorials.
 - Do not add a separate simplified editor mode with different rules.
 - Do not bypass existing validation or save-blocking messages.
 

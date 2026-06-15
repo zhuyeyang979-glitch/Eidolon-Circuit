@@ -1,6 +1,6 @@
 extends SceneTree
 
-const MainScene := preload("res://scripts/main.gd")
+const Helpers := preload("res://tools/scythe_link_probe_helpers.gd")
 
 
 func _fail(message: String) -> void:
@@ -8,46 +8,28 @@ func _fail(message: String) -> void:
 	quit(1)
 
 
-func _first_torso(main: Node) -> int:
-	for i in range(main._catalog_for("hero", "muscle").size()):
-		if main._component_is_torso(main._selected_component("hero", "muscle", i)):
-			return i
-	return -1
-
-
-func _scythe_index(main: Node) -> int:
-	for i in range(main._catalog_for("hero", "muscle").size()):
-		var part: Dictionary = main._selected_component("hero", "muscle", i)
-		if main._blade_weapon_family_for_part(part) == "scythe" and main._part_counts_as_terminal_weapon(part, "muscle"):
-			return i
-	return -1
-
-
-func _build_unit(main: Node, unit_name: String) -> Dictionary:
-	var unit_bp: Dictionary = main._make_editor_blank_blueprint("hero")
-	var nodes: Array = []
-	var edges: Array = []
-	var torso: int = main._append_component_root_node(nodes, "CORE", Vector2(0.42, 0.5), _first_torso(main))
-	var scythe: int = main._append_directed_component_node("hero", unit_bp, nodes, edges, torso, "LEFT SCYTHE", "muscle", _scythe_index(main), Vector2.RIGHT)
-	var node: Dictionary = Dictionary(nodes[scythe]).duplicate(true)
-	node["visual_handedness"] = "left"
-	nodes[scythe] = node
-	unit_bp["role"] = "hero"
-	unit_bp["unit_name"] = unit_name
-	unit_bp["blank_canvas"] = false
-	unit_bp["custom_topology"] = {"nodes": nodes, "edges": edges, "edge_snap_version": MainScene.TOPOLOGY_SNAP_VERSION}
-	return unit_bp
-
-
 func _init() -> void:
-	var main = MainScene.new()
-	root.add_child(main)
-	main._ready()
-	main._show_editor(true)
+	var main := Helpers.setup_main(self)
 	var unit_name := "Scythe Handedness Save %d" % int(Time.get_ticks_msec())
-	main.editor_working_role_key = "hero"
-	main.editor_working_blueprint = _build_unit(main, unit_name)
-	var path := main._save_editor_current_unit_to_library_named(unit_name, "", true)
+	var setup := Helpers.build_torso_limb_scythe_module(main, "left")
+	if setup.is_empty():
+		_fail("Could not build scythe module test unit.")
+		return
+	var unit_bp: Dictionary = setup.get("unit_bp", {})
+	if not Helpers.bind_scythe_action_side(main, unit_bp, int(setup.get("scythe", -1)), int(setup.get("module", -1)), "left", 1):
+		_fail("Could not bind left scythe action.")
+		return
+	if not Helpers.make_scythe_module_deployable(main, setup):
+		_fail("Could not install deployable scythe payloads.")
+		return
+	unit_bp = setup.get("unit_bp", {})
+	unit_bp["unit_name"] = unit_name
+	unit_bp["name"] = unit_name
+	var legality_note: String = main._training_blueprint_illegal_note(1, "hero", unit_bp)
+	if legality_note != "":
+		_fail("Bound scythe save fixture should be legal: %s" % legality_note)
+		return
+	var path: String = main._save_editor_current_unit_to_library_named(unit_name, "", true)
 	if path == "" or not FileAccess.file_exists(path):
 		_fail("Save did not create a readable file.")
 		return
