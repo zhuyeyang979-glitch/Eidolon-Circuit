@@ -73,6 +73,7 @@ const BackdropView = preload("res://scripts/views/backdrop_view.gd")
 const SortieThumbView = preload("res://scripts/views/sortie_thumb_view.gd")
 const CockpitHudView = preload("res://scripts/views/cockpit_hud_view.gd")
 const BattleInstrumentGaugeView = preload("res://scripts/views/battle_instrument_gauge_view.gd")
+const BattleAttackFeedbackView = preload("res://scripts/views/battle_attack_feedback_view.gd")
 const BattleMinimapView = preload("res://scripts/views/battle_minimap_view.gd")
 const BattleActionDiagnosticsView = preload("res://scripts/views/battle_action_diagnostics_view.gd")
 const BattlePartPreviewView = preload("res://scripts/views/battle_part_preview_view.gd")
@@ -8764,6 +8765,7 @@ var aim_locked_targets := {1: null, 2: null}
 var aim_locked_directions := {1: Vector2.ZERO, 2: Vector2.ZERO}
 var gun_activation_state := {1: {}, 2: {}}
 var held_melee_activation_state := {1: {}, 2: {}}
+var battle_attack_feedback_events := {1: {}, 2: {}}
 var salvo_landing_preview_effects := {}
 var last_direction_taps := {}
 var unit2_boost_momentum_reference_cache := -1.0
@@ -8987,6 +8989,7 @@ var settings_backdrop: BackdropView
 var hud_overlay: CockpitHudView
 var battle_minimap_view: BattleMinimapView
 var battle_instrument_gauge: BattleInstrumentGaugeView
+var battle_attack_feedback_view: BattleAttackFeedbackView
 var battle_action_diagnostics_view: BattleActionDiagnosticsView
 var training_entry_intro_view: TrainingEntryIntroView
 var battle_ui_last_heavy_msec := -1000000
@@ -16103,6 +16106,7 @@ func _cleanup_battle_runtime(preserve_for_return: bool = false) -> void:
 	if bool(cleanup_intent.get("clear_gun_state", true)):
 		gun_activation_state = {1: {}, 2: {}}
 		held_melee_activation_state = {1: {}, 2: {}}
+		battle_attack_feedback_events = {1: {}, 2: {}}
 	_commit_battle_cleanup_intent(cleanup_intent)
 
 
@@ -18061,6 +18065,7 @@ func _begin_battle(mode: String, preloaded: bool = false, reason: String = "") -
 	aim_locked_directions = {1: Vector2.ZERO, 2: Vector2.ZERO}
 	gun_activation_state = {1: {}, 2: {}}
 	held_melee_activation_state = {1: {}, 2: {}}
+	battle_attack_feedback_events = {1: {}, 2: {}}
 	salvo_landing_preview_effects.clear()
 	_apply_ai_side_roster_mapping(mode)
 	_initialize_sortie_price_state()
@@ -33208,19 +33213,23 @@ func _start_or_fire_attack_button(player_id: int, prefix: String, input_vector: 
 		})
 		var route_action := String(route_intent.get("action", "legacy_attack"))
 		if route_action == "start_gun_activation":
+			_record_attack_feedback(player_id, attack_index, "aim", "gun activation", 0.0, 0.72)
 			_start_runtime_gun_activation(player_id, prefix, attack_index, action_name, binding)
 			return
 		if route_action == "start_held_melee_activation":
+			_record_attack_feedback(player_id, attack_index, "aim", "held melee", 0.0, 0.72)
 			_start_runtime_held_melee_activation(player_id, prefix, attack_index, action_name, binding, input_vector)
 			return
 		if route_action == "resolve_command_window":
 			_resolve_attack_command_window(player_id, prefix, input_vector, int(route_intent.get("attack_index", attack_index)), String(route_intent.get("action_state", "normal")))
 			return
 		if route_action == "fail_unbound":
+			_record_attack_feedback(player_id, attack_index, "empty", "unbound", 1.0, 0.9)
 			_play_module_fail_sfx()
 			_show_battle_message("攻击键 %d 未绑定行动模块" % [attack_index + 1] if _ui_is_zh() else "Attack key %d has no module binding" % [attack_index + 1], 0.55)
 			return
 		if route_action == "open_command_window":
+			_record_attack_feedback(player_id, attack_index, "window", "command window", 0.1, 0.9)
 			_open_attack_command_window(player_id, prefix, int(route_intent.get("attack_index", attack_index)), binding)
 			return
 		return
@@ -33244,6 +33253,7 @@ func _start_or_fire_attack_button(player_id: int, prefix: String, input_vector: 
 	aim_hold_fire_timers[player_id] = _hold_activation_initial_delay(group)
 	aim_locked_targets[player_id] = null
 	aim_locked_directions[player_id] = Vector2.ZERO
+	_record_attack_feedback(player_id, attack_index, "aim", String(group.get("name", "aim")), 0.0, 0.72)
 	if hero.has_method("set_aim_pose"):
 		hero.set_aim_pose(attack_index, aim_directions[player_id], 0.18)
 
@@ -33369,6 +33379,7 @@ func _update_held_aim(player_id: int, prefix: String, input_vector: Vector2, del
 		if _is_live_unit(locked_target):
 			aim_locked_targets[player_id] = locked_target
 			aim_locked_directions[player_id] = direction
+			_record_attack_feedback(player_id, int(aim_attack_index[player_id]), "lock", "true bullet lock", 0.0, 0.72)
 			_show_battle_message("P%d TRUE BULLET AIM LOCK" % player_id, 0.42)
 	_update_hold_activation_fire(player_id, prefix, direction, delta, group, true_bullet_aim)
 
@@ -33660,6 +33671,7 @@ func _runtime_gun_activation_event_for(player_id: int) -> Dictionary:
 		direction
 	)
 	var event := _true_bullet_event_for_aim(unit, direction, group, node_index, event_options)
+	event["attack_key"] = int(binding.get("attack_key", 1))
 	_copy_module_variant_fields(event, module_part)
 	var service_intent := _battle_action_event_service().gun_activation_event_patch({
 		"event": event,
@@ -33686,6 +33698,7 @@ func _start_runtime_gun_activation(player_id: int, prefix: String, attack_index:
 	var segment := _runtime_gun_segment_for_binding(unit, binding)
 	var source_gate := _gun_activation_service().activation_source_gate(segment)
 	if not bool(source_gate.get("can_start", false)):
+		_record_attack_feedback(player_id, attack_index, "block", "gun source gate", 1.0, 0.9)
 		_play_module_fail_sfx()
 		_show_battle_message("枪械启动需要绑定枪械末端肌肉" if _ui_is_zh() else "Gun Activate needs a gun terminal muscle", 0.62)
 		return
@@ -33697,6 +33710,7 @@ func _start_runtime_gun_activation(player_id: int, prefix: String, attack_index:
 	var spec := _gun_activation_spec(gun_kind, effective_profile)
 	var profile_gate := _gun_activation_service().activation_profile_gate(effective_profile, spec, _gun_activation_profile_supports_kind(profile, gun_kind, ammo_kind))
 	if not bool(profile_gate.get("can_start", false)):
+		_record_attack_feedback(player_id, attack_index, "block", "profile mismatch", 1.0, 0.9)
 		_show_battle_message("该行动模块不支持此枪械类型" if _ui_is_zh() else "This module does not support that gun kind", 0.55)
 		return
 	var aim_input_mode := _runtime_binding_gun_aim_input_mode(binding)
@@ -33718,6 +33732,7 @@ func _start_runtime_gun_activation(player_id: int, prefix: String, attack_index:
 		"mobility_contract": mobility_contract,
 	})
 	_clear_attack_command_windows(player_id)
+	_record_attack_feedback(player_id, attack_index, "aim", String(spec.get("semantic", "gun activation")), 0.0, 0.72)
 	match String(spec.get("semantic", "")):
 		"hold_stream":
 			_show_battle_message("P%d 枪械启动：化学喷射" % player_id if _ui_is_zh() else "P%d Gun Activate: chemical spray" % player_id, 0.45)
@@ -33739,9 +33754,11 @@ func _runtime_gun_activation_fire_once(unit, event: Dictionary) -> bool:
 	var ammo_kind := String(event.get("ammo_kind", _ammo_type_for_event(event)))
 	var ammo_gate := _gun_activation_service().fire_ammo_gate(ammo_kind, _ammo_capacity_for(unit, ammo_kind), _current_ammo(unit, ammo_kind))
 	if not bool(ammo_gate.get("can_fire", true)):
+		_record_attack_feedback(int(unit.owner_id), _attack_feedback_index_for_event(event), "block", "ammo empty", 1.0, 0.86)
 		_show_battle_message("%s %s AMMO EMPTY" % [unit.unit_name, ammo_kind.to_upper()], 0.62)
 		return false
 	_resolve_attack(unit, event)
+	_record_attack_feedback(int(unit.owner_id), _attack_feedback_index_for_event(event), "fire", ammo_kind, 0.0, 0.62)
 	if unit != null and is_instance_valid(unit) and event.has("normal_heat"):
 		_add_unit_heat_event(unit, float(event.get("normal_heat", 0.0)), _heat_tags_for_projectile_event(event), "projectile")
 	return true
@@ -33774,6 +33791,7 @@ func _start_runtime_held_melee_activation(player_id: int, prefix: String, attack
 	if unit.has_method("begin_runtime_module_action"):
 		event = unit.begin_runtime_module_action(action_state, binding.duplicate(true), direction)
 	if event.is_empty():
+		_record_attack_feedback(player_id, attack_index, "block", String(unit.get_meta("last_module_gate_reason", "locked")), 1.0, 0.9)
 		_play_module_fail_sfx()
 		var reason := String(unit.get_meta("last_module_gate_reason", "locked"))
 		_show_battle_message("Boot Driver 无法启动：%s" % reason if _ui_is_zh() else "Boot Driver blocked: %s" % reason, 0.45)
@@ -33798,6 +33816,7 @@ func _start_runtime_held_melee_activation(player_id: int, prefix: String, attack
 	event = Dictionary(service_intent.get("event", event))
 	_copy_module_variant_fields(event, module_part)
 	var state_label := String(service_intent.get("state_label", String(event.get("state", action_state)).to_upper()))
+	_record_attack_feedback(player_id, attack_index, "fire", state_label, 0.0, 0.62)
 	_show_battle_message("P%d BOOT DRIVER %s" % [player_id, state_label], 0.45)
 	_resolve_attack(unit, event)
 
@@ -33974,6 +33993,7 @@ func _release_runtime_gun_activation(player_id: int) -> void:
 		if not _is_live_unit(missile_target):
 			missile_target = _acquire_missile_lock_target(unit, event)
 		if not _is_live_unit(missile_target):
+			_record_attack_feedback(player_id, int(state.get("attack_index", _attack_feedback_index_for_event(event))), "block", "no missile lock", 1.0, 0.86)
 			_show_battle_message("%s MISSILE: no lock" % String(unit.unit_name), 0.52)
 			_clear_runtime_gun_pose_for_payload(unit, event)
 			return
@@ -33986,6 +34006,7 @@ func _release_runtime_gun_activation(player_id: int) -> void:
 		return
 	var target = state.get("locked_target", null)
 	if not _is_live_unit(target):
+		_record_attack_feedback(player_id, int(state.get("attack_index", _attack_feedback_index_for_event(event))), "block", "no lock", 1.0, 0.86)
 		_clear_runtime_gun_pose_for_payload(unit, event)
 		return
 	event["locked_target"] = target
@@ -34192,6 +34213,7 @@ func _hero_runtime_module_attack(player_id: int, prefix: String, input_vector: V
 		return
 	var binding := _runtime_binding_for_attack_index(hero, attack_index)
 	if binding.is_empty():
+		_record_attack_feedback(player_id, attack_index, "empty", "unbound", 1.0, 0.9)
 		_play_module_fail_sfx()
 		_show_battle_message("攻击键 %d 未绑定行动模块" % [attack_index + 1] if _ui_is_zh() else "Attack key %d has no module binding" % [attack_index + 1], 0.55)
 		return
@@ -34221,6 +34243,7 @@ func _hero_runtime_module_attack(player_id: int, prefix: String, input_vector: V
 	if hero.has_method("begin_runtime_module_action"):
 		event = hero.begin_runtime_module_action(action_state, runtime_binding, direction)
 	if event.is_empty():
+		_record_attack_feedback(player_id, attack_index, "block", String(hero.get_meta("last_module_gate_reason", "locked")), 1.0, 0.9)
 		_play_module_fail_sfx()
 		var reason := String(hero.get_meta("last_module_gate_reason", "locked"))
 		_show_battle_message("行动模块无法触发：%s" % reason if _ui_is_zh() else "Module trigger blocked: %s" % reason, 0.45)
@@ -34239,6 +34262,7 @@ func _hero_runtime_module_attack(player_id: int, prefix: String, input_vector: V
 	if not bool(event.get("projectile", false)):
 		hero.apply_recoil(direction, float(event.get("recoil", 0.04)), bool(event["recoil_countered"]))
 	var state_label := String(service_intent.get("state_label", String(event.get("state", action_state)).to_upper()))
+	_record_attack_feedback(player_id, attack_index, "fire", state_label, 0.0, 0.62)
 	_show_battle_message("P%d %s %s" % [player_id, _short_part_name(String(event["group_name"])), state_label], 0.45)
 	_resolve_attack(hero, event)
 
@@ -34251,6 +34275,7 @@ func _hero_normal_attack(player_id: int, prefix: String, input_vector: Vector2, 
 		_hero_runtime_module_attack(player_id, prefix, input_vector, attack_index, requested_state)
 		return
 	if _part_disabled(hero, attack_index):
+		_record_attack_feedback(player_id, attack_index, "block", "limb severed", 1.0, 0.9)
 		_module_fail_feedback(hero, attack_index)
 		return
 	var group := override_group.duplicate(true) if not override_group.is_empty() else _attack_group(hero, attack_index)
@@ -34267,12 +34292,15 @@ func _hero_normal_attack(player_id: int, prefix: String, input_vector: Vector2, 
 	if String(group.get("module_effect", "")) == "trap_control":
 		var command := String(group.get("command", "236"))
 		if not _command_matches(player_id, command):
+			_record_attack_feedback(player_id, attack_index, "block", "command miss", 0.9, 0.86)
 			_show_battle_message("Trap link command miss. Try %s + attack %d." % [command, attack_index + 1], 0.65)
 			return
 		var link := String(group.get("trap_link", "all"))
 		if _try_trigger_trap_fields(player_id, link, input_vector, true):
+			_record_attack_feedback(player_id, attack_index, "fire", "trap link", 0.0, 0.62)
 			_show_battle_message("P%d attack %d routed to trap link %s" % [player_id, attack_index + 1, link.to_upper()], 0.55)
 		else:
+			_record_attack_feedback(player_id, attack_index, "block", "no trap target", 1.0, 0.9)
 			_play_module_fail_sfx()
 			_show_battle_message("No linked trap has a valid target", 0.65)
 		return
@@ -34280,6 +34308,7 @@ func _hero_normal_attack(player_id: int, prefix: String, input_vector: Vector2, 
 	var action_kind := _battle_action_event_service().normal_attack_action_kind(requested_state)
 	var event: Dictionary = _begin_unit_module_action(hero, action_kind, group, attack_index)
 	if event.is_empty():
+		_record_attack_feedback(player_id, attack_index, "block", String(hero.get_meta("last_module_gate_reason", "locked")), 1.0, 0.9)
 		return
 	var direction := _attack_direction_for_group(hero, input_vector, group)
 	if String(group.get("module_action_profile", "")) == "two_link_forward_snap":
@@ -34323,6 +34352,7 @@ func _hero_normal_attack(player_id: int, prefix: String, input_vector: Vector2, 
 	var damage_name: String = _damage_name(String(event.get("damage_type", "blunt")))
 	var state_label := String(event.get("state", "normal")).to_upper()
 	var cancel_label := " 取消" if _ui_is_zh() and bool(event.get("module_cancel", false)) else (" CANCEL" if bool(event.get("module_cancel", false)) else "")
+	_record_attack_feedback(player_id, attack_index, "fire", state_label, 0.0, 0.62)
 	_show_battle_message("P%d %s %s %s %s%s" % [player_id, String(event["group_name"]), state_label, damage_name, "projectile" if bool(event.get("projectile", false)) else "strike", cancel_label], 0.45)
 	_resolve_attack(hero, event)
 
@@ -35969,6 +35999,7 @@ func _consume_ammo_for_event(attacker, event: Dictionary) -> bool:
 		return true
 	var current := _current_ammo(attacker, ammo_type)
 	if current <= 0:
+		_record_attack_feedback(int(attacker.owner_id), _attack_feedback_index_for_event(event), "block", "ammo empty", 1.0, 0.86)
 		_play_module_fail_sfx()
 		_show_battle_message("%s %s AMMO EMPTY" % [attacker.unit_name, ammo_type.to_upper()], 0.62)
 		return false
@@ -43264,6 +43295,7 @@ func _clear_all_units() -> void:
 	active_web_swings.clear()
 	gun_activation_state = {1: {}, 2: {}}
 	held_melee_activation_state = {1: {}, 2: {}}
+	battle_attack_feedback_events = {1: {}, 2: {}}
 	salvo_landing_preview_effects.clear()
 	active_units = {
 		1: {"hero": null, "puppet": [], "barrier": null},
@@ -52349,6 +52381,14 @@ func _build_battle_ui() -> void:
 	battle_instrument_gauge.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	battle_instrument_gauge.visible = false
 	hud.add_child(battle_instrument_gauge)
+	battle_attack_feedback_view = BattleAttackFeedbackView.new()
+	battle_attack_feedback_view.name = "BattleAttackFeedback"
+	battle_attack_feedback_view.position = Vector2(430.0, 516.0)
+	battle_attack_feedback_view.size = Vector2(420.0, 72.0)
+	battle_attack_feedback_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	battle_attack_feedback_view.visible = false
+	battle_attack_feedback_view.z_index = 62
+	hud.add_child(battle_attack_feedback_view)
 	battle_action_diagnostics_view = BattleActionDiagnosticsView.new()
 	battle_action_diagnostics_view.name = "BattleActionDiagnostics"
 	battle_action_diagnostics_view.position = Vector2(454.0, 108.0)
@@ -58009,6 +58049,240 @@ func _live_unit_ammo_breakdown(unit) -> Dictionary:
 	return breakdown
 
 
+func _record_attack_feedback(player_id: int, attack_index: int, status: String, detail: String = "", severity: float = 0.0, duration: float = 0.78) -> void:
+	var safe_player := clampi(player_id, 1, 2)
+	var safe_index := clampi(attack_index, 0, ATTACK_GROUP_COUNT - 1)
+	if not battle_attack_feedback_events.has(safe_player) or not (battle_attack_feedback_events[safe_player] is Dictionary):
+		battle_attack_feedback_events[safe_player] = {}
+	var now := Time.get_ticks_msec() * 0.001
+	var status_key := String(status).to_lower()
+	var player_events: Dictionary = battle_attack_feedback_events[safe_player]
+	player_events[safe_index] = {
+		"status": status_key,
+		"detail": detail,
+		"severity": clampf(severity, 0.0, 1.0),
+		"time": now,
+		"duration": maxf(0.12, duration),
+	}
+	battle_attack_feedback_events[safe_player] = player_events
+	if active_units.has(safe_player) and active_units[safe_player] is Dictionary:
+		var hero = active_units[safe_player].get("hero", null)
+		if _is_live_unit(hero) and hero.has_method("pulse_attack_feedback"):
+			hero.pulse_attack_feedback(safe_index, status_key, duration)
+
+
+func _attack_feedback_index_for_event(event: Dictionary, fallback_index: int = 0) -> int:
+	if event.has("attack_key"):
+		return clampi(int(event.get("attack_key", fallback_index + 1)) - 1, 0, ATTACK_GROUP_COUNT - 1)
+	if event.has("attack_index"):
+		return clampi(int(event.get("attack_index", fallback_index)), 0, ATTACK_GROUP_COUNT - 1)
+	return clampi(int(event.get("muscle_node", fallback_index)), 0, ATTACK_GROUP_COUNT - 1)
+
+
+func _update_attack_feedback_hud() -> void:
+	if battle_attack_feedback_view == null:
+		return
+	var model := _battle_attack_feedback_model(_controlled_player_id_for_battle_gauge())
+	if not bool(model.get("visible", false)):
+		battle_attack_feedback_view.visible = false
+		battle_attack_feedback_view.clear_model()
+		return
+	battle_attack_feedback_view.visible = true
+	battle_attack_feedback_view.set_model(model)
+
+
+func _battle_attack_feedback_model(player_id: int) -> Dictionary:
+	if player_id <= 0 or not active_units.has(player_id):
+		return {"visible": false, "slots": []}
+	var hero = active_units[player_id].get("hero", null)
+	if not _is_live_unit(hero):
+		return {"visible": false, "slots": []}
+	var slots: Array = []
+	for attack_index in range(ATTACK_GROUP_COUNT):
+		slots.append(_battle_attack_feedback_slot(player_id, hero, attack_index))
+	return {
+		"visible": true,
+		"player_id": player_id,
+		"title": ("P%d 攻击组反馈" if _ui_is_zh() else "P%d ATTACK GROUPS") % player_id,
+		"slots": slots,
+		"language": ui_language,
+	}
+
+
+func _battle_attack_feedback_slot(player_id: int, hero, attack_index: int) -> Dictionary:
+	var direct_runtime := _unit_uses_direct_runtime_topology(hero)
+	var binding := _runtime_binding_for_attack_index(hero, attack_index) if direct_runtime else {}
+	var bound := not binding.is_empty()
+	var group: Dictionary = {}
+	if direct_runtime and bound and _runtime_binding_is_gun_activation(binding):
+		group = _runtime_gun_group_for_binding(hero, binding)
+	elif not direct_runtime:
+		group = _attack_group(hero, attack_index)
+		bound = not group.is_empty()
+	var heat_ratio := _unit_heat_ratio(hero)
+	var cooldown_ratio := _unit_action_cooldown_ratio(hero)
+	var status := _attack_feedback_base_status(player_id, hero, attack_index, bound, cooldown_ratio, heat_ratio)
+	var status_event := _attack_feedback_recent_event(player_id, attack_index)
+	var flash_ratio := 0.0
+	var detail := ""
+	var severity := 0.0
+	if not status_event.is_empty():
+		status = String(status_event.get("status", status))
+		flash_ratio = float(status_event.get("flash_ratio", 0.0))
+		detail = String(status_event.get("detail", ""))
+		severity = float(status_event.get("severity", 0.0))
+	var ammo := _attack_feedback_ammo_info(hero, binding, group)
+	return {
+		"index": attack_index,
+		"group": attack_index + 1,
+		"key_label": _attack_key_label(attack_index + 1),
+		"name": _attack_feedback_slot_name(hero, binding, group, attack_index, direct_runtime, bound),
+		"status": status,
+		"status_label": _attack_feedback_status_label(status),
+		"detail": detail,
+		"severity": severity,
+		"flash_ratio": flash_ratio,
+		"heat_ratio": heat_ratio,
+		"cooldown_ratio": cooldown_ratio,
+		"ammo_kind": String(ammo.get("kind", "")),
+		"ammo_current": int(ammo.get("current", 0)),
+		"ammo_capacity": int(ammo.get("capacity", 0)),
+		"bound": bound,
+		"disabled": _part_disabled(hero, attack_index),
+	}
+
+
+func _attack_feedback_base_status(player_id: int, hero, attack_index: int, bound: bool, cooldown_ratio: float, heat_ratio: float) -> String:
+	if not bound:
+		return "empty"
+	if _part_disabled(hero, attack_index):
+		return "sever"
+	var hold_status := _attack_feedback_active_hold_status(player_id, attack_index)
+	if hold_status != "":
+		return hold_status
+	if bool(hero.get("overheated")) or heat_ratio >= 0.96:
+		return "heat"
+	if cooldown_ratio > 0.05:
+		return "cool"
+	return "ready"
+
+
+func _attack_feedback_active_hold_status(player_id: int, attack_index: int) -> String:
+	if _attack_windows_any_open(player_id):
+		var windows := _ensure_attack_command_windows(player_id)
+		if windows.has(_attack_window_key(attack_index)):
+			return "window"
+	if _runtime_gun_activation_active(player_id):
+		var gun_state: Dictionary = gun_activation_state[player_id]
+		if int(gun_state.get("attack_index", -1)) == attack_index:
+			return "lock" if _is_live_unit(gun_state.get("locked_target", null)) else "aim"
+	if _runtime_held_melee_activation_active(player_id):
+		var held_state: Dictionary = held_melee_activation_state[player_id]
+		if int(held_state.get("attack_index", -1)) == attack_index:
+			return "aim"
+	if bool(aim_holding[player_id]) and int(aim_attack_index[player_id]) == attack_index:
+		return "lock" if _is_live_unit(aim_locked_targets[player_id]) else "aim"
+	return ""
+
+
+func _attack_feedback_recent_event(player_id: int, attack_index: int) -> Dictionary:
+	if not battle_attack_feedback_events.has(player_id) or not (battle_attack_feedback_events[player_id] is Dictionary):
+		return {}
+	var player_events: Dictionary = battle_attack_feedback_events[player_id]
+	if not player_events.has(attack_index) or not (player_events[attack_index] is Dictionary):
+		return {}
+	var event: Dictionary = player_events[attack_index]
+	var duration := maxf(0.12, float(event.get("duration", 0.78)))
+	var age := Time.get_ticks_msec() * 0.001 - float(event.get("time", 0.0))
+	if age > duration:
+		return {}
+	var result := event.duplicate(true)
+	result["flash_ratio"] = clampf(1.0 - age / duration, 0.0, 1.0)
+	return result
+
+
+func _attack_feedback_slot_name(hero, binding: Dictionary, group: Dictionary, attack_index: int, direct_runtime: bool, bound: bool) -> String:
+	if not bound:
+		return "未绑定" if _ui_is_zh() else "UNBOUND"
+	if not binding.is_empty():
+		var module_part: Dictionary = binding.get("module_part", {}) if binding.get("module_part", {}) is Dictionary else {}
+		if not module_part.is_empty():
+			return _short_part_display_name(module_part, "MODULE")
+		var target_nodes := Array(binding.get("target_nodes", []))
+		if _is_live_unit(hero) and hero.has_method("runtime_group_for_node") and not target_nodes.is_empty():
+			var target_group: Dictionary = hero.runtime_group_for_node(int(target_nodes[target_nodes.size() - 1]))
+			var target_name := String(target_group.get("name", ""))
+			if target_name != "":
+				return _short_part_name(target_name)
+		var profile := String(binding.get("module_action_profile", binding.get("profile", ""))).strip_edges()
+		if profile != "":
+			return _compact_feedback_text(profile.to_upper(), 10)
+	if not group.is_empty():
+		return _short_part_name(String(group.get("name", "GROUP")))
+	return ("攻击%d" if _ui_is_zh() else "GROUP %d") % [attack_index + 1]
+
+
+func _attack_feedback_ammo_info(hero, binding: Dictionary, group: Dictionary) -> Dictionary:
+	var ammo_kind := ""
+	if not group.is_empty() and bool(group.get("projectile", false)):
+		ammo_kind = String(group.get("ammo_kind", _ammo_kind_for_data(group)))
+	if ammo_kind == "" and not binding.is_empty():
+		var module_part: Dictionary = binding.get("module_part", {}) if binding.get("module_part", {}) is Dictionary else {}
+		if bool(module_part.get("projectile", false)):
+			ammo_kind = String(module_part.get("ammo_kind", _ammo_kind_for_data(module_part)))
+	if ammo_kind == "":
+		return {"kind": "", "current": 0, "capacity": 0}
+	return {
+		"kind": ammo_kind,
+		"current": _current_ammo(hero, ammo_kind),
+		"capacity": _ammo_capacity_for(hero, ammo_kind),
+	}
+
+
+func _unit_heat_ratio(unit) -> float:
+	if not _is_live_unit(unit):
+		return 0.0
+	return clampf(float(unit.get("heat")) / maxf(1.0, float(unit.stats.get("heat_capacity", 100.0))), 0.0, 1.0)
+
+
+func _unit_action_cooldown_ratio(unit) -> float:
+	if not _is_live_unit(unit):
+		return 0.0
+	return clampf(float(unit.get("action_cooldown")) / 1.2, 0.0, 1.0)
+
+
+func _attack_feedback_status_label(status: String) -> String:
+	match String(status).to_lower():
+		"ready":
+			return "就绪" if _ui_is_zh() else "READY"
+		"aim":
+			return "瞄准" if _ui_is_zh() else "AIM"
+		"lock":
+			return "锁定" if _ui_is_zh() else "LOCK"
+		"fire":
+			return "触发" if _ui_is_zh() else "FIRE"
+		"window":
+			return "指令" if _ui_is_zh() else "CMD"
+		"cool":
+			return "恢复" if _ui_is_zh() else "COOL"
+		"heat":
+			return "过热" if _ui_is_zh() else "HEAT"
+		"sever":
+			return "断肢" if _ui_is_zh() else "SEVER"
+		"block":
+			return "阻断" if _ui_is_zh() else "BLOCK"
+		"empty":
+			return "未绑" if _ui_is_zh() else "EMPTY"
+	return String(status).to_upper()
+
+
+func _compact_feedback_text(value: String, max_chars: int) -> String:
+	var text := value.strip_edges()
+	if text.length() <= max_chars:
+		return text
+	return text.substr(0, maxi(1, max_chars - 1)) + "."
+
+
 func _update_battle_instrument_gauge() -> void:
 	if battle_instrument_gauge == null:
 		return
@@ -58088,6 +58362,7 @@ func _update_battle_ui() -> void:
 		battle_ui_last_sortie_msec = now_msec
 		_update_sortie_thumbnails()
 	_apply_ui_state({"message": battle_message_label}, {"message": _ui_text_state(battle_message)})
+	_update_attack_feedback_hud()
 	_update_battle_instrument_gauge()
 
 

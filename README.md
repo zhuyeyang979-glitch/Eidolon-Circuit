@@ -164,6 +164,15 @@ Low-frequency tactical commands are intentionally smaller. The player can Cycle 
 
 Puppet and barrier control is not direct micromanagement during battle. Puppet Source Code and barrier Ether logic are authored before battle, then evaluated locally from the current battle state. Runtime input chooses when and where to commit those prepared tools; it does not add separate puppet-move, puppet-attack, barrier-move, or barrier-attack controls.
 
+## Attack Group Feedback
+
+The six attack groups have a dedicated battle HUD strip so the player can tell whether an input was accepted, prepared, executed, or blocked without reading a long debug panel.
+
+- Each slot shows the input key, attack group number, bound module or limb label, and a compact state: READY, AIM, LOCK, FIRE, CMD, COOL, HEAT, BLOCK, EMPTY, or SEVER.
+- A short flash is recorded whenever the player presses an attack group, enters an aim or command window, fires, runs out of ammo, hits a module gate, or presses an unbound group.
+- The controlled unit highlights the corresponding runtime segment for the same flash window. Successful fire is warm, aim and lock are cool or gold, and blocked or empty inputs are red.
+- The small bars under each slot link to recovery, heat, and ammo where available. They are advisory feedback only; they do not force the player to change a build or prescribe a single "correct" combo.
+
 ## Cognitive Load Guardrails
 
 The battle input model treats the hero as the only high-frequency direct-control focus. Aiming can temporarily reserve the turn keys, but it must not create a second real-time control layer for puppets or barriers.

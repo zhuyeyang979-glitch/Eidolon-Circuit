@@ -128,6 +128,9 @@ var active_part_state := STATE_NORMAL
 var active_module_key := ""
 var active_module_part_index := -1
 var active_module_started_at := -999.0
+var attack_feedback_timers := {}
+var attack_feedback_durations := {}
+var attack_feedback_statuses := {}
 var turn_input_active := false
 var turn_input_timer := 0.0
 var aim_pose_part_index := -1
@@ -431,6 +434,7 @@ func tick(delta: float, ring_length: float) -> void:
 	active_part_timer = maxf(0.0, active_part_timer - delta)
 	if active_part_timer <= 0.0:
 		active_part_index = -1
+	_tick_attack_feedback_pulses(delta)
 	aim_pose_timer = maxf(0.0, aim_pose_timer - delta)
 	if aim_pose_timer <= 0.0:
 		if aim_pose_part_index != -1:
@@ -2166,6 +2170,65 @@ func mark_part_action(part_index: int, direction: Vector2, action_state: String,
 	_refresh_visuals()
 
 
+func pulse_attack_feedback(part_index: int, status: String = "fire", duration: float = 0.42) -> void:
+	var safe_index := clampi(part_index, 0, 5)
+	var key := str(safe_index)
+	var safe_duration := maxf(0.12, duration)
+	attack_feedback_timers[key] = maxf(float(attack_feedback_timers.get(key, 0.0)), safe_duration)
+	attack_feedback_durations[key] = safe_duration
+	attack_feedback_statuses[key] = String(status).to_lower()
+	_refresh_visuals()
+
+
+func _tick_attack_feedback_pulses(delta: float) -> void:
+	if attack_feedback_timers.is_empty():
+		return
+	var changed := false
+	for raw_key in attack_feedback_timers.keys():
+		var key := String(raw_key)
+		var next_timer := maxf(0.0, float(attack_feedback_timers.get(key, 0.0)) - delta)
+		if next_timer <= 0.0:
+			attack_feedback_timers.erase(key)
+			attack_feedback_durations.erase(key)
+			attack_feedback_statuses.erase(key)
+		else:
+			attack_feedback_timers[key] = next_timer
+		changed = true
+	if changed:
+		_refresh_visuals()
+
+
+func _attack_feedback_power(part_index: int) -> float:
+	var key := str(clampi(part_index, 0, 5))
+	if not attack_feedback_timers.has(key):
+		return 0.0
+	var duration := maxf(0.12, float(attack_feedback_durations.get(key, 0.42)))
+	return clampf(float(attack_feedback_timers.get(key, 0.0)) / duration, 0.0, 1.0)
+
+
+func _attack_feedback_status(part_index: int) -> String:
+	return String(attack_feedback_statuses.get(str(clampi(part_index, 0, 5)), "fire"))
+
+
+func _attack_feedback_overlay_color(part_index: int) -> Color:
+	var power := _attack_feedback_power(part_index)
+	var status := _attack_feedback_status(part_index)
+	var base := Color(1.0, 0.78, 0.22, 1.0)
+	match status:
+		"aim":
+			base = Color(0.24, 0.9, 1.0, 1.0)
+		"lock":
+			base = Color(1.0, 0.92, 0.34, 1.0)
+		"window":
+			base = Color(0.74, 0.62, 1.0, 1.0)
+		"block", "empty", "sever", "heat":
+			base = Color(1.0, 0.18, 0.28, 1.0)
+		"cool":
+			base = Color(1.0, 0.46, 0.2, 1.0)
+	var pulse := 0.78 + 0.22 * sin(Time.get_ticks_msec() * 0.02 + float(part_index))
+	return Color(base.r, base.g, base.b, clampf(0.18 + power * pulse * 0.64, 0.18, 0.86))
+
+
 func set_aim_pose(part_index: int, direction: Vector2, hold_time: float = 0.12) -> void:
 	if not active or part_index < 0:
 		return
@@ -3640,7 +3703,8 @@ func _draw_runtime_assembly_segment(segment: Dictionary, material_color: Color) 
 	var visual_group := _runtime_contact_group_for_segment(segment)
 	var attack_index := _runtime_attack_index_for_segment(segment)
 	var runtime_action := bool(segment.get("runtime_action", false))
-	var action_flash := runtime_action or (attack_index >= 0 and _limb_drive_power(attack_index) > 0.04)
+	var feedback_power := _attack_feedback_power(attack_index) if attack_index >= 0 else 0.0
+	var action_flash := runtime_action or (attack_index >= 0 and _limb_drive_power(attack_index) > 0.04) or feedback_power > 0.04
 	var draw_segment := segment.duplicate(true)
 	if part_kind == "torso":
 		draw_segment["material_visual"] = String(stats.get("torso_visual_material", visual_group.get("material_visual", "metal")))
@@ -3648,6 +3712,14 @@ func _draw_runtime_assembly_segment(segment: Dictionary, material_color: Color) 
 		draw_segment["material_visual"] = String(visual_group.get("material_visual", segment.get("material_visual", segment.get("material_class", ""))))
 	if action_flash:
 		var action_state := String(segment.get("runtime_action_state", active_part_state))
+		if feedback_power > 0.04 and not runtime_action:
+			var feedback_status := _attack_feedback_status(attack_index)
+			if feedback_status in ["fire", "lock"]:
+				action_state = STATE_ACTIVE
+			elif feedback_status in ["aim", "window"]:
+				action_state = STATE_ARMOR
+			else:
+				action_state = STATE_NORMAL
 		draw_segment["runtime_action"] = true
 		draw_segment["runtime_action_state"] = action_state
 		draw_segment["runtime_action_phase"] = String(segment.get("runtime_action_phase", ""))
@@ -3661,6 +3733,8 @@ func _draw_runtime_assembly_segment(segment: Dictionary, material_color: Color) 
 	draw_segment["blunt_gauntlet"] = bool(visual_group.get("blunt_gauntlet", segment.get("blunt_gauntlet", false)))
 	draw_segment["blunt_hammer"] = bool(visual_group.get("blunt_hammer", segment.get("blunt_hammer", false)))
 	AssemblyBoardRenderer.draw_runtime_segment(self, draw_segment, _runtime_visual_origin(), rotation, _runtime_visual_scale(), material_color, primary_color)
+	if feedback_power > 0.04:
+		AssemblyBoardRenderer.draw_runtime_segment_status_overlay(self, draw_segment, _runtime_visual_origin(), rotation, _runtime_visual_scale(), _attack_feedback_overlay_color(attack_index), 2.4 + feedback_power * 2.2)
 
 
 func _runtime_group_for_segment(segment: Dictionary) -> Dictionary:
