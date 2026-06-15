@@ -104,6 +104,8 @@ func report_text(report_data: Dictionary, language: String = "zh") -> String:
 				int(runtime.get("boost_count", 0)),
 				float(runtime.get("distance_moved", 0.0)),
 			])
+		for breakdown_line in _runtime_attack_breakdown_lines(runtime, true):
+			lines.append(breakdown_line)
 	else:
 		lines.append("TRAINING VALIDATION")
 		lines.append("%s: %s" % ["Player Goal" if intent_source == "player" else "Observed Intent", _intent_label(intent_key, "en")])
@@ -119,6 +121,8 @@ func report_text(report_data: Dictionary, language: String = "zh") -> String:
 				int(runtime.get("boost_count", 0)),
 				float(runtime.get("distance_moved", 0.0)),
 			])
+		for breakdown_line in _runtime_attack_breakdown_lines(runtime, false):
+			lines.append(breakdown_line)
 	for raw_entry in entries:
 		if not (raw_entry is Dictionary):
 			continue
@@ -144,7 +148,40 @@ func _runtime_sample_has_values(runtime: Dictionary) -> bool:
 		or int(runtime.get("ammo_spent", 0)) > 0 \
 		or int(runtime.get("ammo_remaining", -1)) >= 0 \
 		or int(runtime.get("boost_count", 0)) > 0 \
-		or float(runtime.get("distance_moved", 0.0)) > 0.0
+		or float(runtime.get("distance_moved", 0.0)) > 0.0 \
+		or not Array(runtime.get("attack_breakdowns", [])).is_empty()
+
+
+func _runtime_attack_breakdown_lines(runtime: Dictionary, use_zh: bool) -> Array:
+	var breakdowns: Array = Array(runtime.get("attack_breakdowns", []))
+	if breakdowns.is_empty():
+		return []
+	var lines: Array = []
+	lines.append("命中解释：" if use_zh else "Hit explanation:")
+	var count := 0
+	for raw_breakdown in breakdowns:
+		if not (raw_breakdown is Dictionary):
+			continue
+		var breakdown: Dictionary = raw_breakdown
+		var text := String(breakdown.get("text_zh", "")) if use_zh else String(breakdown.get("text_en", ""))
+		if text.strip_edges() == "":
+			text = _fallback_attack_breakdown_text(breakdown, use_zh)
+		if text.strip_edges() == "":
+			continue
+		lines.append("- %s" % text)
+		count += 1
+		if count >= 4:
+			break
+	return lines
+
+
+func _fallback_attack_breakdown_text(breakdown: Dictionary, use_zh: bool) -> String:
+	var attack_label := String(breakdown.get("attack_label", "ATTACK"))
+	var live_tag := String(breakdown.get("live_tag", "结果")) if use_zh else String(breakdown.get("live_tag_en", "result"))
+	var damage := int(breakdown.get("final_damage", breakdown.get("damage", 0)))
+	if use_zh:
+		return "%s：%s，伤害 %d。" % [attack_label, live_tag, damage] if damage > 0 else "%s：%s。" % [attack_label, live_tag]
+	return "%s: %s, %d damage." % [attack_label, live_tag, damage] if damage > 0 else "%s: %s." % [attack_label, live_tag]
 
 
 func _metrics_for(units: Array, runtime: Dictionary) -> Dictionary:

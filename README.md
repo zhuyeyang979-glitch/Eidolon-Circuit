@@ -175,6 +175,12 @@ The six attack groups have a dedicated battle HUD strip so the player can tell w
 - The controlled unit highlights the corresponding runtime segment for the same flash window. Successful fire is warm, aim and lock are cool or gold, and blocked or empty inputs are red.
 - The small bars under each slot link to recovery, heat, and ammo where available. They are advisory feedback only; they do not force the player to change a build or prescribe a single "correct" combo.
 
+## Attack Rule Explanation
+
+The structure authored in the unit editor is also the unit's move list. Action-module detail cards now show approximate move possibilities such as sweep control, linear thrust, heavy break, guard bash, sustained pressure, lock-on shot, or tether control. These labels describe the likely move family created by the selected structure and module; they do not promise exact damage or a fixed combo.
+
+Live combat keeps explanation lightweight with short cause tags such as hit, low momentum, material disadvantage, occluded, reflected, empty ammo, or heat pressure. Training validation carries the detailed explanation: representative attack results record the attack group, hit part, final damage, and the main reasons that changed the result. Post-battle review keeps the latest attack explanations beside the command log. All explanation is advisory and never forces a build change.
+
 ## Command Review Log
 
 Directional command cache messages such as armor command cached or active command cached are not shown as live HUD text. They are recorded silently for post-battle review so combat stays focused on hero movement and attack feedback.

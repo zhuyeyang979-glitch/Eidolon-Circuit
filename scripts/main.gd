@@ -7713,6 +7713,7 @@ const ATTACK_GROUP_COUNT = 6
 const ATTACK_KEY_LABELS = ["U", "I", "O", "J", "K", "L"]
 const ATTACK_GROUP_FALLBACK = ["LEFT CLAW", "RIGHT CLAW", "FRONT LEFT LEG", "FRONT RIGHT LEG", "REAR LEFT LEG", "REAR RIGHT LEG"]
 const BATTLE_COMMAND_LOG_LIMIT = 48
+const TRAINING_ATTACK_BREAKDOWN_LIMIT = 8
 const BURST_ATTACK_CHORD = [0, 1, 2]
 const ROMANCE_CANCEL_CHORD = [3, 4, 5]
 const COMBO_SCALING_MAX_HITS = 24
@@ -8752,6 +8753,7 @@ var muscle_selection := {1: 0, 2: 0}
 var command_buffers := {1: [], 2: []}
 var command_timers := {1: 0.0, 2: 0.0}
 var battle_command_log: Array = []
+var battle_attack_rule_log: Array = []
 var battle_command_log_last_cache := {1: "", 2: ""}
 var attack_command_windows := {1: {}, 2: {}}
 var pending_deploys := {}
@@ -16111,6 +16113,7 @@ func _cleanup_battle_runtime(preserve_for_return: bool = false) -> void:
 		held_melee_activation_state = {1: {}, 2: {}}
 		battle_attack_feedback_events = {1: {}, 2: {}}
 		battle_command_log.clear()
+		battle_attack_rule_log.clear()
 		battle_command_log_last_cache = {1: "", 2: ""}
 	_commit_battle_cleanup_intent(cleanup_intent)
 
@@ -17689,6 +17692,7 @@ func _empty_training_validation_sample() -> Dictionary:
 		"ammo_remaining": -1,
 		"boost_count": 0,
 		"distance_moved": 0.0,
+		"attack_breakdowns": [],
 		"overheated_players": {},
 	}
 
@@ -17730,6 +17734,310 @@ func _training_validation_sample_record_hit(player_id: int, damage: float, _even
 	if bool(_event.get("projectile", false)):
 		training_validation_sample["hits"] = int(training_validation_sample.get("hits", 0)) + 1
 	training_validation_sample["damage_dealt"] = float(training_validation_sample.get("damage_dealt", 0.0)) + maxf(0.0, damage)
+	if not bool(_event.get("training_attack_breakdown_recorded", false)) and _event.has("attack_rule_breakdown") and _event["attack_rule_breakdown"] is Dictionary:
+		_training_validation_sample_record_attack_breakdown(player_id, Dictionary(_event["attack_rule_breakdown"]))
+		_event["training_attack_breakdown_recorded"] = true
+
+
+func _training_validation_sample_record_attack_breakdown(player_id: int, raw_breakdown: Dictionary) -> void:
+	if not _training_validation_sample_accepts_player(player_id):
+		return
+	_ensure_training_validation_sample()
+	var breakdown := _normalize_attack_rule_breakdown(raw_breakdown)
+	if breakdown.is_empty():
+		return
+	var entries: Array = Array(training_validation_sample.get("attack_breakdowns", []))
+	entries.append(breakdown)
+	while entries.size() > TRAINING_ATTACK_BREAKDOWN_LIMIT:
+		entries.pop_front()
+	training_validation_sample["attack_breakdowns"] = entries
+
+
+func _normalize_attack_rule_breakdown(raw_breakdown: Dictionary) -> Dictionary:
+	if raw_breakdown.is_empty():
+		return {}
+	var normalized := raw_breakdown.duplicate(true)
+	var tags: Array = []
+	for raw_tag in Array(raw_breakdown.get("reason_tags", [])):
+		var tag := String(raw_tag).strip_edges()
+		if tag != "" and not tags.has(tag):
+			tags.append(tag)
+	normalized["reason_tags"] = tags
+	normalized["outcome"] = String(raw_breakdown.get("outcome", "hit" if tags.has("hit") else "blocked"))
+	normalized["attack_label"] = String(raw_breakdown.get("attack_label", _attack_rule_label_from_event(raw_breakdown)))
+	if String(normalized.get("live_tag", "")).strip_edges() == "":
+		normalized["live_tag"] = _attack_rule_live_tag_for_tags(tags, normalized["outcome"], true)
+	if String(normalized.get("live_tag_en", "")).strip_edges() == "":
+		normalized["live_tag_en"] = _attack_rule_live_tag_for_tags(tags, normalized["outcome"], false)
+	if String(normalized.get("text_zh", "")).strip_edges() == "":
+		normalized["text_zh"] = _attack_rule_breakdown_text(normalized, true)
+	if String(normalized.get("text_en", "")).strip_edges() == "":
+		normalized["text_en"] = _attack_rule_breakdown_text(normalized, false)
+	normalized["advisory_only"] = true
+	return normalized
+
+
+func _attack_rule_breakdown_for_result(event: Dictionary, context: Dictionary = {}) -> Dictionary:
+	var outcome := String(context.get("outcome", "hit")).strip_edges()
+	if outcome == "":
+		outcome = "hit"
+	var tags: Array = []
+	_attack_rule_append_tag(tags, outcome if outcome != "blocked" else "block")
+	if outcome == "hit":
+		_attack_rule_append_tag(tags, "hit")
+	if bool(context.get("blocked", false)) or bool(event.get("contact_gate_blocked", false)):
+		_attack_rule_append_tag(tags, "block")
+	if outcome == "ammo_empty":
+		_attack_rule_append_tag(tags, "ammo_empty")
+	if outcome == "low_momentum" or String(event.get("projectile_style", "")) == "low_momentum" or float(context.get("raw_damage", event.get("damage", 1.0))) <= 0.001:
+		_attack_rule_append_tag(tags, "low_momentum")
+	if outcome == "reflected" or bool(context.get("reflected", false)) or bool(event.get("reflected", false)):
+		_attack_rule_append_tag(tags, "reflected")
+	var occlusion_kind := String(context.get("map_occlusion_kind", event.get("map_occlusion_kind", ""))).strip_edges()
+	if occlusion_kind != "" and occlusion_kind != MAP_OCCLUSION_NONE:
+		_attack_rule_append_tag(tags, "occluded")
+	if bool(context.get("occluded", false)):
+		_attack_rule_append_tag(tags, "occluded")
+	var material_resist := float(event.get("projectile_material_resist", context.get("projectile_material_resist", 1.0)))
+	if material_resist < 0.97:
+		_attack_rule_append_tag(tags, "material_down")
+	elif material_resist > 1.03:
+		_attack_rule_append_tag(tags, "material_up")
+	if bool(context.get("overheated", false)) or bool(event.get("overheated", false)):
+		_attack_rule_append_tag(tags, "heat")
+	if bool(event.get("projectile", false)):
+		_attack_rule_append_tag(tags, "projectile")
+	else:
+		_attack_rule_append_tag(tags, "contact")
+	var target_part_name := String(context.get("target_part_name", event.get("target_part_name", event.get("part_name", "")))).strip_edges()
+	if target_part_name == "":
+		target_part_name = _stiffness_segment_name_for_hit(context.get("target", null), event) if context.has("target") else String(context.get("target_part_kind", event.get("target_part_kind", "CORE"))).to_upper()
+	var breakdown := {
+		"attack_label": _attack_rule_label_from_event(event),
+		"outcome": outcome,
+		"reason_tags": tags,
+		"live_tag": _attack_rule_live_tag_for_tags(tags, outcome, true),
+		"live_tag_en": _attack_rule_live_tag_for_tags(tags, outcome, false),
+		"raw_damage": float(context.get("raw_damage", event.get("damage", 0.0))),
+		"final_damage": int(context.get("final_damage", context.get("damage", 0))),
+		"target_part_kind": String(context.get("target_part_kind", event.get("target_part_kind", ""))),
+		"target_part_name": target_part_name,
+		"damage_type": String(context.get("damage_type", event.get("damage_type", ""))),
+		"counter_tier": int(context.get("counter_tier", 0)),
+		"advisory_only": true,
+	}
+	breakdown["text_zh"] = _attack_rule_breakdown_text(breakdown, true)
+	breakdown["text_en"] = _attack_rule_breakdown_text(breakdown, false)
+	return breakdown
+
+
+func _attack_rule_append_tag(tags: Array, tag: String) -> void:
+	var safe_tag := String(tag).strip_edges()
+	if safe_tag != "" and not tags.has(safe_tag):
+		tags.append(safe_tag)
+
+
+func _attack_rule_label_from_event(event: Dictionary) -> String:
+	var attack_key := int(event.get("attack_key", int(event.get("attack_index", 0)) + 1))
+	var key_label := _attack_key_label(clampi(attack_key, 1, ATTACK_GROUP_COUNT))
+	var group_name := String(event.get("group_name", event.get("name", ""))).strip_edges()
+	if group_name == "":
+		group_name = String(event.get("module_name", event.get("module_action_profile", "ATTACK"))).strip_edges()
+	return "%s键 / %s" % [key_label, group_name] if _ui_is_zh() else "%s / %s" % [key_label, group_name]
+
+
+func _attack_rule_live_tag_for_tags(tags: Array, outcome: String, zh: bool) -> String:
+	if tags.has("ammo_empty"):
+		return "空弹" if zh else "EMPTY"
+	if tags.has("reflected"):
+		return "反射" if zh else "REFLECT"
+	if tags.has("occluded"):
+		return "遮挡" if zh else "OCCLUDED"
+	if tags.has("low_momentum"):
+		return "动量低" if zh else "LOW MOM"
+	if tags.has("material_down"):
+		return "材料不利" if zh else "MATERIAL"
+	if tags.has("material_up"):
+		return "材料有利" if zh else "MATERIAL+"
+	if tags.has("heat"):
+		return "热限制" if zh else "HEAT"
+	if tags.has("block") or outcome == "blocked":
+		return "阻断" if zh else "BLOCK"
+	if tags.has("hit") or outcome == "hit":
+		return "命中" if zh else "HIT"
+	return "反馈" if zh else "INFO"
+
+
+func _attack_rule_live_feedback_status(breakdown: Dictionary) -> String:
+	var tags: Array = Array(breakdown.get("reason_tags", []))
+	if tags.has("ammo_empty"):
+		return "block"
+	if tags.has("heat"):
+		return "heat"
+	if tags.has("block") or tags.has("occluded") or tags.has("reflected") or tags.has("low_momentum"):
+		return "block"
+	return "fire" if tags.has("hit") else "window"
+
+
+func _record_attack_rule_result(attacker, event: Dictionary, context: Dictionary = {}) -> Dictionary:
+	var breakdown := _attack_rule_breakdown_for_result(event, context)
+	event["attack_rule_breakdown"] = breakdown
+	if attacker == null or not is_instance_valid(attacker):
+		return breakdown
+	var player_id := int(attacker.owner_id)
+	var status := _attack_rule_live_feedback_status(breakdown)
+	var live_tag := String(breakdown.get("live_tag", "")) if _ui_is_zh() else String(breakdown.get("live_tag_en", ""))
+	var severity := 0.0 if status == "fire" else 1.0
+	_record_attack_feedback(player_id, _attack_feedback_index_for_event(event), status, live_tag, severity, 0.82)
+	_training_validation_sample_record_attack_breakdown(player_id, breakdown)
+	_record_battle_attack_rule_log(player_id, breakdown)
+	event["training_attack_breakdown_recorded"] = true
+	return breakdown
+
+
+func _attack_rule_breakdown_text(breakdown: Dictionary, zh: bool) -> String:
+	var attack_label := String(breakdown.get("attack_label", "ATTACK"))
+	var target_part := String(breakdown.get("target_part_name", "TARGET")).strip_edges()
+	if target_part == "":
+		target_part = "TARGET"
+	var damage := int(breakdown.get("final_damage", breakdown.get("damage", 0)))
+	var tags: Array = Array(breakdown.get("reason_tags", []))
+	var reasons_zh: Array = []
+	var reasons_en: Array = []
+	if tags.has("hit"):
+		reasons_zh.append("接触成立")
+		reasons_en.append("contact confirmed")
+	if tags.has("projectile"):
+		reasons_zh.append("投射物结算")
+		reasons_en.append("projectile resolve")
+	if tags.has("contact"):
+		reasons_zh.append("真实接触")
+		reasons_en.append("real contact")
+	if tags.has("low_momentum"):
+		reasons_zh.append("动量不足")
+		reasons_en.append("low momentum")
+	if tags.has("material_down"):
+		reasons_zh.append("材料不利")
+		reasons_en.append("material disadvantage")
+	if tags.has("material_up"):
+		reasons_zh.append("材料有利")
+		reasons_en.append("material advantage")
+	if tags.has("occluded"):
+		reasons_zh.append("存在遮挡")
+		reasons_en.append("occlusion applied")
+	if tags.has("reflected"):
+		reasons_zh.append("被反射")
+		reasons_en.append("reflected")
+	if tags.has("ammo_empty"):
+		reasons_zh.append("弹药耗尽")
+		reasons_en.append("ammo empty")
+	if tags.has("heat"):
+		reasons_zh.append("热量限制")
+		reasons_en.append("heat pressure")
+	if tags.has("block"):
+		reasons_zh.append("结果被阻断")
+		reasons_en.append("blocked")
+	if reasons_zh.is_empty():
+		reasons_zh.append("记录到攻击结果")
+		reasons_en.append("attack result recorded")
+	if zh:
+		if damage > 0:
+			return "%s：命中 %s，伤害 %d；%s。" % [attack_label, target_part, damage, "，".join(reasons_zh)]
+		return "%s：未造成伤害；%s。" % [attack_label, "，".join(reasons_zh)]
+	if damage > 0:
+		return "%s: hit %s for %d damage; %s." % [attack_label, target_part, damage, ", ".join(reasons_en)]
+	return "%s: dealt no damage; %s." % [attack_label, ", ".join(reasons_en)]
+
+
+func _attack_rule_move_possibility_tags(part: Dictionary = {}, model: Dictionary = {}) -> Array:
+	var key := " ".join([
+		String(model.get("category", _module_category_for_part(part))),
+		String(model.get("profile", part.get("module_action_profile", ""))),
+		String(model.get("command_profile", part.get("command_window_profile", ""))),
+		String(model.get("target_kind", part.get("module_target_kind", ""))),
+		String(part.get("motion", "")),
+		String(part.get("module_effect", "")),
+		String(part.get("projectile_behavior", "")),
+		String(part.get("projectile_style", "")),
+		String(part.get("travel_path", "")),
+		String(part.get("module_variant_key", "")),
+	]).to_lower()
+	var tags: Array = []
+	if key.find("missile") >= 0 or key.find("lock") >= 0:
+		_attack_rule_append_tag(tags, "锁定射击")
+	if key.find("laser") >= 0 or key.find("beam") >= 0:
+		_attack_rule_append_tag(tags, "持续压制")
+	if key.find("spray") >= 0 or key.find("chemical") >= 0 or key.find("salvo") >= 0 or key.find("barrage") >= 0:
+		_attack_rule_append_tag(tags, "范围压制")
+	if key.find("web") >= 0 or key.find("tether") >= 0 or key.find("grapple") >= 0 or key.find("capture") >= 0:
+		_attack_rule_append_tag(tags, "牵引控制")
+	if key.find("shield") >= 0 or key.find("guard") >= 0 or key.find("riposte") >= 0:
+		_attack_rule_append_tag(tags, "盾击防反")
+	if key.find("hammer") >= 0 or key.find("slam") >= 0 or key.find("crush") >= 0 or key.find("maul") >= 0:
+		_attack_rule_append_tag(tags, "重击破阵")
+	if key.find("swing") >= 0 or key.find("scythe") >= 0 or key.find("blade") >= 0 or key.find("katana") >= 0 or key.find("slash") >= 0 or key.find("chain") >= 0:
+		_attack_rule_append_tag(tags, "横扫控距")
+	if key.find("thrust") >= 0 or key.find("pierce") >= 0 or key.find("lance") >= 0 or key.find("telescopic") >= 0 or key.find("gauntlet") >= 0 or key.find("punch") >= 0 or key.find("snap") >= 0:
+		_attack_rule_append_tag(tags, "直线突击")
+	if key.find("dash") >= 0 or key.find("route") >= 0 or key.find("advance") >= 0:
+		_attack_rule_append_tag(tags, "突进追击")
+	if key.find("cool") >= 0 or key.find("vent") >= 0:
+		_attack_rule_append_tag(tags, "散热重置")
+	if key.find("control") >= 0 or key.find("support") >= 0 or key.find("repair") >= 0 or key.find("heal") >= 0 or key.find("buff") >= 0:
+		_attack_rule_append_tag(tags, "战术支援")
+	if tags.is_empty():
+		match String(model.get("category", _module_category_for_part(part))):
+			"ranged":
+				tags.append("远程射击")
+			"other":
+				tags.append("战术行动")
+			_:
+				tags.append("接触打击")
+	return tags.slice(0, mini(3, tags.size()))
+
+
+func _attack_rule_move_possibility_label(tag: String, zh: bool) -> String:
+	if zh:
+		return tag
+	match tag:
+		"锁定射击":
+			return "Lock-on Shot"
+		"持续压制":
+			return "Sustained Pressure"
+		"范围压制":
+			return "Area Pressure"
+		"牵引控制":
+			return "Tether Control"
+		"盾击防反":
+			return "Guard Bash"
+		"重击破阵":
+			return "Heavy Break"
+		"横扫控距":
+			return "Sweep Control"
+		"直线突击":
+			return "Linear Thrust"
+		"突进追击":
+			return "Chase Advance"
+		"散热重置":
+			return "Cooling Reset"
+		"战术支援":
+			return "Tactical Support"
+		"远程射击":
+			return "Ranged Shot"
+		"战术行动":
+			return "Tactical Action"
+	return "Contact Strike"
+
+
+func _attack_rule_explanation_build_preview_line(part: Dictionary = {}, model: Dictionary = {}) -> String:
+	var zh := _ui_is_zh()
+	var labels: Array = []
+	for raw_tag in _attack_rule_move_possibility_tags(part, model):
+		labels.append(_attack_rule_move_possibility_label(String(raw_tag), zh))
+	var possibilities := " / ".join(labels)
+	if zh:
+		return "潜在招式类型：%s。仅表示结构可能形成的动作家族；真实接触、动量、材料与最终伤害进入训练后解释。" % possibilities
+	return "Possible move types: %s. This describes structural move families only; training explains contact, momentum, material, and final damage." % possibilities
 
 
 func _training_validation_sample_record_ammo_spent(player_id: int, _ammo_type: String, amount: int = 1) -> void:
@@ -18053,6 +18361,7 @@ func _begin_battle(mode: String, preloaded: bool = false, reason: String = "") -
 	command_buffers = {1: [], 2: []}
 	command_timers = {1: 0.0, 2: 0.0}
 	battle_command_log.clear()
+	battle_attack_rule_log.clear()
 	battle_command_log_last_cache = {1: "", 2: ""}
 	attack_command_windows = {1: {}, 2: {}}
 	pending_deploys = {
@@ -18074,6 +18383,7 @@ func _begin_battle(mode: String, preloaded: bool = false, reason: String = "") -
 	held_melee_activation_state = {1: {}, 2: {}}
 	battle_attack_feedback_events = {1: {}, 2: {}}
 	battle_command_log.clear()
+	battle_attack_rule_log.clear()
 	battle_command_log_last_cache = {1: "", 2: ""}
 	salvo_landing_preview_effects.clear()
 	_apply_ai_side_roster_mapping(mode)
@@ -20072,6 +20382,10 @@ func _module_binding_status_for_payload(unit_bp: Dictionary, payload_index: int,
 	var invalid_reason := _module_binding_invalid_reason(unit_bp, payload_index, payload, part, binding)
 	var ok := invalid_reason == ""
 	var line := ("键 %d%s  %s" if _ui_is_zh() else "KEY %d%s  %s") % [attack_key, _attack_key_label(attack_key), target_label]
+	var move_model := _module_action_card_model(part)
+	var move_tags: Array = Array(move_model.get("move_possibility_tags", []))
+	if ok and not move_tags.is_empty():
+		line += " · %s" % _attack_rule_move_possibility_label(String(move_tags[0]), _ui_is_zh())
 	if not ok:
 		line = ("失效 %d%s：%s" if _ui_is_zh() else "STALE %d%s: %s") % [attack_key, _attack_key_label(attack_key), _trim_text(invalid_reason, 18)]
 	return {
@@ -33500,6 +33814,74 @@ func _record_battle_command_log(player_id: int, event_kind: String, command_text
 		battle_command_log.pop_front()
 
 
+func _record_battle_attack_rule_log(player_id: int, raw_breakdown: Dictionary) -> void:
+	if player_id <= 0 or raw_breakdown.is_empty():
+		return
+	var breakdown := _normalize_attack_rule_breakdown(raw_breakdown)
+	battle_attack_rule_log.append({
+		"time": maxf(0.0, MATCH_TARGET_SECONDS - match_time_remaining),
+		"player_id": player_id,
+		"breakdown": breakdown,
+	})
+	while battle_attack_rule_log.size() > BATTLE_COMMAND_LOG_LIMIT:
+		battle_attack_rule_log.pop_front()
+
+
+func _battle_attack_rule_summary_text(max_lines: int = 5) -> String:
+	var zh := _ui_is_zh()
+	if battle_attack_rule_log.is_empty():
+		return "攻击结果：本局未记录可解释攻击结果。" if zh else "Attack results: no explainable attack results recorded this match."
+	var lines := PackedStringArray()
+	lines.append("攻击结果（最近 %d 条）" % mini(max_lines, battle_attack_rule_log.size()) if zh else "Attack results (latest %d)" % mini(max_lines, battle_attack_rule_log.size()))
+	var start := maxi(0, battle_attack_rule_log.size() - maxi(1, max_lines))
+	for i in range(start, battle_attack_rule_log.size()):
+		if not (battle_attack_rule_log[i] is Dictionary):
+			continue
+		var entry: Dictionary = battle_attack_rule_log[i]
+		var breakdown: Dictionary = Dictionary(entry.get("breakdown", {}))
+		var attack_label := _compact_feedback_text(String(breakdown.get("attack_label", "ATTACK")), 18)
+		var target_part := _compact_feedback_text(String(breakdown.get("target_part_name", "TARGET")), 12)
+		var reasons := _attack_rule_post_review_reason_text(breakdown, zh)
+		var damage := int(breakdown.get("final_damage", 0))
+		lines.append("P%d %.1fs %s · %s · %s · %d" % [int(entry.get("player_id", 0)), float(entry.get("time", 0.0)), attack_label, target_part, reasons, damage])
+	return "\n".join(lines)
+
+
+func _attack_rule_post_review_reason_text(breakdown: Dictionary, zh: bool) -> String:
+	var tags: Array = Array(breakdown.get("reason_tags", []))
+	var labels: Array = []
+	var ordered_tags := ["ammo_empty", "reflected", "occluded", "low_momentum", "material_down", "material_up", "heat", "block", "hit"]
+	for tag in ordered_tags:
+		if not tags.has(tag):
+			continue
+		match tag:
+			"ammo_empty":
+				labels.append("空弹" if zh else "EMPTY")
+			"reflected":
+				labels.append("反射" if zh else "REFLECT")
+			"occluded":
+				labels.append("遮挡" if zh else "OCCLUDED")
+			"low_momentum":
+				labels.append("动量低" if zh else "LOW MOM")
+			"material_down":
+				labels.append("材料不利" if zh else "MATERIAL-")
+			"material_up":
+				labels.append("材料有利" if zh else "MATERIAL+")
+			"heat":
+				labels.append("热限制" if zh else "HEAT")
+			"block":
+				labels.append("阻断" if zh else "BLOCK")
+			"hit":
+				labels.append("命中" if zh else "HIT")
+		if labels.size() >= 3:
+			break
+	return "/".join(labels) if not labels.is_empty() else ("结果" if zh else "RESULT")
+
+
+func _battle_review_diagnostic_summary_text() -> String:
+	return "%s\n\n%s" % [_battle_attack_rule_summary_text(2), _battle_command_log_summary_text(2)]
+
+
 func _battle_command_log_summary_text(max_lines: int = 6) -> String:
 	var zh := _ui_is_zh()
 	if battle_command_log.is_empty():
@@ -36178,7 +36560,10 @@ func _consume_ammo_for_event(attacker, event: Dictionary) -> bool:
 		return true
 	var current := _current_ammo(attacker, ammo_type)
 	if current <= 0:
-		_record_attack_feedback(int(attacker.owner_id), _attack_feedback_index_for_event(event), "block", "ammo empty", 1.0, 0.86)
+		_record_attack_rule_result(attacker, event, {
+			"outcome": "ammo_empty",
+			"final_damage": 0,
+		})
 		_play_module_fail_sfx()
 		_show_battle_message("%s %s AMMO EMPTY" % [attacker.unit_name, ammo_type.to_upper()], 0.62)
 		return false
@@ -37965,9 +38350,24 @@ func _apply_runtime_contact_damage(attacker, attacker_collider: Dictionary, targ
 	if not bool(intent.get("should_apply", false)):
 		return
 	var event: Dictionary = Dictionary(intent.get("event", {}))
+	event["attack_key"] = int(attacker_collider.get("attack_key", int(attacker_collider.get("part_index", 0)) + 1))
+	event["group_name"] = String(attacker_collider.get("name", attacker_collider.get("part_name", "CONTACT")))
+	event["target_part_kind"] = String(target_collider.get("part_kind", "core"))
+	event["target_part_name"] = String(target_collider.get("name", target_collider.get("part_name", "CORE")))
 	var damage_float := float(intent.get("damage_float", 0.0))
 	if bool(intent.get("threshold_blocked", false)):
 		_spawn_hit_effect(target, 1, damage_type, true, "threshold", hit_position)
+		if contact_source == "active_melee":
+			_record_attack_rule_result(attacker, event, {
+				"outcome": "blocked",
+				"blocked": true,
+				"raw_damage": damage_float,
+				"final_damage": 0,
+				"target": target,
+				"target_part_kind": event["target_part_kind"],
+				"target_part_name": event["target_part_name"],
+				"damage_type": damage_type,
+			})
 		return
 	var damage: int = max(1, int(roundf(damage_float)))
 	damage = _melee_damage_adjusted(event, damage)
@@ -37976,7 +38376,20 @@ func _apply_runtime_contact_damage(attacker, attacker_collider: Dictionary, targ
 	var counter_tier := _counter_tier_for_hit(target, damage_type)
 	_spawn_hit_effect(target, 0, damage_type, false, "impact", hit_position)
 	_apply_hitstop(damage_type, counter_tier, damage)
+	if contact_source == "active_melee":
+		_record_attack_rule_result(attacker, event, {
+			"outcome": "hit",
+			"raw_damage": damage_float,
+			"final_damage": damage,
+			"target": target,
+			"target_part_kind": event["target_part_kind"],
+			"target_part_name": event["target_part_name"],
+			"damage_type": damage_type,
+			"counter_tier": counter_tier,
+		})
 	var killed: bool = target.take_hit(damage, "normal", int(attacker.owner_id), damage_type, material_class)
+	if contact_source == "active_melee":
+		_training_validation_sample_record_hit(int(attacker.owner_id), float(damage), event)
 	if not killed and _is_back_hit(attacker, target, event):
 		_apply_back_hit_heat(attacker, target, event, damage)
 	if killed:
@@ -40555,6 +40968,14 @@ func _resolve_runtime_melee_attack(attacker, event: Dictionary) -> void:
 		var hit_position: Vector2 = hit.get("position", _collider_hit_position(attacker_collider, target_collider))
 		if closing_speed < PASSIVE_CONTACT_MIN_SPEED:
 			_spawn_hit_effect(target, 1, _runtime_contact_damage_type(attacker_collider), true, "low_momentum", hit_position)
+			_record_attack_rule_result(attacker, event, {
+				"outcome": "low_momentum",
+				"raw_damage": 0.0,
+				"final_damage": 0,
+				"target": target,
+				"target_part_kind": String(target_collider.get("part_kind", "core")),
+				"target_part_name": String(target_collider.get("name", "CORE")),
+			})
 			continue
 		var contact_momentum := closing_speed * (maxf(1.0, _unit_effective_mass(attacker)) + maxf(1.0, _unit_effective_mass(target)))
 		if contact_momentum <= 0.001:
@@ -40744,6 +41165,15 @@ func _resolve_attack(attacker, event: Dictionary) -> void:
 					continue
 		var hit: Dictionary = Dictionary(first_projectile_impact.get("hit", {})) if (_unit_uses_direct_runtime_topology(attacker) and bool(event.get("projectile", false)) and not first_projectile_impact.is_empty()) else _attack_part_hit(attacker, target, event)
 		if hit.is_empty():
+			if bool(event.get("projectile", false)) and not bool(event.get("attack_rule_occlusion_recorded", false)) and String(event.get("map_occlusion_kind", MAP_OCCLUSION_NONE)) != MAP_OCCLUSION_NONE:
+				_record_attack_rule_result(attacker, event, {
+					"outcome": "blocked",
+					"blocked": true,
+					"occluded": true,
+					"map_occlusion_kind": String(event.get("map_occlusion_kind", MAP_OCCLUSION_NONE)),
+					"final_damage": 0,
+				})
+				event["attack_rule_occlusion_recorded"] = true
 			continue
 		var hit_context := _battle_hit_resolution_service().target_hit_context(event, hit, {
 			"position": Vector2(target.ring_pos, target.lane),
@@ -40755,9 +41185,28 @@ func _resolve_attack(attacker, event: Dictionary) -> void:
 
 		var damage_type := String(hit_context.get("damage_type", event.get("damage_type", "blunt")))
 		if bool(event.get("projectile", false)) and _one_way_shield_intercept(attacker, target, event):
+			_record_attack_rule_result(attacker, event, {
+				"outcome": "blocked",
+				"blocked": true,
+				"occluded": true,
+				"target": target,
+				"target_part_kind": String(event.get("target_part_kind", "barrier_tile")),
+				"target_part_name": String(event.get("target_part_name", "SHIELD")),
+				"damage_type": damage_type,
+				"final_damage": 0,
+			})
 			continue
 		if bool(event.get("projectile", false)) and _target_projectile_shield_reflects(target, event):
 			_reflect_projectile_from_target_shield(target, attacker, event)
+			_record_attack_rule_result(attacker, event, {
+				"outcome": "reflected",
+				"reflected": true,
+				"target": target,
+				"target_part_kind": String(event.get("target_part_kind", "core")),
+				"target_part_name": String(event.get("target_part_name", "SHIELD")),
+				"damage_type": damage_type,
+				"final_damage": 0,
+			})
 			continue
 		var material_class := String(hit_context.get("material_class", event.get("material_class", "weapon")))
 		var counter_tier := _counter_tier_for_hit(target, damage_type)
@@ -40770,6 +41219,15 @@ func _resolve_attack(attacker, event: Dictionary) -> void:
 		if not bool(event.get("projectile", false)):
 			raw_damage = _momentum_damage_for_event(attacker, event)
 			if raw_damage <= 0.001:
+				_record_attack_rule_result(attacker, event, {
+					"outcome": "low_momentum",
+					"raw_damage": raw_damage,
+					"final_damage": 0,
+					"target": target,
+					"target_part_kind": String(event.get("target_part_kind", "core")),
+					"target_part_name": String(event.get("target_part_name", "CORE")),
+					"damage_type": damage_type,
+				})
 				continue
 		else:
 			raw_damage = _projectile_raw_damage_for_event(attacker, target, event)
@@ -40826,12 +41284,33 @@ func _resolve_attack(attacker, event: Dictionary) -> void:
 		else:
 			_spawn_hit_effect(target, counter_tier, damage_type, nullified or contact_gate_blocked, effect_style, hit_vfx_position)
 		if contact_gate_blocked:
+			_record_attack_rule_result(attacker, event, {
+				"outcome": "blocked",
+				"blocked": true,
+				"raw_damage": raw_damage,
+				"final_damage": 0,
+				"target": target,
+				"target_part_kind": String(event.get("target_part_kind", "core")),
+				"target_part_name": String(event.get("target_part_name", "CORE")),
+				"damage_type": damage_type,
+				"counter_tier": counter_tier,
+			})
 			if bool(event.get("projectile", false)):
 				_apply_projectile_momentum_stagger(attacker, target, event)
 			else:
 				_apply_active_melee_momentum_stagger(attacker, target, event)
 			_apply_hitstop(damage_type, counter_tier, 0)
 			continue
+		_record_attack_rule_result(attacker, event, {
+			"outcome": "hit",
+			"raw_damage": raw_damage,
+			"final_damage": damage,
+			"target": target,
+			"target_part_kind": String(event.get("target_part_kind", "core")),
+			"target_part_name": String(event.get("target_part_name", "CORE")),
+			"damage_type": damage_type,
+			"counter_tier": counter_tier,
+		})
 		var post_hit_intents := _battle_hit_resolution_service().post_hit_intents({
 			"projectile": bool(event.get("projectile", false)),
 			"blocked": contact_gate_blocked,
@@ -52732,7 +53211,7 @@ func _show_post_battle_review(winner_id: int, reason: String = "victory") -> voi
 	post_battle_review_reason = reason
 	if menu_view == null or menu_controller == null:
 		return
-	menu_view.update_post_battle_review(menu_controller.post_battle_review_model(ui_language, winner_id, victory_points, match_time_remaining, battle_mode, _battle_command_log_summary_text(5)))
+	menu_view.update_post_battle_review(menu_controller.post_battle_review_model(ui_language, winner_id, victory_points, match_time_remaining, battle_mode, _battle_review_diagnostic_summary_text()))
 	menu_view.show_post_battle_review()
 
 
@@ -56038,6 +56517,11 @@ func _module_action_card_model(part: Dictionary) -> Dictionary:
 		"data_line": _module_action_data_line(part, profile, command_profile, zh),
 		"icon_tags": [joint_icon, weapon_icon, "input", "projectile" if _gun_activation_profiles().has(profile) else "contact"],
 	}
+	model["move_possibility_tags"] = _attack_rule_move_possibility_tags(part, model)
+	var move_labels: Array = []
+	for raw_tag in Array(model["move_possibility_tags"]):
+		move_labels.append(_attack_rule_move_possibility_label(String(raw_tag), zh))
+	model["move_possibility_label"] = " / ".join(move_labels)
 	return model
 
 
@@ -56736,6 +57220,8 @@ func _module_action_detail_model(part: Dictionary, context: Dictionary = {}) -> 
 	var variant_summary := String(model.get("variant_summary", "")).strip_edges()
 	if variant_summary != "":
 		lines.append(("%s：%s" if zh else "%s: %s") % [String(model.get("variant_label", "特色" if zh else "Variant")), variant_summary])
+	lines.append("#%s" % ("招式可能性" if zh else "Move Possibilities"))
+	lines.append(_attack_rule_explanation_build_preview_line(part, model))
 	lines.append("#%s" % ("时间分配" if zh else "Timing"))
 	lines.append(_module_action_timing_detail_line(part, profile, command_profile, zh))
 	var data_line := String(model.get("data_line", "")).strip_edges()
