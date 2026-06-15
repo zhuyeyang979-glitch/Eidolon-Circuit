@@ -140,8 +140,8 @@ P1 keyboard:
 - Manual cooling: hold `G`
 - Command module: directional command plus an attack button
 - Melee command attack: `236+attack` becomes armor-state, `214+attack` becomes active-state
-- Cycle summon portal: `Tab`
-- Pair-summon sortie slot: press the slot's assigned two attack buttons together; held direction chooses a lane, otherwise the current portal is used
+- Summon portal: tap `Tab` to cycle; hold a direction and tap `Tab` to direct-select that entrance
+- Pair-summon sortie slot: press the slot's assigned two attack buttons together to deploy through the selected portal
 
 Controller:
 
@@ -149,8 +149,8 @@ Controller:
 - Boost: double-tap a direction
 - Six attack groups: face buttons plus left/right shoulder
 - Manual cooling: guide button
-- Cycle summon portal: back button
-- Pair-summon sortie slot: press the slot's assigned two attack buttons together; held direction chooses a lane, otherwise the current portal is used
+- Summon portal: tap back to cycle; hold a direction and tap back to direct-select that entrance
+- Pair-summon sortie slot: press the slot's assigned two attack buttons together to deploy through the selected portal
 
 Normal attacks are always normal state. Armor and active states only appear through action modules or source-code puppet sequences. Gun-like muscle components can fire bullet, chemical, or laser projectiles and add a sharp heat spike when used.
 
@@ -160,7 +160,9 @@ The command notation is fighting-game numpad notation, not number keys. In this 
 
 High-frequency hero control is the part that feels closest to a fighting game: movement, facing, Boost, attack buttons, aiming holds, command inputs, and manual cooling all stay on the hero and are expected to be used moment to moment.
 
-Low-frequency tactical commands are intentionally smaller. The player can Cycle summon portal: `Tab`, then deploy a prepared sortie slot by pressing its paired attack buttons together. The deployed slot may be a hero, puppet group, or barrier depending on the team setup and current resource gate.
+Low-frequency tactical commands are intentionally smaller. The player chooses a summon portal first, either by cycling or by direct-selecting with direction plus portal input, then deploys a prepared sortie slot by pressing its paired attack buttons together. The deployed slot may be a hero, puppet group, or barrier depending on the team setup and current resource gate.
+
+Pair-summon deployment no longer steals the live movement direction as an implicit portal choice. The selected portal is the commitment; the pair chord only confirms the prepared unit and spends the resource. Portal feedback shows the first sortie bindings and current live deploy costs so the player can decide before committing.
 
 Puppet and barrier control is not direct micromanagement during battle. Puppet Source Code and barrier Ether logic are authored before battle, then evaluated locally from the current battle state. Runtime input chooses when and where to commit those prepared tools; it does not add separate puppet-move, puppet-attack, barrier-move, or barrier-attack controls.
 

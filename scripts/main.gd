@@ -32952,7 +32952,25 @@ func _legacy_movement_input_state(raw_input: Vector2, previous_input: Vector2, d
 	}
 
 
+func _select_summon_portal_for_input(player_id: int, input_vector: Vector2) -> Dictionary:
+	var intent := _battle_actor_command_service().summon_portal_selection_intent(input_vector, int(portal_index[player_id]), PORTALS.size())
+	portal_index[player_id] = int(intent.get("portal_index", int(portal_index[player_id])))
+	return intent
+
+
+func _summon_portal_feedback_text(player_id: int, selection: String) -> String:
+	var portal: Dictionary = PORTALS[int(portal_index[player_id])]
+	var selection_label := "直选" if selection == "direct" else "切换"
+	if not _ui_is_zh():
+		selection_label = "DIRECT" if selection == "direct" else "CYCLE"
+	var preview := _sortie_pair_preview(player_id, 3)
+	if _ui_is_zh():
+		return "P%d %s%s：%s | %s" % [player_id, _ui_term("portal"), selection_label, String(portal["name"]), preview]
+	return "P%d %s %s: %s | %s" % [player_id, _ui_term("portal"), selection_label, String(portal["name"]), preview]
+
+
 func _handle_player_battle_input(player_id: int, delta: float, prefix: String) -> void:
+	var input_vector := _input_vector_for(prefix)
 	var facing_unit = active_units[player_id]["hero"]
 	var face_left_held := Input.is_action_pressed("%s_face_left" % prefix)
 	var face_right_held := Input.is_action_pressed("%s_face_right" % prefix)
@@ -32969,11 +32987,9 @@ func _handle_player_battle_input(player_id: int, delta: float, prefix: String) -
 			else:
 				facing_unit.facing = turn_sign
 	if _battle_action_just_pressed("%s_portal" % prefix):
-		portal_index[player_id] = _wrapped_index(int(portal_index[player_id]) + 1, PORTALS.size())
-		var portal: Dictionary = PORTALS[int(portal_index[player_id])]
-		_show_battle_message("P%d %s：%s" % [player_id, _ui_term("portal"), portal["name"]], 0.9)
+		var portal_intent := _select_summon_portal_for_input(player_id, input_vector)
+		_show_battle_message(_summon_portal_feedback_text(player_id, String(portal_intent.get("selection", "cycle"))), 1.0)
 
-	var input_vector := _input_vector_for(prefix)
 	var previous_input: Vector2 = battle_last_move_input_vectors.get(player_id, Vector2.ZERO)
 	var movement_state := battle_input_service.movement_input_state(input_vector, previous_input, _battle_direction_just_pressed(prefix)) if battle_input_service != null else _legacy_movement_input_state(input_vector, previous_input, _battle_direction_just_pressed(prefix))
 	var has_move_input := bool(movement_state.get("has_move_input", input_vector.length() > 0.04))
@@ -33147,14 +33163,14 @@ func _try_attack_pair_summon(player_id: int, prefix: String, input_vector: Vecto
 		var both_pressed := Input.is_action_pressed(action_a) and Input.is_action_pressed(action_b)
 		var fresh_pair := _battle_action_just_pressed(action_a) or _battle_action_just_pressed(action_b)
 		if both_pressed and fresh_pair:
-			_summon_sortie_slot(player_id, slot_index, input_vector)
+			_summon_sortie_slot(player_id, slot_index)
 			aim_holding[player_id] = false
 			aim_action_name[player_id] = ""
 			return true
 	return false
 
 
-func _summon_sortie_slot(player_id: int, slot_index: int, input_vector: Vector2) -> bool:
+func _summon_sortie_slot(player_id: int, slot_index: int) -> bool:
 	var sortie_order := _team_sortie_order(player_id)
 	if slot_index < 0 or slot_index >= sortie_order.size():
 		_illegal_summon_feedback(player_id, "No sortie unit assigned to pair slot %d" % [slot_index + 1])
@@ -33164,15 +33180,26 @@ func _summon_sortie_slot(player_id: int, slot_index: int, input_vector: Vector2)
 	var unit_index := int(entry.get("index", 0))
 	var previous_index := int(active_roster_indices[player_id].get(role_key, 0))
 	active_roster_indices[player_id][role_key] = unit_index
-	var next_portal := _portal_index_from_vector(input_vector, int(portal_index[player_id]))
-	portal_index[player_id] = next_portal
-	var portal: Dictionary = PORTALS[next_portal]
+	var stats := _compute_unit_stats(player_id, role_key, unit_index)
+	var base_deploy_cost: int = int(stats.get("deploy_cost", stats.get("cost", 0)))
+	var deploy_cost: int = _discounted_deploy_cost(player_id, role_key, unit_index, base_deploy_cost)
+	var wait_time := maxf(0.4, float(stats.get("deploy_wait", DEPLOY_WAIT_SECONDS)))
+	var portal: Dictionary = PORTALS[int(portal_index[player_id])]
 	var accepted := _summon_role(player_id, role_key, false)
 	if accepted:
-		_show_battle_message("P%d SLOT %d %s #%d via %s" % [player_id, slot_index + 1, _role_name(role_key), unit_index + 1, String(portal["name"])], 1.0)
+		_show_battle_message(_summon_commit_feedback_text(player_id, slot_index, role_key, unit_index, String(portal["name"]), deploy_cost, base_deploy_cost, wait_time), 1.05)
 	else:
 		active_roster_indices[player_id][role_key] = previous_index
 	return accepted
+
+
+func _summon_commit_feedback_text(player_id: int, slot_index: int, role_key: String, unit_index: int, portal_name: String, deploy_cost: int, base_deploy_cost: int, wait_time: float) -> String:
+	var cost_note := "消耗 %d" % deploy_cost if _ui_is_zh() else "cost %d" % deploy_cost
+	if deploy_cost < base_deploy_cost:
+		cost_note = "折扣 %d<%d" % [deploy_cost, base_deploy_cost] if _ui_is_zh() else "discount %d<%d" % [deploy_cost, base_deploy_cost]
+	if _ui_is_zh():
+		return "P%d 槽%d %s#%d：%s，%.1fs 入场，%s" % [player_id, slot_index + 1, _role_name(role_key), unit_index + 1, portal_name, wait_time, cost_note]
+	return "P%d SLOT %d %s#%d: %s, %.1fs deploy, %s" % [player_id, slot_index + 1, _role_name(role_key), unit_index + 1, portal_name, wait_time, cost_note]
 
 
 func _team_sortie_order(player_id: int) -> Array:

@@ -90,6 +90,7 @@
     "formal_battle_wording_probe",
     "tactical_input_contract_probe",
     "cognitive_load_guardrails_probe",
+    "summon_portal_deploy_logic_probe",
     "battle_attack_feedback_probe",
     "battle_command_review_log_probe",
     "post_battle_review_loop_probe",
