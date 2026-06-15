@@ -262,6 +262,7 @@ The battle HUD places all three role resources in the corners: P1 health bars li
 - If the opponent has no units in play, the battle ends immediately.
 - First to `7` victory points wins.
 - Matches target roughly `10` minutes; timeout resolves by victory points, then remaining health.
+- During battle, corner labels show `P1 VP` and `P2 VP`; the central scoreboard shows both sides' score, target score, tied/lead state, and match point pressure while kill messages explain why the score changed.
 
 ## Post-Battle Review Loop
 

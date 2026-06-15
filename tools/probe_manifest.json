@@ -93,6 +93,7 @@
     "summon_portal_deploy_logic_probe",
     "battle_attack_feedback_probe",
     "battle_command_review_log_probe",
+    "battle_scoreboard_feedback_probe",
     "active_cooling_mindgame_probe",
     "heat_core_concept_probe",
     "heat_burst_window_logic_probe",

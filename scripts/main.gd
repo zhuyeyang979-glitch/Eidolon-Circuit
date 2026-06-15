@@ -9359,6 +9359,7 @@ var unit_status_labels := {}
 var portal_labels := {}
 var battle_mode_label: Label
 var match_timer_label: Label
+var battle_scoreboard_label: Label
 var battle_message_label: Label
 var page_options_layer: CanvasLayer
 var page_options_panel: Control
@@ -16766,6 +16767,10 @@ func _ui_term(term_key: String) -> String:
 	var zh_terms := {
 		"resource": "资源",
 		"victory_points": "胜利点",
+		"score": "比分",
+		"tied": "平分",
+		"leads": "领先",
+		"match_point": "赛点",
 		"portal": "入场点",
 		"deploy": "入场",
 		"offline": "离线",
@@ -16799,6 +16804,10 @@ func _ui_term(term_key: String) -> String:
 	var en_terms := {
 		"resource": "RESOURCE",
 		"victory_points": "VICTORY POINTS",
+		"score": "SCORE",
+		"tied": "TIED",
+		"leads": "LEADS",
+		"match_point": "MATCH POINT",
 		"portal": "PORTAL",
 		"deploy": "DEPLOY",
 		"offline": "OFFLINE",
@@ -53128,8 +53137,9 @@ func _build_battle_ui() -> void:
 			hud.add_child(thumb)
 			sortie_thumbnail_views[player_id].append(thumb)
 	battle_mode_label = _make_label(hud, "Mode", "", Vector2(440.0, 16.0), Vector2(400.0, 24.0), 18, Color(0.9, 0.96, 1.0, 1.0), HORIZONTAL_ALIGNMENT_CENTER)
+	battle_scoreboard_label = _make_label(hud, "Scoreboard", "", Vector2(390.0, 42.0), Vector2(500.0, 24.0), 16, Color(1.0, 0.88, 0.28, 1.0), HORIZONTAL_ALIGNMENT_CENTER)
 	match_timer_label = _make_label(hud, "Timer", "", Vector2(540.0, 72.0), Vector2(200.0, 24.0), 18, Color(1.0, 0.9, 0.35, 1.0), HORIZONTAL_ALIGNMENT_CENTER)
-	battle_message_label = _make_label(hud, "Message", "", Vector2(330.0, 44.0), Vector2(620.0, 28.0), 19, Color(1.0, 0.9, 0.35, 1.0), HORIZONTAL_ALIGNMENT_CENTER)
+	battle_message_label = _make_label(hud, "Message", "", Vector2(330.0, 100.0), Vector2(620.0, 28.0), 19, Color(1.0, 0.9, 0.35, 1.0), HORIZONTAL_ALIGNMENT_CENTER)
 	training_entry_intro_view = TrainingEntryIntroView.new()
 	training_entry_intro_view.name = "TrainingEntryIntro"
 	training_entry_intro_view.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -59057,6 +59067,7 @@ func _battle_hud_text_controls() -> Dictionary:
 	var controls := {
 		"mode": battle_mode_label,
 		"timer": match_timer_label,
+		"scoreboard": battle_scoreboard_label,
 	}
 	for player_id in [1, 2]:
 		controls["p%d_resource" % player_id] = resource_labels[player_id]
@@ -59089,9 +59100,14 @@ func _legacy_battle_hud_text_model() -> Dictionary:
 		"mode": {"text": _battle_mode_title()},
 		"timer": {"text": battle_hud_state_service.timer_text(match_time_remaining) if battle_hud_state_service != null else "%02d:%02d" % [int(floorf(match_time_remaining / 60.0)), int(floorf(fmod(match_time_remaining, 60.0)))]},
 	}
+	var players := {
+		1: {"victory_points": int(victory_points[1])},
+		2: {"victory_points": int(victory_points[2])},
+	}
+	model["scoreboard"] = {"text": battle_hud_state_service.scoreboard_text(players, WIN_POINTS, _battle_hud_terms()) if battle_hud_state_service != null else "%s P1 %d - %d P2 / %d" % [_ui_term("score"), int(victory_points[1]), int(victory_points[2]), WIN_POINTS]}
 	for player_id in [1, 2]:
 		model["p%d_resource" % player_id] = {"text": "P%d %s %d" % [player_id, _ui_term("resource"), int(runtime_resource[player_id])]}
-		model["p%d_victory" % player_id] = {"text": "%s %d/%d" % [_ui_term("victory_points"), int(victory_points[player_id]), WIN_POINTS]}
+		model["p%d_victory" % player_id] = {"text": battle_hud_state_service.victory_label_text(player_id, int(victory_points[player_id]), WIN_POINTS, _battle_hud_terms()) if battle_hud_state_service != null else "P%d %s %d/%d" % [player_id, _ui_term("victory_points"), int(victory_points[player_id]), WIN_POINTS]}
 		var portal: Dictionary = PORTALS[int(portal_index[player_id])]
 		model["p%d_portal" % player_id] = {"text": "%s %s  %s" % [_ui_term("portal"), String(portal["name"]), _sortie_discount_status(player_id, 3)]}
 		for i in range(ROLE_ORDER.size()):
@@ -59160,6 +59176,10 @@ func _battle_hud_terms() -> Dictionary:
 	return {
 		"resource": _ui_term("resource"),
 		"victory_points": _ui_term("victory_points"),
+		"score": _ui_term("score"),
+		"tied": _ui_term("tied"),
+		"leads": _ui_term("leads"),
+		"match_point": _ui_term("match_point"),
 		"portal": _ui_term("portal"),
 		"deploy": _ui_term("deploy"),
 		"offline": _ui_term("offline"),

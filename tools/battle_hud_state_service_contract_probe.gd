@@ -39,6 +39,10 @@ func _init() -> void:
 		"ammo": "AMMO",
 		"resource": "RES",
 		"victory_points": "VP",
+		"score": "SCORE",
+		"tied": "TIED",
+		"leads": "LEADS",
+		"match_point": "MATCH POINT",
 		"portal": "PORT",
 		"shift": "SHIFT",
 		"normal": "OK",
@@ -200,6 +204,10 @@ func _init() -> void:
 	})
 	if String(Dictionary(hud_model.get("timer", {})).get("text", "")) != "01:01":
 		_fail("HUD model timer mismatch: %s" % str(hud_model))
+		return
+	var scoreboard_text := String(Dictionary(hud_model.get("scoreboard", {})).get("text", ""))
+	if scoreboard_text != "SCORE P1 1 - 0 P2 / 2  P1 MATCH POINT":
+		_fail("HUD scoreboard model mismatch: %s" % scoreboard_text)
 		return
 	if String(Dictionary(hud_model.get("p1_portal", {})).get("text", "")) != "PORT Gate  1:HERO#1 $50":
 		_fail("HUD portal model mismatch: %s" % str(hud_model.get("p1_portal", {})))
