@@ -82,7 +82,7 @@ func _init() -> void:
 		"stats": {
 			"health": 100,
 			"mass": 12.0,
-			"body_move_speed": 4.0,
+			"move_speed": 4.0,
 			"boost_speed": 7.0,
 			"boost_momentum": 120.0,
 			"heat_capacity": 80.0,

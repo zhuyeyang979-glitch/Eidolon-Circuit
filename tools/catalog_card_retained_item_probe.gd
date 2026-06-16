@@ -34,9 +34,11 @@ func _init() -> void:
 	if retained_count != visible_buttons:
 		_fail("Visible catalog cards are not fully retained: %d/%d." % [retained_count, visible_buttons])
 		return
-	var source := FileAccess.get_file_as_string("res://scripts/main.gd")
-	var card_start := source.find("class PartCatalogCardButton")
-	var draw_start := source.find("func _draw() -> void:", card_start)
+	var source := FileAccess.get_file_as_string("res://scripts/views/catalog/part_catalog_card_button.gd")
+	if source.is_empty() or source.find("class_name PartCatalogCardButton") < 0:
+		_fail("Extracted PartCatalogCardButton source missing.")
+		return
+	var draw_start := source.find("func _draw() -> void:")
 	var draw_end := source.find("func _draw_art", draw_start)
 	var draw_block := source.substr(draw_start, max(0, draw_end - draw_start))
 	if draw_block.contains("draw_rect") or draw_block.contains("draw_texture"):

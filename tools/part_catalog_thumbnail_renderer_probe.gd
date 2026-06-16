@@ -5,8 +5,11 @@ func _init() -> void:
 	var main_source := FileAccess.get_file_as_string("res://scripts/main.gd")
 	var renderer_source := FileAccess.get_file_as_string("res://scripts/assembly_board_renderer.gd")
 	var ghost_source := FileAccess.get_file_as_string("res://scripts/views/part_drag_ghost_view.gd")
-	if main_source.is_empty() or renderer_source.is_empty() or ghost_source.is_empty():
-		push_error("Unable to read main.gd, assembly_board_renderer.gd, or part_drag_ghost_view.gd")
+	var cache_source := FileAccess.get_file_as_string("res://scripts/views/catalog/part_preview_texture_cache.gd")
+	var canvas_source := FileAccess.get_file_as_string("res://scripts/views/catalog/part_preview_texture_render_canvas.gd")
+	var icon_source := FileAccess.get_file_as_string("res://scripts/views/catalog/part_preview_icon_view.gd")
+	if main_source.is_empty() or renderer_source.is_empty() or ghost_source.is_empty() or cache_source.is_empty() or canvas_source.is_empty() or icon_source.is_empty():
+		push_error("Unable to read thumbnail renderer sources")
 		quit(1)
 		return
 	var failures: Array[String] = []
@@ -14,28 +17,27 @@ func _init() -> void:
 		failures.append("AssemblyBoardRenderer.draw_part_preview missing")
 	if not renderer_source.contains("static func part_to_component_node"):
 		failures.append("AssemblyBoardRenderer.part_to_component_node missing")
-	if not main_source.contains("class PartPreviewTextureCache"):
+	if not cache_source.contains("class_name PartPreviewTextureCache"):
 		failures.append("PartPreviewTextureCache missing")
-	if not main_source.contains("request_preview") or not main_source.contains("process_queue"):
+	if not cache_source.contains("request_preview") or not cache_source.contains("process_queue"):
 		failures.append("PartPreviewTextureCache is not request/queue based")
-	if not main_source.contains("class PartPreviewTextureRenderCanvas"):
+	if not canvas_source.contains("class_name PartPreviewTextureRenderCanvas"):
 		failures.append("Preview render canvas missing")
-	if not main_source.contains("class PartPreviewIconView"):
+	if not icon_source.contains("class_name PartPreviewIconView"):
 		failures.append("PartPreviewIconView missing")
-	var icon_pos := main_source.find("class PartPreviewIconView")
-	if icon_pos >= 0:
-		var icon_block := main_source.substr(icon_pos, min(1600, main_source.length() - icon_pos))
-		var draw_pos := icon_block.find("func _draw() -> void:")
-		var draw_block := icon_block.substr(draw_pos, min(500, icon_block.length() - draw_pos)) if draw_pos >= 0 else ""
+	if icon_source.contains("class_name PartPreviewIconView"):
+		var draw_pos := icon_source.find("func _draw() -> void:")
+		var draw_block := icon_source.substr(draw_pos, min(500, icon_source.length() - draw_pos)) if draw_pos >= 0 else ""
 		if draw_block.contains("AssemblyBoardRenderer.draw_part_preview"):
 			failures.append("PartPreviewIconView._draw still calls full renderer instead of cached texture")
 		if draw_block.contains("SubViewport.new") or draw_block.contains("RenderingServer.force_draw"):
 			failures.append("PartPreviewIconView._draw still creates/renders SubViewport")
-	var canvas_pos := main_source.find("class PartPreviewTextureRenderCanvas")
-	if canvas_pos >= 0:
-		var canvas_block := main_source.substr(canvas_pos, min(600, main_source.length() - canvas_pos))
-		if not canvas_block.contains("AssemblyBoardRenderer.draw_part_preview"):
-			failures.append("Offscreen preview canvas is not renderer-driven")
+	if canvas_source.contains("class_name PartPreviewTextureRenderCanvas") and not canvas_source.contains("AssemblyBoardRenderer.draw_part_preview"):
+		failures.append("Offscreen preview canvas is not renderer-driven")
+	if not main_source.contains("preload(\"res://scripts/views/catalog/part_preview_texture_cache.gd\")"):
+		failures.append("main.gd should preload extracted PartPreviewTextureCache")
+	if not main_source.contains("preload(\"res://scripts/views/catalog/part_preview_icon_view.gd\")"):
+		failures.append("main.gd should preload extracted PartPreviewIconView")
 	if not main_source.contains("preload(\"res://scripts/views/part_drag_ghost_view.gd\")"):
 		failures.append("main.gd should preload extracted PartDragGhostView")
 	if not ghost_source.contains("class_name PartDragGhostView") or not ghost_source.contains("AssemblyBoardRenderer.draw_part_preview"):

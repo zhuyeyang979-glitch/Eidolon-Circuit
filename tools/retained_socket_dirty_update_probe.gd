@@ -1,6 +1,6 @@
 extends SceneTree
 
-const MainScene := preload("res://scripts/main.gd")
+const AssemblyBoardViewScript := preload("res://scripts/views/editor/assembly_board_view.gd")
 
 
 func _fail(message: String) -> void:
@@ -29,7 +29,7 @@ func _snapshot(revision: String, select_second: bool) -> Dictionary:
 
 
 func _init() -> void:
-	var board = MainScene.AssemblyBoardView.new()
+	var board = AssemblyBoardViewScript.new()
 	board.size = Vector2(620.0, 420.0)
 	root.add_child(board)
 	board.set_board(_snapshot("socket-dirty-1", false), "", {}, "", 0.0, "custom", "zh", 0.0, "socket-dirty-1")

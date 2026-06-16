@@ -241,16 +241,17 @@ func _init() -> void:
 	for token in [
 		"scripts/services/battle_hud_state_service.gd",
 		"BattleHudStateService.new",
-		"battle_hud_state_service.heavy_hud_text_state",
-		"battle_hud_state_service.heavy_hud_bar_state",
-		"battle_hud_state_service.corner_bar_model",
-		"battle_hud_state_service.shield_corner_bar_model",
-		"battle_hud_state_service.puppet_segment_bar_model",
-		"battle_hud_state_service.instrument_gauge_model",
-		"battle_hud_state_service.ammo_breakdown",
-		"battle_hud_state_service.role_status_text",
-		"battle_hud_state_service.role_bar_text",
-		"battle_hud_state_service.ammo_display_text",
+		"func _battle_hud_service() -> BattleHudStateService",
+		"_battle_hud_service().heavy_hud_text_state",
+		"_battle_hud_service().heavy_hud_bar_state",
+		"_battle_hud_service().corner_bar_model",
+		"_battle_hud_service().shield_corner_bar_model",
+		"_battle_hud_service().puppet_segment_bar_model",
+		"_battle_hud_service().instrument_gauge_model",
+		"_battle_hud_service().ammo_breakdown",
+		"_battle_hud_service().role_status_text",
+		"_battle_hud_service().role_bar_text",
+		"_battle_hud_service().ammo_display_text",
 		"_battle_hud_text_snapshot",
 		"_battle_hud_bar_snapshot",
 		"_battle_instrument_gauge_model",
@@ -258,6 +259,18 @@ func _init() -> void:
 	]:
 		if not main_source.contains(token):
 			_fail("main.gd missing BattleHudStateService boundary token: %s" % token)
+			return
+	for legacy_token in [
+		"_legacy_battle_hud_text_model",
+		"_legacy_battle_hud_bar_state",
+		"_legacy_role_status_text",
+		"_legacy_unit_status_text",
+		"_legacy_unit_ammo_display_text",
+		"_legacy_role_bar_text",
+		"battle_hud_state_service != null",
+	]:
+		if main_source.contains(legacy_token):
+			_fail("main.gd should route HUD display rules through BattleHudStateService without legacy fallback: %s" % legacy_token)
 			return
 	var main = MainScene.new()
 	root.add_child(main)

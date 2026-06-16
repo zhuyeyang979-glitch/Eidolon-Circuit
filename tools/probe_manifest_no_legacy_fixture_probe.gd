@@ -1,9 +1,11 @@
 extends SceneTree
 
+var failures: Array = []
+
 
 func _fail(message: String) -> void:
 	push_error(message)
-	quit(1)
+	failures.append(message)
 
 
 func _init() -> void:
@@ -45,5 +47,9 @@ func _init() -> void:
 		if ["drive_legacy_rejection_probe.gd", "drive_legacy_saved_unit_rejection_probe.gd", "legacy_pointer_rejection_probe.gd"].has(legacy_name):
 			continue
 		_fail("Legacy rejection probe missing: %s." % legacy_path)
+	if not failures.is_empty():
+		print("PROBE_MANIFEST_NO_LEGACY_FIXTURE_PROBE failed count=%d" % failures.size())
+		quit(1)
+		return
 	print("PROBE_MANIFEST_NO_LEGACY_FIXTURE_PROBE ok current=%d sections=%d" % [governed.size(), manifest.keys().size()])
-	quit()
+	quit(0)

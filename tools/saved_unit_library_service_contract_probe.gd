@@ -39,6 +39,21 @@ func _init() -> void:
 		"const SavedUnitLibraryService = preload(\"res://scripts/services/saved_unit_library_service.gd\")",
 		"var saved_unit_library_service: SavedUnitLibraryService",
 		"saved_unit_library_service = SavedUnitLibraryService.new()",
+		"func _saved_unit_library_service() -> SavedUnitLibraryService",
+		"_saved_unit_library_service().signature_from_records",
+		"_saved_unit_library_service().cache_refresh_intent",
+		"_saved_unit_library_service().latest_entry_named",
+		"_saved_unit_library_service().resolve_save_path",
+		"_saved_unit_library_service().build_save_payload",
+		"_saved_unit_library_service().readback_status",
+		"_saved_unit_library_service().entry_from_payload",
+		"_saved_unit_library_service().rejected_entry_from_payload",
+		"_saved_unit_library_service().entries_from_records",
+	]:
+		if main_source.find(token) < 0:
+			_fail("main.gd should delegate saved-unit library service token: %s" % token)
+			return
+	for forbidden in [
 		"saved_unit_library_service.signature_from_records",
 		"saved_unit_library_service.cache_refresh_intent",
 		"saved_unit_library_service.latest_entry_named",
@@ -48,9 +63,13 @@ func _init() -> void:
 		"saved_unit_library_service.entry_from_payload",
 		"saved_unit_library_service.rejected_entry_from_payload",
 		"saved_unit_library_service.entries_from_records",
+		"saved_unit_library_service != null",
+		"_legacy_saved_unit_cache_refresh_intent",
+		"_legacy_saved_unit_entries_from_records",
+		"_legacy_saved_unit_export_path",
 	]:
-		if main_source.find(token) < 0:
-			_fail("main.gd should delegate saved-unit library service token: %s" % token)
+		if main_source.find(forbidden) >= 0:
+			_fail("main.gd should not keep legacy SavedUnitLibraryService fallback token: %s" % forbidden)
 			return
 	var service = SavedUnitLibraryServiceScript.new()
 	var signature := service.signature_from_records([

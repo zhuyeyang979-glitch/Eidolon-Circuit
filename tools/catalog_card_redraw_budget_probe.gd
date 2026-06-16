@@ -1,6 +1,6 @@
 extends SceneTree
 
-const MAIN_PATH := "res://scripts/main.gd"
+const CARD_BUTTON_PATH := "res://scripts/views/catalog/part_catalog_card_button.gd"
 const MainScene := preload("res://scripts/main.gd")
 
 
@@ -18,8 +18,10 @@ func _preview_draw_total(main) -> int:
 
 
 func _init() -> void:
-	var source := FileAccess.get_file_as_string(MAIN_PATH)
-	var card_draw_pos := source.find("func _draw() -> void:", source.find("class PartCatalogCardButton"))
+	var source := FileAccess.get_file_as_string(CARD_BUTTON_PATH)
+	if source.is_empty() or source.find("class_name PartCatalogCardButton") < 0:
+		_fail("Extracted PartCatalogCardButton source missing.")
+	var card_draw_pos := source.find("func _draw() -> void:")
 	var draw_art_pos := source.find("func _draw_art", card_draw_pos)
 	var card_draw_block := source.substr(card_draw_pos, max(0, draw_art_pos - card_draw_pos))
 	if card_draw_block.contains("AssemblyBoardRenderer.draw_part_preview"):

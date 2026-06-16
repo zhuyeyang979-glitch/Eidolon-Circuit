@@ -1,6 +1,6 @@
 extends SceneTree
 
-const MainScene := preload("res://scripts/main.gd")
+const AssemblyBoardViewScript := preload("res://scripts/views/editor/assembly_board_view.gd")
 
 
 func _fail(message: String) -> void:
@@ -58,17 +58,17 @@ func _sample_snapshot() -> Dictionary:
 
 
 func _init() -> void:
-	var source := FileAccess.get_file_as_string("res://scripts/main.gd")
+	var source := FileAccess.get_file_as_string("res://scripts/views/editor/assembly_board_view.gd")
 	if source.is_empty():
-		_fail("Unable to read main.gd.")
-	if not source.contains("class AssemblyBoardRenderLayer") or not source.contains("class AssemblyBoardRenderComponentItem"):
+		_fail("Unable to read assembly_board_view.gd.")
+	if not source.contains("class_name AssemblyBoardView") or not source.contains("class AssemblyBoardRenderLayer") or not source.contains("class AssemblyBoardRenderComponentItem"):
 		_fail("Retained render layer classes are missing.")
-	var draw_block := _function_block_after(source, "class AssemblyBoardView", "func _draw() -> void:", "\n\tfunc _draw_barrier_board")
+	var draw_block := _function_block_after(source, "signal part_dropped", "func _draw() -> void:", "\nfunc _draw_barrier_board")
 	if draw_block.is_empty():
 		_fail("AssemblyBoardView._draw block not found.")
 	if draw_block.contains("_draw_custom_board()"):
 		_fail("AssemblyBoardView._draw still calls monolithic _draw_custom_board for custom boards.")
-	var board = MainScene.AssemblyBoardView.new()
+	var board = AssemblyBoardViewScript.new()
 	board.size = Vector2(620.0, 420.0)
 	root.add_child(board)
 	board.set_board(_sample_snapshot(), "", {}, "", 0.0, "custom", "zh", 0.0, "retained-probe-1")

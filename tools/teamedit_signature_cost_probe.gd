@@ -1,6 +1,7 @@
 extends SceneTree
 
 const MAIN_PATH := "res://scripts/main.gd"
+const ASSEMBLY_BOARD_VIEW_PATH := "res://scripts/views/editor/assembly_board_view.gd"
 
 
 func _fail(message: String) -> void:
@@ -10,6 +11,9 @@ func _fail(message: String) -> void:
 
 func _init() -> void:
 	var source := FileAccess.get_file_as_string(MAIN_PATH)
+	var board_source := FileAccess.get_file_as_string(ASSEMBLY_BOARD_VIEW_PATH)
+	if source.is_empty() or board_source.is_empty():
+		_fail("Unable to read TeamEdit signature sources.")
 	var forbidden := [
 		"str(next_snapshot)",
 		"str(next_data)",
@@ -21,9 +25,9 @@ func _init() -> void:
 		"str(next_lines)",
 	]
 	for token in forbidden:
-		if source.contains(token):
+		if source.contains(token) or board_source.contains(token):
 			_fail("Hot-path expensive signature token remains: %s" % token)
-	if not source.contains("next_revision_key"):
+	if not board_source.contains("next_revision_key"):
 		_fail("AssemblyBoardView.set_board does not accept a cheap revision key.")
 	print("TEAMEDIT_SIGNATURE_COST_PROBE ok")
 	quit()

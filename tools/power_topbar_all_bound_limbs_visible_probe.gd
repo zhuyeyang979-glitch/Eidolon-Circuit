@@ -1,6 +1,7 @@
 extends SceneTree
 
 const MainScene := preload("res://scripts/main.gd")
+const POWER_DOCK_VIEW_PATH := "res://scripts/views/editor/unit_editor_power_dock_view.gd"
 
 
 func _fail(message: String) -> void:
@@ -84,11 +85,10 @@ func _init() -> void:
 		_fail("Dock should expose all bound limb sliders, not truncate to the first few.")
 	if float(main.editor_power_dock_view._max_scroll()) <= 0.0:
 		_fail("Dock should become horizontally scrollable when entries exceed available width.")
-	var source := FileAccess.get_file_as_string("res://scripts/main.gd")
-	var class_start := source.find("class UnitEditorPowerDockView")
-	var class_end := source.find("class AssemblyBoardRenderLayer", class_start)
-	var block := source.substr(class_start, class_end - class_start)
-	if block.contains("mini(entries.size(), 5)"):
+	var source := FileAccess.get_file_as_string(POWER_DOCK_VIEW_PATH)
+	if source.find("class_name UnitEditorPowerDockView") < 0:
+		_fail("UnitEditorPowerDockView source should live in the extracted dock view file.")
+	if source.contains("mini(entries.size(), 5)"):
 		_fail("UnitEditorPowerDockView still hard-caps drawn entries at 5.")
 	print("POWER_TOPBAR_ALL_BOUND_LIMBS_VISIBLE_PROBE ok entries=%d limbs=%d scroll=%.1f" % [entries.size(), limb_count, main.editor_power_dock_view._max_scroll()])
 	quit()
