@@ -2,6 +2,7 @@ class_name CatalogCardRetainedItem
 extends Control
 
 const PartArt = preload("res://scripts/part_art.gd")
+const PartIdentity = preload("res://scripts/part_identity.gd")
 const PartPreviewTextureCache = preload("res://scripts/views/catalog/part_preview_texture_cache.gd")
 const CATALOG_CARD_TITLE_FONT_SIZE := 10
 const CATALOG_CARD_SIMPLE_TITLE_FONT_SIZE := 11
@@ -15,6 +16,7 @@ var part := {}
 var display_name := ""
 var data_line_a := ""
 var data_line_b := ""
+var ui_language := "zh"
 var selected := false
 var content_signature := ""
 var textures_requested_signature := ""
@@ -28,8 +30,8 @@ func _init() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	focus_mode = Control.FOCUS_NONE
 
-func configure(next_slot: String, next_part: Dictionary, next_display_name: String, next_line_a: String, next_line_b: String, next_selected: bool) -> void:
-	var next_signature := _content_signature(next_slot, next_part, next_display_name, next_line_a, next_line_b)
+func configure(next_slot: String, next_part: Dictionary, next_display_name: String, next_line_a: String, next_line_b: String, next_selected: bool, next_language: String = "zh") -> void:
+	var next_signature := _content_signature(next_slot, next_part, next_display_name, next_line_a, next_line_b, next_language)
 	var selected_changed := selected != next_selected
 	selected = next_selected
 	if next_signature == content_signature:
@@ -42,13 +44,14 @@ func configure(next_slot: String, next_part: Dictionary, next_display_name: Stri
 	display_name = next_display_name
 	data_line_a = next_line_a
 	data_line_b = next_line_b
+	ui_language = next_language
 	preview_texture = PartPreviewTextureCache.peek_preview(slot_key, part, false, 0.0, _art_rect().size)
 	body_texture = null
 	if not defer_texture_requests:
 		_request_textures()
 	queue_redraw()
 
-func _content_signature(next_slot: String, next_part: Dictionary, next_display_name: String, next_line_a: String, next_line_b: String) -> String:
+func _content_signature(next_slot: String, next_part: Dictionary, next_display_name: String, next_line_a: String, next_line_b: String, next_language: String = "zh") -> String:
 	var size_key := "%dx%d" % [maxi(1, int(round(size.x))), maxi(1, int(round(size.y)))]
 	return "%s|%s|%s|%s|%s|%s" % [
 		next_slot,
@@ -56,7 +59,7 @@ func _content_signature(next_slot: String, next_part: Dictionary, next_display_n
 		next_display_name,
 		next_line_a,
 		next_line_b,
-		size_key,
+		size_key + "|" + next_language + "|" + PartIdentity.signature_for(next_slot, next_part, next_language),
 	]
 
 func _request_textures() -> void:
@@ -80,7 +83,7 @@ func ensure_textures_requested() -> bool:
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_RESIZED:
-		var next_signature := _content_signature(slot_key, part, display_name, data_line_a, data_line_b)
+		var next_signature := _content_signature(slot_key, part, display_name, data_line_a, data_line_b, ui_language)
 		if next_signature != content_signature:
 			content_signature = next_signature
 			_request_textures()
@@ -129,6 +132,7 @@ func _draw() -> void:
 	draw_rect(art_rect, Color(0.26, 0.36, 0.46, 0.5), false, 1.0)
 	_draw_size_ruler(art_rect, _thumbnail_size_scale())
 	_draw_size_badge(art_rect)
+	_draw_identity_overlay(art_rect)
 	var data_rect := _data_rect()
 	draw_rect(data_rect, Color(0.0, 0.0, 0.0, 0.58), true)
 	_draw_body_fallback(_body_texture_rect())
@@ -231,3 +235,40 @@ func _draw_size_badge(rect: Rect2) -> void:
 	draw_rect(badge_rect, Color(0.0, 0.0, 0.0, 0.34), true)
 	draw_rect(badge_rect, Color(0.86, 0.96, 1.0, 0.2), false, 1.0)
 	draw_string(font, badge_rect.position + Vector2(3.0, 8.0), tier.substr(0, 2), HORIZONTAL_ALIGNMENT_LEFT, badge_rect.size.x, 7, Color(0.9, 0.98, 1.0, 0.82))
+
+func _draw_identity_overlay(rect: Rect2) -> void:
+	if part.is_empty():
+		return
+	var font := ThemeDB.get_fallback_font()
+	var identity := PartIdentity.identity_for(slot_key, part, ui_language)
+	var accent: Color = identity.get("color", _slot_color())
+	var code := String(identity.get("code", ""))
+	var glyph := String(identity.get("glyph", ""))
+	var tags: Array = identity.get("tags", [])
+	var chip_rect := Rect2(rect.position + Vector2(3.0, 3.0), Vector2(minf(rect.size.x - 31.0, 69.0), 12.0))
+	_draw_identity_chip(font, chip_rect, code, accent, 7, 0.92)
+	if glyph != "":
+		var glyph_rect := Rect2(rect.position + Vector2(rect.size.x - 25.0, rect.size.y - 18.0), Vector2(21.0, 13.0))
+		draw_rect(glyph_rect, Color(0.0, 0.0, 0.0, 0.42), true)
+		draw_rect(glyph_rect, accent.lerp(Color.WHITE, 0.18), false, 1.0)
+		draw_string(font, glyph_rect.position + Vector2(2.0, 10.0), _card_trim(glyph, 4), HORIZONTAL_ALIGNMENT_CENTER, glyph_rect.size.x - 4.0, 7, Color(0.92, 0.98, 1.0, 0.9))
+	var tag_y := rect.position.y + rect.size.y - 17.0
+	var x := rect.position.x + 3.0
+	for i in range(mini(tags.size(), 2)):
+		var tag := _card_trim(String(tags[i]), 5)
+		var tag_w := clampf(float(tag.length()) * 6.0 + 10.0, 22.0, rect.size.x * 0.44)
+		var tag_rect := Rect2(Vector2(x, tag_y), Vector2(tag_w, 11.0))
+		_draw_identity_chip(font, tag_rect, tag, accent, 7, 0.72)
+		x += tag_w + 3.0
+
+func _draw_identity_chip(font: Font, rect: Rect2, text_value: String, accent: Color, font_size: int, alpha: float) -> void:
+	if rect.size.x <= 4.0 or text_value == "":
+		return
+	var bg := accent.darkened(0.58)
+	bg.a = 0.72 * alpha
+	var border := accent.lerp(Color.WHITE, 0.28)
+	border.a = 0.58 * alpha
+	draw_rect(rect, Color(0.0, 0.0, 0.0, 0.5 * alpha), true)
+	draw_rect(rect.grow(-1.0), bg, true)
+	draw_rect(rect, border, false, 1.0)
+	draw_string(font, rect.position + Vector2(4.0, rect.size.y - 3.0), _card_trim(text_value, maxi(3, int(rect.size.x / 5.8))), HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 7.0, font_size, Color(0.93, 0.99, 1.0, 0.96 * alpha))

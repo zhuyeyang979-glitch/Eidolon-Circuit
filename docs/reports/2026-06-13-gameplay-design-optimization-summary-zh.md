@@ -104,7 +104,7 @@
 - `UNIT_EDITOR_AUTO_CONNECTION_UI_PROBE ok`
 - `UNIT_EDITOR_ASSEMBLY_GUIDE_SERVICE_PROBE ok`
 - `UNIT_EDITOR_ASSEMBLY_GUIDE_UI_PROBE ok`
-- Godot `--check-only` 退出码为 `0`；macOS headless 环境下已知的 ObjectDB 警告仍为非阻塞问题。
+- Godot `--check-only` 退出码为 `0`；早期 macOS headless 运行中记录的 ObjectDB 警告在 2026-06-17 最新定向验证中未复现，后续继续观察。
 - `TEXT_OVERFLOW_PROBE` 在中文和英文覆盖下报告 0 个文本溢出失败。
 - 功能提交前 `git diff --check` 没有输出。
 - `jq empty tools/probe_manifest.json` 通过。

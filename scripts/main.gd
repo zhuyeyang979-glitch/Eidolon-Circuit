@@ -64,6 +64,8 @@ const TeamEditController = preload("res://scripts/controllers/team_edit_controll
 const UnitEditorCatalogController = preload("res://scripts/controllers/unit_editor_catalog_controller.gd")
 const UnitEditorBoardController = preload("res://scripts/controllers/unit_editor_board_controller.gd")
 const UnitEditorAssemblyGuideService = preload("res://scripts/services/unit_editor_assembly_guide_service.gd")
+const UnitEditorAssemblyTemplateService = preload("res://scripts/services/unit_editor_assembly_template_service.gd")
+const UnitEditorEngineAllocationService = preload("res://scripts/services/unit_editor_engine_allocation_service.gd")
 const UnitEditorAutoConnectionService = preload("res://scripts/services/unit_editor_auto_connection_service.gd")
 const BattleController = preload("res://scripts/controllers/battle_controller.gd")
 const SavedUnitsController = preload("res://scripts/controllers/saved_units_controller.gd")
@@ -1953,6 +1955,8 @@ var team_edit_mode_owner: TeamEditMode
 var unit_editor_catalog_controller: UnitEditorCatalogController
 var unit_editor_board_controller: UnitEditorBoardController
 var unit_editor_assembly_guide_service: UnitEditorAssemblyGuideService
+var unit_editor_assembly_template_service: UnitEditorAssemblyTemplateService
+var unit_editor_engine_allocation_service: UnitEditorEngineAllocationService
 var unit_editor_auto_connection_service: UnitEditorAutoConnectionService
 var unit_build_rule_service: UnitBuildRuleService
 var team_legality_service: TeamLegalityService
@@ -2296,6 +2300,8 @@ func _initialize_hot_path_state_layer() -> void:
 	unit_editor_catalog_controller.bind(hot_path_profiler)
 	unit_editor_board_controller = UnitEditorBoardController.new()
 	unit_editor_assembly_guide_service = UnitEditorAssemblyGuideService.new()
+	unit_editor_assembly_template_service = UnitEditorAssemblyTemplateService.new()
+	unit_editor_engine_allocation_service = UnitEditorEngineAllocationService.new()
 	unit_editor_auto_connection_service = UnitEditorAutoConnectionService.new()
 	battle_controller = BattleController.new()
 	battle_controller.bind(self, game_state_store, dirty_graph, derived_state_cache, hot_path_profiler, gpu_geometry_service)
@@ -13346,236 +13352,47 @@ func _engine_allocation_engine_idle_heat_for_torso(unit_bp: Dictionary, torso_no
 	return total
 
 
-func _engine_momentum_allocation_data(unit_bp: Dictionary, torso_node_index: int, engine_payload_index: int) -> Dictionary:
-	if not unit_bp.has("custom_topology"):
-		return {}
-	var payloads: Array = Array(unit_bp.get("slot_payloads", []))
-	var role_key: String = String(unit_bp.get("role", ROLE_ORDER[editor_role_index]))
-	var topology: Dictionary = unit_bp.get("custom_topology", {})
-	var nodes: Array = Array(topology.get("nodes", []))
-	if torso_node_index < 0 or torso_node_index >= nodes.size() or not (nodes[torso_node_index] is Dictionary):
-		return {}
-	var has_engine_payload := false
-	var engine_payload: Dictionary = {}
-	if engine_payload_index >= 0:
-		if engine_payload_index >= payloads.size() or not (payloads[engine_payload_index] is Dictionary):
-			return {}
-		engine_payload = payloads[engine_payload_index]
-		if String(engine_payload.get("kind", "")) != "engine":
-			return {}
-		if _payload_torso_node_index(engine_payload, unit_bp) != torso_node_index:
-			return {}
-		has_engine_payload = true
-	var stats := _editor_current_stats()
-	var segments: Array = Array(stats.get("runtime_topology_segments", []))
-	var segments_by_node := _engine_allocation_segment_by_node(stats)
-	var pool := _engine_allocation_pool_for_torso(unit_bp, torso_node_index)
-	var cooling_pool := _thermal_load_pool_for_stats(stats)
-	var engine_heat_load := _engine_allocation_engine_idle_heat_for_torso(unit_bp, torso_node_index)
-	var engine_part := _payload_part_for_payload(role_key, engine_payload) if has_engine_payload else {"name": "NO ENGINE"}
-	var torso_part := _topology_node_part(role_key, nodes[torso_node_index], unit_bp)
-	var entries: Array = []
-	for i in range(payloads.size()):
-		if not (payloads[i] is Dictionary):
-			continue
-		var payload: Dictionary = payloads[i]
-		if String(payload.get("kind", "")) != "booster":
-			continue
-		if _payload_torso_node_index(payload, unit_bp) != torso_node_index:
-			continue
-		var booster_part := _payload_part_for_payload(role_key, payload)
-		var drive_min := _thruster_drive_allocation_min_for_part(booster_part)
-		var drive_max := _thruster_drive_allocation_max_for_part(booster_part)
-		var drive_momentum := _thruster_drive_allocated_for_payload(payload, booster_part)
-		var drive_ratio := drive_momentum / maxf(1.0, pool) if pool > 0.0 else 0.0
-		var boost_min := _thruster_boost_brake_allocation_min_for_part(booster_part)
-		var boost_max := _thruster_boost_brake_allocation_max_for_part(booster_part)
-		var boost_momentum := _thruster_boost_brake_allocated_for_payload(payload, booster_part)
-		var boost_ratio := boost_momentum / maxf(1.0, pool) if pool > 0.0 else 0.0
-		var boost_peak := drive_momentum + boost_momentum
-		var boost_peak_ratio := boost_peak / maxf(1.0, pool) if pool > 0.0 else 0.0
-		var booster_heat_coeff := _thruster_idle_heat_coeff_for_part(booster_part)
-		var boost_heat_cost := maxf(0.0, float(_thruster_with_drive_defaults(booster_part).get("boost_heat", 0.0)))
-		var booster_label := _short_part_display_name(booster_part, "BOOSTER")
-		entries.append({
-			"id": "booster_drive:%d" % i,
-			"kind": "booster_drive",
-			"payload_index": i,
-			"label": ("%s / 推进" if _ui_is_zh() else "%s / MOVE") % booster_label,
-			"line": ("普通移动/转向 %.0f-%.0f" if _ui_is_zh() else "Move/turn %.0f-%.0f") % [drive_min, drive_max],
-			"ratio": drive_ratio,
-			"momentum": drive_momentum,
-			"allocated_momentum": drive_momentum,
-			"min_momentum": drive_min,
-			"max_momentum": drive_max,
-			"default_momentum": drive_min,
-			"boost_extra_momentum": boost_momentum,
-			"boost_peak_momentum": boost_peak,
-			"boost_extra_ratio": boost_ratio,
-			"boost_peak_ratio": boost_peak_ratio,
-			"boost_dash_hint": true,
-			"boost_label": ("Boost刹车 +%.0f / 峰值 %.0f" if _ui_is_zh() else "Boost-brake +%.0f / PEAK %.0f") % [boost_momentum, boost_peak],
-			"heat_coeff": booster_heat_coeff,
-			"heat_color": Color(1.0, 0.48, 0.14, 1.0),
-			"readonly": drive_max <= drive_min,
-			"disabled": pool <= 0.0,
-			"color": Color(1.0, 0.52, 0.18, 1.0),
-		})
-		entries.append({
-			"id": "booster_boost_brake:%d" % i,
-			"kind": "booster_boost_brake",
-			"payload_index": i,
-			"label": ("%s / Boost刹车" if _ui_is_zh() else "%s / BOOST-BRAKE") % booster_label,
-			"line": ("Boost/刹车峰值动力 %.0f-%.0f；事件热 %.1f" if _ui_is_zh() else "Boost/brake peak drive %.0f-%.0f; event heat %.1f") % [boost_min, boost_max, boost_heat_cost],
-			"ratio": boost_ratio,
-			"momentum": boost_momentum,
-			"allocated_momentum": boost_momentum,
-			"min_momentum": boost_min,
-			"max_momentum": boost_max,
-			"default_momentum": boost_min,
-			"boost_peak_momentum": boost_peak,
-			"boost_peak_ratio": boost_peak_ratio,
-			"heat_coeff": 0.0,
-			"heat_exempt": true,
-			"heat_label": ("Boost事件热 %.1f / 不占常热" if _ui_is_zh() else "Boost event heat %.1f / no idle heat") % boost_heat_cost,
-			"heat_color": Color(1.0, 0.62, 0.18, 1.0),
-			"readonly": boost_max <= boost_min,
-			"disabled": pool <= 0.0 or boost_max <= 0.0,
-			"color": Color(1.0, 0.72, 0.22, 1.0),
-		})
-	var allocation_groups: Array = []
-	var counted_nodes := {}
-	for ref in _engine_allocation_sorted_binding_refs(unit_bp):
-		if not (ref is Dictionary):
-			continue
-		var binding_index := int(Dictionary(ref).get("index", -1))
-		var binding: Dictionary = Dictionary(ref).get("binding", {})
-		var software_slot := int(binding.get("software_slot_index", -1))
-		if software_slot < 0 or software_slot >= payloads.size() or not (payloads[software_slot] is Dictionary):
-			continue
-		var module_payload: Dictionary = payloads[software_slot]
-		if String(module_payload.get("kind", "")) != "module":
-			continue
-		if _payload_torso_node_index(module_payload, unit_bp) != torso_node_index:
-			continue
-		if _module_binding_torso_node_index(role_key, unit_bp, binding) != torso_node_index:
-			continue
-		var module_part := _payload_part_for_payload(role_key, module_payload)
-		var binding_target_nodes: Array = Array(binding.get("target_nodes", []))
-		var group_nodes: Array = []
-		for raw_group_node in binding_target_nodes:
-			var group_node := int(raw_group_node)
-			if group_node >= 0 and segments_by_node.has(group_node):
-				group_nodes.append(group_node)
-		var group_id := "binding:%d:%s" % [binding_index, _editor_int_array_signature(group_nodes)]
-		if not group_nodes.is_empty():
-			allocation_groups.append({
-				"id": group_id,
-				"binding_index": binding_index,
-				"target_nodes": group_nodes.duplicate(true),
-				"root_index": int(binding.get("root_index", group_nodes[0])),
-				"label": _short_part_display_name(module_part, "ACTION"),
-			})
-		for raw_node in Array(binding.get("target_nodes", [])):
-			var node_index := int(raw_node)
-			if counted_nodes.has(node_index):
-				continue
-			if not segments_by_node.has(node_index):
-				continue
-			var segment: Dictionary = segments_by_node[node_index]
-			if String(segment.get("part_kind", "")) == "torso":
-				continue
-			var drive_kind := String(segment.get("joint_drive_kind", "rigid"))
-			if drive_kind == "rigid" or drive_kind == "port":
-				continue
-			var momentum := _engine_allocation_limb_momentum_for_node(binding, node_index, segment)
-			var default_momentum := _engine_allocation_default_limb_momentum(segment)
-			var min_momentum := maxf(0.0, float(segment.get("momentum_min", 0.0)))
-			var max_momentum := maxf(0.0, float(segment.get("momentum_max", 0.0)))
-			if max_momentum <= 0.0:
-				max_momentum = maxf(default_momentum, min_momentum)
-			var anchor := Vector2.ZERO
-			var a_value = segment.get("a_local", segment.get("a", Vector2.ZERO))
-			var b_value = segment.get("b_local", segment.get("b", a_value))
-			if a_value is Vector2 and b_value is Vector2:
-				anchor = (a_value + b_value) * 0.5
-			var duration_info := _engine_allocation_limb_duration_estimate(segment, module_part, momentum)
-			var duration_estimate := maxf(0.0, float(duration_info.get("duration", 0.0)))
-			var duration_context := _engine_allocation_limb_motion_context(segment, module_part)
-			var limb_heat_coeff := _limb_drive_heat_coeff_for_segment(segment, module_part)
-			counted_nodes[node_index] = true
-			entries.append({
-				"id": "limb:%d:%d" % [binding_index, node_index],
-				"kind": "limb",
-				"binding_index": binding_index,
-				"node_index": node_index,
-				"group_id": group_id,
-				"target_nodes": group_nodes.duplicate(true),
-				"label": _short_part_name(String(segment.get("name", "LIMB"))),
-				"line": ("%s %.0f-%.0f" if _ui_is_zh() else "%s %.0f-%.0f") % [_short_part_name(String(module_part.get("name", "ACT"))), min_momentum, max_momentum],
-				"ratio": momentum / maxf(1.0, pool) if pool > 0.0 else 0.0,
-				"momentum": momentum,
-				"min_momentum": min_momentum,
-				"max_momentum": max_momentum,
-				"default_momentum": default_momentum,
-				"duration_estimate": duration_estimate,
-				"duration_budget": duration_info,
-				"duration_label": _engine_allocation_limb_duration_label(module_part, min_momentum, max_momentum, duration_estimate),
-				"duration_module_part": module_part.duplicate(true),
-				"duration_motion_stats": Dictionary(duration_context.get("motion_stats", {})).duplicate(true),
-				"duration_angle_degrees": float(duration_context.get("angle_degrees", 180.0)),
-				"duration_extension_m": float(duration_context.get("extension_m", 0.0)),
-				"duration_fallback": float(duration_context.get("fallback_duration", 0.72)),
-				"heat_coeff": limb_heat_coeff,
-				"heat_color": Color(1.0, 0.38, 0.12, 1.0),
-				"anchor_local": anchor,
-				"disabled": pool <= 0.0,
-				"color": Color(0.38, 0.9, 1.0, 1.0),
-			})
-	var used_ratio := 0.0
-	for entry in entries:
-		if entry is Dictionary:
-			used_ratio += maxf(0.0, float(Dictionary(entry).get("ratio", 0.0)))
-	for i in range(entries.size()):
-		if entries[i] is Dictionary:
-			var entry: Dictionary = entries[i]
-			entry["over_budget"] = used_ratio > 1.0001
-			entries[i] = entry
-	var heat_summary := _engine_allocation_recalculate_heat(entries, cooling_pool, engine_heat_load)
-	entries = Array(heat_summary.get("entries", entries))
-	var display_entries := entries.duplicate(true)
-	if engine_heat_load > 0.0:
-		display_entries.insert(0, _engine_allocation_engine_heat_entry(engine_part, engine_heat_load, cooling_pool))
-	var title := "动力预算" if _ui_is_zh() else "DRIVE BUDGET"
-	var engine_label := _zh_part_name(String(engine_part.get("name", "引擎"))) if _ui_is_zh() else String(engine_part.get("name", "ENGINE"))
-	if not has_engine_payload:
-		engine_label = "未装引擎" if _ui_is_zh() else "NO ENGINE"
-	var subtitle := ("%s / %s / 池 %.0f = 1.00" if _ui_is_zh() else "%s / %s / POOL %.0f = 1.00") % [
-		engine_label,
-		_zh_part_name(String(torso_part.get("name", "躯干"))) if _ui_is_zh() else String(torso_part.get("name", "TORSO")),
-		pool,
-	]
+func _unit_editor_engine_allocation_callbacks() -> Dictionary:
 	return {
-		"title": title,
-		"subtitle": subtitle,
-		"engine_name": String(engine_part.get("name", "ENGINE")),
-		"torso_name": String(torso_part.get("name", "TORSO")),
-		"engine_output": pool,
-		"used_ratio": used_ratio,
-		"cooling_pool": cooling_pool,
-		"engine_heat_load": engine_heat_load,
-		"allocation_heat_used": maxf(0.0, float(heat_summary.get("allocation_heat_used", 0.0))),
-		"heat_used": maxf(0.0, float(heat_summary.get("heat_used", 0.0))),
-		"heat_ratio": maxf(0.0, float(heat_summary.get("heat_ratio", 0.0))),
-		"thermal_margin": float(heat_summary.get("thermal_margin", cooling_pool)),
-		"entries": entries,
-		"display_entries": display_entries,
-		"segments": segments,
-		"allocation_groups": allocation_groups,
-		"torso_node": torso_node_index,
-		"engine_payload_index": engine_payload_index,
-		"has_engine": has_engine_payload,
+		"editor_current_stats": Callable(self, "_editor_current_stats"),
+		"payload_torso_node_index": Callable(self, "_payload_torso_node_index"),
+		"payload_part_for_payload": Callable(self, "_payload_part_for_payload"),
+		"topology_node_part": Callable(self, "_topology_node_part"),
+		"engine_allocation_pool_for_torso": Callable(self, "_engine_allocation_pool_for_torso"),
+		"thermal_load_pool_for_stats": Callable(self, "_thermal_load_pool_for_stats"),
+		"engine_allocation_engine_idle_heat_for_torso": Callable(self, "_engine_allocation_engine_idle_heat_for_torso"),
+		"thruster_drive_allocation_min_for_part": Callable(self, "_thruster_drive_allocation_min_for_part"),
+		"thruster_drive_allocation_max_for_part": Callable(self, "_thruster_drive_allocation_max_for_part"),
+		"thruster_drive_allocated_for_payload": Callable(self, "_thruster_drive_allocated_for_payload"),
+		"thruster_boost_brake_allocation_min_for_part": Callable(self, "_thruster_boost_brake_allocation_min_for_part"),
+		"thruster_boost_brake_allocation_max_for_part": Callable(self, "_thruster_boost_brake_allocation_max_for_part"),
+		"thruster_boost_brake_allocated_for_payload": Callable(self, "_thruster_boost_brake_allocated_for_payload"),
+		"thruster_idle_heat_coeff_for_part": Callable(self, "_thruster_idle_heat_coeff_for_part"),
+		"thruster_with_drive_defaults": Callable(self, "_thruster_with_drive_defaults"),
+		"short_part_display_name": Callable(self, "_short_part_display_name"),
+		"short_part_name": Callable(self, "_short_part_name"),
+		"engine_allocation_sorted_binding_refs": Callable(self, "_engine_allocation_sorted_binding_refs"),
+		"module_binding_torso_node_index": Callable(self, "_module_binding_torso_node_index"),
+		"engine_allocation_limb_momentum_for_node": Callable(self, "_engine_allocation_limb_momentum_for_node"),
+		"engine_allocation_default_limb_momentum": Callable(self, "_engine_allocation_default_limb_momentum"),
+		"engine_allocation_limb_duration_estimate": Callable(self, "_engine_allocation_limb_duration_estimate"),
+		"engine_allocation_limb_motion_context": Callable(self, "_engine_allocation_limb_motion_context"),
+		"limb_drive_heat_coeff_for_segment": Callable(self, "_limb_drive_heat_coeff_for_segment"),
+		"engine_allocation_limb_duration_label": Callable(self, "_engine_allocation_limb_duration_label"),
+		"editor_int_array_signature": Callable(self, "_editor_int_array_signature"),
+		"zh_part_name": Callable(self, "_zh_part_name"),
 	}
+
+
+func _engine_momentum_allocation_data(unit_bp: Dictionary, torso_node_index: int, engine_payload_index: int) -> Dictionary:
+	return _unit_editor_engine_allocation_service().allocation_data(
+		unit_bp,
+		torso_node_index,
+		engine_payload_index,
+		_unit_editor_engine_allocation_callbacks(),
+		_ui_is_zh(),
+		String(unit_bp.get("role", ROLE_ORDER[editor_role_index]))
+	)
 
 
 func _engine_allocation_entry_for_id(data: Dictionary, entry_id: String) -> Dictionary:
@@ -14235,6 +14052,49 @@ func _editor_board_snapshot_cache_key(role_key: String, unit_bp: Dictionary) -> 
 	return "|".join(bits)
 
 
+func _editor_assembly_template_callbacks() -> Dictionary:
+	return {
+		"selected_component": Callable(self, "_selected_component"),
+		"short_part_name": Callable(self, "_short_part_name"),
+		"topology_node_is_component": Callable(self, "_topology_node_is_component"),
+		"topology_node_slot": Callable(self, "_topology_node_slot"),
+		"topology_node_resolved_part_index": Callable(self, "_topology_node_resolved_part_index"),
+		"topology_node_part": Callable(self, "_topology_node_part"),
+		"component_is_torso": Callable(self, "_component_is_torso"),
+		"payload_slot_key_for_kind": Callable(self, "_payload_slot_key_for_kind"),
+		"payload_part_for_payload": Callable(self, "_payload_part_for_payload"),
+		"runtime_module_bindings_for_blueprint": Callable(self, "_runtime_module_bindings_for_blueprint"),
+	}
+
+
+func _editor_assembly_template_model(role_key: String, unit_bp: Dictionary, visual_stats: Dictionary = {}) -> Dictionary:
+	return _unit_editor_assembly_template_service().model(
+		role_key,
+		unit_bp,
+		visual_stats,
+		_editor_assembly_template_callbacks(),
+		_ui_is_zh()
+	)
+
+
+func _apply_editor_assembly_template_snapshot_fields(snapshot: Dictionary, role_key: String, unit_bp: Dictionary, visual_stats: Dictionary, preserve_existing: bool = true) -> String:
+	var model := {}
+	if preserve_existing and visual_stats.is_empty() and assembly_board_view != null:
+		var current_model = assembly_board_view.board_snapshot.get("assembly_template_model", {})
+		if current_model is Dictionary and not Dictionary(current_model).is_empty():
+			model = Dictionary(current_model).duplicate(true)
+	if model.is_empty():
+		model = _editor_assembly_template_model(role_key, unit_bp, visual_stats)
+	if model.is_empty():
+		snapshot.erase("assembly_template_model")
+		snapshot.erase("assembly_template_signature")
+		return ""
+	var signature := String(model.get("signature", ""))
+	snapshot["assembly_template_model"] = model
+	snapshot["assembly_template_signature"] = signature
+	return signature
+
+
 func _editor_board_dynamic_revision_key() -> String:
 	return "|".join([
 		str(editor_topology_node_index),
@@ -14408,6 +14268,7 @@ func _apply_editor_board_dynamic_fields(snapshot: Dictionary, role_key: String, 
 	snapshot["joint_slot_profiles"] = Array(visual_stats.get("joint_slot_profiles", snapshot.get("joint_slot_profiles", [])))
 	snapshot["swept_collision_count"] = int(visual_stats.get("swept_collision_count", snapshot.get("swept_collision_count", 0)))
 	snapshot["material_warning_nodes"] = editor_material_warning_nodes.duplicate()
+	var assembly_template_signature := _apply_editor_assembly_template_snapshot_fields(snapshot, role_key, unit_bp, visual_stats)
 	var binding_highlights := {}
 	if not editor_pending_module_binding.is_empty() and (engine_momentum_allocation_view == null or not engine_momentum_allocation_view.visible):
 		binding_highlights = _editor_binding_highlights_for_board(unit_bp)
@@ -14434,7 +14295,7 @@ func _apply_editor_board_dynamic_fields(snapshot: Dictionary, role_key: String, 
 				"node_a": editor_dragging_node_index,
 				"node_b": int(socket_candidate.get("target", -1)),
 			}
-	snapshot["revision_key"] = "%s|dyn:%s" % [base_key, _editor_board_dynamic_revision_key()]
+	snapshot["revision_key"] = "%s|dyn:%s|tpl:%s" % [base_key, _editor_board_dynamic_revision_key(), assembly_template_signature]
 	return snapshot
 
 
@@ -14480,6 +14341,14 @@ func _apply_editor_board_pose_dynamic_fields(snapshot: Dictionary, role_key: Str
 	snapshot["pose_downstream_nodes"] = editor_pose_downstream_nodes.duplicate()
 	snapshot["material_warning_nodes"] = editor_material_warning_nodes.duplicate()
 	var current_board_snapshot: Dictionary = assembly_board_view.board_snapshot if assembly_board_view != null else {}
+	var assembly_template_signature := String(current_board_snapshot.get("assembly_template_signature", ""))
+	var assembly_template_model = current_board_snapshot.get("assembly_template_model", {})
+	if assembly_template_model is Dictionary and not Dictionary(assembly_template_model).is_empty():
+		snapshot["assembly_template_model"] = Dictionary(assembly_template_model).duplicate(true)
+		snapshot["assembly_template_signature"] = assembly_template_signature
+	else:
+		snapshot.erase("assembly_template_model")
+		snapshot.erase("assembly_template_signature")
 	var pose_binding_highlights := {}
 	if not editor_pending_module_binding.is_empty() and (engine_momentum_allocation_view == null or not engine_momentum_allocation_view.visible):
 		pose_binding_highlights = _editor_binding_highlights_for_board(unit_bp)
@@ -14550,7 +14419,7 @@ func _apply_editor_board_pose_dynamic_fields(snapshot: Dictionary, role_key: Str
 		state["socket_b"] = String(edge_points.get("socket_b", ""))
 		edge_states[key] = state
 	snapshot["edge_states"] = edge_states
-	snapshot["revision_key"] = "%s|pose-dyn:%s:%s" % [base_key, _editor_board_dynamic_revision_key(), _editor_int_array_signature(changed_nodes)]
+	snapshot["revision_key"] = "%s|pose-dyn:%s:%s|tpl:%s" % [base_key, _editor_board_dynamic_revision_key(), _editor_int_array_signature(changed_nodes), assembly_template_signature]
 	return snapshot
 
 
@@ -24829,6 +24698,45 @@ func _power_allocation_service() -> PowerAllocationService:
 	if power_allocation_service == null:
 		power_allocation_service = PowerAllocationService.new()
 	return power_allocation_service
+
+
+func _unit_stats_service() -> UnitStatsService:
+	if unit_stats_service == null:
+		unit_stats_service = UnitStatsService.new()
+		unit_stats_service.bind(self, derived_state_cache)
+	return unit_stats_service
+
+
+func _unit_stats_base_constants() -> Dictionary:
+	return {
+		"deploy_wait_seconds": DEPLOY_WAIT_SECONDS,
+		"melee_stability_threshold_floor": MELEE_STABILITY_THRESHOLD_FLOOR,
+		"economy_boost_momentum_mult": ECONOMY_BOOST_MOMENTUM_MULT,
+		"identity_switch_cooldown_seconds": IDENTITY_SWITCH_COOLDOWN_SECONDS,
+		"barrier_map_columns": BARRIER_MAP_COLUMNS,
+		"barrier_map_rows": BARRIER_MAP_ROWS,
+		"barrier_blueprint_width": BARRIER_BLUEPRINT_WIDTH,
+		"barrier_blueprint_height": BARRIER_BLUEPRINT_HEIGHT,
+		"bullet_hell_default_speed_mult": BULLET_HELL_DEFAULT_SPEED_MULT,
+		"laser_default_aim_seconds": LASER_DEFAULT_AIM_SECONDS,
+		"true_bullet_default_lock_seconds": TRUE_BULLET_DEFAULT_LOCK_SECONDS,
+		"true_bullet_default_lock_radius": TRUE_BULLET_DEFAULT_LOCK_RADIUS,
+		"chemical_dot_default_duration": CHEMICAL_DOT_DEFAULT_DURATION,
+		"chemical_dot_default_mult": CHEMICAL_DOT_DEFAULT_MULT,
+		"chemical_dot_default_frontload": CHEMICAL_DOT_DEFAULT_FRONTLOAD,
+	}
+
+
+func _unit_editor_assembly_template_service() -> UnitEditorAssemblyTemplateService:
+	if unit_editor_assembly_template_service == null:
+		unit_editor_assembly_template_service = UnitEditorAssemblyTemplateService.new()
+	return unit_editor_assembly_template_service
+
+
+func _unit_editor_engine_allocation_service() -> UnitEditorEngineAllocationService:
+	if unit_editor_engine_allocation_service == null:
+		unit_editor_engine_allocation_service = UnitEditorEngineAllocationService.new()
+	return unit_editor_engine_allocation_service
 
 
 func _action_profile_registry() -> ActionProfileRegistry:
@@ -36865,499 +36773,16 @@ func _compute_unit_stats(player_id: int, role_key: String, unit_index: int = -1,
 	var manufacturer_counts := _manufacturer_counts_for_blueprint(role_key, unit_bp)
 	var manufacturer_discount := _manufacturer_discount_from_counts(manufacturer_counts)
 
-	var stats := {
-		"role": role_key,
+	var stats := _unit_stats_service().base_stats({
+		"role_key": role_key,
 		"unit_index": resolved_index,
-		"name": String(unit_bp.get("name", _role_name(role_key))),
-		"cost": 0,
-		"health": 30,
-		"mass": 0.0,
-		"structural_mass": 0.0,
-		"power": 0.0,
-		"energy": 0.0,
-		"power_load": 0.0,
-		"length": 0.0,
-		"cooling": 0.0,
-		"heat_capacity": 0.0,
-		"hardware_heat_capacity": 0.0,
-		"cooling_heat_capacity": 0.0,
-		"soul_heat_capacity": 0.0,
-		"soul_heat_note": "",
-		"engine_idle_heat": 0.0,
-		"booster_idle_heat": 0.0,
-		"idle_heat_load": 0.0,
-		"thermal_margin": 0.0,
-		"thermal_note": "",
-		"thermal_pool": 0.0,
-		"thermal_load_pool": 0.0,
-		"thermal_dissipation_rate": 0.0,
-		"heat_dissipation": 0.0,
-		"cooling_pool": 0.0,
-		"cooling_rate": 0.0,
-		"runtime_cooling_rate": 0.0,
-		"radius": 0.08,
-		"speed_mult": 1.0,
-		"cornering": 1.0,
-		"speed_lane_affinity": 0.0,
-		"normal_damage": 9,
-		"armor_damage": 7,
-		"active_damage": 17,
-		"normal_range": 0.36,
-		"armor_range": 0.24,
-		"active_range": 0.52,
-		"normal_lane_range": 0.24,
-		"armor_lane_range": 0.2,
-		"active_lane_range": 0.32,
-		"normal_knock": 0.08,
-		"armor_knock": 0.05,
-		"active_knock": 0.14,
-		"normal_duration": 0.2,
-		"armor_duration": 0.42,
-		"active_duration": 0.28,
-		"normal_cooldown": 0.34,
-		"armor_cooldown": 0.5,
-		"active_cooldown": 0.74,
-		"normal_heat": 0.0,
-		"armor_heat": 0.0,
-		"active_heat": 0.0,
-		"move_heat": 0.0,
-		"back_hit_heat_bonus": 0.0,
-		"back_hit_heat_mult": 1.0,
-		"deploy_wait": DEPLOY_WAIT_SECONDS,
-		"projectile": false,
-		"engine_power": 0.0,
-		"aux_power": 0.0,
-		"engine_count": 0,
-		"engine_torque": 0.0,
-		"engine_volume_rank": 0.0,
-		"engine_momentum_budget": 0.0,
-		"engine_joint_momentum_budget": 0.0,
-		"engine_thruster_momentum_budget": 0.0,
-		"engine_momentum_required": 0.0,
-		"engine_momentum_margin": 0.0,
-		"engine_momentum_ratio": 1.0,
-		"engine_momentum_note": "",
-		"thruster_engine_demand": 0.0,
-		"bound_joint_engine_demand": 0.0,
-		"bound_joint_count": 0,
-		"bound_joint_output_momentum": 0.0,
-		"estimated_joint_motion_speed": 0.0,
-		"estimated_module_duration": 0.0,
-		"required_power": 0.0,
-		"power_ratio": 1.0,
-		"power_margin": 0.0,
-		"usable_power": 1.0,
-		"power_note": "",
-		"damage_type": "blunt",
-		"material_class": "weapon",
-		"connection_ends": 1,
-		"joint_ports": 0,
-		"weapon_bays": 0,
-		"engine_slots": 0,
-		"booster_slots": 0,
-		"cooling_slots": 0,
-		"module_slots": 0,
-		"torso_slots": 0,
-		"torso_slot_mass_limit": 0.0,
-		"torso_slot_volume_rank_limit": 0.0,
-		"slot_payload_count": 0,
-		"slot_payload_mass": 0.0,
-		"slot_payload_volume_rank": 0.0,
-		"slot_payload_note": "",
-		"spare_weapon_slots": 0,
-		"spare_weapon_mass_limit": 0.0,
-		"ammo_capacity": {"bullet": 0, "chemical": 0, "laser": 0},
-		"ammo_slot_count": 0,
-		"ammo_slot_mass": 0.0,
-		"ammo_note": "",
-		"electronic_armor_max": 0.0,
-		"electronic_armor_regen": 0.0,
-		"electronic_armor_coverage": 0.0,
-		"electronic_armor_note": "",
-		"shield_max": 0.0,
-		"shield_regen": 0.0,
-		"shield_coverage": 0.0,
-		"shield_note": "",
-		"attitude_control": 0.85,
-		"melee_stability_core": 0.85,
-		"melee_stability_threshold": MELEE_STABILITY_THRESHOLD_FLOOR,
-		"recoil_stabilization": 0.65,
-		"knockback_resist": 0.12,
-		"recovery_response": 0.85,
-		"attitude_control_note": "",
-		"load_capacity": 0.0,
-		"stiffness": 0.0,
-		"momentum_capacity": 0.0,
-		"torso_break_threshold": 0.0,
-		"torso_stiffness_segment_hp": 0.0,
-		"torso_stiffness_segment_count": 0,
-		"torso_stiffness_segments": [],
-		"torso_material_family": "",
-		"torso_material_mixed": false,
-		"torso_resist": {"bullet": 1.0, "chemical": 1.0, "laser": 1.0, "blunt": 1.0, "pierce": 1.0, "tear": 1.0},
-		"stiffness_note": "",
-		"stiffness_segment_valid": true,
-		"max_possible_momentum": 0.0,
-		"weakest_group_stiffness": 0.0,
-		"momentum_overload_ratio": 1.0,
-		"momentum_note": "",
-		"worst_joint_momentum": 0.0,
-		"weakest_joint_momentum_capacity": 0.0,
-		"max_joint_output_momentum": 0.0,
-		"joint_momentum_overload_ratio": 1.0,
-		"joint_momentum_note": "",
-		"joint_slot_profiles": [],
-		"joint_slot_count": 0,
-		"joint_slot_note": "",
-		"swept_collision_note": "",
-		"swept_collision_count": 0,
-		"terminal_weapon_mass": 0.0,
-		"load_overload_ratio": 1.0,
-		"load_note": "",
-		"requires_dual_mount": false,
-		"dual_mount_module": false,
-		"dual_mount_points": 1,
-		"dual_mount_load_mult": 1.0,
-		"recoil_brace_mult": 1.0,
-		"allows_vertical_overlap": false,
-		"vertical_overlap_ports": 0,
-		"resistances": {"bullet": 1.0, "chemical": 1.0, "laser": 1.0, "blunt": 1.0, "pierce": 1.0, "tear": 1.0},
-		"counter_tiers": {"bullet": 0, "chemical": 0, "laser": 0, "blunt": 0, "pierce": 0, "tear": 0},
-		"recoil": 0.06,
-		"cancel_profile": "none",
-		"cancel_power": 0.0,
-		"aim_mode": "fixed",
-		"motion": "straight",
-		"aim_swing": 5.5,
-		"auto_swing": 2.4,
-		"thruster_family": "",
-		"movement_profile": "",
-		"flame_color": "blue",
-		"brake_efficiency": 1.0,
-		"move_efficiency": 1.0,
-		"boost_efficiency": ECONOMY_BOOST_MOMENTUM_MULT,
-		"turn_efficiency": 1.0,
-		"boost_angle_degrees": 360.0,
-		"boost_cooldown": 0.5,
-		"boost_heat": 0.0,
-		"thruster_drive_demand": 0.0,
-		"thruster_allocated_momentum": 0.0,
-		"thruster_efficiency_weight": 0.0,
-		"move_efficiency_sum": 0.0,
-		"boost_efficiency_sum": 0.0,
-		"turn_efficiency_sum": 0.0,
-		"thruster_momentum": 0.0,
-		"boost_momentum": 0.0,
-		"boost_total_momentum": 0.0,
-		"thruster_duration": 0.0,
-		"body_move_speed": 0.0,
-		"boost_speed": 0.0,
-		"thruster_acceleration": 0.0,
-		"brake_power": 0.0,
-		"boost_duration": 0.0,
-		"thruster_boost_extra_demand": 0.0,
-		"thruster_boost_peak_demand": 0.0,
-		"thruster_effective_drive_demand": 0.0,
-		"thruster_effective_boost_peak_demand": 0.0,
-		"engine_drive_chain_ratio": 0.0,
-		"engine_boost_chain_ratio": 0.0,
-		"turn_speed": 2.4,
-		"turn_acceleration": 4.2,
-		"turn_damping": 3.2,
-		"turn_inertia": 1.0,
-		"recoil_cancel": 0.45,
-		"engine_weapon_tags": [],
-		"engine_team_roles": [],
-		"engine_heat_profiles": [],
-		"engine_recoil_stability": 1.0,
-		"engine_boost_control": 1.0,
-		"engine_command_drive": 1.0,
-		"engine_supply_load": 1.0,
-		"boost_cooling_mult": 1.0,
-		"pierce_range_bonus": 0.0,
-		"tear_range_bonus": 0.0,
-		"manual_cooling": 48.0,
-		"cooling_profiles": [],
-		"weapon_heat_tags": [],
-		"repeat_heat_relief": 0.0,
-		"projectile_heat_relief": 0.0,
-		"boost_heat_relief": 0.0,
-		"laser_heat_relief": 0.0,
-		"chemical_heat_relief": 0.0,
-		"missile_heat_relief": 0.0,
-		"overheat_clear_ratio": 0.42,
-		"overheat_shutdown_mult": 1.0,
-		"cooling_aura_bonus": 0.0,
-		"shape": "core",
-		"command": "236",
-		"skill_state": "active",
-		"sequence": ["normal"],
-		"group_count": 1,
-		"ai": "direct",
-		"source_rules": {},
-		"module_sequence_limit": 1,
-		"condition_slots": 1,
-		"has_soul": false,
-		"soul_anchor_torso_unit_index": -1,
-		"soul_bonus_active": false,
-		"soul_note": "",
-		"soul_archetype": "",
-		"soul_oath_active": false,
-		"soul_oath_reason": "",
-		"soul_echo_window": 0.0,
-		"soul_echo_recovery_mult": 1.0,
-		"soul_echo_heat_relief": 0.0,
-		"orbit_radius": 0.45,
-		"hold_range": 0.82,
-		"flank_width": 0.55,
-		"barrier_logic": "pulse",
-		"aura_range": 0.58,
-		"aura_heat": 0.0,
-		"ally_cooling": 0.0,
-		"slow_power": 0.0,
-		"pulse_interval": 1.25,
-		"role_switch": "",
-		"switch_cooldown": IDENTITY_SWITCH_COOLDOWN_SECONDS,
-		"identity_receiver_role": "",
-		"identity_receiver_order": 0,
-		"role_form_target_role": "",
-		"role_form_mech_role": "puppet",
-		"role_form_shape": "",
-		"combine_partner_count": 1,
-		"combine_max_partners": 1,
-		"combine_shape": "",
-		"material_slots": 0,
-		"space_size": 0.0,
-		"barrier_map_tiles": [],
-		"barrier_map_columns": BARRIER_MAP_COLUMNS,
-		"barrier_map_rows": BARRIER_MAP_ROWS,
-		"barrier_map_width": BARRIER_BLUEPRINT_WIDTH,
-		"barrier_map_height": BARRIER_BLUEPRINT_HEIGHT,
-		"barrier_damage_type": "",
-		"damage_boost_type": "",
-		"damage_boost_mult": 1.0,
-		"barrier_disconnected": false,
-		"ether_count": 0,
-		"ether_bind_radius_m": 0.0,
-		"ether_group_link_limit": -1,
-		"ether_group_capacity": 1,
-		"ether_group_kind": "",
-		"ether_effects": [],
-		"module_effect": "",
-		"module_state": "",
-		"fracture_trigger": "",
-		"fracture_exception_group": false,
-		"fracture_ai": "",
-		"module_range": 0.0,
-		"module_lane_range": 0.0,
-		"module_damage_mult": 1.0,
-		"projectile_style": "",
-		"projectile_behavior": "",
-		"projectile_range": 0.0,
-		"projectile_momentum": 0.0,
-		"projectile_speed_mult": BULLET_HELL_DEFAULT_SPEED_MULT,
-		"travel_path": "",
-		"laser_aim_time": LASER_DEFAULT_AIM_SECONDS,
-		"bullet_lock_time": TRUE_BULLET_DEFAULT_LOCK_SECONDS,
-		"bullet_lock_radius": TRUE_BULLET_DEFAULT_LOCK_RADIUS,
-		"chemical_dot_duration": CHEMICAL_DOT_DEFAULT_DURATION,
-		"chemical_dot_mult": CHEMICAL_DOT_DEFAULT_MULT,
-		"chemical_frontload": CHEMICAL_DOT_DEFAULT_FRONTLOAD,
-		"chemical_pellets": 1,
-		"chemical_spread": 0.0,
-		"pull_power": 0.0,
-		"non_damage": false,
-		"web_strength": 0.0,
-		"web_break_force": 0.0,
-		"web_pull_mode": "",
-		"blind_radius": 0.0,
-		"blind_duration": 0.0,
-		"blind_strength": 0.0,
-		"data_security": 1.0,
-		"security_note": "",
-		"cool_burst": 0.0,
-		"cool_lock": 0.0,
-		"cool_overheat_clear": false,
-		"takeover_on_hit": false,
-		"takeover_seconds": 0.0,
-		"takeover_power": 1.0,
-		"takeover_damage_rate": 0.0,
-		"takeover_damage_type": "laser",
-		"is_signal_jammer": false,
-		"jam_radius": 0.0,
-		"jam_seconds": 0.0,
-		"jam_power": 1.0,
-		"jam_duration": 0.0,
-		"jam_affects": "enemy",
-		"is_repair_station": false,
-		"repair_rate": 0.0,
-		"repair_capacity": 0,
-		"station_repair_mult": 1.0,
-		"retreat_on_defeat": false,
-		"retreat_repair_rate": 0.0,
-		"repair_time_mult": 1.0,
-		"prefer_repair_station": false,
-		"is_hatchery": false,
-		"hatch_profile": "",
-		"hatch_interval": 0.0,
-		"hatch_limit": 0,
-		"hatch_ai": "",
-		"hatch_modifier": "",
-		"is_gravity_field": false,
-		"gravity_force": 0.0,
-		"gravity_direction": "",
-		"gravity_radius": 0.0,
-		"is_coolant_field": false,
-		"coolant_radius": 0.0,
-		"coolant_boost": 0.0,
-		"coolant_affects": "ally",
-		"is_heat_field": false,
-		"heat_field_radius": 0.0,
-		"heat_field_rate": 0.0,
-		"heat_field_affects": "all",
-		"is_repulsion_field": false,
-		"repulsion_radius": 0.0,
-		"repulsion_force": 0.0,
-		"is_hack_field": false,
-		"hack_radius": 0.0,
-		"hack_seconds": 0.0,
-		"hack_power": 1.0,
-		"is_trap_field": false,
-		"trap_radius": 0.0,
-		"trap_effect": "",
-		"trap_command": "",
-		"trap_cooldown": 0.0,
-		"trap_power": 0.0,
-		"trap_damage": 0,
-		"trap_damage_type": "",
-		"trap_slow_duration": 0.0,
-		"trap_affects": "enemy",
-		"trap_direction_mode": "input",
-		"trap_link": "",
-		"lease_rate": 0.0,
-		"lease_heat_penalty": 0.0,
-		"reflect_projectiles": false,
-		"reflect_types": [],
-		"reflect_power": 0.0,
-		"reflect_bonus_range": 0.0,
-		"reflect_affects": "ally",
-		"shield_duration": 0.0,
-		"control_pages": [],
-		"can_control_traps": false,
-		"is_barrage_emitter": false,
-		"barrage_mode": "",
-		"barrage_interval": 0.0,
-		"barrage_damage": 0,
-		"barrage_damage_type": "bullet",
-		"barrage_range": 0.0,
-		"barrage_lane_range": 0.0,
-		"barrage_heat": 0.0,
-		"barrage_style": "",
-		"barrage_spin_rate": 1.0,
-		"barrage_affects": "enemy",
-		"explosion_radius": 0.0,
-		"explosion_damage": 0,
-		"explosion_damage_type": "",
-		"explosion_style": "",
-		"entry_breach_damage": 0,
-		"entry_breach_damage_type": "blunt",
-		"entry_breach_self_heat": 0.0,
-		"has_escape_pod": false,
-		"escape_speed": 0.0,
-		"escape_module_slots": 0,
-		"escape_target_ring_delta": 2.8,
-		"escape_target_lane": 0.0,
-		"bounty_reward": 0,
-		"insured_refund": 0,
-		"annuity_rate": 0.0,
-		"entry_grant": 0,
-		"owner_destroy_penalty": 0,
-		"is_cage_wall": false,
-		"cage_radius": 0.0,
-		"cage_damage": 0,
-		"cage_damage_type": "blunt",
-		"cage_repel": 0.0,
-		"cage_hit_interval": 0.6,
-		"cage_affects": "enemy",
-		"cage_shape": "",
-		"is_homing_launcher": false,
-		"homing_radius": 0.0,
-		"homing_interval": 0.0,
-		"homing_accuracy": 0.0,
-		"homing_damage": 0,
-		"homing_damage_type": "bullet",
-		"homing_heat": 0.0,
-		"homing_knock": 0.08,
-		"homing_affects": "enemy",
+		"unit_name": String(unit_bp.get("name", _role_name(role_key))),
 		"manufacturer_counts": manufacturer_counts,
 		"manufacturer_locked": _dominant_hardware_maker(manufacturer_counts),
-		"manufacturer_note": "",
-		"suicide_on_hit": false,
-		"vuln_kind": "",
-		"vuln_mult": 1.0,
-		"vuln_duration": 0.0,
-		"blast_radius": 0.0,
-		"ball_puppet": false,
-		"ball_hit_damage": 0,
-		"racket_power": 0.0,
-		"racket_lane_lift": 0.0,
-		"serve_range": 0.0,
-		"combine_range": 0.0,
-		"combine_bonus_hp": 0,
-		"is_resource_siphon": false,
-		"siphon_radius": 0.0,
-		"siphon_rate": 0.0,
-		"is_support_node": false,
-		"support_kind": "",
-		"support_radius": 0.0,
-		"support_rate": 0.0,
-		"support_amount": 0,
-		"support_refill_seconds": 1.0,
-		"support_ammo_type": "",
-		"support_buff_type": "",
-		"support_buff_mult": 1.0,
-		"support_duration": 0.0,
-		"support_affects": "ally",
-		"support_field_shape": "circle",
-		"is_support_platform": false,
-		"platform_pair_range": 0.0,
-		"platform_width": 0.0,
-		"platform_armor_hp": 0.0,
-		"is_speed_lane": false,
-		"speed_lane_radius": 0.0,
-		"speed_lane_width": 0.0,
-		"speed_lane_mult": 1.0,
-		"speed_lane_pull": 0.0,
-		"speed_lane_affects": "all",
-		"speed_lane_bidirectional": true,
-		"speed_field_shape": "rectangle",
-		"is_coin_generator": false,
-		"coin_interval": 0.0,
-		"coin_value": 0,
-		"coin_ttl": 0.0,
-		"coin_spawn_radius": 0.0,
-		"coin_pickup_radius": 0.0,
-		"is_one_way_shield": false,
-		"shield_radius": 0.0,
-		"shield_lane_width": 0.0,
-		"shield_pass_mode": "directional",
-		"shield_pass_direction": "facing",
-		"shield_block_damage_mult": 1.0,
-		"shield_affects": "enemy",
-		"pirate_discount": 0.0,
-		"betrayal_chance": 0.0,
-		"morph_modes": [],
-		"morph_cooldown": 0.0,
-		"charge_time": 0.0,
-		"focus_cost": 0.0,
-		"receiver": false,
-		"size_class": "standard",
-		"deploy_cost": 0,
 		"primary_color": _team_primary_color(player_id),
 		"accent_color": _team_accent_color(player_id),
-		"torso_visual_shape": "core",
-		"torso_visual_material": "metal",
-	}
+		"constants": _unit_stats_base_constants(),
+	})
 
 	if _unit_blueprint_is_blank_canvas(role_key, unit_bp):
 		return _blank_canvas_stats(stats, player_id, role_key, resolved_index)
@@ -37444,60 +36869,15 @@ func _compute_unit_stats(player_id: int, role_key: String, unit_index: int = -1,
 			stats["allows_vertical_overlap"] = bool(stats["allows_vertical_overlap"]) or bool(part["allows_vertical_overlap"])
 		if part.has("vertical_overlap_ports"):
 			stats["vertical_overlap_ports"] = max(int(stats.get("vertical_overlap_ports", 0)), int(part["vertical_overlap_ports"]))
-		if part.has("normal_heat") and not part_is_torso:
-			stats["normal_heat"] = float(part["normal_heat"])
-		if part.has("armor_heat") and not part_is_torso:
-			stats["armor_heat"] = float(part["armor_heat"])
-		if part.has("active_heat") and not part_is_torso:
-			stats["active_heat"] = float(part["active_heat"])
-		if part.has("projectile") and not part_is_torso:
-			stats["projectile"] = bool(part["projectile"])
-		if part.has("projectile_damage_type") and not part_is_torso:
-			stats["projectile_damage_type"] = String(part["projectile_damage_type"])
-		if part.has("projectile_style") and not part_is_torso:
-			stats["projectile_style"] = String(part["projectile_style"])
-		if part.has("projectile_behavior") and not part_is_torso:
-			stats["projectile_behavior"] = String(part["projectile_behavior"])
-		if part.has("projectile_range") and not part_is_torso:
-			stats["projectile_range"] = float(part["projectile_range"])
-		if part.has("projectile_momentum") and not part_is_torso:
-			stats["projectile_momentum"] = maxf(float(stats.get("projectile_momentum", 0.0)), float(part["projectile_momentum"]))
-		if part.has("projectile_mass") and not part_is_torso:
-			stats["projectile_mass"] = maxf(float(stats.get("projectile_mass", 0.0)), float(part["projectile_mass"]))
-		if part.has("projectile_collision_speed") and not part_is_torso:
-			stats["projectile_collision_speed"] = maxf(float(stats.get("projectile_collision_speed", 0.0)), float(part["projectile_collision_speed"]))
-		if part.has("projectile_speed_mult") and not part_is_torso:
-			stats["projectile_speed_mult"] = float(part["projectile_speed_mult"])
-		for missile_key in ["missile_lock_priority", "missile_lock_cone_degrees", "missile_lock_range", "missile_lock_target_classes", "missile_occlusion_grace"]:
-			if part.has(missile_key) and not part_is_torso:
-				stats[missile_key] = part[missile_key]
-		if part.has("travel_path") and not part_is_torso:
-			stats["travel_path"] = String(part["travel_path"])
-		if part.has("laser_aim_time") and not part_is_torso:
-			stats["laser_aim_time"] = float(part["laser_aim_time"])
-		if part.has("bullet_lock_time") and not part_is_torso:
-			stats["bullet_lock_time"] = float(part["bullet_lock_time"])
-		if part.has("bullet_lock_radius") and not part_is_torso:
-			stats["bullet_lock_radius"] = float(part["bullet_lock_radius"])
+		_unit_stats_service().copy_part_combat_stats(stats, part, {
+			"part_is_torso": part_is_torso,
+		})
 		if part.has("ammo_capacity"):
 			_merge_ammo_capacity(stats, part["ammo_capacity"])
 		if bool(part.get("electronic_armor", false)):
 			_merge_electronic_armor_stats(stats, part)
-		if part.has("damage_type") and not part_is_torso:
-			stats["damage_type"] = String(part["damage_type"])
 		if part.has("material_class"):
 			stats["material_class"] = String(part["material_class"])
-		if part.has("data_security"):
-			var security_value := float(part["data_security"])
-			if bool(part.get("is_torso", false)) or String(part.get("material_class", "")) == "torso":
-				stats["data_security"] = maxf(float(stats["data_security"]), security_value) if security_value >= 1.0 else minf(float(stats["data_security"]), clampf(security_value, 0.25, 1.0))
-			else:
-				stats["data_security"] = float(stats["data_security"]) + security_value
-		if part.has("takeover_power"):
-			var intrusion_value := float(part["takeover_power"])
-			stats["takeover_power"] = maxf(float(stats["takeover_power"]), intrusion_value) if intrusion_value >= 1.0 else float(stats["takeover_power"]) + intrusion_value
-		if part.has("size_class"):
-			stats["size_class"] = String(part["size_class"])
 		if part.has("connection_ends"):
 			stats["connection_ends"] = max(int(stats["connection_ends"]), int(part["connection_ends"]))
 		if part_is_torso:
@@ -37576,21 +36956,11 @@ func _compute_unit_stats(player_id: int, role_key: String, unit_index: int = -1,
 		if part.has("space_size") and part_kind != "ether":
 			stats["aura_range"] = float(part["space_size"])
 			stats["active_range"] = maxf(float(stats["active_range"]), float(part["space_size"]) * 0.78)
-		for logic_key in ["orbit_radius", "hold_range", "flank_width", "source_target_policy", "source_attack_preference", "source_close_response", "source_threat_override_range", "source_keep_range", "source_heat_focus_ratio", "barrier_logic", "aura_range", "aura_heat", "ally_cooling", "slow_power", "pulse_interval", "role_switch", "switch_cooldown", "identity_receiver_role", "identity_receiver_order", "role_form_target_role", "role_form_mech_role", "role_form_shape", "combine_partner_count", "combine_max_partners", "combine_shape", "module_effect", "module_state", "module_range", "module_lane_range", "module_damage_mult", "pull_power", "non_damage", "web_strength", "web_break_force", "web_pull_mode", "blind_radius", "blind_duration", "blind_strength", "cool_burst", "cool_lock", "cool_overheat_clear", "chemical_dot_duration", "chemical_dot_mult", "chemical_frontload", "chemical_pellets", "chemical_spread", "takeover_on_hit", "takeover_seconds", "takeover_damage_rate", "takeover_damage_type", "is_signal_jammer", "jam_radius", "jam_seconds", "jam_power", "jam_duration", "jam_affects", "is_repair_station", "repair_rate", "repair_capacity", "station_repair_mult", "retreat_on_defeat", "retreat_repair_rate", "repair_time_mult", "prefer_repair_station", "is_hatchery", "hatch_profile", "hatch_interval", "hatch_limit", "hatch_ai", "hatch_modifier", "is_gravity_field", "gravity_force", "gravity_direction", "gravity_radius", "is_coolant_field", "coolant_radius", "coolant_boost", "coolant_affects", "is_heat_field", "heat_field_radius", "heat_field_rate", "heat_field_affects", "is_repulsion_field", "repulsion_radius", "repulsion_force", "is_hack_field", "hack_radius", "hack_seconds", "hack_power", "is_trap_field", "trap_radius", "trap_effect", "trap_command", "trap_cooldown", "trap_power", "trap_damage", "trap_damage_type", "trap_slow_duration", "trap_affects", "trap_direction_mode", "trap_link", "lease_rate", "lease_heat_penalty", "reflect_projectiles", "reflect_types", "reflect_power", "reflect_bonus_range", "reflect_affects", "shield_duration", "control_pages", "can_control_traps", "is_barrage_emitter", "barrage_mode", "barrage_interval", "barrage_damage", "barrage_damage_type", "barrage_range", "barrage_lane_range", "barrage_heat", "barrage_style", "barrage_spin_rate", "barrage_affects", "explosion_radius", "explosion_damage", "explosion_damage_type", "explosion_style", "projectile_momentum", "entry_breach_damage", "entry_breach_damage_type", "entry_breach_self_heat", "has_escape_pod", "escape_speed", "escape_module_slots", "escape_target_ring_delta", "escape_target_lane", "bounty_reward", "insured_refund", "annuity_rate", "entry_grant", "owner_destroy_penalty", "is_cage_wall", "cage_radius", "cage_damage", "cage_damage_type", "cage_repel", "cage_hit_interval", "cage_affects", "cage_shape", "is_homing_launcher", "homing_radius", "homing_interval", "homing_accuracy", "homing_damage", "homing_damage_type", "homing_heat", "homing_knock", "homing_affects", "suicide_on_hit", "vuln_kind", "vuln_mult", "vuln_duration", "blast_radius", "ball_puppet", "ball_hit_damage", "racket_power", "racket_lane_lift", "serve_range", "combine_range", "combine_bonus_hp", "is_resource_siphon", "siphon_radius", "siphon_rate", "is_speed_lane", "speed_lane_radius", "speed_lane_width", "speed_lane_mult", "speed_lane_pull", "speed_lane_affects", "speed_lane_bidirectional", "speed_field_shape", "is_coin_generator", "coin_interval", "coin_value", "coin_ttl", "coin_spawn_radius", "coin_pickup_radius", "is_one_way_shield", "shield_radius", "shield_lane_width", "shield_pass_mode", "shield_pass_direction", "shield_block_damage_mult", "shield_affects", "pirate_discount", "betrayal_chance", "morph_modes", "morph_cooldown", "charge_time", "focus_cost", "receiver", "material_slots", "space_size", "barrier_damage_type", "damage_boost_type", "damage_boost_mult", "barrier_disconnected"]:
-			if puppet_only_inactive:
-				continue
-			if part_is_torso and logic_key in ["module_range", "module_lane_range", "module_damage_mult", "pull_power", "non_damage", "web_strength", "web_break_force", "web_pull_mode", "blind_radius", "blind_duration", "blind_strength", "chemical_dot_duration", "chemical_dot_mult", "chemical_frontload", "chemical_pellets", "chemical_spread", "takeover_on_hit", "takeover_seconds", "takeover_damage_rate", "takeover_damage_type", "is_barrage_emitter", "barrage_mode", "barrage_interval", "barrage_damage", "barrage_damage_type", "barrage_range", "barrage_lane_range", "barrage_heat", "barrage_style", "barrage_spin_rate", "barrage_affects", "explosion_radius", "explosion_damage", "explosion_damage_type", "explosion_style", "projectile_momentum", "is_homing_launcher", "homing_radius", "homing_interval", "homing_accuracy", "homing_damage", "homing_damage_type", "homing_heat", "homing_knock", "homing_affects", "suicide_on_hit", "vuln_kind", "vuln_mult", "blast_radius", "ball_hit_damage", "racket_power", "racket_lane_lift", "serve_range"]:
-				continue
-			if part_kind == "ether" and logic_key in ["material_slots", "space_size", "aura_range", "barrier_disconnected"]:
-				continue
-			if part.has(logic_key):
-				stats[logic_key] = part[logic_key]
-		for fracture_key in ["fracture_trigger", "fracture_exception_group", "fracture_ai"]:
-			if part.has(fracture_key):
-				stats[fracture_key] = part[fracture_key]
-		for support_key in ["is_support_node", "support_kind", "support_radius", "support_rate", "support_amount", "support_refill_seconds", "support_ammo_type", "support_buff_type", "support_buff_mult", "support_duration", "support_affects", "support_field_shape", "is_support_platform", "platform_pair_range", "platform_width", "platform_armor_hp"]:
-			if part.has(support_key):
-				stats[support_key] = part[support_key]
+		_unit_stats_service().copy_part_logic_stats(stats, part, {
+			"puppet_only_inactive": puppet_only_inactive,
+			"part_is_torso": part_is_torso,
+			"part_kind": part_kind,
+		})
 
 	_apply_custom_topology_stats(stats, role_key, unit_bp)
 	_apply_barrier_tile_stats(stats, role_key, unit_bp)
@@ -37603,24 +36973,7 @@ func _compute_unit_stats(player_id: int, role_key: String, unit_index: int = -1,
 
 	_apply_load_balance(stats)
 	_apply_engine_momentum_budget_with_runtime_modifiers(stats, role_key, false, false)
-	var power_surplus: float = maxf(1.0, float(stats.get("usable_power", stats["power"])) - float(stats.get("power_load", stats["energy"])) * 0.18)
-	var mass: float = maxf(1.0, float(stats["mass"]))
-	var structural_mass: float = maxf(1.0, float(stats.get("structural_mass", mass)))
-	stats["speed"] = clampf((0.42 + power_surplus / (mass + 28.0)) * float(stats["speed_mult"]), 0.28, 1.5)
-	stats["acceleration"] = clampf(2.0 + power_surplus / (mass + 12.0), 1.4, 5.2)
-	stats["drag"] = clampf(2.1 + float(stats["cooling"]) / (mass + 8.0), 1.4, 5.6)
-	stats["health"] = maxi(25, int(roundf(float(stats["health"]) + structural_mass * 1.2)))
-	stats["radius"] = clampf(float(stats["radius"]), 0.08, 3.2)
-	stats["length"] = clampf(float(stats["length"]), 0.14, 4.5)
-	var radius_drag: float = 1.0 + maxf(0.0, float(stats["radius"]) - 0.58) * 0.42
-	var tiny_lift: float = 1.0 + clampf(0.2 - float(stats["radius"]), 0.0, 0.12) * 1.4
-	stats["speed"] = clampf(float(stats["speed"]) * tiny_lift / radius_drag, 0.12, 1.72)
-	stats["acceleration"] = clampf(float(stats["acceleration"]) * tiny_lift / (1.0 + maxf(0.0, float(stats["radius"]) - 0.58) * 0.34), 0.42, 5.6)
-	stats["drag"] = clampf(float(stats["drag"]) + maxf(0.0, float(stats["radius"]) - 0.72) * 0.38, 0.9, 6.8)
-	stats["move_heat"] = 0.0
-	stats["normal_lane_range"] = float(stats["normal_lane_range"]) + maxf(0.0, float(stats["radius"]) - 0.3) * 0.16
-	stats["armor_lane_range"] = float(stats["armor_lane_range"]) + maxf(0.0, float(stats["radius"]) - 0.3) * 0.12
-	stats["active_lane_range"] = float(stats["active_lane_range"]) + maxf(0.0, float(stats["radius"]) - 0.3) * 0.2
+	_unit_stats_service().apply_base_motion_envelope(stats)
 	if role_key == "hero":
 		if not parts.is_empty() and String(Dictionary(parts[0]).get("kind", "")) == "soul":
 			_apply_soul_heat_capacity(stats, parts[0])
@@ -37656,36 +37009,7 @@ func _compute_unit_stats(player_id: int, role_key: String, unit_index: int = -1,
 		stats["runtime_module_bindings"] = []
 		stats["legacy_topology_note"] = "OLD TOPOLOGY REJECTED: rebuild this unit in TeamEdit."
 	_ensure_projectile_ammo_capacity(stats)
-
-	if role_key == "hero":
-		stats["deploy_cost"] = int(ceilf(float(stats["cost"]) * 0.72))
-		stats["health"] = int(stats["health"]) + 35
-		stats["speed"] = float(stats["speed"]) + 0.08
-	elif role_key == "puppet":
-		var pirate_discount: float = clampf(float(stats.get("pirate_discount", 0.0)), 0.0, 0.45)
-		if pirate_discount > 0.0:
-			stats["raw_cost"] = int(stats["cost"])
-			stats["cost"] = maxi(1, int(roundf(float(stats["cost"]) * (1.0 - pirate_discount))))
-			stats["pirate_note"] = "BOOTLEG %.0f%% OFF / %.0f%% BETRAY" % [pirate_discount * 100.0, float(stats.get("betrayal_chance", 0.0)) * 100.0]
-		stats["deploy_cost"] = int(ceilf(float(stats["cost"]) * 0.48))
-		stats["health"] = int(roundf(float(stats["health"]) * 0.58))
-		stats["speed"] = float(stats["speed"]) + 0.12
-		stats["group_count"] = clampi(int(stats["group_count"]), 1, 11)
-		if String(stats.get("ai", "")) == "drone_cloud":
-			stats["radius"] = clampf(float(stats["radius"]) * 0.72, 0.035, 0.32)
-			stats["health"] = maxi(8, int(roundf(float(stats["health"]) * 0.42)))
-			stats["speed"] = float(stats["speed"]) + 0.32
-			stats["deploy_cost"] = int(ceilf(float(stats["cost"]) * 0.34))
-	else:
-		stats["deploy_cost"] = int(ceilf(float(stats["cost"]) * 0.55))
-		stats["health"] = int(roundf(float(stats["health"]) * 1.35))
-		stats["speed"] = 0.0
-		stats["normal_damage"] = 0
-		stats["armor_damage"] = 0
-		stats["active_damage"] = maxi(4, int(roundf(float(stats["active_damage"]) * 0.6)))
-		stats["active_cooldown"] = 1.2
-		stats["active_heat"] = 28.0
-		stats["active_lane_range"] = 0.64
+	_unit_stats_service().apply_role_deploy_profile(stats, role_key)
 
 	_apply_engine_momentum_budget_with_runtime_modifiers(stats, role_key, true, true)
 	_apply_thermal_budget(stats, role_key)
@@ -37697,11 +37021,7 @@ func _compute_unit_stats(player_id: int, role_key: String, unit_index: int = -1,
 	_apply_joint_momentum_capacity(stats, role_key, unit_bp)
 	_apply_joint_slot_motion_limits(stats, role_key, unit_bp)
 	_apply_stiffness_segment_summary(stats)
-	if manufacturer_discount > 0.0:
-		stats["manufacturer_discount"] = manufacturer_discount
-		stats["raw_cost_before_maker"] = int(stats["cost"])
-		stats["cost"] = maxi(1, int(roundf(float(stats["cost"]) * (1.0 - manufacturer_discount))))
-		stats["deploy_cost"] = maxi(1, int(roundf(float(stats["deploy_cost"]) * (1.0 - manufacturer_discount))))
+	_unit_stats_service().apply_manufacturer_discount(stats, manufacturer_discount)
 
 	return _scrub_legacy_power_stats(stats)
 

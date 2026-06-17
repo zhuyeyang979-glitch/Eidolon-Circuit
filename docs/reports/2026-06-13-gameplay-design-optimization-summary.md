@@ -104,7 +104,7 @@ Latest local verification for the Unit Editor connection checkpoint:
 - `UNIT_EDITOR_AUTO_CONNECTION_UI_PROBE ok`
 - `UNIT_EDITOR_ASSEMBLY_GUIDE_SERVICE_PROBE ok`
 - `UNIT_EDITOR_ASSEMBLY_GUIDE_UI_PROBE ok`
-- Godot `--check-only` exited with code `0`; the known macOS headless ObjectDB warning remains non-blocking.
+- Godot `--check-only` exited with code `0`; the ObjectDB warning noted in earlier macOS headless runs was not reproduced in the latest targeted 2026-06-17 verification and should continue to be watched.
 - `TEXT_OVERFLOW_PROBE` reported zero overflow failures in Chinese and English coverage.
 - `git diff --check` produced no output before the feature commit.
 - `jq empty tools/probe_manifest.json` passed.

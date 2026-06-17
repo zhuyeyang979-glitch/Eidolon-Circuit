@@ -2,6 +2,7 @@ class_name PartCatalogCardButton
 extends Button
 
 const PartArt = preload("res://scripts/part_art.gd")
+const PartIdentity = preload("res://scripts/part_identity.gd")
 const PartDragGhostView = preload("res://scripts/views/part_drag_ghost_view.gd")
 const CatalogCardTextLayer = preload("res://scripts/views/catalog/catalog_card_text_layer.gd")
 const CatalogCardRetainedItem = preload("res://scripts/views/catalog/catalog_card_retained_item.gd")
@@ -120,7 +121,7 @@ func set_art_sheets(next_asset: Texture2D, next_joint: Texture2D, next_limb: Tex
 	queue_redraw()
 
 func _card_signature(next_slot: String, next_part: Dictionary, next_selected: bool, next_language: String, next_index: int, next_display_name: String, next_line_a: String, next_line_b: String) -> String:
-	return "%s|%d|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s" % [
+	return "%s|%d|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s" % [
 		next_slot,
 		next_index,
 		str(next_selected),
@@ -137,6 +138,7 @@ func _card_signature(next_slot: String, next_part: Dictionary, next_selected: bo
 		String(next_part.get("gun_kind", "")),
 		str(bool(next_part.get("is_torso", false))),
 		str(bool(next_part.get("terminal_weapon", false))),
+		PartIdentity.signature_for(next_slot, next_part, next_language),
 	]
 
 func _art_rect() -> Rect2:
@@ -164,7 +166,7 @@ func _layout_card_nodes() -> void:
 
 func _apply_card_texts() -> void:
 	if retained_item != null:
-		retained_item.configure(slot_key, part, display_name, data_line_a, data_line_b, selected)
+		retained_item.configure(slot_key, part, display_name, data_line_a, data_line_b, selected, ui_language)
 	if text_layer != null:
 		text_layer.configure(slot_key, part, display_name, data_line_a, data_line_b, selected)
 

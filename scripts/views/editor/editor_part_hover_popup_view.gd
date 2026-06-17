@@ -3,6 +3,7 @@ extends Control
 
 const AssemblyBoardRenderer = preload("res://scripts/assembly_board_renderer.gd")
 const PartArt = preload("res://scripts/part_art.gd")
+const PartIdentity = preload("res://scripts/part_identity.gd")
 const PartPreviewIconView = preload("res://scripts/views/catalog/part_preview_icon_view.gd")
 
 signal close_requested(suppress_token: String)
@@ -30,7 +31,7 @@ func _notification(what: int) -> void:
 
 func set_part(next_slot: String, next_part: Dictionary, next_title: String, next_subtitle: String, next_lines: Array, next_language: String, next_stat_entries: Array = [], next_pinned: bool = false, next_suppress_token: String = "") -> void:
 	_ensure_preview_icon()
-	var signature := "%s|%s|%s|%s|%s|%d|%d|%s|%s|%s|%s|%s" % [
+	var signature := "%s|%s|%s|%s|%s|%d|%d|%s|%s|%s|%s|%s|%s" % [
 		next_slot,
 		next_language,
 		next_title,
@@ -43,6 +44,7 @@ func set_part(next_slot: String, next_part: Dictionary, next_title: String, next
 		String(next_part.get("damage_type", next_part.get("projectile_damage_type", ""))),
 		str(next_pinned),
 		next_suppress_token,
+		PartIdentity.signature_for(next_slot, next_part, next_language),
 	]
 	if visible and signature == last_part_signature:
 		return
@@ -148,9 +150,12 @@ func _draw() -> void:
 	var rect := Rect2(Vector2.ZERO, size)
 	draw_rect(rect, Color(0.004, 0.01, 0.018, 0.96), true)
 	draw_rect(Rect2(Vector2.ONE, size - Vector2(2.0, 2.0)), _slot_color().lerp(Color.WHITE, 0.18), false, 2.0)
-	var title_width := size.x - 36.0 - (32.0 if pinned else 0.0)
+	var identity_width := minf(126.0, maxf(86.0, size.x * 0.34))
+	var right_reserved := identity_width + 10.0 + (32.0 if pinned else 0.0)
+	var title_width := maxf(90.0, size.x - 36.0 - right_reserved)
 	draw_string(font, Vector2(18.0, 27.0), _trim(title, 36), HORIZONTAL_ALIGNMENT_LEFT, title_width, 17, Color(0.95, 0.98, 1.0, 1.0))
-	draw_string(font, Vector2(18.0, 48.0), _trim(subtitle, 54), HORIZONTAL_ALIGNMENT_LEFT, size.x - 36.0, 10, Color(1.0, 0.86, 0.26, 1.0))
+	draw_string(font, Vector2(18.0, 48.0), _trim(subtitle, 42), HORIZONTAL_ALIGNMENT_LEFT, title_width, 10, Color(1.0, 0.86, 0.26, 1.0))
+	_draw_identity_header(font, identity_width)
 	if pinned:
 		draw_rect(_close_rect(), Color(0.22, 0.035, 0.04, 0.96), true)
 		draw_rect(_close_rect(), Color(1.0, 0.34, 0.24, 0.9), false, 1.0)
@@ -202,6 +207,42 @@ func _draw_metric_tiles(font: Font, rect: Rect2) -> void:
 		var row := floori(float(i) / float(columns))
 		var cell := Rect2(rect.position + Vector2(float(col) * cell_w + 5.0, float(row) * cell_h + 6.0), Vector2(cell_w - 10.0, cell_h - 11.0))
 		_draw_metric_tile(font, cell, entry)
+
+func _draw_identity_header(font: Font, identity_width: float) -> void:
+	if part.is_empty():
+		return
+	var identity := PartIdentity.identity_for(slot_key, part, ui_language)
+	var accent: Color = identity.get("color", _slot_color())
+	var close_gap := 30.0 if pinned else 0.0
+	var code_rect := Rect2(Vector2(size.x - 18.0 - close_gap - identity_width, 12.0), Vector2(identity_width, 18.0))
+	_draw_identity_chip(font, code_rect, String(identity.get("code", "")), accent, 10, 0.96)
+	var tags: Array = identity.get("tags", [])
+	var x := code_rect.position.x
+	var y := 36.0
+	for i in range(mini(tags.size(), 3)):
+		var tag := _trim(String(tags[i]), 6)
+		var tag_w := clampf(float(tag.length()) * 7.0 + 12.0, 32.0, identity_width * 0.46)
+		if x + tag_w > code_rect.end.x:
+			break
+		_draw_identity_chip(font, Rect2(Vector2(x, y), Vector2(tag_w, 15.0)), tag, accent, 8, 0.72)
+		x += tag_w + 4.0
+	var scan := String(identity.get("scan_label", ""))
+	if scan != "" and int(identity.get("scan_level", PartIdentity.FULL_SCAN)) < PartIdentity.FULL_SCAN:
+		var scan_w := minf(48.0, maxf(34.0, float(scan.length()) * 8.0 + 12.0))
+		var scan_rect := Rect2(Vector2(code_rect.end.x - scan_w, y), Vector2(scan_w, 15.0))
+		_draw_identity_chip(font, scan_rect, scan, accent, 8, 0.56)
+
+func _draw_identity_chip(font: Font, rect: Rect2, text_value: String, accent: Color, font_size: int, alpha: float) -> void:
+	if text_value == "" or rect.size.x <= 5.0:
+		return
+	var bg := accent.darkened(0.62)
+	bg.a = 0.64 * alpha
+	var border := accent.lerp(Color.WHITE, 0.24)
+	border.a = 0.64 * alpha
+	draw_rect(rect, Color(0.0, 0.0, 0.0, 0.52 * alpha), true)
+	draw_rect(rect.grow(-1.0), bg, true)
+	draw_rect(rect, border, false, 1.0)
+	draw_string(font, rect.position + Vector2(5.0, rect.size.y - 4.0), _trim(text_value, maxi(3, int(rect.size.x / 6.0))), HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 9.0, font_size, Color(0.92, 0.98, 1.0, 0.96 * alpha))
 
 func _draw_metric_tile(font: Font, rect: Rect2, entry: Dictionary) -> void:
 	var label := String(entry.get("label", ""))

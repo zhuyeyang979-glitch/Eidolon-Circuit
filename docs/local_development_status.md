@@ -1,6 +1,6 @@
 # Eidolon Circuit Local Development Status
 
-Last updated: 2026-06-13
+Last updated: 2026-06-17
 
 This file is the local execution board for the active Linear project `Eidolon Circuit Codebase Slimdown 2026-05-27`. The checked-in backlog remains `docs/development_backlog.md`; this file records local baseline and the next safe implementation order between Linear updates.
 
@@ -35,7 +35,23 @@ This file is the local execution board for the active Linear project `Eidolon Ci
 
 - `tools/run_godot_checked.ps1 -Headless -CheckOnly -TimeoutSec 120`: passed.
 - Governance mirror probes from `.github/workflows/godot-governance.yml`: all 16 passed.
-- Godot ObjectDB leak warnings appeared on some runs; no functional assertion failed.
+- Historical Godot ObjectDB leak warnings appeared on some earlier runs; the latest 2026-06-17 targeted macOS headless verification below did not reproduce them.
+
+## 2026-06-17 yhzlxp Optimization Execution Snapshot
+
+- Active branch: `codex/yhzlxp-eidolon-work`.
+- Added `docs/plans/2026-06-17-project-optimization-execution.md` as the prioritized execution plan for the current optimization batch.
+- Extracted assembly template model construction from `scripts/main.gd` into `scripts/services/unit_editor_assembly_template_service.gd`; `main.gd` now remains the adapter/composition owner for this path.
+- Extended `scripts/services/unit_stats_service.gd` beyond stats-cache bookkeeping so it now owns the default stats schema, pure base motion envelope, part logic/combat field copy gating, role deploy profile, and manufacturer discount post-processing for `_compute_unit_stats`.
+- Extracted engine allocation data model construction from `scripts/main.gd` into `scripts/services/unit_editor_engine_allocation_service.gd`; `main.gd` now remains the callback adapter for current topology and binding data.
+- Extracted assembly template overlay drawing from `scripts/views/editor/assembly_board_view.gd` into `scripts/views/editor/assembly_template_overlay_renderer.gd`; `AssemblyBoardView` now delegates overlay rendering while keeping board snapshot and retained-layer ownership.
+- Added headless contract probes: `part_identity_contract_probe` and `unit_editor_assembly_template_service_contract_probe`.
+- Added `unit_stats_service_contract_probe`, `unit_editor_engine_allocation_service_contract_probe`, and `assembly_template_overlay_renderer_contract_probe` to guard the new service/view boundaries.
+- Registered the new contract probes in `tools/probe_manifest.json`; registered `part_identity_language_probe` and `unit_editor_assembly_template_probe` as manual/headed visual checks because they skip under headless display.
+- Verification passed: `jq empty tools/probe_manifest.json`, `git diff --check`, Godot `--check-only`, `part_identity_contract_probe`, `unit_editor_assembly_template_service_contract_probe`, `assembly_template_overlay_renderer_contract_probe`, `unit_editor_engine_allocation_service_contract_probe`, `unit_stats_service_contract_probe`, `main_file_extraction_contract_probe` (`services=9`), `view_extraction_contract_probe`, `headed_gate_manifest_source_probe`, `headed_gate_manifest_alignment_probe`, `engine_momentum_allocation_open_probe`, `power_allocation_panel_heat_live_update_probe`, `engine_momentum_allocation_scope_probe`, `power_allocation_equalize_percent_all_entries_probe`, `audio_lifecycle_contract_probe`, `part_preview_board_art_identity_probe`, and `unit_editor_assembly_guide_service_probe`.
+- Additional `_compute_unit_stats` regression probes passed after the `UnitStatsService` extraction: `editor_cost_accounting_probe`, `unit_build_rule_training_gate_probe`, `thruster_dual_motion_formula_probe`, `source_code_probe`, `barrier_panel_probe`, `projectile_profile_whitelist_probe`, and `legacy_power_symbol_absence_probe`.
+- The latest targeted Godot outputs did not include ObjectDB leaked-instance warnings. Continue watching future headed/manual runs because older local history recorded them.
+- Resource note: `assets/concepts/` remains a large local concept-art set and should stay out of normal code commits until a Git/Git LFS/local-reference policy is chosen.
 
 ## 2026-06-12 yhzlxp Optimization Baseline
 

@@ -3,6 +3,7 @@ extends Control
 
 const AssemblyBoardRenderer = preload("res://scripts/assembly_board_renderer.gd")
 const PartArt = preload("res://scripts/part_art.gd")
+const PartIdentity = preload("res://scripts/part_identity.gd")
 
 var slot_key := ""
 var part := {}
@@ -119,27 +120,28 @@ func _draw_terminal_thumbnail(rect: Rect2, style: Dictionary, primary: Color, ac
 	var fill := _thumbnail_fill(primary)
 	var stroke := _thumbnail_stroke(accent)
 	var dark := primary.darkened(0.46)
+	var subcode := String(PartIdentity.identity_for(slot_key, part, "zh").get("subcode", "")).to_upper()
 	if _thumbnail_profile_is_ranged(profile, key):
 		_draw_ranged_weapon_thumbnail(rect, profile, key, fill, stroke, dark, accent)
 		return
-	if profile.contains("shield"):
+	if subcode == "SHD" or profile.contains("shield"):
 		_draw_shield_weapon_thumbnail(rect, fill, stroke, accent)
-	elif profile.contains("hammer"):
-		_draw_hammer_weapon_thumbnail(rect, fill, stroke, accent)
+	elif subcode == "HMR" or profile.contains("hammer"):
+		_draw_hammer_weapon_thumbnail(rect, key, fill, stroke, accent)
 	elif profile.contains("drill"):
 		_draw_drill_weapon_thumbnail(rect, fill, stroke, accent)
-	elif profile.contains("rapier") or profile.contains("lance") or profile.contains("spear") or profile.contains("pierce"):
-		_draw_pierce_weapon_thumbnail(rect, profile, fill, stroke, accent)
+	elif subcode == "LNC" or profile.contains("rapier") or profile.contains("lance") or profile.contains("spear") or profile.contains("pierce"):
+		_draw_pierce_weapon_thumbnail(rect, profile, key, fill, stroke, accent)
 	elif profile.contains("scythe"):
 		_draw_scythe_weapon_thumbnail(rect, fill, stroke, accent)
 	elif profile.contains("claw"):
-		_draw_claw_weapon_thumbnail(rect, fill, stroke, accent)
+		_draw_claw_weapon_thumbnail(rect, key, fill, stroke, accent)
 	elif profile.contains("gauntlet") or profile.contains("fist"):
 		_draw_gauntlet_weapon_thumbnail(rect, fill, stroke, accent)
 	elif profile.contains("chain") or profile.contains("whip"):
 		_draw_chain_weapon_thumbnail(rect, fill, stroke, accent)
 	else:
-		_draw_blade_weapon_thumbnail(rect, profile, fill, stroke, accent)
+		_draw_blade_weapon_thumbnail(rect, profile, key, fill, stroke, accent)
 
 
 func _thumbnail_profile_is_ranged(profile: String, key: String) -> bool:
@@ -198,11 +200,25 @@ func _draw_ranged_weapon_thumbnail(rect: Rect2, profile: String, key: String, fi
 	draw_line(_p(rect, 0.86, barrel_y), _p(rect, 0.98, barrel_y), accent, 1.4)
 
 
-func _draw_blade_weapon_thumbnail(rect: Rect2, profile: String, fill: Color, stroke: Color, accent: Color) -> void:
+func _draw_blade_weapon_thumbnail(rect: Rect2, profile: String, key: String, fill: Color, stroke: Color, accent: Color) -> void:
 	draw_rect(Rect2(_p(rect, 0.08, 0.45), Vector2(rect.size.x * 0.16, rect.size.y * 0.12)), accent, true)
 	var broad := profile.contains("greatsword")
-	if broad:
+	if key.contains("razor") or key.contains("feeler") or key.contains("antenna"):
+		_draw_poly([_p(rect, 0.2, 0.43), _p(rect, 0.86, 0.34), _p(rect, 0.96, 0.48), _p(rect, 0.22, 0.6)], fill, stroke, 1.1)
+		for t in [0.36, 0.5, 0.64, 0.78]:
+			_draw_poly([_p(rect, t, 0.38), _p(rect, t + 0.035, 0.32), _p(rect, t + 0.07, 0.39)], accent, Color.TRANSPARENT, 1.0)
+		draw_line(_p(rect, 0.26, 0.57), _p(rect, 0.9, 0.48), Color(0.0, 0.0, 0.0, 0.28), 1.0)
+	elif key.contains("wing") or key.contains("feather"):
+		_draw_poly([_p(rect, 0.2, 0.64), _p(rect, 0.7, 0.18), _p(rect, 0.96, 0.28), _p(rect, 0.64, 0.62), _p(rect, 0.34, 0.74)], fill, stroke, 1.1)
+		for t in [0.34, 0.46, 0.58, 0.7]:
+			draw_line(_p(rect, 0.28, 0.62), _p(rect, t, 0.24 + (t - 0.34) * 0.5), accent, 1.0)
+	elif key.contains("machete") or key.contains("tail"):
+		_draw_poly([_p(rect, 0.18, 0.56), _p(rect, 0.64, 0.22), _p(rect, 0.94, 0.36), _p(rect, 0.72, 0.72), _p(rect, 0.28, 0.68)], fill, stroke, 1.2)
+		draw_line(_p(rect, 0.34, 0.62), _p(rect, 0.82, 0.42), accent, 1.2)
+	elif broad:
 		_draw_poly([_p(rect, 0.22, 0.26), _p(rect, 0.9, 0.48), _p(rect, 0.22, 0.76), _p(rect, 0.28, 0.5)], fill, stroke, 1.2)
+		for t in [0.38, 0.52, 0.66]:
+			draw_line(_p(rect, t, 0.36), _p(rect, t + 0.08, 0.62), Color(0.0, 0.0, 0.0, 0.22), 1.0)
 	else:
 		_draw_poly([_p(rect, 0.2, 0.39), _p(rect, 0.93, 0.48), _p(rect, 0.2, 0.61), _p(rect, 0.31, 0.5)], fill, stroke, 1.1)
 	draw_line(_p(rect, 0.32, 0.5), _p(rect, 0.86, 0.5), Color(0.0, 0.0, 0.0, 0.26), 1.0)
@@ -222,16 +238,34 @@ func _draw_shield_weapon_thumbnail(rect: Rect2, fill: Color, stroke: Color, acce
 	draw_line(_p(rect, 0.28, 0.48), _p(rect, 0.74, 0.48), accent, 1.2)
 
 
-func _draw_hammer_weapon_thumbnail(rect: Rect2, fill: Color, stroke: Color, accent: Color) -> void:
+func _draw_hammer_weapon_thumbnail(rect: Rect2, key: String, fill: Color, stroke: Color, accent: Color) -> void:
 	draw_line(_p(rect, 0.18, 0.78), _p(rect, 0.62, 0.36), fill, 3.0)
-	draw_rect(Rect2(_p(rect, 0.55, 0.18), Vector2(rect.size.x * 0.3, rect.size.y * 0.34)), fill, true)
-	draw_rect(Rect2(_p(rect, 0.55, 0.18), Vector2(rect.size.x * 0.3, rect.size.y * 0.34)), stroke, false, 1.2)
+	var head_rect := Rect2(_p(rect, 0.55, 0.18), Vector2(rect.size.x * 0.3, rect.size.y * 0.34))
+	if key.contains("hoof"):
+		_draw_poly([head_rect.position + Vector2(0.0, head_rect.size.y * 0.18), head_rect.position + Vector2(head_rect.size.x, 0.0), head_rect.end, head_rect.position + Vector2(0.0, head_rect.size.y * 0.82)], fill, stroke, 1.2)
+	else:
+		draw_rect(head_rect, fill, true)
+		draw_rect(head_rect, stroke, false, 1.2)
+	for y in [0.28, 0.48, 0.68]:
+		draw_line(_p(rect, 0.58, y), _p(rect, 0.82, y - 0.04), Color(0.0, 0.0, 0.0, 0.26), 1.0)
 	draw_line(_p(rect, 0.52, 0.56), _p(rect, 0.7, 0.74), accent, 1.4)
 
 
-func _draw_pierce_weapon_thumbnail(rect: Rect2, profile: String, fill: Color, stroke: Color, accent: Color) -> void:
-	draw_line(_p(rect, 0.12, 0.5), _p(rect, 0.82, 0.5), fill, 2.4 if profile.contains("lance") else 1.7)
-	_draw_poly([_p(rect, 0.8, 0.28), _p(rect, 0.98, 0.5), _p(rect, 0.8, 0.72)], fill, stroke, 1.0)
+func _draw_pierce_weapon_thumbnail(rect: Rect2, profile: String, key: String, fill: Color, stroke: Color, accent: Color) -> void:
+	var needle := key.contains("needle") or key.contains("nano") or key.contains("spike")
+	var shaft_width := 1.4 if needle else (2.4 if profile.contains("lance") else 1.8)
+	draw_line(_p(rect, 0.12, 0.5), _p(rect, 0.82, 0.5), fill, shaft_width)
+	var tip_top := 0.40 if needle else 0.28
+	var tip_bottom := 0.60 if needle else 0.72
+	_draw_poly([_p(rect, 0.8, tip_top), _p(rect, 0.98, 0.5), _p(rect, 0.8, tip_bottom)], fill, stroke, 1.0)
+	if key.contains("horn") or key.contains("talon"):
+		draw_arc(_p(rect, 0.73, 0.5), rect.size.y * 0.22, -0.74, 0.74, 18, accent, 1.2, true)
+	if not needle:
+		_draw_poly([_p(rect, 0.52, 0.5), _p(rect, 0.62, 0.36), _p(rect, 0.64, 0.5)], accent, Color.TRANSPARENT, 1.0)
+		_draw_poly([_p(rect, 0.52, 0.5), _p(rect, 0.62, 0.64), _p(rect, 0.64, 0.5)], accent, Color.TRANSPARENT, 1.0)
+	else:
+		draw_circle(_p(rect, 0.88, 0.5), 1.4, accent)
+		draw_line(_p(rect, 0.3, 0.44), _p(rect, 0.68, 0.44), Color(accent.r, accent.g, accent.b, 0.42), 1.0)
 	draw_rect(Rect2(_p(rect, 0.18, 0.42), Vector2(rect.size.x * 0.1, rect.size.y * 0.16)), accent, true)
 
 
@@ -242,8 +276,15 @@ func _draw_drill_weapon_thumbnail(rect: Rect2, fill: Color, stroke: Color, accen
 	draw_rect(Rect2(_p(rect, 0.08, 0.39), Vector2(rect.size.x * 0.14, rect.size.y * 0.22)), accent, true)
 
 
-func _draw_claw_weapon_thumbnail(rect: Rect2, fill: Color, stroke: Color, accent: Color) -> void:
+func _draw_claw_weapon_thumbnail(rect: Rect2, key: String, fill: Color, stroke: Color, accent: Color) -> void:
 	draw_rect(Rect2(_p(rect, 0.14, 0.35), Vector2(rect.size.x * 0.22, rect.size.y * 0.3)), fill, true)
+	if key.contains("jaw") or key.contains("clamp"):
+		_draw_poly([_p(rect, 0.34, 0.24), _p(rect, 0.92, 0.36), _p(rect, 0.5, 0.48)], fill, stroke, 1.0)
+		_draw_poly([_p(rect, 0.34, 0.76), _p(rect, 0.92, 0.64), _p(rect, 0.5, 0.52)], fill, stroke, 1.0)
+		for x in [0.5, 0.64, 0.78]:
+			_draw_poly([_p(rect, x, 0.43), _p(rect, x + 0.04, 0.5), _p(rect, x + 0.08, 0.43)], accent, Color.TRANSPARENT, 1.0)
+			_draw_poly([_p(rect, x, 0.57), _p(rect, x + 0.04, 0.5), _p(rect, x + 0.08, 0.57)], accent, Color.TRANSPARENT, 1.0)
+		return
 	for y in [0.24, 0.5, 0.76]:
 		_draw_poly([_p(rect, 0.34, 0.5), _p(rect, 0.92, y), _p(rect, 0.48, y + (0.08 if y < 0.6 else -0.08))], fill, stroke, 1.0)
 	draw_line(_p(rect, 0.24, 0.5), _p(rect, 0.38, 0.5), accent, 1.4)
@@ -326,29 +367,68 @@ func _draw_barrier_thumbnail(rect: Rect2, primary: Color, accent: Color) -> void
 func _draw_booster_thumbnail(rect: Rect2, primary: Color, accent: Color) -> void:
 	var fill := _thumbnail_fill(primary)
 	var stroke := _thumbnail_stroke(accent)
-	for y in [0.36, 0.64]:
-		draw_rect(Rect2(_p(rect, 0.3, y - 0.1), Vector2(rect.size.x * 0.36, rect.size.y * 0.2)), fill, true)
-		_draw_poly([_p(rect, 0.66, y - 0.12), _p(rect, 0.9, y), _p(rect, 0.66, y + 0.12)], accent, Color(accent.r, accent.g, accent.b, 0.35), 1.0)
+	var family := ("%s %s" % [String(part.get("thruster_family", "")), _image2_part_match_key()]).to_lower()
+	var flame := _thumbnail_thruster_flame_color()
+	if family.contains("dash") or family.contains("burst") or family.contains("overburn"):
+		draw_rect(Rect2(_p(rect, 0.24, 0.36), Vector2(rect.size.x * 0.44, rect.size.y * 0.28)), fill, true)
+		_draw_poly([_p(rect, 0.66, 0.24), _p(rect, 0.96, 0.5), _p(rect, 0.66, 0.76)], flame, Color(flame.r, flame.g, flame.b, 0.35), 1.0)
+		for y in [0.32, 0.5, 0.68]:
+			draw_line(_p(rect, 0.3, y), _p(rect, 0.62, y), stroke, 1.0)
+	elif family.contains("brake") or family.contains("reverse"):
+		for y in [0.34, 0.5, 0.66]:
+			draw_rect(Rect2(_p(rect, 0.34, y - 0.06), Vector2(rect.size.x * 0.42, rect.size.y * 0.11)), fill, true)
+			_draw_poly([_p(rect, 0.22, y - 0.08), _p(rect, 0.1, y), _p(rect, 0.22, y + 0.08)], flame, Color(flame.r, flame.g, flame.b, 0.34), 1.0)
+		draw_line(_p(rect, 0.78, 0.26), _p(rect, 0.78, 0.74), stroke, 1.2)
+	else:
+		for y in [0.36, 0.64]:
+			draw_rect(Rect2(_p(rect, 0.3, y - 0.1), Vector2(rect.size.x * 0.36, rect.size.y * 0.2)), fill, true)
+			_draw_poly([_p(rect, 0.66, y - 0.12), _p(rect, 0.9, y), _p(rect, 0.66, y + 0.12)], flame, Color(flame.r, flame.g, flame.b, 0.35), 1.0)
 	draw_rect(Rect2(_p(rect, 0.16, 0.28), Vector2(rect.size.x * 0.18, rect.size.y * 0.44)), primary.darkened(0.32), true)
 	draw_line(_p(rect, 0.22, 0.5), _p(rect, 0.64, 0.5), stroke, 1.0)
 
 
 func _draw_engine_thumbnail(rect: Rect2, primary: Color, accent: Color) -> void:
 	var fill := _thumbnail_fill(primary)
+	var key := ("%s %s" % [String(part.get("engine_family", "")), _image2_part_match_key()]).to_lower()
 	draw_circle(_p(rect, 0.5, 0.5), minf(rect.size.x, rect.size.y) * 0.3, fill)
 	draw_circle(_p(rect, 0.5, 0.5), minf(rect.size.x, rect.size.y) * 0.16, primary.darkened(0.46))
-	for angle in [0.0, PI * 0.5, PI, PI * 1.5]:
-		var dir := Vector2(cos(angle), sin(angle))
-		draw_line(_p(rect, 0.5, 0.5), _p(rect, 0.5, 0.5) + dir * minf(rect.size.x, rect.size.y) * 0.36, accent, 1.4)
+	if key.contains("capacitor") or key.contains("cell") or key.contains("battery"):
+		for x in [0.34, 0.46, 0.58, 0.7]:
+			draw_rect(Rect2(_p(rect, x, 0.26), Vector2(rect.size.x * 0.05, rect.size.y * 0.48)), accent, true)
+		draw_line(_p(rect, 0.28, 0.5), _p(rect, 0.78, 0.5), Color(0.0, 0.0, 0.0, 0.32), 1.0)
+	elif key.contains("turbine") or key.contains("flywheel"):
+		for angle in [0.0, TAU / 3.0, TAU * 2.0 / 3.0]:
+			var dir := Vector2(cos(angle), sin(angle))
+			_draw_poly([_p(rect, 0.5, 0.5), _p(rect, 0.5, 0.5) + dir.rotated(-0.38) * rect.size.y * 0.26, _p(rect, 0.5, 0.5) + dir.rotated(0.48) * rect.size.y * 0.18], accent, Color.TRANSPARENT, 1.0)
+	else:
+		for angle in [0.0, PI * 0.5, PI, PI * 1.5]:
+			var dir := Vector2(cos(angle), sin(angle))
+			draw_line(_p(rect, 0.5, 0.5), _p(rect, 0.5, 0.5) + dir * minf(rect.size.x, rect.size.y) * 0.36, accent, 1.4)
 	draw_rect(Rect2(_p(rect, 0.2, 0.42), Vector2(rect.size.x * 0.18, rect.size.y * 0.16)), Color(accent.r, accent.g, accent.b, 0.58), true)
 	draw_rect(Rect2(_p(rect, 0.62, 0.42), Vector2(rect.size.x * 0.18, rect.size.y * 0.16)), Color(accent.r, accent.g, accent.b, 0.58), true)
 
 
 func _draw_cooling_thumbnail(rect: Rect2, primary: Color, accent: Color) -> void:
 	var fill := _thumbnail_fill(primary)
-	for i in range(5):
-		var x := 0.22 + float(i) * 0.12
-		_draw_poly([_p(rect, x, 0.22), _p(rect, x + 0.08, 0.22), _p(rect, x + 0.04, 0.78)], fill, Color(accent.r, accent.g, accent.b, 0.35), 1.0)
+	var key := _image2_part_match_key()
+	if key.contains("pump") or key.contains("liquid"):
+		draw_circle(_p(rect, 0.34, 0.5), minf(rect.size.x, rect.size.y) * 0.22, fill)
+		draw_arc(_p(rect, 0.34, 0.5), minf(rect.size.x, rect.size.y) * 0.14, 0.0, TAU, 20, accent, 1.2)
+		draw_line(_p(rect, 0.48, 0.38), _p(rect, 0.82, 0.38), fill, 2.0)
+		draw_line(_p(rect, 0.48, 0.62), _p(rect, 0.82, 0.62), fill, 2.0)
+	elif key.contains("vent") or key.contains("exhaust"):
+		draw_rect(Rect2(_p(rect, 0.2, 0.28), Vector2(rect.size.x * 0.62, rect.size.y * 0.44)), fill, true)
+		for y in [0.34, 0.44, 0.54, 0.64]:
+			draw_line(_p(rect, 0.24, y), _p(rect, 0.78, y - 0.05), Color(0.0, 0.0, 0.0, 0.34), 1.3)
+	elif key.contains("sink") or key.contains("plate"):
+		for i in range(4):
+			var x := 0.22 + float(i) * 0.14
+			draw_rect(Rect2(_p(rect, x, 0.26), Vector2(rect.size.x * 0.08, rect.size.y * 0.48)), fill, true)
+			draw_rect(Rect2(_p(rect, x, 0.26), Vector2(rect.size.x * 0.08, rect.size.y * 0.48)), Color(accent.r, accent.g, accent.b, 0.28), false, 0.8)
+	else:
+		for i in range(5):
+			var x := 0.22 + float(i) * 0.12
+			_draw_poly([_p(rect, x, 0.22), _p(rect, x + 0.08, 0.22), _p(rect, x + 0.04, 0.78)], fill, Color(accent.r, accent.g, accent.b, 0.35), 1.0)
 	draw_line(_p(rect, 0.18, 0.78), _p(rect, 0.86, 0.78), accent, 1.4)
 	draw_line(_p(rect, 0.22, 0.34), _p(rect, 0.78, 0.34), Color(0.0, 0.0, 0.0, 0.22), 1.0)
 
@@ -356,6 +436,7 @@ func _draw_cooling_thumbnail(rect: Rect2, primary: Color, accent: Color) -> void
 func _draw_software_thumbnail(rect: Rect2, icon_kind: String, primary: Color, accent: Color) -> void:
 	var fill := _thumbnail_fill(primary)
 	var stroke := _thumbnail_stroke(accent)
+	var module_family := String(part.get("module_visual_family", part.get("module_variant_key", ""))).to_lower()
 	if icon_kind == "ammo_stack":
 		for y in [0.3, 0.5, 0.7]:
 			draw_rect(Rect2(_p(rect, 0.24, y - 0.08), Vector2(rect.size.x * 0.5, rect.size.y * 0.12)), fill, true)
@@ -365,6 +446,26 @@ func _draw_software_thumbnail(rect: Rect2, icon_kind: String, primary: Color, ac
 		draw_circle(_p(rect, 0.5, 0.5), minf(rect.size.x, rect.size.y) * 0.2, fill)
 		draw_arc(_p(rect, 0.5, 0.5), minf(rect.size.x, rect.size.y) * 0.34, -0.8, PI * 1.35, 24, accent, 1.3, true)
 		draw_line(_p(rect, 0.5, 0.18), _p(rect, 0.5, 0.82), Color(accent.r, accent.g, accent.b, 0.38), 1.0)
+		return
+	if module_family.contains("dash"):
+		draw_line(_p(rect, 0.22, 0.5), _p(rect, 0.72, 0.5), fill, 2.3)
+		_draw_poly([_p(rect, 0.72, 0.28), _p(rect, 0.94, 0.5), _p(rect, 0.72, 0.72)], accent, stroke, 1.0)
+		for y in [0.34, 0.66]:
+			draw_line(_p(rect, 0.18, y), _p(rect, 0.62, y), Color(accent.r, accent.g, accent.b, 0.42), 1.0)
+		return
+	if module_family.contains("clamp") or module_family.contains("vise"):
+		_draw_poly([_p(rect, 0.18, 0.22), _p(rect, 0.52, 0.22), _p(rect, 0.44, 0.42), _p(rect, 0.52, 0.5), _p(rect, 0.18, 0.5)], fill, stroke, 1.0)
+		_draw_poly([_p(rect, 0.18, 0.78), _p(rect, 0.52, 0.78), _p(rect, 0.44, 0.58), _p(rect, 0.52, 0.5), _p(rect, 0.18, 0.5)], fill, stroke, 1.0)
+		draw_line(_p(rect, 0.56, 0.5), _p(rect, 0.88, 0.5), accent, 1.5)
+		return
+	if module_family.contains("arc") or module_family.contains("salvo"):
+		var previous := _p(rect, 0.18, 0.72)
+		for i in range(1, 7):
+			var t := float(i) / 6.0
+			var point := _p(rect, lerpf(0.18, 0.86, t), 0.72 - sin(t * PI) * 0.44)
+			draw_line(previous, point, accent if i % 2 == 0 else Color(accent.r, accent.g, accent.b, 0.48), 1.2)
+			previous = point
+		draw_rect(Rect2(_p(rect, 0.78, 0.64), Vector2(rect.size.x * 0.12, rect.size.y * 0.1)), fill, true)
 		return
 	draw_rect(Rect2(_p(rect, 0.24, 0.22), Vector2(rect.size.x * 0.52, rect.size.y * 0.56)), fill, true)
 	draw_rect(Rect2(_p(rect, 0.24, 0.22), Vector2(rect.size.x * 0.52, rect.size.y * 0.56)), stroke, false, 1.1)
@@ -378,6 +479,16 @@ func _draw_generic_thumbnail(rect: Rect2, primary: Color, accent: Color) -> void
 	var fill := _thumbnail_fill(primary)
 	_draw_poly([_p(rect, 0.18, 0.32), _p(rect, 0.74, 0.26), _p(rect, 0.9, 0.5), _p(rect, 0.74, 0.74), _p(rect, 0.18, 0.68)], fill, _thumbnail_stroke(accent), 1.1)
 	draw_line(_p(rect, 0.26, 0.5), _p(rect, 0.78, 0.5), accent, 1.1)
+
+
+func _thumbnail_thruster_flame_color() -> Color:
+	var flame := String(part.get("flame_color", "")).to_lower()
+	var family := String(part.get("thruster_family", "")).to_lower()
+	if flame.contains("red") or family.contains("overburn") or family.contains("burst") or family.contains("dash"):
+		return Color(1.0, 0.16, 0.08, 0.92)
+	if flame.contains("yellow") or family.contains("sustain") or family.contains("cruise"):
+		return Color(1.0, 0.86, 0.18, 0.92)
+	return Color(0.24, 0.72, 1.0, 0.92)
 
 
 func _draw_image2_part_preview(rect: Rect2) -> bool:

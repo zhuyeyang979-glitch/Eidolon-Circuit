@@ -3,6 +3,7 @@ extends Control
 
 const PartArt = preload("res://scripts/part_art.gd")
 const AssemblyBoardRenderer = preload("res://scripts/assembly_board_renderer.gd")
+const AssemblyTemplateOverlayRenderer = preload("res://scripts/views/editor/assembly_template_overlay_renderer.gd")
 
 const TOPOLOGY_BOARD_PHYSICAL_UNITS = 2.0
 const EDITOR_BOARD_ZOOM_MIN = 0.35
@@ -127,6 +128,7 @@ var snap_amount := 0.0
 var ui_language := "zh"
 var motion_phase := 0.0
 var last_board_signature := ""
+var assembly_template_overlay_renderer := AssemblyTemplateOverlayRenderer.new()
 var set_board_call_count := 0
 var set_board_apply_count := 0
 var set_board_noop_count := 0
@@ -246,7 +248,7 @@ func apply_board_diff(diff: Dictionary, revision_key: String) -> void:
 				_submit_retained_socket_items(false)
 				_submit_retained_overlay_items(false)
 			_submit_retained_layer(retained_selection_layer, "selection|" + _retained_selection_signature())
-			_submit_retained_layer(retained_hint_layer, "hint|" + revision_key + "|" + ui_language)
+			_submit_retained_layer(retained_hint_layer, "hint|" + revision_key + "|" + ui_language + "|tpl:" + _assembly_template_signature())
 		custom_retained_root_redraw_skip_count += 1
 		return
 	set_board(next_snapshot, next_selected, next_illegal, next_snap_part, next_snap_amount, next_mode, next_language, next_motion_phase, revision_key)
@@ -449,7 +451,7 @@ func _submit_custom_board_to_retained_layers(force_layers: bool = false) -> void
 	_submit_retained_socket_items(force_layers)
 	_submit_retained_overlay_items(force_layers)
 	_submit_retained_layer(retained_selection_layer, "selection|" + _retained_selection_signature())
-	_submit_retained_layer(retained_hint_layer, "hint|" + base + "|" + ui_language)
+	_submit_retained_layer(retained_hint_layer, "hint|" + base + "|" + ui_language + "|tpl:" + _assembly_template_signature())
 	_submit_retained_components(force_layers)
 
 func _retained_item_parent_for_kind(kind: String) -> Control:
@@ -780,7 +782,7 @@ func flush_deferred_retained_components(max_items: int = 2) -> int:
 		batch.append(retained_deferred_component_indices.pop_front())
 	_submit_retained_components_for_indices(batch)
 	_submit_retained_layer(retained_selection_layer, "selection|" + _retained_selection_signature())
-	_submit_retained_layer(retained_hint_layer, "hint|" + last_board_signature + "|" + ui_language)
+	_submit_retained_layer(retained_hint_layer, "hint|" + last_board_signature + "|" + ui_language + "|tpl:" + _assembly_template_signature())
 	retained_component_deferred_flush_count += batch.size()
 	return batch.size()
 
@@ -1453,7 +1455,17 @@ func _retained_draw_custom_selection(canvas: CanvasItem) -> void:
 	canvas.draw_rect(selection_rect, Color(0.25, 0.82, 1.0, 0.12), true)
 	canvas.draw_rect(selection_rect, Color(0.34, 0.92, 1.0, 0.75), false, 2.0)
 
+func _assembly_template_signature() -> String:
+	return String(board_snapshot.get("assembly_template_signature", ""))
+
+
+func _draw_assembly_template_overlay(canvas: CanvasItem) -> void:
+	var model: Dictionary = board_snapshot.get("assembly_template_model", {})
+	assembly_template_overlay_renderer.draw_overlay(canvas, size, model, _board_is_zh())
+
+
 func _retained_draw_custom_hint(canvas: CanvasItem) -> void:
+	_draw_assembly_template_overlay(canvas)
 	var canvas_hint := "自由画布 / 零件拖入画布 / 硬规则：上游端口直连下游肌肉根部关节 / 关节内置于肌肉" if _board_is_zh() else "FREE CANVAS / drag parts in / hard link: upstream socket -> downstream muscle root joint / joints are embedded"
 	canvas.draw_string(ThemeDB.get_fallback_font(), Vector2(36.0, size.y - 22.0), canvas_hint, HORIZONTAL_ALIGNMENT_LEFT, size.x - 72.0, 13, Color(0.78, 0.9, 1.0, 0.72))
 
@@ -1627,6 +1639,7 @@ func _draw_custom_board() -> void:
 		)
 		draw_rect(selection_rect, Color(0.25, 0.82, 1.0, 0.12), true)
 		draw_rect(selection_rect, Color(0.34, 0.92, 1.0, 0.75), false, 2.0)
+	_draw_assembly_template_overlay(self)
 	var canvas_hint := "自由画布 / 零件拖入画布 / 硬规则：上游端口直连下游肌肉根部关节 / 关节内置于肌肉" if _board_is_zh() else "FREE CANVAS / drag parts in / hard link: upstream socket -> downstream muscle root joint / joints are embedded"
 	draw_string(ThemeDB.get_fallback_font(), Vector2(36.0, size.y - 22.0), canvas_hint, HORIZONTAL_ALIGNMENT_LEFT, size.x - 72.0, 13, Color(0.78, 0.9, 1.0, 0.72))
 
