@@ -179,6 +179,55 @@ func _init() -> void:
 	_assert_near(float(payload_stats.get("torso_slot_mass_limit", 0.0)), 12.0, "payload torso slot mass")
 	_assert_near(float(payload_stats.get("torso_slot_volume_rank_limit", 0.0)), 4.0, "payload torso slot volume")
 	_assert_near(float(payload_stats.get("spare_weapon_mass_limit", 0.0)), 9.0, "payload spare weapon mass")
+	var torso_payload_context := {
+		"ammo_types": ["bullet", "laser", "chemical", "explosive", "web"],
+		"ammo_unit_mass": {"bullet": 0.16, "laser": 0.11, "chemical": 0.24, "explosive": 0.42, "web": 0.09},
+	}
+	var torso_payload_stats := {
+		"cost": 10,
+		"mass": 4.0,
+		"energy": 1.0,
+		"ammo_capacity": {"bullet": 1},
+		"ammo_payload_mass": 0.0,
+		"electronic_armor_max": 0.0,
+		"electronic_armor_regen": 0.0,
+		"electronic_armor_coverage": 0.0,
+		"shield_max": 0.0,
+		"shield_regen": 0.0,
+		"shield_coverage": 0.0,
+		"has_escape_pod": false,
+		"escape_speed": 0.0,
+		"escape_module_slots": 0,
+		"escape_target_ring_delta": 2.8,
+		"escape_target_lane": 0.0,
+	}
+	service.apply_torso_payload_direct_stats(torso_payload_stats, {"cost": 5, "mass": 2.0, "ammo_capacity": {"missile": 2}}, "ammo", torso_payload_context)
+	var torso_ammo: Dictionary = torso_payload_stats.get("ammo_capacity", {})
+	if int(torso_payload_stats.get("cost", 0)) != 15 or int(torso_ammo.get("explosive", 0)) != 2:
+		_fail("torso ammo payload should merge cost and normalized capacity: %s" % str(torso_payload_stats))
+	_assert_near(float(torso_payload_stats.get("ammo_payload_mass", 0.0)), 0.84, "torso ammo payload mass")
+	_assert_near(float(torso_payload_stats.get("mass", 0.0)), 6.84, "torso ammo total mass")
+	service.apply_torso_payload_direct_stats(torso_payload_stats, {"cost": 7, "mass": 1.5, "shield_hp": 9.0, "shield_regen": 2.0, "shield_coverage": 0.6}, "electronic_armor", torso_payload_context)
+	if int(torso_payload_stats.get("cost", 0)) != 22:
+		_fail("torso shield payload should merge cost: %s" % str(torso_payload_stats))
+	_assert_near(float(torso_payload_stats.get("mass", 0.0)), 8.34, "torso shield total mass")
+	_assert_near(float(torso_payload_stats.get("electronic_armor_max", 0.0)), 9.0, "torso shield max")
+	_assert_near(float(torso_payload_stats.get("electronic_armor_regen", 0.0)), 2.0, "torso shield regen")
+	_assert_near(float(torso_payload_stats.get("electronic_armor_coverage", 0.0)), 0.6, "torso shield coverage")
+	service.apply_torso_payload_direct_stats(torso_payload_stats, {"cost": 11, "mass": 3.0, "energy": 4.5, "escape_speed": 8.0, "escape_module_slots": 2, "escape_target_ring_delta": 3.2, "escape_target_lane": -0.25}, "escape_pod", torso_payload_context)
+	if int(torso_payload_stats.get("cost", 0)) != 33 or not bool(torso_payload_stats.get("has_escape_pod", false)):
+		_fail("torso escape pod should merge cost and escape flag: %s" % str(torso_payload_stats))
+	_assert_near(float(torso_payload_stats.get("mass", 0.0)), 11.34, "torso escape total mass")
+	_assert_near(float(torso_payload_stats.get("energy", 0.0)), 5.5, "torso escape energy")
+	_assert_near(float(torso_payload_stats.get("escape_speed", 0.0)), 8.0, "torso escape speed")
+	if int(torso_payload_stats.get("escape_module_slots", 0)) != 2:
+		_fail("torso escape module slots mismatch: %s" % str(torso_payload_stats))
+	_assert_near(float(torso_payload_stats.get("escape_target_ring_delta", 0.0)), 3.2, "torso escape ring target")
+	_assert_near(float(torso_payload_stats.get("escape_target_lane", 0.0)), -0.25, "torso escape lane target")
+	service.apply_torso_payload_direct_stats(torso_payload_stats, {"cost": 13, "mass": 4.25}, "spare_weapon", torso_payload_context)
+	if int(torso_payload_stats.get("cost", 0)) != 46:
+		_fail("torso spare payload should merge cost: %s" % str(torso_payload_stats))
+	_assert_near(float(torso_payload_stats.get("mass", 0.0)), 15.59, "torso spare total mass")
 	var motion_stats := {
 		"usable_power": 80.0,
 		"power_load": 20.0,
@@ -235,10 +284,11 @@ func _init() -> void:
 		"_unit_stats_service().apply_base_motion_envelope(stats)",
 		"_unit_stats_service().apply_role_deploy_profile(stats, role_key)",
 		"_unit_stats_service().apply_manufacturer_discount(stats, manufacturer_discount)",
-			"_unit_stats_service().copy_part_logic_stats(stats, part",
-			"_unit_stats_service().copy_part_combat_stats(stats, part",
-			"_unit_stats_service().copy_part_payload_stats(stats, part",
-		]:
+		"_unit_stats_service().copy_part_logic_stats(stats, part",
+		"_unit_stats_service().copy_part_combat_stats(stats, part",
+		"_unit_stats_service().copy_part_payload_stats(stats, part",
+		"_unit_stats_service().apply_torso_payload_direct_stats(stats,",
+	]:
 		if not main_source.contains(token):
 			_fail("main.gd missing UnitStatsService delegation token: %s" % token)
 			return

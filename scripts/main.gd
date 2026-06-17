@@ -24739,6 +24739,13 @@ func _unit_stats_part_payload_context(part: Dictionary, part_is_torso: bool) -> 
 	}
 
 
+func _unit_stats_torso_payload_context() -> Dictionary:
+	return {
+		"ammo_types": AMMO_TYPES,
+		"ammo_unit_mass": AMMO_UNIT_MASS,
+	}
+
+
 func _unit_editor_assembly_template_service() -> UnitEditorAssemblyTemplateService:
 	if unit_editor_assembly_template_service == null:
 		unit_editor_assembly_template_service = UnitEditorAssemblyTemplateService.new()
@@ -38762,6 +38769,7 @@ func _apply_torso_slot_payload_stats(stats: Dictionary, role_key: String, unit_b
 	var ammo_count := 0
 	var ammo_mass := 0.0
 	var component_priced := _unit_uses_component_pricing(unit_bp)
+	var torso_payload_context := _unit_stats_torso_payload_context()
 	if not component_priced:
 		for slot_key in ["engine", "cooling", "booster"]:
 			var part := _selected_component(role_key, slot_key, int(unit_bp.get(slot_key, 0)))
@@ -38816,17 +38824,13 @@ func _apply_torso_slot_payload_stats(stats: Dictionary, role_key: String, unit_b
 				payload_volume_rank += _payload_slot_volume_rank(payload_kind, ammo_part, payload, "muscle")
 				ammo_count += 1
 				ammo_mass += float(ammo_part.get("mass", 0.0))
-				stats["cost"] = int(stats["cost"]) + int(ammo_part.get("cost", 0))
-				stats["mass"] = float(stats["mass"]) + float(ammo_part.get("mass", 0.0))
-				_merge_ammo_capacity(stats, ammo_part.get("ammo_capacity", {}))
+				_unit_stats_service().apply_torso_payload_direct_stats(stats, ammo_part, payload_kind, torso_payload_context)
 			elif payload_kind == "electronic_armor":
 				var armor_part := _payload_part_for_payload(role_key, payload)
 				payload_count += 1
 				payload_mass += float(armor_part.get("mass", 0.0))
 				payload_volume_rank += _payload_slot_volume_rank(payload_kind, armor_part, payload, "muscle")
-				stats["cost"] = int(stats["cost"]) + int(armor_part.get("cost", 0))
-				stats["mass"] = float(stats["mass"]) + float(armor_part.get("mass", 0.0))
-				_merge_electronic_armor_stats(stats, armor_part)
+				_unit_stats_service().apply_torso_payload_direct_stats(stats, armor_part, payload_kind, torso_payload_context)
 			elif payload_kind == "engine":
 				var engine_part := _payload_part_for_payload(role_key, payload)
 				payload_count += 1
@@ -38850,21 +38854,13 @@ func _apply_torso_slot_payload_stats(stats: Dictionary, role_key: String, unit_b
 				payload_count += 1
 				payload_mass += float(pod_payload_part.get("mass", 0.0))
 				payload_volume_rank += _payload_slot_volume_rank(payload_kind, pod_payload_part, payload, "muscle")
-				stats["cost"] = int(stats["cost"]) + int(pod_payload_part.get("cost", 0))
-				stats["mass"] = float(stats["mass"]) + float(pod_payload_part.get("mass", 0.0))
-				stats["energy"] = float(stats["energy"]) + float(pod_payload_part.get("energy", 0.0))
-				stats["has_escape_pod"] = true
-				stats["escape_speed"] = maxf(float(stats.get("escape_speed", 0.0)), float(pod_payload_part.get("escape_speed", 0.0)))
-				stats["escape_module_slots"] = max(int(stats.get("escape_module_slots", 0)), int(pod_payload_part.get("escape_module_slots", 0)))
-				stats["escape_target_ring_delta"] = float(pod_payload_part.get("escape_target_ring_delta", stats.get("escape_target_ring_delta", 2.8)))
-				stats["escape_target_lane"] = float(pod_payload_part.get("escape_target_lane", stats.get("escape_target_lane", 0.0)))
+				_unit_stats_service().apply_torso_payload_direct_stats(stats, pod_payload_part, payload_kind, torso_payload_context)
 			elif payload_kind == "spare_weapon":
 				var spare_payload_part := _payload_part_for_payload(role_key, payload)
 				payload_count += 1
 				payload_mass += float(spare_payload_part.get("mass", 0.0))
 				payload_volume_rank += _payload_slot_volume_rank(payload_kind, spare_payload_part, payload, "muscle")
-				stats["cost"] = int(stats["cost"]) + int(spare_payload_part.get("cost", 0))
-				stats["mass"] = float(stats["mass"]) + float(spare_payload_part.get("mass", 0.0))
+				_unit_stats_service().apply_torso_payload_direct_stats(stats, spare_payload_part, payload_kind, torso_payload_context)
 			elif payload.has("slot"):
 				var payload_slot := String(payload.get("slot", ""))
 				var payload_part := _selected_component(role_key, payload_slot, int(payload.get("index", 0)))
@@ -38879,14 +38875,7 @@ func _apply_torso_slot_payload_stats(stats: Dictionary, role_key: String, unit_b
 			payload_count += 1
 			payload_mass += float(pod_part.get("mass", 0.0))
 			payload_volume_rank += _part_slot_volume_rank(pod_part, "muscle")
-			stats["cost"] = int(stats["cost"]) + int(pod_part.get("cost", 0))
-			stats["mass"] = float(stats["mass"]) + float(pod_part.get("mass", 0.0))
-			stats["energy"] = float(stats["energy"]) + float(pod_part.get("energy", 0.0))
-			stats["has_escape_pod"] = true
-			stats["escape_speed"] = maxf(float(stats.get("escape_speed", 0.0)), float(pod_part.get("escape_speed", 0.0)))
-			stats["escape_module_slots"] = max(int(stats.get("escape_module_slots", 0)), int(pod_part.get("escape_module_slots", 0)))
-			stats["escape_target_ring_delta"] = float(pod_part.get("escape_target_ring_delta", stats.get("escape_target_ring_delta", 2.8)))
-			stats["escape_target_lane"] = float(pod_part.get("escape_target_lane", stats.get("escape_target_lane", 0.0)))
+			_unit_stats_service().apply_torso_payload_direct_stats(stats, pod_part, "escape_pod", torso_payload_context)
 	var slot_cap := int(stats.get("torso_slots", 0))
 	if slot_cap <= 0:
 		slot_cap = int(stats.get("engine_slots", 0)) + int(stats.get("cooling_slots", 0)) + int(stats.get("booster_slots", 0)) + int(stats.get("spare_weapon_slots", 0))

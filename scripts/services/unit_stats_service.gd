@@ -652,6 +652,26 @@ func copy_part_payload_stats(stats: Dictionary, part: Dictionary, context: Dicti
 	return stats
 
 
+func apply_torso_payload_direct_stats(stats: Dictionary, part: Dictionary, payload_kind: String, context: Dictionary) -> Dictionary:
+	if not (payload_kind in ["ammo", "electronic_armor", "escape_pod", "spare_weapon"]):
+		return stats
+	stats["cost"] = int(stats.get("cost", 0)) + int(part.get("cost", 0))
+	stats["mass"] = float(stats.get("mass", 0.0)) + float(part.get("mass", 0.0))
+	match payload_kind:
+		"ammo":
+			_merge_ammo_capacity(stats, part.get("ammo_capacity", {}), float(context.get("ammo_scale", 1.0)), context)
+		"electronic_armor":
+			_merge_electronic_armor_stats(stats, part, float(context.get("shield_scale", 1.0)))
+		"escape_pod":
+			stats["energy"] = float(stats.get("energy", 0.0)) + float(part.get("energy", 0.0))
+			stats["has_escape_pod"] = true
+			stats["escape_speed"] = maxf(float(stats.get("escape_speed", 0.0)), float(part.get("escape_speed", 0.0)))
+			stats["escape_module_slots"] = maxi(int(stats.get("escape_module_slots", 0)), int(part.get("escape_module_slots", 0)))
+			stats["escape_target_ring_delta"] = float(part.get("escape_target_ring_delta", stats.get("escape_target_ring_delta", 2.8)))
+			stats["escape_target_lane"] = float(part.get("escape_target_lane", stats.get("escape_target_lane", 0.0)))
+	return stats
+
+
 func _merge_ammo_capacity(stats: Dictionary, capacity: Variant, scale: float, context: Dictionary) -> void:
 	if not (capacity is Dictionary):
 		return
