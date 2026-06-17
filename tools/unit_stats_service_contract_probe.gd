@@ -123,6 +123,62 @@ func _init() -> void:
 		_fail("torso combat copy should block weapon/projectile identity: %s" % str(torso_combat_stats))
 	if not _near(float(torso_combat_stats.get("data_security", 0.0)), 0.5):
 		_fail("torso combat copy should still merge torso data security: %s" % str(torso_combat_stats))
+	var payload_stats := {
+		"ammo_capacity": {"bullet": 1},
+		"mass": 10.0,
+		"electronic_armor_max": 2.0,
+		"electronic_armor_regen": 0.5,
+		"electronic_armor_coverage": 0.2,
+		"material_class": "weapon",
+		"connection_ends": 1,
+		"joint_ports": 1,
+		"weapon_bays": 0,
+		"engine_slots": 0,
+		"booster_slots": 0,
+		"cooling_slots": 0,
+		"module_slots": 0,
+		"torso_slots": 0,
+		"spare_weapon_slots": 0,
+		"torso_slot_volume_rank_limit": 0.0,
+	}
+	service.copy_part_payload_stats(payload_stats, {
+		"ammo_capacity": {"bullet": 2, "missile": 3},
+		"electronic_armor": true,
+		"shield_hp": 5.0,
+		"shield_regen": 1.0,
+		"shield_coverage": 0.8,
+		"material_class": "gun",
+		"connection_ends": 3,
+		"joint_ports": 2,
+		"module_slots": 4,
+		"torso_slots": 5,
+		"torso_slot_mass_limit": 12.0,
+		"torso_slot_volume_tier": "L",
+		"spare_weapon_mass_limit": 9.0,
+	}, {
+		"part_is_torso": true,
+		"torso_module_slots": 6,
+		"torso_plugin_slots": 7,
+		"legacy_mass_limit_volume_rank": 2.5,
+		"torso_slot_volume_tier_rank": 4.0,
+		"ammo_types": ["bullet", "laser", "chemical", "explosive", "web"],
+		"ammo_unit_mass": {"bullet": 0.16, "laser": 0.11, "chemical": 0.24, "explosive": 0.42, "web": 0.09},
+	})
+	var payload_ammo: Dictionary = payload_stats.get("ammo_capacity", {})
+	if int(payload_ammo.get("bullet", 0)) != 3 or int(payload_ammo.get("explosive", 0)) != 3:
+		_fail("payload copy should merge and normalize ammo capacity: %s" % str(payload_ammo))
+	_assert_near(float(payload_stats.get("ammo_payload_mass", 0.0)), 1.58, "payload ammo mass")
+	_assert_near(float(payload_stats.get("mass", 0.0)), 11.58, "payload mass with ammo")
+	_assert_near(float(payload_stats.get("electronic_armor_max", 0.0)), 7.0, "payload shield max")
+	_assert_near(float(payload_stats.get("electronic_armor_regen", 0.0)), 1.5, "payload shield regen")
+	_assert_near(float(payload_stats.get("electronic_armor_coverage", 0.0)), 0.8, "payload shield coverage")
+	if String(payload_stats.get("material_class", "")) != "gun" or int(payload_stats.get("connection_ends", 0)) != 3:
+		_fail("payload copy should preserve material and connection metadata: %s" % str(payload_stats))
+	if int(payload_stats.get("module_slots", 0)) != 6 or int(payload_stats.get("torso_slots", 0)) != 7 or int(payload_stats.get("joint_ports", 0)) != 2:
+		_fail("payload copy should apply torso capacity context: %s" % str(payload_stats))
+	_assert_near(float(payload_stats.get("torso_slot_mass_limit", 0.0)), 12.0, "payload torso slot mass")
+	_assert_near(float(payload_stats.get("torso_slot_volume_rank_limit", 0.0)), 4.0, "payload torso slot volume")
+	_assert_near(float(payload_stats.get("spare_weapon_mass_limit", 0.0)), 9.0, "payload spare weapon mass")
 	var motion_stats := {
 		"usable_power": 80.0,
 		"power_load": 20.0,
@@ -181,6 +237,7 @@ func _init() -> void:
 		"_unit_stats_service().apply_manufacturer_discount(stats, manufacturer_discount)",
 			"_unit_stats_service().copy_part_logic_stats(stats, part",
 			"_unit_stats_service().copy_part_combat_stats(stats, part",
+			"_unit_stats_service().copy_part_payload_stats(stats, part",
 		]:
 		if not main_source.contains(token):
 			_fail("main.gd missing UnitStatsService delegation token: %s" % token)

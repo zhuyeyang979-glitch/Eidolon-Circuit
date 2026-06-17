@@ -620,6 +620,85 @@ func copy_part_combat_stats(stats: Dictionary, part: Dictionary, context: Dictio
 	return stats
 
 
+func copy_part_payload_stats(stats: Dictionary, part: Dictionary, context: Dictionary) -> Dictionary:
+	var part_is_torso := bool(context.get("part_is_torso", false))
+	if part.has("ammo_capacity"):
+		_merge_ammo_capacity(stats, part.get("ammo_capacity", {}), float(context.get("ammo_scale", 1.0)), context)
+	if bool(part.get("electronic_armor", false)):
+		_merge_electronic_armor_stats(stats, part, float(context.get("shield_scale", 1.0)))
+	if part.has("material_class"):
+		stats["material_class"] = String(part["material_class"])
+	if part.has("connection_ends"):
+		stats["connection_ends"] = maxi(int(stats.get("connection_ends", 0)), int(part["connection_ends"]))
+	if part_is_torso:
+		stats["module_slots"] = maxi(int(stats.get("module_slots", 0)), int(context.get("torso_module_slots", part.get("module_slots", 0))))
+		stats["torso_slots"] = maxi(int(stats.get("torso_slots", 0)), int(context.get("torso_plugin_slots", part.get("torso_slots", 0))))
+	for capacity_key in ["joint_ports", "weapon_bays", "engine_slots", "booster_slots", "cooling_slots", "module_slots", "torso_slots", "spare_weapon_slots"]:
+		if not part.has(capacity_key):
+			continue
+		var capacity_value := int(part[capacity_key])
+		if part_is_torso and capacity_key == "module_slots":
+			capacity_value = int(context.get("torso_module_slots", capacity_value))
+		elif part_is_torso and capacity_key == "torso_slots":
+			capacity_value = int(context.get("torso_plugin_slots", capacity_value))
+		stats[capacity_key] = maxi(int(stats.get(capacity_key, 0)), capacity_value)
+	if part.has("torso_slot_mass_limit"):
+		stats["torso_slot_mass_limit"] = maxf(float(stats.get("torso_slot_mass_limit", 0.0)), float(part["torso_slot_mass_limit"]))
+		stats["torso_slot_volume_rank_limit"] = maxf(float(stats.get("torso_slot_volume_rank_limit", 0.0)), float(context.get("legacy_mass_limit_volume_rank", 0.0)))
+	if part.has("torso_slot_volume_tier"):
+		stats["torso_slot_volume_rank_limit"] = maxf(float(stats.get("torso_slot_volume_rank_limit", 0.0)), float(context.get("torso_slot_volume_tier_rank", 0.0)))
+	if part.has("spare_weapon_mass_limit"):
+		stats["spare_weapon_mass_limit"] = maxf(float(stats.get("spare_weapon_mass_limit", 0.0)), float(part["spare_weapon_mass_limit"]))
+	return stats
+
+
+func _merge_ammo_capacity(stats: Dictionary, capacity: Variant, scale: float, context: Dictionary) -> void:
+	if not (capacity is Dictionary):
+		return
+	var ammo_capacity: Dictionary = Dictionary(stats.get("ammo_capacity", {"bullet": 0, "chemical": 0, "laser": 0})).duplicate(true)
+	var added_mass := 0.0
+	for raw_type in Dictionary(capacity).keys():
+		var ammo_type := _normalized_ammo_type(String(raw_type), context)
+		if ammo_type == "":
+			continue
+		var added_count := maxi(0, int(roundf(float(Dictionary(capacity).get(raw_type, 0)) * scale)))
+		ammo_capacity[ammo_type] = int(ammo_capacity.get(ammo_type, 0)) + added_count
+		added_mass += float(added_count) * _ammo_unit_mass(ammo_type, context)
+	stats["ammo_capacity"] = ammo_capacity
+	if added_mass > 0.0:
+		stats["ammo_payload_mass"] = float(stats.get("ammo_payload_mass", 0.0)) + added_mass
+		stats["mass"] = float(stats.get("mass", 0.0)) + added_mass
+
+
+func _normalized_ammo_type(ammo_type: String, context: Dictionary) -> String:
+	var normalized := ammo_type.to_lower()
+	if normalized in ["explosion", "missile"]:
+		normalized = "explosive"
+	elif normalized in ["chemical_splash", "acid"]:
+		normalized = "chemical"
+	elif normalized in ["silk", "thread"]:
+		normalized = "web"
+	var ammo_types: Array = Array(context.get("ammo_types", []))
+	return normalized if ammo_types.has(normalized) else ""
+
+
+func _ammo_unit_mass(ammo_type: String, context: Dictionary) -> float:
+	var masses: Dictionary = Dictionary(context.get("ammo_unit_mass", {}))
+	return float(masses.get(_normalized_ammo_type(ammo_type, context), 0.0))
+
+
+func _merge_electronic_armor_stats(stats: Dictionary, part: Dictionary, scale: float = 1.0) -> void:
+	var shield_hp := float(part.get("shield_hp", part.get("electronic_armor_hp", 0.0)))
+	var shield_regen := float(part.get("shield_regen", part.get("electronic_armor_regen", 0.0)))
+	var shield_coverage := float(part.get("shield_coverage", part.get("electronic_armor_coverage", 0.0)))
+	stats["electronic_armor_max"] = float(stats.get("electronic_armor_max", 0.0)) + shield_hp * scale
+	stats["electronic_armor_regen"] = float(stats.get("electronic_armor_regen", 0.0)) + shield_regen * scale
+	stats["electronic_armor_coverage"] = maxf(float(stats.get("electronic_armor_coverage", 0.0)), shield_coverage * sqrt(maxf(0.0, scale)))
+	stats["shield_max"] = float(stats.get("electronic_armor_max", 0.0))
+	stats["shield_regen"] = float(stats.get("electronic_armor_regen", 0.0))
+	stats["shield_coverage"] = float(stats.get("electronic_armor_coverage", 0.0))
+
+
 func apply_base_motion_envelope(stats: Dictionary) -> Dictionary:
 	var power_surplus: float = maxf(1.0, float(stats.get("usable_power", stats.get("power", 0.0))) - float(stats.get("power_load", stats.get("energy", 0.0))) * 0.18)
 	var mass: float = maxf(1.0, float(stats.get("mass", 0.0)))

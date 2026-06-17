@@ -42,7 +42,7 @@ This file is the local execution board for the active Linear project `Eidolon Ci
 - Active branch: `codex/yhzlxp-eidolon-work`.
 - Added `docs/plans/2026-06-17-project-optimization-execution.md` as the prioritized execution plan for the current optimization batch.
 - Extracted assembly template model construction from `scripts/main.gd` into `scripts/services/unit_editor_assembly_template_service.gd`; `main.gd` now remains the adapter/composition owner for this path.
-- Extended `scripts/services/unit_stats_service.gd` beyond stats-cache bookkeeping so it now owns the default stats schema, pure base motion envelope, part logic/combat field copy gating, role deploy profile, and manufacturer discount post-processing for `_compute_unit_stats`.
+- Extended `scripts/services/unit_stats_service.gd` beyond stats-cache bookkeeping so it now owns the default stats schema, pure base motion envelope, part logic/combat/payload field copy gating, role deploy profile, and manufacturer discount post-processing for `_compute_unit_stats`.
 - Extracted engine allocation data model construction from `scripts/main.gd` into `scripts/services/unit_editor_engine_allocation_service.gd`; `main.gd` now remains the callback adapter for current topology and binding data.
 - Extracted assembly template overlay drawing from `scripts/views/editor/assembly_board_view.gd` into `scripts/views/editor/assembly_template_overlay_renderer.gd`; `AssemblyBoardView` now delegates overlay rendering while keeping board snapshot and retained-layer ownership.
 - Added headless contract probes: `part_identity_contract_probe` and `unit_editor_assembly_template_service_contract_probe`.

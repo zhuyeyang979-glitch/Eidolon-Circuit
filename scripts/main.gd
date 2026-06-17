@@ -24727,6 +24727,18 @@ func _unit_stats_base_constants() -> Dictionary:
 	}
 
 
+func _unit_stats_part_payload_context(part: Dictionary, part_is_torso: bool) -> Dictionary:
+	return {
+		"part_is_torso": part_is_torso,
+		"ammo_types": AMMO_TYPES,
+		"ammo_unit_mass": AMMO_UNIT_MASS,
+		"torso_module_slots": _torso_software_capacity_for_part(part) if part_is_torso else int(part.get("module_slots", 0)),
+		"torso_plugin_slots": _torso_plugin_capacity_for_part(part) if part_is_torso else int(part.get("torso_slots", 0)),
+		"legacy_mass_limit_volume_rank": _legacy_mass_limit_to_volume_rank(float(part["torso_slot_mass_limit"])) if part.has("torso_slot_mass_limit") else 0.0,
+		"torso_slot_volume_tier_rank": float(_volume_tier_rank(String(part["torso_slot_volume_tier"]))) if part.has("torso_slot_volume_tier") else 0.0,
+	}
+
+
 func _unit_editor_assembly_template_service() -> UnitEditorAssemblyTemplateService:
 	if unit_editor_assembly_template_service == null:
 		unit_editor_assembly_template_service = UnitEditorAssemblyTemplateService.new()
@@ -36872,32 +36884,7 @@ func _compute_unit_stats(player_id: int, role_key: String, unit_index: int = -1,
 		_unit_stats_service().copy_part_combat_stats(stats, part, {
 			"part_is_torso": part_is_torso,
 		})
-		if part.has("ammo_capacity"):
-			_merge_ammo_capacity(stats, part["ammo_capacity"])
-		if bool(part.get("electronic_armor", false)):
-			_merge_electronic_armor_stats(stats, part)
-		if part.has("material_class"):
-			stats["material_class"] = String(part["material_class"])
-		if part.has("connection_ends"):
-			stats["connection_ends"] = max(int(stats["connection_ends"]), int(part["connection_ends"]))
-		if part_is_torso:
-			stats["module_slots"] = max(int(stats.get("module_slots", 0)), _torso_software_capacity_for_part(part))
-			stats["torso_slots"] = max(int(stats.get("torso_slots", 0)), _torso_plugin_capacity_for_part(part))
-		for capacity_key in ["joint_ports", "weapon_bays", "engine_slots", "booster_slots", "cooling_slots", "module_slots", "torso_slots", "spare_weapon_slots"]:
-			if part.has(capacity_key):
-				var capacity_value := int(part[capacity_key])
-				if part_is_torso and capacity_key == "module_slots":
-					capacity_value = _torso_software_capacity_for_part(part)
-				elif part_is_torso and capacity_key == "torso_slots":
-					capacity_value = _torso_plugin_capacity_for_part(part)
-				stats[capacity_key] = max(int(stats[capacity_key]), capacity_value)
-		if part.has("torso_slot_mass_limit"):
-			stats["torso_slot_mass_limit"] = maxf(float(stats.get("torso_slot_mass_limit", 0.0)), float(part["torso_slot_mass_limit"]))
-			stats["torso_slot_volume_rank_limit"] = maxf(float(stats.get("torso_slot_volume_rank_limit", 0.0)), _legacy_mass_limit_to_volume_rank(float(part["torso_slot_mass_limit"])))
-		if part.has("torso_slot_volume_tier"):
-			stats["torso_slot_volume_rank_limit"] = maxf(float(stats.get("torso_slot_volume_rank_limit", 0.0)), float(_volume_tier_rank(String(part["torso_slot_volume_tier"]))))
-		if part.has("spare_weapon_mass_limit"):
-			stats["spare_weapon_mass_limit"] = maxf(float(stats.get("spare_weapon_mass_limit", 0.0)), float(part["spare_weapon_mass_limit"]))
+		_unit_stats_service().copy_part_payload_stats(stats, part, _unit_stats_part_payload_context(part, part_is_torso))
 		if part.has("resist"):
 			var part_resist: Dictionary = part["resist"]
 			for damage_type in MELEE_DAMAGE_TYPES:
