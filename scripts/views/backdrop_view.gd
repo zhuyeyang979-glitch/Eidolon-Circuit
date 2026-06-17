@@ -17,7 +17,9 @@ func set_background_texture(texture: Texture2D) -> void:
 
 func _draw() -> void:
 	var base := Color(0.008, 0.014, 0.02, 0.94)
-	if mode == "editor":
+	if mode == "menu":
+		base = Color(0.0, 0.004, 0.008, 1.0)
+	elif mode == "editor":
 		base = Color(0.012, 0.018, 0.022, 0.92)
 	elif mode == "settings":
 		base = Color(0.012, 0.014, 0.024, 0.93)
@@ -26,11 +28,15 @@ func _draw() -> void:
 	draw_rect(Rect2(Vector2.ZERO, size), base, true)
 	if background_texture != null:
 		var art_alpha := 0.34
-		if mode == "editor":
+		if mode == "menu":
+			art_alpha = 0.86
+		elif mode == "editor":
 			art_alpha = 0.26
 		elif mode == "battle":
 			art_alpha = 0.28
 		draw_texture_rect(background_texture, Rect2(Vector2.ZERO, size), false, Color(1.0, 1.0, 1.0, art_alpha))
+	if mode == "menu":
+		_draw_menu_key_art_veil()
 	var grid_color := Color(0.26, 0.86, 1.0, 0.08)
 	var warm_color := Color(1.0, 0.78, 0.24, 0.11)
 	for x in range(-80, int(size.x) + 160, 64):
@@ -47,3 +53,11 @@ func _draw() -> void:
 	for i in range(12):
 		var x0 := 70.0 + float(i) * 96.0
 		draw_rect(Rect2(Vector2(x0, 604.0 + float(i % 3) * 12.0), Vector2(42.0, 3.0)), Color(0.9, 0.96, 1.0, 0.12), true)
+
+
+func _draw_menu_key_art_veil() -> void:
+	var left_w := size.x * 0.45
+	draw_rect(Rect2(Vector2.ZERO, Vector2(left_w, size.y)), Color(0.0, 0.006, 0.014, 0.68), true)
+	draw_rect(Rect2(Vector2(left_w, 0.0), Vector2(size.x * 0.18, size.y)), Color(0.0, 0.006, 0.014, 0.32), true)
+	draw_rect(Rect2(Vector2.ZERO, Vector2(size.x, 112.0)), Color(0.0, 0.006, 0.014, 0.26), true)
+	draw_rect(Rect2(Vector2(0.0, size.y - 96.0), Vector2(size.x, 96.0)), Color(0.0, 0.006, 0.014, 0.38), true)

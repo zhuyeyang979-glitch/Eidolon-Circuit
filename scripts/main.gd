@@ -2231,6 +2231,10 @@ func _ready() -> void:
 	_show_menu()
 
 
+func _exit_tree() -> void:
+	_shutdown_audio_system()
+
+
 func _initialize_hot_path_state_layer() -> void:
 	game_state_store = GameStateStore.new()
 	dirty_graph = DirtyGraph.new()
@@ -3390,41 +3394,8 @@ func _ensure_saved_units_dir() -> void:
 	DirAccess.make_dir_recursive_absolute(SAVED_UNITS_DIR)
 
 
-const LEGACY_POWER_FIELD_KEYS := [
-	"power",
-	"energy",
-	"power_load",
-	"engine_power",
-	"aux_power",
-	"required_power",
-	"power_margin",
-	"engine_torque",
-	"engine_motion_scale",
-	"engine_momentum_budget",
-	"engine_joint_momentum_budget",
-	"engine_thruster_momentum_budget",
-	"engine_momentum_required",
-	"engine_momentum_margin",
-	"engine_momentum_ratio",
-	"thruster_engine_demand",
-	"bound_joint_engine_demand",
-	"joint_engine_demand",
-	"normal_thrust",
-	"boost_power",
-	"thruster_momentum",
-	"momentum_capacity",
-	"load_capacity",
-	"embedded_joint_momentum_capacity",
-	"damage_unit" + "_threshold",
-	"reference_" + "damage",
-	"torso_damage_unit" + "_threshold",
-]
-
-
 func _legacy_power_field_keys() -> Array:
-	if unit_blueprint_validator != null:
-		return unit_blueprint_validator.legacy_drive_keys()
-	return LEGACY_POWER_FIELD_KEYS.duplicate()
+	return _unit_blueprint_validator().legacy_drive_keys()
 
 
 func _remove_user_json_file(path: String) -> bool:
@@ -3434,31 +3405,7 @@ func _remove_user_json_file(path: String) -> bool:
 
 
 func _saved_payload_legacy_path(value: Variant) -> String:
-	if unit_blueprint_validator != null:
-		return unit_blueprint_validator.first_legacy_drive_path(value)
-	return _saved_payload_legacy_path_fallback(value)
-
-
-func _saved_payload_legacy_path_fallback(value: Variant, path: String = "$") -> String:
-	if value is Dictionary:
-		var dict: Dictionary = value
-		for key in _legacy_power_field_keys():
-			if dict.has(key):
-				return "%s.%s" % [path, String(key)]
-		for key in ["attack_groups", "action_groups", "shell", "joint_a", "joint_b", "muscle_a", "muscle_b", "visual_pointer", "collider_pointer"]:
-			if dict.has(key):
-				return "%s.%s" % [path, String(key)]
-		for child_key in dict.keys():
-			var found := _saved_payload_legacy_path_fallback(dict[child_key], "%s.%s" % [path, str(child_key)])
-			if found != "":
-				return found
-	elif value is Array:
-		var arr := Array(value)
-		for i in range(arr.size()):
-			var found := _saved_payload_legacy_path_fallback(arr[i], "%s[%d]" % [path, i])
-			if found != "":
-				return found
-	return ""
+	return _unit_blueprint_validator().first_legacy_drive_path(value)
 
 
 func _saved_payload_has_legacy_power_fields(value: Variant) -> bool:
@@ -3482,25 +3429,23 @@ func _without_legacy_power_fields(part: Dictionary, slot_key: String = "") -> Di
 const ACTION_MODULE_COMBAT_FIELD_KEYS = DataRuleService.ACTION_MODULE_COMBAT_FIELD_KEYS
 
 func _part_is_action_module(slot_key: String, part: Dictionary) -> bool:
-	return data_rule_service.is_action_module(slot_key, part) if data_rule_service != null else DataRuleService.new().is_action_module(slot_key, part)
+	return _data_rule_service().is_action_module(slot_key, part)
 
 func _part_is_nonphysical_equipment_or_software(slot_key: String, part: Dictionary) -> bool:
-	return data_rule_service.is_nonphysical_equipment_or_software(slot_key, part) if data_rule_service != null else DataRuleService.new().is_nonphysical_equipment_or_software(slot_key, part)
+	return _data_rule_service().is_nonphysical_equipment_or_software(slot_key, part)
 
 func _scrub_nonphysical_catalog_part(part: Dictionary, slot_key: String) -> Dictionary:
-	return data_rule_service.canonical_catalog_part(part, slot_key) if data_rule_service != null else DataRuleService.new().canonical_catalog_part(part, slot_key)
+	return _data_rule_service().canonical_catalog_part(part, slot_key)
 
 func _saved_dict_looks_like_nonphysical_payload(data: Dictionary) -> bool:
-	return data_rule_service.saved_dict_looks_like_nonphysical_payload(data) if data_rule_service != null else DataRuleService.new().saved_dict_looks_like_nonphysical_payload(data)
+	return _data_rule_service().saved_dict_looks_like_nonphysical_payload(data)
 
 func _saved_payload_has_legacy_nonphysical_combat_fields(value) -> bool:
 	return _saved_payload_nonphysical_combat_path(value) != ""
 
 
 func _saved_payload_nonphysical_combat_path(value, path: String = "$") -> String:
-	if unit_blueprint_validator != null:
-		return unit_blueprint_validator.first_nonphysical_combat_path(value, path)
-	return DataRuleService.new().first_nonphysical_combat_path(value, path)
+	return _unit_blueprint_validator().first_nonphysical_combat_path(value, path)
 
 
 func _saved_blueprint_has_current_topology(unit_bp: Dictionary) -> bool:
@@ -3687,14 +3632,9 @@ func _saved_unit_sanitize_strip_keys() -> Array:
 	for key in _legacy_power_field_keys():
 		if not keys.has(key):
 			keys.append(key)
-	if unit_blueprint_validator != null:
-		for key in unit_blueprint_validator.legacy_pointer_keys():
-			if not keys.has(key):
-				keys.append(key)
-	else:
-		for key in ["attack_groups", "action_groups", "shell", "joint_a", "joint_b", "muscle_a", "muscle_b", "visual_pointer", "collider_pointer"]:
-			if not keys.has(key):
-				keys.append(key)
+	for key in _unit_blueprint_validator().legacy_pointer_keys():
+		if not keys.has(key):
+			keys.append(key)
 	return keys
 
 
@@ -5791,7 +5731,7 @@ func _saved_teams_entries(force: bool = false) -> Array:
 		var payload: Dictionary = parsed
 		if not _is_current_saved_team_payload(payload):
 			continue
-		var saved_profile := team_legality_service.profile_for_saved_payload(payload) if team_legality_service != null else {}
+		var saved_profile := _team_legality_service().profile_for_saved_payload(payload)
 		var slots: Array = Array(payload.get("slots", []))
 		var non_empty := 0
 		for raw_slot in slots:
@@ -5925,7 +5865,7 @@ func _team_legality_first_note(report: Dictionary, code_key: String, ready_note_
 
 
 func _saved_units_team_legality_summary(selection: Array) -> Dictionary:
-	var audit := team_legality_service.audit(_team_rule_profile(), _team_legality_saved_entries(selection)) if team_legality_service != null else {}
+	var audit := _team_legality_service().audit(_team_rule_profile(), _team_legality_saved_entries(selection))
 	var metrics: Dictionary = audit.get("metrics", {})
 	return {
 		"valid": bool(audit.get("roster_ready", false)),
@@ -6020,7 +5960,7 @@ func _load_saved_team_to_current_roster(path: String) -> bool:
 		if saved_unit_hint_label != null:
 			saved_unit_hint_label.text = "载入队伍失败：旧队伍数据已废弃。" if _ui_is_zh() else "Load team failed: old team schema is obsolete."
 		return false
-	var saved_profile := team_legality_service.profile_for_saved_payload(payload) if team_legality_service != null else {}
+	var saved_profile := _team_legality_service().profile_for_saved_payload(payload)
 	if saved_profile.is_empty():
 		if saved_unit_hint_label != null:
 			saved_unit_hint_label.text = "载入队伍失败：该队伍规则暂未开放，文件已保留。" if _ui_is_zh() else "Load team failed: this team rule is not active yet; the file was preserved."
@@ -6060,7 +6000,7 @@ func _load_saved_team_to_current_roster(path: String) -> bool:
 			"legal": illegal_note == "",
 			"illegal_note": illegal_note,
 		})
-	var load_audit := team_legality_service.audit(saved_profile, normalized_entries) if team_legality_service != null else {}
+	var load_audit := _team_legality_service().audit(saved_profile, normalized_entries)
 	if not bool(load_audit.get("roster_ready", false)):
 		if saved_unit_hint_label != null:
 			saved_unit_hint_label.text = ("载入队伍失败：%s" if _ui_is_zh() else "Load team failed: %s") % _team_legality_first_note(load_audit, "roster_blocking_codes", "队伍合法。", "Team ready.")
@@ -6234,7 +6174,7 @@ func _import_editor_team(path: String = "") -> bool:
 		_remove_user_json_file(import_path)
 		editor_summary_label.text = "导入失败：旧队伍动力链数据已删除，请用 TeamEdit 重新保存。" if _ui_is_zh() else "Import failed: old momentum-chain team data was deleted; rebuild it in TeamEdit."
 		return false
-	var saved_profile := team_legality_service.profile_for_saved_payload(payload) if team_legality_service != null else {}
+	var saved_profile := _team_legality_service().profile_for_saved_payload(payload)
 	if saved_profile.is_empty():
 		editor_summary_label.text = "导入失败：该队伍规则暂未开放，文件已保留。" if _ui_is_zh() else "Import failed: this team rule is not active yet; the file was preserved."
 		return false
@@ -6276,7 +6216,7 @@ func _import_editor_team(path: String = "") -> bool:
 			"legal": illegal_note == "",
 			"illegal_note": illegal_note,
 		})
-	var import_audit := team_legality_service.audit(saved_profile, normalized_entries) if team_legality_service != null else {}
+	var import_audit := _team_legality_service().audit(saved_profile, normalized_entries)
 	if not bool(import_audit.get("roster_ready", false)):
 		editor_summary_label.text = ("导入失败：%s" if _ui_is_zh() else "Import failed: %s") % _team_legality_first_note(import_audit, "roster_blocking_codes", "队伍合法。", "Team ready.")
 		return false
@@ -6603,9 +6543,7 @@ func _roster_unit_total(player_id: int) -> int:
 
 
 func _team_rule_profile() -> Dictionary:
-	if team_legality_service == null:
-		team_legality_service = TeamLegalityService.new()
-	return team_legality_service.active_profile()
+	return _team_legality_service().active_profile()
 
 
 func _current_roster_cap() -> int:
@@ -7578,7 +7516,7 @@ func _team_legality_live_entries(player_id: int, entries: Array) -> Array:
 
 func _team_legality_live_roster_audit(player_id: int) -> Dictionary:
 	var roster_entries := _team_legality_live_entries(player_id, _all_roster_order(player_id))
-	return team_legality_service.audit(_team_rule_profile(), roster_entries) if team_legality_service != null else {}
+	return _team_legality_service().audit(_team_rule_profile(), roster_entries)
 
 
 func _team_legality_live_audit(player_id: int) -> Dictionary:
@@ -7586,7 +7524,7 @@ func _team_legality_live_audit(player_id: int) -> Dictionary:
 	var sortie_entries := _team_legality_live_entries(player_id, _team_sortie_order(player_id))
 	var starter_raw := _starter_sortie_entry(player_id)
 	var starter_entry := _team_legality_live_entry(player_id, starter_raw) if not starter_raw.is_empty() else {}
-	return team_legality_service.audit(_team_rule_profile(), roster_entries, sortie_entries, starter_entry) if team_legality_service != null else {}
+	return _team_legality_service().audit(_team_rule_profile(), roster_entries, sortie_entries, starter_entry)
 
 
 func _team_battle_entry_summary(player_id: int) -> Dictionary:
@@ -14082,9 +14020,7 @@ func _editor_torso_detail_button_target() -> Dictionary:
 
 
 func _engine_allocation_totals(data: Dictionary) -> Dictionary:
-	if power_allocation_service != null:
-		return power_allocation_service.totals(data)
-	return PowerAllocationService.new().totals(data)
+	return _power_allocation_service().totals(data)
 
 
 func _open_dashboard_engine_allocation() -> void:
@@ -14894,7 +14830,7 @@ func _equalize_engine_momentum_allocation() -> void:
 	var entries: Array = Array(data.get("entries", []))
 	if entries.is_empty():
 		return
-	var momentum_by_id := power_allocation_service.equalized_entry_momentum(entries, float(data.get("engine_output", 0.0))) if power_allocation_service != null else PowerAllocationService.new().equalized_entry_momentum(entries, float(data.get("engine_output", 0.0)))
+	var momentum_by_id := _power_allocation_service().equalized_entry_momentum(entries, float(data.get("engine_output", 0.0)))
 	if momentum_by_id.is_empty():
 		return
 	_record_engine_allocation_undo_once()
@@ -24871,6 +24807,36 @@ func _held_melee_activation_service() -> HeldMeleeActivationService:
 	return held_melee_activation_service
 
 
+func _unit_blueprint_validator() -> UnitBlueprintValidator:
+	if unit_blueprint_validator == null:
+		unit_blueprint_validator = UnitBlueprintValidator.new()
+	return unit_blueprint_validator
+
+
+func _data_rule_service() -> DataRuleService:
+	if data_rule_service == null:
+		data_rule_service = DataRuleService.new()
+	return data_rule_service
+
+
+func _team_legality_service() -> TeamLegalityService:
+	if team_legality_service == null:
+		team_legality_service = TeamLegalityService.new()
+	return team_legality_service
+
+
+func _power_allocation_service() -> PowerAllocationService:
+	if power_allocation_service == null:
+		power_allocation_service = PowerAllocationService.new()
+	return power_allocation_service
+
+
+func _action_profile_registry() -> ActionProfileRegistry:
+	if action_profile_registry == null:
+		action_profile_registry = ActionProfileRegistry.new()
+	return action_profile_registry
+
+
 func _battle_action_event_constants() -> Dictionary:
 	return {
 		"standard_sniper_projectile_width_m": STANDARD_SNIPER_PROJECTILE_WIDTH_M,
@@ -26494,9 +26460,7 @@ func _runtime_binding_profile(binding: Dictionary) -> String:
 
 
 func _gun_activation_profiles() -> Array:
-	if action_profile_registry != null:
-		return action_profile_registry.projectile_profiles()
-	return ActionProfileRegistry.PROJECTILE_PROFILES.duplicate()
+	return _action_profile_registry().projectile_profiles()
 
 
 func _gun_aim_input_mode_for_data(data: Dictionary) -> String:
@@ -26508,9 +26472,7 @@ func _runtime_binding_gun_aim_input_mode(binding: Dictionary) -> String:
 
 
 func _gun_mobility_contract_for_profile(profile: String) -> Dictionary:
-	if action_profile_registry != null:
-		return action_profile_registry.projectile_mobility_contract(profile)
-	return ActionProfileRegistry.new().projectile_mobility_contract(profile)
+	return _action_profile_registry().projectile_mobility_contract(profile)
 
 
 func _runtime_binding_gun_mobility_contract(binding: Dictionary) -> Dictionary:
@@ -26533,17 +26495,13 @@ func _runtime_binding_is_held_melee_activation(binding: Dictionary) -> bool:
 
 
 func _gun_activation_profile_for_kind(gun_kind: String) -> String:
-	if action_profile_registry != null:
-		return action_profile_registry.profile_for_gun_kind(gun_kind)
-	return ActionProfileRegistry.new().profile_for_gun_kind(gun_kind)
+	return _action_profile_registry().profile_for_gun_kind(gun_kind)
 
 
 func _effective_gun_activation_profile(module_profile: String, gun_kind: String, ammo_kind: String = "") -> String:
 	if module_profile == "":
 		return _gun_activation_profile_for_kind(gun_kind)
-	if action_profile_registry != null:
-		return action_profile_registry.effective_profile_for_activation(module_profile, gun_kind, ammo_kind)
-	return ActionProfileRegistry.new().effective_profile_for_activation(module_profile, gun_kind, ammo_kind)
+	return _action_profile_registry().effective_profile_for_activation(module_profile, gun_kind, ammo_kind)
 
 
 func _gun_activation_spec(gun_kind: String, profile: String = "") -> Dictionary:
@@ -26555,12 +26513,7 @@ func _gun_activation_spec(gun_kind: String, profile: String = "") -> Dictionary:
 
 
 func _gun_activation_profile_supports_kind(profile: String, gun_kind: String, ammo_kind: String = "") -> bool:
-	var registry_supported := true
-	if action_profile_registry != null:
-		if not action_profile_registry.module_supports_gun(profile, gun_kind, ammo_kind):
-			registry_supported = false
-	elif not ActionProfileRegistry.new().module_supports_gun(profile, gun_kind, ammo_kind):
-		registry_supported = false
+	var registry_supported := _action_profile_registry().module_supports_gun(profile, gun_kind, ammo_kind)
 	var spec := _gun_activation_spec(gun_kind, profile)
 	return _gun_activation_service().gun_activation_profile_supports_kind(profile, gun_kind, ammo_kind, registry_supported, spec)
 
@@ -31292,7 +31245,7 @@ func _projectile_runtime_constants() -> Dictionary:
 
 
 func _gun_current_multiplier_for_projectile_service(max_multiplier: float, allocated: float, maximum: float, non_damage: bool = false) -> float:
-	return data_rule_service.gun_current_multiplier(max_multiplier, allocated, maximum, non_damage) if data_rule_service != null else DataRuleService.new().gun_current_multiplier(max_multiplier, allocated, maximum, non_damage)
+	return _data_rule_service().gun_current_multiplier(max_multiplier, allocated, maximum, non_damage)
 
 
 func _projectile_default_momentum_for_event(event: Dictionary) -> float:
@@ -34641,7 +34594,7 @@ func _thruster_drive_allocation_min_for_part(part: Dictionary) -> float:
 
 func _thruster_drive_allocation_max_for_part(part: Dictionary) -> float:
 	var minimum := _thruster_drive_allocation_min_for_part(part)
-	return data_rule_service.allocation_max(minimum) if data_rule_service != null else DataRuleService.new().allocation_max(minimum)
+	return _data_rule_service().allocation_max(minimum)
 
 
 func _thruster_boost_brake_allocation_min_for_part(part: Dictionary) -> float:
@@ -34650,7 +34603,7 @@ func _thruster_boost_brake_allocation_min_for_part(part: Dictionary) -> float:
 
 func _thruster_boost_brake_allocation_max_for_part(part: Dictionary) -> float:
 	var minimum := _thruster_boost_brake_allocation_min_for_part(part)
-	return data_rule_service.allocation_max(minimum) if data_rule_service != null else DataRuleService.new().allocation_max(minimum)
+	return _data_rule_service().allocation_max(minimum)
 
 
 func _thruster_drive_allocated_for_payload(payload: Dictionary, part: Dictionary) -> float:
@@ -34661,7 +34614,7 @@ func _thruster_drive_allocated_for_payload(payload: Dictionary, part: Dictionary
 	var value := minimum
 	if payload.has("thruster_drive_allocated_momentum"):
 		value = float(payload.get("thruster_drive_allocated_momentum", minimum))
-	return data_rule_service.clamp_allocation(value, minimum, maximum) if data_rule_service != null else DataRuleService.new().clamp_allocation(value, minimum, maximum)
+	return _data_rule_service().clamp_allocation(value, minimum, maximum)
 
 
 func _thruster_boost_brake_allocated_for_payload(payload: Dictionary, part: Dictionary) -> float:
@@ -34672,7 +34625,7 @@ func _thruster_boost_brake_allocated_for_payload(payload: Dictionary, part: Dict
 	var value := minimum
 	if payload.has("thruster_boost_brake_allocated_momentum"):
 		value = float(payload.get("thruster_boost_brake_allocated_momentum", minimum))
-	return data_rule_service.clamp_allocation(value, minimum, maximum) if data_rule_service != null else DataRuleService.new().clamp_allocation(value, minimum, maximum)
+	return _data_rule_service().clamp_allocation(value, minimum, maximum)
 
 
 func _thruster_boost_total_momentum_for_part(part: Dictionary) -> float:
@@ -36622,7 +36575,7 @@ func _engine_momentum_output_raw_for_part(part: Dictionary, scale: float = 1.0) 
 
 func _engine_momentum_output_for_part(part: Dictionary, scale: float = 1.0) -> float:
 	var raw_output := _engine_momentum_output_raw_for_part(part)
-	return data_rule_service.engine_output(raw_output, scale) if data_rule_service != null else DataRuleService.new().engine_output(raw_output, scale)
+	return _data_rule_service().engine_output(raw_output, scale)
 
 
 func _engine_momentum_budget_for_part(part: Dictionary, scale: float = 1.0) -> float:
@@ -36762,7 +36715,7 @@ func _cooling_with_v3_defaults(part: Dictionary) -> Dictionary:
 	adjusted["cooling_rate"] = raw_rate
 	adjusted["cooling"] = raw_cooling
 	adjusted["heat_dissipation"] = raw_dissipation
-	adjusted["heat_capacity"] = data_rule_service.cooling_pool_capacity(raw_capacity, pool_already_scaled) if data_rule_service != null else DataRuleService.new().cooling_pool_capacity(raw_capacity, pool_already_scaled)
+	adjusted["heat_capacity"] = _data_rule_service().cooling_pool_capacity(raw_capacity, pool_already_scaled)
 	if not pool_already_scaled:
 		adjusted["_cooling_pool_scaled"] = true
 	adjusted["cooling_output_scale"] = COOLING_OUTPUT_SCALE
@@ -38426,7 +38379,7 @@ func _catalog_lifecycle_for_part(slot_key: String, part: Dictionary) -> Dictiona
 		result["future_dev_tag"] = "future_takeover_system"
 		return result
 	if slot_key == "module":
-		var live_profiles := action_profile_registry.live_profiles() if action_profile_registry != null else ActionProfileRegistry.new().live_profiles()
+		var live_profiles := _action_profile_registry().live_profiles()
 		var frozen_effects := [
 			"trap_control",
 			"boomerang_recall",
@@ -40464,7 +40417,7 @@ func _limb_momentum_raw_max_for_part(part: Dictionary, slot_key: String) -> floa
 
 func _limb_momentum_max_for_part(part: Dictionary, slot_key: String) -> float:
 	var raw_maximum := _limb_momentum_raw_max_for_part(part, slot_key)
-	return data_rule_service.limb_max(raw_maximum) if data_rule_service != null else DataRuleService.new().limb_max(raw_maximum)
+	return _data_rule_service().limb_max(raw_maximum)
 
 
 func _default_limb_allocated_momentum_for_part(part: Dictionary, slot_key: String, module_part: Dictionary = {}) -> float:
@@ -40505,7 +40458,7 @@ func _limb_drive_component_with_defaults(part: Dictionary, slot_key: String) -> 
 		adjusted["limb_idle_heat_coeff"] = _limb_drive_heat_coeff_for_part(adjusted, slot_key)
 	var resolved_min_momentum := _limb_momentum_min_for_part(adjusted, slot_key)
 	var resolved_raw_max_momentum := _limb_momentum_raw_max_for_part(adjusted, slot_key)
-	var resolved_max_momentum := data_rule_service.limb_max(resolved_raw_max_momentum) if data_rule_service != null else DataRuleService.new().limb_max(resolved_raw_max_momentum)
+	var resolved_max_momentum := _data_rule_service().limb_max(resolved_raw_max_momentum)
 	if not adjusted.has("momentum_min"):
 		adjusted["momentum_min"] = resolved_min_momentum
 	adjusted["momentum_max_raw"] = resolved_raw_max_momentum
@@ -42171,10 +42124,7 @@ func _component_topology_attack_nodes(role_key: String, unit_bp: Dictionary, lim
 			var module_profile := String(module_part.get("module_action_profile", ""))
 			if String(module_profile) == "two_link_forward_snap":
 				has_two_link_module = true
-			if action_profile_registry != null:
-				has_live_melee_module = has_live_melee_module or action_profile_registry.is_melee_profile(module_profile)
-			else:
-				has_live_melee_module = has_live_melee_module or ActionProfileRegistry.new().is_melee_profile(module_profile)
+			has_live_melee_module = has_live_melee_module or _action_profile_registry().is_melee_profile(module_profile)
 		var attack_key := int(driven_node.get("attack_key", synthetic_nodes.size() + 1))
 		if limit_to_attack_keys and (attack_key < 1 or attack_key > ATTACK_GROUP_COUNT):
 			continue
@@ -45833,7 +45783,7 @@ func _show_context_help(context: String) -> void:
 
 
 func _build_music_system() -> void:
-	if not is_inside_tree():
+	if not is_inside_tree() or not _audio_system_enabled():
 		return
 	var stream := AudioStreamGenerator.new()
 	stream.mix_rate = 22050
@@ -45847,8 +45797,25 @@ func _build_music_system() -> void:
 	music_playback = music_player.get_stream_playback()
 
 
+func _audio_system_enabled() -> bool:
+	return DisplayServer.get_name() != "headless"
+
+
+func _shutdown_audio_system() -> void:
+	music_playback = null
+	var player := music_player
+	music_player = null
+	if player != null and is_instance_valid(player):
+		player.stop()
+		player.stream = null
+		var parent := player.get_parent()
+		if parent != null:
+			parent.remove_child(player)
+		player.free()
+
+
 func _play_sfx_wave(kind: String, pitch: float, duration: float, volume_db: float = -12.0) -> void:
-	if not is_inside_tree():
+	if not is_inside_tree() or not _audio_system_enabled():
 		return
 	var stream := AudioStreamGenerator.new()
 	stream.mix_rate = 22050

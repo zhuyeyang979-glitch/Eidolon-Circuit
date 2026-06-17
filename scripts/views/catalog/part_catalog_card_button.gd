@@ -141,7 +141,7 @@ func _card_signature(next_slot: String, next_part: Dictionary, next_selected: bo
 
 func _art_rect() -> Rect2:
 	var simple_card := data_line_a == "" and data_line_b == ""
-	return Rect2(Vector2(8.0, 6.0), Vector2(size.x - 16.0, maxf(26.0, size.y * (0.56 if simple_card else 0.38))))
+	return Rect2(Vector2(8.0, 6.0), Vector2(size.x - 16.0, maxf(26.0, size.y * (0.56 if simple_card else 0.46))))
 
 func _ensure_card_nodes() -> void:
 	if retained_item == null:

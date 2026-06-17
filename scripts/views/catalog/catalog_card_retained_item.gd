@@ -3,9 +3,9 @@ extends Control
 
 const PartArt = preload("res://scripts/part_art.gd")
 const PartPreviewTextureCache = preload("res://scripts/views/catalog/part_preview_texture_cache.gd")
-const CATALOG_CARD_TITLE_FONT_SIZE := 11
-const CATALOG_CARD_SIMPLE_TITLE_FONT_SIZE := 12
-const CATALOG_CARD_LINE_FONT_SIZE := 9
+const CATALOG_CARD_TITLE_FONT_SIZE := 10
+const CATALOG_CARD_SIMPLE_TITLE_FONT_SIZE := 11
+const CATALOG_CARD_LINE_FONT_SIZE := 8
 const CATALOG_CARD_TEXT_PLATE_ALPHA := 0.62
 
 static var defer_texture_requests := false
@@ -137,7 +137,7 @@ func _draw() -> void:
 
 func _art_rect() -> Rect2:
 	var simple_card := data_line_a == "" and data_line_b == ""
-	return Rect2(Vector2(8.0, 6.0), Vector2(size.x - 16.0, maxf(26.0, size.y * (0.56 if simple_card else 0.38))))
+	return Rect2(Vector2(8.0, 6.0), Vector2(size.x - 16.0, maxf(26.0, size.y * (0.56 if simple_card else 0.46))))
 
 func _data_rect() -> Rect2:
 	var art_rect := _art_rect()
@@ -151,18 +151,20 @@ func _body_texture_rect() -> Rect2:
 func _draw_body_fallback(rect: Rect2) -> void:
 	var font := ThemeDB.get_fallback_font()
 	var simple_card := data_line_a == "" and data_line_b == ""
+	var compact := rect.size.y < 30.0 and not simple_card
 	var title_size := CATALOG_CARD_SIMPLE_TITLE_FONT_SIZE if simple_card else CATALOG_CARD_TITLE_FONT_SIZE
-	var title_pos := rect.position + Vector2(2.0, 15.0 if simple_card else 11.0)
+	var line_size := 7 if compact else CATALOG_CARD_LINE_FONT_SIZE
+	var title_pos := rect.position + Vector2(2.0, 15.0 if simple_card else (8.8 if compact else 11.0))
 	draw_rect(rect, Color(0.0, 0.0, 0.0, CATALOG_CARD_TEXT_PLATE_ALPHA), true)
-	draw_string(font, title_pos + Vector2(1.0, 1.0), _card_trim(display_name, 17 if simple_card else 14), HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 4.0, title_size, Color(0.0, 0.0, 0.0, 0.82))
-	draw_string(font, title_pos, _card_trim(display_name, 17 if simple_card else 14), HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 4.0, title_size, Color(0.9, 0.96, 1.0, 1.0))
+	draw_string(font, title_pos + Vector2(1.0, 1.0), _card_trim(display_name, 17 if simple_card else (15 if compact else 14)), HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 4.0, title_size, Color(0.0, 0.0, 0.0, 0.82))
+	draw_string(font, title_pos, _card_trim(display_name, 17 if simple_card else (15 if compact else 14)), HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 4.0, title_size, Color(0.9, 0.96, 1.0, 1.0))
 	if not simple_card:
-		var line_a_pos := rect.position + Vector2(2.0, 21.0)
-		var line_b_pos := rect.position + Vector2(2.0, minf(32.0, rect.size.y - 3.0))
-		draw_string(font, line_a_pos + Vector2(1.0, 1.0), _card_trim(data_line_a, 15), HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 4.0, CATALOG_CARD_LINE_FONT_SIZE, Color(0.0, 0.0, 0.0, 0.78))
-		draw_string(font, line_a_pos, _card_trim(data_line_a, 15), HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 4.0, CATALOG_CARD_LINE_FONT_SIZE, Color(0.82, 0.94, 1.0, 1.0))
-		draw_string(font, line_b_pos + Vector2(1.0, 1.0), _card_trim(data_line_b, 15), HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 4.0, CATALOG_CARD_LINE_FONT_SIZE, Color(0.0, 0.0, 0.0, 0.76))
-		draw_string(font, line_b_pos, _card_trim(data_line_b, 15), HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 4.0, CATALOG_CARD_LINE_FONT_SIZE, Color(0.78, 0.86, 0.94, 1.0))
+		var line_a_pos := rect.position + Vector2(2.0, 16.4 if compact else 21.0)
+		var line_b_pos := rect.position + Vector2(2.0, minf(23.4 if compact else 32.0, rect.size.y - 3.0))
+		draw_string(font, line_a_pos + Vector2(1.0, 1.0), _card_trim(data_line_a, 16 if compact else 15), HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 4.0, line_size, Color(0.0, 0.0, 0.0, 0.78))
+		draw_string(font, line_a_pos, _card_trim(data_line_a, 16 if compact else 15), HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 4.0, line_size, Color(0.82, 0.94, 1.0, 1.0))
+		draw_string(font, line_b_pos + Vector2(1.0, 1.0), _card_trim(data_line_b, 16 if compact else 15), HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 4.0, line_size, Color(0.0, 0.0, 0.0, 0.76))
+		draw_string(font, line_b_pos, _card_trim(data_line_b, 16 if compact else 15), HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 4.0, line_size, Color(0.78, 0.86, 0.94, 1.0))
 
 func _card_trim(value: String, max_chars: int) -> String:
 	if value.length() <= max_chars:
@@ -212,20 +214,20 @@ func _thumbnail_size_scale() -> float:
 	return clampf(scale / 1.82, 0.32, 1.0)
 
 func _draw_size_ruler(rect: Rect2, scale_value: float) -> void:
-	var y := rect.position.y + rect.size.y - 4.0
+	var y := rect.position.y + rect.size.y - 3.0
 	var width := maxf(10.0, rect.size.x * clampf(scale_value, 0.25, 1.0))
 	var start := Vector2(rect.position.x + 5.0, y)
 	var end := start + Vector2(width, 0.0)
-	draw_line(start, end, Color(0.86, 0.96, 1.0, 0.48), 1.0)
-	draw_line(start + Vector2(0.0, -3.0), start + Vector2(0.0, 3.0), Color(0.86, 0.96, 1.0, 0.38), 1.0)
-	draw_line(end + Vector2(0.0, -3.0), end + Vector2(0.0, 3.0), Color(0.86, 0.96, 1.0, 0.38), 1.0)
+	draw_line(start, end, Color(0.86, 0.96, 1.0, 0.22), 1.0)
+	draw_line(start + Vector2(0.0, -2.0), start + Vector2(0.0, 2.0), Color(0.86, 0.96, 1.0, 0.18), 1.0)
+	draw_line(end + Vector2(0.0, -2.0), end + Vector2(0.0, 2.0), Color(0.86, 0.96, 1.0, 0.18), 1.0)
 
 func _draw_size_badge(rect: Rect2) -> void:
 	var tier := PartArt.normalized_size_tier(part)
 	if tier == "":
 		return
 	var font := ThemeDB.get_fallback_font()
-	var badge_rect := Rect2(rect.position + Vector2(rect.size.x - 28.0, 4.0), Vector2(24.0, 12.0))
-	draw_rect(badge_rect, Color(0.0, 0.0, 0.0, 0.45), true)
-	draw_rect(badge_rect, Color(0.86, 0.96, 1.0, 0.28), false, 1.0)
-	draw_string(font, badge_rect.position + Vector2(3.0, 9.0), tier.substr(0, 2), HORIZONTAL_ALIGNMENT_LEFT, badge_rect.size.x, 8, Color(0.9, 0.98, 1.0, 0.9))
+	var badge_rect := Rect2(rect.position + Vector2(rect.size.x - 24.0, 3.0), Vector2(20.0, 10.0))
+	draw_rect(badge_rect, Color(0.0, 0.0, 0.0, 0.34), true)
+	draw_rect(badge_rect, Color(0.86, 0.96, 1.0, 0.2), false, 1.0)
+	draw_string(font, badge_rect.position + Vector2(3.0, 8.0), tier.substr(0, 2), HORIZONTAL_ALIGNMENT_LEFT, badge_rect.size.x, 7, Color(0.9, 0.98, 1.0, 0.82))

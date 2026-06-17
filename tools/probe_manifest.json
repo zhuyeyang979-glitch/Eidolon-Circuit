@@ -54,6 +54,7 @@
     "loading_task_phase_semantics_probe",
     "loading_controller_typed_storage_probe",
     "preload_tasks_typed_probe",
+    "audio_lifecycle_contract_probe",
     "action_profile_registry_completeness_probe",
     "gun_activation_service_contract_probe",
     "drive_service_contract_probe",
