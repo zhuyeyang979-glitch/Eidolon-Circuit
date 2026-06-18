@@ -107,6 +107,7 @@ Completed in the first optimization batch:
 - Moved torso-slot payload summary entry accumulation into `UnitStatsService.record_torso_payload_summary_entry()`, so `main.gd` now records sampled payload/software/ammo facts through a single service API instead of repeating counter/mass/volume increments in each branch.
 - Moved torso-slot special payload classification for ether/soul/code into `UnitStatsService.apply_torso_special_payload_logic_stats()`, so `main.gd` now consumes a pure intent for ether callbacks, hero soul callbacks, and code AI/group stats instead of owning that kind switch inline.
 - Moved soul heat-capacity stat and note application into `UnitStatsService.apply_soul_heat_capacity_stats()`, leaving `main.gd` to orchestrate only when hero soul callbacks should run.
+- Moved internal payload base stat accumulation into `UnitStatsService.apply_internal_payload_base_stats()`, leaving `main.gd` to orchestrate only cooling defaults/profile, engine momentum, and booster drive helper calls.
 - Moved torso-slot module payload logic-field copying into `UnitStatsService.apply_torso_module_payload_logic_stats()`, so `main.gd` no longer owns the inline command/module/fracture/morph/combine/identity allowlist for action-module payload stats.
 - Replaced the long `AssemblyBoardView` assembly-template overlay drawing helpers with a one-line renderer delegation.
 - Added `tools/part_identity_contract_probe.gd`.
@@ -114,7 +115,7 @@ Completed in the first optimization batch:
 - Added `tools/assembly_template_overlay_renderer_contract_probe.gd`.
 - Added `tools/unit_editor_engine_allocation_service_contract_probe.gd`.
 - Added `tools/unit_stats_service_contract_probe.gd`.
-- Strengthened `tools/unit_stats_service_contract_probe.gd` so `UnitStatsService.base_stats()` now guards default constants, context metadata, editor colors, manufacturer-count duplication, and per-call dictionary/array ownership; the same probe now guards `copy_part_payload_stats()` ammo normalization/mass, shield aggregation, material metadata, capacity context behavior, torso payload direct stat merges for ammo/shield/escape/spare payloads, torso payload summary-entry accumulation, special payload intent classification, soul heat-capacity notes, module payload logic-field copying, and torso payload summary note/cap decisions.
+- Strengthened `tools/unit_stats_service_contract_probe.gd` so `UnitStatsService.base_stats()` now guards default constants, context metadata, editor colors, manufacturer-count duplication, and per-call dictionary/array ownership; the same probe now guards `copy_part_payload_stats()` ammo normalization/mass, shield aggregation, material metadata, capacity context behavior, torso payload direct stat merges for ammo/shield/escape/spare payloads, torso payload summary-entry accumulation, special payload intent classification, soul heat-capacity notes, internal payload base stat accumulation, module payload logic-field copying, and torso payload summary note/cap decisions.
 - Updated `tools/main_file_extraction_contract_probe.gd` to include `UnitStatsService`, `UnitEditorAssemblyTemplateService`, and `UnitEditorEngineAllocationService`.
 - Updated engine allocation regression probes to use the current `booster_drive` / `booster_boost_brake` entry IDs and public panel-open path.
 - Updated `tools/probe_manifest.json` with the new headless contract probes and manual/headed visual probe entries.
@@ -163,6 +164,7 @@ RED: unit_stats_service_contract_probe failed on missing UnitStatsService.apply_
 RED: unit_stats_service_contract_probe failed on missing UnitStatsService.record_torso_payload_summary_entry()
 RED: unit_stats_service_contract_probe failed on missing UnitStatsService.apply_torso_special_payload_logic_stats()
 RED: unit_stats_service_contract_probe failed on missing UnitStatsService.apply_soul_heat_capacity_stats()
+RED: unit_stats_service_contract_probe failed on missing UnitStatsService.apply_internal_payload_base_stats()
 RED: unit_stats_service_contract_probe failed on missing UnitStatsService.apply_torso_module_payload_logic_stats()
 jq empty tools/probe_manifest.json: pass
 git diff --check: pass
@@ -182,5 +184,5 @@ Remaining items after this batch:
 
 - Run a headed/manual visual check for `part_identity_language_probe` and `unit_editor_assembly_template_probe` when a display session is available.
 - Decide whether `assets/concepts/` is Git-tracked, Git LFS-managed, or local-reference-only.
-- Continue deeper `main.gd` extraction with the remaining `_compute_unit_stats` torso-slot payload traversal/catalog lookup/volume-rank sampling, soul bonus/ether helper implementations, broader part accumulation mechanics, `_build_editor_ui`, `_apply_editor_panel_visibility`, `_resolve_attack`, and `_refresh_editor_visual_views`.
+- Continue deeper `main.gd` extraction with the remaining `_compute_unit_stats` torso-slot payload traversal/catalog lookup/volume-rank sampling, soul bonus/ether/helper-specific internal payload implementations, `_build_editor_ui`, `_apply_editor_panel_visibility`, `_resolve_attack`, and `_refresh_editor_visual_views`.
 - `power_allocation_panel_duration_estimate_probe` is not registered in the manifest and still prints stale assertion errors before exiting `0`; do not use it as completion evidence until its expectations are reviewed.

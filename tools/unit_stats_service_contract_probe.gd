@@ -280,6 +280,55 @@ func _init() -> void:
 	service.apply_soul_heat_capacity_stats(minimum_soul_heat_stats, {"name": "SOUL: LOW", "soul_heat_capacity": -5.0})
 	if int(minimum_soul_heat_stats.get("soul_heat_capacity", 0)) != 1:
 		_fail("soul heat capacity should clamp to minimum one: %s" % str(minimum_soul_heat_stats))
+	if not service.has_method("apply_internal_payload_base_stats"):
+		_fail("UnitStatsService missing apply_internal_payload_base_stats.")
+		return
+	var internal_payload_stats := {
+		"cost": 10,
+		"mass": 2.5,
+		"energy": 1.0,
+		"power_load": 3.0,
+		"heat_capacity": 4.0,
+		"hardware_heat_capacity": 2.0,
+		"cooling_heat_capacity": 5.0,
+		"speed_mult": 1.2,
+		"cornering": 1.1,
+		"speed_lane_affinity": 0.5,
+	}
+	service.apply_internal_payload_base_stats(internal_payload_stats, {
+		"cost": 7,
+		"mass": 1.5,
+		"heat_capacity": 9.0,
+		"speed_mult": 0.8,
+		"cornering": 1.4,
+		"speed_lane_affinity": 0.25,
+	}, "engine", {"payload_power_load": 0.75})
+	if int(internal_payload_stats.get("cost", 0)) != 17:
+		_fail("internal payload base cost mismatch: %s" % str(internal_payload_stats))
+	_assert_near(float(internal_payload_stats.get("mass", 0.0)), 4.0, "internal payload base mass")
+	_assert_near(float(internal_payload_stats.get("energy", 0.0)), 1.75, "internal payload energy")
+	_assert_near(float(internal_payload_stats.get("power_load", 0.0)), 3.75, "internal payload power load")
+	_assert_near(float(internal_payload_stats.get("heat_capacity", 0.0)), 13.0, "internal payload heat capacity")
+	_assert_near(float(internal_payload_stats.get("hardware_heat_capacity", 0.0)), 11.0, "internal payload hardware heat")
+	_assert_near(float(internal_payload_stats.get("speed_mult", 0.0)), 0.96, "internal payload speed mult")
+	_assert_near(float(internal_payload_stats.get("cornering", 0.0)), 1.4, "internal payload cornering")
+	_assert_near(float(internal_payload_stats.get("speed_lane_affinity", 0.0)), 0.75, "internal payload lane affinity")
+	var cooling_payload_stats := {
+		"cost": 4,
+		"mass": 1.0,
+		"heat_capacity": 10.0,
+		"hardware_heat_capacity": 6.0,
+		"cooling_heat_capacity": 2.0,
+		"speed_mult": 1.0,
+	}
+	service.apply_internal_payload_base_stats(cooling_payload_stats, {"cost": 3, "mass": 2.0, "heat_capacity": 99.0, "speed_mult": 1.1}, "cooling", {"cooling_heat_capacity": 12.5})
+	if int(cooling_payload_stats.get("cost", 0)) != 7:
+		_fail("cooling payload base cost mismatch: %s" % str(cooling_payload_stats))
+	_assert_near(float(cooling_payload_stats.get("mass", 0.0)), 3.0, "cooling payload mass")
+	_assert_near(float(cooling_payload_stats.get("heat_capacity", 0.0)), 10.0, "cooling should not add hardware heat")
+	_assert_near(float(cooling_payload_stats.get("hardware_heat_capacity", 0.0)), 6.0, "cooling should not add hardware heat capacity")
+	_assert_near(float(cooling_payload_stats.get("cooling_heat_capacity", 0.0)), 14.5, "cooling payload heat capacity")
+	_assert_near(float(cooling_payload_stats.get("speed_mult", 0.0)), 1.1, "cooling payload speed mult")
 	if not service.has_method("apply_torso_module_payload_logic_stats"):
 		_fail("UnitStatsService missing apply_torso_module_payload_logic_stats.")
 		return
@@ -484,6 +533,7 @@ func _init() -> void:
 		"_unit_stats_service().record_torso_payload_summary_entry(",
 		"_unit_stats_service().apply_torso_special_payload_logic_stats(stats,",
 		"_unit_stats_service().apply_soul_heat_capacity_stats(stats,",
+		"_unit_stats_service().apply_internal_payload_base_stats(stats,",
 		"_unit_stats_service().apply_torso_module_payload_logic_stats(stats,",
 		"_unit_stats_service().apply_torso_payload_summary(stats,",
 	]:

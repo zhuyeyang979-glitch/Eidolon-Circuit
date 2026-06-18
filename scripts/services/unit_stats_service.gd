@@ -720,6 +720,26 @@ func apply_soul_heat_capacity_stats(stats: Dictionary, soul_part: Dictionary) ->
 	return stats
 
 
+func apply_internal_payload_base_stats(stats: Dictionary, part: Dictionary, slot_key: String, context: Dictionary = {}) -> Dictionary:
+	stats["cost"] = int(stats.get("cost", 0)) + int(part.get("cost", 0))
+	stats["mass"] = float(stats.get("mass", 0.0)) + float(part.get("mass", 0.0))
+	var payload_power_load := float(context.get("payload_power_load", 0.0))
+	stats["energy"] = float(stats.get("energy", 0.0)) + payload_power_load
+	stats["power_load"] = float(stats.get("power_load", 0.0)) + payload_power_load
+	if slot_key == "cooling":
+		stats["cooling_heat_capacity"] = float(stats.get("cooling_heat_capacity", 0.0)) + float(context.get("cooling_heat_capacity", 0.0))
+	else:
+		var heat_capacity := float(part.get("heat_capacity", 0.0))
+		stats["heat_capacity"] = float(stats.get("heat_capacity", 0.0)) + heat_capacity
+		stats["hardware_heat_capacity"] = float(stats.get("hardware_heat_capacity", 0.0)) + heat_capacity
+	stats["speed_mult"] = float(stats.get("speed_mult", 1.0)) * float(part.get("speed_mult", 1.0))
+	if part.has("cornering"):
+		stats["cornering"] = maxf(float(stats.get("cornering", 1.0)), float(part["cornering"]))
+	if part.has("speed_lane_affinity"):
+		stats["speed_lane_affinity"] = float(stats.get("speed_lane_affinity", 0.0)) + float(part["speed_lane_affinity"])
+	return stats
+
+
 func apply_torso_module_payload_logic_stats(stats: Dictionary, module_part: Dictionary) -> Dictionary:
 	for logic_key in TORSO_MODULE_PAYLOAD_LOGIC_KEYS:
 		if module_part.has(logic_key):

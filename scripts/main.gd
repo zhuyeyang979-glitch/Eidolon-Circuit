@@ -38159,25 +38159,14 @@ func _apply_recoil_stabilization(stats: Dictionary) -> void:
 func _merge_internal_payload_stats(stats: Dictionary, part: Dictionary, slot_key: String, payload: Dictionary = {}) -> void:
 	if slot_key == "cooling":
 		part = _cooling_with_v3_defaults(part)
-	stats["cost"] = int(stats["cost"]) + int(part.get("cost", 0))
-	stats["mass"] = float(stats["mass"]) + float(part.get("mass", 0.0))
-	var payload_power_load := 0.0
-	stats["energy"] = float(stats["energy"]) + payload_power_load
-	stats["power_load"] = float(stats.get("power_load", 0.0)) + payload_power_load
+	var base_context := {}
 	if slot_key == "cooling":
-		stats["cooling_heat_capacity"] = float(stats.get("cooling_heat_capacity", 0.0)) + _cooling_heat_capacity_for_part(part)
-		_merge_cooling_profile_stats(stats, part)
-	else:
-		stats["heat_capacity"] = float(stats["heat_capacity"]) + float(part.get("heat_capacity", 0.0))
-		stats["hardware_heat_capacity"] = float(stats.get("hardware_heat_capacity", 0.0)) + float(part.get("heat_capacity", 0.0))
-	stats["speed_mult"] = float(stats.get("speed_mult", 1.0)) * float(part.get("speed_mult", 1.0))
-	if part.has("cornering"):
-		stats["cornering"] = maxf(float(stats.get("cornering", 1.0)), float(part["cornering"]))
-	if part.has("speed_lane_affinity"):
-		stats["speed_lane_affinity"] = float(stats.get("speed_lane_affinity", 0.0)) + float(part["speed_lane_affinity"])
+		base_context["cooling_heat_capacity"] = _cooling_heat_capacity_for_part(part)
+	_unit_stats_service().apply_internal_payload_base_stats(stats, part, slot_key, base_context)
 	if slot_key == "engine":
 		_merge_engine_stats(stats, part)
 	elif slot_key == "cooling":
+		_merge_cooling_profile_stats(stats, part)
 		var cooling_value := _cooling_rate_for_part(part)
 		var dissipation_value := _cooling_dissipation_for_part(part)
 		stats["cooling"] = float(stats.get("cooling", 0.0)) + cooling_value
