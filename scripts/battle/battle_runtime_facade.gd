@@ -1,6 +1,9 @@
 extends RefCounted
 class_name BattleRuntimeFacade
 
+const BattleFrameOrchestratorService = preload("res://scripts/services/battle_frame_orchestrator_service.gd")
+const BattleRuntimeLifecycleService = preload("res://scripts/services/battle_runtime_lifecycle_service.gd")
+const BattleRuntimeActionTelemetryService = preload("res://scripts/services/battle_runtime_action_telemetry_service.gd")
 const BattlePresentationFrameServiceScript = preload("res://scripts/services/battle_presentation_frame_service.gd")
 
 var frame_orchestrator: BattleFrameOrchestratorService
