@@ -672,6 +672,20 @@ func apply_torso_payload_direct_stats(stats: Dictionary, part: Dictionary, paylo
 	return stats
 
 
+func record_torso_payload_summary_entry(summary: Dictionary, entry: Dictionary) -> Dictionary:
+	if bool(entry.get("payload", true)):
+		summary["payload_count"] = int(summary.get("payload_count", 0)) + 1
+		summary["payload_mass"] = float(summary.get("payload_mass", 0.0)) + float(entry.get("mass", 0.0))
+		summary["payload_volume_rank"] = float(summary.get("payload_volume_rank", 0.0)) + float(entry.get("volume_rank", 0.0))
+	if bool(entry.get("software", false)):
+		summary["software_payload_count"] = int(summary.get("software_payload_count", 0)) + 1
+		summary["software_payload_energy"] = float(summary.get("software_payload_energy", 0.0)) + float(entry.get("software_energy", 0.0))
+	if bool(entry.get("ammo", false)):
+		summary["ammo_count"] = int(summary.get("ammo_count", 0)) + 1
+		summary["ammo_mass"] = float(summary.get("ammo_mass", 0.0)) + float(entry.get("mass", 0.0))
+	return summary
+
+
 func apply_torso_payload_summary(stats: Dictionary, summary: Dictionary, context: Dictionary) -> Dictionary:
 	var payload_count := int(summary.get("payload_count", 0))
 	var payload_mass := float(summary.get("payload_mass", 0.0))

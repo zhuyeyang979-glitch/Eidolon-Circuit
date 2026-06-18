@@ -228,6 +228,23 @@ func _init() -> void:
 	if int(torso_payload_stats.get("cost", 0)) != 46:
 		_fail("torso spare payload should merge cost: %s" % str(torso_payload_stats))
 	_assert_near(float(torso_payload_stats.get("mass", 0.0)), 15.59, "torso spare total mass")
+	if not service.has_method("record_torso_payload_summary_entry"):
+		_fail("UnitStatsService missing record_torso_payload_summary_entry.")
+		return
+	var entry_summary := {}
+	service.record_torso_payload_summary_entry(entry_summary, {"mass": 3.5, "volume_rank": 2.25})
+	service.record_torso_payload_summary_entry(entry_summary, {"mass": 2.0, "volume_rank": 1.5, "ammo": true})
+	service.record_torso_payload_summary_entry(entry_summary, {"payload": false, "software": true, "software_energy": 1.25})
+	if int(entry_summary.get("payload_count", 0)) != 2:
+		_fail("payload entry summary count mismatch: %s" % str(entry_summary))
+	_assert_near(float(entry_summary.get("payload_mass", 0.0)), 5.5, "entry summary payload mass")
+	_assert_near(float(entry_summary.get("payload_volume_rank", 0.0)), 3.75, "entry summary payload volume")
+	if int(entry_summary.get("ammo_count", 0)) != 1:
+		_fail("payload entry summary ammo count mismatch: %s" % str(entry_summary))
+	_assert_near(float(entry_summary.get("ammo_mass", 0.0)), 2.0, "entry summary ammo mass")
+	if int(entry_summary.get("software_payload_count", 0)) != 1:
+		_fail("payload entry summary software count mismatch: %s" % str(entry_summary))
+	_assert_near(float(entry_summary.get("software_payload_energy", 0.0)), 1.25, "entry summary software energy")
 	if not service.has_method("apply_torso_payload_summary"):
 		_fail("UnitStatsService missing apply_torso_payload_summary.")
 		return
@@ -377,6 +394,7 @@ func _init() -> void:
 		"_unit_stats_service().copy_part_combat_stats(stats, part",
 		"_unit_stats_service().copy_part_payload_stats(stats, part",
 		"_unit_stats_service().apply_torso_payload_direct_stats(stats,",
+		"_unit_stats_service().record_torso_payload_summary_entry(",
 		"_unit_stats_service().apply_torso_payload_summary(stats,",
 	]:
 		if not main_source.contains(token):
