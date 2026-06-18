@@ -4,8 +4,15 @@ export.cfg
 export_presets.cfg
 *.translation
 logs/
+.DS_Store
+artifacts/
+docs/**/*.png.import
 Godot/
 tools/downloads/
 tools/git-portable/
 tools/godot-*/
 tools/*.gd.uid
+*.gd.uid
+*.gdshader.uid
+*.glsl.import
+.superpowers/

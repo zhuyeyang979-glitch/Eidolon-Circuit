@@ -31,7 +31,7 @@ func _init() -> void:
 	if not bool(p2_summary.get("valid", false)):
 		push_error("P2 AI roster is not battle legal")
 	if state_after_scout != MainScene.STATE_BATTLE:
-		push_error("AI Battle did not enter battle state")
+		push_error("Computer Battle did not enter battle state")
 	if main.all_units.size() < 2:
-		push_error("AI Battle did not spawn both starting units")
+		push_error("Computer Battle did not spawn both starting units")
 	quit()

@@ -14,15 +14,18 @@ func _init() -> void:
 		"res://scripts/services/data_rule_service.gd",
 		"res://scripts/services/loading_lifecycle_service.gd",
 		"res://scripts/services/ui_lifecycle_service.gd",
+		"res://scripts/services/unit_stats_service.gd",
+		"res://scripts/services/unit_editor_assembly_template_service.gd",
+		"res://scripts/services/unit_editor_engine_allocation_service.gd",
 	]
 	for path in required_files:
 		if not FileAccess.file_exists(path):
 			_fail("Missing extraction service %s." % path)
 	var source := FileAccess.get_file_as_string(ProjectSettings.globalize_path("res://scripts/main.gd"))
-	for symbol in ["ActionProfileRegistry", "DriveSystemService", "UnitBlueprintValidator", "DataRuleService", "LoadingLifecycleService", "UILifecycleService", "action_profile_registry", "drive_system_service", "unit_blueprint_validator", "data_rule_service"]:
+	for symbol in ["ActionProfileRegistry", "DriveSystemService", "UnitBlueprintValidator", "DataRuleService", "LoadingLifecycleService", "UILifecycleService", "UnitStatsService", "UnitEditorAssemblyTemplateService", "UnitEditorEngineAllocationService", "action_profile_registry", "drive_system_service", "unit_blueprint_validator", "data_rule_service", "unit_stats_service", "unit_editor_assembly_template_service", "unit_editor_engine_allocation_service"]:
 		if source.find(symbol) < 0:
 			_fail("main.gd does not reference %s." % symbol)
-	for delegated in ["LoadingLifecycleService.prepare_task", "LoadingLifecycleService.queue_deferred_idle_tasks", "UILifecycleService.layer_snapshot", "UILifecycleService.trim_dictionary_cache"]:
+	for delegated in ["LoadingLifecycleService.prepare_task", "LoadingLifecycleService.queue_deferred_idle_tasks", "UILifecycleService.layer_snapshot", "UILifecycleService.trim_dictionary_cache", "_unit_stats_service().copy_part_logic_stats", "_unit_stats_service().copy_part_combat_stats", "_unit_stats_service().copy_part_payload_stats", "_unit_stats_service().apply_torso_payload_direct_stats", "_unit_stats_service().record_torso_payload_summary_entry", "_unit_stats_service().apply_torso_special_payload_logic_stats", "_unit_stats_service().apply_soul_heat_capacity_stats", "_unit_stats_service().apply_internal_payload_base_stats", "_unit_stats_service().apply_torso_module_payload_logic_stats", "_unit_stats_service().apply_torso_payload_summary", "_unit_stats_service().apply_base_motion_envelope", "_unit_stats_service().apply_role_deploy_profile", "_unit_stats_service().apply_manufacturer_discount"]:
 		if source.find(delegated) < 0:
 			_fail("main.gd should delegate extracted glue through %s." % delegated)
 	print("MAIN_FILE_EXTRACTION_CONTRACT_PROBE ok services=%d" % required_files.size())

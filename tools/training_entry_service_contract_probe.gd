@@ -41,6 +41,23 @@ func _init() -> void:
 		"const TrainingEntryService = preload(\"res://scripts/services/training_entry_service.gd\")",
 		"var training_entry_service: TrainingEntryService",
 		"training_entry_service = TrainingEntryService.new()",
+		"func _training_entry_service() -> TrainingEntryService",
+		"_training_entry_service().clamped_radius",
+		"_training_entry_service().ball_volume",
+		"_training_entry_service().ball_mass",
+		"_training_entry_service().ball_stats",
+		"_training_entry_service().ball_entry",
+		"_training_entry_service().ball_intro_segments",
+		"_training_entry_service().pending_imports",
+		"_training_entry_service().loadout_from_imports",
+		"_training_entry_service().first_legal_hero_entry",
+		"_training_entry_service().starter_loadout",
+		"_training_entry_service().training_side_assignment",
+	]:
+		if main_source.find(token) < 0:
+			_fail("main.gd should delegate training entry service token: %s" % token)
+			return
+	for forbidden in [
 		"training_entry_service.clamped_radius",
 		"training_entry_service.ball_volume",
 		"training_entry_service.ball_mass",
@@ -52,9 +69,16 @@ func _init() -> void:
 		"training_entry_service.first_legal_hero_entry",
 		"training_entry_service.starter_loadout",
 		"training_entry_service.training_side_assignment",
+		"training_entry_service != null",
+		"_legacy_training_side_assignment",
+		"_legacy_training_pending_imports",
+		"_legacy_training_loadout_from_imports",
+		"_legacy_first_training_hero_entry",
+		"_legacy_training_starter_loadout",
+		"_training_roster_from_single",
 	]:
-		if main_source.find(token) < 0:
-			_fail("main.gd should delegate training entry service token: %s" % token)
+		if main_source.find(forbidden) >= 0:
+			_fail("main.gd should not keep legacy TrainingEntryService fallback token: %s" % forbidden)
 			return
 	var service = TrainingEntryServiceScript.new()
 	if absf(service.clamped_radius(0.873, 0.2, 2.0, 0.05) - 0.85) > 0.001:

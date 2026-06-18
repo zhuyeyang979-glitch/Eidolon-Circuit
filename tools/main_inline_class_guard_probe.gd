@@ -2,36 +2,7 @@ extends SceneTree
 
 const MAIN_PATH := "res://scripts/main.gd"
 
-const ALLOWED_INLINE_CLASSES := {
-	"MobiusStripSurfaceView": "mobius surface view extraction is deferred until the Mobius visual boundary batch",
-	"MobiusStardustBandView": "mobius surface view extraction is deferred until the Mobius visual boundary batch",
-	"ScoutUnitDetailView": "unit detail preview is coupled to saved-unit/editor hover flows",
-	"PartPreviewTextureRenderCanvas": "catalog preview texture cache cluster is deferred",
-	"PartPreviewTextureCache": "catalog preview texture cache cluster is deferred",
-	"PartPreviewIconView": "catalog preview texture cache cluster is deferred",
-	"CatalogCardTextLayer": "catalog card cluster is deferred",
-	"CatalogCardBodyTextureRenderCanvas": "catalog card cluster is deferred",
-	"CatalogCardBodyTextureCache": "catalog card cluster is deferred",
-	"CatalogCardRetainedItem": "catalog card cluster is deferred",
-	"PartCatalogCardButton": "catalog card cluster is deferred",
-	"EditorStatsRailView": "unit editor rail extraction is deferred",
-	"EditorPartHoverPopupView": "pinned part detail panel remains high-coupling",
-	"TorsoDetailPanelView": "torso detail panel remains high-coupling",
-	"EngineMomentumAllocationPanelView": "power allocation detail panel remains high-coupling",
-	"UnitEditorPowerDockView": "power dock remains high-coupling",
-	"AssemblyBoardRenderLayer": "board render support cluster is deferred",
-	"AssemblyBoardRenderComponentItem": "board render support cluster is deferred",
-	"AssemblyBoardRenderItem": "board render support cluster is deferred",
-	"AssemblyBoardView": "assembly board extraction is deferred to EC-SLIM-003",
-	"BattleContactVfxPool": "contact VFX pool owns runtime particle pooling",
-	"SalvoLandingPreviewEffect": "contextual battle effect extraction is deferred",
-	"LaserAimTelegraphEffect": "contextual battle effect extraction is deferred",
-	"TrueBulletTargetLockEffect": "contextual battle effect extraction is deferred",
-	"BlindZoneEffect": "contextual battle effect extraction is deferred",
-	"FieldAuraEffect": "contextual battle effect extraction is deferred",
-	"CoinPickupEffect": "contextual battle effect extraction is deferred",
-	"IdentityTransferEffect": "contextual battle effect extraction is deferred",
-}
+const ALLOWED_INLINE_CLASSES := {}
 
 const EXTRACTED_INLINE_CLASSES := [
 	"BackdropView",
@@ -47,12 +18,42 @@ const EXTRACTED_INLINE_CLASSES := [
 	"HitEffect",
 	"ComboRippleEffect",
 	"ProjectileTraceEffect",
+	"SalvoLandingPreviewEffect",
+	"LaserAimTelegraphEffect",
+	"TrueBulletTargetLockEffect",
+	"BlindZoneEffect",
+	"FieldAuraEffect",
+	"CoinPickupEffect",
+	"IdentityTransferEffect",
+	"BattleContactVfxPool",
+	"MobiusStripSurfaceView",
+	"MobiusStardustBandView",
+	"PartPreviewTextureRenderCanvas",
+	"PartPreviewTextureCache",
+	"PartPreviewIconView",
+	"CatalogCardTextLayer",
+	"CatalogCardBodyTextureRenderCanvas",
+	"CatalogCardBodyTextureCache",
+	"CatalogCardRetainedItem",
+	"PartCatalogCardButton",
+	"EditorStatsRailView",
+	"EditorPartHoverPopupView",
+	"ScoutUnitDetailView",
+	"UnitEditorPowerDockView",
+	"EngineMomentumAllocationPanelView",
+	"TorsoDetailPanelView",
+	"AssemblyBoardRenderLayer",
+	"AssemblyBoardRenderComponentItem",
+	"AssemblyBoardRenderItem",
+	"AssemblyBoardView",
 ]
+
+var failures: Array = []
 
 
 func _fail(message: String) -> void:
 	push_error(message)
-	quit(1)
+	failures.append(message)
 
 
 func _inline_class_names(source: String) -> Array[String]:
@@ -73,7 +74,7 @@ func _init() -> void:
 	if source.is_empty():
 		_fail("main.gd source is empty or missing.")
 	var inline_classes := _inline_class_names(source)
-	if inline_classes.is_empty():
+	if inline_classes.is_empty() and not ALLOWED_INLINE_CLASSES.is_empty():
 		_fail("Inline class guard expected existing deferred inline classes in main.gd.")
 	for inline_class_name in inline_classes:
 		if not ALLOWED_INLINE_CLASSES.has(inline_class_name):
@@ -81,5 +82,9 @@ func _init() -> void:
 	for extracted_class_name in EXTRACTED_INLINE_CLASSES:
 		if source.find("\nclass %s:" % extracted_class_name) >= 0:
 			_fail("Extracted class should not be reintroduced inline in main.gd: %s" % extracted_class_name)
+	if not failures.is_empty():
+		print("MAIN_INLINE_CLASS_GUARD_PROBE failed count=%d" % failures.size())
+		quit(1)
+		return
 	print("MAIN_INLINE_CLASS_GUARD_PROBE ok allowed=%d active=%d extracted=%d" % [ALLOWED_INLINE_CLASSES.size(), inline_classes.size(), EXTRACTED_INLINE_CLASSES.size()])
 	quit(0)

@@ -1,6 +1,7 @@
 extends SceneTree
 
 const SERVICE_PATH := "res://scripts/services/battle_frame_orchestrator_service.gd"
+const FACADE_PATH := "res://scripts/battle/battle_runtime_facade.gd"
 const MAIN_PATH := "res://scripts/main.gd"
 const BattleFrameOrchestratorServiceScript := preload("res://scripts/services/battle_frame_orchestrator_service.gd")
 
@@ -63,16 +64,34 @@ func _init() -> void:
 	var main_source := FileAccess.get_file_as_string(ProjectSettings.globalize_path(MAIN_PATH))
 	for token in [
 		"const BattleFrameOrchestratorService = preload(\"res://scripts/services/battle_frame_orchestrator_service.gd\")",
+		"const BattleRuntimeFacade = preload(\"res://scripts/battle/battle_runtime_facade.gd\")",
 		"var battle_frame_orchestrator_service: BattleFrameOrchestratorService",
+		"var battle_runtime_facade: BattleRuntimeFacade",
 		"battle_frame_orchestrator_service = BattleFrameOrchestratorService.new()",
+		"battle_runtime_facade = BattleRuntimeFacade.new()",
 		"func _battle_frame_orchestrator_service() -> BattleFrameOrchestratorService",
-		"_battle_frame_orchestrator_service().frame_step_plan",
-		"_battle_frame_orchestrator_service().simulation_phase_plan",
-		"_battle_frame_orchestrator_service().contact_pass_plan",
-		"_battle_frame_orchestrator_service().post_step_state",
+		"func _battle_runtime_facade() -> BattleRuntimeFacade",
+		"_battle_runtime_facade().frame_step_plan",
+		"_battle_runtime_facade().simulation_phase_plan",
+		"_battle_runtime_facade().contact_pass_plan",
+		"_battle_runtime_facade().post_step_state",
 	]:
 		if main_source.find(token) < 0:
 			_fail("main.gd should delegate battle frame orchestrator token: %s" % token)
+			return
+	if not FileAccess.file_exists(FACADE_PATH):
+		_fail("Missing BattleRuntimeFacade script.")
+		return
+	var facade_source := FileAccess.get_file_as_string(ProjectSettings.globalize_path(FACADE_PATH))
+	for token in [
+		"class_name BattleRuntimeFacade",
+		"_frame_orchestrator().frame_step_plan",
+		"_frame_orchestrator().simulation_phase_plan",
+		"_frame_orchestrator().contact_pass_plan",
+		"_frame_orchestrator().post_step_state",
+	]:
+		if facade_source.find(token) < 0:
+			_fail("BattleRuntimeFacade should delegate orchestrator token: %s" % token)
 			return
 	var tick_body := _function_body(main_source, "func _tick_battle")
 	if tick_body.is_empty():

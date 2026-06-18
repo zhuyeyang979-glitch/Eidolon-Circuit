@@ -59,6 +59,7 @@ func _init() -> void:
 		"summon_pair_bindings_plan",
 		"summon_pair_clear_intent",
 		"summon_pair_cycle_intent",
+		"summon_portal_selection_intent",
 		"portal_index_from_vector",
 		"source_rule_for_condition",
 		"default_puppet_attack_modules",
@@ -139,6 +140,7 @@ func _init() -> void:
 		"_battle_actor_command_service().summon_pair_bindings_plan",
 		"_battle_actor_command_service().summon_pair_clear_intent",
 		"_battle_actor_command_service().summon_pair_cycle_intent",
+		"_battle_actor_command_service().summon_portal_selection_intent",
 		"_battle_actor_command_service().portal_index_from_vector",
 		"_battle_actor_command_service().source_rule_for_condition",
 		"_battle_actor_command_service().default_puppet_attack_modules",
@@ -198,6 +200,7 @@ func _init() -> void:
 	_check_summon_pair_bindings(service)
 	_check_summon_pair_clear(service)
 	_check_summon_pair_cycle(service)
+	_check_summon_portal_selection(service)
 	_check_portal_index(service)
 	_check_source_rule_for_condition(service)
 	_check_default_puppet_attack_modules(service)
@@ -1063,6 +1066,24 @@ func _check_summon_pair_cycle(service) -> void:
 	)
 	_assert_eq(String(none.get("action", "")), "none", "summon pair cycle reports no free binding")
 	_assert_eq(_array_text(Array(Array(none.get("bindings", []))[0])), "", "summon pair cycle no-op preserves bindings")
+
+
+func _check_summon_portal_selection(service) -> void:
+	var cycled: Dictionary = service.summon_portal_selection_intent(Vector2.ZERO, 3, 8)
+	_assert_eq(String(cycled.get("selection", "")), "cycle", "neutral portal input should cycle")
+	_assert_eq(int(cycled.get("portal_index", -1)), 4, "neutral portal input cycles forward")
+	if bool(cycled.get("direct", true)):
+		_fail("neutral portal input should not be direct")
+	var direct: Dictionary = service.summon_portal_selection_intent(Vector2(-0.7, -0.7), 3, 8)
+	_assert_eq(String(direct.get("selection", "")), "direct", "strong portal direction should direct-select")
+	_assert_eq(int(direct.get("portal_index", -1)), 0, "strong up-left should direct-select portal 0")
+	if not bool(direct.get("direct", false)):
+		_fail("strong portal direction should mark direct=true")
+	var backward_cycle: Dictionary = service.summon_portal_selection_intent(Vector2.ZERO, 0, 8, -1)
+	_assert_eq(int(backward_cycle.get("portal_index", -1)), 7, "negative portal cycle wraps")
+	var empty: Dictionary = service.summon_portal_selection_intent(Vector2.RIGHT, 4, 0)
+	_assert_eq(String(empty.get("selection", "")), "none", "empty portal selection reports none")
+	_assert_eq(int(empty.get("portal_index", -1)), 0, "empty portal selection returns zero")
 
 
 func _check_portal_index(service) -> void:

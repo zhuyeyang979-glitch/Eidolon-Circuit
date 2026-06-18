@@ -44,24 +44,43 @@ func _init() -> void:
 		"const BattleInputService = preload(\"res://scripts/services/battle_input_service.gd\")",
 		"var battle_input_service: BattleInputService",
 		"battle_input_service = BattleInputService.new()",
-		"battle_input_service.battle_action_names",
-		"battle_input_service.capture_edge_frame",
-		"battle_input_service.consume_edges_once",
-		"battle_input_service.action_just_pressed",
-		"battle_input_service.action_just_released",
-		"battle_input_service.battle_control_routes",
-		"battle_input_service.direction_just_pressed",
-		"battle_input_service.movement_input_state",
-		"input_vector_from_strengths",
-		"gun_turn_input_vector_from_strengths",
-		"battle_input_service.spectator_input_intent",
+		"func _battle_input_service() -> BattleInputService",
+		"_battle_input_service().battle_action_names",
+		"_battle_input_service().capture_edge_frame",
+		"_battle_input_service().consume_edges_once",
+		"_battle_input_service().action_just_pressed",
+		"_battle_input_service().action_just_released",
+		"_battle_input_service().battle_control_routes",
+		"_battle_input_service().direction_just_pressed",
+		"_battle_input_service().movement_input_state",
+		"_battle_input_service().input_vector_from_strengths",
+		"_battle_input_service().gun_turn_input_vector_from_strengths",
+		"_battle_input_service().spectator_input_intent",
 	]:
 		if main_source.find(token) < 0:
 			_fail("main.gd should delegate battle input service token: %s" % token)
 			return
+	for forbidden in [
+		"battle_input_service.battle_",
+		"battle_input_service.capture_edge_frame",
+		"battle_input_service.consume_edges_once",
+		"battle_input_service.action_just_",
+		"battle_input_service.direction_just_pressed",
+		"battle_input_service.movement_input_state",
+		"battle_input_service.spectator_input_intent",
+		"battle_input_service.input_vector_from_strengths",
+		"battle_input_service.gun_turn_input_vector_from_strengths",
+		"battle_input_service != null",
+		"_legacy_battle_control_routes",
+		"_legacy_spectator_input_intent",
+		"_legacy_movement_input_state",
+	]:
+		if main_source.find(forbidden) >= 0:
+			_fail("main.gd should not keep legacy BattleInputService fallback token: %s" % forbidden)
+			return
 	var service = BattleInputServiceScript.new()
 	var actions: Array = service.battle_action_names(["p1", "p2"], 6)
-	for action_name in ["battle_pause", "p1_left", "p1_right", "p1_up", "p1_down", "p1_face_left", "p1_face_right", "p1_portal", "p1_attack_6", "p2_attack_6"]:
+	for action_name in ["battle_pause", "p1_left", "p1_right", "p1_up", "p1_down", "p1_face_left", "p1_face_right", "p1_cool", "p1_portal", "p1_attack_6", "p2_cool", "p2_attack_6"]:
 		if not actions.has(action_name):
 			_fail("battle_action_names missing action: %s in %s" % [action_name, str(actions)])
 			return

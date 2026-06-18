@@ -1,6 +1,7 @@
 extends SceneTree
 
 const MainScene := preload("res://scripts/main.gd")
+const LegalStarterBlueprintFixture := preload("res://tools/fixtures/legal_starter_blueprint_fixture.gd")
 
 
 func _fail(message: String) -> void:
@@ -32,19 +33,25 @@ func _init() -> void:
 	var first_path := "user://saved_units/probe_save_overwrite_source.json"
 	_remove_user_file(first_path)
 
-	var bp: Dictionary = main._editor_current_blueprint()
-	bp["custom_topology"] = main._default_free_canvas_topology("hero")
-	bp["blank_canvas"] = false
-	bp["unit_name"] = unit_name
+	var bp := LegalStarterBlueprintFixture.build(main, unit_name)
+	if bp.is_empty():
+		_fail("Could not build legal save fixture.")
+		return
 	bp["probe_save_marker"] = "first"
+	main.editor_working_blueprint = bp
+	main.editor_working_role_key = "hero"
+	main.editor_canvas_mode = "blank"
 	var saved_path := main._save_editor_current_unit_to_library_named(unit_name, first_path)
 	if saved_path != first_path:
 		_fail("Initial explicit save should use requested path.")
+		return
 	var entry := main._unit_library_entry_from_file(first_path)
 	if entry.is_empty():
 		_fail("Initial save file could not be read back.")
+		return
 	if not main._load_saved_unit_entry_into_unit_editor(entry):
 		_fail("Saved unit should load into Unit Edit.")
+		return
 
 	var loaded: Dictionary = main._editor_current_blueprint()
 	loaded["probe_save_marker"] = "overwrite"
@@ -52,19 +59,24 @@ func _init() -> void:
 	var overwrite_path := main._save_editor_current_unit_to_library_named(unit_name)
 	if overwrite_path != first_path:
 		_fail("Save should overwrite the source path, got %s." % overwrite_path)
+		return
 	var count_after := _count_saved_units_named(main, unit_name)
 	if count_after != count_before:
 		_fail("Overwrite save should not create another same-name unit.")
+		return
 	var overwritten := main._unit_library_entry_from_file(first_path)
 	var overwritten_bp: Dictionary = Dictionary(overwritten.get("blueprint", {}))
 	if String(overwritten_bp.get("probe_save_marker", "")) != "overwrite":
 		_fail("Overwrite did not update the original saved unit payload.")
+		return
 
 	var save_as_path := main._save_editor_current_unit_to_library_named(unit_name, "", true)
 	if save_as_path == "" or save_as_path == first_path:
 		_fail("Save As should create a distinct saved unit path.")
+		return
 	if not FileAccess.file_exists(save_as_path):
 		_fail("Save As path does not exist.")
+		return
 	_remove_user_file(first_path)
 	_remove_user_file(save_as_path)
 	main._invalidate_saved_unit_library_cache()

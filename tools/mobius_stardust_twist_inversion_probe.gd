@@ -1,6 +1,6 @@
 extends SceneTree
 
-const MainScene := preload("res://scripts/main.gd")
+const MobiusStardustBandViewScript := preload("res://scripts/views/mobius_stardust_band_view.gd")
 
 
 func _fail(message: String) -> void:
@@ -50,19 +50,21 @@ func _assert_source_invariant(before: Dictionary, after: Dictionary) -> void:
 
 
 func _init() -> void:
-	var main = MainScene.new()
-	root.add_child(main)
-	main._ready()
-	main.game_state = MainScene.STATE_BATTLE
-	main.mobius_enabled = true
-	main.camera_mobius_s = 2.0
-	main.camera_center = 2.0
-	main.mobius_rotation_state = {"twist_phase": 0.0, "angle": 0.0}
-	main._refresh_mobius_surface_view()
-	var first: Dictionary = main.mobius_stardust_band_view.stardust_band_snapshot()
-	main.mobius_rotation_state = {"twist_phase": PI, "angle": 0.0}
-	main._refresh_mobius_surface_view()
-	var second: Dictionary = main.mobius_stardust_band_view.stardust_band_snapshot()
+	var stardust = MobiusStardustBandViewScript.new()
+	root.add_child(stardust)
+	stardust.size = Vector2(1280.0, 720.0)
+	var config := {
+		"enabled": true,
+		"stardust_band_enabled": true,
+		"surface_segments": 96,
+		"view_width": 7.2,
+		"screen_scale": 100.0,
+		"stardust_particle_budget": 96,
+	}
+	stardust.set_world(config, {"twist_phase": 0.0, "angle": 0.0}, Vector2(2.0, 0.0))
+	var first: Dictionary = stardust.stardust_band_snapshot()
+	stardust.set_world(config, {"twist_phase": PI, "angle": 0.0}, Vector2(2.0, 0.0))
+	var second: Dictionary = stardust.stardust_band_snapshot()
 	var first_bands: Array = first.get("bands", [])
 	var second_bands: Array = second.get("bands", [])
 	if first_bands.size() != 2 or second_bands.size() != 2:

@@ -261,6 +261,24 @@ func _init() -> void:
 	for token in [
 		"scripts/services/battle_runtime_lifecycle_service.gd",
 		"BattleRuntimeLifecycleService.new",
+		"battle_runtime_facade.bind_runtime_lifecycle(battle_runtime_lifecycle_service)",
+		"_battle_runtime_facade().cleanup_intent",
+		"_battle_runtime_facade().snapshot_summary",
+		"_battle_runtime_facade().kill_flow_intent",
+		"_battle_runtime_facade().destroy_economy_intents",
+		"_battle_runtime_facade().pirate_betrayal_intent",
+		"_battle_runtime_facade().retreat_start_intent",
+		"_battle_runtime_facade().retreat_repair_tick_intent",
+		"_battle_runtime_facade().escape_pod_spawn_intent",
+		"_battle_runtime_facade().escape_pod_tick_intent",
+		"_battle_runtime_facade().fracture_cleanup_intent",
+		"_battle_runtime_facade().torso_fracture_brood_intent",
+		"_battle_runtime_lifecycle_snapshot",
+	]:
+		if not main_source.contains(token):
+			_fail("main.gd missing BattleRuntimeLifecycleService boundary token: %s" % token)
+			return
+	for forbidden in [
 		"battle_runtime_lifecycle_service.cleanup_intent",
 		"battle_runtime_lifecycle_service.snapshot_summary",
 		"_battle_runtime_lifecycle_service().kill_flow_intent",
@@ -272,10 +290,9 @@ func _init() -> void:
 		"_battle_runtime_lifecycle_service().escape_pod_tick_intent",
 		"_battle_runtime_lifecycle_service().fracture_cleanup_intent",
 		"_battle_runtime_lifecycle_service().torso_fracture_brood_intent",
-		"_battle_runtime_lifecycle_snapshot",
 	]:
-		if not main_source.contains(token):
-			_fail("main.gd missing BattleRuntimeLifecycleService boundary token: %s" % token)
+		if main_source.contains(forbidden):
+			_fail("main.gd should enter lifecycle intents through BattleRuntimeFacade token: %s" % forbidden)
 			return
 	print("BATTLE_RUNTIME_LIFECYCLE_SERVICE_CONTRACT_PROBE ok")
 	quit(0)

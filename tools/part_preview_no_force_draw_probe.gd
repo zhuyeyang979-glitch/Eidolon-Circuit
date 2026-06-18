@@ -7,15 +7,10 @@ func _fail(message: String) -> void:
 
 
 func _init() -> void:
-	var source := FileAccess.get_file_as_string("res://scripts/main.gd")
-	var cache_start := source.find("class PartPreviewTextureCache:")
-	if cache_start < 0:
+	var cache_block := FileAccess.get_file_as_string("res://scripts/views/catalog/part_preview_texture_cache.gd")
+	if cache_block.is_empty() or cache_block.find("class_name PartPreviewTextureCache") < 0:
 		_fail("PartPreviewTextureCache missing.")
 		return
-	var next_class := source.find("\nclass PartPreviewIconView:", cache_start)
-	if next_class < 0:
-		next_class = source.length()
-	var cache_block := source.substr(cache_start, next_class - cache_start)
 	if cache_block.contains("RenderingServer.force_draw"):
 		_fail("Preview texture cache still forces a synchronous GPU draw.")
 		return

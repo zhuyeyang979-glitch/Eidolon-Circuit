@@ -8,6 +8,24 @@ const COMPONENT_SHEET_PATH := ""
 const SOFTWARE_SHEET_PATH := ""
 const FALLBACK_SHEET_PATH := ""
 const TORSO_GEOMETRY_SCALE := 2.0
+const IMAGE2_PART_TEXTURE_PATHS := {
+	"torso_core": "res://assets/concepts/parts/image2_individual/torso_core_image2_v1.png",
+	"ball_joint": "res://assets/concepts/parts/image2_individual/ball_joint_image2_v1.png",
+	"telescopic_joint": "res://assets/concepts/parts/image2_individual/telescopic_joint_image2_v1.png",
+	"light_forearm_strut": "res://assets/concepts/parts/image2_individual/light_forearm_strut_image2_v1.png",
+	"heavy_barrier_strut": "res://assets/concepts/parts/image2_individual/heavy_barrier_strut_image2_v1.png",
+	"curved_blade_claw": "res://assets/concepts/parts/image2_individual/curved_blade_claw_image2_v1.png",
+	"paired_pincer_claw": "res://assets/concepts/parts/image2_individual/paired_pincer_claw_image2_v1.png",
+	"railgun_pod": "res://assets/concepts/parts/image2_individual/railgun_pod_image2_v1.png",
+	"missile_tube_pod": "res://assets/concepts/parts/image2_individual/missile_tube_pod_image2_v1.png",
+	"thruster_nozzle_pair": "res://assets/concepts/parts/image2_individual/thruster_nozzle_pair_image2_v1.png",
+	"barrier_emitter_plate": "res://assets/concepts/parts/image2_individual/barrier_emitter_plate_image2_v1.png",
+	"sensor_eye_array": "res://assets/concepts/parts/image2_individual/sensor_eye_array_image2_v1.png",
+	"cooling_fin_module": "res://assets/concepts/parts/image2_individual/cooling_fin_module_image2_v1.png",
+	"engine_reactor_capsule": "res://assets/concepts/parts/image2_individual/engine_reactor_capsule_image2_v1.png",
+	"ammo_pod": "res://assets/concepts/parts/image2_individual/ammo_pod_image2_v1.png",
+	"soul_source_ether_chip": "res://assets/concepts/parts/image2_individual/soul_source_ether_chip_image2_v1.png",
+}
 
 
 static func load_texture(path: String) -> Texture2D:

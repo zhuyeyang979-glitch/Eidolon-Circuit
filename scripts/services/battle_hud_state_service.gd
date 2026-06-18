@@ -1,6 +1,10 @@
 extends RefCounted
 class_name BattleHudStateService
 
+const HeatDoctrineService = preload("res://scripts/services/heat_doctrine_service.gd")
+
+var heat_doctrine = HeatDoctrineService.new()
+
 
 func timer_text(match_time_remaining: float) -> String:
 	var safe_time := maxf(0.0, match_time_remaining)
@@ -29,6 +33,14 @@ func _display_ratio(value) -> float:
 
 func _display_ratio_percent(value) -> int:
 	return int(roundf(_display_ratio(value) * 100.0))
+
+
+func heat_rhythm_stage(unit_state: Dictionary) -> String:
+	return heat_doctrine.rhythm_stage(unit_state)
+
+
+func heat_rhythm_label(unit_state: Dictionary, terms: Dictionary) -> String:
+	return heat_doctrine.rhythm_label(heat_rhythm_stage(unit_state), terms)
 
 
 func _display_combat_state(unit_state: Dictionary, terms: Dictionary) -> String:
@@ -62,7 +74,7 @@ func unit_status_text(unit_state: Dictionary, fallback: String, terms: Dictionar
 		]
 	var heat_text := ""
 	if bool(unit_state.get("uses_heat", false)):
-		heat_text = "  %s %d%%" % [String(terms.get("heat", "heat")), _display_ratio_percent(unit_state.get("heat_ratio", 0.0))]
+		heat_text = "  %s %d%% %s" % [String(terms.get("heat", "heat")), _display_ratio_percent(unit_state.get("heat_ratio", 0.0)), heat_rhythm_label(unit_state, terms)]
 	return "%s %s %d/%d%s%s%s  %s" % [
 		fallback,
 		hp_label,
@@ -246,12 +258,13 @@ func role_bar_text(role_state: Dictionary, terms: Dictionary) -> String:
 	if maxf(0.0, float(unit_state.get("electronic_armor_max", 0.0))) > 0.0:
 		electronic_armor_tag = " %s%.0f" % [String(terms.get("electronic_armor", "shield")), _display_armor_hp(unit_state, "electronic_armor_hp", "electronic_armor_max")]
 	if role_key == "hero" and bool(unit_state.get("uses_heat", false)):
-		return "%d/%d%s  %s %.0f%%%s" % [
+		return "%d/%d%s  %s %.0f%% %s%s" % [
 			_display_health(unit_state),
 			_display_max_int(unit_state.get("max_health", 0)),
 			electronic_armor_tag,
 			String(terms.get("heat", "heat")),
 			float(_display_ratio_percent(unit_state.get("heat_ratio", 0.0))),
+			heat_rhythm_label(unit_state, terms),
 			switch_tag,
 		]
 	return "%d/%d%s%s" % [_display_health(unit_state), _display_max_int(unit_state.get("max_health", 0)), electronic_armor_tag, switch_tag]
@@ -276,6 +289,46 @@ func sortie_discount_status(entries: Array, max_items: int = 3) -> String:
 	return " ".join(pieces)
 
 
+func victory_label_text(player_id: int, points: int, win_points: int, terms: Dictionary) -> String:
+	return "P%d %s %d/%d" % [
+		player_id,
+		String(terms.get("victory_points", "VP")),
+		maxi(0, points),
+		maxi(1, win_points),
+	]
+
+
+func score_status_text(p1_points: int, p2_points: int, win_points: int, terms: Dictionary) -> String:
+	var p1 := maxi(0, p1_points)
+	var p2 := maxi(0, p2_points)
+	var target := maxi(1, win_points)
+	if p1 >= target - 1 and p1 > p2:
+		return "P1 %s" % String(terms.get("match_point", "MATCH POINT"))
+	if p2 >= target - 1 and p2 > p1:
+		return "P2 %s" % String(terms.get("match_point", "MATCH POINT"))
+	if p1 == p2:
+		return String(terms.get("tied", "TIED"))
+	var leader := 1 if p1 > p2 else 2
+	var lead := maxi(p1, p2) - mini(p1, p2)
+	return "P%d %s +%d" % [leader, String(terms.get("leads", "LEADS")), lead]
+
+
+func scoreboard_text(players: Dictionary, win_points: int, terms: Dictionary) -> String:
+	var p1_player: Dictionary = Dictionary(players.get(1, players.get("1", {})))
+	var p2_player: Dictionary = Dictionary(players.get(2, players.get("2", {})))
+	var p1_points := maxi(0, int(p1_player.get("victory_points", 0)))
+	var p2_points := maxi(0, int(p2_player.get("victory_points", 0)))
+	var target := maxi(1, win_points)
+	var base := "%s P1 %d - %d P2 / %d" % [
+		String(terms.get("score", "SCORE")),
+		p1_points,
+		p2_points,
+		target,
+	]
+	var status := score_status_text(p1_points, p2_points, target, terms)
+	return "%s  %s" % [base, status] if status != "" else base
+
+
 func heavy_hud_text_state(snapshot: Dictionary) -> Dictionary:
 	var terms: Dictionary = Dictionary(snapshot.get("terms", {}))
 	var hp_label := String(snapshot.get("hp_label", "HP"))
@@ -285,12 +338,13 @@ func heavy_hud_text_state(snapshot: Dictionary) -> Dictionary:
 		"timer": {"text": timer_text(float(snapshot.get("match_time_remaining", 0.0)))},
 	}
 	var players: Dictionary = Dictionary(snapshot.get("players", {}))
+	state["scoreboard"] = {"text": scoreboard_text(players, win_points, terms)}
 	var role_order: Array = Array(snapshot.get("role_order", []))
 	for raw_player_id in players.keys():
 		var player_id := int(raw_player_id)
 		var player: Dictionary = Dictionary(players[raw_player_id])
 		state["p%d_resource" % player_id] = {"text": "P%d %s %d" % [player_id, String(terms.get("resource", "resource")), int(player.get("resource", 0))]}
-		state["p%d_victory" % player_id] = {"text": "%s %d/%d" % [String(terms.get("victory_points", "VP")), int(player.get("victory_points", 0)), win_points]}
+		state["p%d_victory" % player_id] = {"text": victory_label_text(player_id, int(player.get("victory_points", 0)), win_points, terms)}
 		state["p%d_portal" % player_id] = {"text": "%s %s  %s" % [String(terms.get("portal", "portal")), String(player.get("portal_name", "")), sortie_discount_status(Array(player.get("sortie_discount_entries", [])), int(snapshot.get("sortie_discount_max_items", 3)))]}
 		var roles: Dictionary = Dictionary(player.get("roles", {}))
 		for i in range(role_order.size()):

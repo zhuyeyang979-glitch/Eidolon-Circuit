@@ -18,7 +18,7 @@ func _class_block(source: String, cls_name: String, next_cls_name: String) -> St
 
 func _init() -> void:
 	var source := FileAccess.get_file_as_string("res://scripts/main.gd")
-	var retained := _class_block(source, "CatalogCardRetainedItem", "PartCatalogCardButton")
+	var retained := FileAccess.get_file_as_string("res://scripts/views/catalog/catalog_card_retained_item.gd")
 	if retained == "":
 		_fail("CatalogCardRetainedItem class missing.")
 	if retained.contains("draw_texture_rect(body_texture"):

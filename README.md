@@ -1,6 +1,6 @@
 # 星魂回环 / Eidolon Circuit
 
-Eidolon Circuit is a topology-construction fighting prototype with a single-player-first flow.
+Eidolon Circuit is a topology-construction fighting prototype with a local-versus-first formal battle flow.
 
 ## Current Governance Baseline
 
@@ -18,8 +18,8 @@ The game now opens to a main menu:
 
 - Team Edit
 - Training
-- AI Battle
-- PVP
+- PVP / Local Versus
+- Computer Battle
 - Settings
 
 The UI direction is closer to modern fighting-game front ends: big mode entries, a strong title block, an information panel, and a separate team edit lab with component art and stat readouts.
@@ -29,8 +29,10 @@ The UI direction is closer to modern fighting-game front ends: big mode entries,
 Each team owns a roster of mutually exclusive unit roles:
 
 - Hero: contains a Soul component and is the directly controlled unit.
-- Puppet: contains Source Code and deploys as a shared-code puppet group.
+- Puppet: contains Source Code and deploys as a group governed by deterministic conditions, target priorities, movement routines, and action sequences.
 - Barrier: contains Ether and behaves as a fixed space/topology.
+
+The project does not connect puppets or opponents to a large language model. Source Code behavior is evaluated locally from authored rules and the current battle state; it does not learn or generate decisions through an external model service.
 
 Every role uses the same common component categories:
 
@@ -97,7 +99,7 @@ Team Edit controls:
 - Duplicate current unit: `N`
 - Remove current unit: `Delete`
 - Set current role as initial deployment: `L`
-- Copy P1 team to P2/AI: `C`
+- Copy P1 team to P2/computer: `C`
 - Return to menu: `Enter` or `Esc`
 
 ## Modes
@@ -105,16 +107,28 @@ Team Edit controls:
 Training:
 - P1 fights a passive dummy.
 - Good for testing reach, heat, overheat, and component stats.
+- The dummy can be replaced by a deterministic computer sparring unit for movement, aiming, defense, and pressure testing. It uses local authored combat rules, not a large language model.
 
-AI Battle:
-- P1 fights an automated opponent.
-- AI buys and deploys hero, puppet group, and barrier from its team.
-
-PVP:
+PVP / Local Versus:
+- This is the formal battle priority for the initial playable model.
 - Two-controller local versus.
 - P1 uses controller 1.
 - P2 uses controller 2.
 - Keyboard remains a P1 fallback only.
+
+Computer Battle:
+- P1 fights a deterministic computer-controlled opponent.
+- The opponent follows authored rules to buy and deploy its hero, puppet group, and barrier.
+- P3 can watch a computer-versus-computer match with the spectator camera.
+- No large language model or external model service is involved.
+
+## Battle Space Visuals
+
+The battle arena still uses a top-down horizontal field with left and right wrapping. The codebase has Mobius projection and surface-rendering infrastructure, but the current battle view deliberately keeps combat projection locally rectangular so attacks, hitboxes, and map references remain readable.
+
+Because a Mobius space has little design value if players cannot see or feel it, the current runtime presents a temporary linear elevation cue instead of a full twist: the world-grid surface gains subtle low-to-high lane bands and dashed height contours. This is visual-only. It does not change collision, projectile paths, target queries, or the local battle coordinate contract.
+
+This leaves a clear extension point for a later full Mobius treatment: visual twist, authored terrain height, barrier/terrain interaction, and topology-aware local battle events can be added without mixing those ideas into today's combat geometry.
 
 ## Battle Controls
 
@@ -122,14 +136,12 @@ P1 keyboard:
 
 - Move hero: `W` / `A` / `S` / `D`
 - Boost: double-tap a direction
-- Six crab attack groups: `F` left claw, `R` right claw, `T` front-left leg, `C` front-right leg, `V` rear-left leg, `B` rear-right leg
+- Six attack groups: `U` / `I` / `O` / `J` / `K` / `L`
 - Manual cooling: hold `G`
-- Command module: direction input then `Y`
-- Melee command attack: `236+F` becomes armor-state, `214+F` becomes active-state
-- Cycle summon portal: `Q`
-- Buy/deploy Hero: `1`
-- Buy/deploy Puppet group: `2`
-- Buy/deploy Barrier: `3`
+- Command module: directional command plus an attack button
+- Melee command attack: `236+attack` becomes armor-state, `214+attack` becomes active-state
+- Summon portal: tap `Tab` to cycle; hold a direction and tap `Tab` to direct-select that entrance
+- Pair-summon sortie slot: press the slot's assigned two attack buttons together to deploy through the selected portal
 
 Controller:
 
@@ -137,14 +149,53 @@ Controller:
 - Boost: double-tap a direction
 - Six attack groups: face buttons plus left/right shoulder
 - Manual cooling: guide button
-- Cycle summon portal: back button
-- Buy/deploy Hero: start button
-- Buy/deploy Puppet group: left stick press
-- Buy/deploy Barrier: right stick press
+- Summon portal: tap back to cycle; hold a direction and tap back to direct-select that entrance
+- Pair-summon sortie slot: press the slot's assigned two attack buttons together to deploy through the selected portal
 
 Normal attacks are always normal state. Armor and active states only appear through action modules or source-code puppet sequences. Gun-like muscle components can fire bullet, chemical, or laser projectiles and add a sharp heat spike when used.
 
 The command notation is fighting-game numpad notation, not number keys. In this prototype `236` is recognized as down then forward, and `214` as down then back, relative to the hero's facing direction. Any melee attack button can be combined with these: `236+attack` is armor-state, `214+attack` is active-state.
+
+## Tactical Input Model
+
+High-frequency hero control is the part that feels closest to a fighting game: movement, facing, Boost, attack buttons, aiming holds, command inputs, and manual cooling all stay on the hero and are expected to be used moment to moment.
+
+Low-frequency tactical commands are intentionally smaller. The player chooses a summon portal first, either by cycling or by direct-selecting with direction plus portal input, then deploys a prepared sortie slot by pressing its paired attack buttons together. The deployed slot may be a hero, puppet group, or barrier depending on the team setup and current resource gate.
+
+Pair-summon deployment no longer steals the live movement direction as an implicit portal choice. The selected portal is the commitment; the pair chord only confirms the prepared unit and spends the resource. Portal feedback shows the first sortie bindings and current live deploy costs so the player can decide before committing.
+
+Puppet and barrier control is not direct micromanagement during battle. Puppet Source Code and barrier Ether logic are authored before battle, then evaluated locally from the current battle state. Runtime input chooses when and where to commit those prepared tools; it does not add separate puppet-move, puppet-attack, barrier-move, or barrier-attack controls.
+
+## Attack Group Feedback
+
+The six attack groups have a dedicated battle HUD strip so the player can tell whether an input was accepted, prepared, executed, or blocked without reading a long debug panel.
+
+- Each slot shows the input key, attack group number, bound module or limb label, and a compact state: READY, AIM, LOCK, FIRE, CMD, COOL, HEAT, BLOCK, EMPTY, or SEVER.
+- A short flash is recorded whenever the player presses an attack group, enters an aim or command window, fires, runs out of ammo, hits a module gate, or presses an unbound group.
+- The controlled unit highlights the corresponding runtime segment for the same flash window. Successful fire is warm, aim and lock are cool or gold, and blocked or empty inputs are red.
+- The small bars under each slot link to recovery, heat, and ammo where available. They are advisory feedback only; they do not force the player to change a build or prescribe a single "correct" combo.
+
+## Attack Rule Explanation
+
+The structure authored in the unit editor is also the unit's move list. Action-module detail cards now show approximate move possibilities such as sweep control, linear thrust, heavy break, guard bash, sustained pressure, lock-on shot, or tether control. These labels describe the likely move family created by the selected structure and module; they do not promise exact damage or a fixed combo.
+
+Live combat keeps explanation lightweight with short cause tags such as hit, low momentum, material disadvantage, occluded, reflected, empty ammo, or heat pressure. Training validation carries the detailed explanation: representative attack results record the attack group, hit part, final damage, and the main reasons that changed the result. Post-battle review keeps the latest attack explanations beside the command log. All explanation is advisory and never forces a build change.
+
+## Command Review Log
+
+Directional command cache messages such as armor command cached or active command cached are not shown as live HUD text. They are recorded silently for post-battle review so combat stays focused on hero movement and attack feedback.
+
+- The log records command cache, consume, and special-module match events with player, timestamp, command text, state, and source.
+- The post-battle review panel shows the latest entries for players and developers to inspect input timing, command consumption, and build execution after the round.
+- This log is diagnostic and advisory. It helps explain why a build did or did not execute a planned command, but it does not interrupt battle or force a player to change the current configuration.
+
+## Cognitive Load Guardrails
+
+The battle input model treats the hero as the only high-frequency direct-control focus. Aiming can temporarily reserve the turn keys, but it must not create a second real-time control layer for puppets or barriers.
+
+Puppets and barriers are tactical commitments, not extra hands. New features for those roles should prefer build-time authoring, source-code routines, ether logic, deployment timing, placement choice, buffered confirmation, or delayed execution. They should not add continuous puppet movement axes, puppet attack buttons, barrier movement axes, barrier attack buttons, or separate role-camera micromanagement.
+
+If a new mechanic asks the player to aim, move, attack, and maintain a support unit at the same time, it should be redesigned into a hero action, a preauthored puppet/barrier rule, or a low-frequency deployment decision. The goal is to keep difficulty in construction, timing, matchup reading, and commitment, not in overloading the player's attention.
 
 The default hero is now a crab-style mech built around a torso chassis. Each claw is not a single pincer part: it is represented as two opposing scythe blades connected by a joint and driven by a rod-clamp module. The front two legs mount bullet guns with swing-aim modules, and the rear two legs mount scythes with chain-swing modules.
 
@@ -152,7 +203,7 @@ Team Edit includes a first-pass assembly board. Select a crab body part, then us
 
 The editor now uses self-drawn component art for each part class rather than plain text-only previews. Guns, scythes, spikes, gloves, wood stakes, joints, boosters, engines, cooling units, modules, and torso chassis all have separate silhouettes and color language.
 
-Puppet source code now has distinct behavior systems:
+Puppet Source Code defines deterministic behavior routines:
 
 - `CODE: GUARD ORBIT` circles the friendly hero and intercepts close approaches.
 - `CODE: PINCER` splits a puppet pair high/low and collapses from both lanes.
@@ -166,6 +217,8 @@ Barrier ether now supports space-control logic:
 - `ETHER: DRAG NET` damps enemy velocity inside its area.
 - `ETHER: RIPOSTE MIRROR` pulses only when enemies enter its area.
 
+Barrier tiles currently act as player-deployed terrain-like objects: they can provide collision, projectile occlusion, walls, lanes, triggers, and local fields. The arena does not yet expose an independent authored-terrain layer, so barriers cannot currently attach to, read, transform, or inherit properties from native map terrain. This is a planned high-priority extension tracked in `docs/TODO.md`.
+
 The arena is now treated as a horizontal bullet-hell top-down strip: left and right wrap, top and bottom are the paper strip's width, and the camera eases around the ring while keeping both heroes readable.
 
 Summoned units take `4` seconds to enter after purchase. The initial pre-battle deployment appears immediately.
@@ -178,6 +231,14 @@ Aim behavior is action-module driven:
 
 ## Heat Rules
 
+Heat is the combat-tempo core / 热量是战斗节奏的核心. It is not a fixed power score or a legality gate: a player-designed unit may pursue sustained pressure, short burst strings, deliberate redline play, or active-cooling traps. The editor, live HUD, and training report use a shared rhythm language so new players can connect design choices to battle decisions.
+
+This makes combat emphasize burst windows rather than infinite continuous attacks / 爆发窗口，而不是无限连续攻击. The heat system should expose hooks for different player-authored styles: low-heat endurance heroes, short-burst rotations, pressure loops that skim the buffer, and redline overlimit builds that intentionally touch danger before retreating or venting.
+
+The live heat rhythm moves through `STABLE`, `PRESSURE`, `DECIDE`, `VENT`, and `OVERHEAT`. As heat rises, the player chooses whether to continue attacking, disengage, stop acting for natural cooling, or commit to active cooling. These are suggestions and tactical information, not forced corrections to the player's build.
+
+Design profiles use these extension keys for future rules and content: `low_heat_endurance`, `short_burst_rotation`, `pressure_loop`, `redline_overlimit`, `cooling_window`, and `future_heat_traits`.
+
 The battle HUD places all three role resources in the corners: P1 health bars live in the upper-left and P1 heat bars in the lower-left; P2 health bars live in the upper-right and P2 heat bars in the lower-right. Each side has separate bars for hero, puppet group, and barrier.
 
 - Skills add a large amount of heat.
@@ -185,6 +246,9 @@ The battle HUD places all three role resources in the corners: P1 health bars li
 - If cooling is weak, ordinary movement also accumulates heat.
 - Stopping and not acting lowers heat faster.
 - Holding manual cooling locks the hero in place for at least `0.4` seconds and vents smoke while rapidly lowering heat.
+- Manual cooling and active cooling modules now create a readable active cooling window / 散热窗口: the unit vents a visible cyan heat cloud, its heat bar shifts color, and movement is locked while the commitment is live.
+- Active cooling modules trade a larger heat dump for a larger punish window. Hits during the cooling exposure window deal a small extra damage bonus, so opponents can chase, pre-aim, or force unsafe vent timing instead of treating cooling as a free reset.
+- Active cooling module use is also written to the post-battle review log so players and developers can inspect when a build chose to stop, vent, and re-enter pressure.
 - Boosting adds a large heat spike.
 - At full heat, a hero enters Overheat.
 - While overheated, skills are locked, hero actions slow down, and incoming damage is increased by `15%`.
@@ -198,3 +262,10 @@ The battle HUD places all three role resources in the corners: P1 health bars li
 - If the opponent has no units in play, the battle ends immediately.
 - First to `7` victory points wins.
 - Matches target roughly `10` minutes; timeout resolves by victory points, then remaining health.
+- During battle, corner labels show `P1 VP` and `P2 VP`; the central scoreboard shows both sides' score, target score, tied/lead state, and match point pressure while kill messages explain why the score changed.
+
+## Post-Battle Review Loop
+
+Battle end does not force the player into editing. The result freezes into a post-battle review panel where the player can stay on the field, inspect the score, adjust the current sortie configuration, open Unit Edit, rematch, or return to the main menu.
+
+This is the deck-building loop for Eidolon Circuit: design a roster, test it in training, take it into formal battle, then choose whether the current configuration needs changes. The system offers the loop, but the player decides when to revise the build.

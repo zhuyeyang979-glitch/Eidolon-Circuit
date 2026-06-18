@@ -3,10 +3,10 @@ class_name ComponentArtView
 
 const PartArt = preload("res://scripts/part_art.gd")
 
-
 var slot_key := ""
 var part := {}
 var snap_amount := 0.0
+var image2_part_art_cache := {}
 var asset_sheet: Texture2D
 var joint_sheet: Texture2D
 var limb_muscle_sheet: Texture2D
@@ -427,12 +427,136 @@ func _draw_grid() -> void:
 	for y in range(0, int(size.y), 28):
 		draw_line(Vector2(0.0, float(y)), Vector2(size.x, float(y)), Color(0.45, 0.92, 1.0, 0.05), 1.0)
 
+func _image2_part_art_for_component() -> Dictionary:
+	var part_id := _image2_part_id_for_component()
+	if part_id == "" or not PartArt.IMAGE2_PART_TEXTURE_PATHS.has(part_id):
+		return {}
+	if image2_part_art_cache.has(part_id):
+		return Dictionary(image2_part_art_cache[part_id])
+	var path := String(PartArt.IMAGE2_PART_TEXTURE_PATHS[part_id])
+	var image := Image.new()
+	if image.load(path) != OK:
+		image2_part_art_cache[part_id] = {}
+		return {}
+	var used_rect_i := image.get_used_rect()
+	if used_rect_i.size.x <= 0 or used_rect_i.size.y <= 0:
+		used_rect_i = Rect2i(Vector2i.ZERO, image.get_size())
+	var used_rect := Rect2(
+		Vector2(float(used_rect_i.position.x), float(used_rect_i.position.y)),
+		Vector2(float(used_rect_i.size.x), float(used_rect_i.size.y))
+	)
+	var texture := ImageTexture.create_from_image(image)
+	var art := {
+		"id": part_id,
+		"texture": texture,
+		"region": used_rect,
+	}
+	image2_part_art_cache[part_id] = art
+	return art
+
+
+func _image2_part_id_for_component() -> String:
+	if part.is_empty():
+		return ""
+	var style := PartArt.style_for(slot_key, part, "card")
+	var resolved_slot := String(style.get("slot", slot_key))
+	var shape_kind := String(style.get("shape_kind", "")).to_lower()
+	var terminal_profile := String(style.get("terminal_profile", "")).to_lower()
+	var software_icon := String(style.get("software_icon_kind", "")).to_lower()
+	var material_style := String(style.get("material_style", "")).to_lower()
+	var damage_style := String(style.get("damage_style", "")).to_lower()
+	var key := _image2_part_match_key()
+	if resolved_slot == "torso":
+		return "torso_core"
+	if resolved_slot == "joint":
+		return "telescopic_joint" if shape_kind.contains("telescopic") or key.contains("rail") else "ball_joint"
+	if resolved_slot == "limb_muscle":
+		if shape_kind.contains("barrier") or shape_kind.contains("girder") or shape_kind.contains("steel") or key.contains("heavy") or key.contains("shield"):
+			return "heavy_barrier_strut"
+		return "light_forearm_strut"
+	if resolved_slot == "booster" or shape_kind == "thruster_nozzle":
+		return "thruster_nozzle_pair"
+	if resolved_slot == "engine" or software_icon == "engine_core":
+		return "engine_reactor_capsule"
+	if resolved_slot == "cooling" or software_icon == "cooling_fins":
+		return "cooling_fin_module"
+	if resolved_slot == "barrier_tile" or shape_kind.contains("plate") or shape_kind.contains("panel") or shape_kind.contains("field") or key.contains("barrier"):
+		return "barrier_emitter_plate"
+	if resolved_slot == "special" or software_icon in ["soul_star", "source_star", "ether_orbit"]:
+		return "soul_source_ether_chip"
+	if resolved_slot == "ammo" or software_icon == "ammo_stack" or key.contains("ammo"):
+		return "ammo_pod"
+	if resolved_slot in ["module", "software"] or shape_kind == "software_chip" or material_style == "software":
+		return "sensor_eye_array"
+	if resolved_slot == "projectile" or _image2_terminal_profile_is_ranged(terminal_profile) or _image2_key_is_ranged(key):
+		if terminal_profile.contains("missile") or terminal_profile.contains("launcher") or key.contains("missile") or key.contains("rocket") or damage_style == "explosive":
+			return "missile_tube_pod"
+		return "railgun_pod"
+	if resolved_slot == "terminal":
+		if terminal_profile.contains("shield"):
+			return "barrier_emitter_plate"
+		if terminal_profile.contains("claw") or key.contains("claw") or key.contains("jaw") or key.contains("talon") or key.contains("pincer"):
+			return "paired_pincer_claw"
+		return "curved_blade_claw"
+	return ""
+
+
+func _image2_part_match_key() -> String:
+	return ("%s %s %s %s %s %s %s %s" % [
+		String(part.get("name", "")),
+		String(part.get("component_name", "")),
+		String(part.get("label", "")),
+		String(part.get("shape", "")),
+		String(part.get("material_class", "")),
+		String(part.get("weapon_family", "")),
+		String(part.get("gun_kind", "")),
+		String(part.get("projectile_style", "")),
+	]).to_lower()
+
+
+func _image2_terminal_profile_is_ranged(terminal_profile: String) -> bool:
+	return terminal_profile in [
+		"web_spool_gun",
+		"missile_tube_pod",
+		"prism_laser_gun",
+		"chemical_sprayer",
+		"grenade_launcher",
+		"heavy_launcher",
+		"scoped_sniper",
+		"stocked_rifle",
+		"muzzle",
+	]
+
+
+func _image2_key_is_ranged(key: String) -> bool:
+	for token in ["gun", "rifle", "cannon", "launcher", "missile", "laser", "mortar", "turret", "sniper"]:
+		if key.contains(token):
+			return true
+	return false
+
+
+func _draw_image2_component_art(art: Dictionary, center: Vector2) -> void:
+	var texture := art.get("texture", null) as Texture2D
+	var region: Rect2 = art.get("region", Rect2())
+	if texture == null or region.size.x <= 0.0 or region.size.y <= 0.0:
+		return
+	var max_draw_size := Vector2(maxf(24.0, size.x - 24.0), maxf(24.0, size.y - 10.0))
+	var fit := minf(max_draw_size.x / region.size.x, max_draw_size.y / region.size.y)
+	var draw_size := region.size * fit
+	var draw_rect := Rect2(center - draw_size * 0.5, draw_size)
+	draw_texture_rect_region(texture, draw_rect, region, Color.WHITE)
+
+
 func _draw_component(center: Vector2, scale: float) -> void:
 	var name := String(part.get("name", ""))
 	var shape := String(part.get("shape", ""))
 	var color := _part_color()
 	var dark := color.darkened(0.45)
 	var light := color.lerp(Color.WHITE, 0.38)
+	var image2_art := _image2_part_art_for_component()
+	if not image2_art.is_empty():
+		_draw_image2_component_art(image2_art, center)
+		return
 	if slot_key == "special":
 		_draw_diamond(center, 58.0 * scale, color)
 		draw_circle(center, 20.0 * scale, Color(1.0, 0.88, 0.28, 0.85))

@@ -1,6 +1,6 @@
 extends SceneTree
 
-const MainScene := preload("res://scripts/main.gd")
+const AssemblyBoardViewScript := preload("res://scripts/views/editor/assembly_board_view.gd")
 
 
 func _fail(message: String) -> void:
@@ -37,13 +37,17 @@ func _snapshot(revision: String) -> Dictionary:
 
 
 func _init() -> void:
-	var source := FileAccess.get_file_as_string("res://scripts/main.gd")
+	var source := FileAccess.get_file_as_string("res://scripts/views/editor/assembly_board_view.gd")
+	if source.is_empty() or not source.contains("class_name AssemblyBoardView"):
+		_fail("Unable to read extracted AssemblyBoardView.")
 	var layer_block_start := source.find("class AssemblyBoardRenderLayer")
 	var layer_block_end := source.find("class AssemblyBoardRenderComponentItem", layer_block_start)
+	if layer_block_start < 0 or layer_block_end < 0:
+		_fail("Retained layer class block not found.")
 	var layer_block := source.substr(layer_block_start, layer_block_end - layer_block_start)
 	if layer_block.contains("\"edges\"") or layer_block.contains("\"sockets\"") or layer_block.contains("\"overlays\""):
 		_fail("Retained edge/socket/overlay containers still draw whole layers.")
-	var board = MainScene.AssemblyBoardView.new()
+	var board = AssemblyBoardViewScript.new()
 	board.size = Vector2(620.0, 420.0)
 	root.add_child(board)
 	board.set_board(_snapshot("retained-items-1"), "", {}, "", 0.0, "custom", "zh", 0.0, "retained-items-1")

@@ -266,7 +266,7 @@ func post_delete_selection_state(entries: Array, deleted_paths: Array, previous_
 
 
 func toggle_selection_state(entry: Dictionary, selected_paths: Array, illegal_note: String = "") -> Dictionary:
-	if bool(entry.get("canonical_rejected", false)):
+	if bool(entry.get("canonical_rejected", false)) or illegal_note.strip_edges() != "":
 		return {"valid": false, "reason": illegal_note}
 	var path := entry_path(entry)
 	if path == "":
@@ -284,7 +284,7 @@ func toggle_selection_state(entry: Dictionary, selected_paths: Array, illegal_no
 	}
 
 
-func page_action_state(action_key: String, page: int, page_size: int, entry_count: int, selected_index: int, selected_paths: Array, selected_entry: Dictionary = {}) -> Dictionary:
+func page_action_state(action_key: String, page: int, page_size: int, entry_count: int, selected_index: int, selected_paths: Array, selected_entry: Dictionary = {}, illegal_note: String = "") -> Dictionary:
 	var safe_page_size := maxi(1, page_size)
 	var max_page := maxi(0, int(ceil(float(maxi(0, entry_count)) / float(safe_page_size))) - 1)
 	match action_key:
@@ -297,7 +297,7 @@ func page_action_state(action_key: String, page: int, page_size: int, entry_coun
 		"toggle":
 			if selected_entry.is_empty():
 				return {"valid": false, "action": "toggle"}
-			var toggle_state := toggle_selection_state(selected_entry, selected_paths)
+			var toggle_state := toggle_selection_state(selected_entry, selected_paths, illegal_note)
 			toggle_state["action"] = "toggle"
 			return toggle_state
 		_:

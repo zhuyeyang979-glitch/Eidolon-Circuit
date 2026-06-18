@@ -443,18 +443,28 @@ func _init() -> void:
 	for token in [
 		"scripts/services/battle_runtime_action_telemetry_service.gd",
 		"BattleRuntimeActionTelemetryService.new",
-		"battle_runtime_action_telemetry_service.battle_action_telemetry",
+		"battle_runtime_facade.bind_action_telemetry(battle_runtime_action_telemetry_service)",
+		"_battle_runtime_facade().battle_action_telemetry",
+		"_battle_runtime_facade().battle_action_diagnostics_model",
+		"_battle_runtime_facade().projectile_target_diagnostics",
 		"battle_action_diagnostics_model",
 		"_battle_runtime_action_telemetry_unit_snapshot",
 		"_battle_runtime_action_telemetry_snapshot",
 		"_battle_command_diagnostics_unit_snapshot",
 		"_battle_projectile_target_diagnostics_unit_snapshot",
 		"_battle_projectile_target_diagnostics_facts",
-		"_battle_runtime_action_telemetry_service().projectile_target_diagnostics",
 		"runtime_action_telemetry_snapshot",
 	]:
 		if not main_source.contains(token):
 			_fail("main.gd missing BattleRuntimeActionTelemetryService boundary token: %s" % token)
+			return
+	for forbidden in [
+		"battle_runtime_action_telemetry_service.battle_action_telemetry",
+		"_battle_runtime_action_telemetry_service().battle_action_diagnostics_model",
+		"_battle_runtime_action_telemetry_service().projectile_target_diagnostics",
+	]:
+		if main_source.contains(forbidden):
+			_fail("main.gd should enter action telemetry through BattleRuntimeFacade token: %s" % forbidden)
 			return
 	var main = MainScene.new()
 	root.add_child(main)

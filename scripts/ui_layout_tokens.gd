@@ -20,25 +20,25 @@ const TOP_DOCK_RECT := Rect2(Vector2(190.0, 24.0), Vector2(726.0, 132.0))
 const BOTTOM_BAR_RECT := Rect2(Vector2(18.0, 650.0), Vector2(898.0, 50.0))
 const MODAL_Y_OFFSET := -10.0
 
-const MENU_HEADER_RECT := Rect2(Vector2(42.0, 34.0), Vector2(1136.0, 130.0))
-const MENU_TITLE_RECT := Rect2(Vector2(64.0, 40.0), Vector2(690.0, 56.0))
-const MENU_SUBTITLE_RECT := Rect2(Vector2(68.0, 112.0), Vector2(520.0, 28.0))
-const MENU_ACCENT_RECT := Rect2(Vector2(68.0, 148.0), Vector2(346.0, 4.0))
-const MENU_CALLSIGN_RECT := Rect2(Vector2(656.0, 112.0), Vector2(480.0, 28.0))
-const MENU_LIST_PANEL_RECT := Rect2(Vector2(54.0, 184.0), Vector2(438.0, 430.0))
-const MENU_INFO_PANEL_RECT := Rect2(Vector2(536.0, 184.0), Vector2(620.0, 226.0))
-const MENU_DESCRIPTION_RECT := Rect2(Vector2(570.0, 212.0), Vector2(552.0, 138.0))
-const MENU_STATUS_RECT := Rect2(Vector2(570.0, 354.0), Vector2(552.0, 42.0))
-const MENU_TELEMETRY_RECT := Rect2(Vector2(540.0, 438.0), Vector2(604.0, 26.0))
-const MENU_HELP_RECT := Rect2(Vector2(64.0, 656.0), Vector2(980.0, 28.0))
-const MENU_BUTTON_ORIGIN := Vector2(82.0, 204.0)
-const MENU_BUTTON_SIZE := Vector2(382.0, 44.0)
-const MENU_BUTTON_ROW_GAP := 12.0
-const MENU_AI_SEAT_PANEL_RECT := Rect2(Vector2(536.0, 466.0), Vector2(620.0, 114.0))
-const MENU_AI_SEAT_LABEL_RECT := Rect2(Vector2(566.0, 476.0), Vector2(560.0, 24.0))
-const MENU_AI_SEAT_ORIGIN := Vector2(566.0, 512.0)
-const MENU_AI_SEAT_SIZE := Vector2(170.0, 48.0)
-const MENU_AI_SEAT_GAP := Vector2(20.0, 0.0)
+const MENU_HEADER_RECT := Rect2(Vector2(42.0, 30.0), Vector2(512.0, 132.0))
+const MENU_TITLE_RECT := Rect2(Vector2(62.0, 46.0), Vector2(480.0, 58.0))
+const MENU_SUBTITLE_RECT := Rect2(Vector2(66.0, 112.0), Vector2(420.0, 28.0))
+const MENU_ACCENT_RECT := Rect2(Vector2(66.0, 152.0), Vector2(380.0, 3.0))
+const MENU_CALLSIGN_RECT := Rect2(Vector2(66.0, 20.0), Vector2(420.0, 24.0))
+const MENU_LIST_PANEL_RECT := Rect2(Vector2(54.0, 166.0), Vector2(510.0, 522.0))
+const MENU_INFO_PANEL_RECT := Rect2(Vector2(596.0, 580.0), Vector2(624.0, 100.0))
+const MENU_DESCRIPTION_RECT := Rect2(Vector2(622.0, 596.0), Vector2(572.0, 60.0))
+const MENU_STATUS_RECT := Rect2(Vector2(622.0, 658.0), Vector2(572.0, 20.0))
+const MENU_TELEMETRY_RECT := Rect2(Vector2(74.0, 690.0), Vector2(438.0, 22.0))
+const MENU_HELP_RECT := Rect2(Vector2(520.0, 682.0), Vector2(700.0, 24.0))
+const MENU_BUTTON_ORIGIN := Vector2(82.0, 176.0)
+const MENU_BUTTON_SIZE := Vector2(455.0, 68.0)
+const MENU_BUTTON_ROW_GAP := 4.0
+const MENU_AI_SEAT_PANEL_RECT := Rect2(Vector2(596.0, 454.0), Vector2(546.0, 118.0))
+const MENU_AI_SEAT_LABEL_RECT := Rect2(Vector2(622.0, 466.0), Vector2(494.0, 24.0))
+const MENU_AI_SEAT_ORIGIN := Vector2(622.0, 506.0)
+const MENU_AI_SEAT_SIZE := Vector2(150.0, 42.0)
+const MENU_AI_SEAT_GAP := Vector2(16.0, 0.0)
 
 const PAGE_OPTIONS_RECT := Rect2(Vector2(952.0, 72.0), Vector2(246.0, 228.0))
 const PAGE_OPTIONS_ACCENT_RECT := Rect2(Vector2(16.0, 42.0), Vector2(214.0, 2.0))
@@ -52,6 +52,15 @@ const BATTLE_RUNTIME_TITLE_RECT := Rect2(Vector2(18.0, 12.0), Vector2(294.0, 28.
 const BATTLE_RUNTIME_BUTTON_ORIGIN := Vector2(24.0, 52.0)
 const BATTLE_RUNTIME_BUTTON_SIZE := Vector2(282.0, 28.0)
 const BATTLE_RUNTIME_BUTTON_ROW_GAP := 6.0
+const POST_BATTLE_REVIEW_RECT := Rect2(Vector2(306.0, 146.0), Vector2(668.0, 430.0))
+const POST_BATTLE_REVIEW_ACCENT_RECT := Rect2(Vector2(32.0, 54.0), Vector2(604.0, 3.0))
+const POST_BATTLE_REVIEW_TITLE_RECT := Rect2(Vector2(32.0, 16.0), Vector2(604.0, 34.0))
+const POST_BATTLE_REVIEW_SUMMARY_RECT := Rect2(Vector2(42.0, 66.0), Vector2(584.0, 34.0))
+const POST_BATTLE_REVIEW_HINT_RECT := Rect2(Vector2(42.0, 104.0), Vector2(584.0, 48.0))
+const POST_BATTLE_REVIEW_COMMAND_LOG_RECT := Rect2(Vector2(42.0, 160.0), Vector2(584.0, 92.0))
+const POST_BATTLE_REVIEW_BUTTON_ORIGIN := Vector2(46.0, 270.0)
+const POST_BATTLE_REVIEW_BUTTON_SIZE := Vector2(252.0, 36.0)
+const POST_BATTLE_REVIEW_BUTTON_GAP := Vector2(32.0, 12.0)
 
 const FORMAT_SELECT_PANEL_SIZE := Vector2(708.0, 360.0)
 const FORMAT_SELECT_ACCENT_RECT := Rect2(Vector2(40.0, 64.0), Vector2(628.0, 3.0))
@@ -82,13 +91,19 @@ const SCOUT_TIMER_RECT := Rect2(Vector2(890.0, 22.0), Vector2(300.0, 28.0))
 const SCOUT_START_BUTTON_RECT := Rect2(Vector2(874.0, 64.0), Vector2(142.0, 24.0))
 const SCOUT_OPTIONS_BUTTON_RECT := Rect2(Vector2(1030.0, 64.0), Vector2(148.0, 24.0))
 const SCOUT_HINT_RECT := Rect2(Vector2(64.0, 78.0), Vector2(760.0, 22.0))
-const SCOUT_DUMMY_PANEL_RECT := Rect2(Vector2(426.0, 592.0), Vector2(428.0, 78.0))
+const SCOUT_DUMMY_PANEL_RECT := Rect2(Vector2(426.0, 592.0), Vector2(428.0, 120.0))
 const SCOUT_DUMMY_TITLE_RECT := Rect2(Vector2(438.0, 600.0), Vector2(98.0, 22.0))
 const SCOUT_DUMMY_MINUS_RECT := Rect2(Vector2(542.0, 598.0), Vector2(32.0, 24.0))
 const SCOUT_DUMMY_SLIDER_RECT := Rect2(Vector2(582.0, 598.0), Vector2(158.0, 24.0))
 const SCOUT_DUMMY_PLUS_RECT := Rect2(Vector2(748.0, 598.0), Vector2(32.0, 24.0))
 const SCOUT_DUMMY_RESET_RECT := Rect2(Vector2(788.0, 598.0), Vector2(54.0, 24.0))
-const SCOUT_DUMMY_VALUE_RECT := Rect2(Vector2(438.0, 628.0), Vector2(400.0, 30.0))
+const SCOUT_DUMMY_VALUE_RECT := Rect2(Vector2(438.0, 626.0), Vector2(400.0, 22.0))
+const SCOUT_DUMMY_STATE_ORIGIN := Vector2(438.0, 660.0)
+const SCOUT_DUMMY_STATE_SIZE := Vector2(94.0, 24.0)
+const SCOUT_DUMMY_STATE_GAP := Vector2(8.0, 0.0)
+const SCOUT_TRAINING_INTENT_ORIGIN := Vector2(438.0, 688.0)
+const SCOUT_TRAINING_INTENT_SIZE := Vector2(62.0, 22.0)
+const SCOUT_TRAINING_INTENT_GAP := Vector2(6.0, 0.0)
 
 const SAVED_UNITS_CANVAS_PANEL_RECT := Rect2(Vector2(34.0, 76.0), Vector2(760.0, 590.0))
 const SAVED_UNITS_DETAIL_PANEL_RECT := Rect2(Vector2(822.0, 76.0), Vector2(398.0, 590.0))
@@ -203,6 +218,34 @@ static func page_options_rect() -> Rect2:
 
 static func battle_runtime_options_rect() -> Rect2:
 	return BATTLE_RUNTIME_OPTIONS_RECT
+
+
+static func post_battle_review_rect() -> Rect2:
+	return POST_BATTLE_REVIEW_RECT
+
+
+static func post_battle_review_accent_rect() -> Rect2:
+	return POST_BATTLE_REVIEW_ACCENT_RECT
+
+
+static func post_battle_review_title_rect() -> Rect2:
+	return POST_BATTLE_REVIEW_TITLE_RECT
+
+
+static func post_battle_review_summary_rect() -> Rect2:
+	return POST_BATTLE_REVIEW_SUMMARY_RECT
+
+
+static func post_battle_review_hint_rect() -> Rect2:
+	return POST_BATTLE_REVIEW_HINT_RECT
+
+
+static func post_battle_review_command_log_rect() -> Rect2:
+	return POST_BATTLE_REVIEW_COMMAND_LOG_RECT
+
+
+static func post_battle_review_button_rect(index: int) -> Rect2:
+	return grid_rect(POST_BATTLE_REVIEW_BUTTON_ORIGIN, POST_BATTLE_REVIEW_BUTTON_SIZE, index, 2, POST_BATTLE_REVIEW_BUTTON_GAP.x, POST_BATTLE_REVIEW_BUTTON_GAP.y)
 
 
 static func row_rect(origin: Vector2, item_size: Vector2, index: int, gap_y: float = 0.0) -> Rect2:

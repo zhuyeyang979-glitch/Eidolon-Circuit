@@ -26,7 +26,7 @@ func _init() -> void:
 			texts.append(label.text)
 		for role_key in MainScene.ROLE_ORDER:
 			texts.append(main.role_bar_labels[player_id][role_key].text)
-	var forbidden := ["PUPPET", "DEPLOY", "OFFLINE", "RESOURCE", "VICTORY POINTS", "PORTAL", "AI BATTLE"]
+	var forbidden := ["PUPPET", "DEPLOY", "OFFLINE", "RESOURCE", "VICTORY POINTS", "PORTAL", "COMPUTER BATTLE"]
 	for text in texts:
 		for token in forbidden:
 			if text.find(token) >= 0:

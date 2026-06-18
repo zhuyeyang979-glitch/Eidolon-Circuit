@@ -599,6 +599,20 @@ func summon_pair_cycle_intent(bindings: Array, slot_index: int, direction: int, 
 	return {"action": "none", "bindings": next_bindings, "pair": [], "candidate_index": -1}
 
 
+func summon_portal_selection_intent(input_vector: Vector2, current_index: int, portal_count: int, cycle_direction: int = 1) -> Dictionary:
+	if portal_count <= 0:
+		return {"portal_index": 0, "selection": "none", "direct": false, "changed": false}
+	var current := clampi(current_index, 0, portal_count - 1)
+	var direct := input_vector.length() >= 0.34
+	var next_index := portal_index_from_vector(input_vector, current, portal_count) if direct else _wrapped_index(current + cycle_direction, portal_count)
+	return {
+		"portal_index": next_index,
+		"selection": "direct" if direct else "cycle",
+		"direct": direct,
+		"changed": next_index != current,
+	}
+
+
 func portal_index_from_vector(input_vector: Vector2, fallback_index: int, portal_count: int) -> int:
 	if portal_count <= 0:
 		return 0

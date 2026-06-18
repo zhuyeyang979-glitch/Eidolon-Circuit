@@ -72,19 +72,23 @@ func _init() -> void:
 	for entry in Array(data_a.get("entries", [])):
 		if entry is Dictionary:
 			ids_a.append(String(Dictionary(entry).get("id", "")))
-	if not ids_a.has("booster:1") or ids_a.has("booster:4"):
+	if not ids_a.has("booster_drive:1") or not ids_a.has("booster_boost_brake:1") or ids_a.has("booster_drive:4") or ids_a.has("booster_boost_brake:4"):
 		_fail("First torso booster scope is wrong: %s" % str(ids_a))
+		return
 	for id in ids_a:
 		if String(id).begins_with("limb:1:"):
 			_fail("First torso leaked second torso binding: %s" % str(ids_a))
+			return
 	var ids_b: Array = []
 	for entry in Array(data_b.get("entries", [])):
 		if entry is Dictionary:
 			ids_b.append(String(Dictionary(entry).get("id", "")))
-	if not ids_b.has("booster:4") or ids_b.has("booster:1"):
+	if not ids_b.has("booster_drive:4") or not ids_b.has("booster_boost_brake:4") or ids_b.has("booster_drive:1") or ids_b.has("booster_boost_brake:1"):
 		_fail("Second torso booster scope is wrong: %s" % str(ids_b))
+		return
 	for id in ids_b:
 		if String(id).begins_with("limb:0:"):
 			_fail("Second torso leaked first torso binding: %s" % str(ids_b))
+			return
 	print("ENGINE_POWER_ALLOCATION_SCOPE_PROBE ok a=%s b=%s" % [str(ids_a), str(ids_b)])
 	quit()

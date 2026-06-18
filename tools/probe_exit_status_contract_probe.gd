@@ -65,6 +65,22 @@ const GUARDED_PROBES := {
 		"return",
 		"quit(0)",
 	],
+	"res://tools/main_inline_class_guard_probe.gd": [
+		"var failures",
+		"failures.append",
+		"if not failures.is_empty()",
+		"quit(1)",
+		"return",
+		"quit(0)",
+	],
+	"res://tools/probe_manifest_no_legacy_fixture_probe.gd": [
+		"var failures",
+		"failures.append",
+		"if not failures.is_empty()",
+		"quit(1)",
+		"return",
+		"quit(0)",
+	],
 	"res://tools/training_import_spawn_role_probe.gd": [
 		"var failures",
 		"failures.append",

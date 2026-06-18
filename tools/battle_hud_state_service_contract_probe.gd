@@ -30,10 +30,19 @@ func _init() -> void:
 		"support_armor": "ARM",
 		"electronic_armor": "EA",
 		"heat": "HEAT",
+		"heat_stable": "STABLE",
+		"heat_pressure": "PRESSURE",
+		"heat_decision": "DECIDE",
+		"heat_vent": "VENT",
+		"heat_overheat": "OVERHEAT",
 		"deploy": "DEP",
 		"ammo": "AMMO",
 		"resource": "RES",
 		"victory_points": "VP",
+		"score": "SCORE",
+		"tied": "TIED",
+		"leads": "LEADS",
+		"match_point": "MATCH POINT",
 		"portal": "PORT",
 		"shift": "SHIFT",
 		"normal": "OK",
@@ -88,7 +97,7 @@ func _init() -> void:
 			"electronic_armor_max": 2.0,
 		},
 	}, terms)
-	if clamped_bar_text != "10/10 EA0  HEAT 100%":
+	if clamped_bar_text != "10/10 EA0  HEAT 100% OVERHEAT":
 		_fail("role_bar_text should clamp hero HUD values: %s" % clamped_bar_text)
 		return
 	var puppet_text := service.role_bar_text({
@@ -196,6 +205,10 @@ func _init() -> void:
 	if String(Dictionary(hud_model.get("timer", {})).get("text", "")) != "01:01":
 		_fail("HUD model timer mismatch: %s" % str(hud_model))
 		return
+	var scoreboard_text := String(Dictionary(hud_model.get("scoreboard", {})).get("text", ""))
+	if scoreboard_text != "SCORE P1 1 - 0 P2 / 2  P1 MATCH POINT":
+		_fail("HUD scoreboard model mismatch: %s" % scoreboard_text)
+		return
 	if String(Dictionary(hud_model.get("p1_portal", {})).get("text", "")) != "PORT Gate  1:HERO#1 $50":
 		_fail("HUD portal model mismatch: %s" % str(hud_model.get("p1_portal", {})))
 		return
@@ -228,16 +241,17 @@ func _init() -> void:
 	for token in [
 		"scripts/services/battle_hud_state_service.gd",
 		"BattleHudStateService.new",
-		"battle_hud_state_service.heavy_hud_text_state",
-		"battle_hud_state_service.heavy_hud_bar_state",
-		"battle_hud_state_service.corner_bar_model",
-		"battle_hud_state_service.shield_corner_bar_model",
-		"battle_hud_state_service.puppet_segment_bar_model",
-		"battle_hud_state_service.instrument_gauge_model",
-		"battle_hud_state_service.ammo_breakdown",
-		"battle_hud_state_service.role_status_text",
-		"battle_hud_state_service.role_bar_text",
-		"battle_hud_state_service.ammo_display_text",
+		"func _battle_hud_service() -> BattleHudStateService",
+		"_battle_hud_service().heavy_hud_text_state",
+		"_battle_hud_service().heavy_hud_bar_state",
+		"_battle_hud_service().corner_bar_model",
+		"_battle_hud_service().shield_corner_bar_model",
+		"_battle_hud_service().puppet_segment_bar_model",
+		"_battle_hud_service().instrument_gauge_model",
+		"_battle_hud_service().ammo_breakdown",
+		"_battle_hud_service().role_status_text",
+		"_battle_hud_service().role_bar_text",
+		"_battle_hud_service().ammo_display_text",
 		"_battle_hud_text_snapshot",
 		"_battle_hud_bar_snapshot",
 		"_battle_instrument_gauge_model",
@@ -245,6 +259,18 @@ func _init() -> void:
 	]:
 		if not main_source.contains(token):
 			_fail("main.gd missing BattleHudStateService boundary token: %s" % token)
+			return
+	for legacy_token in [
+		"_legacy_battle_hud_text_model",
+		"_legacy_battle_hud_bar_state",
+		"_legacy_role_status_text",
+		"_legacy_unit_status_text",
+		"_legacy_unit_ammo_display_text",
+		"_legacy_role_bar_text",
+		"battle_hud_state_service != null",
+	]:
+		if main_source.contains(legacy_token):
+			_fail("main.gd should route HUD display rules through BattleHudStateService without legacy fallback: %s" % legacy_token)
 			return
 	var main = MainScene.new()
 	root.add_child(main)

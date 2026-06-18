@@ -6,11 +6,81 @@ func battle_action_names(prefixes: Array, attack_group_count: int) -> Array:
 	var actions: Array = ["battle_pause"]
 	for raw_prefix in prefixes:
 		var prefix := String(raw_prefix)
-		for suffix in ["left", "right", "up", "down", "face_left", "face_right", "portal"]:
+		for suffix in ["left", "right", "up", "down", "face_left", "face_right", "cool", "portal"]:
 			actions.append("%s_%s" % [prefix, suffix])
 		for attack_index in range(maxi(0, attack_group_count)):
 			actions.append("%s_attack_%d" % [prefix, attack_index + 1])
 	return actions
+
+
+func tactical_input_contract() -> Dictionary:
+	return {
+		"high_frequency_hero": [
+			"move",
+			"turn",
+			"boost",
+			"attack",
+			"manual_cooling",
+		],
+		"mid_frequency_tactical": [
+			"cycle_portal",
+			"pair_summon",
+			"deploy_hero",
+			"deploy_puppet",
+			"deploy_barrier",
+		],
+		"low_frequency_preset": [
+			"puppet_source_code",
+			"barrier_ether_logic",
+		],
+		"forbidden_runtime_micro": [
+			"puppet_direct_move",
+			"puppet_direct_attack",
+			"barrier_direct_move",
+			"barrier_direct_attack",
+		],
+		"cognitive_load_guardrails": cognitive_load_contract(),
+	}
+
+
+func cognitive_load_contract() -> Dictionary:
+	return {
+		"primary_runtime_focus": "hero",
+		"max_simultaneous_direct_control_roles": 1,
+		"direct_control_roles": [
+			"hero",
+		],
+		"tactical_commit_roles": [
+			"puppet",
+			"barrier",
+		],
+		"tactical_command_style": [
+			"cycle_portal",
+			"pair_summon_chord",
+			"deploy_prebuilt_slot",
+		],
+		"conflict_resolution": [
+			"hero_aim_reserves_turn_keys",
+			"attack_window_blocks_pair_summon",
+			"movement_remains_on_wasd_during_aim",
+			"puppet_barrier_runtime_logic_is_preset",
+		],
+		"forbidden_runtime_micro": [
+			"puppet_direct_move",
+			"puppet_direct_attack",
+			"puppet_direct_aim",
+			"barrier_direct_move",
+			"barrier_direct_attack",
+			"barrier_direct_aim",
+			"role_camera_micro_cycle",
+		],
+		"new_feature_gate": [
+			"no_new_continuous_puppet_axis",
+			"no_new_continuous_barrier_axis",
+			"prefer_authoring_or_deploy_commit",
+			"prefer_buffered_or_delayed_tactical_confirmation",
+		],
+	}
 
 
 func capture_edge_frame(action_names: Array, pending_pressed: Dictionary, pending_released: Dictionary, just_pressed_fn: Callable, just_released_fn: Callable) -> Dictionary:
