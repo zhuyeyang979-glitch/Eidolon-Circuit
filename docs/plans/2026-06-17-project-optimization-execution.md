@@ -103,13 +103,14 @@ Completed in the first optimization batch:
 - Moved `_compute_unit_stats` combat/projectile/lock/data-security field copy rules into `UnitStatsService.copy_part_combat_stats()`.
 - Moved the top-level `_compute_unit_stats` part payload field copy rules for ammo capacity, electronic armor, material class, connection counts, and capacity limits into `UnitStatsService.copy_part_payload_stats()`, keeping torso-slot payload branch aggregation in `main.gd` for now.
 - Moved torso-slot payload direct stat merges for ammo, electronic armor, escape pods, and spare weapons into `UnitStatsService.apply_torso_payload_direct_stats()`, keeping slot counts, payload volume ranks, internal-slot status, and note formatting in `main.gd` for now.
+- Moved final torso-slot payload summary application into `UnitStatsService.apply_torso_payload_summary()`, including payload/ammo mass finalization, slot/software cap notes, barrier internal note formatting, and ammo note formatting; `main.gd` still owns payload traversal, catalog lookups, volume-rank sampling, and internal-slot status lookup.
 - Replaced the long `AssemblyBoardView` assembly-template overlay drawing helpers with a one-line renderer delegation.
 - Added `tools/part_identity_contract_probe.gd`.
 - Added `tools/unit_editor_assembly_template_service_contract_probe.gd`.
 - Added `tools/assembly_template_overlay_renderer_contract_probe.gd`.
 - Added `tools/unit_editor_engine_allocation_service_contract_probe.gd`.
 - Added `tools/unit_stats_service_contract_probe.gd`.
-- Strengthened `tools/unit_stats_service_contract_probe.gd` so `UnitStatsService.base_stats()` now guards default constants, context metadata, editor colors, manufacturer-count duplication, and per-call dictionary/array ownership; the same probe now guards `copy_part_payload_stats()` ammo normalization/mass, shield aggregation, material metadata, capacity context behavior, and torso payload direct stat merges for ammo/shield/escape/spare payloads.
+- Strengthened `tools/unit_stats_service_contract_probe.gd` so `UnitStatsService.base_stats()` now guards default constants, context metadata, editor colors, manufacturer-count duplication, and per-call dictionary/array ownership; the same probe now guards `copy_part_payload_stats()` ammo normalization/mass, shield aggregation, material metadata, capacity context behavior, torso payload direct stat merges for ammo/shield/escape/spare payloads, and torso payload summary note/cap decisions.
 - Updated `tools/main_file_extraction_contract_probe.gd` to include `UnitStatsService`, `UnitEditorAssemblyTemplateService`, and `UnitEditorEngineAllocationService`.
 - Updated engine allocation regression probes to use the current `booster_drive` / `booster_boost_brake` entry IDs and public panel-open path.
 - Updated `tools/probe_manifest.json` with the new headless contract probes and manual/headed visual probe entries.
@@ -148,10 +149,11 @@ ASSEMBLY_TEMPLATE_PROBE skipped headless
 PART_IDENTITY_LANGUAGE_PROBE skipped headless
 ```
 
-Follow-up verification for the torso payload direct stat merge:
+Follow-up verification for the torso payload direct stat merge and summary extraction:
 
 ```text
 RED: unit_stats_service_contract_probe failed on missing UnitStatsService.apply_torso_payload_direct_stats()
+RED: unit_stats_service_contract_probe failed on missing UnitStatsService.apply_torso_payload_summary()
 jq empty tools/probe_manifest.json: pass
 git diff --check: pass
 Godot --check-only --quit-after 1: pass
@@ -170,5 +172,5 @@ Remaining items after this batch:
 
 - Run a headed/manual visual check for `part_identity_language_probe` and `unit_editor_assembly_template_probe` when a display session is available.
 - Decide whether `assets/concepts/` is Git-tracked, Git LFS-managed, or local-reference-only.
-- Continue deeper `main.gd` extraction with the remaining `_compute_unit_stats` torso-slot payload counting/volume/internal-slot note logic and broader part accumulation mechanics, `_build_editor_ui`, `_apply_editor_panel_visibility`, `_resolve_attack`, and `_refresh_editor_visual_views`.
+- Continue deeper `main.gd` extraction with the remaining `_compute_unit_stats` torso-slot payload traversal/catalog lookup/volume-rank sampling, broader part accumulation mechanics, `_build_editor_ui`, `_apply_editor_panel_visibility`, `_resolve_attack`, and `_refresh_editor_visual_views`.
 - `power_allocation_panel_duration_estimate_probe` is not registered in the manifest and still prints stale assertion errors before exiting `0`; do not use it as completion evidence until its expectations are reviewed.

@@ -672,6 +672,59 @@ func apply_torso_payload_direct_stats(stats: Dictionary, part: Dictionary, paylo
 	return stats
 
 
+func apply_torso_payload_summary(stats: Dictionary, summary: Dictionary, context: Dictionary) -> Dictionary:
+	var payload_count := int(summary.get("payload_count", 0))
+	var payload_mass := float(summary.get("payload_mass", 0.0))
+	var payload_volume_rank := float(summary.get("payload_volume_rank", 0.0))
+	var software_payload_count := int(summary.get("software_payload_count", 0))
+	var software_payload_energy := float(summary.get("software_payload_energy", 0.0))
+	var ammo_count := int(summary.get("ammo_count", 0))
+	var ammo_mass := float(summary.get("ammo_mass", 0.0))
+	var counted_ammo_payload_mass := float(stats.get("ammo_payload_mass", 0.0))
+	ammo_mass += counted_ammo_payload_mass
+	payload_mass += counted_ammo_payload_mass
+	stats["slot_payload_count"] = payload_count
+	stats["slot_payload_mass"] = payload_mass
+	stats["slot_payload_volume_rank"] = payload_volume_rank
+	stats["software_payload_count"] = software_payload_count
+	stats["software_payload_energy"] = software_payload_energy
+	stats["ammo_slot_count"] = ammo_count
+	stats["ammo_slot_mass"] = ammo_mass
+	var internal_slot_status: Dictionary = Dictionary(context.get("internal_slot_status", {}))
+	stats["internal_slot_max_installed_rank"] = int(internal_slot_status.get("max_installed_rank", 0))
+	stats["internal_slot_max_empty_rank"] = int(internal_slot_status.get("max_empty_rank", 0))
+	var slot_cap := int(stats.get("torso_slots", 0))
+	if slot_cap <= 0:
+		slot_cap = int(stats.get("engine_slots", 0)) + int(stats.get("cooling_slots", 0)) + int(stats.get("booster_slots", 0)) + int(stats.get("spare_weapon_slots", 0))
+	var software_cap := int(stats.get("module_slots", 0))
+	var role_key := String(context.get("role_key", ""))
+	if role_key == "barrier" and software_cap <= 0:
+		software_cap = maxi(software_cap, software_payload_count)
+	var installed_rank_label := String(context.get("installed_rank_label", str(stats.get("internal_slot_max_installed_rank", 0))))
+	var empty_rank_label := String(context.get("empty_rank_label", str(stats.get("internal_slot_max_empty_rank", 0))))
+	var note := "INTERNAL SLOTS %d/%d  SOFTWARE %d/%d  MAX %s / FREE %s  MASS %.0f" % [payload_count, slot_cap, software_payload_count, software_cap, installed_rank_label, empty_rank_label, payload_mass]
+	if role_key == "barrier" and slot_cap <= 0:
+		note = "BARRIER INTERNAL %d  SOFTWARE %d/%d  MAX %s  MASS %.0f" % [payload_count, software_payload_count, software_cap, installed_rank_label, payload_mass]
+	elif slot_cap > 0 and payload_count > slot_cap:
+		note = "INVALID: internal plugin slots %d/%d." % [payload_count, slot_cap]
+	elif software_payload_count > software_cap:
+		note = "INVALID: software slots %d/%d." % [software_payload_count, software_cap]
+	elif String(internal_slot_status.get("invalid", "")) != "":
+		note = String(internal_slot_status.get("invalid", ""))
+	stats["slot_payload_note"] = note
+	var ammo_capacity: Dictionary = Dictionary(stats.get("ammo_capacity", {}))
+	stats["ammo_note"] = "AMMO B/L/C/X/W %d/%d/%d/%d/%d  AMMO SLOTS %d MASS %.0f" % [
+		int(ammo_capacity.get("bullet", 0)),
+		int(ammo_capacity.get("laser", 0)),
+		int(ammo_capacity.get("chemical", 0)),
+		int(ammo_capacity.get("explosive", 0)),
+		int(ammo_capacity.get("web", 0)),
+		ammo_count,
+		ammo_mass,
+	]
+	return stats
+
+
 func _merge_ammo_capacity(stats: Dictionary, capacity: Variant, scale: float, context: Dictionary) -> void:
 	if not (capacity is Dictionary):
 		return

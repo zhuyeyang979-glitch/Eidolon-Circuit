@@ -38876,49 +38876,21 @@ func _apply_torso_slot_payload_stats(stats: Dictionary, role_key: String, unit_b
 			payload_mass += float(pod_part.get("mass", 0.0))
 			payload_volume_rank += _part_slot_volume_rank(pod_part, "muscle")
 			_unit_stats_service().apply_torso_payload_direct_stats(stats, pod_part, "escape_pod", torso_payload_context)
-	var slot_cap := int(stats.get("torso_slots", 0))
-	if slot_cap <= 0:
-		slot_cap = int(stats.get("engine_slots", 0)) + int(stats.get("cooling_slots", 0)) + int(stats.get("booster_slots", 0)) + int(stats.get("spare_weapon_slots", 0))
-	var volume_cap_rank := float(stats.get("torso_slot_volume_rank_limit", 0.0))
-	if volume_cap_rank <= 0.0:
-		volume_cap_rank = maxf(2.0, _legacy_mass_limit_to_volume_rank(maxf(0.0, float(stats.get("spare_weapon_mass_limit", 0.0))) + 24.0))
-	var volume_cap_budget := maxf(volume_cap_rank, volume_cap_rank * maxf(1.0, float(slot_cap)) * 0.68)
-	var counted_ammo_payload_mass := float(stats.get("ammo_payload_mass", 0.0))
-	ammo_mass += counted_ammo_payload_mass
-	payload_mass += counted_ammo_payload_mass
-	stats["slot_payload_count"] = payload_count
-	stats["slot_payload_mass"] = payload_mass
-	stats["slot_payload_volume_rank"] = payload_volume_rank
-	stats["software_payload_count"] = software_payload_count
-	stats["software_payload_energy"] = software_payload_energy
-	stats["ammo_slot_count"] = ammo_count
-	stats["ammo_slot_mass"] = ammo_mass
 	var internal_slot_status := _torso_internal_slot_status_for_unit(role_key, unit_bp)
-	stats["internal_slot_max_installed_rank"] = int(internal_slot_status.get("max_installed_rank", 0))
-	stats["internal_slot_max_empty_rank"] = int(internal_slot_status.get("max_empty_rank", 0))
-	var software_cap := int(stats.get("module_slots", 0))
-	if role_key == "barrier" and software_cap <= 0:
-		software_cap = maxi(software_cap, software_payload_count)
-	var note := "INTERNAL SLOTS %d/%d  SOFTWARE %d/%d  MAX %s / FREE %s  MASS %.0f" % [payload_count, slot_cap, software_payload_count, software_cap, _volume_rank_label(float(stats.get("internal_slot_max_installed_rank", 0))), _volume_rank_label(float(stats.get("internal_slot_max_empty_rank", 0))), payload_mass]
-	if role_key == "barrier" and slot_cap <= 0:
-		note = "BARRIER INTERNAL %d  SOFTWARE %d/%d  MAX %s  MASS %.0f" % [payload_count, software_payload_count, software_cap, _volume_rank_label(float(stats.get("internal_slot_max_installed_rank", 0))), payload_mass]
-	elif slot_cap > 0 and payload_count > slot_cap:
-		note = "INVALID: internal plugin slots %d/%d." % [payload_count, slot_cap]
-	elif software_payload_count > software_cap:
-		note = "INVALID: software slots %d/%d." % [software_payload_count, software_cap]
-	elif String(internal_slot_status.get("invalid", "")) != "":
-		note = String(internal_slot_status.get("invalid", ""))
-	stats["slot_payload_note"] = note
-	var ammo_capacity: Dictionary = stats.get("ammo_capacity", {})
-	stats["ammo_note"] = "AMMO B/L/C/X/W %d/%d/%d/%d/%d  AMMO SLOTS %d MASS %.0f" % [
-		int(ammo_capacity.get("bullet", 0)),
-		int(ammo_capacity.get("laser", 0)),
-		int(ammo_capacity.get("chemical", 0)),
-		int(ammo_capacity.get("explosive", 0)),
-		int(ammo_capacity.get("web", 0)),
-		ammo_count,
-		ammo_mass,
-	]
+	_unit_stats_service().apply_torso_payload_summary(stats, {
+		"payload_count": payload_count,
+		"payload_mass": payload_mass,
+		"payload_volume_rank": payload_volume_rank,
+		"software_payload_count": software_payload_count,
+		"software_payload_energy": software_payload_energy,
+		"ammo_count": ammo_count,
+		"ammo_mass": ammo_mass,
+	}, {
+		"role_key": role_key,
+		"internal_slot_status": internal_slot_status,
+		"installed_rank_label": _volume_rank_label(float(internal_slot_status.get("max_installed_rank", 0))),
+		"empty_rank_label": _volume_rank_label(float(internal_slot_status.get("max_empty_rank", 0))),
+	})
 
 
 func _part_load_capacity(part: Dictionary, slot_kind: String) -> float:

@@ -228,6 +228,95 @@ func _init() -> void:
 	if int(torso_payload_stats.get("cost", 0)) != 46:
 		_fail("torso spare payload should merge cost: %s" % str(torso_payload_stats))
 	_assert_near(float(torso_payload_stats.get("mass", 0.0)), 15.59, "torso spare total mass")
+	if not service.has_method("apply_torso_payload_summary"):
+		_fail("UnitStatsService missing apply_torso_payload_summary.")
+		return
+	var payload_summary_stats := {
+		"torso_slots": 2,
+		"module_slots": 1,
+		"engine_slots": 0,
+		"cooling_slots": 0,
+		"booster_slots": 0,
+		"spare_weapon_slots": 0,
+		"ammo_payload_mass": 0.84,
+		"ammo_capacity": {"bullet": 2, "laser": 1, "chemical": 0, "explosive": 3, "web": 0},
+	}
+	service.apply_torso_payload_summary(payload_summary_stats, {
+		"payload_count": 3,
+		"payload_mass": 8.0,
+		"payload_volume_rank": 4.5,
+		"software_payload_count": 2,
+		"software_payload_energy": 1.25,
+		"ammo_count": 1,
+		"ammo_mass": 2.0,
+	}, {
+		"role_key": "hero",
+		"internal_slot_status": {"max_installed_rank": 4, "max_empty_rank": 2},
+		"installed_rank_label": "L",
+		"empty_rank_label": "S",
+	})
+	if int(payload_summary_stats.get("slot_payload_count", 0)) != 3 or int(payload_summary_stats.get("software_payload_count", 0)) != 2:
+		_fail("torso payload summary should copy counts: %s" % str(payload_summary_stats))
+	_assert_near(float(payload_summary_stats.get("slot_payload_mass", 0.0)), 8.84, "summary payload mass")
+	_assert_near(float(payload_summary_stats.get("slot_payload_volume_rank", 0.0)), 4.5, "summary payload volume")
+	_assert_near(float(payload_summary_stats.get("software_payload_energy", 0.0)), 1.25, "summary software energy")
+	if int(payload_summary_stats.get("ammo_slot_count", 0)) != 1:
+		_fail("summary ammo slot count mismatch: %s" % str(payload_summary_stats))
+	_assert_near(float(payload_summary_stats.get("ammo_slot_mass", 0.0)), 2.84, "summary ammo mass")
+	if String(payload_summary_stats.get("slot_payload_note", "")) != "INVALID: internal plugin slots 3/2.":
+		_fail("summary plugin invalid note mismatch: %s" % str(payload_summary_stats.get("slot_payload_note", "")))
+	if String(payload_summary_stats.get("ammo_note", "")) != "AMMO B/L/C/X/W 2/1/0/3/0  AMMO SLOTS 1 MASS 3":
+		_fail("summary ammo note mismatch: %s" % str(payload_summary_stats.get("ammo_note", "")))
+	var barrier_summary_stats := {
+		"torso_slots": 0,
+		"module_slots": 0,
+		"engine_slots": 0,
+		"cooling_slots": 0,
+		"booster_slots": 0,
+		"spare_weapon_slots": 0,
+		"ammo_capacity": {"bullet": 0, "laser": 0, "chemical": 0, "explosive": 0, "web": 0},
+	}
+	service.apply_torso_payload_summary(barrier_summary_stats, {
+		"payload_count": 2,
+		"payload_mass": 6.0,
+		"payload_volume_rank": 3.0,
+		"software_payload_count": 2,
+		"software_payload_energy": 0.0,
+		"ammo_count": 0,
+		"ammo_mass": 0.0,
+	}, {
+		"role_key": "barrier",
+		"internal_slot_status": {"max_installed_rank": 3, "max_empty_rank": 0},
+		"installed_rank_label": "M",
+		"empty_rank_label": "-",
+	})
+	if String(barrier_summary_stats.get("slot_payload_note", "")) != "BARRIER INTERNAL 2  SOFTWARE 2/2  MAX M  MASS 6":
+		_fail("barrier payload summary note mismatch: %s" % str(barrier_summary_stats.get("slot_payload_note", "")))
+	var internal_invalid_stats := {
+		"torso_slots": 4,
+		"module_slots": 4,
+		"engine_slots": 0,
+		"cooling_slots": 0,
+		"booster_slots": 0,
+		"spare_weapon_slots": 0,
+		"ammo_capacity": {"bullet": 0, "laser": 0, "chemical": 0, "explosive": 0, "web": 0},
+	}
+	service.apply_torso_payload_summary(internal_invalid_stats, {
+		"payload_count": 2,
+		"payload_mass": 6.0,
+		"payload_volume_rank": 2.0,
+		"software_payload_count": 1,
+		"software_payload_energy": 0.0,
+		"ammo_count": 0,
+		"ammo_mass": 0.0,
+	}, {
+		"role_key": "hero",
+		"internal_slot_status": {"max_installed_rank": 2, "max_empty_rank": 1, "invalid": "INVALID: custom internal slot conflict."},
+		"installed_rank_label": "S",
+		"empty_rank_label": "XS",
+	})
+	if String(internal_invalid_stats.get("slot_payload_note", "")) != "INVALID: custom internal slot conflict.":
+		_fail("internal invalid payload summary note mismatch: %s" % str(internal_invalid_stats.get("slot_payload_note", "")))
 	var motion_stats := {
 		"usable_power": 80.0,
 		"power_load": 20.0,
@@ -288,6 +377,7 @@ func _init() -> void:
 		"_unit_stats_service().copy_part_combat_stats(stats, part",
 		"_unit_stats_service().copy_part_payload_stats(stats, part",
 		"_unit_stats_service().apply_torso_payload_direct_stats(stats,",
+		"_unit_stats_service().apply_torso_payload_summary(stats,",
 	]:
 		if not main_source.contains(token):
 			_fail("main.gd missing UnitStatsService delegation token: %s" % token)
