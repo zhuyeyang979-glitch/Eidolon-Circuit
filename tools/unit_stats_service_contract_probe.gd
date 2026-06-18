@@ -245,6 +245,58 @@ func _init() -> void:
 	if int(entry_summary.get("software_payload_count", 0)) != 1:
 		_fail("payload entry summary software count mismatch: %s" % str(entry_summary))
 	_assert_near(float(entry_summary.get("software_payload_energy", 0.0)), 1.25, "entry summary software energy")
+	if not service.has_method("apply_torso_module_payload_logic_stats"):
+		_fail("UnitStatsService missing apply_torso_module_payload_logic_stats.")
+		return
+	var module_logic_stats := {
+		"command": "",
+		"skill_state": "",
+		"motion": "",
+		"aim_mode": "",
+		"module_effect": "",
+		"module_state": "",
+		"role_switch": "",
+		"switch_cooldown": 0,
+		"fracture_trigger": "",
+		"fracture_exception_group": "",
+		"fracture_ai": "",
+		"morph_modes": [],
+		"morph_cooldown": 0,
+		"combine_range": 0.0,
+		"combine_bonus_hp": 0,
+		"identity_receiver_role": "",
+		"identity_receiver_order": 0,
+	}
+	service.apply_torso_module_payload_logic_stats(module_logic_stats, {
+		"command": "switch",
+		"skill_state": "armed",
+		"motion": "sweep",
+		"aim_mode": "auto",
+		"module_effect": "burst",
+		"module_state": "locked",
+		"role_switch": "puppet",
+		"switch_cooldown": 12,
+		"fracture_trigger": "shell",
+		"fracture_exception_group": "A",
+		"fracture_ai": "split",
+		"morph_modes": ["alpha", "beta"],
+		"morph_cooldown": 6,
+		"combine_range": 3.5,
+		"combine_bonus_hp": 18,
+		"identity_receiver_role": "hero",
+		"identity_receiver_order": 2,
+	})
+	if String(module_logic_stats.get("command", "")) != "switch" or String(module_logic_stats.get("skill_state", "")) != "armed" or String(module_logic_stats.get("motion", "")) != "sweep":
+		_fail("module payload logic copy mismatch: %s" % str(module_logic_stats))
+	if String(module_logic_stats.get("module_effect", "")) != "burst" or String(module_logic_stats.get("module_state", "")) != "locked" or String(module_logic_stats.get("role_switch", "")) != "puppet":
+		_fail("module payload module-state copy mismatch: %s" % str(module_logic_stats))
+	if int(module_logic_stats.get("switch_cooldown", 0)) != 12 or String(module_logic_stats.get("fracture_trigger", "")) != "shell" or String(module_logic_stats.get("fracture_exception_group", "")) != "A" or String(module_logic_stats.get("fracture_ai", "")) != "split":
+		_fail("module payload fracture/switch copy mismatch: %s" % str(module_logic_stats))
+	if Array(module_logic_stats.get("morph_modes", [])).size() != 2 or int(module_logic_stats.get("morph_cooldown", 0)) != 6:
+		_fail("module payload morph copy mismatch: %s" % str(module_logic_stats))
+	_assert_near(float(module_logic_stats.get("combine_range", 0.0)), 3.5, "module combine range")
+	if int(module_logic_stats.get("combine_bonus_hp", 0)) != 18 or String(module_logic_stats.get("identity_receiver_role", "")) != "hero" or int(module_logic_stats.get("identity_receiver_order", 0)) != 2:
+		_fail("module payload identity/combine copy mismatch: %s" % str(module_logic_stats))
 	if not service.has_method("apply_torso_payload_summary"):
 		_fail("UnitStatsService missing apply_torso_payload_summary.")
 		return
@@ -395,6 +447,7 @@ func _init() -> void:
 		"_unit_stats_service().copy_part_payload_stats(stats, part",
 		"_unit_stats_service().apply_torso_payload_direct_stats(stats,",
 		"_unit_stats_service().record_torso_payload_summary_entry(",
+		"_unit_stats_service().apply_torso_module_payload_logic_stats(stats,",
 		"_unit_stats_service().apply_torso_payload_summary(stats,",
 	]:
 		if not main_source.contains(token):

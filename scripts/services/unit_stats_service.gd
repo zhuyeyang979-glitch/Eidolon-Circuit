@@ -16,6 +16,7 @@ const ETHER_BLOCKED_PART_LOGIC_KEYS := ["material_slots", "space_size", "aura_ra
 const FRACTURE_COPY_KEYS := ["fracture_trigger", "fracture_exception_group", "fracture_ai"]
 const SUPPORT_COPY_KEYS := ["is_support_node", "support_kind", "support_radius", "support_rate", "support_amount", "support_refill_seconds", "support_ammo_type", "support_buff_type", "support_buff_mult", "support_duration", "support_affects", "support_field_shape", "is_support_platform", "platform_pair_range", "platform_width", "platform_armor_hp"]
 const MISSILE_COPY_KEYS := ["missile_lock_priority", "missile_lock_cone_degrees", "missile_lock_range", "missile_lock_target_classes", "missile_occlusion_grace"]
+const TORSO_MODULE_PAYLOAD_LOGIC_KEYS := ["command", "skill_state", "motion", "aim_mode", "module_effect", "module_state", "role_switch", "switch_cooldown", "fracture_trigger", "fracture_exception_group", "fracture_ai", "morph_modes", "morph_cooldown", "combine_range", "combine_bonus_hp", "identity_receiver_role", "identity_receiver_order"]
 
 
 func bind(main: Object, next_cache) -> void:
@@ -684,6 +685,13 @@ func record_torso_payload_summary_entry(summary: Dictionary, entry: Dictionary) 
 		summary["ammo_count"] = int(summary.get("ammo_count", 0)) + 1
 		summary["ammo_mass"] = float(summary.get("ammo_mass", 0.0)) + float(entry.get("mass", 0.0))
 	return summary
+
+
+func apply_torso_module_payload_logic_stats(stats: Dictionary, module_part: Dictionary) -> Dictionary:
+	for logic_key in TORSO_MODULE_PAYLOAD_LOGIC_KEYS:
+		if module_part.has(logic_key):
+			stats[logic_key] = module_part[logic_key]
+	return stats
 
 
 func apply_torso_payload_summary(stats: Dictionary, summary: Dictionary, context: Dictionary) -> Dictionary:

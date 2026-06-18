@@ -38807,9 +38807,7 @@ func _apply_torso_slot_payload_stats(stats: Dictionary, role_key: String, unit_b
 				var module_part := _payload_part_for_payload(role_key, payload)
 				_unit_stats_service().record_torso_payload_summary_entry(payload_summary, {"payload": false, "software": true})
 				_merge_internal_payload_stats(stats, module_part, "module")
-				for logic_key in ["command", "skill_state", "motion", "aim_mode", "module_effect", "module_state", "role_switch", "switch_cooldown", "fracture_trigger", "fracture_exception_group", "fracture_ai", "morph_modes", "morph_cooldown", "combine_range", "combine_bonus_hp", "identity_receiver_role", "identity_receiver_order"]:
-					if module_part.has(logic_key):
-						stats[logic_key] = module_part[logic_key]
+				_unit_stats_service().apply_torso_module_payload_logic_stats(stats, module_part)
 				continue
 			elif payload_kind == "ammo":
 				var ammo_part := _payload_part_for_payload(role_key, payload)
