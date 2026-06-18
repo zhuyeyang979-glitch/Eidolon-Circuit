@@ -710,6 +710,16 @@ func apply_torso_special_payload_logic_stats(stats: Dictionary, special_part: Di
 	return intent
 
 
+func apply_soul_heat_capacity_stats(stats: Dictionary, soul_part: Dictionary) -> Dictionary:
+	var soul_capacity := maxf(1.0, float(soul_part.get("soul_heat_capacity", 74.0)))
+	stats["soul_heat_capacity"] = soul_capacity
+	stats["soul_heat_note"] = "%s SOUL %.0f: heat capacity is now supplied by cooling modules" % [
+		String(soul_part.get("name", "SOUL")),
+		soul_capacity,
+	]
+	return stats
+
+
 func apply_torso_module_payload_logic_stats(stats: Dictionary, module_part: Dictionary) -> Dictionary:
 	for logic_key in TORSO_MODULE_PAYLOAD_LOGIC_KEYS:
 		if module_part.has(logic_key):

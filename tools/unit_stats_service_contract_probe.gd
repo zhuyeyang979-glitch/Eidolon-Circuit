@@ -267,6 +267,19 @@ func _init() -> void:
 		_fail("code payload special stats mismatch: %s" % str(special_logic_stats))
 	if bool(code_intent.get("apply_ether", false)) or bool(code_intent.get("apply_soul_bonus", false)):
 		_fail("code payload should not request special callbacks: %s" % str(code_intent))
+	if not service.has_method("apply_soul_heat_capacity_stats"):
+		_fail("UnitStatsService missing apply_soul_heat_capacity_stats.")
+		return
+	var soul_heat_stats := {}
+	service.apply_soul_heat_capacity_stats(soul_heat_stats, {"name": "SOUL: TEST", "soul_heat_capacity": 88.0})
+	if int(soul_heat_stats.get("soul_heat_capacity", 0)) != 88:
+		_fail("soul heat capacity stat mismatch: %s" % str(soul_heat_stats))
+	if String(soul_heat_stats.get("soul_heat_note", "")) != "SOUL: TEST SOUL 88: heat capacity is now supplied by cooling modules":
+		_fail("soul heat note mismatch: %s" % str(soul_heat_stats))
+	var minimum_soul_heat_stats := {}
+	service.apply_soul_heat_capacity_stats(minimum_soul_heat_stats, {"name": "SOUL: LOW", "soul_heat_capacity": -5.0})
+	if int(minimum_soul_heat_stats.get("soul_heat_capacity", 0)) != 1:
+		_fail("soul heat capacity should clamp to minimum one: %s" % str(minimum_soul_heat_stats))
 	if not service.has_method("apply_torso_module_payload_logic_stats"):
 		_fail("UnitStatsService missing apply_torso_module_payload_logic_stats.")
 		return
@@ -470,6 +483,7 @@ func _init() -> void:
 		"_unit_stats_service().apply_torso_payload_direct_stats(stats,",
 		"_unit_stats_service().record_torso_payload_summary_entry(",
 		"_unit_stats_service().apply_torso_special_payload_logic_stats(stats,",
+		"_unit_stats_service().apply_soul_heat_capacity_stats(stats,",
 		"_unit_stats_service().apply_torso_module_payload_logic_stats(stats,",
 		"_unit_stats_service().apply_torso_payload_summary(stats,",
 	]:

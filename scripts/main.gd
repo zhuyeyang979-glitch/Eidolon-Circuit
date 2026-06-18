@@ -36970,7 +36970,7 @@ func _compute_unit_stats(player_id: int, role_key: String, unit_index: int = -1,
 	_unit_stats_service().apply_base_motion_envelope(stats)
 	if role_key == "hero":
 		if not parts.is_empty() and String(Dictionary(parts[0]).get("kind", "")) == "soul":
-			_apply_soul_heat_capacity(stats, parts[0])
+			_unit_stats_service().apply_soul_heat_capacity_stats(stats, parts[0])
 			_apply_soul_bonus(stats, unit_bp, parts[0])
 		elif not bool(stats.get("has_soul", false)):
 			stats["soul_heat_note"] = "NO SOUL: heat capacity comes from installed cooling."
@@ -38796,7 +38796,7 @@ func _apply_torso_slot_payload_stats(stats: Dictionary, role_key: String, unit_b
 					_merge_ether_stats(stats, special_part)
 				elif bool(special_intent.get("apply_soul_heat_capacity", false)) or bool(special_intent.get("apply_soul_bonus", false)):
 					if bool(special_intent.get("apply_soul_heat_capacity", false)):
-						_apply_soul_heat_capacity(stats, special_part)
+						_unit_stats_service().apply_soul_heat_capacity_stats(stats, special_part)
 					if bool(special_intent.get("apply_soul_bonus", false)):
 						_apply_soul_bonus(stats, unit_bp, special_part)
 				continue
@@ -40850,15 +40850,6 @@ func _merge_scaled_part_logic(stats: Dictionary, part: Dictionary, scale: float)
 		stats["cage_hit_interval"] = minf(float(stats.get("cage_hit_interval", 0.6)), float(part.get("cage_hit_interval", 0.6)))
 		stats["cage_affects"] = String(part.get("cage_affects", stats.get("cage_affects", "enemy")))
 		stats["cage_shape"] = String(part.get("bend", part.get("shape", stats.get("cage_shape", ""))))
-
-
-func _apply_soul_heat_capacity(stats: Dictionary, soul_part: Dictionary) -> void:
-	var soul_capacity := maxf(1.0, float(soul_part.get("soul_heat_capacity", 74.0)))
-	stats["soul_heat_capacity"] = soul_capacity
-	stats["soul_heat_note"] = "%s SOUL %.0f: heat capacity is now supplied by cooling modules" % [
-		String(soul_part.get("name", "SOUL")),
-		soul_capacity,
-	]
 
 
 func _apply_soul_bonus(stats: Dictionary, unit_bp: Dictionary, soul_part: Dictionary) -> void:
