@@ -245,6 +245,28 @@ func _init() -> void:
 	if int(entry_summary.get("software_payload_count", 0)) != 1:
 		_fail("payload entry summary software count mismatch: %s" % str(entry_summary))
 	_assert_near(float(entry_summary.get("software_payload_energy", 0.0)), 1.25, "entry summary software energy")
+	if not service.has_method("apply_torso_special_payload_logic_stats"):
+		_fail("UnitStatsService missing apply_torso_special_payload_logic_stats.")
+		return
+	var special_logic_stats := {
+		"group_count": 1,
+		"ai": "",
+		"has_soul": false,
+	}
+	var ether_intent: Dictionary = service.apply_torso_special_payload_logic_stats(special_logic_stats, {"kind": "ether"}, {"role_key": "hero"})
+	if not bool(ether_intent.get("apply_ether", false)) or bool(ether_intent.get("apply_soul_bonus", false)):
+		_fail("ether payload special intent mismatch: %s" % str(ether_intent))
+	var soul_intent: Dictionary = service.apply_torso_special_payload_logic_stats(special_logic_stats, {"kind": "soul"}, {"role_key": "hero"})
+	if not bool(special_logic_stats.get("has_soul", false)) or not bool(soul_intent.get("apply_soul_heat_capacity", false)) or not bool(soul_intent.get("apply_soul_bonus", false)):
+		_fail("hero soul payload special intent mismatch: stats=%s intent=%s" % [str(special_logic_stats), str(soul_intent)])
+	var puppet_soul_intent: Dictionary = service.apply_torso_special_payload_logic_stats(special_logic_stats, {"kind": "soul"}, {"role_key": "puppet"})
+	if bool(puppet_soul_intent.get("apply_soul_heat_capacity", false)) or bool(puppet_soul_intent.get("apply_soul_bonus", false)):
+		_fail("non-hero soul payload should not request hero soul callbacks: %s" % str(puppet_soul_intent))
+	var code_intent: Dictionary = service.apply_torso_special_payload_logic_stats(special_logic_stats, {"kind": "code", "group_count": 4, "ai": "ranged_pack"}, {"role_key": "hero"})
+	if int(special_logic_stats.get("group_count", 0)) != 4 or String(special_logic_stats.get("ai", "")) != "ranged_pack":
+		_fail("code payload special stats mismatch: %s" % str(special_logic_stats))
+	if bool(code_intent.get("apply_ether", false)) or bool(code_intent.get("apply_soul_bonus", false)):
+		_fail("code payload should not request special callbacks: %s" % str(code_intent))
 	if not service.has_method("apply_torso_module_payload_logic_stats"):
 		_fail("UnitStatsService missing apply_torso_module_payload_logic_stats.")
 		return
@@ -447,6 +469,7 @@ func _init() -> void:
 		"_unit_stats_service().copy_part_payload_stats(stats, part",
 		"_unit_stats_service().apply_torso_payload_direct_stats(stats,",
 		"_unit_stats_service().record_torso_payload_summary_entry(",
+		"_unit_stats_service().apply_torso_special_payload_logic_stats(stats,",
 		"_unit_stats_service().apply_torso_module_payload_logic_stats(stats,",
 		"_unit_stats_service().apply_torso_payload_summary(stats,",
 	]:

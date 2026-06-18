@@ -38791,17 +38791,14 @@ func _apply_torso_slot_payload_stats(stats: Dictionary, role_key: String, unit_b
 				var special_part := _payload_part_for_payload(role_key, payload)
 				_unit_stats_service().record_torso_payload_summary_entry(payload_summary, {"payload": false, "software": true})
 				_merge_internal_payload_stats(stats, special_part, "special")
-				if String(special_part.get("kind", "")) == "ether":
+				var special_intent := _unit_stats_service().apply_torso_special_payload_logic_stats(stats, special_part, {"role_key": role_key})
+				if bool(special_intent.get("apply_ether", false)):
 					_merge_ether_stats(stats, special_part)
-				elif String(special_part.get("kind", "")) == "soul":
-					stats["has_soul"] = true
-					if role_key == "hero":
+				elif bool(special_intent.get("apply_soul_heat_capacity", false)) or bool(special_intent.get("apply_soul_bonus", false)):
+					if bool(special_intent.get("apply_soul_heat_capacity", false)):
 						_apply_soul_heat_capacity(stats, special_part)
+					if bool(special_intent.get("apply_soul_bonus", false)):
 						_apply_soul_bonus(stats, unit_bp, special_part)
-				elif String(special_part.get("kind", "")) == "code":
-					stats["group_count"] = maxi(int(stats.get("group_count", 1)), int(special_part.get("group_count", 1)))
-					if special_part.has("ai"):
-						stats["ai"] = String(special_part["ai"])
 				continue
 			elif payload_kind == "module":
 				var module_part := _payload_part_for_payload(role_key, payload)

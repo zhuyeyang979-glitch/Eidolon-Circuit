@@ -687,6 +687,29 @@ func record_torso_payload_summary_entry(summary: Dictionary, entry: Dictionary) 
 	return summary
 
 
+func apply_torso_special_payload_logic_stats(stats: Dictionary, special_part: Dictionary, context: Dictionary) -> Dictionary:
+	var special_kind := String(special_part.get("kind", ""))
+	var intent := {
+		"kind": special_kind,
+		"apply_ether": false,
+		"apply_soul_heat_capacity": false,
+		"apply_soul_bonus": false,
+	}
+	match special_kind:
+		"ether":
+			intent["apply_ether"] = true
+		"soul":
+			stats["has_soul"] = true
+			if String(context.get("role_key", "")) == "hero":
+				intent["apply_soul_heat_capacity"] = true
+				intent["apply_soul_bonus"] = true
+		"code":
+			stats["group_count"] = maxi(int(stats.get("group_count", 1)), int(special_part.get("group_count", 1)))
+			if special_part.has("ai"):
+				stats["ai"] = String(special_part["ai"])
+	return intent
+
+
 func apply_torso_module_payload_logic_stats(stats: Dictionary, module_part: Dictionary) -> Dictionary:
 	for logic_key in TORSO_MODULE_PAYLOAD_LOGIC_KEYS:
 		if module_part.has(logic_key):
