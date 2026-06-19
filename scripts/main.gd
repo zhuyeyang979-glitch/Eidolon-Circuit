@@ -1738,6 +1738,8 @@ var editor_assembly_guide_label: Label
 var editor_assembly_tutorial_panel: ColorRect
 var editor_assembly_tutorial_label: Label
 var editor_assembly_guide_step_index := 0
+var editor_assembly_template_collapsed := false
+var editor_assembly_template_fold_revision_counter := 0
 var editor_color_picker_sync := false
 var editor_panel_mode := "parts"
 var editor_load_mode := "team"
@@ -14079,6 +14081,23 @@ func _editor_assembly_template_model(role_key: String, unit_bp: Dictionary, visu
 	)
 
 
+func _editor_assembly_template_model_with_fold_state(model: Dictionary) -> Dictionary:
+	var next_model := model.duplicate(true)
+	next_model["collapsed"] = editor_assembly_template_collapsed
+	return next_model
+
+
+func _editor_assembly_template_signature(model: Dictionary) -> String:
+	var base_signature := String(model.get("signature", ""))
+	if base_signature == "":
+		base_signature = "%s:%s:%d" % [
+			String(model.get("title", "")),
+			String(model.get("status", "")),
+			int(model.get("warning_count", Array(model.get("warnings", [])).size())),
+		]
+	return "%s|fold:%d" % [base_signature, 1 if editor_assembly_template_collapsed else 0]
+
+
 func _apply_editor_assembly_template_snapshot_fields(snapshot: Dictionary, role_key: String, unit_bp: Dictionary, visual_stats: Dictionary, preserve_existing: bool = true) -> String:
 	var model := {}
 	if preserve_existing and visual_stats.is_empty() and assembly_board_view != null:
@@ -14091,7 +14110,8 @@ func _apply_editor_assembly_template_snapshot_fields(snapshot: Dictionary, role_
 		snapshot.erase("assembly_template_model")
 		snapshot.erase("assembly_template_signature")
 		return ""
-	var signature := String(model.get("signature", ""))
+	model = _editor_assembly_template_model_with_fold_state(model)
+	var signature := _editor_assembly_template_signature(model)
 	snapshot["assembly_template_model"] = model
 	snapshot["assembly_template_signature"] = signature
 	return signature
@@ -14114,6 +14134,7 @@ func _editor_board_dynamic_revision_key() -> String:
 		str(editor_dragging_node_index),
 		str(editor_pending_orientation_node_index),
 		str(snappedf(editor_snap_timer, 0.01)),
+		str(editor_assembly_template_collapsed),
 		_editor_pending_binding_signature(),
 		_editor_bound_allocation_signature(),
 		_editor_tryout_signature(),
@@ -14343,10 +14364,12 @@ func _apply_editor_board_pose_dynamic_fields(snapshot: Dictionary, role_key: Str
 	snapshot["pose_downstream_nodes"] = editor_pose_downstream_nodes.duplicate()
 	snapshot["material_warning_nodes"] = editor_material_warning_nodes.duplicate()
 	var current_board_snapshot: Dictionary = assembly_board_view.board_snapshot if assembly_board_view != null else {}
-	var assembly_template_signature := String(current_board_snapshot.get("assembly_template_signature", ""))
+	var assembly_template_signature := ""
 	var assembly_template_model = current_board_snapshot.get("assembly_template_model", {})
 	if assembly_template_model is Dictionary and not Dictionary(assembly_template_model).is_empty():
-		snapshot["assembly_template_model"] = Dictionary(assembly_template_model).duplicate(true)
+		var folded_model := _editor_assembly_template_model_with_fold_state(Dictionary(assembly_template_model))
+		assembly_template_signature = _editor_assembly_template_signature(folded_model)
+		snapshot["assembly_template_model"] = folded_model
 		snapshot["assembly_template_signature"] = assembly_template_signature
 	else:
 		snapshot.erase("assembly_template_model")
@@ -16772,8 +16795,76 @@ func _remember_editor_board_event_position(event: InputEvent) -> void:
 		editor_last_board_mouse_position = (event as InputEventMouseMotion).position
 
 
+func _try_toggle_editor_assembly_template(event: InputEvent) -> bool:
+	if assembly_board_view == null or not assembly_board_view.visible:
+		return false
+	if not (event is InputEventMouseButton):
+		return false
+	var mouse_event := event as InputEventMouseButton
+	if not mouse_event.pressed or mouse_event.button_index != MOUSE_BUTTON_LEFT:
+		return false
+	var model = assembly_board_view.board_snapshot.get("assembly_template_model", {})
+	if not (model is Dictionary) or Dictionary(model).is_empty():
+		return false
+	var local_position := mouse_event.position
+	var local_rect := Rect2(Vector2.ZERO, assembly_board_view.size)
+	if not local_rect.has_point(local_position):
+		var global_rect := assembly_board_view.get_global_rect()
+		if not global_rect.has_point(mouse_event.position):
+			return false
+		local_position = assembly_board_view.get_global_transform().affine_inverse() * mouse_event.position
+	var toggle_rect := assembly_board_view.assembly_template_overlay_renderer.toggle_button_rect(assembly_board_view.size, editor_assembly_template_collapsed)
+	if not toggle_rect.has_point(local_position):
+		return false
+	_set_editor_assembly_template_collapsed(not editor_assembly_template_collapsed)
+	_mark_input_as_handled()
+	return true
+
+
+func _set_editor_assembly_template_collapsed(next_collapsed: bool) -> void:
+	if editor_assembly_template_collapsed == next_collapsed:
+		return
+	editor_assembly_template_collapsed = next_collapsed
+	_refresh_editor_assembly_template_overlay_snapshot("assembly_template.fold")
+
+
+func _refresh_editor_assembly_template_overlay_snapshot(reason: String) -> void:
+	if assembly_board_view == null:
+		return
+	var current_snapshot: Dictionary = assembly_board_view.board_snapshot
+	var model = current_snapshot.get("assembly_template_model", {})
+	if not (model is Dictionary) or Dictionary(model).is_empty():
+		return
+	var snapshot := current_snapshot.duplicate(false)
+	var folded_model := _editor_assembly_template_model_with_fold_state(Dictionary(model))
+	var signature := _editor_assembly_template_signature(folded_model)
+	editor_assembly_template_fold_revision_counter += 1
+	var revision := "%s|%s:%d:%d" % [
+		String(snapshot.get("revision_key", "")),
+		reason,
+		1 if editor_assembly_template_collapsed else 0,
+		editor_assembly_template_fold_revision_counter,
+	]
+	snapshot["assembly_template_model"] = folded_model
+	snapshot["assembly_template_signature"] = signature
+	snapshot["revision_key"] = revision
+	assembly_board_view.set_board(
+		snapshot,
+		assembly_board_view.selected_part,
+		assembly_board_view.illegal_parts,
+		assembly_board_view.snap_part,
+		assembly_board_view.snap_amount,
+		assembly_board_view.board_mode,
+		ui_language,
+		assembly_board_view.motion_phase,
+		revision
+	)
+
+
 func _handle_editor_board_input(event: InputEvent) -> void:
 	_remember_editor_board_event_position(event)
+	if _try_toggle_editor_assembly_template(event):
+		return
 	var player_id := _editor_player()
 	var role_key: String = ROLE_ORDER[editor_role_index]
 	var unit_bp: Dictionary = _editor_current_blueprint()
@@ -43912,9 +44003,9 @@ func _build_editor_ui() -> void:
 	assembly_board_view.gui_input.connect(_handle_editor_board_input)
 	assembly_board_view.part_dropped.connect(_drop_catalog_part_on_board)
 	root.add_child(assembly_board_view)
-	editor_assembly_tutorial_panel = _add_ui_rect(root, "AssemblyTutorialPanel", Vector2(194.0, 102.0), Vector2(706.0, 76.0), Color(0.006, 0.014, 0.021, 0.78))
+	editor_assembly_tutorial_panel = _add_ui_rect(root, "AssemblyTutorialPanel", Vector2(194.0, 102.0), Vector2(706.0, 66.0), Color(0.006, 0.014, 0.021, 0.78))
 	editor_assembly_tutorial_panel.z_index = 340
-	editor_assembly_tutorial_label = _make_label(root, "AssemblyTutorialLabel", "", Vector2(206.0, 108.0), Vector2(682.0, 64.0), 10, Color(0.86, 0.94, 1.0, 1.0), HORIZONTAL_ALIGNMENT_LEFT)
+	editor_assembly_tutorial_label = _make_label(root, "AssemblyTutorialLabel", "", Vector2(206.0, 108.0), Vector2(682.0, 54.0), 10, Color(0.86, 0.94, 1.0, 1.0), HORIZONTAL_ALIGNMENT_LEFT)
 	editor_assembly_tutorial_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	editor_assembly_tutorial_label.vertical_alignment = VERTICAL_ALIGNMENT_TOP
 	editor_assembly_tutorial_label.z_index = 341
@@ -46200,11 +46291,11 @@ func _refresh_editor_assembly_guide_ui(parts_visible: bool, role_key: String) ->
 		_set_canvas_item_modulate_if_changed(editor_assembly_guide_label, Color(1.0, 0.88, 0.30, 1.0))
 	if editor_assembly_tutorial_panel != null:
 		_set_control_position_if_changed(editor_assembly_tutorial_panel, Vector2(194.0, 102.0))
-		_set_control_size_if_changed(editor_assembly_tutorial_panel, Vector2(706.0, 76.0))
+		_set_control_size_if_changed(editor_assembly_tutorial_panel, Vector2(706.0, 66.0))
 		_set_canvas_item_modulate_if_changed(editor_assembly_tutorial_panel, Color(1.0, 1.0, 1.0, 1.0))
 	if editor_assembly_tutorial_label != null:
 		_set_control_position_if_changed(editor_assembly_tutorial_label, Vector2(206.0, 108.0))
-		_set_control_size_if_changed(editor_assembly_tutorial_label, Vector2(682.0, 64.0))
+		_set_control_size_if_changed(editor_assembly_tutorial_label, Vector2(682.0, 54.0))
 		_set_control_text_if_changed(editor_assembly_tutorial_label, String(model.get("tutorial_text", "")))
 		_set_control_tooltip_if_changed(editor_assembly_tutorial_label, String(model.get("instruction", "")))
 		_set_canvas_item_modulate_if_changed(editor_assembly_tutorial_label, Color(0.86, 0.94, 1.0, 1.0))
@@ -49530,7 +49621,7 @@ func _refresh_editor_selected_part_preview(slot_key: String, part: Dictionary, s
 
 
 func _editor_visual_revision_signature(role_key: String, unit_bp: Dictionary, stats: Dictionary, custom_board_cache_key: String, update_side_panels: bool) -> String:
-	return "%s|%s|%s|%d|%d|%s|%s|%s|%s|%s|%d|%s|%s|%s|%s|%s|%s|%s|%d|%d|%d" % [
+	return "%s|%s|%s|%d|%d|%s|%s|%s|%s|%s|%d|%s|%s|%s|%s|%s|%s|%s|%d|%d|%d|%d" % [
 		role_key,
 		custom_board_cache_key,
 		editor_selected_body_part,
@@ -49552,6 +49643,7 @@ func _editor_visual_revision_signature(role_key: String, unit_bp: Dictionary, st
 		1 if _barrier_uses_screen_board(unit_bp) else 0,
 		Array(unit_bp.get("barrier_tiles", [])).hash(),
 		1 if editor_barrier_grid_guides_enabled else 0,
+		1 if editor_assembly_template_collapsed else 0,
 	]
 
 
