@@ -1,0 +1,188 @@
+{
+  "version": 1,
+  "source_model": "image2 via built-in image_gen tool",
+  "chroma_key": "#00ff00",
+  "sprite_size": [
+    1024,
+    1024
+  ],
+  "parts": [
+    {
+      "id": "torso_core",
+      "name": "Torso Core",
+      "zh_name": "躯干核心",
+      "slot": "torso",
+      "connectors": 6,
+      "source": "assets/concepts/parts/image2_individual/sources/torso_core_image2_source_v1.png",
+      "sprite": "assets/concepts/parts/image2_individual/torso_core_image2_v1.png",
+      "source_generated_path": "/Users/peiyuhang/.codex/generated_images/019ecf7b-8a80-74d3-b209-c63a4fa03362/ig_07f00576e388b7f5016a3136a3573c81919a9d891ea2f389c2.png",
+      "card": "assets/concepts/parts/image2_individual/torso_core_image2_card_v1.png"
+    },
+    {
+      "id": "ball_joint",
+      "name": "Ball Joint",
+      "zh_name": "球形连接件",
+      "slot": "joint",
+      "connectors": 2,
+      "source": "assets/concepts/parts/image2_individual/sources/ball_joint_image2_source_v1.png",
+      "sprite": "assets/concepts/parts/image2_individual/ball_joint_image2_v1.png",
+      "source_generated_path": "/Users/peiyuhang/.codex/generated_images/019ecf7b-8a80-74d3-b209-c63a4fa03362/ig_07f00576e388b7f5016a3136ec292c8191851d37b1e3b94881.png",
+      "card": "assets/concepts/parts/image2_individual/ball_joint_image2_card_v1.png"
+    },
+    {
+      "id": "telescopic_joint",
+      "name": "Telescopic Joint",
+      "zh_name": "伸缩连接件",
+      "slot": "joint",
+      "connectors": 2,
+      "source": "assets/concepts/parts/image2_individual/sources/telescopic_joint_image2_source_v1.png",
+      "sprite": "assets/concepts/parts/image2_individual/telescopic_joint_image2_v1.png",
+      "source_generated_path": "/Users/peiyuhang/.codex/generated_images/019ecf7b-8a80-74d3-b209-c63a4fa03362/ig_07f00576e388b7f5016a313731a15481918c25dbf54a417a06.png",
+      "card": "assets/concepts/parts/image2_individual/telescopic_joint_image2_card_v1.png"
+    },
+    {
+      "id": "light_forearm_strut",
+      "name": "Light Forearm Strut",
+      "zh_name": "轻型肢体梁",
+      "slot": "limb_muscle",
+      "connectors": 2,
+      "source": "assets/concepts/parts/image2_individual/sources/light_forearm_strut_image2_source_v1.png",
+      "sprite": "assets/concepts/parts/image2_individual/light_forearm_strut_image2_v1.png",
+      "source_generated_path": "/Users/peiyuhang/.codex/generated_images/019ecf7b-8a80-74d3-b209-c63a4fa03362/ig_07f00576e388b7f5016a31376e25188191b5cbdac2e1e434b2.png",
+      "card": "assets/concepts/parts/image2_individual/light_forearm_strut_image2_card_v1.png"
+    },
+    {
+      "id": "heavy_barrier_strut",
+      "name": "Heavy Barrier Strut",
+      "zh_name": "重型结界梁",
+      "slot": "limb_muscle",
+      "connectors": 2,
+      "source": "assets/concepts/parts/image2_individual/sources/heavy_barrier_strut_image2_source_v1.png",
+      "sprite": "assets/concepts/parts/image2_individual/heavy_barrier_strut_image2_v1.png",
+      "source_generated_path": "/Users/peiyuhang/.codex/generated_images/019ecf7b-8a80-74d3-b209-c63a4fa03362/ig_07f00576e388b7f5016a3137a4dabc8191b58050b257442059.png",
+      "card": "assets/concepts/parts/image2_individual/heavy_barrier_strut_image2_card_v1.png"
+    },
+    {
+      "id": "curved_blade_claw",
+      "name": "Curved Blade Claw",
+      "zh_name": "弧形刀爪",
+      "slot": "terminal",
+      "connectors": 1,
+      "source": "assets/concepts/parts/image2_individual/sources/curved_blade_claw_image2_source_v1.png",
+      "sprite": "assets/concepts/parts/image2_individual/curved_blade_claw_image2_v1.png",
+      "source_generated_path": "/Users/peiyuhang/.codex/generated_images/019ecf7b-8a80-74d3-b209-c63a4fa03362/ig_07f00576e388b7f5016a3138d284888191b73302a8178dee0f.png",
+      "card": "assets/concepts/parts/image2_individual/curved_blade_claw_image2_card_v1.png"
+    },
+    {
+      "id": "paired_pincer_claw",
+      "name": "Paired Pincer Claw",
+      "zh_name": "双钳爪",
+      "slot": "terminal",
+      "connectors": 1,
+      "source": "assets/concepts/parts/image2_individual/sources/paired_pincer_claw_image2_source_v1.png",
+      "sprite": "assets/concepts/parts/image2_individual/paired_pincer_claw_image2_v1.png",
+      "source_generated_path": "/Users/peiyuhang/.codex/generated_images/019ecf7b-8a80-74d3-b209-c63a4fa03362/ig_07f00576e388b7f5016a31391de64481918e404fdd219fbc6f.png",
+      "card": "assets/concepts/parts/image2_individual/paired_pincer_claw_image2_card_v1.png"
+    },
+    {
+      "id": "railgun_pod",
+      "name": "Railgun Pod",
+      "zh_name": "轨道炮舱",
+      "slot": "projectile",
+      "connectors": 1,
+      "source": "assets/concepts/parts/image2_individual/sources/railgun_pod_image2_source_v1.png",
+      "sprite": "assets/concepts/parts/image2_individual/railgun_pod_image2_v1.png",
+      "source_generated_path": "/Users/peiyuhang/.codex/generated_images/019ecf7b-8a80-74d3-b209-c63a4fa03362/ig_07f00576e388b7f5016a31395417a881919ebe032db7ccd8e4.png",
+      "card": "assets/concepts/parts/image2_individual/railgun_pod_image2_card_v1.png"
+    },
+    {
+      "id": "missile_tube_pod",
+      "name": "Missile Tube Pod",
+      "zh_name": "导弹管舱",
+      "slot": "projectile",
+      "connectors": 1,
+      "source": "assets/concepts/parts/image2_individual/sources/missile_tube_pod_image2_source_v1.png",
+      "sprite": "assets/concepts/parts/image2_individual/missile_tube_pod_image2_v1.png",
+      "source_generated_path": "/Users/peiyuhang/.codex/generated_images/019ecf7b-8a80-74d3-b209-c63a4fa03362/ig_07f00576e388b7f5016a31398bb6b08191a82fd5c46b81bec5.png",
+      "card": "assets/concepts/parts/image2_individual/missile_tube_pod_image2_card_v1.png"
+    },
+    {
+      "id": "thruster_nozzle_pair",
+      "name": "Thruster Nozzle Pair",
+      "zh_name": "双推进喷口",
+      "slot": "booster",
+      "connectors": 1,
+      "source": "assets/concepts/parts/image2_individual/sources/thruster_nozzle_pair_image2_source_v1.png",
+      "sprite": "assets/concepts/parts/image2_individual/thruster_nozzle_pair_image2_v1.png",
+      "source_generated_path": "/Users/peiyuhang/.codex/generated_images/019ecf7b-8a80-74d3-b209-c63a4fa03362/ig_07f00576e388b7f5016a3139c158ac8191bc3433f1aed25528.png",
+      "card": "assets/concepts/parts/image2_individual/thruster_nozzle_pair_image2_card_v1.png"
+    },
+    {
+      "id": "barrier_emitter_plate",
+      "name": "Barrier Emitter Plate",
+      "zh_name": "结界发生板",
+      "slot": "barrier_tile",
+      "connectors": 2,
+      "source": "assets/concepts/parts/image2_individual/sources/barrier_emitter_plate_image2_source_v1.png",
+      "sprite": "assets/concepts/parts/image2_individual/barrier_emitter_plate_image2_v1.png",
+      "source_generated_path": "/Users/peiyuhang/.codex/generated_images/019ecf7b-8a80-74d3-b209-c63a4fa03362/ig_07f00576e388b7f5016a3139e97c9c81919773545f8cdd7159.png",
+      "card": "assets/concepts/parts/image2_individual/barrier_emitter_plate_image2_card_v1.png"
+    },
+    {
+      "id": "sensor_eye_array",
+      "name": "Sensor Eye Array",
+      "zh_name": "传感器阵列",
+      "slot": "software",
+      "connectors": 0,
+      "source": "assets/concepts/parts/image2_individual/sources/sensor_eye_array_image2_source_v1.png",
+      "sprite": "assets/concepts/parts/image2_individual/sensor_eye_array_image2_v1.png",
+      "source_generated_path": "/Users/peiyuhang/.codex/generated_images/019ecf7b-8a80-74d3-b209-c63a4fa03362/ig_07f00576e388b7f5016a313a1fa8f08191951e73d98f118ce3.png",
+      "card": "assets/concepts/parts/image2_individual/sensor_eye_array_image2_card_v1.png"
+    },
+    {
+      "id": "cooling_fin_module",
+      "name": "Cooling Fin Module",
+      "zh_name": "散热鳍片",
+      "slot": "cooling",
+      "connectors": 0,
+      "source": "assets/concepts/parts/image2_individual/sources/cooling_fin_module_image2_source_v1.png",
+      "sprite": "assets/concepts/parts/image2_individual/cooling_fin_module_image2_v1.png",
+      "source_generated_path": "/Users/peiyuhang/.codex/generated_images/019ecf7b-8a80-74d3-b209-c63a4fa03362/ig_07f00576e388b7f5016a313a65d2c4819185b65094527e60bb.png",
+      "card": "assets/concepts/parts/image2_individual/cooling_fin_module_image2_card_v1.png"
+    },
+    {
+      "id": "engine_reactor_capsule",
+      "name": "Engine Reactor Capsule",
+      "zh_name": "引擎反应舱",
+      "slot": "engine",
+      "connectors": 0,
+      "source": "assets/concepts/parts/image2_individual/sources/engine_reactor_capsule_image2_source_v1.png",
+      "sprite": "assets/concepts/parts/image2_individual/engine_reactor_capsule_image2_v1.png",
+      "source_generated_path": "/Users/peiyuhang/.codex/generated_images/019ecf7b-8a80-74d3-b209-c63a4fa03362/ig_07f00576e388b7f5016a313aa46c0c81918d41c5d363f0047b.png",
+      "card": "assets/concepts/parts/image2_individual/engine_reactor_capsule_image2_card_v1.png"
+    },
+    {
+      "id": "ammo_pod",
+      "name": "Ammo Pod",
+      "zh_name": "弹药舱",
+      "slot": "ammo",
+      "connectors": 0,
+      "source": "assets/concepts/parts/image2_individual/sources/ammo_pod_image2_source_v1.png",
+      "sprite": "assets/concepts/parts/image2_individual/ammo_pod_image2_v1.png",
+      "source_generated_path": "/Users/peiyuhang/.codex/generated_images/019ecf7b-8a80-74d3-b209-c63a4fa03362/ig_07f00576e388b7f5016a313ad8791c819196d4bbbffd8aacb0.png",
+      "card": "assets/concepts/parts/image2_individual/ammo_pod_image2_card_v1.png"
+    },
+    {
+      "id": "soul_source_ether_chip",
+      "name": "Soul Source Ether Chip",
+      "zh_name": "魂源以太芯片",
+      "slot": "special",
+      "connectors": 0,
+      "source": "assets/concepts/parts/image2_individual/sources/soul_source_ether_chip_image2_source_v1.png",
+      "sprite": "assets/concepts/parts/image2_individual/soul_source_ether_chip_image2_v1.png",
+      "source_generated_path": "/Users/peiyuhang/.codex/generated_images/019ecf7b-8a80-74d3-b209-c63a4fa03362/ig_07f00576e388b7f5016a313b125d5081919f536b76e019790a.png",
+      "card": "assets/concepts/parts/image2_individual/soul_source_ether_chip_image2_card_v1.png"
+    }
+  ],
+  "contact_sheet": "assets/concepts/parts/image2_individual/hero_assembly_image2_individual_parts_contact_sheet_v1.png"
+}

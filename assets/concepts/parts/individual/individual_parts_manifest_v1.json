@@ -1,0 +1,271 @@
+{
+  "version": 1,
+  "source_atlas": "assets/concepts/parts/hero_assembly_parts_atlas_v1.png",
+  "sprite_size": [
+    512,
+    512
+  ],
+  "card_size": [
+    512,
+    640
+  ],
+  "parts": [
+    {
+      "id": "torso_core",
+      "name": "Torso Core",
+      "zh_name": "\u8eaf\u5e72\u6838\u5fc3",
+      "slot": "torso",
+      "usage": "Assembly root / six sockets",
+      "connectors": 6,
+      "source_rect": [
+        0,
+        0,
+        256,
+        256
+      ],
+      "sprite": "assets/concepts/parts/individual/torso_core_v1.png",
+      "card": "assets/concepts/parts/individual/torso_core_card_v1.png"
+    },
+    {
+      "id": "ball_joint",
+      "name": "Ball Joint",
+      "zh_name": "\u7403\u5f62\u8fde\u63a5\u4ef6",
+      "slot": "joint",
+      "usage": "Flexible 2-ended connector",
+      "connectors": 2,
+      "source_rect": [
+        256,
+        0,
+        256,
+        256
+      ],
+      "sprite": "assets/concepts/parts/individual/ball_joint_v1.png",
+      "card": "assets/concepts/parts/individual/ball_joint_card_v1.png"
+    },
+    {
+      "id": "telescopic_joint",
+      "name": "Telescopic Joint",
+      "zh_name": "\u4f38\u7f29\u8fde\u63a5\u4ef6",
+      "slot": "joint",
+      "usage": "Sliding rail connector",
+      "connectors": 2,
+      "source_rect": [
+        512,
+        0,
+        256,
+        256
+      ],
+      "sprite": "assets/concepts/parts/individual/telescopic_joint_v1.png",
+      "card": "assets/concepts/parts/individual/telescopic_joint_card_v1.png"
+    },
+    {
+      "id": "light_forearm_strut",
+      "name": "Light Forearm Strut",
+      "zh_name": "\u8f7b\u578b\u80a2\u4f53\u6881",
+      "slot": "limb_muscle",
+      "usage": "Fast limb muscle segment",
+      "connectors": 2,
+      "source_rect": [
+        768,
+        0,
+        256,
+        256
+      ],
+      "sprite": "assets/concepts/parts/individual/light_forearm_strut_v1.png",
+      "card": "assets/concepts/parts/individual/light_forearm_strut_card_v1.png"
+    },
+    {
+      "id": "heavy_barrier_strut",
+      "name": "Heavy Barrier Strut",
+      "zh_name": "\u91cd\u578b\u7ed3\u754c\u6881",
+      "slot": "limb_muscle",
+      "usage": "Armored limb muscle segment",
+      "connectors": 2,
+      "source_rect": [
+        0,
+        256,
+        256,
+        256
+      ],
+      "sprite": "assets/concepts/parts/individual/heavy_barrier_strut_v1.png",
+      "card": "assets/concepts/parts/individual/heavy_barrier_strut_card_v1.png"
+    },
+    {
+      "id": "curved_blade_claw",
+      "name": "Curved Blade Claw",
+      "zh_name": "\u5f27\u5f62\u5200\u722a",
+      "slot": "terminal",
+      "usage": "Close terminal weapon",
+      "connectors": 1,
+      "source_rect": [
+        256,
+        256,
+        256,
+        256
+      ],
+      "sprite": "assets/concepts/parts/individual/curved_blade_claw_v1.png",
+      "card": "assets/concepts/parts/individual/curved_blade_claw_card_v1.png"
+    },
+    {
+      "id": "paired_pincer_claw",
+      "name": "Paired Pincer Claw",
+      "zh_name": "\u53cc\u94b3\u722a",
+      "slot": "terminal",
+      "usage": "Grapple terminal weapon",
+      "connectors": 1,
+      "source_rect": [
+        512,
+        256,
+        256,
+        256
+      ],
+      "sprite": "assets/concepts/parts/individual/paired_pincer_claw_v1.png",
+      "card": "assets/concepts/parts/individual/paired_pincer_claw_card_v1.png"
+    },
+    {
+      "id": "railgun_pod",
+      "name": "Railgun Pod",
+      "zh_name": "\u8f68\u9053\u70ae\u8231",
+      "slot": "projectile",
+      "usage": "Ranged terminal weapon",
+      "connectors": 1,
+      "source_rect": [
+        768,
+        256,
+        256,
+        256
+      ],
+      "sprite": "assets/concepts/parts/individual/railgun_pod_v1.png",
+      "card": "assets/concepts/parts/individual/railgun_pod_card_v1.png"
+    },
+    {
+      "id": "missile_tube_pod",
+      "name": "Missile Tube Pod",
+      "zh_name": "\u5bfc\u5f39\u7ba1\u8231",
+      "slot": "projectile",
+      "usage": "Ranged terminal weapon",
+      "connectors": 1,
+      "source_rect": [
+        0,
+        512,
+        256,
+        256
+      ],
+      "sprite": "assets/concepts/parts/individual/missile_tube_pod_v1.png",
+      "card": "assets/concepts/parts/individual/missile_tube_pod_card_v1.png"
+    },
+    {
+      "id": "thruster_nozzle_pair",
+      "name": "Thruster Nozzle Pair",
+      "zh_name": "\u53cc\u63a8\u8fdb\u55b7\u53e3",
+      "slot": "booster",
+      "usage": "Booster software muscle",
+      "connectors": 1,
+      "source_rect": [
+        256,
+        512,
+        256,
+        256
+      ],
+      "sprite": "assets/concepts/parts/individual/thruster_nozzle_pair_v1.png",
+      "card": "assets/concepts/parts/individual/thruster_nozzle_pair_card_v1.png"
+    },
+    {
+      "id": "barrier_emitter_plate",
+      "name": "Barrier Emitter Plate",
+      "zh_name": "\u7ed3\u754c\u53d1\u751f\u677f",
+      "slot": "barrier_tile",
+      "usage": "Deployable barrier panel",
+      "connectors": 2,
+      "source_rect": [
+        512,
+        512,
+        256,
+        256
+      ],
+      "sprite": "assets/concepts/parts/individual/barrier_emitter_plate_v1.png",
+      "card": "assets/concepts/parts/individual/barrier_emitter_plate_card_v1.png"
+    },
+    {
+      "id": "sensor_eye_array",
+      "name": "Sensor Eye Array",
+      "zh_name": "\u4f20\u611f\u5668\u9635\u5217",
+      "slot": "software",
+      "usage": "Software module / targeting",
+      "connectors": 0,
+      "source_rect": [
+        768,
+        512,
+        256,
+        256
+      ],
+      "sprite": "assets/concepts/parts/individual/sensor_eye_array_v1.png",
+      "card": "assets/concepts/parts/individual/sensor_eye_array_card_v1.png"
+    },
+    {
+      "id": "cooling_fin_module",
+      "name": "Cooling Fin Module",
+      "zh_name": "\u6563\u70ed\u9ccd\u7247",
+      "slot": "cooling",
+      "usage": "Cooling software muscle",
+      "connectors": 0,
+      "source_rect": [
+        0,
+        768,
+        256,
+        256
+      ],
+      "sprite": "assets/concepts/parts/individual/cooling_fin_module_v1.png",
+      "card": "assets/concepts/parts/individual/cooling_fin_module_card_v1.png"
+    },
+    {
+      "id": "engine_reactor_capsule",
+      "name": "Engine Reactor Capsule",
+      "zh_name": "\u5f15\u64ce\u53cd\u5e94\u8231",
+      "slot": "engine",
+      "usage": "Engine software muscle",
+      "connectors": 0,
+      "source_rect": [
+        256,
+        768,
+        256,
+        256
+      ],
+      "sprite": "assets/concepts/parts/individual/engine_reactor_capsule_v1.png",
+      "card": "assets/concepts/parts/individual/engine_reactor_capsule_card_v1.png"
+    },
+    {
+      "id": "ammo_pod",
+      "name": "Ammo Pod",
+      "zh_name": "\u5f39\u836f\u8231",
+      "slot": "ammo",
+      "usage": "Ammo support module",
+      "connectors": 0,
+      "source_rect": [
+        512,
+        768,
+        256,
+        256
+      ],
+      "sprite": "assets/concepts/parts/individual/ammo_pod_v1.png",
+      "card": "assets/concepts/parts/individual/ammo_pod_card_v1.png"
+    },
+    {
+      "id": "soul_source_ether_chip",
+      "name": "Soul Source Ether Chip",
+      "zh_name": "\u9b42\u6e90\u4ee5\u592a\u82af\u7247",
+      "slot": "special",
+      "usage": "Special source module",
+      "connectors": 0,
+      "source_rect": [
+        768,
+        768,
+        256,
+        256
+      ],
+      "sprite": "assets/concepts/parts/individual/soul_source_ether_chip_v1.png",
+      "card": "assets/concepts/parts/individual/soul_source_ether_chip_card_v1.png"
+    }
+  ],
+  "contact_sheet": "assets/concepts/parts/individual/hero_assembly_individual_parts_contact_sheet_v1.png"
+}

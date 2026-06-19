@@ -280,6 +280,22 @@ func _init() -> void:
 	service.apply_soul_heat_capacity_stats(minimum_soul_heat_stats, {"name": "SOUL: LOW", "soul_heat_capacity": -5.0})
 	if int(minimum_soul_heat_stats.get("soul_heat_capacity", 0)) != 1:
 		_fail("soul heat capacity should clamp to minimum one: %s" % str(minimum_soul_heat_stats))
+	for method_name in ["payload_slot_key_for_kind", "volume_tier_rank", "volume_rank_from_value"]:
+		if not service.has_method(method_name):
+			_fail("UnitStatsService missing %s." % method_name)
+			return
+	if String(service.payload_slot_key_for_kind("engine", "muscle")) != "engine" or String(service.payload_slot_key_for_kind("electronic_armor", "limb_muscle")) != "muscle":
+		_fail("payload slot-key mapping mismatch.")
+	if String(service.payload_slot_key_for_kind("unknown_payload", "custom_slot")) != "custom_slot":
+		_fail("payload slot-key fallback mismatch.")
+	if int(service.volume_tier_rank("XS")) != 1 or int(service.volume_tier_rank("XL")) != 5 or int(service.volume_tier_rank("???")) != 3:
+		_fail("volume tier rank mismatch.")
+	if int(service.volume_rank_from_value("", 4)) != 4 or int(service.volume_rank_from_value("-", 2)) != 2:
+		_fail("blank volume rank fallback mismatch.")
+	if int(service.volume_rank_from_value("L", 1)) != 4 or int(service.volume_rank_from_value(2, 1)) != 2 or int(service.volume_rank_from_value(2.2, 1)) != 3:
+		_fail("volume rank value normalization mismatch.")
+	if int(service.volume_rank_from_value(12.0, 1)) != 5 or int(service.volume_rank_from_value(-4, 3)) != 1:
+		_fail("volume rank clamp mismatch.")
 	if not service.has_method("apply_internal_payload_base_stats"):
 		_fail("UnitStatsService missing apply_internal_payload_base_stats.")
 		return
@@ -529,6 +545,9 @@ func _init() -> void:
 		"_unit_stats_service().copy_part_logic_stats(stats, part",
 		"_unit_stats_service().copy_part_combat_stats(stats, part",
 		"_unit_stats_service().copy_part_payload_stats(stats, part",
+		"_unit_stats_service().payload_slot_key_for_kind(",
+		"_unit_stats_service().volume_tier_rank(",
+		"_unit_stats_service().volume_rank_from_value(",
 		"_unit_stats_service().apply_torso_payload_direct_stats(stats,",
 		"_unit_stats_service().record_torso_payload_summary_entry(",
 		"_unit_stats_service().apply_torso_special_payload_logic_stats(stats,",

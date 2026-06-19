@@ -1,0 +1,200 @@
+{
+  "image": "hero_assembly_parts_atlas_v1.png",
+  "cell_size": 256,
+  "columns": 4,
+  "rows": 4,
+  "parts": [
+    {
+      "id": "torso_core",
+      "slot": "torso",
+      "label": "carapace core",
+      "connectors": 6,
+      "rect": [
+        0,
+        0,
+        256,
+        256
+      ]
+    },
+    {
+      "id": "ball_joint",
+      "slot": "joint",
+      "label": "ball joint",
+      "connectors": 2,
+      "rect": [
+        256,
+        0,
+        256,
+        256
+      ]
+    },
+    {
+      "id": "telescopic_joint",
+      "slot": "joint",
+      "label": "telescopic rail",
+      "connectors": 2,
+      "rect": [
+        512,
+        0,
+        256,
+        256
+      ]
+    },
+    {
+      "id": "light_forearm_strut",
+      "slot": "limb_muscle",
+      "label": "light strut",
+      "connectors": 2,
+      "rect": [
+        768,
+        0,
+        256,
+        256
+      ]
+    },
+    {
+      "id": "heavy_barrier_strut",
+      "slot": "limb_muscle",
+      "label": "barrier strut",
+      "connectors": 2,
+      "rect": [
+        0,
+        256,
+        256,
+        256
+      ]
+    },
+    {
+      "id": "curved_blade_claw",
+      "slot": "terminal",
+      "label": "blade claw",
+      "connectors": 1,
+      "rect": [
+        256,
+        256,
+        256,
+        256
+      ]
+    },
+    {
+      "id": "paired_pincer_claw",
+      "slot": "terminal",
+      "label": "pincer claw",
+      "connectors": 1,
+      "rect": [
+        512,
+        256,
+        256,
+        256
+      ]
+    },
+    {
+      "id": "railgun_pod",
+      "slot": "projectile",
+      "label": "railgun pod",
+      "connectors": 1,
+      "rect": [
+        768,
+        256,
+        256,
+        256
+      ]
+    },
+    {
+      "id": "missile_tube_pod",
+      "slot": "projectile",
+      "label": "missile pod",
+      "connectors": 1,
+      "rect": [
+        0,
+        512,
+        256,
+        256
+      ]
+    },
+    {
+      "id": "thruster_nozzle_pair",
+      "slot": "booster",
+      "label": "thruster pair",
+      "connectors": 1,
+      "rect": [
+        256,
+        512,
+        256,
+        256
+      ]
+    },
+    {
+      "id": "barrier_emitter_plate",
+      "slot": "barrier_tile",
+      "label": "barrier emitter",
+      "connectors": 2,
+      "rect": [
+        512,
+        512,
+        256,
+        256
+      ]
+    },
+    {
+      "id": "sensor_eye_array",
+      "slot": "software",
+      "label": "sensor array",
+      "connectors": 0,
+      "rect": [
+        768,
+        512,
+        256,
+        256
+      ]
+    },
+    {
+      "id": "cooling_fin_module",
+      "slot": "cooling",
+      "label": "cooling fins",
+      "connectors": 0,
+      "rect": [
+        0,
+        768,
+        256,
+        256
+      ]
+    },
+    {
+      "id": "engine_reactor_capsule",
+      "slot": "engine",
+      "label": "reactor",
+      "connectors": 0,
+      "rect": [
+        256,
+        768,
+        256,
+        256
+      ]
+    },
+    {
+      "id": "ammo_pod",
+      "slot": "ammo",
+      "label": "ammo pod",
+      "connectors": 0,
+      "rect": [
+        512,
+        768,
+        256,
+        256
+      ]
+    },
+    {
+      "id": "soul_source_ether_chip",
+      "slot": "special",
+      "label": "resource chip",
+      "connectors": 0,
+      "rect": [
+        768,
+        768,
+        256,
+        256
+      ]
+    }
+  ]
+}

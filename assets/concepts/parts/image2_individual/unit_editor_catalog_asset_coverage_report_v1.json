@@ -1,0 +1,71 @@
+{
+	"coverage": {
+		"entry_count": 104,
+		"missing_preview": [],
+		"missing_text": [],
+		"preview_cache_size": 129,
+		"preview_capture_count": 129,
+		"preview_ok": 104,
+		"preview_submit_count": 129,
+		"text_ok": 104
+	},
+	"current_after_show": {
+		"entry_count": 24,
+		"label": "current_after_show",
+		"max_page": 2,
+		"page_size": 8,
+		"part_filter_mode": "terminal",
+		"part_group_mode": "muscle",
+		"role": "hero",
+		"slot": "booster",
+		"sort_ascending": true,
+		"sort_key": "cost",
+		"weapon_filter_group": "all",
+		"weapon_filter_subtype": "all"
+	},
+	"legacy_terminal_filter": {
+		"entry_count": 104,
+		"label": "legacy_terminal_filter",
+		"max_page": 12,
+		"page_size": 8,
+		"part_filter_mode": "terminal",
+		"part_group_mode": "muscle",
+		"role": "hero",
+		"slot": "muscle",
+		"sort_ascending": true,
+		"sort_key": "cost",
+		"weapon_filter_group": "all",
+		"weapon_filter_subtype": "all"
+	},
+	"matching_103_states": [],
+	"screenshot_path": "res://assets/concepts/parts/image2_individual/unit_editor_catalog_asset_coverage_panel_v1.png",
+	"target_count_requested": 103,
+	"terminal_weapon_all": {
+		"entry_count": 104,
+		"label": "terminal_weapon_all",
+		"max_page": 12,
+		"page_size": 8,
+		"part_filter_mode": "weapon_all",
+		"part_group_mode": "terminal_weapon",
+		"role": "hero",
+		"slot": "muscle",
+		"sort_ascending": true,
+		"sort_key": "cost",
+		"weapon_filter_group": "all",
+		"weapon_filter_subtype": "all"
+	},
+	"tested_panel": {
+		"entry_count": 104,
+		"label": "tested_panel",
+		"max_page": 12,
+		"page_size": 8,
+		"part_filter_mode": "weapon_all",
+		"part_group_mode": "terminal_weapon",
+		"role": "hero",
+		"slot": "muscle",
+		"sort_ascending": true,
+		"sort_key": "cost",
+		"weapon_filter_group": "all",
+		"weapon_filter_subtype": "all"
+	}
+}
