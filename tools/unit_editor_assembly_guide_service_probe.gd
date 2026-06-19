@@ -52,6 +52,11 @@ func _init() -> void:
 		_fail("Step 4 should be the connection step, got %s." % str(connection_model))
 	if String(connection_model.get("instruction", "")).find("自动连接") < 0:
 		_fail("Connection step should explicitly point players to Auto Connect.")
+	for key in ["function_text", "limit_text", "next_action_text", "tutorial_text"]:
+		if String(connection_model.get(key, "")).strip_edges() == "":
+			_fail("Connection step should expose tutorial field %s." % key)
+	if String(connection_model.get("tutorial_text", "")).find("作用") < 0 or String(connection_model.get("tutorial_text", "")).find("限制") < 0 or String(connection_model.get("tutorial_text", "")).find("下一步") < 0:
+		_fail("Tutorial text should explain function, limits, and next action: %s." % String(connection_model.get("tutorial_text", "")))
 	_assert_catalog_state(service.catalog_state_for_step("hero", 0, build_slots), "torso", "connector_torso", 2)
 	_assert_catalog_state(service.catalog_state_for_step("hero", 1, build_slots), "limb", "connector_limb", 1)
 	_assert_catalog_state(service.catalog_state_for_step("hero", 2, build_slots), "terminal_weapon", "weapon_all", 2)
@@ -80,7 +85,11 @@ func _init() -> void:
 	var first_model: Dictionary = service.step_model("hero", 0, true)
 	if String(first_model.get("custom_order_note", "")).find("自由") < 0:
 		_fail("Step model should explicitly preserve custom assembly order in Chinese copy.")
+	if String(first_model.get("tutorial_text", "")).find("躯干") < 0 or String(first_model.get("limit_text", "")).find("接口") < 0:
+		_fail("Torso tutorial should explain torso ports and limits: %s." % String(first_model.get("tutorial_text", "")))
 	var last_model: Dictionary = service.step_model("hero", 8, false)
+	if String(last_model.get("tutorial_text", "")).find("Function") < 0 or String(last_model.get("tutorial_text", "")).find("Limit") < 0 or String(last_model.get("tutorial_text", "")).find("Next") < 0:
+		_fail("English tutorial text should expose Function/Limit/Next sections: %s." % String(last_model.get("tutorial_text", "")))
 	if bool(last_model.get("can_next", true)):
 		_fail("Last recommended step should not enable next.")
 	if not bool(first_model.get("can_next", false)):

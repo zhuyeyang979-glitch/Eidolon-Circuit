@@ -169,6 +169,112 @@ const BARRIER_STEPS := [
 	},
 ]
 
+const TUTORIAL_ZH_BY_KEY := {
+	"torso": {
+		"function": "躯干是英雄的承载核心，决定接口数量、体量、机内插件槽和软件槽。",
+		"limit": "接口数量限制可连接肢体；插件/软件槽限制引擎、散热、推进器、弹药和行动模块容量。",
+		"next": "点“前往”筛选躯干，把一个躯干核心拖到画布，作为第一次组装的根节点。",
+	},
+	"joint_muscle": {
+		"function": "关节/连接肌肉把躯干延伸成可驱动的肢体，是武器和动作的力臂。",
+		"limit": "连接件要和接口贴合；长度、材料和承载会影响后续武器、动力分配和连接合法性。",
+		"next": "选择一段基础肢体连接件，拖到躯干附近，之后用自动连接或手动接口把它接上。",
+	},
+	"weapon": {
+		"function": "武器决定主要伤害方式：近战靠接触姿态，枪械靠弹药、射程和行动模块触发。",
+		"limit": "多数末端武器只有一个接口；侧挂刃需要选择左右方向，枪械还要匹配弹药和动作模块。",
+		"next": "选择一种新手易读的末端武器，放在肢体末端，先保证结构清楚再追求复杂组合。",
+	},
+	"connection": {
+		"function": "连接阶段把零件变成真正的拓扑结构，系统会检查接口贴合、材料组和可进入姿态条件。",
+		"limit": "未贴合、接口占用或材料非法时不能安全进入下一阶段；连接变动后需要重新评估。",
+		"next": "先点“自动连接”，再点“评估连接”；通过后才能继续到引擎与动力配置。",
+	},
+	"engine": {
+		"function": "引擎提供动力预算，驱动移动、推进器、绑定肢体和部分行动模块。",
+		"limit": "动力输出必须覆盖需求；过强引擎会增加热压力，过弱会让动作或推进不足。",
+		"next": "安装一个均衡引擎，观察构筑仪表中的动力预算是否还有余量。",
+	},
+	"cooling": {
+		"function": "散热决定英雄能持续进攻多久，是攻击、撤退、停手和主动散热节奏的核心。",
+		"limit": "散热不足会让高热行动难以连续使用；专项散热只对匹配热源最有效。",
+		"next": "安装散热器，确认热管理没有明显短板，再进入推进配置。",
+	},
+	"booster": {
+		"function": "推进器提供移动和 Boost，让英雄接近、脱离或调整攻击角度。",
+		"limit": "推进会占用动力并产生热；高机动不等于更强，必须和武器距离、热节奏配合。",
+		"next": "选择一个基础推进器，优先保证可控移动，再考虑高速爆发。",
+	},
+	"identity": {
+		"function": "身份核心让单位符合英雄/傀儡/结界的基本身份规则，也会改变队伍和行为定位。",
+		"limit": "英雄需要英魂，傀儡需要源代码，结界需要以太；身份核心不占战斗体积但受槽位限制。",
+		"next": "为当前角色装入对应身份核心，然后进入行动模块配置。",
+	},
+	"module": {
+		"function": "行动模块把输入变成攻击、投射、冷却或特殊动作，是玩家实际操作英雄的按钮逻辑。",
+		"limit": "模块需要合法目标、键位和软件槽；绑定肢体会消耗动力，并可能改变热节奏。",
+		"next": "安装一个简单行动模块，选择目标与攻击键，最后保存单位或进入训练测试。",
+	},
+	"barrier_panel": {
+		"function": "结界板决定固定空间、屏障覆盖和以太构件的基础形状。",
+		"limit": "结界格数量和材料槽有限；部分构件只能放在屏幕格或自由画布的合法位置。",
+		"next": "先放一个清晰的结界板，再补身份核心和主动模块。",
+	},
+}
+
+const TUTORIAL_EN_BY_KEY := {
+	"torso": {
+		"function": "The torso is the hero's core: ports, size, internal payload slots, and software slots.",
+		"limit": "Ports limit limb count; payload and software slots limit engines, cooling, boosters, ammo, and actions.",
+		"next": "Press GO to filter torsos, then drag one torso core onto the board as the root node.",
+	},
+	"joint_muscle": {
+		"function": "Joint/connector muscle extends the torso into driven limbs for weapons and actions.",
+		"limit": "Connectors must align to sockets; length, material, and load affect legal links and drive.",
+		"next": "Drag one beginner connector near the torso, then link it manually or with Auto Connect.",
+	},
+	"weapon": {
+		"function": "Weapons define damage: melee uses contact pose, guns use ammo, range, and action modules.",
+		"limit": "Most terminal weapons have one socket; side blades need left/right choice, guns need ammo and actions.",
+		"next": "Choose a readable terminal weapon and place it at the limb end before making complex combos.",
+	},
+	"connection": {
+		"function": "Connection turns loose parts into topology and checks socket fit, material groups, and entry-pose readiness.",
+		"limit": "Misfit sockets, occupied ports, or illegal material links block safe progress; edits require re-evaluation.",
+		"next": "Use Auto Connect, then Evaluate Connection. Passing unlocks engine and drive setup.",
+	},
+	"engine": {
+		"function": "Engines provide drive budget for movement, boosters, bound limbs, and some action modules.",
+		"limit": "Output must cover demand; stronger engines add heat pressure, weaker engines starve actions.",
+		"next": "Install a balanced engine and check the build meter for remaining drive margin.",
+	},
+	"cooling": {
+		"function": "Cooling sets combat tempo: attack, disengage, stop, and active-cooling windows.",
+		"limit": "Poor cooling blocks repeated hot actions; specialized cooling mainly helps matching heat sources.",
+		"next": "Install cooling, confirm heat has no obvious shortage, then configure boosters.",
+	},
+	"booster": {
+		"function": "Boosters provide movement and burst repositioning for approach, escape, and attack angles.",
+		"limit": "Boost costs drive and heat; mobility must match weapon range and heat tempo.",
+		"next": "Pick a basic booster for controlled movement before chasing high-speed bursts.",
+	},
+	"identity": {
+		"function": "Identity cores satisfy hero/puppet/barrier rules and shape team and behavior roles.",
+		"limit": "Heroes need Soul, puppets need Code, barriers need Ether; identity has no battle volume but uses slots.",
+		"next": "Install the matching identity core, then move to action modules.",
+	},
+	"module": {
+		"function": "Action modules turn player input into attacks, shots, cooling, or special moves.",
+		"limit": "Modules need legal targets, keys, and software slots; bound limbs consume drive and can change heat tempo.",
+		"next": "Install one simple action, choose its target and key, then save or enter Training.",
+	},
+	"barrier_panel": {
+		"function": "Barrier panels define fixed space, coverage, and the base shape for Ether parts.",
+		"limit": "Barrier cells and material slots are limited; some parts only fit screen cells or valid board positions.",
+		"next": "Place one clear barrier panel, then add identity and active modules.",
+	},
+}
+
 
 func steps_for_role(role_key: String) -> Array:
 	var source_steps := BARRIER_STEPS if role_key == "barrier" else BODY_STEPS
@@ -207,6 +313,10 @@ func step_model(role_key: String, step_index: int, zh: bool) -> Dictionary:
 	var title := String(step.get("zh_title" if zh else "en_title", ""))
 	var instruction := String(step.get("zh_instruction" if zh else "en_instruction", ""))
 	var custom_note := "推荐路径只负责指路；仍可直接点下方分类自由组装。" if zh else "Recommended path only points; use the catalog freely in any order."
+	var tutorial_copy := _tutorial_copy_for_step(step, zh)
+	var function_text := String(tutorial_copy.get("function", instruction))
+	var limit_text := String(tutorial_copy.get("limit", custom_note))
+	var next_action_text := String(tutorial_copy.get("next", instruction))
 	step["valid"] = true
 	step["index"] = index
 	step["step_number"] = index + 1
@@ -216,6 +326,10 @@ func step_model(role_key: String, step_index: int, zh: bool) -> Dictionary:
 	step["short_label"] = ("%d/%d %s" if zh else "%d/%d %s") % [index + 1, steps.size(), title]
 	step["tooltip_text"] = "%s\n%s" % [instruction, custom_note]
 	step["custom_order_note"] = custom_note
+	step["function_text"] = function_text
+	step["limit_text"] = limit_text
+	step["next_action_text"] = next_action_text
+	step["tutorial_text"] = ("作用：%s\n限制：%s\n下一步：%s" if zh else "Function: %s\nLimit: %s\nNext: %s") % [function_text, limit_text, next_action_text]
 	step["can_prev"] = index > 0
 	step["can_next"] = index < steps.size() - 1
 	return step
@@ -271,3 +385,11 @@ func _filter_is_weapon_filter(filter_key: String) -> bool:
 		or filter_key.begins_with("gun_")
 		or filter_key.begins_with("terminal")
 	)
+
+
+func _tutorial_copy_for_step(step: Dictionary, zh: bool) -> Dictionary:
+	var key := String(step.get("key", ""))
+	var source := TUTORIAL_ZH_BY_KEY if zh else TUTORIAL_EN_BY_KEY
+	if source.has(key):
+		return Dictionary(source[key])
+	return {}

@@ -1735,6 +1735,8 @@ var editor_accent_color_picker: ColorPickerButton
 var editor_shop_hint_label: Label
 var editor_shop_pending_label: Label
 var editor_assembly_guide_label: Label
+var editor_assembly_tutorial_panel: ColorRect
+var editor_assembly_tutorial_label: Label
 var editor_assembly_guide_step_index := 0
 var editor_color_picker_sync := false
 var editor_panel_mode := "parts"
@@ -43910,6 +43912,12 @@ func _build_editor_ui() -> void:
 	assembly_board_view.gui_input.connect(_handle_editor_board_input)
 	assembly_board_view.part_dropped.connect(_drop_catalog_part_on_board)
 	root.add_child(assembly_board_view)
+	editor_assembly_tutorial_panel = _add_ui_rect(root, "AssemblyTutorialPanel", Vector2(194.0, 102.0), Vector2(706.0, 76.0), Color(0.006, 0.014, 0.021, 0.78))
+	editor_assembly_tutorial_panel.z_index = 340
+	editor_assembly_tutorial_label = _make_label(root, "AssemblyTutorialLabel", "", Vector2(206.0, 108.0), Vector2(682.0, 64.0), 10, Color(0.86, 0.94, 1.0, 1.0), HORIZONTAL_ALIGNMENT_LEFT)
+	editor_assembly_tutorial_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	editor_assembly_tutorial_label.vertical_alignment = VERTICAL_ALIGNMENT_TOP
+	editor_assembly_tutorial_label.z_index = 341
 	editor_stats_rail_view = EditorStatsRailView.new()
 	editor_stats_rail_view.name = "EditorStatsRail"
 	editor_stats_rail_view.position = Vector2(18.0, 104.0)
@@ -46171,6 +46179,10 @@ func _refresh_editor_assembly_guide_ui(parts_visible: bool, role_key: String) ->
 	var show_guide := parts_visible and unit_editor_assembly_guide_service != null
 	if editor_assembly_guide_label != null:
 		_set_canvas_item_visible_if_changed(editor_assembly_guide_label, show_guide)
+	if editor_assembly_tutorial_panel != null:
+		_set_canvas_item_visible_if_changed(editor_assembly_tutorial_panel, show_guide)
+	if editor_assembly_tutorial_label != null:
+		_set_canvas_item_visible_if_changed(editor_assembly_tutorial_label, show_guide)
 	for action_key in ["assembly_guide_prev", "assembly_guide_apply", "assembly_guide_next"]:
 		if editor_action_buttons.has(action_key):
 			var action_button: Button = editor_action_buttons[action_key]
@@ -46186,6 +46198,16 @@ func _refresh_editor_assembly_guide_ui(parts_visible: bool, role_key: String) ->
 		_set_control_text_if_changed(editor_assembly_guide_label, ("推荐 %s" if _ui_is_zh() else "GUIDE %s") % String(model.get("short_label", "")))
 		_set_control_tooltip_if_changed(editor_assembly_guide_label, String(model.get("tooltip_text", "")))
 		_set_canvas_item_modulate_if_changed(editor_assembly_guide_label, Color(1.0, 0.88, 0.30, 1.0))
+	if editor_assembly_tutorial_panel != null:
+		_set_control_position_if_changed(editor_assembly_tutorial_panel, Vector2(194.0, 102.0))
+		_set_control_size_if_changed(editor_assembly_tutorial_panel, Vector2(706.0, 76.0))
+		_set_canvas_item_modulate_if_changed(editor_assembly_tutorial_panel, Color(1.0, 1.0, 1.0, 1.0))
+	if editor_assembly_tutorial_label != null:
+		_set_control_position_if_changed(editor_assembly_tutorial_label, Vector2(206.0, 108.0))
+		_set_control_size_if_changed(editor_assembly_tutorial_label, Vector2(682.0, 64.0))
+		_set_control_text_if_changed(editor_assembly_tutorial_label, String(model.get("tutorial_text", "")))
+		_set_control_tooltip_if_changed(editor_assembly_tutorial_label, String(model.get("instruction", "")))
+		_set_canvas_item_modulate_if_changed(editor_assembly_tutorial_label, Color(0.86, 0.94, 1.0, 1.0))
 	if editor_action_buttons.has("assembly_guide_prev"):
 		var prev_button: Button = editor_action_buttons["assembly_guide_prev"]
 		_set_control_position_if_changed(prev_button, Vector2(1100.0, 118.0))
@@ -46502,6 +46524,10 @@ func _apply_editor_panel_visibility(role_key: String, unit_bp: Dictionary) -> vo
 	var visible_sort_index := 0
 	for i in range(editor_sort_option_buttons.size()):
 		var sort_option_button: Button = editor_sort_option_buttons[i]
+		if i >= EDITOR_SORT_KEY_ORDER.size():
+			_set_canvas_item_visible_if_changed(sort_option_button, false)
+			_set_button_disabled_if_changed(sort_option_button, true)
+			continue
 		var option_key := String(EDITOR_SORT_KEY_ORDER[i])
 		var show_sort_option := parts_visible and editor_sort_menu_open and available_sort_keys.has(option_key)
 		_set_canvas_item_visible_if_changed(sort_option_button, show_sort_option)
