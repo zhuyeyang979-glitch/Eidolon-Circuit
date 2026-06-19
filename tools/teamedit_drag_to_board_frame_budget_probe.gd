@@ -53,6 +53,9 @@ func _init() -> void:
 	var stats_delta := int(main.editor_compute_unit_stats_count) - before_stats
 	var gpu_delta := int(main.gpu_geometry_query_submit_count) - before_gpu_submit
 	var visual_delta := int(main.editor_visual_refresh_count) - before_visual
+	if visual_delta != 0:
+		_fail("Dragging parts to board used full visual refresh: %d" % visual_delta)
+		return
 	if catalog_delta != 0:
 		_fail("Dragging parts to board refreshed catalog cards: %d" % catalog_delta)
 		return

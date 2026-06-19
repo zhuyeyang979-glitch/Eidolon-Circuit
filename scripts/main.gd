@@ -14423,6 +14423,43 @@ func _apply_editor_board_pose_dynamic_fields(snapshot: Dictionary, role_key: Str
 	return snapshot
 
 
+func _editor_board_visual_domain_key(role_key: String, unit_bp: Dictionary, custom_board_enabled: bool, custom_board_cache_key: String, visual_stats: Dictionary) -> String:
+	return "%s|%s|%s|%s|%d|%d|%s|%s|%s|%s|%s|%s|%d" % [
+		role_key,
+		str(custom_board_enabled),
+		custom_board_cache_key,
+		_editor_board_dynamic_revision_key() if custom_board_enabled else "",
+		editor_topology_node_index,
+		editor_open_torso_node_index,
+		editor_board_tool,
+		editor_pending_place_slot,
+		str(editor_pending_place_index),
+		editor_pending_payload_slot,
+		str(editor_pending_payload_index),
+		_editor_visual_stats_revision_key(visual_stats),
+		1 if editor_barrier_grid_guides_enabled else 0,
+	]
+
+
+func _sync_editor_board_visual_domain_after_fast_update(role_key: String, unit_bp: Dictionary, custom_board_cache_key: String = "") -> void:
+	var custom_board_enabled := _role_uses_body_board(role_key) \
+			and unit_bp.has("custom_topology") \
+			and not (role_key == "barrier" and _barrier_uses_screen_board(unit_bp))
+	if not custom_board_enabled:
+		return
+	if custom_board_cache_key == "":
+		custom_board_cache_key = _editor_board_snapshot_cache_key(role_key, unit_bp)
+	if custom_board_cache_key == "":
+		return
+	editor_board_visual_domain_revision_key = _editor_board_visual_domain_key(
+		role_key,
+		unit_bp,
+		custom_board_enabled,
+		custom_board_cache_key,
+		_editor_lightweight_board_stats()
+	)
+
+
 func _editor_fast_enriched_board_node(role_key: String, unit_bp: Dictionary, source_nodes: Array, source_edges: Array, index: int) -> Dictionary:
 	if index < 0 or index >= source_nodes.size() or not (source_nodes[index] is Dictionary):
 		return {}
@@ -14575,6 +14612,7 @@ func _refresh_editor_visual_views_fast_drag(changed_nodes: Array = [], component
 		"language": ui_language,
 		"motion_phase": editor_canvas_motion_phase,
 	}, fast_revision)
+	_sync_editor_board_visual_domain_after_fast_update(role_key, unit_bp, base_key)
 	_refresh_editor_orientation_popup()
 	if hot_path_profiler != null:
 		hot_path_profiler.scope_end("pose.visual.apply_diff")
@@ -14605,6 +14643,7 @@ func _apply_editor_component_node_direct(node_index: int, defer_draw: bool = tru
 		_editor_board_dynamic_revision_key(),
 	]
 	assembly_board_view.apply_component_node_diff(node_index, node, fast_revision, defer_draw)
+	_sync_editor_board_visual_domain_after_fast_update(role_key, unit_bp)
 	return true
 
 
@@ -23403,6 +23442,16 @@ func _schedule_editor_stats_idle_refresh(reason: String, delay_msec: int = 150) 
 	editor_board_stats_idle_reason = reason
 
 
+func _editor_lightweight_board_stats() -> Dictionary:
+	return {
+		"joint_slot_profiles": [],
+		"swept_collision_count": 0,
+		"cost": 0,
+		"illegal": false,
+		"lightweight": true,
+	}
+
+
 func _mark_editor_board_interaction_dirty(reason: String, include_stats: bool = false, flush_now: bool = true) -> void:
 	var flags := EDITOR_DIRTY_BOARD_UI | EDITOR_DIRTY_ACTION_BUTTONS
 	if include_stats:
@@ -23458,13 +23507,7 @@ func flush_editor_dirty(budget_usec: int = 0) -> void:
 			hot_path_profiler.scope_begin("teamedit.flush.board_ui")
 		var board_ui_stats := stats
 		if board_ui_stats.is_empty() and (flags & (EDITOR_DIRTY_STATS | EDITOR_DIRTY_LEGALITY | EDITOR_DIRTY_DASHBOARD | EDITOR_DIRTY_DETAIL)) == 0:
-			board_ui_stats = {
-				"joint_slot_profiles": [],
-				"swept_collision_count": 0,
-				"cost": 0,
-				"illegal": false,
-				"lightweight": true,
-			}
+			board_ui_stats = _editor_lightweight_board_stats()
 		_update_editor_board_ui(role_key, unit_bp, board_ui_stats)
 		if hot_path_profiler != null:
 			hot_path_profiler.scope_end("teamedit.flush.board_ui")
@@ -23473,13 +23516,7 @@ func flush_editor_dirty(budget_usec: int = 0) -> void:
 			hot_path_profiler.scope_begin("teamedit.flush.board")
 		var board_visual_stats := stats
 		if board_visual_stats.is_empty() and (flags & (EDITOR_DIRTY_STATS | EDITOR_DIRTY_LEGALITY | EDITOR_DIRTY_DASHBOARD | EDITOR_DIRTY_DETAIL)) == 0:
-			board_visual_stats = {
-				"joint_slot_profiles": [],
-				"swept_collision_count": 0,
-				"cost": 0,
-				"illegal": false,
-				"lightweight": true,
-			}
+			board_visual_stats = _editor_lightweight_board_stats()
 		_refresh_editor_visual_views(board_visual_stats, false)
 		if hot_path_profiler != null:
 			hot_path_profiler.scope_end("teamedit.flush.board")
@@ -46760,21 +46797,7 @@ func _update_editor_board_ui(role_key: String, unit_bp: Dictionary, precomputed_
 	if catalog_domain_key != editor_catalog_domain_revision_key:
 		editor_catalog_domain_revision_key = catalog_domain_key
 		_update_editor_catalog_buttons(role_key, unit_bp)
-	var visual_domain_key := "%s|%s|%s|%s|%d|%d|%s|%s|%s|%s|%s|%s|%d" % [
-		role_key,
-		str(custom_board_enabled),
-		custom_board_cache_key,
-		_editor_board_dynamic_revision_key() if custom_board_enabled else "",
-		editor_topology_node_index,
-		editor_open_torso_node_index,
-		editor_board_tool,
-		editor_pending_place_slot,
-		str(editor_pending_place_index),
-		editor_pending_payload_slot,
-		str(editor_pending_payload_index),
-		_editor_visual_stats_revision_key(precomputed_stats),
-		1 if editor_barrier_grid_guides_enabled else 0,
-	]
+	var visual_domain_key := _editor_board_visual_domain_key(role_key, unit_bp, custom_board_enabled, custom_board_cache_key, precomputed_stats)
 	if visual_domain_key != editor_board_visual_domain_revision_key:
 		editor_board_visual_domain_revision_key = visual_domain_key
 		_refresh_editor_visual_views(precomputed_stats)
