@@ -160,6 +160,7 @@ const SAVED_UNITS_DIR = "user://saved_units"
 const SAVED_UNIT_SCHEMA_VERSION = "momentum_chain_v3"
 const SAVE_KIND_SINGLE_UNIT = "single_unit"
 const SAVE_KIND_PUPPET_GROUP = "puppet_group"
+const BUILTIN_HERO_PRESET_SOURCE_PREFIX = "builtin://hero_presets/"
 const BATTLE_INPUT_BINDINGS_PATH = "user://battle_input_bindings.json"
 const PERFORMANCE_SETTINGS_PATH = "user://performance_settings.json"
 const PERFORMANCE_PROFILE_DEFAULT = "balanced_4080s"
@@ -4392,6 +4393,189 @@ func _unit_library_entries() -> Array:
 	return saved_unit_library_cache
 
 
+func _builtin_hero_preset_entries() -> Array:
+	var entries: Array = []
+	for definition in _builtin_hero_preset_definitions():
+		var preset_key := String(definition.get("key", ""))
+		var blueprint := _builtin_hero_preset_blueprint(definition)
+		if preset_key == "" or blueprint.is_empty():
+			continue
+		var unit_name := String(blueprint.get("unit_name", blueprint.get("name", preset_key)))
+		entries.append({
+			"unit_library": true,
+			"builtin_hero_preset": true,
+			"path": BUILTIN_HERO_PRESET_SOURCE_PREFIX + preset_key,
+			"role": "hero",
+			"unit_name": unit_name,
+			"save_kind": SAVE_KIND_SINGLE_UNIT,
+			"blueprint": blueprint,
+		})
+	return entries
+
+
+func _builtin_hero_preset_definitions() -> Array:
+	return [
+		{
+			"key": "twin_snap",
+			"name_zh": "预设英雄：双连突击",
+			"name_en": "Preset Hero: Twin Snap",
+			"root_label": "TWIN",
+			"chain_a": "EDGE",
+			"chain_b": "REACH",
+			"origin": Vector2(0.42, 0.52),
+			"axis": Vector2.RIGHT,
+			"attack_key": 1,
+		},
+		{
+			"key": "mirror_guard",
+			"name_zh": "预设英雄：镜卫回斩",
+			"name_en": "Preset Hero: Mirror Guard",
+			"root_label": "MIRROR",
+			"chain_a": "GUARD",
+			"chain_b": "HOOK",
+			"origin": Vector2(0.58, 0.52),
+			"axis": Vector2.LEFT,
+			"attack_key": 2,
+		},
+		{
+			"key": "rising_arc",
+			"name_zh": "预设英雄：升弧连刃",
+			"name_en": "Preset Hero: Rising Arc",
+			"root_label": "ARC",
+			"chain_a": "LIFT",
+			"chain_b": "FALL",
+			"origin": Vector2(0.46, 0.62),
+			"axis": Vector2(0.55, -0.85),
+			"attack_key": 3,
+		},
+	]
+
+
+func _builtin_hero_preset_blueprint(definition: Dictionary) -> Dictionary:
+	var torso_index := _builtin_hero_torso_index()
+	var limb_index := _builtin_hero_limb_index()
+	var engine_index := _builtin_hero_engine_index()
+	var booster_index := _builtin_hero_booster_index()
+	var cooling_index := _builtin_hero_cooling_index()
+	var module_index := _builtin_hero_two_link_module_index()
+	var soul_index := _builtin_hero_soul_index()
+	if torso_index < 0 or limb_index < 0 or engine_index < 0 or booster_index < 0 or cooling_index < 0 or module_index < 0:
+		return {}
+	var unit: Dictionary = _make_editor_blank_blueprint("hero")
+	var nodes: Array = []
+	var edges: Array = []
+	var origin: Vector2 = definition.get("origin", Vector2(0.5, 0.5))
+	var axis: Vector2 = definition.get("axis", Vector2.RIGHT)
+	if axis.length() <= 0.001:
+		axis = Vector2.RIGHT
+	axis = axis.normalized()
+	var torso: int = _append_component_root_node(nodes, String(definition.get("root_label", "HERO")), origin, torso_index)
+	var limb_a: int = _append_directed_component_node("hero", unit, nodes, edges, torso, String(definition.get("chain_a", "A")), "limb_muscle", limb_index, axis, [module_index])
+	var limb_b: int = _append_directed_component_node("hero", unit, nodes, edges, limb_a, String(definition.get("chain_b", "B")), "limb_muscle", limb_index, axis)
+	var unit_name := String(definition.get("name_zh", definition.get("name_en", definition.get("key", "Preset Hero"))))
+	var preset_key := String(definition.get("key", unit_name))
+	unit["name"] = unit_name
+	unit["unit_name"] = unit_name
+	unit["unit_id"] = "builtin_%s" % preset_key
+	unit["role"] = "hero"
+	unit["blank_canvas"] = false
+	unit["builtin_hero_preset"] = true
+	unit["builtin_hero_preset_key"] = preset_key
+	unit["special"] = soul_index
+	unit["muscle"] = torso_index
+	unit["limb_muscle"] = limb_index
+	unit["engine"] = engine_index
+	unit["booster"] = booster_index
+	unit["cooling"] = cooling_index
+	unit["module"] = module_index
+	unit["slot_payloads"] = [
+		{"kind": "engine", "engine": engine_index, "torso_node": torso},
+		{"kind": "booster", "booster": booster_index, "torso_node": torso},
+		{"kind": "cooling", "cooling": cooling_index, "torso_node": torso},
+		{"kind": "module", "module": module_index, "torso_node": torso},
+	]
+	if soul_index >= 0:
+		unit["slot_payloads"].append({"kind": "special", "special": soul_index, "torso_node": torso})
+	unit["module_bindings"] = [{
+		"software_slot_index": 3,
+		"module_index": module_index,
+		"attack_key": int(definition.get("attack_key", 1)),
+		"target_kind": "limb",
+		"root_index": limb_a,
+		"target_nodes": [limb_a, limb_b],
+		"target_torso_node": torso,
+	}]
+	unit["custom_topology"] = {"nodes": nodes, "edges": edges, "edge_snap_version": TOPOLOGY_SNAP_VERSION}
+	_topology_update_local_pose_fields("hero", unit)
+	var canonical := _unit_blueprint_for_library("hero", unit)
+	canonical["name"] = unit_name
+	canonical["unit_name"] = unit_name
+	canonical["unit_id"] = "builtin_%s" % preset_key
+	canonical["role"] = "hero"
+	canonical["builtin_hero_preset"] = true
+	canonical["builtin_hero_preset_key"] = preset_key
+	return canonical
+
+
+func _builtin_hero_torso_index() -> int:
+	for i in range(_catalog_for("hero", "muscle").size()):
+		var part: Dictionary = _selected_component("hero", "muscle", i)
+		if _component_is_torso(part) and _part_slot_volume_rank(part, "muscle") <= 2.0 and _torso_plugin_capacity_for_part(part) >= 3 and _torso_software_capacity_for_part(part) >= 1:
+			return i
+	return -1
+
+
+func _builtin_hero_limb_index() -> int:
+	for i in range(_catalog_for("hero", "limb_muscle").size()):
+		var part: Dictionary = _selected_component("hero", "limb_muscle", i)
+		if _part_slot_volume_rank(part, "limb_muscle") <= 2.0 and _limb_momentum_max_for_part(part, "limb_muscle") > _limb_momentum_min_for_part(part, "limb_muscle") and String(part.get("joint_drive_kind", _joint_drive_kind_for_part(part, "limb_muscle"))).find("rigid") < 0:
+			return i
+	return -1
+
+
+func _builtin_hero_engine_index() -> int:
+	for i in range(_catalog_for("hero", "engine").size()):
+		var part: Dictionary = _selected_component("hero", "engine", i)
+		if _payload_slot_volume_rank("engine", part, {"kind": "engine"}, "engine") <= 2.0 and _engine_momentum_output_for_part(part) > 0.0:
+			return i
+	return -1
+
+
+func _builtin_hero_booster_index() -> int:
+	for i in range(_catalog_for("hero", "booster").size()):
+		var part: Dictionary = _selected_component("hero", "booster", i)
+		if _payload_slot_volume_rank("booster", part, {"kind": "booster"}, "booster") <= 2.0 and _thruster_drive_allocation_min_for_part(part) > 0.0:
+			return i
+	return -1
+
+
+func _builtin_hero_cooling_index() -> int:
+	for i in range(_catalog_for("hero", "cooling").size()):
+		var part: Dictionary = _selected_component("hero", "cooling", i)
+		if _payload_slot_volume_rank("cooling", part, {"kind": "cooling"}, "cooling") <= 2.0 and _cooling_heat_capacity_for_part(part) > 0.0:
+			return i
+	return -1
+
+
+func _builtin_hero_two_link_module_index() -> int:
+	for i in range(_catalog_for("hero", "module").size()):
+		var part: Dictionary = _selected_component("hero", "module", i)
+		if String(part.get("module_action_profile", "")) == "two_link_forward_snap":
+			return i
+	return -1
+
+
+func _builtin_hero_soul_index() -> int:
+	var exact_index := _component_index_by_exact_name("hero", "special", "SOUL: FIRST EDGE ECHO")
+	if exact_index >= 0:
+		return exact_index
+	for i in range(_catalog_for("hero", "special").size()):
+		var part: Dictionary = _selected_component("hero", "special", i)
+		if String(part.get("kind", "")) == "soul":
+			return i
+	return -1
+
+
 func _latest_saved_unit_named(unit_name: String) -> Dictionary:
 	return _saved_unit_library_service().latest_entry_named(_unit_library_entries(), unit_name)
 
@@ -4704,7 +4888,10 @@ func _load_unit_library_entry_to_canvas(entry: Dictionary) -> void:
 	editor_dragging_whole_unit = false
 	editor_open_torso_node_index = -1
 	editor_hovered_torso_node_index = -1
-	editor_summary_label.text = "已从单位库载入到临时画布：%s。再次保存才会覆盖/新增单位文件。" % String(entry.get("unit_name", "")) if _ui_is_zh() else "Loaded unit library item into the temporary canvas: %s. Save again to write a unit file." % String(entry.get("unit_name", ""))
+	if bool(entry.get("builtin_hero_preset", false)):
+		editor_summary_label.text = "已载入内置英雄预设到临时画布：%s。可直接训练、加入队伍或另存到单位库。" % String(entry.get("unit_name", "")) if _ui_is_zh() else "Loaded built-in hero preset into the temporary canvas: %s. Train it, add it to a team, or save it to the unit library." % String(entry.get("unit_name", ""))
+	else:
+		editor_summary_label.text = "已从单位库载入到临时画布：%s。再次保存才会覆盖/新增单位文件。" % String(entry.get("unit_name", "")) if _ui_is_zh() else "Loaded unit library item into the temporary canvas: %s. Save again to write a unit file." % String(entry.get("unit_name", ""))
 	_update_editor_ui()
 
 
@@ -7690,7 +7877,11 @@ func _editor_load_entries() -> Array:
 	if editor_load_mode == "team":
 		return _editor_team_order_entries(player_id)
 	if editor_load_mode == "unit":
-		return _unit_library_entries()
+		var unit_entries: Array = []
+		if ROLE_ORDER[editor_role_index] == "hero":
+			unit_entries.append_array(_builtin_hero_preset_entries())
+		unit_entries.append_array(_unit_library_entries())
+		return unit_entries
 	var role_key: String = ROLE_ORDER[editor_role_index]
 	var roster: Array = blueprints.get(player_id, {}).get(role_key, [])
 	var entries: Array = []
@@ -46256,6 +46447,9 @@ func _update_editor_load_card_buttons(role_key: String) -> void:
 		if editor_load_mode == "team":
 			prefix = ("队" if _ui_is_zh() else "T")
 			_set_control_position_if_changed(button, Vector2(936.0, 224.0 + float(i) * 34.0))
+		elif bool(entry.get("builtin_hero_preset", false)):
+			prefix = ("预" if _ui_is_zh() else "P")
+			_set_control_position_if_changed(button, Vector2(936.0, 250.0 + float(i) * 34.0))
 		else:
 			prefix = ("库" if _ui_is_zh() else "U")
 			_set_control_position_if_changed(button, Vector2(936.0, 250.0 + float(i) * 34.0))
@@ -46263,7 +46457,7 @@ func _update_editor_load_card_buttons(role_key: String) -> void:
 		var localized_name := _short_part_name(String(stats.get("name", "")))
 		var index_text := ("#%d" % (entry_index + 1)) if entry_index >= 0 else ""
 		_set_control_text_if_changed(button, "%s%02d %s%s  %s  ¥%d" % [prefix, actual_index + 1, _role_short(entry_role), index_text, localized_name, int(stats.get("cost", 0))] if _ui_is_zh() else "%s%02d %s%s  %s  $%d" % [prefix, actual_index + 1, _role_short(entry_role), index_text, localized_name, int(stats.get("cost", 0))])
-		_set_canvas_item_modulate_if_changed(button, Color(0.38, 0.96, 1.0, 1.0) if bool(entry.get("unit_library", false)) else (Color(1.0, 0.86, 0.28, 1.0) if (editor_load_mode == "unit" and entry_index == int(editor_unit_indices.get(entry_role, 0))) else Color(0.84, 0.9, 0.94, 1.0)))
+		_set_canvas_item_modulate_if_changed(button, Color(0.74, 1.0, 0.48, 1.0) if bool(entry.get("builtin_hero_preset", false)) else (Color(0.38, 0.96, 1.0, 1.0) if bool(entry.get("unit_library", false)) else (Color(1.0, 0.86, 0.28, 1.0) if (editor_load_mode == "unit" and entry_index == int(editor_unit_indices.get(entry_role, 0))) else Color(0.84, 0.9, 0.94, 1.0))))
 
 
 func _refresh_editor_assembly_guide_ui(parts_visible: bool, role_key: String) -> void:

@@ -210,6 +210,8 @@ Puppet Source Code defines deterministic behavior routines:
 - `CODE: SCREEN WALL` forms a moving line between the enemy hero and your hero.
 - `CODE: MINE DANCE` orbits the target and periodically creates wider strike pockets.
 
+Player-facing starter references for puppet groups live in `docs/plans/2026-06-22-puppet-standard-schemes.md`. These are standard schemes, not legality gates: players can modify the Source Code, bodies, weapons, modules, budget split, and saved-group membership freely.
+
 Barrier ether now supports space-control logic:
 
 - `ETHER: HEAT WELL` adds heat to enemies inside its area.

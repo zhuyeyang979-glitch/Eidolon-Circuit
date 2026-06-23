@@ -117,6 +117,7 @@
     "training_import_spawn_role_probe",
     "training_all_entrypoints_require_seat_probe",
     "starter_build_gradient_probe",
+    "prebuilt_hero_presets_probe",
     "unit_build_rule_service_probe",
     "unit_build_rule_training_gate_probe",
     "unit_library_legality_gate_probe",
