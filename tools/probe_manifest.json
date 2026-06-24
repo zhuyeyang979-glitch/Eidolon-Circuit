@@ -91,6 +91,7 @@
     "keyboard_reserved_static_guard_probe"
   ],
   "current": [
+    "star_soul_bp_service_probe",
     "part_gradient_curve_probe",
     "part_gradient_outlier_probe",
     "thruster_dual_gradient_probe",
