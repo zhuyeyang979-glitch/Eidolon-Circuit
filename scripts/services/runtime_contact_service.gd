@@ -204,6 +204,10 @@ func damage_type(collider: Dictionary, melee_damage_types: Array) -> String:
 	if collider_uses_torso_damage(collider):
 		return "blunt"
 	var result := String(collider.get("damage_type", "blunt"))
+	if result == "slash":
+		result = "tear"
+	elif result == "stab":
+		result = "pierce"
 	if not melee_damage_types.has(result):
 		return "blunt"
 	return result
@@ -335,6 +339,7 @@ func damage_intent(context: Dictionary) -> Dictionary:
 		return {"should_apply": false, "reason": "zero_damage", "damage_float": damage_float}
 	var threshold := maxf(0.0, float(context.get("break_threshold", 0.5)))
 	var damage_type_value := String(context.get("damage_type", "blunt"))
+	var threshold_blocked := damage_float <= threshold
 	var event := {
 		"state": "normal",
 		"projectile": false,
@@ -352,10 +357,21 @@ func damage_intent(context: Dictionary) -> Dictionary:
 		"momentum_vector": normal * usable_momentum,
 		"momentum_magnitude": usable_momentum,
 		"raw_momentum": contact_momentum,
+		"capped_momentum": usable_momentum,
 		"usable_contact_momentum": usable_momentum,
+		"damage_coefficient": maxf(0.0, float(context.get("damage_coeff", 0.0))),
+		"adjustment_coefficient": float(context.get("contact_damage_scale", 0.09)) * maxf(0.0, float(context.get("vulnerability_multiplier", 1.0))),
 		"attacker_path_stiffness": attacker_path_stiffness,
 		"target_path_stiffness": maxf(1.0, float(context.get("target_path_stiffness", 1.0))),
+		"break_value": threshold,
 		"break_threshold": threshold,
+		"break_value_adjustment": 1.0,
+		"effective_break_value": threshold,
+		"break_gate": threshold,
+		"threshold_blocked": threshold_blocked,
+		"contact_gate_blocked": threshold_blocked,
+		"knock_adjustment_coefficient": 1.0,
+		"knock_momentum": usable_momentum,
 		"damage_after_break": damage_float,
 		"contact_damage": damage_float,
 		"target_part_index": int(target_collider.get("part_index", -1)),
@@ -369,9 +385,10 @@ func damage_intent(context: Dictionary) -> Dictionary:
 	}
 	return {
 		"should_apply": true,
-		"threshold_blocked": damage_float < threshold,
+		"threshold_blocked": threshold_blocked,
 		"usable_momentum": usable_momentum,
 		"damage_float": damage_float,
+		"break_value": threshold,
 		"break_threshold": threshold,
 		"event": event,
 	}

@@ -42,12 +42,12 @@ func _init() -> void:
 		_fail("Assembly guide label should be visible on the parts panel.")
 	if not tutorial_label.visible:
 		_fail("Assembly tutorial label should be visible on the parts panel.")
-	if guide_label.text.find("1/9") < 0 or guide_label.text.find("躯干") < 0:
-		_fail("Assembly guide should start at the torso step, got: %s." % guide_label.text)
+	if guide_label.text.find("1/9") < 0 or guide_label.text.find("核心") < 0:
+		_fail("Assembly guide should start at the core step, got: %s." % guide_label.text)
 	if tutorial_label.text.find("作用") < 0 or tutorial_label.text.find("限制") < 0 or tutorial_label.text.find("下一步") < 0:
 		_fail("Assembly tutorial should explain function, limits, and next action, got: %s." % tutorial_label.text)
-	if tutorial_label.text.find("躯干") < 0:
-		_fail("First tutorial step should explain torso assembly, got: %s." % tutorial_label.text)
+	if tutorial_label.text.find("核心") < 0:
+		_fail("First tutorial step should explain core assembly, got: %s." % tutorial_label.text)
 	for action_key in ["assembly_guide_prev", "assembly_guide_apply", "assembly_guide_next", "auto_connect", "evaluate_connection", "restore_suggested_connection"]:
 		if not main.editor_action_buttons.has(action_key):
 			_fail("Missing guide or connection action button: %s." % action_key)
@@ -55,8 +55,8 @@ func _init() -> void:
 		if not button.visible:
 			_fail("Guide or connection action should be visible: %s." % action_key)
 	main._editor_action("assembly_guide_next")
-	_assert_catalog(main, "limb", "connector_limb", "Guide next should jump to joint/muscle.")
-	if tutorial_label.text.find("关节") < 0 and tutorial_label.text.find("肌肉") < 0:
+	_assert_catalog(main, "limb", "connector_limb", "Guide next should jump to connector.")
+	if tutorial_label.text.find("连接件") < 0:
 		_fail("Tutorial text should update after guide next, got: %s." % tutorial_label.text)
 	main._editor_action("assembly_guide_next")
 	_assert_catalog(main, "terminal_weapon", "weapon_all", "Guide next should jump to weapon.")
@@ -84,9 +84,17 @@ func _init() -> void:
 		_fail("Manual cooling selection should sync guide state, got: %s." % guide_label.text)
 	main._editor_action("assembly_guide_next")
 	_assert_catalog(main, "software_muscle", "booster", "Guide next after manual cooling should continue to booster.")
+	main._set_ui_language("en")
+	var booster_filter := _filter_index(main, "software_muscle", "booster")
+	var booster_options: Array = main._part_filter_options_for_group("software_muscle")
+	if booster_filter < 0 or String(Dictionary(booster_options[booster_filter]).get("en", "")) != "THRUSTER":
+		_fail("Booster compatibility filter should be player-facing THRUSTER.")
+	main._set_ui_language("zh")
 	var torso_group_button: Button = main.editor_part_group_buttons.get("torso", null)
 	if torso_group_button == null or not torso_group_button.visible or torso_group_button.disabled:
 		_fail("Manual part group buttons should remain available while guide is visible.")
+	if torso_group_button.text.find("核心") < 0:
+		_fail("Core group button should use the player-facing 核心 label: %s" % torso_group_button.text)
 	if failed:
 		quit(1)
 		return

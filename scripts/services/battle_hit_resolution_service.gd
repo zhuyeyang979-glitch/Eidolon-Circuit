@@ -81,6 +81,79 @@ func target_hit_context(event: Dictionary, hit: Dictionary, target_snapshot: Dic
 	}
 
 
+func momentum_damage_gate_intent(context: Dictionary) -> Dictionary:
+	var momentum := maxf(0.0, float(context.get("momentum", 0.0)))
+	var raw_momentum := maxf(momentum, float(context.get("raw_momentum", momentum)))
+	var damage_coefficient := maxf(0.0, float(context.get("damage_coefficient", context.get("damage_coeff", 1.0))))
+	var adjustment_coefficient := maxf(0.0, float(context.get("adjustment_coefficient", context.get("damage_adjustment_coefficient", 1.0))))
+	var non_damage := bool(context.get("non_damage", false))
+	var damage_value := 0.0
+	if not non_damage:
+		damage_value = maxf(0.0, float(context.get("precomputed_damage", momentum * damage_coefficient * adjustment_coefficient)))
+	var break_value := maxf(0.0, float(context.get("break_value", context.get("break_threshold", 0.0))))
+	var break_value_adjustment := maxf(0.0, float(context.get("break_value_adjustment", context.get("break_adjustment_coefficient", 1.0))))
+	var effective_break_value := break_value * break_value_adjustment
+	var threshold_blocked := false
+	if not non_damage and not bool(context.get("skip_break_gate", false)):
+		threshold_blocked = damage_value <= effective_break_value
+	var knock_adjustment := maxf(0.0, float(context.get("knock_adjustment_coefficient", context.get("knock_adjustment", 1.0))))
+	return {
+		"formula": "momentum_damage_gate",
+		"raw_momentum": raw_momentum,
+		"momentum": momentum,
+		"capped_momentum": momentum,
+		"damage_coefficient": damage_coefficient,
+		"adjustment_coefficient": adjustment_coefficient,
+		"damage_value": damage_value,
+		"damage": int(roundf(damage_value)),
+		"break_value": break_value,
+		"break_value_adjustment": break_value_adjustment,
+		"effective_break_value": effective_break_value,
+		"break_gate": effective_break_value,
+		"threshold_blocked": threshold_blocked,
+		"blocked": threshold_blocked,
+		"knock_adjustment_coefficient": knock_adjustment,
+		"knock_momentum": momentum * knock_adjustment,
+		"non_damage": non_damage,
+	}
+
+
+func melee_type_adjustments(damage_type: String) -> Dictionary:
+	var key := damage_type.strip_edges().to_lower()
+	match key:
+		"tear", "slash":
+			return {
+				"internal_damage_type": "tear",
+				"player_damage_type": "slash",
+				"damage_adjustment": 1.5,
+				"break_value_adjustment": 1.0,
+				"knock_adjustment": 1.0,
+			}
+		"pierce", "stab":
+			return {
+				"internal_damage_type": "pierce",
+				"player_damage_type": "stab",
+				"damage_adjustment": 1.0,
+				"break_value_adjustment": 0.5,
+				"knock_adjustment": 1.0,
+			}
+		"blunt":
+			return {
+				"internal_damage_type": "blunt",
+				"player_damage_type": "blunt",
+				"damage_adjustment": 1.0,
+				"break_value_adjustment": 1.0,
+				"knock_adjustment": 2.0,
+			}
+	return {
+		"internal_damage_type": key,
+		"player_damage_type": key,
+		"damage_adjustment": 1.0,
+		"break_value_adjustment": 1.0,
+		"knock_adjustment": 1.0,
+	}
+
+
 func combo_scaling_intent(context: Dictionary) -> Dictionary:
 	if int(context.get("damage", 0)) <= 0 or not bool(context.get("combo_active", false)):
 		return {
@@ -135,7 +208,7 @@ func damage_stack_intent(context: Dictionary) -> Dictionary:
 			"blocked": false,
 			"non_damage": non_damage,
 		}
-	if not non_damage:
+	if not non_damage and not contact_gate_blocked:
 		damage = max(1, int(roundf(raw_damage * float(context.get("multiplier", 1.0)))))
 		damage = int(context.get("melee_adjusted_damage", damage))
 		damage = int(context.get("material_adjusted_damage", damage))
@@ -323,6 +396,7 @@ func momentum_response_intent(context: Dictionary) -> Dictionary:
 		"hit_displacement_direct":
 			var event_momentum := maxf(float(context.get("event_momentum", 0.0)), float(context.get("fallback_momentum", 0.0)))
 			var transfer := event_momentum * (0.82 if bool(context.get("projectile", false)) else 0.58)
+			transfer *= maxf(0.0, float(context.get("knock_adjustment_coefficient", 1.0)))
 			if bool(context.get("nullified", false)):
 				transfer *= 0.35
 			transfer *= clampf(float(context.get("combo_knock_mult", 1.0)), 1.0, minf(float(context.get("combo_knock_max_mult", 1.0)), 1.65))
@@ -336,6 +410,7 @@ func momentum_response_intent(context: Dictionary) -> Dictionary:
 			}
 		"hit_displacement_projectile":
 			var projectile_push := float(context.get("base_knock", 0.08)) * float(context.get("projectile_space_impulse_mult", 1.0)) * (0.82 if bool(context.get("nullified", false)) else 1.0)
+			projectile_push *= maxf(0.0, float(context.get("knock_adjustment_coefficient", 1.0)))
 			projectile_push *= 1.0 + clampf(float(context.get("damage_for_knock", 0.0)) / 80.0, 0.0, 0.45)
 			projectile_push *= float(context.get("combo_knock_mult", 1.0))
 			var target_anchor := clampf(float(context.get("target_anchor", 0.0)), 0.0, 1.0)
@@ -354,9 +429,9 @@ func momentum_response_intent(context: Dictionary) -> Dictionary:
 			var attacker_anchor := clampf(float(context.get("attacker_anchor", 0.0)), 0.0, 1.0)
 			var target_anchor := clampf(float(context.get("target_anchor", 0.0)), 0.0, 1.0)
 			var impact_scale := 0.38 if bool(context.get("nullified", false)) else 1.0
-			var blunt_launch_mult := 2.0 if String(context.get("damage_type", "blunt")) == "blunt" else 1.0
+			var knock_adjustment := maxf(0.0, float(context.get("knock_adjustment_coefficient", 1.0)))
 			var space_impulse := maxf(0.22, float(context.get("base_knock", 0.08)) * 2.8 + float(context.get("damage_for_knock", 0.0)) * 0.006 + float(context.get("part_radius", 0.0)))
-			space_impulse *= float(context.get("melee_space_impulse_mult", 1.0)) * blunt_launch_mult * impact_scale * float(context.get("combo_knock_mult", 1.0))
+			space_impulse *= float(context.get("melee_space_impulse_mult", 1.0)) * knock_adjustment * impact_scale * float(context.get("combo_knock_mult", 1.0))
 			var attacker_move := space_impulse * attacker_share * (1.0 - attacker_anchor)
 			var target_move := space_impulse * target_share * (1.0 - target_anchor * 0.36)
 			return {
@@ -381,6 +456,7 @@ func post_hit_intents(context: Dictionary) -> Array:
 	var nullified := bool(context.get("nullified", false))
 	if blocked:
 		intents.append({"action": "projectile_stagger" if projectile else "active_melee_stagger"})
+		intents.append({"action": "hit_displacement"})
 		intents.append({"action": "hitstop", "damage": 0})
 		intents.append({"action": "continue_target"})
 		return intents

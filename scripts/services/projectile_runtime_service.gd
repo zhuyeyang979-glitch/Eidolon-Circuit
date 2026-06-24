@@ -55,6 +55,38 @@ func projectile_behavior_key(event: Dictionary) -> String:
 	return ""
 
 
+func projectile_ammo_family(event: Dictionary) -> String:
+	# Player-facing electric ammo still uses the legacy internal "laser" key.
+	var ammo_kind := String(event.get("ammo_kind", "")).strip_edges().to_lower()
+	match ammo_kind:
+		"bullet", "metal", "metal_bullet":
+			return "metal"
+		"laser", "electric", "energy":
+			return "electric"
+		"chemical", "chemical_splash", "acid":
+			return "chemical"
+		"explosive", "explosion", "missile":
+			return "explosive"
+		"web", "silk", "thread":
+			return "web"
+	match projectile_behavior_key(event):
+		"laser":
+			return "electric"
+		"chemical":
+			return "chemical"
+		"true_bullet", "bullet_hell":
+			return "metal"
+		"explosive":
+			return "explosive"
+		"web_tether":
+			return "web"
+	return ""
+
+
+func projectile_uses_fixed_momentum(event: Dictionary) -> bool:
+	return projectile_ammo_family(event) in ["electric", "chemical"]
+
+
 func ammo_type_for_event(event: Dictionary, valid_ammo_types: Array) -> String:
 	var ammo_kind := _normalized_ammo_type(String(event.get("ammo_kind", "")), valid_ammo_types)
 	if _ammo_type_list_has(valid_ammo_types, ammo_kind):
@@ -139,6 +171,12 @@ func projectile_drive_momentum_mult_for_event(event: Dictionary) -> float:
 func projectile_drive_momentum_fields(event: Dictionary) -> Dictionary:
 	if not bool(event.get("projectile", false)):
 		return {}
+	if projectile_uses_fixed_momentum(event):
+		return {
+			"projectile_base_momentum": 1.0,
+			"projectile_drive_momentum_mult": 1.0,
+			"projectile_effective_momentum": 1.0,
+		}
 	var base_momentum := maxf(0.0, float(event.get("projectile_base_momentum", event.get("projectile_momentum", 0.0))))
 	var drive_mult := projectile_drive_momentum_mult_for_event(event)
 	return {
@@ -149,6 +187,8 @@ func projectile_drive_momentum_fields(event: Dictionary) -> Dictionary:
 
 
 func projectile_default_momentum_for_event(event: Dictionary, constants: Dictionary) -> float:
+	if projectile_uses_fixed_momentum(event):
+		return 1.0
 	match projectile_behavior_key(event):
 		"true_bullet":
 			return float(constants.get("projectile_momentum_true_bullet", 96.0))
@@ -157,9 +197,9 @@ func projectile_default_momentum_for_event(event: Dictionary, constants: Diction
 		"bullet_hell":
 			return float(constants.get("projectile_momentum_bullet_hell", 48.0))
 		"laser":
-			return float(constants.get("projectile_momentum_laser", 18.0))
+			return 1.0
 		"chemical":
-			return float(constants.get("projectile_momentum_chemical", 16.0))
+			return 1.0
 	return 0.0
 
 
@@ -186,12 +226,15 @@ func projectile_collision_speed_for_event(event: Dictionary, constants: Dictiona
 func projectile_mass_for_event(event: Dictionary, constants: Dictionary, collision_speed: float = -1.0) -> float:
 	if not bool(event.get("projectile", false)):
 		return 0.0
+	var speed := collision_speed if collision_speed > 0.0 else projectile_collision_speed_for_event(event, constants)
+	var behavior_key := projectile_behavior_key(event)
+	if projectile_uses_fixed_momentum(event) and speed > 0.001:
+		return maxf(0.01, 1.0 / speed)
 	if float(event.get("projectile_mass", 0.0)) > 0.0:
 		return maxf(0.0, float(event["projectile_mass"]))
-	var speed := collision_speed if collision_speed > 0.0 else projectile_collision_speed_for_event(event, constants)
 	if event.has("projectile_momentum") and float(event.get("projectile_momentum", 0.0)) > 0.0 and speed > 0.001:
 		return maxf(0.01, float(event["projectile_momentum"]) * projectile_drive_momentum_mult_for_event(event) / speed)
-	match projectile_behavior_key(event):
+	match behavior_key:
 		"true_bullet":
 			return float(constants.get("projectile_mass_true_bullet", 3.0))
 		"explosive":
@@ -208,6 +251,15 @@ func projectile_mass_for_event(event: Dictionary, constants: Dictionary, collisi
 func projectile_momentum_state_for_event(event: Dictionary, constants: Dictionary) -> Dictionary:
 	if not bool(event.get("projectile", false)):
 		return {"momentum": 0.0, "fields": {}}
+	if projectile_uses_fixed_momentum(event):
+		return {
+			"momentum": 1.0,
+			"fields": {
+				"projectile_base_momentum": 1.0,
+				"projectile_drive_momentum_mult": 1.0,
+				"projectile_effective_momentum": 1.0,
+			},
+		}
 	if float(event.get("projectile_momentum", 0.0)) > 0.0:
 		var base_momentum := maxf(0.0, float(event.get("projectile_momentum", 0.0)))
 		var drive_mult := projectile_drive_momentum_mult_for_event(event)
@@ -239,7 +291,11 @@ func projectile_collision_momentum_intent(context: Dictionary) -> Dictionary:
 	var momentum_scale := maxf(0.0, float(context.get("momentum_scale", 1.0)))
 	var explicit_momentum := float(context.get("explicit_momentum", 0.0))
 	var momentum := projectile_mass * closing_speed * momentum_scale
-	if explicit_momentum > 0.0 and String(context.get("behavior_key", "")) == "true_bullet":
+	var behavior_key := String(context.get("behavior_key", ""))
+	var ammo_family := String(context.get("ammo_family", ""))
+	if ammo_family in ["electric", "chemical"] or behavior_key in ["laser", "chemical"]:
+		momentum = 1.0 * momentum_scale
+	elif explicit_momentum > 0.0 and behavior_key == "true_bullet":
 		momentum = explicit_momentum * momentum_scale
 	var momentum_vector := projectile_direction * momentum
 	var patch := {
@@ -308,9 +364,9 @@ func gun_projectile_damage_mult_max_for_data(data: Dictionary, resolved_gun_kind
 		"rifle":
 			return 4.0
 		"laser_gun":
-			return 3.0
+			return 54.0
 		"sprayer":
-			return 2.0
+			return 32.0
 		"grenade_launcher":
 			return 4.0
 		"missile_launcher":
@@ -319,9 +375,9 @@ func gun_projectile_damage_mult_max_for_data(data: Dictionary, resolved_gun_kind
 			return 0.0
 	match ammo_kind:
 		"laser":
-			return 3.0
+			return 54.0
 		"chemical":
-			return 2.0
+			return 32.0
 		"explosive":
 			return 4.0
 		"web":

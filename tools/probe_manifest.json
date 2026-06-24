@@ -91,6 +91,13 @@
     "keyboard_reserved_static_guard_probe"
   ],
   "current": [
+    "momentum_damage_gate_runtime_probe",
+    "melee_damage_type_rule_probe",
+    "unit_editor_legality_roadmap_probe",
+    "hardware_fault_design_probe",
+    "source_code_priority_service_probe",
+    "star_soul_loop_balance_examples_probe",
+    "star_soul_loop_docs_reconciliation_probe",
     "star_soul_bp_service_probe",
     "part_gradient_curve_probe",
     "part_gradient_outlier_probe",

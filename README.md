@@ -14,7 +14,7 @@ The current runtime contract is intentionally narrower than many older notes in 
 - Probe governance is tracked in `tools/probe_manifest.json`; current probes must not use old drive fixtures unless they are listed as legacy rejection checks.
 - The baseline verification command is `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120`, followed by the governance probes listed in the manifest.
 
-The game now opens to a main menu:
+The current prototype opens to a main menu:
 
 - Team Edit
 - Training
@@ -24,68 +24,142 @@ The game now opens to a main menu:
 
 The UI direction is closer to modern fighting-game front ends: big mode entries, a strong title block, an information panel, and a separate team edit lab with component art and stat readouts.
 
-## Team Construction
+## Current Implementation Status
 
-Each team owns a roster of mutually exclusive unit roles:
+Implemented in the current prototype:
 
-- Hero: contains a Soul component and is the directly controlled unit.
-- Puppet: contains Source Code and deploys as a group governed by deterministic conditions, target priorities, movement routines, and action sequences.
-- Barrier: contains Ether and behaves as a fixed space/topology.
+- Momentum damage formula, strict `damage > break_value` gate, and knock on blocked contacts.
+- Slash, stab, and blunt adjustments with compatibility aliases for old damage keys.
+- Fixed momentum `1` for electric/laser and chemical projectile families.
+- Player-facing Core, Connector, Function Module, Hybrid, and Thruster terminology in the editor path.
+- Attack diagnostics for raw momentum, capped momentum, coefficients, break gate, final damage, and knock momentum.
+- A data-only Source Code priority service with deterministic ordering and saved puppet-group round trips.
+
+Designed but not yet connected to battle/editor runtime:
+
+- Per-hardware `normal -> faulted -> destroyed` state and core-driven construct-body destruction.
+- Exact socket-size, single-manufacturer-per-construct-body, and role-identity legality gates.
+- Source Code priority controls and body-to-code runtime assignment.
+- Full PVE story and PVE roguelike progression.
+
+See [unit editor legality](docs/plans/2026-06-24-unit-editor-legality-roadmap.md), [hardware fault runtime](docs/plans/2026-06-24-hardware-fault-runtime.md), [Source Code priority](docs/plans/2026-06-24-source-code-priority-ui.md), and [balance examples](docs/reports/2026-06-24-star-soul-loop-balance-examples.md).
+
+## Gameplay Baseline
+
+The design baseline is now 星魂回环: a unit-construction battle game split into three large play families:
+
+- PVP
+- PVE story
+- PVE roguelike
+
+Before entering combat, players either edit their own units or choose prebuilt units supplied by the game. Each side can prepare heroes, puppets, and barriers from the same shared part library.
+
+Combat resolution is momentum-first:
+
+- Damage settlement: `damage = momentum * damage_coefficient * adjustment_coefficient`.
+- Damage only enters HP settlement when the computed damage is greater than the target break value.
+- Knockback or pull: `knock = momentum * adjustment_coefficient`.
+- Knockback or pull still happens even when damage is blocked by the break value.
+- Melee momentum is the attack-direction velocity times total unit mass. That velocity combines the unit's body movement and the local movement of the attacking part.
+- Projectile momentum is the momentum value supplied by the gun that fired the projectile.
+
+## Unit Editing
+
+Players edit units on the unit editor canvas. Units are split into three roles:
+
+- Hero: directly controlled by the player, must contain Soul software, and usually consists of one construct body.
+- Puppet: automatically controlled, must contain Source Code software, and may consist of one or more construct bodies.
+- Barrier: automatically controlled, must contain Ether software, usually consists of multiple non-moving construct bodies, and preserves its edited spatial layout when deployed.
+
+A construct body is a single connected body made from hardware. Each construct body can only use hardware from one manufacturer. A unit must contain at least one hardware part.
+
+Parts connect through three slot families:
+
+- Hardware slots connect hardware to hardware.
+- Software slots install software into hardware.
+- Hybrid slots install hybrid hardware/software into hardware.
+
+Every slot accepts one matching part at most, and the part size must be less than or equal to the slot size. Parts and slots use five size classes: `XS`, `S`, `M`, `L`, and `XL`. Every part has a price.
+
+## Part System
+
+Hardware parts have volume and are the physical effectors of movement and combat. All hardware exposes HP, damage coefficient, break value, mass, and momentum capacity.
+
+Hardware HP is aggregated into the construct body's total HP. Hardware damage coefficient and break value are also resolved at construct-body level unless a part has an extra adjustment, such as a melee weapon. Hardware mass is normally aggregated into the construct body's total mass. The target fault rule is: if a hardware part receives momentum above its momentum capacity during one combat settlement, that settlement uses the capacity as the momentum cap and the hardware enters fault. A faulted hardware part cannot execute related action modules; if it faults again, it is destroyed. Destroyed hardware disappears. If the destroyed part is a core, the whole construct body is destroyed and disappears. This fault state machine is currently a reviewed design, not active battle behavior.
+
+Hardware categories:
+
+- Core: the former torso category. Cores have at least one hardware slot. Neural cores are smaller, have lower damage and break coefficients, have fewer hardware slots, have software slots, and do not have hybrid slots. Motion cores are larger, have more hardware slots, have hybrid slots, and do not have software slots. Hybrid cores may combine both traits.
+- Connector: the former limb category. Connectors have at least two hardware slots and connect hardware together.
+- Weapon: usually has one hardware slot. Weapons are melee or ranged.
+- Function module: large and heavy special hardware for barriers and support structures, such as arsenals, ammo bays, cooling platforms, coin platforms, buff/debuff platforms, traps, heavy cannon towers, missile towers, puppet hatcheries, hacker signal towers, one-way shields, and repair stations.
+
+Melee weapons usually apply `2x` damage and break-value coefficients. Sharp weapons and blunt weapons create different melee outcomes through action-module binding:
+
+- Sharp + slash module creates slash, which gains `1.5x` damage adjustment.
+- Sharp + thrust module creates stab, which applies `0.5x` target break-value adjustment.
+- Blunt creates blunt regardless of module and gains `2x` knock distance adjustment.
+
+Ranged weapons are described by two parallel classifications:
+
+- Ammo type: metal bullet, electric, or chemical.
+- Gun design: rifle, sniper rifle, machine gun, cannon, shotgun, grenade launcher, or missile.
+
+Metal bullet guns have high projectile momentum. Electric guns have fixed projectile momentum `1` and high damage adjustment. Chemical guns have fixed projectile momentum `1` and apply DoT after hit.
+
+Gun-design behavior:
+
+- Rifle: fires toward the aim direction with medium projectile speed and normal travel distance.
+- Sniper rifle: scans toward the aim direction, locks a valid target, displays a lock marker, then fires an extremely fast shot after a delay. Its projectile momentum receives design-specific bonus.
+- Machine gun: fires continuously while the player adjusts direction.
+- Cannon: consumes much ammo, creates heat and recoil, fires a fast projectile, and has high damage coefficient.
+- Shotgun: fires into a cone, consumes more ammo, has shorter travel distance, and has high damage coefficient.
+- Grenade launcher: fires an explosive that detonates on obstacle contact and deals circular area damage.
+- Missile: automatically locks the highest-priority target, displays a lock marker, tracks the target, and explodes when it hits or is intercepted.
+
+Software parts have no volume and define movement or construction logic:
+
+- Action Module: binds one or more hardware parts and determines their movement pattern.
+- Soul: grants direct player control to a construct body and provides special build rules. One hero can have one Soul.
+- Source Code: controls one or more construct bodies automatically. The current runtime uses authored behavior rules; deterministic multi-code ordering now has a saved data contract, while editor controls and body-to-code runtime assignment remain planned.
+- Ether: allows multiple disconnected construct bodies to form a fixed spatial barrier and provides barrier-specific rules.
+
+Hybrid hardware/software parts have no volume but support both execution and logic:
+
+- Thruster: controls construct-body movement, movement speed, boost speed, base heat, and boost heat.
+- Engine: provides total kinetic energy. Players allocate engine output to parts or part groups in the kinetic-energy panel.
+- Radiator: defines total heat capacity. Base heat must be lower than capacity. Remaining capacity becomes the heat pool; hero heat pools are shown on the battle HUD.
+- Ammo Box: provides ammo for ranged weapons and can be resized to carry different ammo amounts.
+- Electronic Shield: provides regenerating armor that is consumed before HP.
 
 The project does not connect puppets or opponents to a large language model. Source Code behavior is evaluated locally from authored rules and the current battle state; it does not learn or generate decisions through an external model service.
 
-Every role uses the same common component categories:
+## Compatibility Glossary
 
-- Joint
-- Muscle
-- Booster
-- Engine
-- Cooling
-- Action Module
+Player-facing terminology is updated first. Saved data and internal compatibility IDs remain stable until a dedicated schema migration.
 
-The current muscle shop contains the first concrete sci-fi material set:
+| Player term | Current internal compatibility key | Migration status |
+| --- | --- | --- |
+| Core / 核心 | `torso`, `is_torso` | Player labels updated; key retained |
+| Connector / 连接件 | `limb_muscle`, `muscle`, `joint` | Player category updated; topology keys retained |
+| Function Module / 功能模块 | material-specific hardware keys, `barrier_tile` in some runtime paths | No single-key migration yet |
+| Hybrid / 软硬件 | `engine`, `booster`, `cooling`, ammo/shield payload kinds | Player group updated; payload keys retained |
+| Thruster / 推进器 | `booster` | Player label updated; key retained |
+| Action Module / 行动模块 | `module` | Stable compatibility key |
+| Soul / 英魂 | `special` payload with `kind: "soul"` | Stable compatibility shape |
+| Source Code / 源代码 | `special` payload with `kind: "code"` | Priority array added; runtime selection pending |
+| Ether / 以太 | `special` payload with `kind: "ether"` | Stable compatibility shape |
+| Electric ammo / 电能弹药 | `laser` in projectile damage paths | Compatibility bridge documented |
+| Slash / 斩击 | `tear` | Alias supported |
+| Stab / 刺击 | `pierce` | Alias supported |
 
-- Guns: chemical sprayer, bullet gun, laser emitter. These have one joint-connection end and deal high damage through projectiles; if the gun body itself touches an enemy, it is treated like a weak wood/stake contact.
-- Shield-strike melee weapons: boxing glove, gravity hammer, hydraulic jack.
-- Piercing melee weapons: spike lance, needle pike, cactus spine cluster.
-- Tearing melee weapons: scythe blade, heavy machete, mono katana.
-- These weapon muscles have one joint-connection end, with the opposite end acting as the damaging glove face, hammer head, jack plate, blade face, or spike tip.
-- Decorative bridge muscles: broad-bend stake, shallow-bend stake, straight stake. These can connect joints at both ends and deal only tiny contact damage.
-- Torso muscle: the crab torso chassis. It is expensive and large, and defines joint ports, weapon bays, and engine/booster/cooling/action-module capacity.
+## Modes
 
-The roster must stay within:
+The long-term mode families are PVP, PVE story, and PVE roguelike. The current prototype still exposes focused development entry points:
 
-- `1000` construction resource
-- each unit length `<= 4.5`
-- at most `1` unit longer than `3.5`
-- at most `2` units longer than `2.5`
-- at most `3` units longer than `2.0`
-- any number of units at length `<= 2.0`
-
-Each role can contain multiple owned units. Before battle, the player chooses the active roster entry per role and which one role appears first. During battle, a player can have at most one hero, one puppet group, and one barrier in play at the same time.
-
-Action Modules replace calculators. A hero design can eventually carry up to seven action modules mapped to seven buttons and seven component groups; the current prototype exposes one selected action-module slot and uses the same catalog for heroes, puppets, and barriers. Example modules include chain swing, rod swing, swing assault, direct assault, manual aim, swing aim, auto aim, chain clamp, rod clamp, chain deflect, and rod deflect.
-
-Damage is split into six named effects:
-
-- Projectile: bullet, chemical corrosion, laser
-- Melee: blunt, pierce, tear
-
-Projectile types are no longer resisted by a simple resistance stat. They stay distinct through ammo economy, range, projectile path, recoil, heat, hit timing, reflection rules, and visual/audio feedback.
-
-Joint and muscle components keep melee resistance profiles for blunt, pierce, and tear. High resistance means reduced incoming melee damage, low resistance means increased incoming melee damage, creating price and matchup gradients.
-
-Materials now also expose small/medium/large melee counter tiers. A tier reduces incoming matching melee damage by `20%`, then another `20%`, then another `20%` for large counters. Wood/stake attacks cannot damage a material that counters that melee type at any tier.
-
-Materials keep melee resistance and small/medium/large counter tiers. Counter readability has moved to hit effects:
-
-- Hit sparks display NONE, SMALL, MEDIUM, LARGE, or NULL when a strike connects.
-- Small/medium/large counter tiers still reduce incoming matching melee damage by repeated `20%` steps.
-- Wood/stake attacks still cannot damage a material that counters that melee type at any tier.
-- Blunt resistance adds reflective gloss; higher resistance means stronger shine.
-- Pierce resistance adds wavy side edges; higher resistance means larger wave amplitude.
-- Tear resistance adds honeycomb cutouts; low/medium/high resistance shifts the holes from square-like to hex-like to octagonal.
-- Before battle, the player chooses a unified team color; that color drives unit body art instead of projectile-resistance RGB mixing.
+- Training: P1 fights a passive dummy or deterministic sparring unit to test reach, heat, overheat, and component stats.
+- PVP / Local Versus: the formal battle priority for the initial playable model, using two-controller local versus.
+- Computer Battle: P1 fights a deterministic authored opponent, or P3 watches a computer-versus-computer match with the spectator camera.
 
 Team Edit controls:
 
@@ -101,26 +175,6 @@ Team Edit controls:
 - Set current role as initial deployment: `L`
 - Copy P1 team to P2/computer: `C`
 - Return to menu: `Enter` or `Esc`
-
-## Modes
-
-Training:
-- P1 fights a passive dummy.
-- Good for testing reach, heat, overheat, and component stats.
-- The dummy can be replaced by a deterministic computer sparring unit for movement, aiming, defense, and pressure testing. It uses local authored combat rules, not a large language model.
-
-PVP / Local Versus:
-- This is the formal battle priority for the initial playable model.
-- Two-controller local versus.
-- P1 uses controller 1.
-- P2 uses controller 2.
-- Keyboard remains a P1 fallback only.
-
-Computer Battle:
-- P1 fights a deterministic computer-controlled opponent.
-- The opponent follows authored rules to buy and deploy its hero, puppet group, and barrier.
-- P3 can watch a computer-versus-computer match with the spectator camera.
-- No large language model or external model service is involved.
 
 ## Battle Space Visuals
 

@@ -20,6 +20,8 @@ func _init() -> void:
 		"projectile_style_for_damage",
 		"projectile_behavior_for_data",
 		"projectile_behavior_key",
+		"projectile_ammo_family",
+		"projectile_uses_fixed_momentum",
 		"ammo_type_for_event",
 		"event_vector_value",
 		"event_momentum_vector_patch",
@@ -69,6 +71,7 @@ func _init() -> void:
 		"_projectile_runtime_service().projectile_style_for_damage(damage_type)",
 		"_projectile_runtime_service().projectile_behavior_for_data(data)",
 		"_projectile_runtime_service().projectile_behavior_key(event)",
+		"_projectile_runtime_service().projectile_ammo_family(event)",
 		"_projectile_runtime_service().ammo_type_for_event(event, AMMO_TYPES)",
 		"_projectile_runtime_service().event_vector_value(event, key)",
 		"_projectile_runtime_service().event_momentum_vector_patch(vector, magnitude)",
@@ -221,6 +224,22 @@ func _init() -> void:
 	_assert_eq(service.projectile_behavior_key({"projectile": true, "projectile_damage_type": "chemical", "projectile_style": "spray"}), "chemical", "chemical behavior key")
 	_assert_eq(service.projectile_behavior_key({"projectile": true, "projectile_style": "missile", "projectile_behavior": "explosive"}), "explosive", "missile behavior key")
 	_assert_eq(service.projectile_behavior_key({"projectile": true, "projectile_style": "web", "projectile_behavior": "web_tether", "travel_path": "tether"}), "web_tether", "web behavior key")
+	_assert_eq(service.projectile_ammo_family({"ammo_kind": "bullet"}), "metal", "metal bullet family")
+	_assert_eq(service.projectile_ammo_family({"ammo_kind": "laser"}), "electric", "laser compatibility family")
+	_assert_eq(service.projectile_ammo_family({"ammo_kind": "electric"}), "electric", "electric family alias")
+	_assert_eq(service.projectile_ammo_family({"ammo_kind": "chemical"}), "chemical", "chemical family")
+	_assert_eq(service.projectile_ammo_family({"ammo_kind": "missile"}), "explosive", "missile family")
+	if not service.projectile_uses_fixed_momentum({"ammo_kind": "laser"}) or not service.projectile_uses_fixed_momentum({"ammo_kind": "chemical"}):
+		_fail("Electric/laser and chemical families should use fixed momentum.")
+	if service.projectile_uses_fixed_momentum({"ammo_kind": "bullet"}):
+		_fail("Metal bullet family should keep gun-supplied momentum.")
+	var fixed_drive_fields: Dictionary = service.projectile_drive_momentum_fields({
+		"projectile": true,
+		"ammo_kind": "laser",
+		"projectile_momentum": 99.0,
+	})
+	if absf(float(fixed_drive_fields.get("projectile_effective_momentum", 0.0)) - 1.0) > 0.001:
+		_fail("Fixed-momentum ammo should ignore explicit drive momentum fields.")
 	var ammo_types := ["bullet", "laser", "chemical", "explosive", "web"]
 	_assert_eq(service.ammo_type_for_event({"ammo_kind": "missile"}, ammo_types), "explosive", "missile ammo alias")
 	_assert_eq(service.ammo_type_for_event({"ammo_kind": "silk"}, ammo_types), "web", "silk ammo alias")
@@ -324,10 +343,53 @@ func _init() -> void:
 	if absf(service.projectile_mass_for_event(bullet, constants) - 2.85) > 0.001:
 		_fail("Bullet hell mass should use default mass.")
 	var laser := {"projectile": true, "projectile_damage_type": "laser", "projectile_style": "beam"}
+	if absf(service.projectile_default_momentum_for_event(laser, constants) - 1.0) > 0.001:
+		_fail("Laser projectile default momentum should be fixed to 1.")
+	if absf(service.projectile_mass_for_event(laser, constants, 60.0) - (1.0 / 60.0)) > 0.001:
+		_fail("Laser projectile mass should derive from fixed momentum 1.")
+	if absf(service.projectile_mass_for_event({"projectile": true, "projectile_damage_type": "laser", "projectile_style": "beam", "projectile_mass": 9.0}, constants, 60.0) - (1.0 / 60.0)) > 0.001:
+		_fail("Laser projectile mass should ignore explicit mass and preserve fixed momentum 1.")
+	var laser_state: Dictionary = service.projectile_momentum_state_for_event({"projectile": true, "projectile_damage_type": "laser", "projectile_style": "beam", "projectile_momentum": 99.0}, constants)
+	if absf(float(laser_state.get("momentum", 0.0)) - 1.0) > 0.001:
+		_fail("Laser momentum state should ignore explicit projectile_momentum and stay fixed at 1.")
+	var chemical_state: Dictionary = service.projectile_momentum_state_for_event({"projectile": true, "projectile_damage_type": "chemical", "projectile_style": "spray", "projectile_momentum": 44.0}, constants)
+	if absf(float(chemical_state.get("momentum", 0.0)) - 1.0) > 0.001:
+		_fail("Chemical momentum state should ignore explicit projectile_momentum and stay fixed at 1.")
+	var electric_alias_state: Dictionary = service.projectile_momentum_state_for_event({
+		"projectile": true,
+		"ammo_kind": "electric",
+		"projectile_damage_type": "bullet",
+		"projectile_style": "bullet_hell",
+		"projectile_momentum": 77.0,
+		"projectile_mass": 12.0,
+	}, constants)
+	if absf(float(electric_alias_state.get("momentum", 0.0)) - 1.0) > 0.001:
+		_fail("Electric ammo alias should force momentum 1 even when projectile behavior looks ballistic.")
+	if absf(service.projectile_mass_for_event({
+		"projectile": true,
+		"ammo_kind": "chemical",
+		"projectile_damage_type": "bullet",
+		"projectile_style": "bullet_hell",
+		"projectile_mass": 9.0,
+		"projectile_momentum": 44.0,
+	}, constants, 12.0) - (1.0 / 12.0)) > 0.001:
+		_fail("Chemical ammo family should ignore explicit mass and momentum.")
+	var chemical_collision: Dictionary = service.projectile_collision_momentum_intent({
+		"projectile": true,
+		"projectile_velocity": Vector2(12.0, 0.0),
+		"fallback_direction": Vector2.RIGHT,
+		"target_velocity": Vector2.ZERO,
+		"projectile_mass": 3.0,
+		"explicit_momentum": 44.0,
+		"behavior_key": "chemical",
+		"momentum_scale": 1.0,
+	})
+	if absf(float(chemical_collision.get("momentum", 0.0)) - 1.0) > 0.001:
+		_fail("Chemical collision momentum should stay fixed at 1: %s" % str(chemical_collision))
 	if absf(service.default_recoil_transfer_for_projectile(laser) - 0.35) > 0.001:
 		_fail("Laser recoil transfer should be low.")
-	if absf(service.gun_projectile_damage_mult_max_for_data({"gun_kind": "laser_gun"}, "laser_gun", "laser", constants) - 3.0) > 0.001:
-		_fail("Laser gun max multiplier should be 3.")
+	if absf(service.gun_projectile_damage_mult_max_for_data({"gun_kind": "laser_gun"}, "laser_gun", "laser", constants) - 54.0) > 0.001:
+		_fail("Laser gun max multiplier should be 54.")
 	var coeffs: Dictionary = service.projectile_damage_coeffs_for_event({"projectile": true, "gun_drive_allocated": 5.0, "gun_drive_max": 10.0}, "rifle", "bullet", constants, Callable(self, "_gun_mult_for_probe"))
 	if absf(float(coeffs.get("gun", 0.0)) - 2.0) > 0.001:
 		_fail("Gun current multiplier should use callback ratio.")

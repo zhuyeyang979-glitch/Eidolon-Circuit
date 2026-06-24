@@ -1,5 +1,44 @@
 # Project TODO
 
+## Star Soul Loop Gameplay Follow-Ups
+
+Status: gameplay baseline polished; the items below have reviewed ownership and probe-first plans but are not all active runtime behavior.
+
+Unit editor legality:
+
+- Implement `scripts/services/unit_editor_legality_service.gd`.
+- Add exact socket `part_size <= socket_capacity` validation.
+- Reject mixed hardware manufacturers inside each connected construct body while excluding software makers.
+- Enforce exactly one Soul for heroes, at least one Source Code for puppets, and Ether for barriers.
+- Return stable reason codes plus Chinese and English messages through the existing save, training, team, and battle-entry gates.
+- Follow `docs/plans/2026-06-24-unit-editor-legality-roadmap.md` and write the named rejection probes before each rule.
+
+Hardware fault runtime:
+
+- Implement the pure state service and runtime adapter described in `docs/plans/2026-06-24-hardware-fault-runtime.md`.
+- Add `normal`, `faulted`, and `destroyed` hardware states without serializing battle state into blueprints.
+- Cap damage momentum at hardware capacity, disable dependent actions, and route primary-core destruction through the existing construct-body destruction flow.
+- Add equality, first-overload, second-overload, action dependency, save round-trip, and deterministic replay probes first.
+
+Source Code priority:
+
+- Keep `scripts/services/source_code_priority_service.gd` as the pure ordering and surviving-carrier boundary.
+- Add the `源代码优先级 / SOURCE PRIORITY` editor list with Up, Down, and Reset controls.
+- Materialize stable construct-body IDs and deterministic body-to-code assignments at puppet spawn.
+- Rebuild assignments after carrier destruction without removing Source Codes on surviving bodies.
+- Follow `docs/plans/2026-06-24-source-code-priority-ui.md`.
+
+Mode families:
+
+- Keep local PVP as the first formal battle target.
+- Design PVE story mission structure and authored encounter progression separately from battle rules.
+- Design PVE roguelike run state, rewards, repair/loss rules, and prebuilt-unit choices separately from permanent player profiles.
+
+Combat contract cleanup:
+
+- Reconcile the existing explosive projectile preflight contract with `_apply_explosion_damage()` before treating missile/explosion probes as a completion gate.
+- Preserve the current electric/laser naming bridge until a saved-data migration is explicitly planned.
+
 ## Online Battle / Deferred
 
 Status: planned after the local two-player formal battle feels complete.

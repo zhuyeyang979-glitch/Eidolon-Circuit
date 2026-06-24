@@ -166,6 +166,8 @@ func _init() -> void:
 		_fail("Break threshold should derive from path stiffness and break coeff.")
 	_assert_eq(service.damage_type({"damage_type": "laser"}, ["blunt", "pierce", "tear"]), "blunt", "invalid damage type fallback")
 	_assert_eq(service.damage_type(terminal_melee, ["blunt", "pierce", "tear"]), "tear", "melee damage type")
+	_assert_eq(service.damage_type({"damage_type": "slash"}, ["blunt", "pierce", "tear"]), "tear", "slash alias")
+	_assert_eq(service.damage_type({"damage_type": "stab"}, ["blunt", "pierce", "tear"]), "pierce", "stab alias")
 	_assert_eq(service.material_class(terminal_ranged), "body", "gun material collision class")
 	_assert_eq(service.contact_source(terminal_melee), "active_module_contact", "active source")
 	_assert_eq(service.contact_source(torso_proxy), "default_body_contact", "default source")
@@ -241,6 +243,30 @@ func _init() -> void:
 	var event: Dictionary = Dictionary(blocked_damage.get("event", {}))
 	if String(event.get("contact_pair_key", "")) != "1|terminal:3:0->2|torso:0:-1":
 		_fail("Damage event should include directed contact key: %s" % String(event.get("contact_pair_key", "")))
+	var equal_break_damage: Dictionary = service.damage_intent({
+		"attacker_id": 1,
+		"target_id": 2,
+		"attacker_collider": terminal_melee,
+		"target_collider": {"part_kind": "torso", "part_index": 0},
+		"normal": Vector2.RIGHT,
+		"contact_momentum": 5.0,
+		"attacker_path_stiffness": 100.0,
+		"target_path_stiffness": 100.0,
+		"damage_coeff": 1.0,
+		"contact_damage_scale": 1.0,
+		"break_threshold": 5.0,
+		"damage_type": "tear",
+		"material_class": "weapon",
+		"vulnerability_multiplier": 1.0,
+	})
+	if not bool(equal_break_damage.get("threshold_blocked", false)):
+		_fail("Damage intent should block when damage equals break value.")
+	var equal_event: Dictionary = Dictionary(equal_break_damage.get("event", {}))
+	if absf(float(equal_event.get("break_value", 0.0)) - 5.0) > 0.001 or absf(float(equal_event.get("damage_coefficient", 0.0)) - 1.0) > 0.001:
+		_fail("Damage event should expose momentum formula fields: %s" % str(equal_event))
+	for field in ["momentum", "raw_momentum", "damage_coefficient", "adjustment_coefficient", "break_value", "effective_break_value", "knock_momentum"]:
+		if not equal_event.has(field):
+			_fail("Runtime contact damage event missing telemetry field %s: %s" % [field, str(equal_event)])
 	var velocity_response: Dictionary = service.velocity_response_intent({
 		"normal": Vector2(2.0, 0.0),
 		"contact_momentum": 30.0,

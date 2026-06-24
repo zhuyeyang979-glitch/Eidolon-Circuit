@@ -48,37 +48,37 @@ const SOFTWARE_PREFERRED_FILTER_BY_ROLE := {
 }
 
 const PART_GROUP_NAMES_ZH := {
-	"torso": "躯干",
-	"limb": "肢体",
+	"torso": "核心",
+	"limb": "连接件",
 	"terminal_weapon": "武器",
-	"barrier_panel": "结界板",
-	"software_muscle": "装备",
+	"barrier_panel": "功能模块",
+	"software_muscle": "软硬件",
 	"software": "软件",
 }
 
 const PART_GROUP_NAMES_EN := {
-	"torso": "TORSO",
-	"limb": "LIMB",
+	"torso": "CORE",
+	"limb": "CONNECTOR",
 	"terminal_weapon": "WEAPON",
-	"barrier_panel": "BARRIER",
-	"software_muscle": "EQUIPMENT",
-	"software": "SOFT",
+	"barrier_panel": "FUNCTION",
+	"software_muscle": "HYBRID",
+	"software": "SOFTWARE",
 }
 
 const FILTER_OPTIONS_BY_GROUP := {
 	"torso": [
-		{"key": "connector_torso", "slot": "muscle", "zh": "躯干", "en": "TORSO"},
-		{"key": "connector_brain", "slot": "muscle", "zh": "大脑躯干", "en": "BRAIN"},
+		{"key": "connector_torso", "slot": "muscle", "zh": "运动核心", "en": "MOTION CORE"},
+		{"key": "connector_brain", "slot": "muscle", "zh": "神经核心", "en": "NEURAL CORE"},
 	],
 	"limb": [
-		{"key": "connector_limb", "slot": "limb_muscle", "zh": "连接肢体", "en": "LIMB"},
+		{"key": "connector_limb", "slot": "limb_muscle", "zh": "连接件", "en": "CONNECTOR"},
 	],
 	"barrier_panel": [
-		{"key": "barrier_muscle", "slots": ["limb_muscle", "muscle"], "zh": "连接-结界", "en": "C-BAR"},
+		{"key": "barrier_muscle", "slots": ["limb_muscle", "muscle"], "zh": "功能模块", "en": "FUNCTION"},
 	],
 	"software_muscle": [
 		{"key": "engine", "slot": "engine", "zh": "引擎", "en": "ENGINE"},
-		{"key": "booster", "slot": "booster", "zh": "推进器", "en": "BOOSTER"},
+		{"key": "booster", "slot": "booster", "zh": "推进器", "en": "THRUSTER"},
 		{"key": "cooling", "slot": "cooling", "zh": "散热器", "en": "COOLING"},
 		{"key": "ammo", "slot": "muscle", "zh": "弹药", "en": "AMMO"},
 		{"key": "shield_payload", "slot": "muscle", "zh": "电子护盾", "en": "E-SHIELD"},

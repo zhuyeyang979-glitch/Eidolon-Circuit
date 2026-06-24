@@ -48,7 +48,8 @@ func _init() -> void:
 		"projectile_style": "spray",
 		"projectile_behavior": "chemical_line",
 		"travel_path": "straight",
-		"projectile_momentum": 4.0,
+		"projectile_momentum": 999.0,
+		"projectile_mass": 999.0,
 		"projectile_damage_coeff": MainScene.PART_DAMAGE_COEFF_TERMINAL_MELEE * MainScene.STANDARD_CHEMICAL_SPRAYER_DOT_DAMAGE_MULT,
 		"chemical_frontload": MainScene.STANDARD_CHEMICAL_SPRAYER_INSTANT_DAMAGE_MULT / MainScene.STANDARD_CHEMICAL_SPRAYER_DOT_DAMAGE_MULT,
 		"chemical_dot_mult": 1.0,
@@ -69,6 +70,14 @@ func _init() -> void:
 	main._update_chemical_projectiles(2.0)
 	if int(target.health) >= before_hp:
 		_fail("Queued sprayer projectile should eventually damage the target.")
+	if float(target.get_meta("chemical_dot_timer", 0.0)) <= 0.0:
+		_fail("Chemical sprayer impact should apply continuing DoT status.")
+	if main.battle_attack_rule_log.is_empty():
+		_fail("Chemical sprayer impact should record attack telemetry.")
+	var latest: Dictionary = Dictionary(main.battle_attack_rule_log.back())
+	var breakdown: Dictionary = Dictionary(latest.get("breakdown", {}))
+	if absf(float(breakdown.get("momentum", 0.0)) - 1.0) > 0.001:
+		_fail("Chemical runtime momentum should stay fixed at 1 despite explicit overrides: %s" % str(breakdown))
 	var ammo_after_fire := main._current_ammo(attacker, "chemical")
 	# Releasing a sprayer does not fire a delayed sniper shot.
 	main.gun_activation_state[1] = {"gun_kind": "sprayer"}

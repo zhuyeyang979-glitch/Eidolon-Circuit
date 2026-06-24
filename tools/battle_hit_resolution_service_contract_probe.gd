@@ -21,6 +21,8 @@ func _init() -> void:
 		"attack_entry_intent",
 		"projectile_preflight_intent",
 		"target_hit_context",
+		"momentum_damage_gate_intent",
+		"melee_type_adjustments",
 		"combo_scaling_intent",
 		"damage_intent",
 		"damage_stack_intent",
@@ -65,6 +67,8 @@ func _init() -> void:
 		"_battle_hit_resolution_service().attack_entry_intent",
 		"_battle_hit_resolution_service().projectile_preflight_intent",
 		"_battle_hit_resolution_service().target_hit_context",
+		"_battle_hit_resolution_service().momentum_damage_gate_intent",
+		"_battle_hit_resolution_service().melee_type_adjustments",
 		"_battle_hit_resolution_service().combo_scaling_intent",
 		"_battle_hit_resolution_service().damage_stack_intent",
 		"_battle_hit_resolution_service().part_damage_intent",
@@ -102,6 +106,7 @@ func _init() -> void:
 	_check_projectile_preflight(service)
 	_check_target_context(service)
 	_check_damage_and_combo(service)
+	_check_melee_type_adjustments(service)
 	_check_post_hit(service)
 	_check_part_damage(service)
 	_check_momentum_response(service)
@@ -167,6 +172,60 @@ func _check_target_context(service) -> void:
 
 
 func _check_damage_and_combo(service) -> void:
+	var gate: Dictionary = service.momentum_damage_gate_intent({
+		"raw_momentum": 25.0,
+		"momentum": 20.0,
+		"damage_coefficient": 2.0,
+		"adjustment_coefficient": 1.5,
+		"break_value": 59.0,
+		"knock_adjustment_coefficient": 2.0,
+	})
+	_assert_close(float(gate.get("damage_value", 0.0)), 60.0, "momentum gate damage")
+	if bool(gate.get("threshold_blocked", true)):
+		_fail("Momentum gate should pass when damage exceeds break value: %s" % str(gate))
+	_assert_close(float(gate.get("raw_momentum", 0.0)), 25.0, "momentum gate raw momentum")
+	_assert_close(float(gate.get("capped_momentum", 0.0)), 20.0, "momentum gate capped momentum")
+	_assert_close(float(gate.get("break_gate", 0.0)), 59.0, "momentum gate break gate")
+	_assert_close(float(gate.get("knock_momentum", 0.0)), 40.0, "momentum gate knock")
+	var equal_block: Dictionary = service.momentum_damage_gate_intent({
+		"momentum": 20.0,
+		"damage_coefficient": 2.0,
+		"adjustment_coefficient": 1.5,
+		"break_value": 60.0,
+	})
+	if not bool(equal_block.get("threshold_blocked", false)):
+		_fail("Momentum gate should block when damage only equals break value: %s" % str(equal_block))
+	var below_block: Dictionary = service.momentum_damage_gate_intent({
+		"momentum": 9.0,
+		"damage_coefficient": 2.0,
+		"adjustment_coefficient": 1.0,
+		"break_value": 19.0,
+	})
+	if not bool(below_block.get("threshold_blocked", false)):
+		_fail("Momentum gate should block when damage is below break value: %s" % str(below_block))
+	var non_damage_knock: Dictionary = service.momentum_damage_gate_intent({
+		"momentum": 24.0,
+		"damage_coefficient": 99.0,
+		"adjustment_coefficient": 99.0,
+		"break_value": 999.0,
+		"knock_adjustment_coefficient": 1.5,
+		"non_damage": true,
+	})
+	if bool(non_damage_knock.get("threshold_blocked", true)):
+		_fail("Non-damage contact should bypass the damage gate: %s" % str(non_damage_knock))
+	_assert_close(float(non_damage_knock.get("damage_value", -1.0)), 0.0, "non-damage gate damage")
+	_assert_close(float(non_damage_knock.get("knock_momentum", 0.0)), 36.0, "non-damage knock momentum")
+	var stab_gate: Dictionary = service.momentum_damage_gate_intent({
+		"momentum": 8.0,
+		"precomputed_damage": 12.0,
+		"break_value": 20.0,
+		"break_value_adjustment": 0.5,
+	})
+	if bool(stab_gate.get("threshold_blocked", true)) or absf(float(stab_gate.get("effective_break_value", 0.0)) - 10.0) > 0.001:
+		_fail("Stab gate should use adjusted break value: %s" % str(stab_gate))
+	for field in ["raw_momentum", "momentum", "capped_momentum", "damage_coefficient", "adjustment_coefficient", "break_value", "effective_break_value", "break_gate", "knock_momentum"]:
+		if not gate.has(field):
+			_fail("Momentum gate telemetry missing field %s: %s" % [field, str(gate)])
 	var combo: Dictionary = service.combo_scaling_intent({
 		"damage": 100,
 		"combo_active": true,
@@ -211,8 +270,30 @@ func _check_damage_and_combo(service) -> void:
 		_fail("zero raw melee should stop hit resolution: %s" % str(zero_melee))
 
 
+func _check_melee_type_adjustments(service) -> void:
+	var slash: Dictionary = service.melee_type_adjustments("slash")
+	_assert_eq(String(slash.get("internal_damage_type", "")), "tear", "slash internal alias")
+	_assert_close(float(slash.get("damage_adjustment", 0.0)), 1.5, "slash damage adjustment")
+	_assert_close(float(slash.get("break_value_adjustment", 0.0)), 1.0, "slash break adjustment")
+	_assert_close(float(slash.get("knock_adjustment", 0.0)), 1.0, "slash knock adjustment")
+	var tear: Dictionary = service.melee_type_adjustments("tear")
+	_assert_eq(String(tear.get("player_damage_type", "")), "slash", "tear player alias")
+	_assert_close(float(tear.get("damage_adjustment", 0.0)), 1.5, "tear damage adjustment")
+	var stab: Dictionary = service.melee_type_adjustments("stab")
+	_assert_eq(String(stab.get("internal_damage_type", "")), "pierce", "stab internal alias")
+	_assert_close(float(stab.get("damage_adjustment", 0.0)), 1.0, "stab damage adjustment")
+	_assert_close(float(stab.get("break_value_adjustment", 0.0)), 0.5, "stab break adjustment")
+	var pierce: Dictionary = service.melee_type_adjustments("pierce")
+	_assert_eq(String(pierce.get("player_damage_type", "")), "stab", "pierce player alias")
+	_assert_close(float(pierce.get("break_value_adjustment", 0.0)), 0.5, "pierce break adjustment")
+	var blunt: Dictionary = service.melee_type_adjustments("blunt")
+	_assert_close(float(blunt.get("damage_adjustment", 0.0)), 1.0, "blunt damage adjustment")
+	_assert_close(float(blunt.get("break_value_adjustment", 0.0)), 1.0, "blunt break adjustment")
+	_assert_close(float(blunt.get("knock_adjustment", 0.0)), 2.0, "blunt knock adjustment")
+
+
 func _check_post_hit(service) -> void:
-	_assert_actions(service.post_hit_intents({"projectile": true, "blocked": true}), ["projectile_stagger", "hitstop", "continue_target"], "blocked projectile actions")
+	_assert_actions(service.post_hit_intents({"projectile": true, "blocked": true}), ["projectile_stagger", "hit_displacement", "hitstop", "continue_target"], "blocked projectile actions")
 	_assert_actions(service.post_hit_intents({
 		"projectile": true,
 		"explosion_radius": 0.8,

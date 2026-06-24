@@ -258,8 +258,8 @@ const TRUE_BULLET_DEFAULT_LOCK_RADIUS = 0.22
 const BULLET_HELL_DEFAULT_SPEED_MULT = 2.8
 const PROJECTILE_MOMENTUM_TRUE_BULLET = 96.0
 const PROJECTILE_MOMENTUM_BULLET_HELL = 48.0
-const PROJECTILE_MOMENTUM_LASER = 18.0
-const PROJECTILE_MOMENTUM_CHEMICAL = 16.0
+const PROJECTILE_MOMENTUM_LASER = 1.0
+const PROJECTILE_MOMENTUM_CHEMICAL = 1.0
 const PROJECTILE_MOMENTUM_EXPLOSIVE = 92.0
 const PROJECTILE_SPEED_UNIT = 6.0
 const PROJECTILE_SPEED_TRUE_BULLET = 32.0
@@ -563,7 +563,7 @@ const AMMO_UNIT_MASS = {"bullet": 0.16, "laser": 0.11, "chemical": 0.24, "explos
 const GUN_DEFAULT_FIRE_RATE = {"true_bullet": 0.72, "bullet_hell": 5.2, "laser": 0.82, "chemical": 2.1, "explosive": 0.58, "missile": 0.52}
 const GUN_DEFAULT_CARRIED_AMMO = {"true_bullet": 6, "bullet_hell": 24, "laser": 7, "chemical": 10, "explosive": 4, "missile": 3}
 const LIVE_BACKFILLED_MODULE_NAMES = {
-	"COMBO ROUTER: BALANCE STRING": {"module_action_profile": "swing_180", "module_target_kind": "ball_joint", "required_joint_degrees": 120, "swing_arc_degrees": 120.0, "module_variant_key": "balance_string", "module_visual_family": "balance_string", "module_variant_label": "平衡串招", "module_variant_label_en": "Balance Chain", "module_variant_summary": "命中或动作完成后，下一条不同绑定肢体获得短暂恢复折扣。", "module_variant_summary_en": "Hit or completion primes a short recovery discount for the next different bound limb.", "combo_balance_window": 1.2, "combo_balance_cooldown_mult": 0.62, "combo_balance_requires_different_key": true, "knock": 0.10, "armor_heat": 30.0, "active_heat": 36.0},
+	"COMBO ROUTER: BALANCE STRING": {"module_action_profile": "swing_180", "module_target_kind": "ball_joint", "required_joint_degrees": 120, "swing_arc_degrees": 120.0, "module_variant_key": "balance_string", "module_visual_family": "balance_string", "module_variant_label": "平衡串招", "module_variant_label_en": "Balance Chain", "module_variant_summary": "命中或动作完成后，下一条不同绑定连接件获得短暂恢复折扣。", "module_variant_summary_en": "Hit or completion primes a short recovery discount for the next different bound connector.", "combo_balance_window": 1.2, "combo_balance_cooldown_mult": 0.62, "combo_balance_requires_different_key": true, "knock": 0.10, "armor_heat": 30.0, "active_heat": 36.0},
 	"CLAMP ROUTER: VISE CLOSE": {"module_action_profile": "inward_pincer_clamp", "module_target_kind": "dual_ball_joint", "required_joint_degrees": 120, "swing_arc_degrees": 120.0, "module_variant_key": "vise_close", "module_visual_family": "vise_close", "module_variant_label": "平行夹具", "module_variant_label_en": "Vise Lock", "module_variant_summary": "双爪合拢接触时压低击退并短暂压制目标速度。", "module_variant_summary_en": "Twin jaws lower launch and briefly suppress target velocity on contact.", "requires_joint_pair": true, "paired_attack_key": true, "paired_joint_count": 2, "dual_joint_action": true, "paired_motion": "inward_clamp", "pincer_close_until_contact": true, "clamp_close_angle_degrees": 150.0, "clamp_pin_seconds": 0.38, "clamp_velocity_mult": 0.35, "clamp_knock_mult": 0.38, "knock": 0.06, "armor_heat": 38.0, "active_heat": 44.0},
 	"ROUTE ROUTER: PICKUP DASH": {"module_action_profile": "swing_180", "module_target_kind": "ball_joint", "required_joint_degrees": 180, "swing_arc_degrees": 180.0, "module_variant_key": "pickup_dash", "module_visual_family": "pickup_dash", "module_variant_label": "路线推进", "module_variant_label_en": "Route Dash", "module_variant_summary": "启动时沿输入方向小冲刺，命中后再补一段推进。", "module_variant_summary_en": "Starts with a small input-direction dash and adds a shorter hit impulse.", "pickup_dash_impulse": 0.65, "pickup_dash_on_start": true, "pickup_dash_on_hit_impulse": 0.35, "route_lane_pull": 0.10, "knock": 0.12, "armor_heat": 28.0, "active_heat": 34.0},
 	"MONSTER ROUTER: CRUSH WINDUP": {"module_action_profile": "swing_180", "module_target_kind": "ball_joint", "required_joint_degrees": 90, "swing_arc_degrees": 180.0, "module_variant_key": "crush_windup", "module_visual_family": "crush_windup", "module_variant_label": "巨兽蓄砸", "module_variant_label_en": "Crush Windup", "module_variant_summary": "启动慢、挥空重，但接触动量与硬直能力更高。", "module_variant_summary_en": "Slow startup and heavy whiff recovery, with stronger contact momentum and stagger.", "duration": 0.96, "startup_ratio": 0.46, "recovery_ratio": 0.54, "cooldown": 0.92, "crush_contact_momentum_mult": 1.45, "crush_stagger_mult": 1.35, "whiff_recovery_mult": 1.25, "runtime_contact_damage_mult": 1.24, "knock": 0.22, "armor_heat": 42.0, "active_heat": 52.0},
@@ -701,7 +701,7 @@ const PART_GRADIENT_TAG_LABELS_ZH = {
 	"flex": "柔性",
 	"gun": "枪械",
 	"melee": "近战",
-	"torso": "躯干",
+	"torso": "核心",
 	"ammo": "弹药",
 	"module": "模块",
 	"contact": "接触",
@@ -755,8 +755,8 @@ const EDITOR_PART_GROUP_SLOTS = {
 	"software_muscle": ["engine", "booster", "cooling", "muscle"],
 	"software": ["special", "module"],
 }
-const EDITOR_PART_GROUP_NAMES_ZH = {"torso": "躯干", "limb": "肢体", "terminal_weapon": "武器", "barrier_panel": "结界板", "software_muscle": "装备", "software": "软件"}
-const EDITOR_PART_GROUP_NAMES_EN = {"torso": "TORSO", "limb": "LIMB", "terminal_weapon": "WEAPON", "barrier_panel": "BARRIER", "software_muscle": "EQUIPMENT", "software": "SOFT"}
+const EDITOR_PART_GROUP_NAMES_ZH = {"torso": "核心", "limb": "连接件", "terminal_weapon": "武器", "barrier_panel": "功能模块", "software_muscle": "软硬件", "software": "软件"}
+const EDITOR_PART_GROUP_NAMES_EN = {"torso": "CORE", "limb": "CONNECTOR", "terminal_weapon": "WEAPON", "barrier_panel": "FUNCTION", "software_muscle": "HYBRID", "software": "SOFTWARE"}
 const EDITOR_SORT_KEY_ORDER = ["cost", "hp", "mass", "length", "stiffness", "engine_momentum", "allocated_momentum", "damage", "range"]
 const EDITOR_SORT_KEY_NAMES_ZH = {"cost": "价格", "hp": "生命", "mass": "质量", "length": "长度", "stiffness": "刚度", "engine_momentum": "总动力", "allocated_momentum": "需求动力", "damage": "伤害", "range": "射程"}
 const EDITOR_SORT_KEY_NAMES_EN = {"cost": "COST", "hp": "HP", "mass": "MASS", "length": "LENGTH", "stiffness": "STIFFNESS", "engine_momentum": "ENGINE MOMENTUM", "allocated_momentum": "REQUIRED", "damage": "DAMAGE", "range": "RANGE"}
@@ -766,23 +766,23 @@ const TERMINAL_MELEE_GEOMETRY_MULTIPLIER = 0.62
 const TERMINAL_RANGED_GEOMETRY_MULTIPLIER = 0.70
 const TERMINAL_RADIUS_GEOMETRY_MULTIPLIER = 0.75
 const SLOT_NAMES = {
-	"special": "软件核心",
+	"special": "软件",
 	"joint": "旧关节(废弃)",
-	"limb_muscle": "连接肌肉",
-	"muscle": "武器肌肉",
+	"limb_muscle": "连接件",
+	"muscle": "硬件",
 	"booster": "推进器",
 	"engine": "引擎",
 	"cooling": "散热器",
 	"module": "行动模块",
 }
 const SLOT_NAMES_EN = {
-	"special": "SPECIAL",
+	"special": "SOFTWARE",
 	"joint": "LEGACY JOINT",
-	"limb_muscle": "LIMB MUSCLE",
-	"muscle": "TERMINAL MUSCLE",
-	"booster": "BOOSTER",
+	"limb_muscle": "CONNECTOR",
+	"muscle": "HARDWARE",
+	"booster": "THRUSTER",
 	"engine": "ENGINE",
-	"cooling": "COOLING",
+	"cooling": "RADIATOR",
 	"module": "ACTION MODULE",
 }
 const SOFTWARE_MANUFACTURERS = ["NULL SOFTWARE", "BOOTLEG GHOST"]
@@ -812,7 +812,7 @@ const MENU_DESCRIPTIONS_EN = [
 const SPECIAL_CATALOG = {
 	"hero": [
 		{"name": "SOUL ANCHOR", "kind": "soul", "cost": 104, "soul_heat_capacity": 92.0, "soul_requirements": {"mass_min": 12.0, "mass_max": 230.0, "cooling_min": 12.0, "radius_max": 0.9, "module_group_min": 2}, "soul_bonus": {"boost_cooling_mult": 1.18}, "summary": "Software soul: 92 heat slot; rewards stable mid-size bodies with cooler boosts and broad control routing"},
-		{"name": "SOUL: FIRST EDGE ECHO", "zh_name": "始锋回响英魂", "maker": "HUMANOVA ATELIER", "kind": "soul", "cost": 118, "soul_archetype": "duelist_oath", "soul_heat_capacity": 68.0, "soul_requirements": {"mass_max": 128.0, "radius_max": 0.56, "module_group_min": 3, "duelist_real_contact_min": 1, "terminal_weapon_mass_max": 34.0}, "soul_echo_window": 1.15, "soul_echo_recovery_mult": 0.72, "soul_echo_heat_relief": 0.18, "soul_bonus": {"pierce_range_bonus": 0.1, "speed_bonus": 0.04}, "summary": "First standard soul: a hero-only duelist oath. It grants a heat slot by default, then rewards light contact builds that rotate different bound limbs."},
+		{"name": "SOUL: FIRST EDGE ECHO", "zh_name": "始锋回响英魂", "maker": "HUMANOVA ATELIER", "kind": "soul", "cost": 118, "soul_archetype": "duelist_oath", "soul_heat_capacity": 68.0, "soul_requirements": {"mass_max": 128.0, "radius_max": 0.56, "module_group_min": 3, "duelist_real_contact_min": 1, "terminal_weapon_mass_max": 34.0}, "soul_echo_window": 1.15, "soul_echo_recovery_mult": 0.72, "soul_echo_heat_relief": 0.18, "soul_bonus": {"pierce_range_bonus": 0.1, "speed_bonus": 0.04}, "summary": "First standard soul: a hero-only duelist oath. It grants a heat slot by default, then rewards light contact builds that rotate different bound connectors."},
 		{"name": "TITAN PILGRIM SOUL", "kind": "soul", "cost": 164, "soul_heat_capacity": 128.0, "soul_requirements": {"cooling_min": 24.0, "mass_ranges": [[20.0, 80.0], [280.0, 900.0]], "module_group_min": 1}, "soul_bonus": {"tear_range_bonus": 0.22, "heat_capacity_bonus": 24.0}, "summary": "Software soul: huge 128 heat slot. Tiny hunter or colossal monster ideals gain tearing reach if cooling is serious"},
 		{"name": "XI CAPTAIN SOUL", "maker": "SYNTAX ELEVEN", "kind": "soul", "cost": 66, "soul_heat_capacity": 54.0, "soul_requirements": {"mass_min": 4.0, "mass_max": 180.0, "module_group_min": 1}, "soul_bonus": {"speed_bonus": 0.03, "boost_cooling_mult": 1.05}, "summary": "Cheap permissive 54 heat-slot soul for average-team rosters; it captains a formation rather than dominating alone"},
 	],
@@ -931,8 +931,8 @@ const STYLE_COMMON_CATALOG = {
 		{"name": "SYNTAX MIDFIELD CORE", "maker": "SYNTAX ELEVEN", "cost": 110, "hp": 120, "mass": 24, "length": 0.68, "heat_capacity": 20, "normal_damage": 1, "damage_type": "blunt", "material_class": "torso", "connection_ends": 5, "is_torso": true, "joint_ports": 5, "weapon_bays": 4, "engine_slots": 1, "cooling_slots": 2, "module_slots": 6, "torso_slots": 5, "shape": "midfield_saddle", "radius": 0.11, "speed_mult": 1.02, "size_class": "medium", "summary": "Balanced M-class midfield torso: five readable ports, normal internal capacity, and neutral stats for rotating roles."},
 		{"name": "CRUSTA PRESS CLAW", "maker": "CRUSTA DYNAMICS", "cost": 94, "hp": 72, "mass": 32, "length": 0.72, "range": 0.2, "normal_damage": 10, "armor_damage": 18, "active_damage": 16, "damage_type": "blunt", "material_class": "weapon", "terminal_weapon": true, "connection_ends": 1, "shape": "claw", "radius": 0.18, "recoil": 0.08, "size_class": "medium", "summary": "Broad crab claw face that turns clamp pressure into shield-like body checks."},
 		{"name": "标准子弹狙击枪 / STANDARD BULLET SNIPER", "maker": "LONGSIGHT AEGIS", "cost": 126, "hp": 30, "mass": 14, "length": 0.88, "normal_damage": 12, "projectile_damage": 12, "damage_type": "bullet", "projectile_damage_type": "bullet", "projectile": true, "projectile_only": true, "gun_kind": "sniper", "ammo_kind": "bullet", "carried_ammo": 10, "ammo_capacity": {"bullet": 10}, "projectile_behavior": "true_bullet", "projectile_style": "true_bullet", "projectile_momentum": 42.0, "projectile_damage_coeff": 64.0, "projectile_width_m": 0.1, "projectile_consumes_on_fire": true, "bullet_lock_time": 0.92, "sniper_fire_delay": 0.92, "bullet_lock_radius": 0.05, "projectile_range": 3.8, "material_class": "gun", "connection_ends": 1, "shape": "rifle", "radius": 0.09, "recoil": 0.16, "size_class": "medium", "summary": "标准子弹狙击枪：10发子弹，按住启动瞄准，松开后有锁定才延迟发射近光速狙击弹。"},
-		{"name": "标准化学喷射器 / STANDARD CAUSTIC SPRAYER", "maker": "VANTA LOOM", "cost": 118, "hp": 34, "mass": 12, "length": 0.62, "normal_damage": 4, "projectile_damage": 4, "damage_type": "chemical", "projectile_damage_type": "chemical", "projectile": true, "projectile_only": true, "gun_kind": "sprayer", "ammo_kind": "chemical", "carried_ammo": 12, "ammo_capacity": {"chemical": 12}, "projectile_behavior": "chemical_line", "projectile_style": "spray", "travel_path": "straight", "projectile_momentum": 4.0, "projectile_damage_coeff": 28.8, "projectile_width_m": 0.28, "projectile_range": 1.6, "range": 1.6, "lane_range": 0.14, "projectile_speed_mult": 0.72, "projectile_consumes_on_fire": true, "chemical_dot_duration": 4.0, "chemical_dot_mult": 1.0, "chemical_frontload": 0.333333, "chemical_dot_tick_seconds": 0.5, "chemical_dot_no_stack": true, "fire_interval": 0.25, "fire_rate": 4.0, "material_class": "gun", "connection_ends": 1, "shape": "sprayer_nozzle", "radius": 0.11, "recoil": 0.08, "size_class": "medium", "summary": "标准化学喷射器：12发化学弹药，按住启动持续喷射，短射程宽喷流，命中后造成腐蚀 DoT。"},
-		{"name": "长视棱镜激光枪 / LONGSIGHT PRISM LASER", "maker": "LONGSIGHT AEGIS", "cost": 118, "hp": 24, "mass": 8, "length": 0.72, "normal_damage": 10, "projectile_damage": 10, "damage_type": "laser", "projectile_damage_type": "laser", "projectile": true, "projectile_only": true, "gun_kind": "laser_gun", "ammo_kind": "laser", "carried_ammo": 7, "ammo_capacity": {"laser": 7}, "projectile_behavior": "laser", "projectile_style": "beam", "travel_path": "instant_line", "projectile_momentum": 18.0, "projectile_damage_coeff": 18.0, "projectile_width_m": 0.18, "projectile_range": 4.2, "range": 4.2, "lane_range": 0.09, "projectile_speed_mult": 2.4, "projectile_consumes_on_fire": true, "laser_charge_time": 0.0, "laser_tick_interval": 1.0, "fire_interval": 1.0, "fire_rate": 1.0, "normal_heat": 18.0, "material_class": "gun", "connection_ends": 1, "shape": "laser_gun", "radius": 0.055, "recoil": 0.03, "size_class": "medium", "summary": "长视棱镜激光枪：7发激光弹药，按住棱镜照射启动持续发射即时光束，不使用狙击锁定。"},
+		{"name": "标准化学喷射器 / STANDARD CAUSTIC SPRAYER", "maker": "VANTA LOOM", "cost": 118, "hp": 34, "mass": 12, "length": 0.62, "normal_damage": 4, "projectile_damage": 4, "damage_type": "chemical", "projectile_damage_type": "chemical", "projectile": true, "projectile_only": true, "gun_kind": "sprayer", "ammo_kind": "chemical", "carried_ammo": 12, "ammo_capacity": {"chemical": 12}, "projectile_behavior": "chemical_line", "projectile_style": "spray", "travel_path": "straight", "projectile_momentum": 1.0, "projectile_damage_coeff": 28.8, "projectile_width_m": 0.28, "projectile_range": 1.6, "range": 1.6, "lane_range": 0.14, "projectile_speed_mult": 0.72, "projectile_consumes_on_fire": true, "chemical_dot_duration": 4.0, "chemical_dot_mult": 1.0, "chemical_frontload": 0.333333, "chemical_dot_tick_seconds": 0.5, "chemical_dot_no_stack": true, "fire_interval": 0.25, "fire_rate": 4.0, "material_class": "gun", "connection_ends": 1, "shape": "sprayer_nozzle", "radius": 0.11, "recoil": 0.08, "size_class": "medium", "summary": "标准化学喷射器：12发化学弹药，投射物动量固定为1，按住启动持续喷射，短射程宽喷流，命中后造成腐蚀 DoT。"},
+		{"name": "长视棱镜激光枪 / LONGSIGHT PRISM LASER", "maker": "LONGSIGHT AEGIS", "cost": 118, "hp": 24, "mass": 8, "length": 0.72, "normal_damage": 10, "projectile_damage": 10, "damage_type": "laser", "projectile_damage_type": "laser", "projectile": true, "projectile_only": true, "gun_kind": "laser_gun", "ammo_kind": "laser", "carried_ammo": 7, "ammo_capacity": {"laser": 7}, "projectile_behavior": "laser", "projectile_style": "beam", "travel_path": "instant_line", "projectile_momentum": 1.0, "projectile_damage_coeff": 18.0, "projectile_width_m": 0.18, "projectile_range": 4.2, "range": 4.2, "lane_range": 0.09, "projectile_speed_mult": 2.4, "projectile_consumes_on_fire": true, "laser_charge_time": 0.0, "laser_tick_interval": 1.0, "fire_interval": 1.0, "fire_rate": 1.0, "normal_heat": 18.0, "material_class": "gun", "connection_ends": 1, "shape": "laser_gun", "radius": 0.055, "recoil": 0.03, "size_class": "medium", "summary": "长视棱镜激光枪：7发激光弹药，投射物动量固定为1，按住棱镜照射启动持续发射即时光束，不使用狙击锁定。"},
 		{"name": "红线猎隼导弹架 / REDLINE KESTREL MISSILE POD", "maker": "REDLINE ARMS", "cost": 148, "hp": 26, "mass": 14, "length": 0.78, "normal_damage": 13, "projectile_damage": 13, "damage_type": "bullet", "projectile_damage_type": "bullet", "projectile": true, "projectile_only": true, "gun_kind": "missile_launcher", "ammo_kind": "explosive", "carried_ammo": 3, "ammo_capacity": {"explosive": 3}, "projectile_behavior": "explosive", "projectile_style": "missile", "travel_path": "homing", "projectile_momentum": 58.0, "projectile_damage_coeff": 34.0, "projectile_width_m": 0.22, "projectile_range": 3.4, "range": 3.4, "lane_range": 0.11, "projectile_speed_mult": 1.05, "projectile_consumes_on_fire": true, "explosion_radius": 0.54, "explosion_damage": 9, "explosion_damage_type": "bullet", "explosion_style": "missile", "missile_lock_priority": "screen_hero_first", "missile_lock_cone_degrees": 52.0, "missile_lock_range": 3.4, "missile_lock_target_classes": ["hero", "puppet", "barrier_support", "barrier_attack", "barrier_other"], "missile_occlusion_grace": 0.28, "fire_rate": 0.55, "fire_interval": 1.818182, "normal_heat": 34.0, "material_class": "missile_launcher", "connection_ends": 1, "shape": "missile_rack", "radius": 0.105, "recoil": 0.18, "size_class": "medium", "summary": "红线猎隼导弹架：3发爆炸弹药，按住猎隼锁射寻找目标，松开发射可规避的制导导弹；遮蔽会切断制导。"},
 		{"name": "COINRUN PICKUP RAKE", "maker": "COINRUN DYNAMICS", "cost": 62, "hp": 28, "mass": 6, "length": 0.52, "range": 0.14, "normal_damage": 5, "active_damage": 8, "damage_type": "blunt", "terminal_weapon": true, "connection_ends": 1, "shape": "racket", "radius": 0.08, "racket_power": 0.22, "speed_lane_affinity": 0.08, "size_class": "small", "summary": "Racket-like route weapon that swats ball puppets while collecting lane tempo."},
 		{"name": "COLOSSUS ARENA MAUL", "maker": "COLOSSUS KENNEL", "cost": 198, "hp": 190, "mass": 180, "length": 1.72, "range": 0.42, "normal_damage": 20, "armor_damage": 30, "active_damage": 34, "damage_type": "blunt", "material_class": "weapon", "terminal_weapon": true, "terminal_weapon_kind": "melee", "weapon_family": "hammer", "blunt_hammer": true, "embedded_joint_kind": "ball", "embedded_joint_angle": 180, "embedded_joint_output_momentum": 980.0, "terminal_momentum_mult": 1.65, "hammer_windup_mult": 1.6, "connection_ends": 1, "shape": "arena_maul", "radius": 0.72, "recoil": 0.28, "size_class": "monster", "summary": "XL monster maul with a 180-degree heavy embedded joint, absurd momentum, and huge knockback if the engine can move it."},
@@ -8111,7 +8111,7 @@ func _editor_unit_hover_detail(player_id: int, role_key: String, unit_index: int
 			var topology: Dictionary = unit_bp.get("custom_topology", {})
 			lines.append("画布节点 %d / 连接 %d" % [Array(topology.get("nodes", [])).size(), Array(topology.get("edges", [])).size()])
 		else:
-			lines.append("结界板块 %d" % Array(unit_bp.get("barrier_tiles", [])).size())
+			lines.append("功能模块 %d" % Array(unit_bp.get("barrier_tiles", [])).size())
 	else:
 		lines.append("Thumbnail preview: click the right card to switch canvas; hover only inspects.")
 		lines.append("Unit cost %d / deploy %d / length %.2f / mass %.0f" % [int(stats.get("cost", 0)), int(stats.get("deploy_cost", 0)), float(stats.get("length", 0.0)), float(stats.get("mass", 0.0))])
@@ -10490,6 +10490,17 @@ func _attack_rule_breakdown_for_result(event: Dictionary, context: Dictionary = 
 		"target_part_name": target_part_name,
 		"damage_type": String(context.get("damage_type", event.get("damage_type", ""))),
 		"counter_tier": int(context.get("counter_tier", 0)),
+		"raw_momentum": float(context.get("raw_momentum", event.get("raw_momentum", event.get("momentum", 0.0)))),
+		"momentum": float(context.get("momentum", event.get("momentum", event.get("momentum_magnitude", 0.0)))),
+		"capped_momentum": float(context.get("capped_momentum", event.get("capped_momentum", event.get("momentum", event.get("momentum_magnitude", 0.0))))),
+		"damage_coefficient": float(context.get("damage_coefficient", event.get("damage_coefficient", 0.0))),
+		"adjustment_coefficient": float(context.get("adjustment_coefficient", event.get("adjustment_coefficient", 1.0))),
+		"break_value": float(context.get("break_value", event.get("break_value", event.get("break_threshold", 0.0)))),
+		"break_value_adjustment": float(context.get("break_value_adjustment", event.get("break_value_adjustment", 1.0))),
+		"effective_break_value": float(context.get("effective_break_value", event.get("effective_break_value", event.get("break_value", 0.0)))),
+		"break_gate": float(context.get("break_gate", event.get("break_gate", event.get("effective_break_value", event.get("break_value", 0.0))))),
+		"threshold_blocked": bool(context.get("threshold_blocked", event.get("threshold_blocked", event.get("contact_gate_blocked", false)))),
+		"knock_momentum": float(context.get("knock_momentum", event.get("knock_momentum", event.get("momentum", 0.0)))),
 		"advisory_only": true,
 	}
 	breakdown["text_zh"] = _attack_rule_breakdown_text(breakdown, true)
@@ -11354,8 +11365,8 @@ func preload_teamedit_content() -> Array:
 		_loading_task("teamedit_board", "画板模型", "Board base model", 1.0, Callable(self, "_preload_teamedit_board_task")),
 		_loading_task("teamedit_socket_index", "连接候选", "Socket candidates", 0.7, Callable(self, "_preload_teamedit_socket_task"), LoadingTask.PHASE_FIRST_INTERACTION, false),
 		_loading_task("teamedit_dashboard", "Dashboard 数值", "Dashboard stats", 0.8, Callable(self, "_preload_teamedit_dashboard_task")),
-		_loading_task("teamedit_torso_detail_templates", "躯干详情模板", "Torso detail templates", 0.6, Callable(self, "_preload_teamedit_torso_templates_task"), LoadingTask.PHASE_FIRST_INTERACTION, false),
-		_loading_task("teamedit_torso_detail", "躯干详情", "Torso detail", 0.8, Callable(self, "_preload_teamedit_torso_detail_task"), LoadingTask.PHASE_FIRST_INTERACTION, false),
+		_loading_task("teamedit_torso_detail_templates", "核心详情模板", "Core detail templates", 0.6, Callable(self, "_preload_teamedit_torso_templates_task"), LoadingTask.PHASE_FIRST_INTERACTION, false),
+		_loading_task("teamedit_torso_detail", "核心详情", "Core detail", 0.8, Callable(self, "_preload_teamedit_torso_detail_task"), LoadingTask.PHASE_FIRST_INTERACTION, false),
 		_loading_task("teamedit_texture_queue", "贴图捕获", "Texture capture", 0.8, Callable(self, "_preload_teamedit_texture_queue_task"), LoadingTask.PHASE_IDLE, false, true),
 	]
 
@@ -12976,7 +12987,7 @@ func _module_binding_for_payload_index(unit_bp: Dictionary, payload_index: int) 
 
 func _module_binding_target_label(role_key: String, unit_bp: Dictionary, binding: Dictionary) -> String:
 	if String(binding.get("target_kind", "limb")) == "torso":
-		return "躯干" if _ui_is_zh() else "TORSO"
+		return "核心" if _ui_is_zh() else "CORE"
 	var topology: Dictionary = unit_bp.get("custom_topology", {})
 	var nodes: Array = topology.get("nodes", [])
 	var names: Array = []
@@ -14043,7 +14054,7 @@ func _toggle_dashboard_torso_detail() -> void:
 	var torso_node := _editor_torso_detail_target_node_index()
 	if torso_node < 0:
 		if editor_board_hint_label != null:
-			_set_control_text_if_changed(editor_board_hint_label, "先放置或选择躯干" if _ui_is_zh() else "Select a torso first")
+			_set_control_text_if_changed(editor_board_hint_label, "先放置或选择核心" if _ui_is_zh() else "Select a core first")
 		return
 	if editor_torso_detail_view != null and editor_torso_detail_view.visible and editor_open_torso_node_index == torso_node:
 		_close_editor_torso_detail()
@@ -14057,7 +14068,7 @@ func _toggle_engine_momentum_allocation_for_active_target() -> void:
 	var target := _editor_active_engine_allocation_target()
 	if target.is_empty():
 		if editor_board_hint_label != null:
-			_set_control_text_if_changed(editor_board_hint_label, "先放置或选择躯干" if _ui_is_zh() else "Select a torso first")
+			_set_control_text_if_changed(editor_board_hint_label, "先放置或选择核心" if _ui_is_zh() else "Select a core first")
 		return
 	var torso_node := int(target.get("torso_node", -1))
 	var payload_index := int(target.get("engine_payload_index", -1))
@@ -14075,14 +14086,14 @@ func _refresh_unit_editor_torso_detail_button(visible: bool, target: Dictionary)
 	_set_canvas_item_visible_if_changed(editor_torso_detail_button, visible)
 	if not visible:
 		return
-	_set_control_text_if_changed(editor_torso_detail_button, "躯干详情" if _ui_is_zh() else "TORSO")
+	_set_control_text_if_changed(editor_torso_detail_button, "核心详情" if _ui_is_zh() else "CORE")
 	if target.is_empty():
 		_set_button_disabled_if_changed(editor_torso_detail_button, true)
-		_set_control_tooltip_if_changed(editor_torso_detail_button, "选择躯干后打开详情" if _ui_is_zh() else "Select a torso to open details")
+		_set_control_tooltip_if_changed(editor_torso_detail_button, "选择核心后打开详情" if _ui_is_zh() else "Select a core to open details")
 		return
 	var torso_node := int(target.get("torso_node", -1))
 	_set_button_disabled_if_changed(editor_torso_detail_button, torso_node < 0)
-	_set_control_tooltip_if_changed(editor_torso_detail_button, "打开/关闭当前躯干详情面板" if _ui_is_zh() else "Open or close the current torso detail panel")
+	_set_control_tooltip_if_changed(editor_torso_detail_button, "打开/关闭当前核心详情面板" if _ui_is_zh() else "Open or close the current core detail panel")
 
 
 func _refresh_engine_allocation_dashboard_summary() -> void:
@@ -14113,13 +14124,13 @@ func _refresh_unit_editor_power_allocation_dock() -> void:
 	var target := _editor_active_engine_allocation_target()
 	if target.is_empty():
 		if editor_power_dock_view != null:
-			editor_power_dock_view.set_empty("选择躯干后显示推进器与绑定肢体动力滑槽。" if _ui_is_zh() else "Select a torso to show thruster and bound-limb sliders.", ui_language)
+			editor_power_dock_view.set_empty("选择核心后显示推进器与绑定连接件动力滑槽。" if _ui_is_zh() else "Select a core to show thruster and bound-connector sliders.", ui_language)
 		return
 	if not bool(target.get("has_engine", false)):
 		var no_engine_data: Dictionary = Dictionary(target.get("data", {}))
 		if no_engine_data.is_empty() or Array(no_engine_data.get("entries", [])).is_empty():
 			if editor_power_dock_view != null:
-				editor_power_dock_view.set_empty("当前躯干未安装引擎；绑定肢体会在此显示为禁用行。" if _ui_is_zh() else "No engine installed; bound limbs appear here as disabled rows.", ui_language)
+				editor_power_dock_view.set_empty("当前核心未安装引擎；绑定连接件会在此显示为禁用行。" if _ui_is_zh() else "No engine installed; bound connectors appear here as disabled rows.", ui_language)
 			return
 		if editor_power_dock_view != null:
 			editor_power_dock_view.set_allocation_data(no_engine_data, ui_language)
@@ -14866,7 +14877,7 @@ func _apply_editor_component_node_direct(node_index: int, defer_draw: bool = tru
 func _record_engine_allocation_undo_once() -> void:
 	if editor_engine_allocation_undo_recorded:
 		return
-	_record_editor_undo_state("调整肢体动力" if _ui_is_zh() else "adjust limb drive")
+	_record_editor_undo_state("调整连接件动力" if _ui_is_zh() else "adjust connector drive")
 	editor_engine_allocation_undo_recorded = true
 
 
@@ -16390,7 +16401,7 @@ func _pending_payload_install_hint(role_key: String) -> String:
 	var pending_name := _pending_payload_part_name(role_key)
 	if pending_name == "":
 		return ""
-	return "待安装：%s。拖到或点击画板上的具体躯干，也可拖进已打开的躯干详情槽。" % pending_name if _ui_is_zh() else "Pending install: %s. Drop or click a specific torso on the board, or drop into an open torso detail slot." % pending_name
+	return "待安装：%s。拖到或点击画板上的具体核心，也可拖进已打开的核心详情槽。" % pending_name if _ui_is_zh() else "Pending install: %s. Drop or click a specific core on the board, or drop into an open core detail slot." % pending_name
 
 
 func _commit_pending_canvas_part_purchase(unit_bp: Dictionary, slot_key: String, part_index: int) -> Dictionary:
@@ -16530,7 +16541,7 @@ func _start_visual_handedness_choice_if_needed(unit_bp: Dictionary, node_index: 
 	editor_pending_orientation_node_index = node_index
 	editor_topology_node_index = node_index
 	if editor_board_hint_label != null:
-		_set_control_text_if_changed(editor_board_hint_label, "选择侧挂刃朝向：左侧挂刃 / 右侧挂刃。以上一段肢体为柄，只改变法线侧向，不改变接口。" if _ui_is_zh() else "Choose side-mounted blade: LEFT / RIGHT. The previous limb is the handle; only the normal-side mount changes.")
+		_set_control_text_if_changed(editor_board_hint_label, "选择侧挂刃朝向：左侧挂刃 / 右侧挂刃。以上一段连接件为柄，只改变法线侧向，不改变接口。" if _ui_is_zh() else "Choose side-mounted blade: LEFT / RIGHT. The previous connector is the handle; only the normal-side mount changes.")
 	mark_editor_dirty(EDITOR_DIRTY_BOARD_UI | EDITOR_DIRTY_ACTION_BUTTONS, "node.visual_mount_side.choice")
 	_refresh_editor_orientation_buttons()
 	_refresh_editor_orientation_popup()
@@ -17351,7 +17362,7 @@ func _set_editor_board_tool(tool_key: String) -> void:
 	editor_board_tool = "pose" if tool_key == "pose" else "layout"
 	_cancel_editor_pose_drag(false)
 	if editor_board_hint_label != null:
-		editor_board_hint_label.text = "姿态编辑：点击任意已连接肢体或末端武器，只旋转该段及其下游；近端不会被远端拖动。" if editor_board_tool == "pose" and _ui_is_zh() else ("POSE: click any linked limb or terminal; only that part and its downstream chain rotate, ancestors stay fixed." if editor_board_tool == "pose" else ("布局编辑：拖动零件调整拓扑；右键构件或连接线解绑。" if _ui_is_zh() else "LAYOUT: drag parts to edit topology; right-click parts or links to unlink."))
+		editor_board_hint_label.text = "姿态编辑：点击任意已连接件或末端武器，只旋转该段及其下游；近端不会被远端拖动。" if editor_board_tool == "pose" and _ui_is_zh() else ("POSE: click any linked connector or terminal; only that part and its downstream chain rotate, ancestors stay fixed." if editor_board_tool == "pose" else ("布局编辑：拖动零件调整拓扑；右键构件或连接线解绑。" if _ui_is_zh() else "LAYOUT: drag parts to edit topology; right-click parts or links to unlink."))
 	_mark_editor_board_interaction_dirty("board.tool_toggle", false)
 
 
@@ -17394,7 +17405,7 @@ func _handle_custom_topology_click(mouse_event: InputEventMouseButton, unit_bp: 
 		if mouse_event.button_index == MOUSE_BUTTON_RIGHT:
 			_clear_pending_payload_part()
 			if editor_board_hint_label != null:
-				editor_board_hint_label.text = "已取消待安装软件/装备。" if _ui_is_zh() else "Cancelled pending software/equipment install."
+				editor_board_hint_label.text = "已取消待安装软件/软硬件。" if _ui_is_zh() else "Cancelled pending software/hybrid install."
 			_play_sfx_wave("clack", 420.0, 0.04, -18.0)
 			_mark_editor_board_model_dirty("board.cancel_pending_payload")
 			if hot_path_profiler != null:
@@ -17449,7 +17460,7 @@ func _handle_custom_topology_click(mouse_event: InputEventMouseButton, unit_bp: 
 		"edge_hit_index": int(edge_hit.get("edge_index", -1)) if edge_hit is Dictionary else -1,
 		"right_clicked_node_index": clicked_node,
 		"pose_candidate_valid": not pose_candidate.is_empty() and bool(pose_candidate.get("valid", false)),
-		"pose_candidate_reason": String(pose_candidate.get("reason", "姿态编辑需要点击已连接肢体。" if _ui_is_zh() else "Pose edit needs a connected limb.")),
+		"pose_candidate_reason": String(pose_candidate.get("reason", "姿态编辑需要点击已连接件。" if _ui_is_zh() else "Pose edit needs a connected connector.")),
 		"pose_candidate_root_index": int(pose_candidate.get("root_index", -1)),
 		"pose_candidate_downstream_count": int(pose_candidate.get("downstream_count", 0)),
 		"has_nodes": not nodes.is_empty(),
@@ -17524,7 +17535,7 @@ func _apply_custom_topology_click_intent(intent: Dictionary, mouse_event: InputE
 				_end_custom_topology_click_profiler()
 				return
 		"pose_drag_invalid":
-			_set_pose_drag_reject(String(intent.get("pose_reject_reason", "姿态编辑需要点击已连接肢体。" if _ui_is_zh() else "Pose edit needs a connected limb.")), int(intent.get("pose_root_index", -1)), int(intent.get("pose_downstream_count", 0)), true)
+			_set_pose_drag_reject(String(intent.get("pose_reject_reason", "姿态编辑需要点击已连接件。" if _ui_is_zh() else "Pose edit needs a connected connector.")), int(intent.get("pose_root_index", -1)), int(intent.get("pose_downstream_count", 0)), true)
 			_play_sfx_wave("alarm", 170.0, 0.08, -16.0)
 			_end_custom_topology_click_profiler()
 			return
@@ -17546,7 +17557,7 @@ func _apply_custom_topology_click_intent(intent: Dictionary, mouse_event: InputE
 			editor_dragging_whole_unit = false
 			editor_selecting_topology_box = false
 			if editor_board_hint_label != null:
-				editor_board_hint_label.text = "布局模式不会拖断已连接肢体；切到姿态模式拖动近端肢体来旋转。" if _ui_is_zh() else "Layout mode will not tear linked limbs loose; switch to POSE and drag the proximal limb to rotate."
+				editor_board_hint_label.text = "布局模式不会拖断已连接件；切到姿态模式拖动近端连接件来旋转。" if _ui_is_zh() else "Layout mode will not tear linked connectors loose; switch to POSE and drag the proximal connector to rotate."
 			_play_sfx_wave("alarm", 170.0, 0.08, -16.0)
 		"layout_connected_part_reject":
 			editor_topology_node_index = int(intent.get("node_index", nearest))
@@ -17557,7 +17568,7 @@ func _apply_custom_topology_click_intent(intent: Dictionary, mouse_event: InputE
 			editor_selecting_topology_box = false
 			_set_layout_drag_reject(String(intent.get("reject_reason", "connected_part")), editor_topology_node_index, "visible")
 			if editor_board_hint_label != null:
-				editor_board_hint_label.text = "已连接肢体请用姿态模式旋转；布局模式只负责拼搭、解绑和移动未连接零件。" if _ui_is_zh() else "Use POSE to rotate linked limbs; layout mode builds, unlinks, and moves loose parts only."
+				editor_board_hint_label.text = "已连接件请用姿态模式旋转；布局模式只负责拼搭、解绑和移动未连接零件。" if _ui_is_zh() else "Use POSE to rotate linked connectors; layout mode builds, unlinks, and moves loose parts only."
 			_play_sfx_wave("alarm", 170.0, 0.08, -16.0)
 			_show_editor_topology_node_detail(editor_topology_node_index, "board", {"position": _editor_board_popup_position(mouse_event.position)})
 		"start_loose_drag":
@@ -17574,7 +17585,7 @@ func _apply_custom_topology_click_intent(intent: Dictionary, mouse_event: InputE
 			editor_dragging_node_index = -1
 			editor_dragging_selected_nodes = false
 			_hide_editor_structure_reference()
-			editor_board_hint_label.text = "空白位置：从零件库拖入肌肉构件；框选多个节点后可整体拖拽。" if _ui_is_zh() else "Blank canvas: drag in muscle components; box-select several nodes to drag them together."
+			editor_board_hint_label.text = "空白位置：从零件库拖入硬件构件；框选多个节点后可整体拖拽。" if _ui_is_zh() else "Blank canvas: drag in hardware components; box-select several nodes to drag them together."
 			_play_sfx_wave("alarm", 170.0, 0.1, -14.0)
 		_:
 			pass
@@ -17608,7 +17619,7 @@ func _update_editor_board_torso_hover(local_position: Vector2) -> void:
 	if nearest >= 0:
 		_clear_editor_hover_card()
 		if editor_board_hint_label != null:
-			editor_board_hint_label.text = "躯干接口高亮中：双击打开详情页；单击拖动躯干。" if _ui_is_zh() else "Torso ports highlighted: double-click for details; single-click drags the torso."
+			editor_board_hint_label.text = "核心插槽高亮中：双击打开详情页；单击拖动核心。" if _ui_is_zh() else "Core sockets highlighted: double-click for details; single-click drags the core."
 	else:
 		if editor_hover_slot_key == "torso_node":
 			_clear_editor_hover_card()
@@ -17644,8 +17655,8 @@ func _show_editor_torso_node_hover(unit_bp: Dictionary, node_index: int) -> void
 	editor_hover_part_index = _topology_node_part_index(node, unit_bp)
 	var plugin_entries := _torso_plugin_slot_summary(unit_bp, node_index)
 	var software_entries := _torso_software_slot_summary(unit_bp, node_index)
-	var title := "%02d %s" % [node_index + 1, _part_display_name(part, "TORSO")]
-	var subtitle := ("双击打开躯干详情 / 接口 %d / 插件 %d/%d / 软件 %d/%d" if _ui_is_zh() else "Double-click for torso detail / ports %d / internal %d/%d / software %d/%d") % [
+	var title := "%02d %s" % [node_index + 1, _part_display_name(part, "CORE")]
+	var subtitle := ("双击打开核心详情 / 接口 %d / 插件 %d/%d / 软件 %d/%d" if _ui_is_zh() else "Double-click for core detail / ports %d / internal %d/%d / software %d/%d") % [
 		int(part.get("joint_ports", part.get("connection_ends", 0))),
 		plugin_entries.size(),
 		_torso_plugin_capacity_for_part(part),
@@ -17655,7 +17666,7 @@ func _show_editor_torso_node_hover(unit_bp: Dictionary, node_index: int) -> void
 	var lines := [
 		("已安装机内插件：%s" if _ui_is_zh() else "Internal plugins: %s") % _payload_names_for_hover(plugin_entries),
 		("已安装软件：%s" if _ui_is_zh() else "Software: %s") % _payload_names_for_hover(software_entries),
-		("关节点位会在躯干外缘显示；已占用点位为绿色。" if _ui_is_zh() else "Joint ports are drawn on the torso edge; occupied ports are green."),
+		("硬件插槽会在核心外缘显示；已占用点位为绿色。" if _ui_is_zh() else "Hardware sockets are drawn on the core edge; occupied sockets are green."),
 	]
 	var stats := _hover_card_stat_entries("muscle", part)
 	if editor_hover_popup_view != null:
@@ -17677,7 +17688,7 @@ func _open_editor_torso_detail(node_index: int) -> void:
 	editor_selected_torso_slot_kind = ""
 	editor_selected_torso_slot_index = -1
 	if editor_board_hint_label != null:
-		editor_board_hint_label.text = "已打开躯干详情页：拖入引擎/散热器/推进器/弹药/护盾，或拖入英魂/源代码/以太/行动模块。" if _ui_is_zh() else "Opened torso detail: drag in engines/cooling/boosters/ammo/shields or soul/source/ether/action modules."
+		editor_board_hint_label.text = "已打开核心详情页：拖入引擎/散热器/推进器/弹药/护盾，或拖入英魂/源代码/以太/行动模块。" if _ui_is_zh() else "Opened core detail: drag in engines/cooling/thrusters/ammo/shields or soul/source/ether/action modules."
 	_refresh_torso_detail_view()
 
 
@@ -18533,20 +18544,20 @@ func _finish_topology_selection_box(unit_bp: Dictionary, local_position: Vector2
 			editor_pose_downstream_nodes = Array(intent.get("pose_downstream_nodes", [])).duplicate()
 			editor_selected_topology_nodes = Array(intent.get("selected_nodes", editor_pose_downstream_nodes)).duplicate()
 			editor_topology_node_index = root_index
-			editor_board_hint_label.text = "已框选一条肢体子链：拖动构件 %d 只旋转它及下游链。" % (root_index + 1) if _ui_is_zh() else "Selected one limb subchain: drag part %d to rotate only it and its downstream chain." % (root_index + 1)
+			editor_board_hint_label.text = "已框选一条连接件子链：拖动构件 %d 只旋转它及下游链。" % (root_index + 1) if _ui_is_zh() else "Selected one connector subchain: drag part %d to rotate only it and its downstream chain." % (root_index + 1)
 		"pose_invalid_selection":
 			editor_pose_root_node = -1
 			editor_pose_downstream_nodes = []
-			editor_board_hint_label.text = "框选内容不是同一条下游肢体链；请只框选一条肢体。" if _ui_is_zh() else "Selection is not one downstream limb chain; box-select only one limb."
+			editor_board_hint_label.text = "框选内容不是同一条下游连接件链；请只框选一条连接件链。" if _ui_is_zh() else "Selection is not one downstream connector chain; box-select only one connector chain."
 			_play_sfx_wave("alarm", 170.0, 0.08, -16.0)
 		"layout_whole_rigid":
 			var expanded := Array(intent.get("selected_nodes", [])).duplicate()
 			if not expanded.is_empty():
 				editor_selected_topology_nodes = expanded
 				editor_topology_node_index = int(expanded[0])
-			editor_board_hint_label.text = "框选包含躯干：拖动时整台机体按刚体平移。" if _ui_is_zh() else "Selection includes a torso: dragging moves the whole mech as a rigid body."
+			editor_board_hint_label.text = "框选包含核心：拖动时整台机体按刚体平移。" if _ui_is_zh() else "Selection includes a core: dragging moves the whole mech as a rigid body."
 		"layout_connected_hint":
-			editor_board_hint_label.text = "框选的是已连接肢体链：请切到姿态模式进行旋转/伸缩测试。" if _ui_is_zh() else "Selected a connected limb chain: switch to POSE to rotate or extend it."
+			editor_board_hint_label.text = "框选的是已连接连接件链：请切到姿态模式进行旋转/伸缩测试。" if _ui_is_zh() else "Selected a connected connector chain: switch to POSE to rotate or extend it."
 		"layout_loose_group":
 			editor_selected_topology_nodes = Array(intent.get("selected_nodes", selected)).duplicate()
 			editor_board_hint_label.text = "已框选 %d 个未连接构件：拖动可一起平移。" % editor_selected_topology_nodes.size() if _ui_is_zh() else "Selected %d loose parts: dragging moves them together." % editor_selected_topology_nodes.size()
@@ -19016,7 +19027,7 @@ func _pose_drag_candidate_for_point(role_key: String, unit_bp: Dictionary, nodes
 			"node_index": -1,
 			"root_index": -1,
 			"downstream_count": 0,
-			"reason": "姿态模式：请点击已连接肢体或末端武器的可见本体。" if _ui_is_zh() else "POSE: click the visible body of a connected limb or terminal weapon.",
+			"reason": "姿态模式：请点击已连接连接件或末端武器的可见本体。" if _ui_is_zh() else "POSE: click the visible body of a connected connector or terminal weapon.",
 		}
 	var reason := _pose_drag_node_reject_reason(role_key, unit_bp, nodes, edges, nearest_index)
 	if reason != "":
@@ -19062,11 +19073,11 @@ func _pose_drag_node_reject_reason(role_key: String, unit_bp: Dictionary, nodes:
 	if not _topology_node_is_component(node):
 		return "姿态模式只能编辑有体积的构件节点。" if _ui_is_zh() else "POSE edits only volumetric component nodes."
 	if _topology_node_is_torso(role_key, node, unit_bp):
-		return "躯干不进入姿态拖拽；双击躯干打开详情页。" if _ui_is_zh() else "Torso does not pose-drag; double-click it for details."
+		return "核心不进入姿态拖拽；双击核心打开详情页。" if _ui_is_zh() else "Core does not pose-drag; double-click it for details."
 	if not _topology_socket_ids_for_node(role_key, node, unit_bp).has("root_joint"):
 		return "这个零件没有 root_joint，不能作为姿态根部。" if _ui_is_zh() else "This part has no root_joint, so it cannot be a pose root."
 	if _topology_node_edge_count(edges, node_index) <= 0 or _topology_parent_edge_info(role_key, unit_bp, nodes, edges, node_index).is_empty():
-		return "未连接零件没有上游根部关节；请切回布局模式移动或先连接到躯干/肢体。" if _ui_is_zh() else "Unconnected parts have no upstream root joint; switch to LAYOUT to move them or connect them first."
+		return "未连接零件没有上游根部接口；请切回布局模式移动或先连接到核心/连接件。" if _ui_is_zh() else "Unconnected parts have no upstream root socket; switch to LAYOUT to move them or connect them first."
 	return ""
 
 
@@ -19162,7 +19173,7 @@ func _start_editor_pose_drag(unit_bp: Dictionary, root_index: int, local_positio
 	if not downstream.has(root_index):
 		downstream.push_front(root_index)
 	if not selected_hint.is_empty() and not _pose_selection_is_single_downstream_chain(role_key, unit_bp, nodes, edges, root_index, selected_hint):
-		_set_pose_drag_reject("框选内容不在同一条下游肢体链中，不能作为一个姿态整体旋转。" if _ui_is_zh() else "The selection is not one downstream limb chain, so it cannot rotate as one pose subtree.", root_index, downstream.size(), true)
+		_set_pose_drag_reject("框选内容不在同一条下游连接件链中，不能作为一个姿态整体旋转。" if _ui_is_zh() else "The selection is not one downstream connector chain, so it cannot rotate as one pose subtree.", root_index, downstream.size(), true)
 		return false
 	var pivot := _topology_socket_position_by_id(role_key, unit_bp, nodes, edges, root_index, "root_joint")
 	var mouse_topology := _board_position_to_topology(local_position)
@@ -20253,12 +20264,12 @@ func _part_filter_options_for_group(group_key: String) -> Array:
 		return unit_editor_catalog_controller.filter_options_for_group(group_key, editor_weapon_filter_group)
 	if group_key == "torso":
 		return [
-			{"key": "connector_torso", "slot": "muscle", "zh": "躯干", "en": "TORSO"},
-			{"key": "connector_brain", "slot": "muscle", "zh": "大脑躯干", "en": "BRAIN"},
+			{"key": "connector_torso", "slot": "muscle", "zh": "运动核心", "en": "MOTION CORE"},
+			{"key": "connector_brain", "slot": "muscle", "zh": "神经核心", "en": "NEURAL CORE"},
 		]
 	if group_key == "limb":
 		return [
-			{"key": "connector_limb", "slot": "limb_muscle", "zh": "连接肢体", "en": "LIMB"},
+			{"key": "connector_limb", "slot": "limb_muscle", "zh": "连接件", "en": "CONNECTOR"},
 		]
 	if group_key == "terminal_weapon":
 		var options := [
@@ -20285,12 +20296,12 @@ func _part_filter_options_for_group(group_key: String) -> Array:
 		return options
 	if group_key == "barrier_panel":
 		return [
-			{"key": "barrier_muscle", "slots": ["limb_muscle", "muscle"], "zh": "连接-结界", "en": "C-BAR"},
+			{"key": "barrier_muscle", "slots": ["limb_muscle", "muscle"], "zh": "功能模块", "en": "FUNCTION"},
 		]
 	if group_key == "software_muscle":
 		return [
 			{"key": "engine", "slot": "engine", "zh": "引擎", "en": "ENGINE"},
-			{"key": "booster", "slot": "booster", "zh": "推进器", "en": "BOOSTER"},
+			{"key": "booster", "slot": "booster", "zh": "推进器", "en": "THRUSTER"},
 			{"key": "cooling", "slot": "cooling", "zh": "散热器", "en": "COOLING"},
 			{"key": "ammo", "slot": "muscle", "zh": "弹药", "en": "AMMO"},
 			{"key": "shield_payload", "slot": "muscle", "zh": "电子护盾", "en": "E-SHIELD"},
@@ -20486,7 +20497,7 @@ func _drop_payload_part_on_board_torso(slot_key: String, part_index: int, part: 
 		_set_pending_payload_part(slot_key, part_index)
 		var hint := _pending_payload_install_hint(role_key)
 		if editor_board_hint_label != null:
-			editor_board_hint_label.text = "警报：请选择画板上的具体躯干来安装。%s" % hint if _ui_is_zh() else "ALARM: choose a specific torso on the board to install. %s" % hint
+			editor_board_hint_label.text = "警报：请选择画板上的具体核心来安装。%s" % hint if _ui_is_zh() else "ALARM: choose a specific core on the board to install. %s" % hint
 		if editor_summary_label != null:
 			editor_summary_label.text = editor_board_hint_label.text if editor_board_hint_label != null else hint
 		_play_sfx_wave("alarm", 170.0, 0.08, -16.0)
@@ -20511,7 +20522,7 @@ func _add_torso_payload_component(slot_key: String, part_index: int, part: Dicti
 	var unit_bp: Dictionary = _editor_current_blueprint()
 	var torso_node_index := _active_torso_node_index_for_payload_install(unit_bp)
 	if _role_uses_body_board(role_key) and torso_node_index < 0:
-		editor_summary_label.text = "警报：请先在画布中放入一个躯干/大脑连接件，再安装机内插件或软件。" if _ui_is_zh() else "ALARM: place a torso/brain connector on the board before installing internal plugins or software."
+		editor_summary_label.text = "警报：请先在画布中放入一个运动核心或神经核心，再安装机内插件或软件。" if _ui_is_zh() else "ALARM: place a motion or neural core on the board before installing internal plugins or software."
 		_play_sfx_wave("alarm", 170.0, 0.08, -16.0)
 		return
 	_install_torso_payload_component(slot_key, part_index, part, torso_node_index, requested_internal_slot_index)
@@ -20526,7 +20537,7 @@ func _install_torso_payload_component(slot_key: String, part_index: int, part: D
 		var topology_for_target: Dictionary = unit_bp.get("custom_topology", {})
 		var nodes_for_target: Array = Array(topology_for_target.get("nodes", []))
 		if torso_node_index < 0 or torso_node_index >= nodes_for_target.size() or not _topology_node_is_torso(role_key, nodes_for_target[torso_node_index], unit_bp):
-			editor_summary_label.text = "警报：请把该软件/装备安装到画板上的具体躯干。" if _ui_is_zh() else "ALARM: install this software/equipment on a specific torso on the board."
+			editor_summary_label.text = "警报：请把该软件/软硬件安装到画板上的具体核心。" if _ui_is_zh() else "ALARM: install this software/hybrid part on a specific core on the board."
 			_play_sfx_wave("alarm", 170.0, 0.08, -16.0)
 			return false
 	var payload_kind := _torso_payload_kind_for_part(part, slot_key)
@@ -20534,7 +20545,7 @@ func _install_torso_payload_component(slot_key: String, part_index: int, part: D
 	var assigned_internal_slot := -1
 	if torso_node_index >= 0:
 		if payload_kind == "booster" and _torso_booster_payload_count(unit_bp, torso_node_index) >= 1:
-			editor_summary_label.text = "警报：该躯体已有推进器。" if _ui_is_zh() else "ALARM: torso already has a booster."
+			editor_summary_label.text = "警报：该构件体已有推进器。" if _ui_is_zh() else "ALARM: this construct body already has a thruster."
 			_play_sfx_wave("alarm", 170.0, 0.08, -16.0)
 			return false
 		var plugin_count := _torso_plugin_slot_summary(unit_bp, torso_node_index).size()
@@ -20545,11 +20556,11 @@ func _install_torso_payload_component(slot_key: String, part_index: int, part: D
 		var plugin_cap := _torso_plugin_capacity_for_part(torso_part)
 		var software_cap := _torso_software_capacity_for_part(torso_part)
 		if _torso_payload_slot_group(payload_kind) == "plugin" and plugin_count >= plugin_cap:
-			editor_summary_label.text = "警报：该躯干机内插件槽已满 %d/%d。" % [plugin_count, plugin_cap] if _ui_is_zh() else "ALARM: this torso's internal plugin slots are full %d/%d." % [plugin_count, plugin_cap]
+			editor_summary_label.text = "警报：该核心机内插件槽已满 %d/%d。" % [plugin_count, plugin_cap] if _ui_is_zh() else "ALARM: this core's internal plugin slots are full %d/%d." % [plugin_count, plugin_cap]
 			_play_sfx_wave("alarm", 170.0, 0.08, -16.0)
 			return false
 		if _torso_payload_slot_group(payload_kind) == "software" and software_count >= software_cap:
-			editor_summary_label.text = "警报：该躯干软件槽已满 %d/%d。" % [software_count, software_cap] if _ui_is_zh() else "ALARM: this torso's software slots are full %d/%d." % [software_count, software_cap]
+			editor_summary_label.text = "警报：该核心软件槽已满 %d/%d。" % [software_count, software_cap] if _ui_is_zh() else "ALARM: this core's software slots are full %d/%d." % [software_count, software_cap]
 			_play_sfx_wave("alarm", 170.0, 0.08, -16.0)
 			return false
 		if _torso_payload_slot_group(payload_kind) == "plugin":
@@ -20562,10 +20573,10 @@ func _install_torso_payload_component(slot_key: String, part_index: int, part: D
 					var slot_sizes := _torso_internal_slot_size_ranks(torso_part)
 					var slot_label := _volume_rank_label(float(slot_sizes[requested_internal_slot_index])) if requested_internal_slot_index < slot_sizes.size() else "-"
 					requested_text = "，目标槽上限%s" % slot_label if _ui_is_zh() else ", target slot <=%s" % slot_label
-				editor_summary_label.text = "警报：该插件尺寸%s无法装入当前机内槽%s。" % [_volume_rank_label(float(payload_rank)), requested_text] if _ui_is_zh() else "ALARM: plugin size %s cannot fit this torso's internal slots%s." % [_volume_rank_label(float(payload_rank)), requested_text]
+				editor_summary_label.text = "警报：该插件尺寸%s无法装入当前机内槽%s。" % [_volume_rank_label(float(payload_rank)), requested_text] if _ui_is_zh() else "ALARM: plugin size %s cannot fit this core's internal slots%s." % [_volume_rank_label(float(payload_rank)), requested_text]
 				_play_sfx_wave("alarm", 170.0, 0.08, -16.0)
 				return false
-	_record_editor_undo_state("安装躯干插件" if _ui_is_zh() else "install torso payload")
+	_record_editor_undo_state("安装核心插件" if _ui_is_zh() else "install core payload")
 	unit_bp["blank_canvas"] = false
 	if torso_node_index >= 0:
 		payload["torso_node"] = torso_node_index
@@ -20586,14 +20597,14 @@ func _install_torso_payload_component(slot_key: String, part_index: int, part: D
 		_start_editor_module_binding_flow(payload_index, installed_part)
 		started_module_binding = true
 	else:
-		var torso_label := "躯干 %02d" % (torso_node_index + 1) if torso_node_index >= 0 else "躯干详情页"
-		editor_summary_label.text = "已安装到%s%s：%s（%s）。" % [torso_label, slot_text, part_name, label] if _ui_is_zh() else "Installed on torso %02d%s: %s (%s)." % [torso_node_index + 1, slot_text, String(installed_part.get("name", "")), payload_kind]
+		var torso_label := "核心 %02d" % (torso_node_index + 1) if torso_node_index >= 0 else "核心详情页"
+		editor_summary_label.text = "已安装到%s%s：%s（%s）。" % [torso_label, slot_text, part_name, label] if _ui_is_zh() else "Installed on core %02d%s: %s (%s)." % [torso_node_index + 1, slot_text, String(installed_part.get("name", "")), payload_kind]
 	_clear_pending_payload_part()
 	ai_team_manual_lock[player_id] = true
 	_update_editor_ui()
 	if started_module_binding:
 		if editor_summary_label != null:
-			editor_summary_label.text = "行动模块已安装：请在躯干详情页点选可绑定部位，然后选择 U/I/O/J/K/L。" if _ui_is_zh() else "Action module installed: choose a bindable target in the torso detail page, then choose U/I/O/J/K/L."
+			editor_summary_label.text = "行动模块已安装：请在核心详情页点选可绑定部位，然后选择 U/I/O/J/K/L。" if _ui_is_zh() else "Action module installed: choose a bindable target in the core detail page, then choose U/I/O/J/K/L."
 		if editor_board_hint_label != null:
 			editor_board_hint_label.text = _pending_module_binding_hint()
 		_refresh_editor_module_binding_buttons()
@@ -20637,7 +20648,7 @@ func _start_editor_module_binding_flow(payload_index: int, module_part: Dictiona
 	editor_selected_topology_nodes = []
 	editor_board_tool = "layout"
 	if editor_summary_label != null:
-		editor_summary_label.text = "行动模块已安装：请在躯干详情页点选可绑定部位，然后选择 U/I/O/J/K/L。" if _ui_is_zh() else "Action module installed: pick a bindable target in the torso detail page, then choose U/I/O/J/K/L."
+		editor_summary_label.text = "行动模块已安装：请在核心详情页点选可绑定部位，然后选择 U/I/O/J/K/L。" if _ui_is_zh() else "Action module installed: pick a bindable target in the core detail page, then choose U/I/O/J/K/L."
 	if editor_board_hint_label != null:
 		editor_board_hint_label.text = _pending_module_binding_hint()
 	_refresh_torso_detail_view()
@@ -20662,7 +20673,7 @@ func _pending_module_binding_hint() -> String:
 	var module_part := _selected_component(role_key, "module", int(editor_pending_module_binding.get("module_index", 0)))
 	var module_name := _part_display_name(module_part, "MODULE")
 	if not bool(editor_pending_module_binding.get("target_selected", false)):
-		return ("绑定 %s：画板蓝绿部位可点击，红橙部位会显示原因；也可在躯干详情页点选。" if _ui_is_zh() else "Bind %s: click blue-green board targets; red-orange targets show why they fail. You can also pick in torso detail.") % module_name
+		return ("绑定 %s：画板蓝绿部位可点击，红橙部位会显示原因；也可在核心详情页点选。" if _ui_is_zh() else "Bind %s: click blue-green board targets; red-orange targets show why they fail. You can also pick in core detail.") % module_name
 	var key := int(editor_pending_module_binding.get("attack_key", 0))
 	var target_label := String(editor_pending_module_binding.get("target_label", "TARGET"))
 	var key_text := "未选择" if _ui_is_zh() else "none"
@@ -21163,7 +21174,7 @@ func _complete_pending_module_binding_with_selection(unit_bp: Dictionary, select
 		_play_sfx_wave("alarm", 170.0, 0.08, -16.0)
 		return true
 	if target_kind == "torso" and String(module_part.get("module_target_kind", "")) != "torso":
-		editor_summary_label.text = "警报：该行动模块需要绑定肢体，不是躯干。" if _ui_is_zh() else "ALARM: this action module needs a limb target, not a torso."
+		editor_summary_label.text = "警报：该行动模块需要绑定连接件，不是核心。" if _ui_is_zh() else "ALARM: this action module needs a connector target, not a core."
 		_play_sfx_wave("alarm", 170.0, 0.08, -16.0)
 		return true
 	if target_kind in ["limb", "gun_terminal", "gauntlet_terminal", "shield_terminal", "hammer_terminal", BOOT_ACTION_DRIVER_TARGET_KIND] and (_topology_node_is_torso(role_key, nodes[root_index], unit_bp) or _topology_node_slot(nodes[root_index]) == "joint"):
@@ -21213,7 +21224,7 @@ func _complete_pending_module_binding_with_selection(unit_bp: Dictionary, select
 	var side_mount_default := _module_binding_default_side_mount_action_side(role_key, unit_bp, nodes, root_index, target_nodes) if side_mount_required else ""
 	var min_bound_nodes := int(module_part.get("min_bound_nodes", 0))
 	if min_bound_nodes > 0 and target_nodes.size() < min_bound_nodes:
-		editor_summary_label.text = "警报：该行动模块至少需要绑定 %d 段肢体。" % min_bound_nodes if _ui_is_zh() else "ALARM: this action module needs at least %d limb segments." % min_bound_nodes
+		editor_summary_label.text = "警报：该行动模块至少需要绑定 %d 段连接件。" % min_bound_nodes if _ui_is_zh() else "ALARM: this action module needs at least %d connector segments." % min_bound_nodes
 		_play_sfx_wave("alarm", 170.0, 0.08, -16.0)
 		return true
 	var test_unit: Dictionary = unit_bp.duplicate(true)
@@ -21248,10 +21259,10 @@ func _complete_pending_module_binding_with_selection(unit_bp: Dictionary, select
 		editor_summary_label.text = "警报：绑定非法：%s" % invalid_reason if _ui_is_zh() else "ALARM: illegal binding: %s" % invalid_reason
 		_play_sfx_wave("alarm", 170.0, 0.08, -16.0)
 		return true
-	var target_label := "躯干" if target_kind == "torso" and _ui_is_zh() else ("TORSO" if target_kind == "torso" else "")
+	var target_label := "核心" if target_kind == "torso" and _ui_is_zh() else ("CORE" if target_kind == "torso" else "")
 	if target_label == "":
 		var root_node: Dictionary = Dictionary(nodes[root_index])
-		target_label = _short_part_name(String(root_node.get("label", root_node.get("part_name", "LIMB"))))
+		target_label = _short_part_name(String(root_node.get("label", root_node.get("part_name", "CONNECTOR"))))
 	editor_pending_module_binding["target_selected"] = true
 	editor_pending_module_binding["target_kind"] = target_kind
 	editor_pending_module_binding["target_nodes"] = target_nodes
@@ -21403,7 +21414,7 @@ func _torso_detail_binding_candidate_for_node(unit_bp: Dictionary, _payload_inde
 		root_index = node_index
 		target_kind = "torso"
 		valid = String(module_part.get("module_target_kind", "")) == "torso"
-		note = "可绑定躯干" if valid and _ui_is_zh() else ("TORSO OK" if valid else ("该模块需要肢体" if _ui_is_zh() else "Needs limb"))
+		note = "可绑定核心" if valid and _ui_is_zh() else ("CORE OK" if valid else ("该模块需要连接件" if _ui_is_zh() else "Needs connector"))
 	elif not (_topology_node_slot(node) in ["limb_muscle", "muscle"]):
 		root_index = node_index
 		valid = false
@@ -21413,11 +21424,11 @@ func _torso_detail_binding_candidate_for_node(unit_bp: Dictionary, _payload_inde
 			root_index = _boot_driver_binding_root_for_selection(role_key, unit_bp, nodes, topology.get("edges", []), selection, module_part)
 			target_kind = BOOT_ACTION_DRIVER_TARGET_KIND
 			valid = root_index >= 0
-			note = "Boot Driver OK" if valid and not _ui_is_zh() else ("Boot Driver OK" if valid else ("需要旋转肢体 + 伸缩钝击末端" if _ui_is_zh() else "Needs rotating limb + telescopic blunt terminal"))
+			note = "Boot Driver OK" if valid and not _ui_is_zh() else ("Boot Driver OK" if valid else ("需要旋转连接件 + 伸缩钝击末端" if _ui_is_zh() else "Needs rotating connector + telescopic blunt terminal"))
 		elif module_profile == "two_link_forward_snap":
 			root_index = _two_link_binding_root_for_selection(role_key, unit_bp, nodes, topology.get("edges", []), selection)
 			valid = root_index >= 0
-			note = "双段链 OK" if valid and _ui_is_zh() else ("TWO-LINK OK" if valid else ("需要两段旋转肢体" if _ui_is_zh() else "Needs two rotating links"))
+			note = "双段链 OK" if valid and _ui_is_zh() else ("TWO-LINK OK" if valid else ("需要两段旋转连接件" if _ui_is_zh() else "Needs two rotating connectors"))
 		elif _gun_activation_profiles().has(module_profile):
 			root_index = _gun_activation_binding_root_for_selection(role_key, unit_bp, nodes, topology.get("edges", []), selection)
 			target_kind = "gun_terminal"
@@ -21444,7 +21455,7 @@ func _torso_detail_binding_candidate_for_node(unit_bp: Dictionary, _payload_inde
 		else:
 			root_index = _pose_root_for_selection(role_key, unit_bp, nodes, topology.get("edges", []), selection)
 			valid = root_index >= 0 and not _topology_node_is_torso(role_key, nodes[root_index], unit_bp)
-			note = "肢体 OK" if valid and _ui_is_zh() else ("LIMB OK" if valid else ("需要带内置关节的肢体" if _ui_is_zh() else "Needs embedded-joint limb"))
+			note = "连接件 OK" if valid and _ui_is_zh() else ("CONNECTOR OK" if valid else ("需要带内置关节的连接件" if _ui_is_zh() else "Needs embedded-joint connector"))
 	if root_index < 0:
 		root_index = node_index
 	var root_node: Dictionary = Dictionary(nodes[root_index]) if root_index >= 0 and root_index < nodes.size() and nodes[root_index] is Dictionary else node
@@ -21803,7 +21814,7 @@ func _rebind_torso_payload_at(payload_index: int) -> void:
 	_record_editor_undo_state("解绑并重新绑定行动模块" if _ui_is_zh() else "unbind and rebind action module")
 	_clear_module_binding_for_payload_index(unit_bp, payload_index, false)
 	_start_editor_module_binding_flow(payload_index, module_part)
-	editor_summary_label.text = "已解绑：请在躯干详情页点选可绑定部位，然后选择 U/I/O/J/K/L。" if _ui_is_zh() else "Unbound: choose a bindable target in the torso detail page, then choose U/I/O/J/K/L."
+	editor_summary_label.text = "已解绑：请在核心详情页点选可绑定部位，然后选择 U/I/O/J/K/L。" if _ui_is_zh() else "Unbound: choose a bindable target in the core detail page, then choose U/I/O/J/K/L."
 	_update_editor_ui()
 
 
@@ -21814,7 +21825,7 @@ func _drop_catalog_part_on_torso_detail(slot_key: String, part_index: int, slot_
 		return
 	var part := _selected_component(role_key, slot_key, part_index)
 	if not _part_installs_as_torso_payload(slot_key, part):
-		editor_summary_label.text = "警报：该零件不是躯干详情页可安装插件。" if _ui_is_zh() else "ALARM: this part cannot be installed in the torso detail page."
+		editor_summary_label.text = "警报：该零件不是核心详情页可安装插件。" if _ui_is_zh() else "ALARM: this part cannot be installed in the core detail page."
 		_play_sfx_wave("alarm", 170.0, 0.08, -16.0)
 		return
 	var payload_kind := _torso_payload_kind_for_part(part, slot_key)
@@ -21826,7 +21837,7 @@ func _drop_catalog_part_on_torso_detail(slot_key: String, part_index: int, slot_
 		return
 	var target_torso := editor_open_torso_node_index
 	if target_torso < 0:
-		editor_summary_label.text = "警报：请先打开一个躯干详情页。" if _ui_is_zh() else "ALARM: open a torso detail page first."
+		editor_summary_label.text = "警报：请先打开一个核心详情页。" if _ui_is_zh() else "ALARM: open a core detail page first."
 		_play_sfx_wave("alarm", 170.0, 0.08, -16.0)
 		return
 	_install_torso_payload_component(slot_key, part_index, part, target_torso, slot_index if slot_kind == "plugin" else -1)
@@ -21871,7 +21882,7 @@ func _remove_torso_payload_at(payload_index: int) -> void:
 		return
 	if editor_engine_allocation_payload_index >= 0:
 		_close_engine_momentum_allocation_panel()
-	_record_editor_undo_state("删除躯干插件" if _ui_is_zh() else "remove torso plugin")
+	_record_editor_undo_state("删除核心插件" if _ui_is_zh() else "remove core plugin")
 	var removed_payload: Dictionary = payloads[payload_index]
 	var removed_part := _payload_part_for_payload(role_key, removed_payload)
 	_remove_module_binding_for_payload(unit_bp, removed_payload, payload_index)
@@ -21880,7 +21891,7 @@ func _remove_torso_payload_at(payload_index: int) -> void:
 	editor_selected_torso_slot_index = -1
 	editor_selected_torso_slot_kind = ""
 	var removed_name := _zh_part_name(String(removed_part.get("name", removed_payload.get("kind", "")))) if _ui_is_zh() else String(removed_part.get("name", removed_payload.get("kind", "")))
-	editor_summary_label.text = "已从躯干详情页拔出：%s。" % removed_name if _ui_is_zh() else "Removed from torso detail: %s." % removed_name
+	editor_summary_label.text = "已从核心详情页拔出：%s。" % removed_name if _ui_is_zh() else "Removed from core detail: %s." % removed_name
 	_play_sfx_wave("clack", 520.0, 0.045, -18.0)
 	ai_team_manual_lock[player_id] = true
 	_update_editor_ui()
@@ -23142,7 +23153,7 @@ func _link_topology_node() -> void:
 			_link_topology_nodes(unit_bp, current, int(nearest_candidate.get("target", -1)))
 			return
 		if editor_board_hint_label != null:
-			editor_board_hint_label.text = "警报：这个末端武器附近没有可用的父级 distal/躯干端口。" if _ui_is_zh() else "ALARM: this terminal weapon has no legal parent distal/torso port to link."
+			editor_board_hint_label.text = "警报：这个末端武器附近没有可用的父级远端/核心插槽。" if _ui_is_zh() else "ALARM: this terminal weapon has no legal parent distal/core socket to link."
 		_play_sfx_wave("alarm", 170.0, 0.12, -13.0)
 		return
 	var previous := maxi(0, current - 1)
@@ -23173,9 +23184,9 @@ func _link_topology_nodes(unit_bp: Dictionary, current: int, previous: int) -> v
 		if socket_error != "":
 			var zh_text := "警报：接口已被占用，或不符合肌肉直连的一对一规则。"
 			if socket_error.contains("hard rule"):
-				zh_text = "警报：硬性规则，躯干端口/肌肉末端只能连接下游肌肉的根部关节。"
+				zh_text = "警报：硬性规则，核心插槽/硬件末端只能连接下游硬件的根部接口。"
 			elif socket_error.contains("terminal muscle"):
-				zh_text = "警报：末端肌肉只能用柄端接口连接；刀尖、枪口、拳面等功能端不能拼接。"
+				zh_text = "警报：末端武器只能用柄端接口连接；刀尖、枪口、拳面等功能端不能拼接。"
 			elif socket_error.contains("occupied"):
 				zh_text = "警报：这个接口已经被占用；请右键解绑后再重新连接。"
 			elif socket_error.contains("material mismatch"):
@@ -23532,7 +23543,7 @@ func _show_editor_material_link_warning(node_indices: Array, reason: String = ""
 	editor_snap_timer = 0.34
 	editor_snap_part = "material"
 	if editor_board_hint_label != null:
-		editor_board_hint_label.text = "警报：材料不匹配，同一肢体必须使用同种连接肌肉材料。" if _ui_is_zh() else "ALARM: material mismatch; one limb connector group must use one material."
+		editor_board_hint_label.text = "警报：材料不匹配，同一构件体连接件必须使用同种硬件材料。" if _ui_is_zh() else "ALARM: material mismatch; one construct connector group must use one hardware material."
 	_play_sfx_wave("alarm", 170.0, 0.12, -13.0)
 	_refresh_editor_visual_views()
 
@@ -31500,6 +31511,10 @@ func _projectile_default_momentum_for_event(event: Dictionary) -> float:
 	return _projectile_runtime_service().projectile_default_momentum_for_event(event, _projectile_runtime_constants())
 
 
+func _projectile_ammo_family(event: Dictionary) -> String:
+	return _projectile_runtime_service().projectile_ammo_family(event)
+
+
 func _projectile_collision_speed_for_event(event: Dictionary) -> float:
 	return _projectile_runtime_service().projectile_collision_speed_for_event(event, _projectile_runtime_constants())
 
@@ -31538,6 +31553,7 @@ func _projectile_collision_momentum(attacker, target, event: Dictionary, momentu
 		"projectile_mass": projectile_mass,
 		"explicit_momentum": explicit_momentum,
 		"behavior_key": _projectile_behavior_key(event),
+		"ammo_family": _projectile_ammo_family(event),
 		"momentum_scale": momentum_scale,
 	})
 	if String(intent.get("action", "")) != "resolve_projectile_collision_momentum":
@@ -31982,6 +31998,7 @@ func _apply_hit_displacement(attacker, target, event: Dictionary, damage: int, n
 		return
 	var direction := _event_direction_vector(attacker, target, event, Vector2(float(attacker.facing), 0.0))
 	var base_knock := maxf(0.02, float(event.get("knock", 0.08)))
+	var knock_adjustment := maxf(0.0, float(event.get("knock_adjustment_coefficient", event.get("knock_adjustment", 1.0))))
 	var combo_knock_mult := _combo_knock_multiplier_for_event(event)
 	var damage_for_knock := int(event.get("combo_unscaled_damage", damage))
 	if _unit_uses_direct_runtime_topology(attacker) or _unit_uses_direct_runtime_topology(target):
@@ -31999,6 +32016,7 @@ func _apply_hit_displacement(attacker, target, event: Dictionary, damage: int, n
 			"fallback_momentum": maxf(base_knock * direct_attacker_mass, float(damage_for_knock) * 0.42),
 			"projectile": bool(event.get("projectile", false)),
 			"nullified": nullified,
+			"knock_adjustment_coefficient": knock_adjustment,
 			"combo_knock_mult": combo_knock_mult,
 			"combo_knock_max_mult": COMBO_KNOCK_MAX_MULT,
 			"attacker_mass": direct_attacker_mass,
@@ -32023,6 +32041,7 @@ func _apply_hit_displacement(attacker, target, event: Dictionary, damage: int, n
 			"base_knock": base_knock,
 			"projectile_space_impulse_mult": PROJECTILE_SPACE_IMPULSE_MULT,
 			"nullified": nullified,
+			"knock_adjustment_coefficient": knock_adjustment,
 			"damage_for_knock": damage_for_knock,
 			"combo_knock_mult": combo_knock_mult,
 			"target_anchor": target_anchor,
@@ -32051,6 +32070,7 @@ func _apply_hit_displacement(attacker, target, event: Dictionary, damage: int, n
 		"part_radius": part_radius,
 		"damage_type": damage_type,
 		"base_knock": base_knock,
+		"knock_adjustment_coefficient": knock_adjustment,
 		"damage_for_knock": damage_for_knock,
 		"melee_space_impulse_mult": MELEE_SPACE_IMPULSE_MULT,
 		"combo_knock_mult": combo_knock_mult,
@@ -33925,6 +33945,41 @@ func _resolve_attack(attacker, event: Dictionary) -> void:
 			material_adjusted_damage = _projectile_material_adjusted_damage(target, event, damage)
 			damage = material_adjusted_damage
 			contact_gate_blocked = bool(event.get("contact_gate_blocked", false))
+		var event_momentum_for_gate := _event_momentum_magnitude(event, maxf(0.0, float(event.get("momentum", 0.0))))
+		var break_value := _target_break_value_for_event(target, event)
+		var break_value_adjustment := _break_value_adjustment_for_event(event)
+		var knock_adjustment := _knock_adjustment_for_event(event)
+		var damage_coefficient := _damage_coefficient_for_gate(raw_damage, event_momentum_for_gate)
+		var adjustment_coefficient := multiplier
+		if raw_damage > 0.001:
+			adjustment_coefficient = maxf(0.0, float(material_adjusted_damage) / raw_damage)
+		event["raw_momentum"] = float(event.get("raw_momentum", event_momentum_for_gate))
+		event["momentum"] = event_momentum_for_gate
+		event["capped_momentum"] = event_momentum_for_gate
+		event["damage_coefficient"] = damage_coefficient
+		event["adjustment_coefficient"] = adjustment_coefficient
+		event["break_value"] = break_value
+		event["break_value_adjustment"] = break_value_adjustment
+		event["knock_adjustment_coefficient"] = knock_adjustment
+		if not nullified:
+			var gate_intent := _battle_hit_resolution_service().momentum_damage_gate_intent({
+				"momentum": event_momentum_for_gate,
+				"damage_coefficient": damage_coefficient,
+				"adjustment_coefficient": adjustment_coefficient,
+				"precomputed_damage": float(material_adjusted_damage),
+				"break_value": break_value,
+				"break_value_adjustment": break_value_adjustment,
+				"knock_adjustment_coefficient": knock_adjustment,
+				"non_damage": non_damage,
+			})
+			event["contact_gate_blocked"] = bool(gate_intent.get("threshold_blocked", false))
+			event["threshold_blocked"] = bool(gate_intent.get("threshold_blocked", false))
+			event["contact_gate_model"] = String(gate_intent.get("formula", "momentum_damage_gate"))
+			event["damage_after_break"] = float(gate_intent.get("damage_value", material_adjusted_damage))
+			event["effective_break_value"] = float(gate_intent.get("effective_break_value", break_value))
+			event["break_gate"] = float(gate_intent.get("break_gate", event["effective_break_value"]))
+			event["knock_momentum"] = float(gate_intent.get("knock_momentum", event_momentum_for_gate))
+			contact_gate_blocked = bool(event.get("contact_gate_blocked", false))
 		var combo_damage := damage
 		if not non_damage and not nullified and not contact_gate_blocked:
 			combo_damage = _apply_combo_hit_scaling(attacker, target, event, damage)
@@ -33980,6 +34035,7 @@ func _resolve_attack(attacker, event: Dictionary) -> void:
 				_apply_projectile_momentum_stagger(attacker, target, event)
 			else:
 				_apply_active_melee_momentum_stagger(attacker, target, event)
+			_apply_hit_displacement(attacker, target, event, 0, nullified)
 			_apply_hitstop(damage_type, counter_tier, 0)
 			continue
 		_record_attack_rule_result(attacker, event, {
@@ -35162,14 +35218,8 @@ func _active_melee_momentum_velocity(attacker, event: Dictionary) -> Dictionary:
 func _melee_damage_adjusted(event: Dictionary, damage: int) -> int:
 	if damage <= 0 or bool(event.get("projectile", false)):
 		return damage
-	match String(event.get("damage_type", "blunt")):
-		"pierce":
-			return damage
-		"tear":
-			return maxi(1, int(roundf(float(damage) * 0.96)))
-		"blunt":
-			return maxi(1, int(roundf(float(damage) * 0.9)))
-	return damage
+	var adjustments := _battle_hit_resolution_service().melee_type_adjustments(String(event.get("damage_type", "blunt")))
+	return maxi(1, int(roundf(float(damage) * float(adjustments.get("damage_adjustment", 1.0)))))
 
 
 func _register_part_damage(target, event: Dictionary, damage: int, counter_tier: int) -> void:
@@ -35583,6 +35633,41 @@ func _target_projectile_material_resistance(target, event: Dictionary, damage_ty
 		if resistance_source.is_empty():
 			resistance_source = target.stats.get("torso_resist", target.stats.get("resistances", {}))
 	return clampf(float(resistance_source.get(damage_type, 1.0)), PROJECTILE_PART_RESIST_MIN, PROJECTILE_PART_RESIST_MAX)
+
+
+func _target_break_value_for_event(target, event: Dictionary) -> float:
+	if target == null or not is_instance_valid(target):
+		return 0.0
+	var part_kind := String(event.get("target_part_kind", "core"))
+	if part_kind == "torso":
+		var torso_unit := _target_torso_stiffness_segment(target, int(event.get("target_torso_unit_index", -1)))
+		if not torso_unit.is_empty():
+			return clampf(float(torso_unit.get("threshold", target.stats.get("torso_break_threshold", CONTACT_UNIT_THRESHOLD_MIN))), CONTACT_UNIT_THRESHOLD_MIN, CONTACT_UNIT_THRESHOLD_MAX)
+	var group := _stiffness_segment_group_for_hit(target, event)
+	if not group.is_empty():
+		if part_kind == "terminal":
+			return clampf(float(group.get("terminal_damage_threshold", group.get("limb_break_threshold", CONTACT_UNIT_THRESHOLD_MIN))), 0.0, CONTACT_UNIT_THRESHOLD_MAX)
+		if part_kind in ["joint", "limb", "limb_muscle", "melee_sweep", "projectile_trace"]:
+			return clampf(float(group.get("limb_break_threshold", CONTACT_UNIT_THRESHOLD_MIN)), CONTACT_UNIT_THRESHOLD_MIN, CONTACT_UNIT_THRESHOLD_MAX)
+	return clampf(float(target.stats.get("torso_break_threshold", target.stats.get("melee_stability_threshold", CONTACT_UNIT_THRESHOLD_MIN))), CONTACT_UNIT_THRESHOLD_MIN, CONTACT_UNIT_THRESHOLD_MAX)
+
+
+func _break_value_adjustment_for_event(event: Dictionary) -> float:
+	if bool(event.get("projectile", false)):
+		return 1.0
+	return float(_battle_hit_resolution_service().melee_type_adjustments(String(event.get("damage_type", "blunt"))).get("break_value_adjustment", 1.0))
+
+
+func _knock_adjustment_for_event(event: Dictionary) -> float:
+	if bool(event.get("projectile", false)):
+		return 1.0
+	return float(_battle_hit_resolution_service().melee_type_adjustments(String(event.get("damage_type", "blunt"))).get("knock_adjustment", 1.0))
+
+
+func _damage_coefficient_for_gate(raw_damage: float, momentum: float) -> float:
+	if momentum <= 0.001:
+		return 0.0
+	return maxf(0.0, raw_damage / momentum)
 
 
 func _projectile_material_adjusted_damage(target, event: Dictionary, damage: int) -> int:
@@ -41395,7 +41480,7 @@ func _duelist_oath_reason_label(reason: String, zh: bool = true) -> String:
 		"missing_duelist_action":
 			return "缺少决斗动作" if zh else "missing duelist action"
 		"xl_limb":
-			return "存在 XL 肢体" if zh else "XL limb installed"
+			return "存在 XL 连接件" if zh else "XL connector installed"
 		"ranged_or_heavy_weapon":
 			return "远程或重型盾锤构筑" if zh else "ranged or heavy shield/hammer build"
 		"weapon_load_too_heavy":
@@ -42248,15 +42333,15 @@ func _apply_engine_momentum_budget(stats: Dictionary, role_key: String) -> void:
 	if role_key == "barrier":
 		stats["engine_momentum_note"] = "BARRIER STATIC: no drive budget required."
 	elif int(bound.get("invalid_count", 0)) > 0:
-		stats["engine_momentum_note"] = "INVALID: bound limb drive demand outside limb range (%s)." % String(bound.get("invalid_note", "range error"))
+		stats["engine_momentum_note"] = "INVALID: bound connector drive demand outside connector range (%s)." % String(bound.get("invalid_note", "range error"))
 	elif required <= 0.0:
-		stats["engine_momentum_note"] = "BUDGET OK: no thruster or bound limb drive demand."
+		stats["engine_momentum_note"] = "BUDGET OK: no thruster or bound connector drive demand."
 	elif engine_budget <= 0.0:
-		stats["engine_momentum_note"] = "INVALID: no engine output for thrusters or bound limbs."
+		stats["engine_momentum_note"] = "INVALID: no engine output for thrusters or bound connectors."
 	elif engine_budget < required:
-		stats["engine_momentum_note"] = "INVALID: engine output %.0f < thruster drive %.0f + boost/brake %.0f + bound limbs %.0f." % [engine_budget, thruster_allocation, boost_extra_demand, limb_allocation]
+		stats["engine_momentum_note"] = "INVALID: engine output %.0f < thruster drive %.0f + boost/brake %.0f + bound connectors %.0f." % [engine_budget, thruster_allocation, boost_extra_demand, limb_allocation]
 	else:
-		stats["engine_momentum_note"] = "BUDGET OK: engine output %.0f covers thruster drive %.0f + boost/brake %.0f + bound limbs %.0f%s." % [engine_budget, thruster_allocation, boost_extra_demand, limb_allocation, " with reserve" if ratio >= 1.18 else ""]
+		stats["engine_momentum_note"] = "BUDGET OK: engine output %.0f covers thruster drive %.0f + boost/brake %.0f + bound connectors %.0f%s." % [engine_budget, thruster_allocation, boost_extra_demand, limb_allocation, " with reserve" if ratio >= 1.18 else ""]
 	if drive_system_service != null:
 		drive_system_service.apply_drive_contract(stats, role_key)
 
@@ -44419,7 +44504,7 @@ func _build_editor_ui() -> void:
 	root.add_child(editor_engine_allocation_button)
 	editor_torso_detail_button = Button.new()
 	editor_torso_detail_button.name = "DashboardTorsoDetailButton"
-	editor_torso_detail_button.text = "躯干详情"
+	editor_torso_detail_button.text = "核心详情"
 	editor_torso_detail_button.position = Vector2(228.0, 108.0)
 	editor_torso_detail_button.size = Vector2(86.0, 24.0)
 	editor_torso_detail_button.focus_mode = Control.FOCUS_NONE
@@ -47027,7 +47112,7 @@ func _update_editor_board_ui(role_key: String, unit_bp: Dictionary, precomputed_
 		_set_control_text_if_changed(editor_board_hint_label, "以太屏幕蓝图 %d/%d  %.1fx%.1f%s" % [tile_count, maxi(1, int(stats.get("material_slots", 4))), BARRIER_BLUEPRINT_WIDTH, BARRIER_BLUEPRINT_HEIGHT, pending_note] if _ui_is_zh() else "Ether screen blueprint %d/%d  %.1fx%.1f%s" % [tile_count, maxi(1, int(stats.get("material_slots", 4))), BARRIER_BLUEPRINT_WIDTH, BARRIER_BLUEPRINT_HEIGHT, pending_note])
 	elif body_board_enabled:
 		_ensure_custom_topology(unit_bp)
-		_set_control_text_if_changed(editor_board_hint_label, "自由画布就绪：拖入构件；双击躯干打开详情，单击拖动。" if _ui_is_zh() else "FREE CANVAS READY: drag parts in; double-click torso for details, single-click to drag.")
+		_set_control_text_if_changed(editor_board_hint_label, "自由画布就绪：拖入构件；双击核心打开详情，单击拖动。" if _ui_is_zh() else "FREE CANVAS READY: drag parts in; double-click core for details, single-click to drag.")
 	else:
 		_set_control_text_if_changed(editor_board_hint_label, "机体画布未启用" if _ui_is_zh() else "Body board inactive")
 	var illegal_parts := _illegal_module_material_parts(unit_bp) if body_board_enabled else {}
@@ -47156,27 +47241,27 @@ func _shop_slot_button_text(slot_key: String, part: Dictionary, volume_note: Str
 	if _ui_is_zh():
 		var title := String({
 			"joint": "购买关节",
-			"limb_muscle": "购买肢体连接件",
-			"muscle": "购买武器/躯干肌肉",
+			"limb_muscle": "购买连接件",
+			"muscle": "购买武器/核心硬件",
 			"module": "安装行动模块",
 		}.get(slot_key, "购买%s" % _slot_name(slot_key)))
 		var rule := String({
 			"joint": "只可连接肌肉；负责旋转/伸缩",
-			"limb_muscle": "两端接关节；自身不主动转向",
-			"muscle": "武器多为单接口；躯干决定插槽",
+			"limb_muscle": "两端接硬件插槽；自身不主动转向",
+			"muscle": "武器多为单接口；核心决定插槽",
 			"module": "无体积；先选节点再绑定部位/键位",
 		}.get(slot_key, "拖入画布或安装"))
 		return "%s%s%s\n%s\n价格%d | %s\n%s" % [pending_marker, selected_marker, title, part_name, cost, volume_note, rule]
 	var title_en := String({
 		"joint": "BUY JOINT",
-		"limb_muscle": "BUY LIMB MUSCLE",
-		"muscle": "BUY WEAPON/TORSO",
+		"limb_muscle": "BUY CONNECTOR",
+		"muscle": "BUY WEAPON/CORE",
 		"module": "INSTALL ACTION MODULE",
 	}.get(slot_key, "BUY %s" % _slot_name(slot_key)))
 	var rule_en := String({
 		"joint": "Connects only to muscle; rotates/extends",
-		"limb_muscle": "Two joint ends; no active rotation",
-		"muscle": "Weapons are usually one-ended; torsos hold slots",
+		"limb_muscle": "Two hardware sockets; no active rotation",
+		"muscle": "Weapons are usually one-ended; cores hold slots",
 		"module": "No volume; select node, then bind part/key",
 	}.get(slot_key, "Drag to canvas or install"))
 	return "%s%s%s\n%s\nCOST %d | %s\n%s" % [pending_marker, selected_marker, title_en, part_name, cost, volume_note, rule_en]
@@ -47237,9 +47322,9 @@ func _engine_family_label(family: String) -> String:
 func _engine_family_summary(family: String) -> String:
 	match family.to_lower():
 		"balanced":
-			return "通用队伍：动力、热量、肢体驱动都没有明显短板。" if _ui_is_zh() else "Generalist teams: no sharp weakness in power, heat, or limb drive."
+			return "通用队伍：动力、热量、连接件驱动都没有明显短板。" if _ui_is_zh() else "Generalist teams: no sharp weakness in power, heat, or connector drive."
 		"melee_drive":
-			return "近战队伍：更高肢体驱动，适合重武器和多肢体行动模块，常热负载更高。" if _ui_is_zh() else "Melee teams: stronger limb drive for heavy weapons and multi-limb modules, with higher idle load."
+			return "近战队伍：更高连接件驱动，适合重武器和多连接件行动模块，常热负载更高。" if _ui_is_zh() else "Melee teams: stronger connector drive for heavy weapons and multi-connector modules, with higher idle load."
 		"ranged_control":
 			return "远程队伍：低热、稳定、偏枪械火控，不擅长巨型近战挥动。" if _ui_is_zh() else "Ranged teams: cool and stable gun control, weaker for giant melee swings."
 		"booster_core":
@@ -47396,7 +47481,7 @@ func _part_gradient_spec(slot_key: String, part: Dictionary) -> Dictionary:
 			elif _component_is_torso(part):
 				family = "torso"
 				role = "torso"
-				role_label = "躯干" if _ui_is_zh() else "Torso"
+				role_label = "核心" if _ui_is_zh() else "Core"
 				tags = ["torso", "balanced"]
 			elif _terminal_weapon_kind_for_part(part, "muscle") == "ranged":
 				family = String(part.get("gun_kind", _gun_kind_for_data(part))).to_lower()
@@ -47463,11 +47548,11 @@ func _limb_visual_family_label(part: Dictionary) -> String:
 		"forearm_myomer":
 			return "轻前臂" if _ui_is_zh() else "Light Forearm"
 		"thigh_myomer":
-			return "标准大肢体" if _ui_is_zh() else "Standard Limb"
+			return "标准连接件" if _ui_is_zh() else "Standard Connector"
 		"flex_tendon":
 			return "柔性腱" if _ui_is_zh() else "Flex Tendon"
 		"chain_muscle":
-			return "分节链肢" if _ui_is_zh() else "Chain Limb"
+			return "分节链件" if _ui_is_zh() else "Chain Connector"
 		"tentacle":
 			return "软体肢" if _ui_is_zh() else "Soft Tentacle"
 		"steel_sinew_beam":
@@ -47480,7 +47565,7 @@ func _limb_visual_family_label(part: Dictionary) -> String:
 			return "结界支架" if _ui_is_zh() else "Barrier Strut"
 		"fur_sleeve":
 			return "缓冲套肢" if _ui_is_zh() else "Impact Sleeve"
-	return "双端肢体" if _ui_is_zh() else "Two-End Limb"
+	return "双端连接件" if _ui_is_zh() else "Two-End Connector"
 
 
 func _limb_material_visual_label(part: Dictionary) -> String:
@@ -48492,7 +48577,7 @@ func _hover_card_subtitle(slot_key: String, part: Dictionary) -> String:
 	var size_label := _volume_rank_label(_part_slot_volume_rank(part, slot_key))
 	var slot_label := _slot_name(slot_key)
 	if slot_key == "muscle" and _component_is_torso(part):
-		slot_label = "躯干肌肉" if _ui_is_zh() else "TORSO MUSCLE"
+		slot_label = "核心硬件" if _ui_is_zh() else "CORE HARDWARE"
 	if maker == "":
 		maker = "未知厂商" if _ui_is_zh() else "UNKNOWN MAKER"
 	if _part_is_catalog_frozen(slot_key, part):
@@ -48630,7 +48715,7 @@ func _module_target_kind_label(target_kind: String, zh: bool) -> String:
 		"gun_terminal":
 			return "枪械末端" if zh else "gun terminal"
 		"two_link_rotating_limb":
-			return "双段旋转肢体" if zh else "two-link limb"
+			return "双段旋转连接件" if zh else "two-link connector"
 		"blade_ball_joint":
 			return "刃系旋转末端" if zh else "blade joint"
 		"blunt_hybrid_gauntlet":
@@ -48646,7 +48731,7 @@ func _module_target_kind_label(target_kind: String, zh: bool) -> String:
 		"dual_ball_joint":
 			return "双球形关节" if zh else "dual ball joint"
 		"chain_limb_joint":
-			return "链式肢体关节" if zh else "chain limb joint"
+			return "链式连接件关节" if zh else "chain connector joint"
 		"ball_joint":
 			return "球形关节" if zh else "ball joint"
 		_:
@@ -48662,7 +48747,7 @@ func _module_joint_fit_label(target_kind: String, zh: bool) -> String:
 	if key.find("telescopic") >= 0 or key.find("linear") >= 0 or key.find("pierce") >= 0:
 		return "线性伸缩关节" if zh else "linear joint"
 	if key.find("two_link") >= 0:
-		return "双段旋转肢体" if zh else "two-link joint"
+		return "双段旋转连接件" if zh else "two-link joint"
 	if key.find("gun") >= 0:
 		return "枪械安装末端" if zh else "gun mount"
 	if key.find("ball") >= 0 or key.find("blade") >= 0 or key.find("shield") >= 0 or key.find("hammer") >= 0:
@@ -48762,7 +48847,7 @@ func _module_input_rows_for_part(part: Dictionary, profile: String, command_prof
 	var rows: Array = []
 	match String(part.get("module_variant_key", "")):
 		"balance_string":
-			rows.append("X：120度短弧，完成后给下一条不同肢体恢复折扣。" if zh else "X: 120-degree short arc; primes recovery discount for a different limb.")
+			rows.append("X：120度短弧，完成后给下一条不同连接件恢复折扣。" if zh else "X: 120-degree short arc; primes recovery discount for a different connector.")
 		"vise_close":
 			rows.append("X：双爪向内合拢；同目标接触会压低击退并短暂压制。" if zh else "X: twin jaws close inward; shared contact lowers launch and briefly pins.")
 		"pickup_dash":
@@ -49081,11 +49166,11 @@ func _hover_card_soul_detail_lines(part: Dictionary, zh: bool) -> Array:
 		lines.append("英魂：定义英雄身份、热池或机体倾向。" if zh else "Soul: defines hero identity, heat pool, or body preference.")
 		return lines
 	lines.append("#%s" % ("英雄 / 软件槽 / 轻中型 / 真实接触 / 换肢连段 / 热池" if zh else "Hero / software slot / light-mid / real contact / limb-chain / heat pool"))
-	lines.append("装入英雄躯干的软件槽。" if zh else "Installs in a hero torso software slot.")
+	lines.append("装入英雄核心的软件槽。" if zh else "Installs in a hero core software slot.")
 	lines.append("满足决斗誓约后生效；不满足时只提供热池。" if zh else "Works after the duelist oath is met; otherwise it only grants a heat pool.")
 	lines.append("适合轻/中型、小半径、三组以上行动模块的近战决斗机。" if zh else "Fits light/mid, small-radius melee duelists with three or more action modules.")
-	lines.append("连续换不同绑定肢体行动，可触发回响窗口，缩短下一次恢复或减轻热负担。" if zh else "Rotate actions across different bound limbs to trigger an echo window that shortens next recovery or eases heat burden.")
-	lines.append("重型盾锤、导弹/纯远程、XL 肢体不会触发誓约。" if zh else "Heavy shield/hammer, missile or pure-ranged builds, and XL limbs do not trigger the oath.")
+	lines.append("连续换不同绑定连接件链行动，可触发回响窗口，缩短下一次恢复或减轻热负担。" if zh else "Rotate actions across different bound connector chains to trigger an echo window that shortens next recovery or eases heat burden.")
+	lines.append("重型盾锤、导弹/纯远程、XL 连接件不会触发誓约。" if zh else "Heavy shield/hammer, missile or pure-ranged builds, and XL connectors do not trigger the oath.")
 	var status_line := _hover_card_duelist_oath_status_line(part, zh)
 	if status_line != "":
 		lines.append(status_line)
@@ -49120,16 +49205,16 @@ func _module_action_timing_detail_line(part: Dictionary, profile: String, comman
 	if startup > 0.0 or recovery > 0.0:
 		var active := maxf(0.0, 1.0 - startup - recovery)
 		if absf(startup - (1.0 / 3.0)) < 0.04 and absf(recovery - (2.0 / 3.0)) < 0.05:
-			return "时间分配：启动 1/3，恢复 2/3；动作总时长由绑定肢体动力与质量解算。" if zh else "Timing: startup 1/3, recovery 2/3; total duration resolves from bound-limb drive and mass."
+			return "时间分配：启动 1/3，恢复 2/3；动作总时长由绑定连接件动力与质量解算。" if zh else "Timing: startup 1/3, recovery 2/3; total duration resolves from bound-connector drive and mass."
 		if active > 0.01:
 			return ("时间分配：启动 %.0f%% / 命中 %.0f%% / 恢复 %.0f%%；总时长由动力与质量解算。" if zh else "Timing: startup %.0f%% / active %.0f%% / recovery %.0f%%; total duration resolves from drive and mass.") % [startup * 100.0, active * 100.0, recovery * 100.0]
 		return ("时间分配：启动 %.0f%% / 恢复 %.0f%%；总时长由动力与质量解算。" if zh else "Timing: startup %.0f%% / recovery %.0f%%; total duration resolves from drive and mass.") % [startup * 100.0, recovery * 100.0]
-	return "时间分配：无固定比例；动作速度由绑定肢体动力、移动质量和姿态距离解算。" if zh else "Timing: no fixed ratio; speed resolves from bound-limb drive, moved mass, and pose distance."
+	return "时间分配：无固定比例；动作速度由绑定连接件动力、移动质量和姿态距离解算。" if zh else "Timing: no fixed ratio; speed resolves from bound-connector drive, moved mass, and pose distance."
 
 
 func _module_action_use_line(part: Dictionary, model: Dictionary, profile: String, target_kind: String, zh: bool) -> String:
 	if profile == "two_link_forward_snap":
-		return "用途：把一条相连的两段旋转肢体变成连杆式折返刺击，先正面伸直，再折回成稳定回收姿态。" if zh else "Use: turns one connected two-segment rotating limb into a linkage-style return thrust: straighten forward, then fold back into a stable recovery pose."
+		return "用途：把一条相连的两段旋转连接件变成连杆式折返刺击，先正面伸直，再折回成稳定回收姿态。" if zh else "Use: turns one connected two-segment rotating connector chain into a linkage-style return thrust: straighten forward, then fold back into a stable recovery pose."
 	if profile == "blunt_gauntlet_extend_swing":
 		return "用途：把混合旋转+伸缩拳套末端变成真实出拳动作，启动伸出命中，恢复收拳回护手姿态。" if zh else "Use: turns a hybrid rotate+extend gauntlet terminal into a real punch: extend to strike during startup, then retract into a guard pose."
 	if profile == "blunt_shield_guard_bash":
@@ -49146,13 +49231,13 @@ func _module_action_use_line(part: Dictionary, model: Dictionary, profile: Strin
 
 func _module_action_binding_line(part: Dictionary, model: Dictionary, profile: String, target_kind: String, requirement_text: String, zh: bool) -> String:
 	if profile == "two_link_forward_snap":
-		return "绑定：需要任意相连的两段非躯干组件，且两段都带旋转内置关节；第一段不必直接接躯干，第二段必须接在第一段之后。" if zh else "Can bind: any connected two-part non-torso chain where both parts have rotating embedded joints; the first part does not need to attach directly to the torso, and the second must follow the first."
+		return "绑定：需要任意相连的两段非核心组件，且两段都带旋转内置关节；第一段不必直接接核心，第二段必须接在第一段之后。" if zh else "Can bind: any connected two-part non-core chain where both parts have rotating embedded joints; the first part does not need to attach directly to the core, and the second must follow the first."
 	if profile == "blunt_gauntlet_extend_swing":
-		return "绑定：需要钝击拳套终端，且拳套自身带混合旋转+伸缩内置关节；点击拳套或同肢体链相邻段都会解析到拳套末端。" if zh else "Can bind: a blunt gauntlet terminal with its own hybrid rotate+extend embedded joint; clicking the gauntlet or an adjacent link in the same chain resolves to the gauntlet terminal."
+		return "绑定：需要钝击拳套终端，且拳套自身带混合旋转+伸缩内置关节；点击拳套或同连接件链相邻段都会解析到拳套末端。" if zh else "Can bind: a blunt gauntlet terminal with its own hybrid rotate+extend embedded joint; clicking the gauntlet or an adjacent connector in the same chain resolves to the gauntlet terminal."
 	if profile == "blunt_shield_guard_bash":
-		return "绑定：需要钝击盾牌终端，且盾牌自身带内置球形关节；点击盾牌或同肢体链相邻段都会解析到盾牌末端。" if zh else "Can bind: a blunt shield terminal with its own embedded ball joint; clicking the shield or an adjacent link in the same chain resolves to the shield terminal."
+		return "绑定：需要钝击盾牌终端，且盾牌自身带内置球形关节；点击盾牌或同连接件链相邻段都会解析到盾牌末端。" if zh else "Can bind: a blunt shield terminal with its own embedded ball joint; clicking the shield or an adjacent connector in the same chain resolves to the shield terminal."
 	if profile == "blunt_hammer_windup_slam":
-		return "绑定：需要钝击大锤或槌类终端，且大锤自身带内置球形关节；点击大锤或同肢体链相邻段都会解析到大锤末端。" if zh else "Can bind: a blunt hammer or maul terminal with its own embedded ball joint; clicking the hammer or an adjacent link in the same chain resolves to the hammer terminal."
+		return "绑定：需要钝击大锤或槌类终端，且大锤自身带内置球形关节；点击大锤或同连接件链相邻段都会解析到大锤末端。" if zh else "Can bind: a blunt hammer or maul terminal with its own embedded ball joint; clicking the hammer or an adjacent connector in the same chain resolves to the hammer terminal."
 	return ("绑定：%s。" if zh else "Can bind: %s.") % requirement_text
 
 
@@ -49181,8 +49266,8 @@ func _module_action_resolve_line(profile: String, target_kind: String, zh: bool)
 			return "显式导弹结算：投射物动量 + 当前枪械倍率 + 导弹锁定/遮蔽 + 命中几何；行动模块只负责锁定和发射。" if zh else "Explicit missile resolve: projectile momentum + current gun multiplier + missile lock/cover + hit geometry; the module only locks and fires."
 		return "枪械结算：投射物动量 + 当前枪械倍率 + 弹药/特效 + 命中几何；行动模块只负责启动和姿态。" if zh else "Gun resolve: projectile momentum + current gun multiplier + ammo/effect + hit geometry; the module only starts the weapon and pose."
 	if profile == "two_link_forward_snap":
-		return "近战结算：真实接触 + 当前连杆姿态 + 分配动力/动量 + 肢体/武器系数；模块本身不携带固定伤害。" if zh else "Melee resolve: real contact + current linkage pose + allocated drive/momentum + limb/weapon coefficients; the module carries no fixed damage."
-	return "近战结算：真实接触 + 当前姿态 + 分配动力/动量 + 武器/肢体系数；模块本身不携带固定伤害。" if zh else "Melee resolve: real contact + active pose + allocated drive/momentum + weapon/limb coefficients; the module carries no fixed damage."
+		return "近战结算：真实接触 + 当前连杆姿态 + 分配动力/动量 + 连接件/武器系数；模块本身不携带固定伤害。" if zh else "Melee resolve: real contact + current linkage pose + allocated drive/momentum + connector/weapon coefficients; the module carries no fixed damage."
+	return "近战结算：真实接触 + 当前姿态 + 分配动力/动量 + 武器/连接件系数；模块本身不携带固定伤害。" if zh else "Melee resolve: real contact + active pose + allocated drive/momentum + weapon/connector coefficients; the module carries no fixed damage."
 
 
 func _module_action_consistency_lines(profile: String, target_kind: String, zh: bool) -> Array:
@@ -49193,7 +49278,7 @@ func _module_action_consistency_lines(profile: String, target_kind: String, zh: 
 		lines.append("一致性：画板、试用和战斗都遵守同一连接姿态。" if zh else "Consistency: board preview, tryout, and battle use the same connected pose.")
 		return lines
 	if profile == "blunt_gauntlet_extend_swing":
-		lines.append("动作合同：拳套模块只驱动绑定拳套终端自身的混合关节，不给普通肢体段凭空添加伸缩。" if zh else "Action contract: the gauntlet module drives only the bound gauntlet terminal's own hybrid joint; it does not invent extension on ordinary limb links.")
+		lines.append("动作合同：拳套模块只驱动绑定拳套终端自身的混合关节，不给普通连接件凭空添加伸缩。" if zh else "Action contract: the gauntlet module drives only the bound gauntlet terminal's own hybrid joint; it does not invent extension on ordinary connectors.")
 		lines.append("攻击范围：拳套按可见伸缩/摆动姿态和真实接触结算，没有投射物、隐藏射线或额外弹体。" if zh else "Hit shape: the gauntlet resolves from visible extend/swing pose and real contact, with no projectile, hidden ray, or extra bullet body.")
 		return lines
 	if profile in ["blunt_shield_guard_bash", "blunt_hammer_windup_slam"]:
@@ -49209,8 +49294,8 @@ func _module_action_consistency_lines(profile: String, target_kind: String, zh: 
 
 func _module_action_drive_heat_line(part: Dictionary, profile: String, heat_text: String, zh: bool) -> String:
 	if profile == "two_link_forward_snap":
-		return ("动作速度读取绑定肢体的行动驱动与关节动力分配；%s。" if zh else "Action speed reads allocated drive and joint allocation for the bound limb; %s.") % heat_text
-	return ("动作速度读取绑定肢体动力分配；%s。" if zh else "Action speed reads bound-limb drive allocation; %s.") % heat_text
+		return ("动作速度读取绑定连接件的行动驱动与关节动力分配；%s。" if zh else "Action speed reads allocated drive and joint allocation for the bound connector; %s.") % heat_text
+	return ("动作速度读取绑定连接件动力分配；%s。" if zh else "Action speed reads bound-connector drive allocation; %s.") % heat_text
 
 
 func _module_action_detail_model(part: Dictionary, context: Dictionary = {}) -> Dictionary:
@@ -49304,7 +49389,7 @@ func _hover_card_player_detail_lines(slot_key: String, part: Dictionary, context
 		"joint":
 			lines.append("#%s" % ("逻辑关节" if zh else "Logic Joint"))
 			lines.append(("固定输出动量 %.0f；安装在关节点，不生成战斗体积。" if zh else "Fixed output %.0f; installs on a joint point and adds no battle volume.") % _joint_fixed_output_momentum(part))
-			lines.append("只驱动远离躯干侧的肢体组。" if zh else "Drives only the limb group away from the torso.")
+			lines.append("只驱动远离核心侧的连接件组。" if zh else "Drives only the connector group away from the core.")
 		"limb_muscle":
 			var joint_kind := String(part.get("embedded_joint_kind", part.get("joint_drive_kind", _joint_drive_kind_for_part(part, slot_key))))
 			lines.append("#%s / %s" % [_limb_visual_family_label(part), _limb_material_visual_label(part)])
@@ -49324,7 +49409,7 @@ func _hover_card_player_detail_lines(slot_key: String, part: Dictionary, context
 				lines.append(("弹药：%s。" if zh else "Ammo: %s.") % (", ".join(ammo_tags) if not ammo_tags.is_empty() else ("无" if zh else "none")))
 				lines.append(("只能装入同尺寸或更大的机内插件槽。" if zh else "Fits only an equal-or-larger internal slot."))
 			elif _component_is_torso(part):
-				lines.append("#%s" % ("躯干核心" if zh else "Torso Core"))
+				lines.append("#%s" % ("核心" if zh else "Core"))
 				lines.append(("接口 %d；机内槽 %d，软件槽 %d。" if zh else "%d ports; %d internal slots, %d software slots.") % [int(part.get("joint_ports", part.get("connection_ends", 0))), _torso_plugin_capacity_for_part(part), _torso_software_capacity_for_part(part)])
 				lines.append(("结构件：负责连接、插件容量和受击承载，不显示武器伤害。" if zh else "Structure part: connection, slot capacity, and hit endurance; no weapon damage readout."))
 			elif _terminal_weapon_kind_for_part(part, "muscle") == "ranged" and bool(part.get("projectile", false)):
@@ -49358,7 +49443,7 @@ func _hover_card_player_detail_lines(slot_key: String, part: Dictionary, context
 		"engine":
 			var engine_family := String(part.get("engine_family", "balanced"))
 			lines.append("#%s" % _engine_family_label(engine_family))
-			lines.append(("动力 %.0f，发热系数 %.3f，常热负载 %.1f；驱动推进器和绑定肢体。" if zh else "Power %.0f, heat coeff %.3f, idle load %.1f; feeds thrusters and bound limbs.") % [_engine_momentum_output_for_part(part), float(part.get("engine_heat_coeff", _engine_family_defaults(engine_family).get("engine_heat_coeff", 0.055))), _engine_idle_heat_for_part(part, _engine_momentum_output_for_part(part))])
+			lines.append(("动力 %.0f，发热系数 %.3f，常热负载 %.1f；驱动推进器和绑定连接件。" if zh else "Power %.0f, heat coeff %.3f, idle load %.1f; feeds thrusters and bound connectors.") % [_engine_momentum_output_for_part(part), float(part.get("engine_heat_coeff", _engine_family_defaults(engine_family).get("engine_heat_coeff", 0.055))), _engine_idle_heat_for_part(part, _engine_momentum_output_for_part(part))])
 			lines.append(_engine_family_summary(engine_family))
 		"cooling":
 			var cooling_tags := ", ".join(_cooling_tags_for_part(part))
@@ -49477,11 +49562,11 @@ func _editor_rule_status_note(flags: Dictionary) -> String:
 	if bool(flags.get("thermal", false)):
 		return "！散热不足" if _ui_is_zh() else "! THERMAL SHORTAGE"
 	if bool(flags.get("slot", false)):
-		return "！躯干插槽超限" if _ui_is_zh() else "! SLOT OVERLOAD"
+		return "！核心插槽超限" if _ui_is_zh() else "! SLOT OVERLOAD"
 	if bool(flags.get("momentum", false)) or bool(flags.get("load", false)):
 		return "！内置关节刚度超限" if _ui_is_zh() else "! EMBEDDED STIFFNESS"
 	if bool(flags.get("sweep", false)):
-		return "！肢体运动范围相撞" if _ui_is_zh() else "! LIMB SWEEP COLLISION"
+		return "！连接件运动范围相撞" if _ui_is_zh() else "! CONNECTOR SWEEP COLLISION"
 	if bool(flags.get("budget", false)):
 		return "！队伍预算超限" if _ui_is_zh() else "! ROSTER BUDGET"
 	if bool(flags.get("sortie", false)):
@@ -49531,7 +49616,7 @@ func _editor_stats_entries(current_stats: Dictionary, preview_stats: Dictionary,
 	_append_editor_section(entries, "动力" if _ui_is_zh() else "DRIVE", Color(1.0, 0.82, 0.28, 0.94))
 	_append_editor_balance_stat(entries, "动力预算" if _ui_is_zh() else "Drive Budget", current_stats, preview_stats, "drive_output_total", "drive_demand_total", "总" if _ui_is_zh() else "T", "需求" if _ui_is_zh() else "REQ", bool(flags.get("power", false)))
 	_append_editor_stat(entries, "推进器需求" if _ui_is_zh() else "Thr Demand", "thruster_drive_demand", current_stats, preview_stats, 520.0, "", bool(flags.get("power", false)))
-	_append_editor_stat(entries, "绑定肢体动力" if _ui_is_zh() else "Bound Limb Drive", "bound_limb_allocated_momentum", current_stats, preview_stats, 520.0, "", bool(flags.get("power", false)))
+	_append_editor_stat(entries, "绑定连接件动力" if _ui_is_zh() else "Bound Connector Drive", "bound_limb_allocated_momentum", current_stats, preview_stats, 520.0, "", bool(flags.get("power", false)))
 	_append_editor_section(entries, "热" if _ui_is_zh() else "HEAT", Color(0.34, 1.0, 0.68, 0.9))
 	_append_editor_balance_stat(entries, "热管理平衡" if _ui_is_zh() else "Thermal Balance", current_stats, preview_stats, "heat_capacity", "idle_heat_load", "池" if _ui_is_zh() else "POOL", "常热" if _ui_is_zh() else "H", bool(flags.get("thermal", false)))
 	_append_editor_stat(entries, "散热速度" if _ui_is_zh() else "Cooling Rate", "cooling", current_stats, preview_stats, 180.0, "", false)
@@ -49550,7 +49635,7 @@ func _editor_stats_entries(current_stats: Dictionary, preview_stats: Dictionary,
 	_append_editor_stat(entries, "转向角速" if _ui_is_zh() else "Turn Speed", "turn_speed", current_stats, preview_stats, 10.0, "rad/s", false)
 	_append_editor_stat(entries, "转向加速" if _ui_is_zh() else "Turn Accel", "turn_acceleration", current_stats, preview_stats, 40.8, "rad/s²" if _ui_is_zh() else "rad/s2", false)
 	_append_editor_section(entries, "行动" if _ui_is_zh() else "ACTION", Color(0.9, 0.58, 1.0, 0.92))
-	_append_editor_stat(entries, "绑定肢体输出" if _ui_is_zh() else "Bound Limb Output", "bound_joint_output_momentum", current_stats, preview_stats, 5200.0, "", bool(flags.get("power", false)))
+	_append_editor_stat(entries, "绑定连接件输出" if _ui_is_zh() else "Bound Connector Output", "bound_joint_output_momentum", current_stats, preview_stats, 5200.0, "", bool(flags.get("power", false)))
 	_append_editor_stat(entries, "预估动作速度" if _ui_is_zh() else "Est Action Speed", "estimated_joint_motion_speed", current_stats, preview_stats, 8.0, "m/s", false)
 	_append_editor_stat(entries, "预估动作时长" if _ui_is_zh() else "Est Action Time", "estimated_module_duration", current_stats, preview_stats, 4.0, "s", false)
 	_append_editor_stat(entries, "槽位数量" if _ui_is_zh() else "Joint Slots", "joint_slot_count", current_stats, preview_stats, 8.0, "", bool(flags.get("sweep", false)))
@@ -49649,7 +49734,7 @@ func _empty_torso_software_entries(capacity: int) -> Array:
 func _build_torso_detail_template(part: Dictionary) -> Dictionary:
 	var plugin_capacity := _torso_plugin_capacity_for_part(part)
 	var software_capacity := _torso_software_capacity_for_part(part)
-	var title := _part_display_name(part, "TORSO")
+	var title := _part_display_name(part, "CORE")
 	var subtitle := ("接口 %d  机内插件槽 %d/%d  软件槽 %d/%d" if _ui_is_zh() else "Ports %d  Internal %d/%d  Software %d/%d") % [
 		int(part.get("joint_ports", part.get("connection_ends", 0))),
 		0,
@@ -49731,7 +49816,7 @@ func _refresh_torso_detail_view() -> void:
 			return
 	var plugin_display := _torso_detail_display_entries(unit_bp, editor_open_torso_node_index, "plugin", plugin_capacity, part)
 	var software_display := _torso_detail_display_entries(unit_bp, editor_open_torso_node_index, "software", software_capacity, part)
-	var title := _part_display_name(part, "TORSO")
+	var title := _part_display_name(part, "CORE")
 	var subtitle := ("接口 %d  机内插件槽 %d/%d  软件槽 %d/%d" if _ui_is_zh() else "Ports %d  Internal %d/%d  Software %d/%d") % [
 		int(part.get("joint_ports", part.get("connection_ends", 0))),
 		plugins.size(),
@@ -50156,8 +50241,8 @@ func _zh_part_name(part_name: String) -> String:
 		"LIGHT RIFLE": "轻型步枪",
 		"SOURCE CORE": "源代码核心",
 		"CORE": "核心",
-		"FLOATING BIT CORE": "浮游炮躯干",
-		"RIFLE BIT CORE": "步枪浮游躯干",
+		"FLOATING BIT CORE": "浮游炮核心",
+		"RIFLE BIT CORE": "步枪浮游核心",
 		"SOUL ANCHOR": "英魂锚",
 		"SOUL: FIRST EDGE ECHO": "始锋回响英魂",
 		"CODE: LINE": "源代码：直线队列",
@@ -50216,7 +50301,7 @@ func _zh_part_name(part_name: String) -> String:
 		["CODE:", "源代码:"],
 		["ETHER:", "以太:"],
 		["SOUL", "英魂"],
-		["TORSO", "躯干"],
+		["TORSO", "核心"],
 		["CORE", "核心"],
 		["BODY", "机体"],
 		["CHASSIS", "底盘"],
@@ -50227,7 +50312,7 @@ func _zh_part_name(part_name: String) -> String:
 		["LINEAR", "直线"],
 		["TELESCOPIC", "伸缩"],
 		["MUSCLE", "肌肉"],
-		["LIMB", "肢体"],
+		["LIMB", "连接件"],
 		["LINK", "连接臂"],
 		["FOREARM", "前臂"],
 		["TENDON", "腱梁"],
@@ -50336,15 +50421,15 @@ func _localized_system_text(value: String) -> String:
 		["BUDGET", "预算"],
 		["DRIVE", "动力"],
 		["DEMAND", "需求"],
-		["BOUND LIMBS", "绑定肢体"],
-		["BOUND LIMB", "绑定肢体"],
+		["BOUND LIMBS", "绑定连接件"],
+		["BOUND LIMB", "绑定连接件"],
 		["THRUSTERS", "推进器"],
 		["THRUSTER", "推进器"],
 		["BOOSTERS", "推进器"],
 		["BOOSTER", "推进器"],
 		["torso has", "躯体已有"],
-		["torso", "躯干"],
-		["limb", "肢体"],
+		["torso", "核心"],
+		["limb", "连接件"],
 		["terminal", "末端武器"],
 		["material", "材料"],
 		["stiffness", "刚度"],
@@ -50427,21 +50512,21 @@ func _localized_component_summary(part: Dictionary, slot_key: String) -> String:
 	if maker != "":
 		tags.append("厂商 %s" % maker)
 	if bool(part.get("is_torso", false)):
-		tags.append("躯干/插槽")
+		tags.append("核心/插槽")
 	if slot_key == "joint":
 		tags.append("关节构件")
 	elif slot_key == "limb_muscle":
-		tags.append("普通肢体肌肉")
+		tags.append("连接件")
 	elif slot_key == "muscle" and bool(part.get("terminal_weapon", false)):
 		tags.append("末端武器")
 	elif bool(part.get("projectile", false)):
 		tags.append("投射武器")
 	elif slot_key in ["engine", "cooling", "booster"]:
-		tags.append("装备")
+		tags.append("软硬件")
 	if bool(part.get("electronic_armor", false)) or bool(part.get("shield_payload", false)):
 		tags.append("电子护盾")
 	if bool(part.get("barrier_tile_component", false)) or bool(part.get("barrier_panel", false)):
-		tags.append("结界板块")
+		tags.append("功能模块")
 	var headline := "%s：%s" % [_slot_name(slot_key), name]
 	if not tags.is_empty():
 		headline = "%s（%s）" % [headline, " / ".join(tags)]

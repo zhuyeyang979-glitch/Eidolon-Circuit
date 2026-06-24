@@ -19,6 +19,18 @@ func _titles(steps: Array, zh: bool) -> Array:
 	return result
 
 
+func _assert_no_legacy_copy(steps: Array) -> void:
+	for raw_step in steps:
+		if not (raw_step is Dictionary):
+			continue
+		var step: Dictionary = raw_step
+		for field in ["zh_title", "zh_instruction", "en_title", "en_instruction"]:
+			var text := String(step.get(field, ""))
+			for forbidden in ["躯干", "肢体", "装备", "TORSO", "LIMB", "EQUIPMENT", "BOOSTER"]:
+				if text.find(forbidden) >= 0:
+					_fail("Assembly guide field %s contains legacy category copy %s: %s" % [field, forbidden, text])
+
+
 func _assert_catalog_state(state: Dictionary, group_key: String, filter_key: String, slot_index: int) -> void:
 	if not bool(state.get("valid", false)):
 		_fail("Catalog state should be valid for %s/%s: %s" % [group_key, filter_key, str(state)])
@@ -39,12 +51,13 @@ func _init() -> void:
 	var service = script.new()
 	var build_slots := ["special", "limb_muscle", "muscle", "booster", "engine", "cooling", "module"]
 	var hero_steps: Array = service.steps_for_role("hero")
+	_assert_no_legacy_copy(hero_steps)
 	if hero_steps.size() != 9:
 		_fail("Hero guide should expose nine recommended assembly steps, got %d." % hero_steps.size())
-	var expected_zh := ["躯干", "关节/肌肉", "武器", "连接", "引擎", "热量/散热", "推进", "英魂", "行动模块"]
+	var expected_zh := ["核心", "连接件", "武器", "连接", "引擎", "热力/散热", "推进器", "英魂", "行动模块"]
 	if _titles(hero_steps, true) != expected_zh:
 		_fail("Hero guide should use the beginner-friendly order: %s." % str(_titles(hero_steps, true)))
-	var expected_en := ["TORSO", "JOINT/MUSCLE", "WEAPON", "CONNECT", "ENGINE", "HEAT/COOLING", "BOOSTER", "SOUL", "ACTION"]
+	var expected_en := ["CORE", "CONNECTOR", "WEAPON", "CONNECT", "ENGINE", "HEAT/RADIATOR", "THRUSTER", "SOUL", "ACTION"]
 	if _titles(hero_steps, false) != expected_en:
 		_fail("Hero guide English labels should be compact and ordered: %s." % str(_titles(hero_steps, false)))
 	var connection_model: Dictionary = service.step_model("hero", 3, true)
@@ -70,6 +83,10 @@ func _init() -> void:
 	_assert_catalog_state(service.catalog_state_for_step("hero", 8, build_slots), "software", "module", 6)
 	_assert_catalog_state(service.catalog_state_for_step("puppet", 7, build_slots), "software", "code", 0)
 	_assert_catalog_state(service.catalog_state_for_step("barrier", 1, build_slots), "software", "ether", 0)
+	var barrier_steps: Array = service.steps_for_role("barrier")
+	_assert_no_legacy_copy(barrier_steps)
+	if _titles(barrier_steps, true).is_empty() or String(_titles(barrier_steps, true)[0]) != "功能模块":
+		_fail("Barrier guide should start with 功能模块.")
 	var cooling_index: int = int(service.step_index_for_catalog_state("hero", "software_muscle", "cooling", 0))
 	if cooling_index != 5:
 		_fail("Manual cooling filter selection should sync guide to step 6, got %d." % cooling_index)
@@ -85,8 +102,8 @@ func _init() -> void:
 	var first_model: Dictionary = service.step_model("hero", 0, true)
 	if String(first_model.get("custom_order_note", "")).find("自由") < 0:
 		_fail("Step model should explicitly preserve custom assembly order in Chinese copy.")
-	if String(first_model.get("tutorial_text", "")).find("躯干") < 0 or String(first_model.get("limit_text", "")).find("接口") < 0:
-		_fail("Torso tutorial should explain torso ports and limits: %s." % String(first_model.get("tutorial_text", "")))
+	if String(first_model.get("tutorial_text", "")).find("核心") < 0 or String(first_model.get("limit_text", "")).find("接口") < 0:
+		_fail("Core tutorial should explain core ports and limits: %s." % String(first_model.get("tutorial_text", "")))
 	var last_model: Dictionary = service.step_model("hero", 8, false)
 	if String(last_model.get("tutorial_text", "")).find("Function") < 0 or String(last_model.get("tutorial_text", "")).find("Limit") < 0 or String(last_model.get("tutorial_text", "")).find("Next") < 0:
 		_fail("English tutorial text should expose Function/Limit/Next sections: %s." % String(last_model.get("tutorial_text", "")))

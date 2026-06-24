@@ -240,9 +240,17 @@ func _init() -> void:
 		_fail("visible_part_group_slots should return software equipment slots.")
 	if controller.visible_part_group_slots("unknown_group") != ["muscle"]:
 		_fail("visible_part_group_slots should fallback to terminal weapon slots.")
-	if controller.part_group_name("barrier_panel", true) != "结界板":
+	if controller.part_group_name("barrier_panel", true) != "功能模块":
 		_fail("part_group_name should return zh labels.")
-	if controller.part_group_name("software_muscle", false) != "EQUIPMENT":
+	if controller.part_group_name("torso", true) != "核心":
+		_fail("torso compatibility group should display as 核心.")
+	if controller.part_group_name("limb", true) != "连接件":
+		_fail("limb compatibility group should display as 连接件.")
+	if controller.part_group_name("limb", false) != "CONNECTOR":
+		_fail("limb compatibility group should display as CONNECTOR.")
+	if controller.part_group_name("software_muscle", true) != "软硬件":
+		_fail("software_muscle compatibility group should display as 软硬件.")
+	if controller.part_group_name("software_muscle", false) != "HYBRID":
 		_fail("part_group_name should return en labels.")
 	if controller.part_group_name("unknown_group", false) != "UNKNOWN_GROUP":
 		_fail("part_group_name should fallback to uppercase keys.")
@@ -254,6 +262,13 @@ func _init() -> void:
 	var weapon_melee := controller.filter_options_for_group("terminal_weapon", "melee")
 	var weapon_gun := controller.filter_options_for_group("terminal_weapon", "gun")
 	var weapon_audit := controller.filter_options_for_group("terminal_weapon", "all", true)
+	var hybrid_options := controller.filter_options_for_group("software_muscle")
+	var thruster_found := false
+	for raw_option in hybrid_options:
+		if raw_option is Dictionary and String(Dictionary(raw_option).get("key", "")) == "booster":
+			thruster_found = controller.filter_option_name(Dictionary(raw_option), false) == "THRUSTER"
+	if not thruster_found:
+		_fail("booster compatibility filter should display as THRUSTER.")
 	if weapon_all.size() != 3 or weapon_melee.size() <= weapon_all.size() or weapon_gun.size() <= weapon_all.size():
 		_fail("terminal weapon filter options should expand for melee/gun submenus.")
 	if String(Dictionary(weapon_melee[3]).get("key", "")) != "weapon_blade":
