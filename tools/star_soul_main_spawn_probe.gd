@@ -43,6 +43,7 @@ func _init() -> void:
 	var hud_snapshot: Dictionary = main._battle_hud_text_snapshot()
 	_require(String(Dictionary(hud_snapshot.get("star_soul_runtime", {})).get("phase", "")) == "active", "HUD snapshot should expose active Star Soul runtime.")
 
+	main._tick_star_soul_runtime(0.25)
 	main._handle_unit_killed(star_soul, 2)
 	_require(main.active_star_soul_units.is_empty(), "Killed Star Soul should leave active_star_soul_units.")
 	_require(not main.all_units.has(star_soul), "Killed Star Soul should be detached from all_units.")
@@ -50,6 +51,8 @@ func _init() -> void:
 	var next_state: Dictionary = main.battle_controller.star_soul_runtime_snapshot()
 	_require(String(next_state.get("phase", "")) == "announcing", "Runtime should announce the next Star Soul after a kill.")
 	_require(String(Dictionary(next_state.get("pending_entry", {})).get("star_soul_id", "")) == "punishment_tower_a", "Next pending Star Soul should be P2's pick.")
+	var history: Array = Array(next_state.get("history", []))
+	_require(not history.is_empty() and float(Dictionary(history[history.size() - 1]).get("lifetime", 0.0)) >= 0.24, "Main Star Soul exit history should preserve live lifetime.")
 
 	if failed:
 		quit(1)

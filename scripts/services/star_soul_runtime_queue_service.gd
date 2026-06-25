@@ -66,7 +66,7 @@ func spawn_committed(raw_state: Dictionary, runtime_id: String = "") -> Dictiona
 	return _intent("spawn_committed", true, state)
 
 
-func active_exit(raw_state: Dictionary, exit_reason: String, runtime_id: String = "") -> Dictionary:
+func active_exit(raw_state: Dictionary, exit_reason: String, runtime_id: String = "", options: Dictionary = {}) -> Dictionary:
 	var state := _normalized_state(raw_state)
 	var active: Dictionary = Dictionary(state.get("active_entry", {})).duplicate(true)
 	if active.is_empty():
@@ -91,6 +91,7 @@ func active_exit(raw_state: Dictionary, exit_reason: String, runtime_id: String 
 		"runtime_id": String(active.get("runtime_id", "")),
 		"exit_reason": reason,
 		"vp_award": award,
+		"lifetime": maxf(0.0, float(options.get("lifetime", active.get("lifetime", 0.0)))),
 	})
 	state["history"] = history
 	state["active_entry"] = {}

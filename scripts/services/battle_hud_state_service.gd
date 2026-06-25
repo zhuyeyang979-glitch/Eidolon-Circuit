@@ -329,6 +329,46 @@ func scoreboard_text(players: Dictionary, win_points: int, terms: Dictionary) ->
 	return "%s  %s" % [base, status] if status != "" else base
 
 
+func star_soul_scoreboard_text(p1_vp: int, p2_vp: int, terms: Dictionary) -> String:
+	return "%s %s P1 %d - %d P2" % [
+		String(terms.get("star_soul", "STAR SOUL")),
+		String(terms.get("victory_points", "VP")),
+		maxi(0, p1_vp),
+		maxi(0, p2_vp),
+	]
+
+
+func star_soul_summary_rows(history: Array) -> Array:
+	var rows: Array = []
+	for i in range(history.size()):
+		if not (history[i] is Dictionary):
+			continue
+		var record: Dictionary = Dictionary(history[i])
+		var award: Dictionary = Dictionary(record.get("vp_award", {}))
+		var award_text := "+0VP"
+		if bool(award.get("award", false)):
+			award_text = "+%dVP P%d" % [maxi(0, int(award.get("vp", 0))), clampi(int(award.get("player", 0)), 1, 2)]
+		var lifetime := maxf(0.0, float(record.get("lifetime", 0.0)))
+		var row := {
+			"sequence": int(record.get("sequence_index", i)) + 1,
+			"owner": clampi(int(record.get("owner", 1)), 1, 2),
+			"star_soul_id": String(record.get("star_soul_id", "")),
+			"exit_reason": String(record.get("exit_reason", "")),
+			"vp_award": award.duplicate(true),
+			"lifetime": lifetime,
+		}
+		row["text"] = "#%d P%d %s %s %s %.1fs" % [
+			int(row.get("sequence", i + 1)),
+			int(row.get("owner", 1)),
+			String(row.get("star_soul_id", "")),
+			String(row.get("exit_reason", "")),
+			award_text,
+			lifetime,
+		]
+		rows.append(row)
+	return rows
+
+
 func star_soul_hud_model(runtime_state: Dictionary, terms: Dictionary) -> Dictionary:
 	if runtime_state.is_empty():
 		return {"visible": false}
@@ -338,6 +378,7 @@ func star_soul_hud_model(runtime_state: Dictionary, terms: Dictionary) -> Dictio
 	var vp_by_player: Dictionary = Dictionary(runtime_state.get("vp_by_player", {}))
 	var p1_vp := maxi(0, int(vp_by_player.get(1, vp_by_player.get("1", 0))))
 	var p2_vp := maxi(0, int(vp_by_player.get(2, vp_by_player.get("2", 0))))
+	var history: Array = Array(runtime_state.get("history", []))
 	var entry: Dictionary = {}
 	if phase == "active":
 		entry = Dictionary(runtime_state.get("active_entry", {}))
@@ -377,7 +418,9 @@ func star_soul_hud_model(runtime_state: Dictionary, terms: Dictionary) -> Dictio
 		"countdown": countdown,
 		"p1_vp": p1_vp,
 		"p2_vp": p2_vp,
-		"history_count": Array(runtime_state.get("history", [])).size(),
+		"scoreboard_text": star_soul_scoreboard_text(p1_vp, p2_vp, terms),
+		"summary_rows": star_soul_summary_rows(history),
+		"history_count": history.size(),
 	}
 
 

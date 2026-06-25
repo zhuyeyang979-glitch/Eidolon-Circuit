@@ -66,13 +66,14 @@ func _init() -> void:
 	var active_tick: Dictionary = runtime_service.tick(state, 10.0)
 	_require(String(Dictionary(active_tick.get("state", {})).get("phase", "")) == "active", "Ticking active state should not spawn a second Star Soul.")
 
-	var destroyed: Dictionary = runtime_service.active_exit(state, "destroyed", "runtime_a")
+	var destroyed: Dictionary = runtime_service.active_exit(state, "destroyed", "runtime_a", {"lifetime": 12.5})
 	_require(bool(destroyed.get("changed", false)), "Destroyed active Star Soul should advance runtime.")
 	state = destroyed.get("state", {})
 	_require(int(Dictionary(state.get("vp_by_player", {})).get(1, 0)) == 3, "Opponent of owner should gain VP on destroy.")
 	_require(String(state.get("phase", "")) == "announcing", "Runtime should announce the next Star Soul after active exit.")
 	_require(String(Dictionary(state.get("pending_entry", {})).get("star_soul_id", "")) == "punishment_tower_a", "Next queue entry should be pending.")
 	_require(Array(state.get("history", [])).size() == 1, "Destroyed Star Soul should be written to history.")
+	_require(is_equal_approx(float(Dictionary(Array(state.get("history", []))[0]).get("lifetime", 0.0)), 12.5), "Destroyed Star Soul history should preserve lifetime.")
 
 	state = runtime_service.tick(state, 10.0).get("state", {})
 	state = runtime_service.spawn_committed(state, "runtime_b").get("state", {})
@@ -96,7 +97,7 @@ func _init() -> void:
 func _spawn_and_exit(runtime_service, state: Dictionary, runtime_id: String, reason: String) -> Dictionary:
 	var next_state: Dictionary = runtime_service.tick(state, 10.0).get("state", {})
 	next_state = runtime_service.spawn_committed(next_state, runtime_id).get("state", {})
-	return runtime_service.active_exit(next_state, reason, runtime_id).get("state", {})
+	return runtime_service.active_exit(next_state, reason, runtime_id, {"lifetime": 3.25}).get("state", {})
 
 
 func _require(condition: bool, message: String) -> void:

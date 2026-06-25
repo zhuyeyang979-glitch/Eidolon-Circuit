@@ -57,10 +57,10 @@ func commit_star_soul_spawn(runtime_id: String = "") -> Dictionary:
 	return intent
 
 
-func exit_active_star_soul(exit_reason: String, runtime_id: String = "") -> Dictionary:
+func exit_active_star_soul(exit_reason: String, runtime_id: String = "", options: Dictionary = {}) -> Dictionary:
 	if star_soul_runtime_state.is_empty():
 		return {"reason": "not_started", "changed": false, "state": {}}
-	var intent: Dictionary = star_soul_runtime_service.active_exit(star_soul_runtime_state, exit_reason, runtime_id)
+	var intent: Dictionary = star_soul_runtime_service.active_exit(star_soul_runtime_state, exit_reason, runtime_id, options)
 	star_soul_runtime_state = Dictionary(intent.get("state", {})).duplicate(true)
 	return intent
 

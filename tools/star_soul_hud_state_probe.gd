@@ -45,17 +45,27 @@ func _init() -> void:
 	var active: Dictionary = hud_service.star_soul_hud_model(state, terms)
 	_require(String(active.get("text", "")) == "SOUL P1 defense_tower_c +3 ACTIVE", "Active text mismatch: %s" % str(active))
 
-	state = runtime_service.active_exit(state, "destroyed", "runtime_star_soul_1").get("state", {})
+	state = runtime_service.active_exit(state, "destroyed", "runtime_star_soul_1", {"lifetime": 12.5}).get("state", {})
 	var next_announcement: Dictionary = hud_service.star_soul_hud_model(state, terms)
 	_require(String(next_announcement.get("text", "")) == "SOUL P2 punishment_tower_a +1 IN 10s", "Next announcement text mismatch: %s" % str(next_announcement))
 	_require(int(next_announcement.get("p2_vp", -1)) == 3, "Destroying P1 Star Soul should award P2 VP in HUD model.")
 	_require(int(next_announcement.get("history_count", 0)) == 1, "HUD model should expose Star Soul history count.")
+	_require(String(next_announcement.get("scoreboard_text", "")) == "SOUL VP P1 0 - 3 P2", "HUD model should expose compact Star Soul VP scoreboard.")
+	var first_rows: Array = Array(next_announcement.get("summary_rows", []))
+	_require(first_rows.size() == 1, "HUD model should expose one Star Soul summary row after first exit.")
+	if not first_rows.is_empty():
+		var first_row: Dictionary = Dictionary(first_rows[0])
+		_require(String(first_row.get("text", "")) == "#1 P1 defense_tower_c destroyed +3VP P2 12.5s", "Destroyed summary row mismatch: %s" % str(first_row))
 
 	state = runtime_service.tick(state, 10.0).get("state", {})
 	state = runtime_service.spawn_committed(state, "runtime_star_soul_2").get("state", {})
-	state = runtime_service.active_exit(state, "timeout", "runtime_star_soul_2").get("state", {})
+	state = runtime_service.active_exit(state, "timeout", "runtime_star_soul_2", {"lifetime": 40.0}).get("state", {})
 	var complete: Dictionary = hud_service.star_soul_hud_model(state, terms)
 	_require(String(complete.get("text", "")) == "SOUL DONE  P1 0 - 3 P2", "Complete text mismatch: %s" % str(complete))
+	var complete_rows: Array = Array(complete.get("summary_rows", []))
+	_require(complete_rows.size() == 2, "Complete Star Soul HUD model should expose two summary rows.")
+	if complete_rows.size() >= 2:
+		_require(String(Dictionary(complete_rows[1]).get("text", "")) == "#2 P2 punishment_tower_a timeout +0VP 40.0s", "Timeout summary row mismatch: %s" % str(complete_rows[1]))
 
 	var heavy_model: Dictionary = hud_service.heavy_hud_text_state({
 		"terms": terms,

@@ -34700,7 +34700,9 @@ func _handle_star_soul_exit(unit, reason: String, _killer_id: int = 0) -> void:
 	var owner := clampi(int(unit.owner_id), 1, 2)
 	var exit_intent := {"changed": false, "state": star_soul_runtime_state}
 	if battle_controller != null:
-		exit_intent = battle_controller.exit_active_star_soul(reason, runtime_id)
+		exit_intent = battle_controller.exit_active_star_soul(reason, runtime_id, {
+			"lifetime": float(unit.get_meta("star_soul_duration_elapsed", 0.0)),
+		})
 		star_soul_runtime_state = Dictionary(exit_intent.get("state", {})).duplicate(true)
 	var award := _apply_star_soul_vp_award(exit_intent)
 	active_star_soul_units.erase(unit)
