@@ -24,9 +24,38 @@ func _new_battle_main() -> Object:
 	return main
 
 
-func _finish_battle(main: Object, winner_id: int = 1) -> void:
+func _sample_star_soul_runtime_state() -> Dictionary:
+	return {
+		"phase": "complete",
+		"vp_by_player": {1: 3, 2: 0},
+		"history": [
+			{
+				"sequence_index": 0,
+				"owner": 1,
+				"star_soul_id": "defense_tower_c",
+				"exit_reason": "destroyed",
+				"vp_award": {"award": true, "vp": 3, "player": 2},
+				"lifetime": 12.5,
+			},
+			{
+				"sequence_index": 1,
+				"owner": 2,
+				"star_soul_id": "punishment_tower_a",
+				"exit_reason": "timeout",
+				"vp_award": {"award": false, "vp": 0, "player": 0},
+				"lifetime": 40.0,
+			},
+		],
+	}
+
+
+func _finish_battle(main: Object, winner_id: int = 1, star_soul_runtime_state: Dictionary = {}) -> void:
 	main.victory_points = {1: 3, 2: 2}
 	main.match_time_remaining = 123.0
+	if not star_soul_runtime_state.is_empty():
+		main.star_soul_runtime_state = star_soul_runtime_state.duplicate(true)
+		if main.battle_controller != null:
+			main.battle_controller.star_soul_runtime_state = star_soul_runtime_state.duplicate(true)
 	main._end_battle(winner_id)
 
 
@@ -41,6 +70,13 @@ func _init() -> void:
 	for key in ["title", "summary", "hint", "items"]:
 		if not model.has(key):
 			_fail("Post-battle review model missing key: %s" % key)
+	var star_soul_rows := [
+		{"text": "#1 P1 defense_tower_c destroyed +3VP P2 12.5s"},
+		{"text": "#2 P2 punishment_tower_a timeout +0VP 40.0s"},
+	]
+	var star_soul_model: Dictionary = controller.post_battle_review_model("zh", 1, {1: 3, 2: 2}, 123.0, MainScene.MODE_PVP, "diagnostics", star_soul_rows)
+	if String(star_soul_model.get("star_soul_summary", "")).find("defense_tower_c") < 0:
+		_fail("Post-battle review model should include Star Soul summary rows.")
 	var item_keys := []
 	for raw_item in Array(model.get("items", [])):
 		if raw_item is Dictionary:
@@ -50,7 +86,7 @@ func _init() -> void:
 			_fail("Post-battle review items missing: %s" % required)
 
 	var main = _new_battle_main()
-	_finish_battle(main, 1)
+	_finish_battle(main, 1, _sample_star_soul_runtime_state())
 	if main.game_state != MainScene.STATE_BATTLE:
 		_fail("Battle end should not auto-navigate away from battle; got %s." % String(main.game_state))
 	if not bool(main.game_over):
@@ -59,6 +95,11 @@ func _init() -> void:
 		_fail("Post-battle review panel should be visible after battle end.")
 	if not main.post_battle_review_buttons.has("adjust_sortie") or not main.post_battle_review_buttons.has("edit_units") or not main.post_battle_review_buttons.has("rematch"):
 		_fail("Post-battle review panel missing expected action buttons.")
+	var star_soul_label: Label = main.post_battle_review_panel.find_child("PostBattleReviewStarSoulSummary", true, false) as Label
+	if star_soul_label == null:
+		_fail("Post-battle review panel missing Star Soul summary label.")
+	elif star_soul_label.text.find("defense_tower_c") < 0 or star_soul_label.text.find("+3VP P2") < 0:
+		_fail("Post-battle review Star Soul summary should include resolved VP rows; got %s" % star_soul_label.text)
 
 	main._post_battle_review_action("review")
 	if main.game_state != MainScene.STATE_BATTLE:

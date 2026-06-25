@@ -192,7 +192,7 @@ func battle_runtime_model(language: String, battle_mode: String, training_mode: 
 	}
 
 
-func post_battle_review_model(language: String, winner_id: int, victory_points: Dictionary, match_time_remaining: float, battle_mode: String, command_log_text: String = "") -> Dictionary:
+func post_battle_review_model(language: String, winner_id: int, victory_points: Dictionary, match_time_remaining: float, battle_mode: String, command_log_text: String = "", star_soul_summary_rows: Array = []) -> Dictionary:
 	var zh := language == "zh"
 	var p1_points := int(victory_points.get(1, 0))
 	var p2_points := int(victory_points.get(2, 0))
@@ -208,8 +208,29 @@ func post_battle_review_model(language: String, winner_id: int, victory_points: 
 		"summary": ("P%d 胜利  |  VP %d:%d  |  剩余 %02d:%02d  |  %s" if zh else "P%d wins  |  VP %d:%d  |  %02d:%02d left  |  %s") % [winner_id, p1_points, p2_points, minutes, seconds, mode_label],
 		"hint": "复盘和改构筑是玩家自主选择：可以先留在战场观察，也可以回到出战配置或单位编辑后再战。" if zh else "Review and build changes are player-chosen: inspect the frozen field, adjust sortie, edit units, or rematch.",
 		"command_log": command_log_text,
+		"star_soul_summary": _star_soul_summary_text(star_soul_summary_rows, zh),
+		"star_soul_summary_rows": star_soul_summary_rows.duplicate(true),
 		"items": _localized_specs(POST_BATTLE_REVIEW_SPECS, zh, false),
 	}
+
+
+func _star_soul_summary_text(summary_rows: Array, zh: bool) -> String:
+	var row_texts: Array = []
+	for raw_row in summary_rows:
+		var row_text := ""
+		if raw_row is Dictionary:
+			row_text = String(Dictionary(raw_row).get("text", "")).strip_edges()
+		else:
+			row_text = String(raw_row).strip_edges()
+		if row_text != "":
+			row_texts.append(row_text)
+	if row_texts.is_empty():
+		return ""
+	var max_visible_rows := 4
+	var visible_rows := row_texts.slice(0, mini(row_texts.size(), max_visible_rows))
+	if row_texts.size() > max_visible_rows:
+		visible_rows.append(("……另 %d 条星魂记录" if zh else "... %d more Star Soul rows") % (row_texts.size() - max_visible_rows))
+	return "%s\n%s" % ["星魂战报" if zh else "STAR SOUL REPORT", "\n".join(visible_rows)]
 
 
 func _localized_specs(specs: Array, zh: bool, include_description: bool) -> Array:

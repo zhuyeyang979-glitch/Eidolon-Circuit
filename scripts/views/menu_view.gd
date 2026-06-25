@@ -240,9 +240,15 @@ func build_post_battle_review(root: Control, next_viewport_size: Vector2 = UILay
 	summary.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	var hint := _add_label(post_battle_review_panel, "PostBattleReviewHint", "", UILayoutTokens.post_battle_review_hint_rect(), 15, Color(0.84, 0.9, 0.96, 1.0), HORIZONTAL_ALIGNMENT_CENTER)
 	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	var star_soul_summary := _add_label(post_battle_review_panel, "PostBattleReviewStarSoulSummary", "", UILayoutTokens.post_battle_review_star_soul_rect(), 12, Color(0.92, 0.86, 0.62, 1.0), HORIZONTAL_ALIGNMENT_LEFT)
+	star_soul_summary.vertical_alignment = VERTICAL_ALIGNMENT_TOP
+	star_soul_summary.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	star_soul_summary.clip_text = true
+	star_soul_summary.visible = false
 	var command_log := _add_label(post_battle_review_panel, "PostBattleReviewCommandLog", "", UILayoutTokens.post_battle_review_command_log_rect(), 12, Color(0.72, 0.84, 0.94, 1.0), HORIZONTAL_ALIGNMENT_LEFT)
 	command_log.vertical_alignment = VERTICAL_ALIGNMENT_TOP
 	command_log.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	command_log.clip_text = true
 	for i in range(MenuControllerModel.POST_BATTLE_REVIEW_SPECS.size()):
 		var spec: Dictionary = MenuControllerModel.POST_BATTLE_REVIEW_SPECS[i]
 		var key := String(spec.get("key", ""))
@@ -301,6 +307,11 @@ func update_post_battle_review(model: Dictionary) -> void:
 	_set_named_label(post_battle_review_panel, "PostBattleReviewTitle", String(model.get("title", "")))
 	_set_named_label(post_battle_review_panel, "PostBattleReviewSummary", String(model.get("summary", "")))
 	_set_named_label(post_battle_review_panel, "PostBattleReviewHint", String(model.get("hint", "")))
+	var star_soul_summary := String(model.get("star_soul_summary", ""))
+	var star_soul_label := post_battle_review_panel.find_child("PostBattleReviewStarSoulSummary", true, false)
+	if star_soul_label is Label:
+		(star_soul_label as Label).text = star_soul_summary
+		(star_soul_label as Label).visible = star_soul_summary != ""
 	_set_named_label(post_battle_review_panel, "PostBattleReviewCommandLog", String(model.get("command_log", "")))
 	var items: Array = model.get("items", [])
 	for raw_item in items:

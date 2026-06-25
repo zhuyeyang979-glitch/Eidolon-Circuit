@@ -45514,8 +45514,13 @@ func _show_post_battle_review(winner_id: int, reason: String = "victory") -> voi
 	post_battle_review_reason = reason
 	if menu_view == null or menu_controller == null:
 		return
-	menu_view.update_post_battle_review(menu_controller.post_battle_review_model(ui_language, winner_id, victory_points, match_time_remaining, battle_mode, _battle_review_diagnostic_summary_text()))
+	menu_view.update_post_battle_review(menu_controller.post_battle_review_model(ui_language, winner_id, victory_points, match_time_remaining, battle_mode, _battle_review_diagnostic_summary_text(), _post_battle_star_soul_summary_rows()))
 	menu_view.show_post_battle_review()
+
+
+func _post_battle_star_soul_summary_rows() -> Array:
+	var star_soul_model := _battle_hud_service().star_soul_hud_model(_battle_star_soul_runtime_snapshot(), _battle_hud_terms())
+	return Array(star_soul_model.get("summary_rows", [])).duplicate(true)
 
 
 func _hide_post_battle_review() -> void:
