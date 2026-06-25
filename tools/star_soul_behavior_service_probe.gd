@@ -74,11 +74,41 @@ func _init() -> void:
 	_require(_has_aura_event(Array(aura_intent.get("events", [])), 1, "ally_buff"), "Ally in range should receive aura buff event.")
 	_require(not _has_aura_event(Array(aura_intent.get("events", [])), 2, "ally_buff"), "Enemy should not receive ally buff event.")
 
+	var cart := star_soul.duplicate(true)
+	Dictionary(cart["stats"])["star_soul_behavior"] = "attack_path_blockers"
+	Dictionary(cart["stats"])["range"] = 0.42
+	Dictionary(cart["stats"])["normal_damage"] = 7
+	Dictionary(cart["stats"])["ally_buffs"] = {"nearby_ally_speed_mult": 1.5}
+	var cart_units := [
+		{"id": 1, "owner": 1, "ring": 0.2, "lane": 0.0, "radius": 0.2, "live": true},
+		{"id": 2, "owner": 2, "ring": 0.3, "lane": 0.0, "radius": 0.2, "live": true},
+		{"id": 3, "owner": 2, "ring": 2.4, "lane": 0.0, "radius": 0.2, "live": true},
+	]
+	var cart_intent: Dictionary = service.tick_intent({
+		"delta": 0.6,
+		"ring_length": 24.0,
+		"star_soul": cart,
+		"units": cart_units,
+		"timers": {"contact_timers": {}},
+	})
+	var cart_events: Array = Array(cart_intent.get("events", []))
+	_require(_has_damage_event(cart_events, 2, "contact"), "Cart should damage an enemy blocking its path.")
+	_require(_has_aura_event(cart_events, 1, "ally_buff"), "Cart should accelerate nearby allies.")
+
 	if failed:
 		quit(1)
 		return
-	print("STAR_SOUL_BEHAVIOR_SERVICE_PROBE ok events=", events.size() + area_events.size())
+	print("STAR_SOUL_BEHAVIOR_SERVICE_PROBE ok events=", events.size() + area_events.size() + cart_events.size())
 	quit(0)
+
+
+func _has_damage_event(events: Array, target_id: int, source_kind: String) -> bool:
+	for raw_event in events:
+		if raw_event is Dictionary:
+			var event: Dictionary = raw_event
+			if String(event.get("type", "")) == "damage" and int(event.get("target_id", 0)) == target_id and String(event.get("source_kind", "")) == source_kind:
+				return true
+	return false
 
 
 func _has_aura_event(events: Array, target_id: int, aura_kind: String) -> bool:

@@ -51539,12 +51539,14 @@ func _star_soul_behavior_timers(unit) -> Dictionary:
 	return {
 		"attack_cooldown": float(unit.get_meta("star_soul_attack_cooldown", 0.0)),
 		"area_timers": Dictionary(unit.get_meta("star_soul_area_timers", {})).duplicate(true),
+		"contact_timers": Dictionary(unit.get_meta("star_soul_contact_timers", {})).duplicate(true),
 	}
 
 
 func _store_star_soul_behavior_timers(unit, timers: Dictionary) -> void:
 	unit.set_meta("star_soul_attack_cooldown", float(timers.get("attack_cooldown", 0.0)))
 	unit.set_meta("star_soul_area_timers", Dictionary(timers.get("area_timers", {})).duplicate(true))
+	unit.set_meta("star_soul_contact_timers", Dictionary(timers.get("contact_timers", {})).duplicate(true))
 
 
 func _apply_star_soul_behavior_event(star_soul, event: Dictionary) -> void:
@@ -51577,7 +51579,7 @@ func _apply_star_soul_aura_event(star_soul, target, event: Dictionary) -> void:
 		var key := String(raw_key)
 		var mult := float(effects[raw_key])
 		match key:
-			"move_speed_mult":
+			"move_speed_mult", "nearby_ally_speed_mult":
 				if mult >= 1.0:
 					target.set_meta("speed_lane_timer", maxf(float(target.get_meta("speed_lane_timer", 0.0)), timer))
 					target.set_meta("speed_lane_mult", maxf(float(target.get_meta("speed_lane_mult", 1.0)), mult))
