@@ -94,6 +94,7 @@
     "momentum_damage_gate_runtime_probe",
     "melee_damage_type_rule_probe",
     "unit_editor_legality_roadmap_probe",
+    "role_identity_software_rejection_probe",
     "hardware_fault_design_probe",
     "source_code_priority_service_probe",
     "star_soul_loop_balance_examples_probe",
