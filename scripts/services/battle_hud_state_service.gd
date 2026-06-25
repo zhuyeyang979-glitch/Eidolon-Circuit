@@ -329,6 +329,58 @@ func scoreboard_text(players: Dictionary, win_points: int, terms: Dictionary) ->
 	return "%s  %s" % [base, status] if status != "" else base
 
 
+func star_soul_hud_model(runtime_state: Dictionary, terms: Dictionary) -> Dictionary:
+	if runtime_state.is_empty():
+		return {"visible": false}
+	var phase := String(runtime_state.get("phase", "")).strip_edges()
+	if phase == "" or phase == "invalid":
+		return {"visible": false, "phase": phase}
+	var vp_by_player: Dictionary = Dictionary(runtime_state.get("vp_by_player", {}))
+	var p1_vp := maxi(0, int(vp_by_player.get(1, vp_by_player.get("1", 0))))
+	var p2_vp := maxi(0, int(vp_by_player.get(2, vp_by_player.get("2", 0))))
+	var entry: Dictionary = {}
+	if phase == "active":
+		entry = Dictionary(runtime_state.get("active_entry", {}))
+	elif phase == "spawn_ready" or phase == "announcing":
+		entry = Dictionary(runtime_state.get("pending_entry", {}))
+	var owner := int(entry.get("owner", 0))
+	var star_soul_id := String(entry.get("star_soul_id", ""))
+	var vp := maxi(0, int(entry.get("vp", 0)))
+	var countdown := maxf(0.0, float(runtime_state.get("countdown", 0.0)))
+	var title := String(terms.get("star_soul", "STAR SOUL"))
+	var text := ""
+	match phase:
+		"announcing":
+			text = "%s P%d %s +%d %s %ds" % [
+				title,
+				owner,
+				star_soul_id,
+				vp,
+				String(terms.get("in", "IN")),
+				int(ceilf(countdown)),
+			]
+		"spawn_ready":
+			text = "%s P%d %s +%d %s" % [title, owner, star_soul_id, vp, String(terms.get("ready", "READY"))]
+		"active":
+			text = "%s P%d %s +%d %s" % [title, owner, star_soul_id, vp, String(terms.get("active", "ACTIVE"))]
+		"complete":
+			text = "%s %s  P1 %d - %d P2" % [title, String(terms.get("complete", "COMPLETE")), p1_vp, p2_vp]
+		_:
+			text = "%s %s" % [title, phase.to_upper()]
+	return {
+		"visible": text != "",
+		"text": text,
+		"phase": phase,
+		"owner": owner,
+		"star_soul_id": star_soul_id,
+		"vp": vp,
+		"countdown": countdown,
+		"p1_vp": p1_vp,
+		"p2_vp": p2_vp,
+		"history_count": Array(runtime_state.get("history", [])).size(),
+	}
+
+
 func heavy_hud_text_state(snapshot: Dictionary) -> Dictionary:
 	var terms: Dictionary = Dictionary(snapshot.get("terms", {}))
 	var hp_label := String(snapshot.get("hp_label", "HP"))
@@ -339,6 +391,8 @@ func heavy_hud_text_state(snapshot: Dictionary) -> Dictionary:
 	}
 	var players: Dictionary = Dictionary(snapshot.get("players", {}))
 	state["scoreboard"] = {"text": scoreboard_text(players, win_points, terms)}
+	var star_soul_model := star_soul_hud_model(Dictionary(snapshot.get("star_soul_runtime", snapshot.get("star_soul", {}))), terms)
+	state["star_soul"] = star_soul_model
 	var role_order: Array = Array(snapshot.get("role_order", []))
 	for raw_player_id in players.keys():
 		var player_id := int(raw_player_id)

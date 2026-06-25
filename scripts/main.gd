@@ -37,6 +37,9 @@ const BattleMapOcclusionService = preload("res://scripts/services/battle_map_occ
 const BattleTargetAcquisitionService = preload("res://scripts/services/battle_target_acquisition_service.gd")
 const BattleHudStateService = preload("res://scripts/services/battle_hud_state_service.gd")
 const BattleAwarenessService = preload("res://scripts/services/battle_awareness_service.gd")
+const StarSoulBPScreenService = preload("res://scripts/services/star_soul_bp_screen_service.gd")
+const StarSoulEntityService = preload("res://scripts/services/star_soul_entity_service.gd")
+const StarSoulBPView = preload("res://scripts/views/star_soul_bp_view.gd")
 const BattleRuntimeActionTelemetryService = preload("res://scripts/services/battle_runtime_action_telemetry_service.gd")
 const PowerAllocationService = preload("res://scripts/services/power_allocation_service.gd")
 const ActionProfileRegistry = preload("res://scripts/services/action_profile_registry.gd")
@@ -1551,6 +1554,12 @@ var team_custom_colors := {
 }
 var runtime_resource := {}
 var victory_points := {}
+var star_soul_runtime_state := {}
+var active_star_soul_units: Array = []
+var star_soul_bp_model := {}
+var star_soul_battle_draft_payload := {}
+var star_soul_bp_active := false
+var star_soul_bp_pending_mode := ""
 var portal_index := {}
 var camera_center := 0.0
 var camera_lane_center := 0.0
@@ -1946,6 +1955,8 @@ var battle_map_occlusion_service: BattleMapOcclusionService
 var battle_target_acquisition_service: BattleTargetAcquisitionService
 var battle_hud_state_service: BattleHudStateService
 var battle_awareness_service: BattleAwarenessService
+var star_soul_bp_screen_service: StarSoulBPScreenService
+var star_soul_entity_service: StarSoulEntityService
 var battle_runtime_action_telemetry_service: BattleRuntimeActionTelemetryService
 var power_allocation_service: PowerAllocationService
 var action_profile_registry: ActionProfileRegistry
@@ -2198,7 +2209,9 @@ var portal_labels := {}
 var battle_mode_label: Label
 var match_timer_label: Label
 var battle_scoreboard_label: Label
+var star_soul_label: Label
 var battle_message_label: Label
+var star_soul_bp_view: StarSoulBPView
 var page_options_layer: CanvasLayer
 var page_options_panel: Control
 var page_options_buttons := {}
@@ -2230,6 +2243,7 @@ func _ready() -> void:
 	_build_editor_ui()
 	_build_saved_units_ui()
 	_build_scout_ui()
+	_build_star_soul_bp_ui()
 	_build_settings_ui()
 	_build_battle_ui()
 	_build_page_options_ui()
@@ -2284,6 +2298,8 @@ func _initialize_hot_path_state_layer() -> void:
 	battle_target_acquisition_service = BattleTargetAcquisitionService.new()
 	battle_hud_state_service = BattleHudStateService.new()
 	battle_awareness_service = BattleAwarenessService.new()
+	star_soul_bp_screen_service = StarSoulBPScreenService.new()
+	star_soul_entity_service = StarSoulEntityService.new()
 	battle_runtime_action_telemetry_service = BattleRuntimeActionTelemetryService.new()
 	battle_runtime_facade.bind_runtime_lifecycle(battle_runtime_lifecycle_service)
 	battle_runtime_facade.bind_action_telemetry(battle_runtime_action_telemetry_service)
@@ -2877,6 +2893,14 @@ func _initialize_state() -> void:
 	}
 	runtime_resource = {1: RUNTIME_START_RESOURCE, 2: RUNTIME_START_RESOURCE}
 	victory_points = {1: 0, 2: 0}
+	star_soul_runtime_state = {}
+	active_star_soul_units = []
+	star_soul_bp_model = {}
+	star_soul_battle_draft_payload = {}
+	star_soul_bp_active = false
+	star_soul_bp_pending_mode = ""
+	if battle_controller != null:
+		battle_controller.clear_star_soul_runtime()
 	portal_index = {1: 3, 2: 4}
 	camera_center = 0.0
 	camera_lane_center = 0.0
@@ -9491,6 +9515,10 @@ func _ui_term(term_key: String) -> String:
 		"electronic_armor": "护盾",
 		"support_armor": "护甲",
 		"shift": "切换",
+		"star_soul": "星魂",
+		"in": "倒计时",
+		"ready": "就绪",
+		"complete": "完成",
 		"ai_battle": "电脑对战",
 		"p1_left": "P1 左侧席位",
 		"p2_right": "P2 右侧席位",
@@ -9528,6 +9556,10 @@ func _ui_term(term_key: String) -> String:
 		"electronic_armor": "SH",
 		"support_armor": "A",
 		"shift": "SHIFT",
+		"star_soul": "STAR SOUL",
+		"in": "IN",
+		"ready": "READY",
+		"complete": "COMPLETE",
 		"ai_battle": "COMPUTER BATTLE",
 		"p1_left": "P1 LEFT SEAT",
 		"p2_right": "P2 RIGHT SEAT",
@@ -10993,6 +11025,7 @@ func _begin_battle(mode: String, preloaded: bool = false, reason: String = "") -
 	spectator_view_mode = SPECTATOR_VIEW_MID
 	runtime_resource = {1: RUNTIME_START_RESOURCE, 2: RUNTIME_START_RESOURCE}
 	victory_points = {1: 0, 2: 0}
+	_start_star_soul_runtime_for_battle(mode)
 	portal_index = {1: 3, 2: 4}
 	ai_timer = 0.0
 	ai_buy_timer = 0.0
@@ -11083,6 +11116,16 @@ func _begin_battle(mode: String, preloaded: bool = false, reason: String = "") -
 	_update_battle_ui()
 
 
+func _start_star_soul_runtime_for_battle(mode: String) -> void:
+	star_soul_runtime_state = {}
+	if battle_controller == null:
+		return
+	battle_controller.clear_star_soul_runtime()
+	if mode != MODE_PVP or not bool(star_soul_battle_draft_payload.get("valid", false)):
+		return
+	star_soul_runtime_state = battle_controller.start_star_soul_runtime(star_soul_battle_draft_payload)
+
+
 func _show_training_entry_intro(training_player: int, training_dummy_player: int) -> void:
 	if training_entry_intro_view == null:
 		return
@@ -11111,7 +11154,7 @@ func _show_training_entry_intro(training_player: int, training_dummy_player: int
 
 
 func _set_visible_layer(layer: CanvasLayer) -> void:
-	for candidate in [menu_layer, editor_layer, saved_units_layer, scout_layer, settings_layer, hud_layer, format_select_layer, loading_layer]:
+	for candidate in [menu_layer, editor_layer, saved_units_layer, scout_layer, star_soul_bp_view, settings_layer, hud_layer, format_select_layer, loading_layer]:
 		if candidate != null:
 			candidate.visible = candidate == layer
 
@@ -12117,6 +12160,10 @@ func _menu_main_action(index: int) -> Dictionary:
 
 
 func _handle_scout_input(delta: float) -> void:
+	if star_soul_bp_active:
+		if Input.is_action_just_pressed("menu_back"):
+			_cancel_star_soul_bp()
+		return
 	if Input.is_action_just_pressed("menu_back"):
 		_show_menu()
 		return
@@ -12164,7 +12211,72 @@ func _try_begin_battle_from_scout() -> void:
 		scout_hint_label.text = "P%d 出战仍不合法：%s" % [player_id, _localized_system_text(String(summary.get("note", "check starter and topology")))] if _ui_is_zh() else "P%d battle entry is not legal yet: %s" % [player_id, String(summary.get("note", "check starter and topology"))]
 		_update_scout_ui()
 		return
+	if pending_battle_mode == MODE_PVP:
+		_show_star_soul_bp(pending_battle_mode)
+		return
 	_begin_battle(pending_battle_mode)
+
+
+func _show_star_soul_bp(mode: String) -> void:
+	if mode != MODE_PVP:
+		_begin_battle(mode)
+		return
+	if star_soul_bp_screen_service == null:
+		star_soul_bp_screen_service = StarSoulBPScreenService.new()
+	if star_soul_bp_view == null:
+		_build_star_soul_bp_ui()
+	star_soul_bp_pending_mode = mode
+	star_soul_bp_model = star_soul_bp_screen_service.initial_model(1, 10)
+	star_soul_battle_draft_payload = {}
+	star_soul_bp_active = true
+	_set_visible_layer(star_soul_bp_view)
+	star_soul_bp_view.set_model(star_soul_bp_model, "zh" if _ui_is_zh() else "en")
+
+
+func _on_star_soul_bp_selected(player: int, star_soul_id: String) -> void:
+	if not star_soul_bp_active or star_soul_bp_screen_service == null:
+		return
+	var intent: Dictionary = star_soul_bp_screen_service.pick_intent(star_soul_bp_model, player, star_soul_id)
+	if not bool(intent.get("accepted", false)):
+		return
+	star_soul_bp_model = Dictionary(intent.get("model", {})).duplicate(true)
+	star_soul_bp_view.set_model(star_soul_bp_model, "zh" if _ui_is_zh() else "en")
+
+
+func _on_star_soul_bp_confirmed(player: int) -> void:
+	if not star_soul_bp_active or star_soul_bp_screen_service == null:
+		return
+	var intent: Dictionary = star_soul_bp_screen_service.confirm_intent(star_soul_bp_model, player)
+	if not bool(intent.get("accepted", false)):
+		return
+	star_soul_bp_model = Dictionary(intent.get("model", {})).duplicate(true)
+	star_soul_bp_view.set_model(star_soul_bp_model, "zh" if _ui_is_zh() else "en")
+	if bool(star_soul_bp_model.get("complete", false)):
+		_complete_star_soul_bp()
+
+
+func _complete_star_soul_bp() -> void:
+	var draft_payload: Dictionary = Dictionary(star_soul_bp_model.get("draft_payload", {})).duplicate(true)
+	if not bool(draft_payload.get("valid", false)):
+		return
+	star_soul_battle_draft_payload = draft_payload
+	star_soul_bp_active = false
+	if star_soul_bp_view != null:
+		star_soul_bp_view.close()
+	var mode := star_soul_bp_pending_mode if star_soul_bp_pending_mode != "" else MODE_PVP
+	star_soul_bp_pending_mode = ""
+	_begin_battle(mode, true, "star_soul_bp_complete")
+
+
+func _cancel_star_soul_bp() -> void:
+	star_soul_bp_active = false
+	star_soul_bp_pending_mode = ""
+	star_soul_bp_model = {}
+	star_soul_battle_draft_payload = {}
+	if star_soul_bp_view != null:
+		star_soul_bp_view.close()
+	_set_visible_layer(scout_layer)
+	_update_scout_ui()
 
 
 func _handle_editor_input() -> void:
@@ -24990,6 +25102,12 @@ func _battle_hud_service() -> BattleHudStateService:
 	return battle_hud_state_service
 
 
+func _star_soul_entity_service() -> StarSoulEntityService:
+	if star_soul_entity_service == null:
+		star_soul_entity_service = StarSoulEntityService.new()
+	return star_soul_entity_service
+
+
 func _battle_input_service() -> BattleInputService:
 	if battle_input_service == null:
 		battle_input_service = BattleInputService.new()
@@ -25200,6 +25318,7 @@ func _tick_battle_simulation(delta: float, _input_frame: Dictionary = {}) -> voi
 					battle_message_timer -= delta
 					if battle_message_timer <= 0.0:
 						battle_message = ""
+				_tick_star_soul_runtime(delta)
 			BattleFrameOrchestratorService.PHASE_DEPLOYS:
 				_tick_deploys(delta)
 			BattleFrameOrchestratorService.PHASE_FIELD_SYSTEMS:
@@ -29729,6 +29848,7 @@ func _switch_target_role(unit) -> String:
 
 func _detach_unit_reference(unit) -> void:
 	var owner: int = int(unit.owner_id)
+	active_star_soul_units.erase(unit)
 	if active_units[owner]["hero"] == unit:
 		active_units[owner]["hero"] = null
 	if active_units[owner]["barrier"] == unit:
@@ -30502,6 +30622,9 @@ func _friendly_units(player_id: int) -> Array:
 		units.append(barrier)
 	for unit in active_units[player_id]["puppet"]:
 		if _is_live_unit(unit):
+			units.append(unit)
+	for unit in active_star_soul_units:
+		if _is_live_unit(unit) and int(unit.owner_id) == player_id:
 			units.append(unit)
 	return units
 
@@ -34461,6 +34584,9 @@ func _cleanup_fracture_puppets_for_parent(parent) -> int:
 func _handle_unit_killed(unit, killer_id: int) -> void:
 	if not is_instance_valid(unit):
 		return
+	if _unit_is_star_soul(unit):
+		_handle_star_soul_exit(unit, "destroyed", killer_id)
+		return
 
 	var victim_id: int = int(unit.owner_id)
 	var killed_role: String = String(unit.role)
@@ -34540,6 +34666,48 @@ func _handle_unit_killed(unit, killer_id: int) -> void:
 	if bool(post_intent.get("end_battle", false)):
 		_end_battle(int(post_intent.get("winner_id", killer_id)))
 	unit.queue_free()
+
+
+func _handle_star_soul_exit(unit, reason: String, _killer_id: int = 0) -> void:
+	if unit == null or not is_instance_valid(unit):
+		return
+	var star_soul_id := String(unit.get_meta("star_soul_id", unit.stats.get("star_soul_id", "")))
+	var runtime_id := String(unit.get_meta("star_soul_runtime_id", ""))
+	var owner := clampi(int(unit.owner_id), 1, 2)
+	var exit_intent := {"changed": false, "state": star_soul_runtime_state}
+	if battle_controller != null:
+		exit_intent = battle_controller.exit_active_star_soul(reason, runtime_id)
+		star_soul_runtime_state = Dictionary(exit_intent.get("state", {})).duplicate(true)
+	var award := _apply_star_soul_vp_award(exit_intent)
+	active_star_soul_units.erase(unit)
+	_detach_unit(unit)
+	if unit.has_method("retire"):
+		unit.retire()
+	unit.queue_free()
+	if bool(award.get("award", false)):
+		_show_battle_message("P%d +%d VP: %s destroyed" % [int(award.get("player", 0)), int(award.get("vp", 0)), star_soul_id], 1.0)
+	elif reason == "timeout":
+		_show_battle_message("P%d STAR SOUL %s leaves" % [owner, star_soul_id], 0.8)
+	elif reason == "arrival":
+		_show_battle_message("P%d STAR SOUL %s arrived" % [owner, star_soul_id], 0.8)
+
+
+func _apply_star_soul_vp_award(exit_intent: Dictionary) -> Dictionary:
+	if not bool(exit_intent.get("changed", false)):
+		return {"award": false}
+	var state: Dictionary = Dictionary(exit_intent.get("state", {}))
+	var history: Array = Array(state.get("history", []))
+	if history.is_empty():
+		return {"award": false}
+	var record: Dictionary = Dictionary(history[history.size() - 1])
+	var award: Dictionary = Dictionary(record.get("vp_award", {}))
+	if not bool(award.get("award", false)):
+		return award
+	var player := int(award.get("player", 0))
+	var vp := int(award.get("vp", 0))
+	if [1, 2].has(player) and vp > 0:
+		victory_points[player] = int(victory_points.get(player, 0)) + vp
+	return award
 
 
 func _apply_destroy_economy(unit, killer_id: int) -> void:
@@ -36163,7 +36331,13 @@ func _defect_unit_to_owner(unit, new_owner: int, reason: String, full_restore: b
 func _unit_role_is_mech(unit) -> bool:
 	if unit == null or not is_instance_valid(unit):
 		return false
-	return String(unit.role) in ["hero", "puppet"]
+	return String(unit.role) in ["hero", "puppet"] or _unit_is_star_soul(unit)
+
+
+func _unit_is_star_soul(unit) -> bool:
+	if unit == null or not is_instance_valid(unit):
+		return false
+	return String(unit.role) == "star_soul" or bool(unit.get_meta("star_soul", false)) or bool(unit.stats.get("star_soul", false))
 
 
 func _unit_uses_heat(unit) -> bool:
@@ -36708,6 +36882,7 @@ func _clear_all_units() -> void:
 	battle_contact_vfx_pool.setup_pool(int(_runtime_quality_value("contact_particle_pool", 128)), float(_runtime_quality_value("vfx_scale", 1.0)))
 	effects_root.add_child(battle_contact_vfx_pool)
 	all_units.clear()
+	active_star_soul_units.clear()
 	blind_zones.clear()
 	field_coins.clear()
 	retreating_units.clear()
@@ -45043,6 +45218,18 @@ func _build_scout_ui() -> void:
 		scout_player_thumb_views.append(player_thumb)
 
 
+func _build_star_soul_bp_ui() -> void:
+	if star_soul_bp_view != null:
+		return
+	star_soul_bp_view = StarSoulBPView.new()
+	star_soul_bp_view.name = "StarSoulBPView"
+	add_child(star_soul_bp_view)
+	star_soul_bp_view.star_soul_selected.connect(_on_star_soul_bp_selected)
+	star_soul_bp_view.player_confirmed.connect(_on_star_soul_bp_confirmed)
+	star_soul_bp_view.cancel_requested.connect(_cancel_star_soul_bp)
+	star_soul_bp_view.visible = false
+
+
 func _build_settings_ui() -> void:
 	settings_layer = CanvasLayer.new()
 	add_child(settings_layer)
@@ -45204,6 +45391,8 @@ func _build_battle_ui() -> void:
 	battle_mode_label = _make_label(hud, "Mode", "", Vector2(440.0, 16.0), Vector2(400.0, 24.0), 18, Color(0.9, 0.96, 1.0, 1.0), HORIZONTAL_ALIGNMENT_CENTER)
 	battle_scoreboard_label = _make_label(hud, "Scoreboard", "", Vector2(390.0, 42.0), Vector2(500.0, 24.0), 16, Color(1.0, 0.88, 0.28, 1.0), HORIZONTAL_ALIGNMENT_CENTER)
 	match_timer_label = _make_label(hud, "Timer", "", Vector2(540.0, 72.0), Vector2(200.0, 24.0), 18, Color(1.0, 0.9, 0.35, 1.0), HORIZONTAL_ALIGNMENT_CENTER)
+	star_soul_label = _make_label(hud, "StarSoulStatus", "", Vector2(330.0, 128.0), Vector2(620.0, 24.0), 15, Color(0.55, 0.92, 1.0, 1.0), HORIZONTAL_ALIGNMENT_CENTER)
+	star_soul_label.visible = false
 	battle_message_label = _make_label(hud, "Message", "", Vector2(330.0, 100.0), Vector2(620.0, 28.0), 19, Color(1.0, 0.9, 0.35, 1.0), HORIZONTAL_ALIGNMENT_CENTER)
 	training_entry_intro_view = TrainingEntryIntroView.new()
 	training_entry_intro_view.name = "TrainingEntryIntro"
@@ -51135,6 +51324,7 @@ func _battle_hud_text_controls() -> Dictionary:
 		"mode": battle_mode_label,
 		"timer": match_timer_label,
 		"scoreboard": battle_scoreboard_label,
+		"star_soul": star_soul_label,
 	}
 	for player_id in [1, 2]:
 		controls["p%d_resource" % player_id] = resource_labels[player_id]
@@ -51162,8 +51352,173 @@ func _battle_hud_text_ui_state() -> Dictionary:
 	return state
 
 
-func _battle_hud_text_snapshot() -> Dictionary:
+func _tick_star_soul_runtime(delta: float) -> void:
+	if battle_controller == null:
+		return
+	if battle_controller.star_soul_runtime_snapshot().is_empty():
+		star_soul_runtime_state = {}
+		return
+	var intent: Dictionary = battle_controller.tick_star_soul_runtime(delta)
+	star_soul_runtime_state = Dictionary(intent.get("state", {})).duplicate(true)
+	var spawned_this_tick := false
+	if String(star_soul_runtime_state.get("phase", "")) == "spawn_ready":
+		spawned_this_tick = _spawn_pending_star_soul_from_controller()
+	if not spawned_this_tick:
+		_update_star_soul_units(delta)
+
+
+func _spawn_pending_star_soul_from_controller() -> bool:
+	if battle_controller == null:
+		return false
+	if not _live_star_soul_units().is_empty():
+		return false
+	var state := battle_controller.star_soul_runtime_snapshot()
+	if String(state.get("phase", "")) != "spawn_ready":
+		return false
+	var spawn_intent: Dictionary = Dictionary(state.get("spawn_intent", {}))
+	if spawn_intent.is_empty():
+		return false
+	var payload := _star_soul_entity_service().spawn_payload(spawn_intent, _star_soul_spawn_context(), Dictionary(state.get("catalog_by_id", {})))
+	if not bool(payload.get("valid", false)):
+		return false
+	var owner := clampi(int(payload.get("owner", 1)), 1, 2)
+	var stats: Dictionary = Dictionary(payload.get("stats", {})).duplicate(true)
+	var unit = _create_unit(owner, "star_soul", stats, String(payload.get("name", "P%d STAR SOUL" % owner)), float(payload.get("ring", 0.0)), float(payload.get("lane", 0.0)))
+	for meta_key in Dictionary(payload.get("meta", {})).keys():
+		unit.set_meta(meta_key, payload["meta"][meta_key])
+	unit.set_meta("star_soul_duration_elapsed", 0.0)
+	active_star_soul_units.append(unit)
+	var runtime_id := String(Dictionary(payload.get("meta", {})).get("star_soul_runtime_id", ""))
+	var commit_intent := battle_controller.commit_star_soul_spawn(runtime_id)
+	star_soul_runtime_state = Dictionary(commit_intent.get("state", {})).duplicate(true)
+	_show_battle_message("P%d STAR SOUL %s online" % [owner, String(stats.get("star_soul_id", ""))], 0.9)
+	return bool(commit_intent.get("changed", false))
+
+
+func _star_soul_spawn_context() -> Dictionary:
 	return {
+		"ring_length": RING_LENGTH,
+		"battle_half_height": BATTLE_HALF_HEIGHT,
+		"spawn_points": {
+			1: {"ring": 0.0, "lane": 0.0},
+			2: {"ring": RING_LENGTH * 0.5, "lane": 0.0},
+		},
+		"primary_colors": {
+			1: _team_primary_color(1),
+			2: _team_primary_color(2),
+		},
+		"accent_colors": {
+			1: _team_accent_color(1),
+			2: _team_accent_color(2),
+		},
+	}
+
+
+func _live_star_soul_units() -> Array:
+	var live: Array = []
+	for unit in active_star_soul_units:
+		if _is_live_unit(unit):
+			live.append(unit)
+	active_star_soul_units = live
+	return live
+
+
+func _update_star_soul_units(delta: float) -> void:
+	for unit in _live_star_soul_units().duplicate():
+		if not _is_live_unit(unit):
+			continue
+		if _update_star_soul_motion(unit, delta):
+			continue
+		var remaining := float(unit.get_meta("star_soul_duration_remaining", unit.stats.get("duration", 0.0)))
+		if remaining <= 0.0:
+			continue
+		remaining = maxf(0.0, remaining - delta)
+		unit.set_meta("star_soul_duration_remaining", remaining)
+		unit.set_meta("star_soul_duration_elapsed", float(unit.get_meta("star_soul_duration_elapsed", 0.0)) + delta)
+		if remaining <= 0.0:
+			_handle_star_soul_departure(unit, "timeout")
+
+
+func _update_star_soul_motion(unit, delta: float) -> bool:
+	if not _is_live_unit(unit):
+		return false
+	var movement := String(unit.get_meta("star_soul_movement", unit.stats.get("star_soul_movement", "stationary")))
+	if movement == "stationary":
+		return false
+	var owner := clampi(int(unit.owner_id), 1, 2)
+	var target = null
+	var target_point := Vector2.INF
+	match movement:
+		"move_to_enemy_spawn":
+			target_point = _star_soul_spawn_point_for_player(2 if owner == 1 else 1)
+		"follow_nearest_enemy":
+			target = _nearest_enemy(unit, owner)
+		"follow_nearest_ally":
+			target = _nearest_star_soul_friendly_target(unit, owner)
+		"follow_nearest_any_unit":
+			target = _nearest_star_soul_any_unit(unit)
+		"flee_from_any_unit":
+			target = _nearest_star_soul_any_unit(unit)
+	var move := Vector2.ZERO
+	if target != null and _is_live_unit(target):
+		move = _mobius_delta_vec_between(unit, target)
+	elif target_point != Vector2.INF:
+		move = _mobius_delta_points(unit.ring_pos, unit.lane, target_point.x, target_point.y)
+	if movement == "flee_from_any_unit":
+		move = -move
+	if movement == "move_to_enemy_spawn" and target_point != Vector2.INF:
+		var radius := float(unit.stats.get("radius", 0.35))
+		if absf(move.x) <= radius + 0.08 and absf(move.y) <= radius + 0.08:
+			_handle_star_soul_departure(unit, "arrival")
+			return true
+	if move.length() <= 0.01:
+		return false
+	var input := move.normalized()
+	if unit.has_method("move_by_gameplay"):
+		unit.move_by_gameplay(input, delta, RING_LENGTH)
+	else:
+		unit.move_by(input, delta, RING_LENGTH)
+	return false
+
+
+func _star_soul_spawn_point_for_player(player_id: int) -> Vector2:
+	return Vector2(RING_LENGTH * 0.5 if player_id == 2 else 0.0, 0.0)
+
+
+func _nearest_star_soul_any_unit(unit):
+	var best = null
+	var best_distance := INF
+	for candidate in all_units:
+		if candidate == unit or not _is_live_unit(candidate):
+			continue
+		var delta := _mobius_delta_vec_between(unit, candidate)
+		var distance := absf(delta.x) + absf(delta.y) * 0.65
+		if distance < best_distance:
+			best_distance = distance
+			best = candidate
+	return best
+
+
+func _nearest_star_soul_friendly_target(unit, owner: int):
+	var best = null
+	var best_distance := INF
+	for candidate in _friendly_units(owner):
+		if candidate == unit or not _is_live_unit(candidate) or _unit_is_star_soul(candidate):
+			continue
+		var delta := _mobius_delta_vec_between(unit, candidate)
+		var distance := absf(delta.x) + absf(delta.y) * 0.65
+		if distance < best_distance:
+			best_distance = distance
+			best = candidate
+	return best
+
+
+func _handle_star_soul_departure(unit, reason: String) -> void:
+	_handle_star_soul_exit(unit, reason, 0)
+
+
+func _battle_hud_text_snapshot() -> Dictionary:
+	var snapshot := {
 		"mode_title": _battle_mode_title(),
 		"match_time_remaining": match_time_remaining,
 		"win_points": WIN_POINTS,
@@ -51176,6 +51531,18 @@ func _battle_hud_text_snapshot() -> Dictionary:
 			2: _battle_hud_player_snapshot(2),
 		},
 	}
+	var star_soul_snapshot := _battle_star_soul_runtime_snapshot()
+	if not star_soul_snapshot.is_empty():
+		snapshot["star_soul_runtime"] = star_soul_snapshot
+	return snapshot
+
+
+func _battle_star_soul_runtime_snapshot() -> Dictionary:
+	if battle_controller != null:
+		var controller_snapshot := battle_controller.star_soul_hud_snapshot()
+		if not controller_snapshot.is_empty():
+			return controller_snapshot
+	return star_soul_runtime_state.duplicate(true)
 
 
 func _battle_hud_bar_snapshot() -> Dictionary:
@@ -51221,6 +51588,10 @@ func _battle_hud_terms() -> Dictionary:
 		"heat": _ui_term("heat"),
 		"ammo": _ui_term("ammo"),
 		"shift": _ui_term("shift"),
+		"star_soul": _ui_term("star_soul"),
+		"in": _ui_term("in"),
+		"ready": _ui_term("ready"),
+		"complete": _ui_term("complete"),
 	}
 
 
@@ -51401,6 +51772,7 @@ func _battle_awareness_unit_snapshot(unit) -> Dictionary:
 		"lane": float(unit.lane),
 		"radius": float(unit.stats.get("radius", 0.18)),
 		"temporary": _is_temporary_fracture_puppet(unit),
+		"star_soul": _unit_is_star_soul(unit),
 		"space_debris": bool(unit.get_meta("space_debris", false)),
 		"hp_ratio": float(unit.health_ratio()) if unit.has_method("health_ratio") else 1.0,
 		"heat_ratio": _source_target_heat_ratio(unit),
@@ -51442,6 +51814,8 @@ func _battle_awareness_active_unit_data(include_barrier_tiles: bool = false) -> 
 		_append_battle_awareness_unit_snapshot(player_units.get("barrier", null), snapshots, refs, include_barrier_tiles)
 		for unit in Array(player_units.get("puppet", [])):
 			_append_battle_awareness_unit_snapshot(unit, snapshots, refs, include_barrier_tiles)
+	for unit in active_star_soul_units:
+		_append_battle_awareness_unit_snapshot(unit, snapshots, refs, include_barrier_tiles)
 	return {"snapshots": snapshots, "refs": refs}
 
 
