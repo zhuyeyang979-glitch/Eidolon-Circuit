@@ -23,6 +23,12 @@ func tick_intent(context: Dictionary) -> Dictionary:
 			events.append_array(_area_damage_events(star_soul, stats, units, timers, delta, ring_length))
 		"attack_path_blockers":
 			events.append_array(_contact_damage_events(star_soul, stats, units, timers, delta, ring_length))
+		"retarget_after_attack":
+			events.append_array(_melee_attack_events(star_soul, stats, units, timers, delta, ring_length, "any"))
+		"attack_owner_units":
+			events.append_array(_melee_attack_events(star_soul, stats, units, timers, delta, ring_length, "ally"))
+		"attack_enemy_units":
+			events.append_array(_melee_attack_events(star_soul, stats, units, timers, delta, ring_length, "enemy"))
 	events.append_array(_aura_events(star_soul, stats, units, ring_length))
 	return {"events": events, "timers": timers}
 
@@ -73,6 +79,18 @@ func _contact_damage_events(star_soul: Dictionary, stats: Dictionary, units: Arr
 		events.append(_damage_event(star_soul, stats, target, "contact"))
 	timers["contact_timers"] = contact_timers
 	return events
+
+
+func _melee_attack_events(star_soul: Dictionary, stats: Dictionary, units: Array, timers: Dictionary, delta: float, ring_length: float, relation: String) -> Array:
+	var cooldown := maxf(0.0, float(timers.get("attack_cooldown", 0.0)) - delta)
+	timers["attack_cooldown"] = cooldown
+	if cooldown > 0.0:
+		return []
+	var target := _nearest_target(star_soul, units, ring_length, relation)
+	if target.is_empty():
+		return []
+	timers["attack_cooldown"] = maxf(0.12, float(stats.get("star_soul_attack_interval", DEFAULT_ATTACK_INTERVAL)))
+	return [_damage_event(star_soul, stats, target, "melee")]
 
 
 func _aura_events(star_soul: Dictionary, stats: Dictionary, units: Array, ring_length: float) -> Array:

@@ -108,6 +108,7 @@
     "star_soul_main_spawn_probe",
     "star_soul_main_behavior_probe",
     "star_soul_main_cart_behavior_probe",
+    "star_soul_main_chaser_behavior_probe",
     "star_soul_hud_state_probe",
     "battle_controller_star_soul_runtime_probe",
     "part_gradient_curve_probe",

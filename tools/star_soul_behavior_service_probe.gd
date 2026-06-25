@@ -95,10 +95,49 @@ func _init() -> void:
 	_require(_has_damage_event(cart_events, 2, "contact"), "Cart should damage an enemy blocking its path.")
 	_require(_has_aura_event(cart_events, 1, "ally_buff"), "Cart should accelerate nearby allies.")
 
+	var chaser := star_soul.duplicate(true)
+	Dictionary(chaser["stats"])["range"] = 0.5
+	Dictionary(chaser["stats"])["normal_damage"] = 8
+	Dictionary(chaser["stats"])["damage_type"] = "blunt"
+	var chaser_units := [
+		{"id": 1, "owner": 1, "ring": 0.24, "lane": 0.0, "radius": 0.2, "live": true},
+		{"id": 2, "owner": 2, "ring": 0.34, "lane": 0.0, "radius": 0.2, "live": true},
+	]
+	Dictionary(chaser["stats"])["star_soul_behavior"] = "retarget_after_attack"
+	var giant_intent: Dictionary = service.tick_intent({
+		"delta": 0.55,
+		"ring_length": 24.0,
+		"star_soul": chaser,
+		"units": chaser_units,
+		"timers": {"attack_cooldown": 0.0},
+	})
+	_require(_has_damage_event(Array(giant_intent.get("events", [])), 1, "melee"), "Wandering giant should hit the nearest unit from either side.")
+
+	Dictionary(chaser["stats"])["star_soul_behavior"] = "attack_owner_units"
+	var traitor_intent: Dictionary = service.tick_intent({
+		"delta": 0.55,
+		"ring_length": 24.0,
+		"star_soul": chaser,
+		"units": chaser_units,
+		"timers": {"attack_cooldown": 0.0},
+	})
+	_require(_has_damage_event(Array(traitor_intent.get("events", [])), 1, "melee"), "Traitor/Rebel should hit owner-side units.")
+	_require(not _has_damage_event(Array(traitor_intent.get("events", [])), 2, "melee"), "Traitor/Rebel should not prefer enemy units.")
+
+	Dictionary(chaser["stats"])["star_soul_behavior"] = "attack_enemy_units"
+	var loyalist_intent: Dictionary = service.tick_intent({
+		"delta": 0.55,
+		"ring_length": 24.0,
+		"star_soul": chaser,
+		"units": chaser_units,
+		"timers": {"attack_cooldown": 0.0},
+	})
+	_require(_has_damage_event(Array(loyalist_intent.get("events", [])), 2, "melee"), "Loyalist should hit enemy units.")
+
 	if failed:
 		quit(1)
 		return
-	print("STAR_SOUL_BEHAVIOR_SERVICE_PROBE ok events=", events.size() + area_events.size() + cart_events.size())
+	print("STAR_SOUL_BEHAVIOR_SERVICE_PROBE ok events=", events.size() + area_events.size() + cart_events.size() + Array(giant_intent.get("events", [])).size())
 	quit(0)
 
 
