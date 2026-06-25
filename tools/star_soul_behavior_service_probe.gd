@@ -134,6 +134,25 @@ func _init() -> void:
 	})
 	_require(_has_damage_event(Array(loyalist_intent.get("events", [])), 2, "melee"), "Loyalist should hit enemy units.")
 
+	var coward := star_soul.duplicate(true)
+	Dictionary(coward["stats"])["star_soul_behavior"] = "lose_hp_when_units_in_area"
+	Dictionary(coward["stats"])["range"] = 1.1
+	Dictionary(coward["stats"])["normal_damage"] = 4
+	var coward_units := [
+		{"id": 1, "owner": 1, "ring": 0.24, "lane": 0.0, "radius": 0.2, "live": true},
+		{"id": 2, "owner": 2, "ring": 0.42, "lane": 0.0, "radius": 0.2, "live": true},
+	]
+	var coward_intent: Dictionary = service.tick_intent({
+		"delta": 0.6,
+		"ring_length": 24.0,
+		"star_soul": coward,
+		"units": coward_units,
+		"timers": {"area_timers": {}},
+	})
+	var coward_events: Array = Array(coward_intent.get("events", []))
+	_require(_has_damage_event(coward_events, 100, "self_area"), "Coward should damage itself when any side has a unit in its area.")
+	_require(not _has_damage_event(coward_events, 1, "area") and not _has_damage_event(coward_events, 2, "area"), "Coward area should not damage nearby player units.")
+
 	if failed:
 		quit(1)
 		return

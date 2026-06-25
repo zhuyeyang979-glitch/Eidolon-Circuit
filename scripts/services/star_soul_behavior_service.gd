@@ -19,8 +19,10 @@ func tick_intent(context: Dictionary) -> Dictionary:
 	match behavior:
 		"shoot_enemy_in_range":
 			events.append_array(_shoot_enemy_events(star_soul, stats, units, timers, delta, ring_length))
-		"damage_enemy_in_area", "lose_hp_when_units_in_area":
+		"damage_enemy_in_area":
 			events.append_array(_area_damage_events(star_soul, stats, units, timers, delta, ring_length))
+		"lose_hp_when_units_in_area":
+			events.append_array(_self_damage_when_units_in_area_events(star_soul, stats, units, timers, delta, ring_length))
 		"attack_path_blockers":
 			events.append_array(_contact_damage_events(star_soul, stats, units, timers, delta, ring_length))
 		"retarget_after_attack":
@@ -61,6 +63,22 @@ func _area_damage_events(star_soul: Dictionary, stats: Dictionary, units: Array,
 		events.append(_damage_event(star_soul, stats, target, "area"))
 	timers["area_timers"] = area_timers
 	return events
+
+
+func _self_damage_when_units_in_area_events(star_soul: Dictionary, stats: Dictionary, units: Array, timers: Dictionary, delta: float, ring_length: float) -> Array:
+	if _targets_in_range(star_soul, units, ring_length, "any").is_empty():
+		return []
+	var area_timers: Dictionary = Dictionary(timers.get("area_timers", {})).duplicate(true)
+	var source_id := str(star_soul.get("id", ""))
+	var interval := maxf(0.1, float(stats.get("star_soul_area_interval", DEFAULT_AREA_INTERVAL)))
+	var timer := maxf(0.0, float(area_timers.get(source_id, 0.0)) - delta)
+	if timer > 0.0:
+		area_timers[source_id] = timer
+		timers["area_timers"] = area_timers
+		return []
+	area_timers[source_id] = interval
+	timers["area_timers"] = area_timers
+	return [_damage_event(star_soul, stats, star_soul, "self_area")]
 
 
 func _contact_damage_events(star_soul: Dictionary, stats: Dictionary, units: Array, timers: Dictionary, delta: float, ring_length: float) -> Array:

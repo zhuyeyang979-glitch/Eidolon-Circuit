@@ -51661,11 +51661,27 @@ func _update_star_soul_motion(unit, delta: float) -> bool:
 	if move.length() <= 0.01:
 		return false
 	var input := move.normalized()
-	if unit.has_method("move_by_gameplay"):
-		unit.move_by_gameplay(input, delta, RING_LENGTH)
-	else:
-		unit.move_by(input, delta, RING_LENGTH)
+	_move_star_soul_autonomous(unit, input, delta)
 	return false
+
+
+func _move_star_soul_autonomous(unit, input: Vector2, delta: float) -> void:
+	var speed := maxf(0.0, float(unit.stats.get("speed", 0.0)))
+	if speed <= 0.0 or input.length() <= 0.01:
+		return
+	var direction := input.normalized()
+	var movement := direction * speed * maxf(0.0, delta)
+	var current_s := float(unit.get("mobius_s")) if unit.get("mobius_s") != null else float(unit.ring_pos)
+	var current_v := float(unit.get("mobius_v")) if unit.get("mobius_v") != null else float(unit.lane)
+	current_s += movement.x
+	current_v = clampf(current_v + movement.y, -BATTLE_HALF_HEIGHT, BATTLE_HALF_HEIGHT)
+	if unit.get("mobius_s") != null:
+		unit.set("mobius_s", current_s)
+	if unit.get("mobius_v") != null:
+		unit.set("mobius_v", current_v)
+	unit.ring_pos = fposmod(current_s, RING_LENGTH)
+	unit.lane = current_v
+	unit.velocity = Vector2.ZERO
 
 
 func _star_soul_spawn_point_for_player(player_id: int) -> Vector2:
