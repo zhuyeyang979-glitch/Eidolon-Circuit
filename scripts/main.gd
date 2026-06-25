@@ -25311,9 +25311,9 @@ func _tick_battle_simulation(delta: float, _input_frame: Dictionary = {}) -> voi
 				_update_units(0.0, false)
 				return
 			BattleFrameOrchestratorService.PHASE_RESOURCE_ECONOMY:
-				runtime_resource[1] = float(runtime_resource[1]) + RESOURCE_GAIN_PER_SECOND * delta
+				runtime_resource[1] = float(runtime_resource[1]) + _resource_gain_for_player(1, delta)
 				if battle_mode != MODE_TRAINING:
-					runtime_resource[2] = float(runtime_resource[2]) + RESOURCE_GAIN_PER_SECOND * delta
+					runtime_resource[2] = float(runtime_resource[2]) + _resource_gain_for_player(2, delta)
 				_tick_sortie_price_discounts(delta)
 				_apply_lease_costs(delta)
 				_apply_annuity_income(delta)
@@ -25386,6 +25386,21 @@ func _refresh_battle_camera_projection_now() -> void:
 	_refresh_mobius_surface_view()
 	_update_parallax_background()
 	_refresh_unit_screen_positions()
+
+
+func _resource_gain_for_player(player_id: int, delta: float) -> float:
+	return RESOURCE_GAIN_PER_SECOND * maxf(0.0, delta) * _star_soul_resource_rate_multiplier(player_id)
+
+
+func _star_soul_resource_rate_multiplier(player_id: int) -> float:
+	var owner := clampi(player_id, 1, 2)
+	var multiplier := 1.0
+	for unit in _live_star_soul_units():
+		if int(unit.owner_id) != owner:
+			continue
+		multiplier *= maxf(0.0, float(unit.stats.get("star_soul_economy_rate_mult", 1.0)))
+		multiplier *= maxf(0.0, float(unit.stats.get("star_soul_owner_economy_rate_mult", 1.0)))
+	return multiplier
 
 
 func _apply_lease_costs(delta: float) -> void:
