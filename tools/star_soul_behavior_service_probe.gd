@@ -1,0 +1,97 @@
+extends SceneTree
+
+const SERVICE_PATH := "res://scripts/services/star_soul_behavior_service.gd"
+
+var failed := false
+
+
+func _init() -> void:
+	_require(FileAccess.file_exists(SERVICE_PATH), "Missing StarSoulBehaviorService script.")
+	var ServiceScript = load(SERVICE_PATH)
+	_require(ServiceScript != null, "Cannot load StarSoulBehaviorService.")
+	if failed:
+		quit(1)
+		return
+	var service = ServiceScript.new()
+	var star_soul := {
+		"id": 100,
+		"owner": 1,
+		"ring": 0.0,
+		"lane": 0.0,
+		"radius": 0.42,
+		"stats": {
+			"star_soul_behavior": "shoot_enemy_in_range",
+			"range": 1.1,
+			"normal_damage": 6,
+			"damage_type": "laser",
+			"star_soul_attack_interval": 1.0,
+		},
+	}
+	var units := [
+		{"id": 1, "owner": 1, "ring": 0.2, "lane": 0.0, "radius": 0.2, "live": true},
+		{"id": 2, "owner": 2, "ring": 0.8, "lane": 0.0, "radius": 0.2, "live": true},
+		{"id": 3, "owner": 2, "ring": 2.4, "lane": 0.0, "radius": 0.2, "live": true},
+	]
+	var shot: Dictionary = service.tick_intent({
+		"delta": 0.1,
+		"ring_length": 24.0,
+		"star_soul": star_soul,
+		"units": units,
+		"timers": {"attack_cooldown": 0.0},
+	})
+	var events: Array = Array(shot.get("events", []))
+	_require(events.size() == 1, "Defense tower should emit one shot event when an enemy is in range.")
+	_require(String(Dictionary(events[0]).get("type", "")) == "damage", "Defense tower event should be damage.")
+	_require(int(Dictionary(events[0]).get("target_id", 0)) == 2, "Defense tower should target the nearest enemy in range.")
+	_require(float(Dictionary(shot.get("timers", {})).get("attack_cooldown", 0.0)) > 0.9, "Shot should reset tower attack cooldown.")
+
+	var punishment := star_soul.duplicate(true)
+	Dictionary(punishment["stats"])["star_soul_behavior"] = "damage_enemy_in_area"
+	Dictionary(punishment["stats"])["range"] = 1.1
+	Dictionary(punishment["stats"])["normal_damage"] = 5
+	var area: Dictionary = service.tick_intent({
+		"delta": 0.6,
+		"ring_length": 24.0,
+		"star_soul": punishment,
+		"units": units,
+		"timers": {"area_timers": {}},
+	})
+	var area_events: Array = Array(area.get("events", []))
+	_require(area_events.size() == 1, "Punishment tower should damage each enemy inside area.")
+	if not area_events.is_empty():
+		_require(int(Dictionary(area_events[0]).get("target_id", 0)) == 2, "Punishment tower should not hit enemies outside area.")
+
+	var aura := star_soul.duplicate(true)
+	Dictionary(aura["stats"])["star_soul_behavior"] = "shoot_enemy_in_range"
+	Dictionary(aura["stats"])["ally_buffs"] = {"move_speed_mult": 1.5, "damage_mult": 1.5}
+	var aura_intent: Dictionary = service.tick_intent({
+		"delta": 0.1,
+		"ring_length": 24.0,
+		"star_soul": aura,
+		"units": units,
+		"timers": {"attack_cooldown": 9.0},
+	})
+	_require(_has_aura_event(Array(aura_intent.get("events", [])), 1, "ally_buff"), "Ally in range should receive aura buff event.")
+	_require(not _has_aura_event(Array(aura_intent.get("events", [])), 2, "ally_buff"), "Enemy should not receive ally buff event.")
+
+	if failed:
+		quit(1)
+		return
+	print("STAR_SOUL_BEHAVIOR_SERVICE_PROBE ok events=", events.size() + area_events.size())
+	quit(0)
+
+
+func _has_aura_event(events: Array, target_id: int, aura_kind: String) -> bool:
+	for raw_event in events:
+		if raw_event is Dictionary:
+			var event: Dictionary = raw_event
+			if String(event.get("type", "")) == "aura" and int(event.get("target_id", 0)) == target_id and String(event.get("aura_kind", "")) == aura_kind:
+				return true
+	return false
+
+
+func _require(condition: bool, message: String) -> void:
+	if condition:
+		return
+	failed = true
+	push_error(message)

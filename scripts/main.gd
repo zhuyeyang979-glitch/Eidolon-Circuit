@@ -39,6 +39,7 @@ const BattleHudStateService = preload("res://scripts/services/battle_hud_state_s
 const BattleAwarenessService = preload("res://scripts/services/battle_awareness_service.gd")
 const StarSoulBPScreenService = preload("res://scripts/services/star_soul_bp_screen_service.gd")
 const StarSoulEntityService = preload("res://scripts/services/star_soul_entity_service.gd")
+const StarSoulBehaviorService = preload("res://scripts/services/star_soul_behavior_service.gd")
 const StarSoulBPView = preload("res://scripts/views/star_soul_bp_view.gd")
 const BattleRuntimeActionTelemetryService = preload("res://scripts/services/battle_runtime_action_telemetry_service.gd")
 const PowerAllocationService = preload("res://scripts/services/power_allocation_service.gd")
@@ -1957,6 +1958,7 @@ var battle_hud_state_service: BattleHudStateService
 var battle_awareness_service: BattleAwarenessService
 var star_soul_bp_screen_service: StarSoulBPScreenService
 var star_soul_entity_service: StarSoulEntityService
+var star_soul_behavior_service: StarSoulBehaviorService
 var battle_runtime_action_telemetry_service: BattleRuntimeActionTelemetryService
 var power_allocation_service: PowerAllocationService
 var action_profile_registry: ActionProfileRegistry
@@ -2300,6 +2302,7 @@ func _initialize_hot_path_state_layer() -> void:
 	battle_awareness_service = BattleAwarenessService.new()
 	star_soul_bp_screen_service = StarSoulBPScreenService.new()
 	star_soul_entity_service = StarSoulEntityService.new()
+	star_soul_behavior_service = StarSoulBehaviorService.new()
 	battle_runtime_action_telemetry_service = BattleRuntimeActionTelemetryService.new()
 	battle_runtime_facade.bind_runtime_lifecycle(battle_runtime_lifecycle_service)
 	battle_runtime_facade.bind_action_telemetry(battle_runtime_action_telemetry_service)
@@ -25108,6 +25111,12 @@ func _star_soul_entity_service() -> StarSoulEntityService:
 	return star_soul_entity_service
 
 
+func _star_soul_behavior_service() -> StarSoulBehaviorService:
+	if star_soul_behavior_service == null:
+		star_soul_behavior_service = StarSoulBehaviorService.new()
+	return star_soul_behavior_service
+
+
 func _battle_input_service() -> BattleInputService:
 	if battle_input_service == null:
 		battle_input_service = BattleInputService.new()
@@ -34979,13 +34988,16 @@ func _vulnerability_multiplier(target, event: Dictionary) -> float:
 func _outgoing_damage_multiplier(attacker, event: Dictionary) -> float:
 	if attacker == null or not is_instance_valid(attacker):
 		return 1.0
+	var multiplier := 1.0
+	if float(attacker.get_meta("star_soul_damage_debuff_timer", 0.0)) > 0.0:
+		multiplier *= clampf(float(attacker.get_meta("star_soul_damage_debuff_mult", 1.0)), 0.1, 1.0)
 	if float(attacker.get_meta("field_damage_boost_timer", 0.0)) <= 0.0:
-		return 1.0
+		return multiplier
 	var boost_type := String(attacker.get_meta("field_damage_boost_type", ""))
 	var damage_type := String(event.get("damage_type", ""))
 	if boost_type == "" or boost_type == "all" or boost_type == damage_type:
-		return maxf(1.0, float(attacker.get_meta("field_damage_boost_mult", 1.0)))
-	return 1.0
+		multiplier *= maxf(1.0, float(attacker.get_meta("field_damage_boost_mult", 1.0)))
+	return multiplier
 
 
 func _state_momentum_mult(state_key: String) -> float:
@@ -51427,6 +51439,9 @@ func _update_star_soul_units(delta: float) -> void:
 	for unit in _live_star_soul_units().duplicate():
 		if not _is_live_unit(unit):
 			continue
+		_apply_star_soul_behavior(unit, delta)
+		if not _is_live_unit(unit):
+			continue
 		if _update_star_soul_motion(unit, delta):
 			continue
 		var remaining := float(unit.get_meta("star_soul_duration_remaining", unit.stats.get("duration", 0.0)))
@@ -51437,6 +51452,161 @@ func _update_star_soul_units(delta: float) -> void:
 		unit.set_meta("star_soul_duration_elapsed", float(unit.get_meta("star_soul_duration_elapsed", 0.0)) + delta)
 		if remaining <= 0.0:
 			_handle_star_soul_departure(unit, "timeout")
+
+
+func _apply_star_soul_behavior(unit, delta: float) -> void:
+	if not _is_live_unit(unit) or delta <= 0.0:
+		return
+	var intent: Dictionary = _star_soul_behavior_service().tick_intent({
+		"delta": delta,
+		"ring_length": RING_LENGTH,
+		"star_soul": _star_soul_behavior_snapshot(unit),
+		"units": _star_soul_behavior_unit_snapshots(unit),
+		"timers": _star_soul_behavior_timers(unit),
+	})
+	_store_star_soul_behavior_timers(unit, Dictionary(intent.get("timers", {})))
+	for raw_event in Array(intent.get("events", [])):
+		if raw_event is Dictionary:
+			_apply_star_soul_behavior_event(unit, raw_event)
+
+
+func _star_soul_behavior_snapshot(unit) -> Dictionary:
+	return {
+		"id": int(unit.get_instance_id()),
+		"owner": clampi(int(unit.owner_id), 1, 2),
+		"ring": float(unit.ring_pos),
+		"lane": float(unit.lane),
+		"radius": float(unit.stats.get("radius", 0.2)),
+		"stats": unit.stats.duplicate(true),
+	}
+
+
+func _star_soul_behavior_unit_snapshots(source_unit) -> Array:
+	var snapshots: Array = []
+	for unit in _star_soul_behavior_candidate_units():
+		if unit == source_unit or not _is_live_unit(unit):
+			continue
+		snapshots.append({
+			"id": int(unit.get_instance_id()),
+			"owner": clampi(int(unit.owner_id), 1, 2),
+			"ring": float(unit.ring_pos),
+			"lane": float(unit.lane),
+			"radius": float(unit.stats.get("radius", 0.2)),
+			"role": String(unit.role),
+			"star_soul": _unit_is_star_soul(unit),
+			"live": true,
+		})
+	return snapshots
+
+
+func _star_soul_behavior_candidate_units() -> Array:
+	var units: Array = []
+	var seen := {}
+	for player_id in [1, 2]:
+		for unit in _direct_active_player_units(player_id):
+			if _is_live_unit(unit):
+				var id := int(unit.get_instance_id())
+				if not bool(seen.get(id, false)):
+					units.append(unit)
+					seen[id] = true
+	for unit in active_star_soul_units:
+		if _is_live_unit(unit):
+			var id := int(unit.get_instance_id())
+			if not bool(seen.get(id, false)):
+				units.append(unit)
+				seen[id] = true
+	return units
+
+
+func _direct_active_player_units(player_id: int) -> Array:
+	var units: Array = []
+	if not active_units.has(player_id) or not (active_units[player_id] is Dictionary):
+		return units
+	var player_units: Dictionary = active_units[player_id]
+	var hero = player_units.get("hero", null)
+	if _is_live_unit(hero):
+		units.append(hero)
+	var barrier = player_units.get("barrier", null)
+	if _is_live_unit(barrier):
+		units.append(barrier)
+	for unit in Array(player_units.get("puppet", [])):
+		if _is_live_unit(unit):
+			units.append(unit)
+	return units
+
+
+func _star_soul_behavior_timers(unit) -> Dictionary:
+	return {
+		"attack_cooldown": float(unit.get_meta("star_soul_attack_cooldown", 0.0)),
+		"area_timers": Dictionary(unit.get_meta("star_soul_area_timers", {})).duplicate(true),
+	}
+
+
+func _store_star_soul_behavior_timers(unit, timers: Dictionary) -> void:
+	unit.set_meta("star_soul_attack_cooldown", float(timers.get("attack_cooldown", 0.0)))
+	unit.set_meta("star_soul_area_timers", Dictionary(timers.get("area_timers", {})).duplicate(true))
+
+
+func _apply_star_soul_behavior_event(star_soul, event: Dictionary) -> void:
+	var target = _unit_by_instance_id(int(event.get("target_id", 0)))
+	if not _is_live_unit(target):
+		return
+	match String(event.get("type", "")):
+		"damage":
+			var damage := maxi(1, int(event.get("damage", 1)))
+			var damage_type := String(event.get("damage_type", "laser"))
+			var projectile_style := String(event.get("projectile_style", "field"))
+			target.set_meta("star_soul_damage_timer", 0.25)
+			target.set_meta("star_soul_damage_source_id", int(star_soul.get_instance_id()))
+			target.set_meta("star_soul_damage_source_kind", String(event.get("source_kind", "")))
+			_apply_trap_damage(star_soul, target, clampi(int(star_soul.owner_id), 1, 2), damage_type, damage, projectile_style)
+		"aura":
+			_apply_star_soul_aura_event(star_soul, target, event)
+
+
+func _apply_star_soul_aura_event(star_soul, target, event: Dictionary) -> void:
+	var timer := maxf(0.05, float(event.get("timer", 0.22)))
+	var effects: Dictionary = Dictionary(event.get("effects", {}))
+	if effects.is_empty():
+		return
+	var aura_kind := String(event.get("aura_kind", "ally_buff"))
+	var prefix := "star_soul_buff" if aura_kind == "ally_buff" else "star_soul_debuff"
+	target.set_meta("%s_timer" % prefix, timer)
+	target.set_meta("%s_source_id" % prefix, int(star_soul.get_instance_id()))
+	for raw_key in effects.keys():
+		var key := String(raw_key)
+		var mult := float(effects[raw_key])
+		match key:
+			"move_speed_mult":
+				if mult >= 1.0:
+					target.set_meta("speed_lane_timer", maxf(float(target.get_meta("speed_lane_timer", 0.0)), timer))
+					target.set_meta("speed_lane_mult", maxf(float(target.get_meta("speed_lane_mult", 1.0)), mult))
+				else:
+					target.set_meta("slow_timer", maxf(float(target.get_meta("slow_timer", 0.0)), timer))
+					target.set_meta("slow_mult", minf(float(target.get_meta("slow_mult", 1.0)), clampf(mult, 0.1, 1.0)))
+			"damage_mult":
+				if mult >= 1.0:
+					target.set_meta("field_damage_boost_type", "all")
+					target.set_meta("field_damage_boost_mult", maxf(float(target.get_meta("field_damage_boost_mult", 1.0)), mult))
+					target.set_meta("field_damage_boost_timer", maxf(float(target.get_meta("field_damage_boost_timer", 0.0)), timer))
+				else:
+					target.set_meta("star_soul_damage_debuff_timer", maxf(float(target.get_meta("star_soul_damage_debuff_timer", 0.0)), timer))
+					target.set_meta("star_soul_damage_debuff_mult", clampf(mult, 0.1, 1.0))
+			"break_value_mult":
+				if mult < 1.0:
+					_apply_vulnerability(target, "all", 1.0 / maxf(0.1, mult), timer)
+				else:
+					target.set_meta("star_soul_break_value_buff_timer", maxf(float(target.get_meta("star_soul_break_value_buff_timer", 0.0)), timer))
+					target.set_meta("star_soul_break_value_buff_mult", mult)
+
+
+func _unit_by_instance_id(instance_id: int):
+	if instance_id == 0:
+		return null
+	for unit in all_units:
+		if unit != null and is_instance_valid(unit) and int(unit.get_instance_id()) == instance_id:
+			return unit
+	return null
 
 
 func _update_star_soul_motion(unit, delta: float) -> bool:
