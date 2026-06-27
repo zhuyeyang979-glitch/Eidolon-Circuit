@@ -98,6 +98,7 @@
     "unit_editor_legality_main_gate_probe",
     "unit_editor_schema_invariance_probe",
     "unit_editor_socket_size_rejection_probe",
+    "unit_editor_topology_socket_size_gate_probe",
     "construct_body_manufacturer_rejection_probe",
     "unit_editor_topology_manufacturer_gate_probe",
     "hardware_fault_design_probe",

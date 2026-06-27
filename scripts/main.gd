@@ -10947,6 +10947,100 @@ func _unit_editor_legality_has_socket_records(unit_bp: Dictionary) -> bool:
 	return false
 
 
+func _unit_editor_legality_topology_part_size_rank(role_key: String, unit_bp: Dictionary, node: Dictionary) -> int:
+	var slot_key := _topology_node_slot(node)
+	var part := _topology_node_part(role_key, node, unit_bp)
+	if not part.is_empty():
+		return _size_tier_rank(_part_size_tier_label(part, slot_key))
+	if node.has("size_tier"):
+		return _size_tier_rank(String(node.get("size_tier", "")))
+	if node.has("size_class"):
+		return _size_tier_rank(String(node.get("size_class", "")))
+	return 0
+
+
+func _unit_editor_legality_topology_socket_size_records(role_key: String, unit_bp: Dictionary) -> Array:
+	if not _role_uses_body_board(role_key) or not unit_bp.has("custom_topology"):
+		return []
+	var topology: Dictionary = unit_bp.get("custom_topology", {})
+	var nodes: Array = Array(topology.get("nodes", []))
+	var edges: Array = Array(topology.get("edges", []))
+	var records: Array = []
+	var seen := {}
+	for raw_edge in edges:
+		if not (raw_edge is Dictionary):
+			continue
+		var edge: Dictionary = raw_edge
+		var a := _topology_edge_node_a(edge)
+		var b := _topology_edge_node_b(edge)
+		if a < 0 or b < 0 or a >= nodes.size() or b >= nodes.size():
+			continue
+		var a_socket := _topology_canonical_socket_id(_topology_edge_socket_for_node(edge, a))
+		var b_socket := _topology_canonical_socket_id(_topology_edge_socket_for_node(edge, b))
+		var child_index := -1
+		var host_index := -1
+		var child_socket := ""
+		var host_socket := ""
+		if a_socket == "root_joint" and b_socket != "root_joint":
+			child_index = a
+			host_index = b
+			child_socket = a_socket
+			host_socket = b_socket
+		elif b_socket == "root_joint" and a_socket != "root_joint":
+			child_index = b
+			host_index = a
+			child_socket = b_socket
+			host_socket = a_socket
+		if child_index < 0 or host_index < 0 or host_socket == "":
+			continue
+		if not (nodes[child_index] is Dictionary) or not (nodes[host_index] is Dictionary):
+			continue
+		var child_node: Dictionary = nodes[child_index]
+		var host_node: Dictionary = nodes[host_index]
+		if not _topology_node_is_component(child_node) or not _topology_node_is_component(host_node):
+			continue
+		var child_size := _unit_editor_legality_topology_part_size_rank(role_key, unit_bp, child_node)
+		var socket_capacity := _unit_editor_legality_topology_part_size_rank(role_key, unit_bp, host_node)
+		if child_size <= 0 or socket_capacity <= 0:
+			continue
+		var record_id := "%d:%s>%d:%s" % [child_index, child_socket, host_index, host_socket]
+		if seen.has(record_id):
+			continue
+		seen[record_id] = true
+		var child_slot := _topology_node_slot(child_node)
+		var child_part := _topology_node_part(role_key, child_node, unit_bp)
+		records.append({
+			"socket_id": "%d:%s" % [host_index, host_socket],
+			"edge_id": record_id,
+			"part_name": String(child_part.get("name", child_node.get("part_name", ""))),
+			"part_size": child_size,
+			"socket_capacity": socket_capacity,
+			"part": child_part.duplicate(true),
+			"socket": {
+				"id": host_socket,
+				"node_index": host_index,
+				"socket_capacity": socket_capacity,
+			},
+			"child_node_index": child_index,
+			"child_socket": child_socket,
+			"child_slot": child_slot,
+			"host_node_index": host_index,
+			"host_socket": host_socket,
+		})
+	return records
+
+
+func _unit_editor_legality_socket_blueprint(role_key: String, unit_bp: Dictionary) -> Dictionary:
+	var legality_bp := unit_bp.duplicate(true)
+	var records: Array = Array(legality_bp.get("socket_size_records", [])).duplicate(true)
+	for raw_record in _unit_editor_legality_topology_socket_size_records(role_key, unit_bp):
+		if raw_record is Dictionary:
+			records.append(Dictionary(raw_record).duplicate(true))
+	if not records.is_empty():
+		legality_bp["socket_size_records"] = records
+	return legality_bp
+
+
 func _unit_editor_legality_has_construct_body_records(unit_bp: Dictionary) -> bool:
 	for key in ["construct_bodies", "construct_body_manufacturer_records", "construct_body_records"]:
 		if not Array(unit_bp.get(key, [])).is_empty():
@@ -11013,8 +11107,9 @@ func _unit_editor_legality_report(role_key: String, unit_bp: Dictionary) -> Dict
 	var reports: Array = [
 		service.audit_role_identity(role_key, _unit_editor_legality_identity_blueprint(role_key, unit_bp), {"special": _catalog_for(role_key, "special")}),
 	]
-	if _unit_editor_legality_has_socket_records(unit_bp):
-		reports.append(service.audit_socket_sizes(unit_bp))
+	var socket_bp := _unit_editor_legality_socket_blueprint(role_key, unit_bp)
+	if _unit_editor_legality_has_socket_records(socket_bp):
+		reports.append(service.audit_socket_sizes(socket_bp))
 	var construct_body_bp := _unit_editor_legality_construct_body_blueprint(role_key, unit_bp)
 	if _unit_editor_legality_has_construct_body_records(construct_body_bp):
 		reports.append(service.audit_construct_body_manufacturers(construct_body_bp))

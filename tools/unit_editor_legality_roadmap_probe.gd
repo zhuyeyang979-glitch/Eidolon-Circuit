@@ -33,6 +33,7 @@ func _init() -> void:
 		"scripts/main.gd::_training_blueprint_illegal_note()",
 		"tools/role_identity_software_rejection_probe.gd",
 		"tools/unit_editor_socket_size_rejection_probe.gd",
+		"tools/unit_editor_topology_socket_size_gate_probe.gd",
 		"tools/construct_body_manufacturer_rejection_probe.gd",
 	]:
 		_require(roadmap, owner, "legality roadmap")
@@ -51,6 +52,7 @@ func _init() -> void:
 		"func _unit_library_save_audit",
 		"func _saved_unit_entry_illegal_note",
 		"func _topology_rule_note",
+		"func _unit_editor_legality_topology_socket_size_records",
 	]:
 		_require(main_source, gate, "main legality gate")
 	if failed:
