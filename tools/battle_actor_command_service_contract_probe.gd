@@ -910,6 +910,9 @@ func _check_sortie_entry_battle_legality(service) -> void:
 	var bad_topology := valid_context.duplicate(true)
 	bad_topology["topology_note"] = "INVALID missing torso"
 	_assert_eq(service.sortie_entry_battle_legality(bad_topology), false, "sortie entry legality should reject invalid topology notes")
+	var bad_unit_legality := valid_context.duplicate(true)
+	bad_unit_legality["unit_legality_note"] = "INVALID: puppet_source_code_missing"
+	_assert_eq(service.sortie_entry_battle_legality(bad_unit_legality), false, "sortie entry legality should reject shared unit-editor legality notes")
 	var bad_note := valid_context.duplicate(true)
 	bad_note["stats"] = {"length": 1.0, "drive_note": "INVALID drive"}
 	_assert_eq(service.sortie_entry_battle_legality(bad_note), false, "sortie entry legality should reject invalid stat notes")

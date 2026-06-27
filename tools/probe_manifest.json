@@ -98,6 +98,8 @@
     "unit_editor_legality_main_gate_probe",
     "unit_editor_puppet_source_code_main_gate_probe",
     "unit_editor_barrier_ether_main_gate_probe",
+    "unit_editor_legality_team_validation_probe",
+    "unit_editor_legality_battle_entry_probe",
     "unit_editor_schema_invariance_probe",
     "unit_editor_socket_size_rejection_probe",
     "unit_editor_topology_socket_size_gate_probe",

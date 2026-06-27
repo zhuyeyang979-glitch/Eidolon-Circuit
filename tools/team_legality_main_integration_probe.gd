@@ -90,11 +90,14 @@ func _init() -> void:
 		"var team_legality_service: TeamLegalityService",
 		"team_legality_service = TeamLegalityService.new()",
 		"func _team_rule_profile() -> Dictionary",
-		"team_legality_service.audit",
 		"\"rule_id\": String(_team_rule_profile().get(\"rule_id\", \"\"))",
 	]:
 		if source.find(token) < 0:
 			_fail("Main team legality integration missing token: %s" % token)
 			return
+	var has_team_audit_call := source.find("team_legality_service.audit") >= 0 or source.find("_team_legality_service().audit") >= 0
+	if not has_team_audit_call:
+		_fail("Main team legality integration missing team legality audit call.")
+		return
 	print("TEAM_LEGALITY_MAIN_INTEGRATION_PROBE ok")
 	quit(0)

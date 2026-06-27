@@ -503,6 +503,8 @@ func sortie_entry_battle_legality(context: Dictionary) -> bool:
 		return false
 	if String(context.get("topology_note", "")).begins_with("INVALID"):
 		return false
+	if String(context.get("unit_legality_note", "")).begins_with("INVALID"):
+		return false
 	for note_key in ["joint_momentum_note", "slot_payload_note", "drive_note", "stiffness_note"]:
 		if role_key == "barrier" and note_key in ["slot_payload_note", "drive_note"]:
 			continue

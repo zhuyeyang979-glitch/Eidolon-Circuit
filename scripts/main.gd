@@ -1149,7 +1149,7 @@ const COMMON_CATALOG = {
 		{"name": "COINRUN SKATE CORE", "maker": "COINRUN DYNAMICS", "cost": 46, "hp": 24, "mass": 5, "length": 0.44, "heat_capacity": 12, "normal_damage": 1, "damage_type": "blunt", "material_class": "torso", "connection_ends": 4, "is_torso": true, "joint_ports": 4, "weapon_bays": 3, "engine_slots": 1, "booster_slots": 2, "cooling_slots": 1, "module_slots": 6, "shape": "drone_core", "radius": 0.085, "speed_mult": 1.22, "cornering": 1.32, "speed_lane_affinity": 0.14, "size_class": "small", "counter_tiers": {"bullet": 0, "chemical": 0, "laser": 1, "blunt": 0, "pierce": 0, "tear": 0}, "resist": {"bullet": 1.08, "chemical": 1.08, "laser": 1.02, "blunt": 1.1, "pierce": 1.08, "tear": 1.1}, "summary": "Coinrun economy-racer torso. Fragile, cheap, high turn rate, and tuned to harvest coins along speed lanes"},
 		{"name": "SPACE TANK HULL", "cost": 58, "hp": 92, "mass": 42, "length": 1.0, "heat_capacity": 24, "normal_damage": 2, "damage_type": "blunt", "material_class": "torso", "connection_ends": 6, "is_torso": true, "archetype": "tank", "joint_ports": 6, "weapon_bays": 4, "engine_slots": 1, "booster_slots": 2, "cooling_slots": 2, "module_slots": 5, "torso_slots": 5, "torso_slot_mass_limit": 92.0, "spare_weapon_slots": 2, "spare_weapon_mass_limit": 36.0, "allows_vertical_overlap": true, "vertical_overlap_ports": 2, "shape": "tank", "radius": 0.32, "speed_mult": 0.72, "size_class": "medium", "counter_tiers": {"bullet": 2, "chemical": 0, "laser": 1, "blunt": 3, "pierce": 1, "tear": 0}, "resist": {"bullet": 0.9, "chemical": 1.16, "laser": 1.02, "blunt": 0.84, "pierce": 1.0, "tear": 1.12}, "summary": "Simple space tank body: movement base, main turret, secondary turret, armor banks. Allows two vertical-axis stacked limbs that overlap in top view while idle"},
 		{"name": "ARSENAL BAY TORSO", "maker": "RECOIL LATTICE", "cost": 104, "hp": 74, "mass": 30, "length": 0.86, "heat_capacity": 30, "normal_damage": 1, "damage_type": "bullet", "material_class": "torso", "connection_ends": 6, "is_torso": true, "joint_ports": 6, "weapon_bays": 6, "engine_slots": 1, "booster_slots": 2, "cooling_slots": 2, "module_slots": 8, "torso_slots": 7, "torso_slot_mass_limit": 132.0, "spare_weapon_slots": 4, "spare_weapon_mass_limit": 72.0, "allows_vertical_overlap": true, "vertical_overlap_ports": 3, "shape": "tank", "radius": 0.26, "speed_mult": 0.88, "size_class": "medium", "counter_tiers": {"bullet": 2, "chemical": 0, "laser": 1, "blunt": 2, "pierce": 1, "tear": 0}, "resist": {"bullet": 0.92, "chemical": 1.12, "laser": 1.02, "blunt": 0.9, "pierce": 1.0, "tear": 1.1}, "summary": "Unified-slot torso: engine, cooling, boosters, escape pod, and stored terminal weapons all compete for the same internal bay budget. Supports stacked over-under limb ports for pseudo-3D top-view actions"},
-		{"name": "LIGHT RIFLE MUSCLE", "cost": 38, "hp": 14, "mass": 3, "length": 0.42, "normal_damage": 8, "projectile_damage": 8, "damage_type": "bullet", "projectile_damage_type": "bullet", "normal_heat": 12.0, "range": 1.4, "projectile_range": 2.15, "projectile": true, "projectile_only": true, "projectile_style": "bullet_hell", "projectile_behavior": "bullet_hell", "projectile_speed_mult": 2.0, "travel_path": "straight", "material_class": "gun", "connection_ends": 1, "shape": "rifle", "radius": 0.035, "recoil": 0.045, "size_class": "small", "counter_tiers": {"bullet": 1, "chemical": 0, "laser": 0, "blunt": 0, "pierce": 0, "tear": 0}, "resist": {"bullet": 0.98, "chemical": 1.08, "laser": 1.06, "blunt": 1.06, "pierce": 1.04, "tear": 1.08}, "summary": "Small bullet-hell rifle muscle; fires visible moving rounds without lock setup."},
+		{"name": "LIGHT RIFLE MUSCLE", "maker": "HUMANOVA ATELIER", "cost": 38, "hp": 14, "mass": 3, "length": 0.42, "normal_damage": 8, "projectile_damage": 8, "damage_type": "bullet", "projectile_damage_type": "bullet", "normal_heat": 12.0, "range": 1.4, "projectile_range": 2.15, "projectile": true, "projectile_only": true, "projectile_style": "bullet_hell", "projectile_behavior": "bullet_hell", "projectile_speed_mult": 2.0, "travel_path": "straight", "material_class": "gun", "connection_ends": 1, "shape": "rifle", "radius": 0.035, "recoil": 0.045, "size_class": "small", "counter_tiers": {"bullet": 1, "chemical": 0, "laser": 0, "blunt": 0, "pierce": 0, "tear": 0}, "resist": {"bullet": 0.98, "chemical": 1.08, "laser": 1.06, "blunt": 1.06, "pierce": 1.04, "tear": 1.08}, "summary": "Small Humanova bullet-hell rifle muscle; fires visible moving rounds without lock setup."},
 		{"name": "ASSAULT RIFLE MUSCLE", "cost": 62, "hp": 20, "mass": 6, "length": 0.56, "normal_damage": 11, "projectile_damage": 11, "damage_type": "bullet", "projectile_damage_type": "bullet", "normal_heat": 18.0, "range": 1.55, "projectile_range": 2.55, "projectile": true, "projectile_only": true, "projectile_style": "bullet_hell", "projectile_behavior": "bullet_hell", "projectile_speed_mult": 3.0, "travel_path": "burst", "material_class": "gun", "connection_ends": 1, "shape": "rifle", "radius": 0.055, "recoil": 0.075, "size_class": "standard", "counter_tiers": {"bullet": 2, "chemical": 0, "laser": 0, "blunt": 0, "pierce": 0, "tear": 0}, "resist": {"bullet": 0.96, "chemical": 1.08, "laser": 1.06, "blunt": 1.04, "pierce": 1.02, "tear": 1.08}, "summary": "Mid-size bullet-hell rifle; visible burst rounds pressure lanes at about triple mech speed."},
 		{"name": "AUTOCANNON TURRET", "cost": 98, "hp": 34, "mass": 18, "length": 0.78, "normal_damage": 16, "projectile_damage": 16, "damage_type": "bullet", "projectile_damage_type": "bullet", "normal_heat": 28.0, "range": 1.8, "projectile_range": 3.0, "projectile": true, "projectile_only": true, "projectile_style": "bullet_hell", "projectile_behavior": "bullet_hell", "projectile_speed_mult": 4.2, "travel_path": "burst", "material_class": "gun", "connection_ends": 1, "shape": "turret", "radius": 0.12, "recoil": 0.14, "size_class": "medium", "counter_tiers": {"bullet": 2, "chemical": 0, "laser": 1, "blunt": 1, "pierce": 0, "tear": 0}, "resist": {"bullet": 0.94, "chemical": 1.1, "laser": 1.0, "blunt": 1.0, "pierce": 1.06, "tear": 1.1}, "summary": "Tank secondary turret; fast bullet-hell fire with visible kick and moving rounds."},
 		{"name": "HEAVY RAIL CANNON TURRET", "cost": 188, "hp": 58, "mass": 64, "length": 1.28, "normal_damage": 34, "projectile_damage": 34, "damage_type": "bullet", "projectile_damage_type": "bullet", "normal_heat": 62.0, "range": 2.25, "projectile_range": 5.8, "projectile": true, "projectile_only": true, "projectile_style": "true_bullet", "projectile_behavior": "true_bullet", "travel_path": "instant_line", "aim_mode": "manual", "bullet_lock_time": 1.18, "bullet_lock_radius": 0.16, "material_class": "gun", "connection_ends": 1, "shape": "heavy_cannon", "radius": 0.28, "recoil": 0.34, "size_class": "siege", "charge_time": 0.34, "counter_tiers": {"bullet": 3, "chemical": 0, "laser": 1, "blunt": 1, "pierce": 0, "tear": 0}, "resist": {"bullet": 0.9, "chemical": 1.14, "laser": 1.02, "blunt": 0.98, "pierce": 1.08, "tear": 1.12}, "summary": "Huge real-bullet rail cannon. Long lock countdown, full-screen line shot, extreme heat and recoil."},
@@ -3168,13 +3168,51 @@ func _blank_player_roster() -> Dictionary:
 	return {"hero": [], "puppet": [], "barrier": []}
 
 
+func _default_topology_required_torso_rank(role_key: String, limb_index: int, terminal_index: int) -> int:
+	var required_rank := 1
+	var limb_part := _selected_component(role_key, "limb_muscle", limb_index)
+	required_rank = maxi(required_rank, _size_tier_rank(_part_size_tier_label(limb_part, "limb_muscle")))
+	var terminal_part := _selected_component(role_key, "muscle", terminal_index)
+	required_rank = maxi(required_rank, _size_tier_rank(_part_size_tier_label(terminal_part, "muscle")))
+	return required_rank
+
+
+func _default_topology_socket_legal_torso_index(role_key: String, required_rank: int, preferred_names: Array, fallback_index: int) -> int:
+	for raw_name in preferred_names:
+		var preferred_index := _component_index_by_exact_name(role_key, "muscle", String(raw_name))
+		if preferred_index < 0:
+			continue
+		var preferred_part := _selected_component(role_key, "muscle", preferred_index)
+		if _component_is_torso(preferred_part) and _size_tier_rank(_part_size_tier_label(preferred_part, "muscle")) >= required_rank:
+			return preferred_index
+	var catalog: Array = _catalog_for(role_key, "muscle")
+	var best_index := -1
+	var best_cost := 2147483647
+	for i in range(catalog.size()):
+		var part := _selected_component(role_key, "muscle", i)
+		if not _component_is_torso(part):
+			continue
+		if _size_tier_rank(_part_size_tier_label(part, "muscle")) < required_rank:
+			continue
+		if int(part.get("joint_ports", part.get("connection_ends", 0))) < 2:
+			continue
+		var cost := int(part.get("cost", 0))
+		if best_index < 0 or cost < best_cost:
+			best_index = i
+			best_cost = cost
+	return best_index if best_index >= 0 else fallback_index
+
+
 func _default_free_canvas_topology(profile: String = "scout") -> Dictionary:
 	var role_key := "puppet" if profile == "puppet" else ("barrier" if profile == "barrier" else "hero")
+	var gun_index := _component_index_by_name(role_key, "muscle", "LIGHT RIFLE MUSCLE", 89)
 	var torso_index := 14
 	if role_key == "puppet":
-		torso_index = _component_index_by_name("puppet", "muscle", "FLOATING BIT CORE", 0)
+		var floating_index := _component_index_by_name("puppet", "muscle", "FLOATING BIT CORE", 0)
+		torso_index = _default_topology_socket_legal_torso_index("puppet", _default_topology_required_torso_rank("puppet", 0, gun_index), ["HUMANOVA DUEL CORE", "SYNTAX MIDFIELD CORE", "FLOATING BIT CORE"], floating_index)
 	elif role_key == "hero":
-		torso_index = _component_index_by_name("hero", "muscle", "SCOUT CORE TORSO", 0)
+		var scout_index := _component_index_by_name("hero", "muscle", "SCOUT CORE TORSO", 0)
+		torso_index = _default_topology_socket_legal_torso_index("hero", _default_topology_required_torso_rank("hero", 0, gun_index), ["HUMANOVA DUEL CORE", "SYNTAX MIDFIELD CORE", "SCOUT CORE TORSO"], scout_index)
 	var unit_bp := {
 		"muscle": torso_index,
 		"limb_muscle": 0,
@@ -3191,7 +3229,6 @@ func _default_free_canvas_topology(profile: String = "scout") -> Dictionary:
 		nodes.append(_topology_component_node(2, "BARRIER TRAP", Vector2(0.48, 0.68), "muscle", panel_c))
 		return {"nodes": nodes, "edges": edges, "edge_snap_version": TOPOLOGY_SNAP_VERSION}
 	var root_index := _append_component_root_node(nodes, "FLOATING BIT CORE" if profile == "puppet" else "STARTER CORE", Vector2(0.42, 0.50), int(unit_bp["muscle"]))
-	var gun_index := _component_index_by_name(role_key, "muscle", "LIGHT RIFLE MUSCLE", 89)
 	var module_a := _component_index_by_name(role_key, "module", "GUNNER WRIST: QE MANUAL SWEEP", 5)
 	var limb_a := _append_directed_component_node(role_key, unit_bp, nodes, edges, root_index, "RIFLE LINK A", "limb_muscle", 0, Vector2(1.0, -0.35), [module_a])
 	var limb_a_node: Dictionary = nodes[limb_a]
@@ -7067,8 +7104,9 @@ func _ai_puppet_unit(unit_name: String, profile: String, muscle_index: int, modu
 
 
 func _ai_micro_puppet_unit(unit_name: String, profile: String = "guard_orbit") -> Dictionary:
-	var torso_index := _component_index_by_name("puppet", "muscle", "FLOATING BIT CORE", 95)
 	var gun_index := _component_index_by_name("puppet", "muscle", "LIGHT RIFLE MUSCLE", 89)
+	var fallback_torso_index := _component_index_by_name("puppet", "muscle", "FLOATING BIT CORE", 95)
+	var torso_index := _default_topology_socket_legal_torso_index("puppet", _default_topology_required_torso_rank("puppet", 0, gun_index), ["HUMANOVA DUEL CORE", "SYNTAX MIDFIELD CORE", "FLOATING BIT CORE"], fallback_torso_index)
 	var module_index := _component_index_by_name("puppet", "module", "GUNNER WRIST: QE MANUAL SWEEP", 5)
 	var unit_bp := {"name": unit_name, "archetype": "custom", "special": 0, "limb_muscle": 0, "muscle": torso_index, "booster": 4, "engine": 3, "cooling": 5, "module": module_index, "ai_profile": profile, "custom_topology": _default_free_canvas_topology("puppet")}
 	var topology: Dictionary = unit_bp.get("custom_topology", {})
@@ -7672,6 +7710,7 @@ func _sortie_entry_is_battle_legal(player_id: int, entry: Dictionary, require_st
 	var role_uses_body_board := false
 	var module_material_valid := true
 	var topology_note := ""
+	var unit_legality_note := ""
 	if valid_roster:
 		starter_cost_valid = _starter_cost_valid(player_id, entry) if require_starter_cost else true
 		if starter_cost_valid or not require_starter_cost:
@@ -7680,6 +7719,7 @@ func _sortie_entry_is_battle_legal(player_id: int, entry: Dictionary, require_st
 			role_uses_body_board = _role_uses_body_board(role_key)
 			module_material_valid = _module_material_rule_valid(unit_bp) if role_uses_body_board else true
 			topology_note = _topology_rule_note(unit_bp, role_key, stats)
+			unit_legality_note = _training_blueprint_illegal_note(player_id, role_key, unit_bp)
 	return _battle_actor_command_service().sortie_entry_battle_legality({
 		"valid_roster": valid_roster,
 		"require_starter_cost": require_starter_cost,
@@ -7689,6 +7729,7 @@ func _sortie_entry_is_battle_legal(player_id: int, entry: Dictionary, require_st
 		"role_uses_body_board": role_uses_body_board,
 		"module_material_valid": module_material_valid,
 		"topology_note": topology_note,
+		"unit_legality_note": unit_legality_note,
 	})
 
 
