@@ -9,6 +9,39 @@ var profiler
 var mark_count := 0
 var flush_count := 0
 
+const UNIT_EDITOR_LEGALITY_ACTIONS := {
+	"hero_soul_count": {
+		"action_key": "fix_role_identity",
+		"field_path": "$.blueprint.special",
+		"hint_zh": "处理：为英雄保留恰好 1 个英魂软件，再保存。",
+		"hint_en": "Action: keep exactly 1 Soul software on the hero, then save again.",
+	},
+	"puppet_source_code_missing": {
+		"action_key": "fix_role_identity",
+		"field_path": "$.blueprint.special",
+		"hint_zh": "处理：为傀儡安装至少 1 个源代码软件，再保存。",
+		"hint_en": "Action: install at least 1 Source Code software on the puppet, then save again.",
+	},
+	"barrier_ether_missing": {
+		"action_key": "fix_role_identity",
+		"field_path": "$.blueprint.special",
+		"hint_zh": "处理：为结界安装至少 1 个以太软件，再保存。",
+		"hint_en": "Action: install at least 1 Ether software on the barrier, then save again.",
+	},
+	"socket_part_too_large": {
+		"action_key": "fit_socket_capacity",
+		"field_path": "$.blueprint.slot_payloads",
+		"hint_zh": "处理：换用不超过插槽容量的部件，或移到更大的插槽后再保存。",
+		"hint_en": "Action: use a part within the socket capacity, or move it to a larger socket before saving.",
+	},
+	"construct_body_mixed_manufacturer": {
+		"action_key": "split_construct_manufacturer",
+		"field_path": "$.blueprint.custom_topology",
+		"hint_zh": "处理：把同一构件体内的硬件统一为同一厂商，或拆分成不同构件体。",
+		"hint_en": "Action: keep hardware in each construct body from one manufacturer, or split the body.",
+	},
+}
+
 
 func bind(main: Object, store, graph, derived_cache, hot_profiler) -> void:
 	main_ref = main
@@ -48,6 +81,8 @@ func save_blocking_feedback(reason: String, zh: bool = false) -> Dictionary:
 	if reason_was_blank:
 		action_key = "unknown"
 		action_hint = "处理：先修复提示中的第一个非法条件，再重新保存。" if zh else "Action: fix the first invalid condition named above, then save again."
+	elif _unit_editor_legality_reason_has_action(clean_reason):
+		return _unit_editor_legality_feedback(clean_reason, zh)
 	elif lower_reason.contains("legacy drive/pointer field"):
 		action_key = "remove_legacy_field"
 		field_path = _field_path_after(clean_reason, " at ")
@@ -80,6 +115,37 @@ func save_blocking_feedback(reason: String, zh: bool = false) -> Dictionary:
 		"field_path": field_path,
 		"summary": summary.strip_edges(),
 	}
+
+
+func _unit_editor_legality_reason_has_action(reason: String) -> bool:
+	return UNIT_EDITOR_LEGALITY_ACTIONS.has(_reason_code_from_brackets(reason))
+
+
+func _unit_editor_legality_feedback(reason: String, zh: bool) -> Dictionary:
+	var code := _reason_code_from_brackets(reason)
+	var spec: Dictionary = Dictionary(UNIT_EDITOR_LEGALITY_ACTIONS.get(code, {}))
+	var action_hint := String(spec.get("hint_zh" if zh else "hint_en", ""))
+	if action_hint == "":
+		action_hint = "处理：先修复提示中的第一个非法条件，再重新保存。" if zh else "Action: fix the first invalid condition named above, then save again."
+	var summary := "%s %s" % [reason, action_hint]
+	return {
+		"reason": reason,
+		"action_key": String(spec.get("action_key", "unknown")),
+		"action_hint": action_hint,
+		"field_path": String(spec.get("field_path", "")),
+		"reason_code": code,
+		"summary": summary.strip_edges(),
+	}
+
+
+func _reason_code_from_brackets(reason: String) -> String:
+	var open_index := reason.rfind("[")
+	if open_index < 0:
+		return ""
+	var close_index := reason.find("]", open_index + 1)
+	if close_index <= open_index:
+		return ""
+	return reason.substr(open_index + 1, close_index - open_index - 1).strip_edges()
 
 
 func _field_path_after(value: String, marker: String) -> String:

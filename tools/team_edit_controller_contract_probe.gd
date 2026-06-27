@@ -61,6 +61,30 @@ func _init() -> void:
 			"",
 			["unknown validation failure"]
 		)
+		_assert_feedback(
+			controller.save_blocking_feedback("INVALID: A hero must carry exactly 1 Soul. [hero_soul_count].", false),
+			"fix_role_identity",
+			"$.blueprint.special",
+			["hero_soul_count", "Soul", "exactly 1"]
+		)
+		_assert_feedback(
+			controller.save_blocking_feedback("INVALID: 英雄必须恰好携带 1 个英魂。 [hero_soul_count].", true),
+			"fix_role_identity",
+			"$.blueprint.special",
+			["hero_soul_count", "英魂", "1"]
+		)
+		_assert_feedback(
+			controller.save_blocking_feedback("INVALID: Part size exceeds socket capacity. [socket_part_too_large].", false),
+			"fit_socket_capacity",
+			"$.blueprint.slot_payloads",
+			["socket_part_too_large", "socket", "capacity"]
+		)
+		_assert_feedback(
+			controller.save_blocking_feedback("INVALID: Each construct body can only use one hardware manufacturer. [construct_body_mixed_manufacturer].", false),
+			"split_construct_manufacturer",
+			"$.blueprint.custom_topology",
+			["construct_body_mixed_manufacturer", "manufacturer", "body"]
+		)
 	else:
 		_fail("TeamEditController missing save_blocking_feedback API.")
 	if failed:
