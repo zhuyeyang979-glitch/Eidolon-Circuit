@@ -1733,6 +1733,7 @@ var editor_role_buttons := {}
 var editor_slot_labels: Array = []
 var editor_slot_buttons: Array = []
 var editor_summary_label: Label
+var editor_legality_status_label: Label
 var editor_unit_label: Label
 var editor_stats_label: Label
 var editor_detail_label: Label
@@ -11115,6 +11116,69 @@ func _unit_editor_legality_socket_blueprint(role_key: String, unit_bp: Dictionar
 	return legality_bp
 
 
+func _unit_editor_legality_has_socket_kind_records(unit_bp: Dictionary) -> bool:
+	for key in ["socket_kind_records", "socket_slot_kind_records", "socket_ownership_records"]:
+		if not Array(unit_bp.get(key, [])).is_empty():
+			return true
+	return false
+
+
+func _unit_editor_legality_topology_owned_socket_kinds(role_key: String, unit_bp: Dictionary, node: Dictionary) -> Array:
+	var owned: Array = []
+	for raw_socket_kind in _topology_socket_ids_for_node(role_key, node, unit_bp):
+		var socket_kind := _topology_canonical_socket_id(String(raw_socket_kind))
+		if socket_kind != "" and not owned.has(socket_kind):
+			owned.append(socket_kind)
+	return owned
+
+
+func _unit_editor_legality_topology_socket_kind_records(role_key: String, unit_bp: Dictionary) -> Array:
+	if not _role_uses_body_board(role_key) or not unit_bp.has("custom_topology"):
+		return []
+	var topology: Dictionary = unit_bp.get("custom_topology", {})
+	var nodes: Array = Array(topology.get("nodes", []))
+	var edges: Array = Array(topology.get("edges", []))
+	var records: Array = []
+	for edge_index in range(edges.size()):
+		var raw_edge = edges[edge_index]
+		if not (raw_edge is Dictionary):
+			continue
+		var edge: Dictionary = raw_edge
+		var a := _topology_edge_node_a(edge)
+		var b := _topology_edge_node_b(edge)
+		if a < 0 or b < 0 or a >= nodes.size() or b >= nodes.size():
+			continue
+		if not (nodes[a] is Dictionary) or not (nodes[b] is Dictionary):
+			continue
+		var node_a: Dictionary = nodes[a]
+		var node_b: Dictionary = nodes[b]
+		if not _topology_node_is_component(node_a) or not _topology_node_is_component(node_b):
+			continue
+		records.append({
+			"edge_id": "topology_edge_%d" % edge_index,
+			"a_node_index": a,
+			"a_part_slot_kind": _topology_node_slot(node_a),
+			"a_socket_kind": _topology_canonical_socket_id(_topology_edge_socket_for_node(edge, a)),
+			"a_owned_socket_kinds": _unit_editor_legality_topology_owned_socket_kinds(role_key, unit_bp, node_a),
+			"b_node_index": b,
+			"b_part_slot_kind": _topology_node_slot(node_b),
+			"b_socket_kind": _topology_canonical_socket_id(_topology_edge_socket_for_node(edge, b)),
+			"b_owned_socket_kinds": _unit_editor_legality_topology_owned_socket_kinds(role_key, unit_bp, node_b),
+		})
+	return records
+
+
+func _unit_editor_legality_socket_kind_blueprint(role_key: String, unit_bp: Dictionary) -> Dictionary:
+	var legality_bp := unit_bp.duplicate(true)
+	var records: Array = Array(legality_bp.get("socket_kind_records", [])).duplicate(true)
+	for raw_record in _unit_editor_legality_topology_socket_kind_records(role_key, unit_bp):
+		if raw_record is Dictionary:
+			records.append(Dictionary(raw_record).duplicate(true))
+	if not records.is_empty():
+		legality_bp["socket_kind_records"] = records
+	return legality_bp
+
+
 func _unit_editor_legality_has_construct_body_records(unit_bp: Dictionary) -> bool:
 	for key in ["construct_bodies", "construct_body_manufacturer_records", "construct_body_records"]:
 		if not Array(unit_bp.get(key, [])).is_empty():
@@ -11181,6 +11245,9 @@ func _unit_editor_legality_report(role_key: String, unit_bp: Dictionary) -> Dict
 	var reports: Array = [
 		service.audit_role_identity(role_key, _unit_editor_legality_identity_blueprint(role_key, unit_bp), {"special": _catalog_for(role_key, "special")}),
 	]
+	var socket_kind_bp := _unit_editor_legality_socket_kind_blueprint(role_key, unit_bp)
+	if _unit_editor_legality_has_socket_kind_records(socket_kind_bp):
+		reports.append(service.audit_socket_kinds(socket_kind_bp))
 	var socket_bp := _unit_editor_legality_socket_blueprint(role_key, unit_bp)
 	if _unit_editor_legality_has_socket_records(socket_bp):
 		reports.append(service.audit_socket_sizes(socket_bp))
@@ -11257,6 +11324,49 @@ func _unit_editor_legality_note(role_key: String, unit_bp: Dictionary) -> String
 	return "INVALID: %s [%s]." % [message, code]
 
 
+func _unit_editor_legality_preview_model(role_key: String, unit_bp: Dictionary) -> Dictionary:
+	var report := _unit_editor_legality_report(role_key, unit_bp)
+	var valid := bool(report.get("valid", true))
+	var issues: Array = Array(report.get("issues", []))
+	var blocking_codes: Array = Array(report.get("blocking_codes", []))
+	var primary_code := String(blocking_codes[0]) if not blocking_codes.is_empty() else "unit_editor_legality"
+	var tooltip_zh_lines: Array = []
+	var tooltip_en_lines: Array = []
+	for raw_issue in issues:
+		if not (raw_issue is Dictionary):
+			continue
+		var issue: Dictionary = raw_issue
+		var code := String(issue.get("code", "unit_editor_legality")).strip_edges()
+		var message_zh := String(issue.get("message_zh", code)).strip_edges()
+		var message_en := String(issue.get("message_en", code)).strip_edges()
+		tooltip_zh_lines.append("%s [%s]" % [message_zh, code])
+		tooltip_en_lines.append("%s [%s]" % [message_en, code])
+	if valid:
+		tooltip_zh_lines.append("身份、插口、尺寸与构件体厂商规则均通过。")
+		tooltip_en_lines.append("Identity, socket, size, and construct-body manufacturer rules passed.")
+	return {
+		"valid": valid,
+		"issue_count": issues.size(),
+		"blocking_codes": blocking_codes.duplicate(),
+		"status_text_zh": "核心规则：通过" if valid else "核心规则：受阻 %d\n%s" % [issues.size(), primary_code],
+		"status_text_en": "CORE RULES: READY" if valid else "CORE RULES: BLOCKED %d\n%s" % [issues.size(), primary_code],
+		"tooltip_zh": "\n".join(tooltip_zh_lines),
+		"tooltip_en": "\n".join(tooltip_en_lines),
+		"report": report,
+	}
+
+
+func _refresh_unit_editor_legality_status(role_key: String, unit_bp: Dictionary) -> void:
+	if editor_legality_status_label == null:
+		return
+	var model := _unit_editor_legality_preview_model(role_key, unit_bp)
+	var valid := bool(model.get("valid", true))
+	_set_canvas_item_visible_if_changed(editor_legality_status_label, true)
+	_set_control_text_if_changed(editor_legality_status_label, String(model.get("status_text_zh" if _ui_is_zh() else "status_text_en", "")))
+	_set_control_tooltip_if_changed(editor_legality_status_label, String(model.get("tooltip_zh" if _ui_is_zh() else "tooltip_en", "")))
+	_set_canvas_item_modulate_if_changed(editor_legality_status_label, Color(0.42, 1.0, 0.62, 1.0) if valid else Color(1.0, 0.38, 0.32, 1.0))
+
+
 func _training_blueprint_illegal_note(player_id: int, role_key: String, unit_bp: Dictionary) -> String:
 	if not ROLE_ORDER.has(role_key):
 		return "INVALID: unknown unit role."
@@ -11287,12 +11397,12 @@ func _training_blueprint_illegal_note(player_id: int, role_key: String, unit_bp:
 		return "INVALID: old topology is deprecated; rebuild this unit in TeamEdit."
 	if _role_uses_body_board(role_key) and not _module_material_rule_valid(candidate):
 		return _module_material_rule_note(candidate)
-	var topology_note := _topology_rule_note(candidate, role_key, stats)
-	if topology_note.begins_with("INVALID"):
-		return topology_note
 	var unit_editor_legality_note := _unit_editor_legality_note(role_key, candidate)
 	if unit_editor_legality_note.begins_with("INVALID"):
 		return unit_editor_legality_note
+	var topology_note := _topology_rule_note(candidate, role_key, stats)
+	if topology_note.begins_with("INVALID"):
+		return topology_note
 	var build_rule_audit := _unit_build_rule_audit(role_key, candidate, stats)
 	var build_rule_note := unit_build_rule_service.first_hard_invalid_note(build_rule_audit) if unit_build_rule_service != null else ""
 	if build_rule_note.begins_with("INVALID"):
@@ -45653,6 +45763,8 @@ func _build_editor_ui() -> void:
 	editor_stats_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	editor_detail_label = _make_label(root, "Detail", "", Vector2(936.0, 548.0), Vector2(270.0, 72.0), 10, Color(0.88, 0.92, 0.96, 1.0), HORIZONTAL_ALIGNMENT_LEFT)
 	editor_detail_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	editor_legality_status_label = _make_label(root, "LegalityStatus", "", Vector2(18.0, 616.0), Vector2(244.0, 32.0), 10, Color(0.42, 1.0, 0.62, 1.0), HORIZONTAL_ALIGNMENT_LEFT)
+	editor_legality_status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	editor_battle_preview_view = BattlePartPreviewView.new()
 	editor_battle_preview_view.name = "BattleArtPreview"
 	editor_battle_preview_view.position = Vector2(936.0, 278.0)
@@ -45686,7 +45798,7 @@ func _build_editor_ui() -> void:
 	root.add_child(assembly_board_view)
 	editor_assembly_tutorial_panel = _add_ui_rect(root, "AssemblyTutorialPanel", Vector2(194.0, 102.0), Vector2(706.0, 66.0), Color(0.006, 0.014, 0.021, 0.78))
 	editor_assembly_tutorial_panel.z_index = 340
-	editor_assembly_tutorial_label = _make_label(root, "AssemblyTutorialLabel", "", Vector2(206.0, 108.0), Vector2(682.0, 54.0), 10, Color(0.86, 0.94, 1.0, 1.0), HORIZONTAL_ALIGNMENT_LEFT)
+	editor_assembly_tutorial_label = _make_label(root, "AssemblyTutorialLabel", "", Vector2(320.0, 108.0), Vector2(568.0, 60.0), 10, Color(0.86, 0.94, 1.0, 1.0), HORIZONTAL_ALIGNMENT_LEFT)
 	editor_assembly_tutorial_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	editor_assembly_tutorial_label.vertical_alignment = VERTICAL_ALIGNMENT_TOP
 	editor_assembly_tutorial_label.z_index = 341
@@ -47675,6 +47787,7 @@ func _update_editor_ui(force_now: bool = false) -> void:
 		unit_note = _localized_system_text(String(stats.get("slot_payload_note", ""))) if _ui_is_zh() else String(stats.get("slot_payload_note", ""))
 	var roster_line := ("P%d %s" if _ui_is_zh() else "P%d %s") % [player_id, unit_note]
 	_set_control_text_if_changed(editor_summary_label, "%s\n%s" % [unit_line, roster_line])
+	_refresh_unit_editor_legality_status(role_key, unit_bp)
 	_set_control_text_if_changed(editor_stats_label, _format_unit_stats(stats))
 	var switch_note: String = " | %s %s" % [_ui_term("shift"), String(selected_component.get("role_switch", "")).to_upper()] if String(selected_component.get("role_switch", "")) != "" else ""
 	var heat_slot_note := " | 英魂热池 %.0f" % float(selected_component.get("soul_heat_capacity", 0.0)) if _ui_is_zh() and selected_component.has("soul_heat_capacity") else (" | Soul Heat Pool %.0f" % float(selected_component.get("soul_heat_capacity", 0.0)) if selected_component.has("soul_heat_capacity") else "")
@@ -47999,8 +48112,8 @@ func _refresh_editor_assembly_guide_ui(parts_visible: bool, role_key: String) ->
 		_set_control_size_if_changed(editor_assembly_tutorial_panel, Vector2(706.0, 66.0))
 		_set_canvas_item_modulate_if_changed(editor_assembly_tutorial_panel, Color(1.0, 1.0, 1.0, 1.0))
 	if editor_assembly_tutorial_label != null:
-		_set_control_position_if_changed(editor_assembly_tutorial_label, Vector2(206.0, 108.0))
-		_set_control_size_if_changed(editor_assembly_tutorial_label, Vector2(682.0, 54.0))
+		_set_control_position_if_changed(editor_assembly_tutorial_label, Vector2(320.0, 108.0))
+		_set_control_size_if_changed(editor_assembly_tutorial_label, Vector2(568.0, 60.0))
 		_set_control_text_if_changed(editor_assembly_tutorial_label, String(model.get("tutorial_text", "")))
 		_set_control_tooltip_if_changed(editor_assembly_tutorial_label, String(model.get("instruction", "")))
 		_set_canvas_item_modulate_if_changed(editor_assembly_tutorial_label, Color(0.86, 0.94, 1.0, 1.0))

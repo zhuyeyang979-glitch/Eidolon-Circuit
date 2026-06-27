@@ -224,9 +224,9 @@ const TUTORIAL_ZH_BY_KEY := {
 
 const TUTORIAL_EN_BY_KEY := {
 	"torso": {
-		"function": "The core is the hero's load-bearing hardware: ports, size, hybrid slots, and software slots.",
-		"limit": "Ports limit connected hardware; hybrid and software slots limit engines, radiators, thrusters, ammo boxes, and actions.",
-		"next": "Press GO to filter cores, then drag one motion or neural core onto the board as the root node.",
+		"function": "The core defines hardware ports, size, and internal slots.",
+		"limit": "Ports cap links; slots cap engines, cooling, boosters, ammo, and actions.",
+		"next": "Press GO, then drag one core onto the board as the root.",
 	},
 	"joint_muscle": {
 		"function": "Connectors extend the core into driven hardware structure for weapons and actions.",

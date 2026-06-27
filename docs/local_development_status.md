@@ -1826,3 +1826,10 @@ Next safe chunk: continue only with narrow pure-rule extraction where `main.gd` 
 - P5 evidence is current: the changed input, command, event, hit-resolution, impact-query, map-occlusion, projectile-lifecycle, target-acquisition, projectile-runtime, and runtime-contact service contracts pass while live Node traversal, mutation, Input reads, VFX/SFX, and damage application remain in `main.gd`.
 - The full GitHub governance probe list passes locally, including action-profile completeness (`live=32`, `projectile=6`), action-module execution (`profiles=11`), Mobius projectile readability, controlled-unit battle centering (`seats=2`), battle VFX budget (`accepted=40`, `dropped=160`), and zero bilingual layout/overflow failures.
 - Known macOS headless ObjectDB leak warnings remain non-blocking when exit code is `0`. Personal-save-only legacy probes are not used as completion evidence unless they provide a generated fixture fallback.
+
+2026-06-27 Unit Editor legality preview and socket-kind ownership follow-up:
+
+- `UnitEditorLegalityService.audit_socket_kinds()` now owns exact socket ownership, compatible root/distal/torso-port pairing, and one-edge-per-socket occupancy with stable bilingual reason codes.
+- `main.gd` materializes those records from live `custom_topology` edges, checks the shared report before legacy topology notes, and renders a persistent bilingual `LegalityStatus` line in Unit Edit.
+- `tools/unit_editor_legality_preview_slot_kind_probe.gd` covers explicit records, legal and corrupted live topology, the training/save gate, and the player-facing status model without persisting transient reports.
+- The same UI pass removed the reproducible English core-tutorial overflow and moved the guide copy clear of the Core Detail button; all editor layout/overflow counts now return zero without expanding panel bounds.

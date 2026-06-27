@@ -41,6 +41,7 @@ func _init() -> void:
 		"tools/unit_editor_legality_battle_entry_probe.gd",
 		"tools/unit_editor_legality_formal_entry_probe.gd",
 		"tools/unit_editor_legality_combined_rule_probe.gd",
+		"tools/unit_editor_legality_preview_slot_kind_probe.gd",
 		"tools/ai_entry_probe.gd",
 	]:
 		_require(roadmap, owner, "legality roadmap")
@@ -60,6 +61,8 @@ func _init() -> void:
 		"func _saved_unit_entry_illegal_note",
 		"func _topology_rule_note",
 		"func _unit_editor_legality_topology_socket_size_records",
+		"func _unit_editor_legality_topology_socket_kind_records",
+		"func _unit_editor_legality_preview_model",
 		"unit_legality_note",
 		"func _formal_battle_start_blocking_summary",
 	]:

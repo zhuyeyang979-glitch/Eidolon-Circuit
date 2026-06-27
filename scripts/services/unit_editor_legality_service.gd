@@ -5,6 +5,9 @@ const HERO_SOUL_COUNT := "hero_soul_count"
 const PUPPET_SOURCE_CODE_MISSING := "puppet_source_code_missing"
 const BARRIER_ETHER_MISSING := "barrier_ether_missing"
 const SOCKET_PART_TOO_LARGE := "socket_part_too_large"
+const SOCKET_KIND_NOT_OWNED := "socket_kind_not_owned"
+const SOCKET_PAIR_KIND_MISMATCH := "socket_pair_kind_mismatch"
+const SOCKET_MULTIPLE_OCCUPANCY := "socket_multiple_occupancy"
 const CONSTRUCT_BODY_MIXED_MANUFACTURER := "construct_body_mixed_manufacturer"
 
 const SOFTWARE_MANUFACTURERS := ["NULL SOFTWARE", "BOOTLEG GHOST"]
@@ -28,6 +31,21 @@ const SOCKET_SIZE_MESSAGES := {
 	SOCKET_PART_TOO_LARGE: {
 		"zh": "部件尺寸超过插槽容量。",
 		"en": "Part size exceeds socket capacity.",
+	},
+}
+
+const SOCKET_KIND_MESSAGES := {
+	SOCKET_KIND_NOT_OWNED: {
+		"zh": "连接边使用了不属于该部件的插口。",
+		"en": "A connection edge uses a socket not owned by that part.",
+	},
+	SOCKET_PAIR_KIND_MISMATCH: {
+		"zh": "连接边两端的插口类型不匹配。",
+		"en": "The socket kinds on this connection edge are incompatible.",
+	},
+	SOCKET_MULTIPLE_OCCUPANCY: {
+		"zh": "同一插口只能连接一个部件。",
+		"en": "Each socket can connect to only one part.",
 	},
 }
 
@@ -83,6 +101,49 @@ func audit_socket_sizes(blueprint: Dictionary) -> Dictionary:
 	}, issues)
 
 
+func audit_socket_kinds(blueprint: Dictionary) -> Dictionary:
+	var records := socket_kind_records(blueprint)
+	var issues: Array = []
+	var occupancy := {}
+	var checked_count := 0
+	for raw_record in records:
+		if not (raw_record is Dictionary):
+			continue
+		var record: Dictionary = raw_record
+		checked_count += 1
+		var edge_owned := true
+		for side in ["a", "b"]:
+			var socket_kind := _socket_kind_for_side(record, side)
+			var owned_socket_kinds := _owned_socket_kinds_for_side(record, side)
+			if socket_kind == "" or not owned_socket_kinds.has(socket_kind):
+				issues.append(_socket_kind_issue(record, side, socket_kind, owned_socket_kinds))
+				edge_owned = false
+				continue
+			var occupancy_key := "%d|%s" % [_socket_node_index_for_side(record, side), socket_kind]
+			if not occupancy.has(occupancy_key):
+				occupancy[occupancy_key] = {
+					"node_index": _socket_node_index_for_side(record, side),
+					"socket_kind": socket_kind,
+					"edge_ids": [],
+				}
+			occupancy[occupancy_key]["edge_ids"].append(String(record.get("edge_id", "")))
+		if edge_owned:
+			var socket_a := _socket_kind_for_side(record, "a")
+			var socket_b := _socket_kind_for_side(record, "b")
+			if not _socket_pair_kinds_match(socket_a, socket_b):
+				issues.append(_socket_pair_kind_issue(record, socket_a, socket_b))
+	for occupancy_key in occupancy.keys():
+		var occupied: Dictionary = occupancy[occupancy_key]
+		var edge_ids: Array = Array(occupied.get("edge_ids", []))
+		if edge_ids.size() > 1:
+			issues.append(_socket_multiple_occupancy_issue(occupied))
+	return _report(String(blueprint.get("role", "")).strip_edges(), {
+		"checked_socket_kind_record_count": checked_count,
+		"socket_kind_record_count": records.size(),
+		"occupied_socket_count": occupancy.size(),
+	}, issues)
+
+
 func audit_construct_body_manufacturers(blueprint: Dictionary) -> Dictionary:
 	var records := construct_body_manufacturer_records(blueprint)
 	var issues: Array = []
@@ -121,6 +182,13 @@ func socket_size_records(blueprint: Dictionary) -> Array:
 		var payload: Dictionary = Dictionary(raw_payload)
 		if payload.has("socket_capacity") or payload.has("socket_size") or payload.has("slot_capacity"):
 			records.append(payload)
+	return records
+
+
+func socket_kind_records(blueprint: Dictionary) -> Array:
+	var records: Array = []
+	for key in ["socket_kind_records", "socket_slot_kind_records", "socket_ownership_records"]:
+		_append_dictionary_array(records, blueprint.get(key, []))
 	return records
 
 
@@ -227,6 +295,51 @@ func _socket_capacity_rank(record: Dictionary) -> int:
 	return 0
 
 
+func _socket_node_index_for_side(record: Dictionary, side: String) -> int:
+	return int(record.get("%s_node_index" % side, -1))
+
+
+func _socket_kind_for_side(record: Dictionary, side: String) -> String:
+	return _normalize_socket_kind(String(record.get("%s_socket_kind" % side, record.get("%s_socket" % side, ""))))
+
+
+func _owned_socket_kinds_for_side(record: Dictionary, side: String) -> Array:
+	var owned: Array = []
+	for raw_kind in Array(record.get("%s_owned_socket_kinds" % side, record.get("%s_allowed_socket_kinds" % side, []))):
+		var socket_kind := _normalize_socket_kind(String(raw_kind))
+		if socket_kind != "" and not owned.has(socket_kind):
+			owned.append(socket_kind)
+	return owned
+
+
+func _normalize_socket_kind(raw_kind: String) -> String:
+	var kind := raw_kind.strip_edges().to_lower()
+	match kind:
+		"root", "root_joint", "handle", "single", "side:-1", "side:a", "end:a":
+			return "root_joint"
+		"distal", "tip", "side:1", "side:b", "end:b":
+			return "distal"
+		"torso", "port":
+			return "torso_port:0"
+	if kind.begins_with("torso:"):
+		return "torso_port:%s" % kind.get_slice(":", 1)
+	if kind.begins_with("port:"):
+		return "torso_port:%s" % kind.get_slice(":", 1)
+	return kind
+
+
+func _socket_pair_kinds_match(socket_a: String, socket_b: String) -> bool:
+	var a := _normalize_socket_kind(socket_a)
+	var b := _normalize_socket_kind(socket_b)
+	if a == "" or b == "":
+		return false
+	var a_torso := a.begins_with("torso_port:")
+	var b_torso := b.begins_with("torso_port:")
+	if a_torso or b_torso:
+		return (a_torso and b == "root_joint") or (b_torso and a == "root_joint")
+	return (a == "distal" and b == "root_joint") or (a == "root_joint" and b == "distal")
+
+
 func _size_rank(raw_value) -> int:
 	if raw_value is int or raw_value is float:
 		return clampi(int(round(float(raw_value))), 1, 5)
@@ -315,6 +428,48 @@ func _socket_size_issue(record: Dictionary, part_size: int, socket_capacity: int
 	}
 
 
+func _socket_kind_issue(record: Dictionary, side: String, socket_kind: String, owned_socket_kinds: Array) -> Dictionary:
+	var messages: Dictionary = _messages_for_code(SOCKET_KIND_NOT_OWNED)
+	return {
+		"code": SOCKET_KIND_NOT_OWNED,
+		"edge_id": String(record.get("edge_id", "")),
+		"side": side,
+		"node_index": _socket_node_index_for_side(record, side),
+		"part_slot_kind": String(record.get("%s_part_slot_kind" % side, "")),
+		"socket_kind": socket_kind,
+		"owned_socket_kinds": owned_socket_kinds.duplicate(),
+		"message_zh": String(messages.get("zh", SOCKET_KIND_NOT_OWNED)),
+		"message_en": String(messages.get("en", SOCKET_KIND_NOT_OWNED)),
+	}
+
+
+func _socket_pair_kind_issue(record: Dictionary, socket_a: String, socket_b: String) -> Dictionary:
+	var messages: Dictionary = _messages_for_code(SOCKET_PAIR_KIND_MISMATCH)
+	return {
+		"code": SOCKET_PAIR_KIND_MISMATCH,
+		"edge_id": String(record.get("edge_id", "")),
+		"a_node_index": _socket_node_index_for_side(record, "a"),
+		"b_node_index": _socket_node_index_for_side(record, "b"),
+		"a_socket_kind": socket_a,
+		"b_socket_kind": socket_b,
+		"message_zh": String(messages.get("zh", SOCKET_PAIR_KIND_MISMATCH)),
+		"message_en": String(messages.get("en", SOCKET_PAIR_KIND_MISMATCH)),
+	}
+
+
+func _socket_multiple_occupancy_issue(occupied: Dictionary) -> Dictionary:
+	var messages: Dictionary = _messages_for_code(SOCKET_MULTIPLE_OCCUPANCY)
+	return {
+		"code": SOCKET_MULTIPLE_OCCUPANCY,
+		"node_index": int(occupied.get("node_index", -1)),
+		"socket_kind": String(occupied.get("socket_kind", "")),
+		"edge_ids": Array(occupied.get("edge_ids", [])).duplicate(),
+		"occupied_count": Array(occupied.get("edge_ids", [])).size(),
+		"message_zh": String(messages.get("zh", SOCKET_MULTIPLE_OCCUPANCY)),
+		"message_en": String(messages.get("en", SOCKET_MULTIPLE_OCCUPANCY)),
+	}
+
+
 func _catalog_part(catalog_by_slot: Dictionary, slot_key: String, part_index: int) -> Dictionary:
 	if part_index < 0:
 		return {}
@@ -362,8 +517,11 @@ func _messages_for_code(code: String) -> Dictionary:
 	if role_messages is Dictionary and not Dictionary(role_messages).is_empty():
 		return Dictionary(role_messages)
 	var socket_messages = SOCKET_SIZE_MESSAGES.get(code, {})
-	if socket_messages is Dictionary:
+	if socket_messages is Dictionary and not Dictionary(socket_messages).is_empty():
 		return Dictionary(socket_messages)
+	var socket_kind_messages = SOCKET_KIND_MESSAGES.get(code, {})
+	if socket_kind_messages is Dictionary and not Dictionary(socket_kind_messages).is_empty():
+		return Dictionary(socket_kind_messages)
 	var manufacturer_messages = MANUFACTURER_MESSAGES.get(code, {})
 	if manufacturer_messages is Dictionary:
 		return Dictionary(manufacturer_messages)
