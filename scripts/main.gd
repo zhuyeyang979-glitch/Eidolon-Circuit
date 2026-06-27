@@ -169,6 +169,9 @@ const HARDWARE_FAULT_TRANSIENT_SAVE_KEYS = {
 	"hardware_fault_state_table": true,
 	"hardware_fault_transition_events": true,
 	"hardware_fault_destruction_intents": true,
+	"hardware_fault_state": true,
+	"hardware_fault_transition_sequence": true,
+	"hardware_fault_runtime_momentum_capacity": true,
 	"runtime_momentum_capacity": true,
 	"transition_sequence": true,
 	"pre_state": true,
@@ -29924,6 +29927,7 @@ func _initialize_unit_runtime_resources(unit) -> void:
 	unit.set_meta("shield_max", electronic_armor_max)
 	unit.set_meta("shield_hp", electronic_armor_max)
 	unit.set_meta("electronic_armor_flash", 0.0)
+	_sync_hardware_fault_runtime_state_to_unit(unit)
 
 
 func _ammo_meta_key(ammo_type: String) -> String:
@@ -31693,6 +31697,8 @@ func _reset_hardware_fault_runtime_state() -> void:
 	hardware_fault_transition_events.clear()
 	hardware_fault_destruction_intents.clear()
 	hardware_fault_contact_sequence = 0
+	for unit in all_units:
+		_sync_hardware_fault_runtime_state_to_unit(unit)
 
 
 func _hardware_fault_live_state_table() -> Dictionary:
@@ -31752,6 +31758,50 @@ func _hardware_fault_runtime_capacity(target, target_collider: Dictionary) -> fl
 	var part_kind := String(target_collider.get("hardware_kind", target_collider.get("part_kind", "")))
 	var fallback := _runtime_contact_part_stiffness(target, target_collider)
 	return _hardware_fault_runtime_service().runtime_momentum_capacity(target_collider, fallback, part_kind)
+
+
+func _hardware_fault_runtime_state_payload(unit, segment: Dictionary) -> Dictionary:
+	var body_id := _hardware_fault_construct_body_id(unit, segment)
+	var hardware_id = _hardware_fault_node_id(segment)
+	var state_entry := _hardware_fault_state_entry(body_id, hardware_id)
+	var state := _hardware_fault_runtime_service().normalized_state(String(state_entry.get("state", HardwareFaultRuntimeService.STATE_NORMAL)))
+	var capacity := _hardware_fault_runtime_capacity(unit, segment)
+	if state_entry.has("runtime_momentum_capacity"):
+		capacity = maxf(1.0, float(state_entry.get("runtime_momentum_capacity", capacity)))
+	return {
+		"hardware_fault_state": state,
+		"hardware_fault_transition_sequence": int(state_entry.get("transition_sequence", 0)),
+		"hardware_fault_runtime_momentum_capacity": capacity,
+	}
+
+
+func _sync_hardware_fault_runtime_state_to_unit(unit) -> void:
+	if unit == null or not is_instance_valid(unit) or unit.get("stats") == null:
+		return
+	var segments: Array = Array(unit.stats.get("runtime_topology_segments", [])).duplicate(true)
+	if segments.is_empty():
+		return
+	var changed := false
+	for i in range(segments.size()):
+		if not (segments[i] is Dictionary):
+			continue
+		var segment: Dictionary = Dictionary(segments[i]).duplicate(true)
+		var payload := _hardware_fault_runtime_state_payload(unit, segment)
+		var segment_changed := false
+		for key in payload.keys():
+			if segment.get(key, null) == payload[key]:
+				continue
+			segment[key] = payload[key]
+			segment_changed = true
+		if not segment_changed:
+			continue
+		segments[i] = segment
+		changed = true
+	if not changed:
+		return
+	unit.stats["runtime_topology_segments"] = segments
+	if unit.has_method("_invalidate_runtime_geometry_cache"):
+		unit._invalidate_runtime_geometry_cache()
 
 
 func _hardware_fault_contact_context(attacker, attacker_collider: Dictionary, target, target_collider: Dictionary, contact_momentum: float, attacker_path_stiffness: float) -> Dictionary:
@@ -31984,6 +32034,7 @@ func _apply_runtime_contact_damage(attacker, attacker_collider: Dictionary, targ
 	var hardware_fault_transition := {}
 	if not hardware_fault_preview.is_empty():
 		hardware_fault_transition = _apply_hardware_fault_contact_transition(hardware_fault_context)
+		_sync_hardware_fault_runtime_state_to_unit(target)
 		_apply_hardware_fault_fields_to_event(event, hardware_fault_transition)
 	event["attack_key"] = int(attacker_collider.get("attack_key", int(attacker_collider.get("part_index", 0)) + 1))
 	event["group_name"] = String(attacker_collider.get("name", attacker_collider.get("part_name", "CONTACT")))

@@ -7,6 +7,9 @@ const TRANSIENT_KEYS := [
 	"hardware_fault_state_table",
 	"hardware_fault_transition_events",
 	"hardware_fault_destruction_intents",
+	"hardware_fault_state",
+	"hardware_fault_transition_sequence",
+	"hardware_fault_runtime_momentum_capacity",
 	"runtime_momentum_capacity",
 	"transition_sequence",
 	"pre_state",
@@ -70,6 +73,9 @@ func _inject_transient_fault_state(unit_bp: Dictionary) -> Dictionary:
 	var nodes: Array = Array(topology.get("nodes", [])).duplicate(true)
 	if not nodes.is_empty() and nodes[0] is Dictionary:
 		var node: Dictionary = Dictionary(nodes[0]).duplicate(true)
+		node["hardware_fault_state"] = "destroyed"
+		node["hardware_fault_transition_sequence"] = 3
+		node["hardware_fault_runtime_momentum_capacity"] = 99.0
 		node["runtime_momentum_capacity"] = 99.0
 		node["transition_sequence"] = 2
 		node["pre_state"] = "faulted"
