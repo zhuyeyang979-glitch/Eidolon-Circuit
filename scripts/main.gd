@@ -33774,6 +33774,9 @@ func _update_laser_telegraphs(delta: float) -> void:
 			if telegraph != null and is_instance_valid(telegraph):
 				telegraph.queue_free()
 			pending_laser_shots.remove_at(index)
+			if _runtime_event_blocked_by_hardware_fault(int(attacker.owner_id), attacker, event, "Laser"):
+				_clear_runtime_gun_pose_for_payload(attacker, event)
+				continue
 			_resolve_attack(attacker, event)
 			_clear_runtime_gun_pose_for_payload(attacker, event)
 			continue
