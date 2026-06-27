@@ -1068,6 +1068,85 @@ func _runtime_parent_node_for(child_node: int) -> int:
 	return -1
 
 
+func _runtime_destroyed_branch_nodes(root_node: int) -> Dictionary:
+	var result := {}
+	if root_node < 0:
+		return result
+	var pending: Array = [root_node]
+	while not pending.is_empty():
+		var node_id := int(pending.pop_front())
+		if bool(result.get(node_id, false)):
+			continue
+		result[node_id] = true
+		for raw_child in _runtime_child_nodes_for(node_id):
+			pending.append(int(raw_child))
+	return result
+
+
+func _runtime_action_references_nodes(action: Dictionary, destroyed_nodes: Dictionary) -> bool:
+	for key in ["root_index", "source_node", "hardware_node_id"]:
+		if action.has(key) and bool(destroyed_nodes.get(int(action.get(key, -999999)), false)):
+			return true
+	for raw_node in Array(action.get("target_nodes", [])):
+		if bool(destroyed_nodes.get(int(raw_node), false)):
+			return true
+	return false
+
+
+func consume_runtime_hardware_destruction_intents(raw_intents: Array) -> Dictionary:
+	var destroyed_nodes := {}
+	for raw_intent in raw_intents:
+		if not (raw_intent is Dictionary):
+			continue
+		var intent: Dictionary = raw_intent
+		if String(intent.get("destruction_intent", "")) != "destroy_hardware":
+			continue
+		var branch := _runtime_destroyed_branch_nodes(int(intent.get("hardware_node_id", -1)))
+		for node_id in branch.keys():
+			destroyed_nodes[int(node_id)] = true
+	if destroyed_nodes.is_empty():
+		return {"changed": false, "destroyed_nodes": []}
+	var destroyed_meta := {}
+	if has_meta("runtime_hardware_destroyed_nodes") and get_meta("runtime_hardware_destroyed_nodes") is Dictionary:
+		destroyed_meta = Dictionary(get_meta("runtime_hardware_destroyed_nodes")).duplicate(true)
+	for node_id in destroyed_nodes.keys():
+		destroyed_meta[str(node_id)] = true
+		_clear_limb_drive_for_node(int(node_id))
+		if aim_pose_part_index == int(node_id):
+			aim_pose_part_index = -1
+			aim_pose_timer = 0.0
+	set_meta("runtime_hardware_destroyed_nodes", destroyed_meta)
+	var segments: Array = []
+	for raw_segment in Array(stats.get("runtime_topology_segments", [])):
+		if not (raw_segment is Dictionary):
+			continue
+		var segment: Dictionary = raw_segment
+		if bool(destroyed_nodes.get(int(segment.get("node_index", -1)), false)):
+			continue
+		segments.append(segment)
+	stats["runtime_topology_segments"] = segments
+	var edges: Array = []
+	for raw_edge in Array(stats.get("runtime_topology_edges", [])):
+		if not (raw_edge is Dictionary):
+			continue
+		var edge: Dictionary = raw_edge
+		if bool(destroyed_nodes.get(_runtime_edge_node(edge, "a_node"), false)) or bool(destroyed_nodes.get(_runtime_edge_node(edge, "b_node"), false)):
+			continue
+		edges.append(edge)
+	stats["runtime_topology_edges"] = edges
+	for i in range(runtime_module_actions.size() - 1, -1, -1):
+		if not (runtime_module_actions[i] is Dictionary):
+			runtime_module_actions.remove_at(i)
+			continue
+		if _runtime_action_references_nodes(Dictionary(runtime_module_actions[i]), destroyed_nodes):
+			runtime_module_actions.remove_at(i)
+	_invalidate_runtime_geometry_cache()
+	_refresh_visuals()
+	var ordered_nodes := destroyed_nodes.keys()
+	ordered_nodes.sort()
+	return {"changed": true, "destroyed_nodes": ordered_nodes}
+
+
 func _runtime_downstream_motion_for_node(node_index: int, included_nodes: Dictionary) -> Dictionary:
 	var mass := 0.0
 	var length := 0.0

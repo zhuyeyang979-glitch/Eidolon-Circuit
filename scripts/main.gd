@@ -31446,6 +31446,23 @@ func _apply_hardware_fault_fields_to_event(event: Dictionary, transition: Dictio
 	event["target_hardware_node_id"] = transition.get("target_hardware_node_id", transition.get("hardware_node_id", ""))
 
 
+func _consume_hardware_fault_destruction_for_target(target, transition: Dictionary) -> void:
+	if target == null or not is_instance_valid(target) or transition.is_empty():
+		return
+	var destruction_intent := String(transition.get("destruction_intent", HardwareFaultRuntimeService.DESTRUCTION_NONE))
+	if destruction_intent != HardwareFaultRuntimeService.DESTRUCTION_HARDWARE:
+		return
+	if not target.has_method("consume_runtime_hardware_destruction_intents"):
+		return
+	target.consume_runtime_hardware_destruction_intents([{
+		"destruction_intent": destruction_intent,
+		"construct_body_id": String(transition.get("target_construct_body_id", transition.get("construct_body_id", ""))),
+		"hardware_node_id": transition.get("target_hardware_node_id", transition.get("hardware_node_id", -1)),
+		"simulation_tick": int(transition.get("simulation_tick", 0)),
+		"contact_sequence": int(transition.get("contact_sequence", 0)),
+	}])
+
+
 func _hardware_fault_state_by_hardware_id(body_id: String) -> Dictionary:
 	var raw_body = hardware_fault_state_table.get(body_id, {})
 	var result := {}
@@ -31562,8 +31579,10 @@ func _apply_runtime_contact_damage(attacker, attacker_collider: Dictionary, targ
 	if not bool(intent.get("should_apply", false)):
 		return
 	var event: Dictionary = Dictionary(intent.get("event", {}))
+	var hardware_fault_transition := {}
 	if not hardware_fault_preview.is_empty():
-		_apply_hardware_fault_fields_to_event(event, _apply_hardware_fault_contact_transition(hardware_fault_context))
+		hardware_fault_transition = _apply_hardware_fault_contact_transition(hardware_fault_context)
+		_apply_hardware_fault_fields_to_event(event, hardware_fault_transition)
 	event["attack_key"] = int(attacker_collider.get("attack_key", int(attacker_collider.get("part_index", 0)) + 1))
 	event["group_name"] = String(attacker_collider.get("name", attacker_collider.get("part_name", "CONTACT")))
 	event["target_part_kind"] = String(target_collider.get("part_kind", "core"))
@@ -31582,6 +31601,7 @@ func _apply_runtime_contact_damage(attacker, attacker_collider: Dictionary, targ
 				"target_part_name": event["target_part_name"],
 				"damage_type": damage_type,
 			})
+		_consume_hardware_fault_destruction_for_target(target, hardware_fault_transition)
 		return
 	var damage: int = max(1, int(roundf(damage_float)))
 	damage = _melee_damage_adjusted(event, damage)
@@ -31602,6 +31622,8 @@ func _apply_runtime_contact_damage(attacker, attacker_collider: Dictionary, targ
 			"counter_tier": counter_tier,
 		})
 	var killed: bool = target.take_hit(damage, "normal", int(attacker.owner_id), damage_type, material_class)
+	if not killed:
+		_consume_hardware_fault_destruction_for_target(target, hardware_fault_transition)
 	if contact_source == "active_melee":
 		_training_validation_sample_record_hit(int(attacker.owner_id), float(damage), event)
 	if not killed and _is_back_hit(attacker, target, event):
