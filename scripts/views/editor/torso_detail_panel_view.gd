@@ -8,6 +8,8 @@ signal payload_hover_cleared()
 signal engine_allocation_requested(payload_index: int)
 signal remove_payload(payload_index: int)
 signal rebind_payload(payload_index: int)
+signal source_priority_move(payload_index: int, direction: int)
+signal source_priority_reset()
 signal binding_candidate_selected(candidate_index: int)
 signal binding_action_side_selected(side: String)
 signal binding_key_selected(key_value: int)
@@ -95,7 +97,7 @@ func _entries_signature(entries: Array) -> String:
 			bits.append("_")
 			continue
 		var entry: Dictionary = entries[i]
-		bits.append("%s:%s:%s:%s:%s:%s:%s:%s" % [
+		bits.append("%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s" % [
 			str(int(entry.get("payload_index", -1))),
 			String(entry.get("kind", "")),
 			String(entry.get("name", "")),
@@ -104,6 +106,11 @@ func _entries_signature(entries: Array) -> String:
 			str(bool(entry.get("empty", false))),
 			str(bool(entry.get("can_rebind", false))),
 			str(bool(entry.get("binding_invalid", false))),
+			str(bool(entry.get("source_code_priority", false))),
+			str(int(entry.get("source_priority", -1))),
+			str(bool(entry.get("source_priority_can_up", false))),
+			str(bool(entry.get("source_priority_can_down", false))),
+			String(entry.get("source_priority_label", "")),
 		])
 	return "|".join(bits)
 
@@ -136,7 +143,7 @@ func _drop_data(at_position: Vector2, data) -> void:
 	var payload := Dictionary(data)
 	var hit := _slot_hit(at_position)
 	var action := String(hit.get("action", "none"))
-	if action in ["delete", "rebind"]:
+	if action in ["delete", "rebind", "source_priority_up", "source_priority_down"]:
 		return
 	var kind := String(hit.get("kind", _slot_kind_at_position(at_position)))
 	if kind == "":
@@ -146,7 +153,7 @@ func _drop_data(at_position: Vector2, data) -> void:
 func _get_drag_data(at_position: Vector2):
 	var hit := _slot_hit(at_position)
 	var action := String(hit.get("action", "none"))
-	if hit.is_empty() or action in ["delete", "rebind"]:
+	if hit.is_empty() or action in ["delete", "rebind", "source_priority_up", "source_priority_down"]:
 		return null
 	var entry := _entry_for_slot(String(hit.get("kind", "")), int(hit.get("index", -1)))
 	var payload_index := int(entry.get("payload_index", -1))
@@ -240,10 +247,19 @@ func _gui_input(event: InputEvent) -> void:
 		close_requested.emit()
 		accept_event()
 		return
+	if mouse_event.button_index == MOUSE_BUTTON_LEFT and _source_priority_reset_rect().has_point(mouse_event.position) and _has_source_priority_entries():
+		source_priority_reset.emit()
+		accept_event()
+		return
 	var hit := _slot_hit(mouse_event.position)
 	if hit.is_empty():
 		return
 	var action := String(hit.get("action", "none"))
+	if action == "source_priority_up" or action == "source_priority_down":
+		source_priority_move.emit(int(hit.get("payload_index", -1)), -1 if action == "source_priority_up" else 1)
+		accept_event()
+		queue_redraw()
+		return
 	if action == "rebind":
 		var hit_kind := String(hit.get("kind", ""))
 		var hit_index := int(hit.get("index", -1))
@@ -280,7 +296,7 @@ func _gui_input(event: InputEvent) -> void:
 func _update_payload_hover(pos: Vector2) -> void:
 	var hit := _slot_hit(pos)
 	var action := String(hit.get("action", "none"))
-	if hit.is_empty() or action in ["delete", "rebind"]:
+	if hit.is_empty() or action in ["delete", "rebind", "source_priority_up", "source_priority_down"]:
 		_clear_payload_hover()
 		return
 	var kind := String(hit.get("kind", ""))
@@ -314,6 +330,11 @@ func _draw() -> void:
 	draw_rect(_close_rect(), Color(0.22, 0.04, 0.05, 0.92), true)
 	draw_rect(_close_rect(), Color(1.0, 0.32, 0.22, 0.86), false, 1.0)
 	draw_string(font, _close_rect().position + Vector2(6.0, 15.0), "X", HORIZONTAL_ALIGNMENT_CENTER, _close_rect().size.x - 12.0, 12, Color(1.0, 0.82, 0.76, 1.0))
+	if _has_source_priority_entries():
+		var reset_rect := _source_priority_reset_rect()
+		draw_rect(reset_rect, Color(0.08, 0.12, 0.18, 0.94), true)
+		draw_rect(reset_rect, Color(0.72, 0.46, 1.0, 0.86), false, 1.0)
+		draw_string(font, reset_rect.position + Vector2(2.0, 13.0), _label("重置", "RST"), HORIZONTAL_ALIGNMENT_CENTER, reset_rect.size.x - 4.0, 9, Color(0.9, 0.84, 1.0, 1.0))
 	_draw_slot_group("plugin", _plugin_group_rect(), plugin_entries, plugin_capacity, Color(0.24, 1.0, 0.72, 1.0), _label("机内插件槽", "INTERNAL PLUGINS"))
 	_draw_slot_group("software", _software_group_rect(), software_entries, software_capacity, Color(0.72, 0.46, 1.0, 1.0), _label("软件槽", "SOFTWARE SLOTS"))
 	if binding_mode:
@@ -357,17 +378,23 @@ func _draw_slot_group(kind: String, rect: Rect2, entries: Array, capacity: int, 
 				icon_rect.position.x += 30.0
 			_draw_payload_icon(icon_rect, entry, color)
 			var text_x := 36.0 if slot_size_label == "" or slot_size_label == "-" else 66.0
+			var has_source_priority := bool(entry.get("source_code_priority", false))
 			var action_width := 40.0
+			if has_source_priority:
+				action_width = 90.0
 			if bool(entry.get("can_rebind", false)):
-				action_width = 92.0
+				action_width = maxf(action_width, 138.0 if has_source_priority else 92.0)
 			var line_color := Color(0.76, 0.86, 0.94, 0.88)
 			if bool(entry.get("binding_invalid", false)):
 				line_color = Color(1.0, 0.38, 0.28, 0.95)
 				draw_rect(slot_rect.grow(-1.0), Color(1.0, 0.16, 0.1, 0.34), false, 1.3)
 			draw_string(font, slot_rect.position + Vector2(text_x, 15.0), _trim(String(entry.get("name", "")), 18), HORIZONTAL_ALIGNMENT_LEFT, slot_rect.size.x - text_x - action_width, 10, Color(0.92, 0.98, 1.0, 0.95))
 			draw_string(font, slot_rect.position + Vector2(text_x, 30.0), _trim(String(entry.get("line", "")), 24), HORIZONTAL_ALIGNMENT_LEFT, slot_rect.size.x - text_x - action_width, 8, line_color)
+			if has_source_priority:
+				_draw_source_priority_button(_priority_up_rect_for_slot(slot_rect), "^", bool(entry.get("source_priority_can_up", false)), color)
+				_draw_source_priority_button(_priority_down_rect_for_slot(slot_rect), "v", bool(entry.get("source_priority_can_down", false)), color)
 			if bool(entry.get("can_rebind", false)):
-				var rebind_rect := _rebind_rect_for_slot(slot_rect)
+				var rebind_rect := _rebind_rect_for_slot(slot_rect, has_source_priority)
 				draw_rect(rebind_rect, Color(0.08, 0.18, 0.32, 0.9), true)
 				draw_rect(rebind_rect, Color(0.42, 0.9, 1.0, 0.72), false, 1.0)
 				draw_string(font, rebind_rect.position + Vector2(2.0, 13.0), _trim(String(entry.get("rebind_label", _label("重绑", "BIND"))), 5), HORIZONTAL_ALIGNMENT_CENTER, rebind_rect.size.x - 4.0, 9, Color(0.82, 0.96, 1.0, 1.0))
@@ -430,9 +457,14 @@ func _slot_hit(pos: Vector2) -> Dictionary:
 			var entry := _entry_for_slot(kind, i)
 			if entry.is_empty():
 				continue
+			var has_source_priority := bool(entry.get("source_code_priority", false))
+			if has_source_priority and bool(entry.get("source_priority_can_up", false)) and _priority_up_rect_for_slot(slot_rect).has_point(pos):
+				return {"kind": kind, "index": i, "action": "source_priority_up", "payload_index": int(entry.get("payload_index", -1))}
+			if has_source_priority and bool(entry.get("source_priority_can_down", false)) and _priority_down_rect_for_slot(slot_rect).has_point(pos):
+				return {"kind": kind, "index": i, "action": "source_priority_down", "payload_index": int(entry.get("payload_index", -1))}
 			if _remove_rect_for_slot(slot_rect).has_point(pos):
 				return {"kind": kind, "index": i, "action": "delete", "payload_index": int(entry.get("payload_index", -1))}
-			if bool(entry.get("can_rebind", false)) and _rebind_rect_for_slot(slot_rect).has_point(pos):
+			if bool(entry.get("can_rebind", false)) and _rebind_rect_for_slot(slot_rect, has_source_priority).has_point(pos):
 				return {"kind": kind, "index": i, "action": "rebind", "payload_index": int(entry.get("payload_index", -1))}
 	for kind in ["plugin", "software"]:
 		if not _group_content_rect(kind).has_point(pos):
@@ -556,8 +588,33 @@ func _drag_scrollbar_to(kind: String, thumb_top_y: float) -> void:
 func _remove_rect_for_slot(slot_rect: Rect2) -> Rect2:
 	return Rect2(Vector2(slot_rect.end.x - 33.0, slot_rect.position.y + 6.0), Vector2(26.0, 20.0))
 
-func _rebind_rect_for_slot(slot_rect: Rect2) -> Rect2:
-	return Rect2(Vector2(slot_rect.end.x - 82.0, slot_rect.position.y + 6.0), Vector2(44.0, 20.0))
+func _rebind_rect_for_slot(slot_rect: Rect2, has_source_priority: bool = false) -> Rect2:
+	var offset := 130.0 if has_source_priority else 82.0
+	return Rect2(Vector2(slot_rect.end.x - offset, slot_rect.position.y + 6.0), Vector2(44.0, 20.0))
+
+func _priority_up_rect_for_slot(slot_rect: Rect2) -> Rect2:
+	return Rect2(Vector2(slot_rect.end.x - 82.0, slot_rect.position.y + 6.0), Vector2(20.0, 20.0))
+
+func _priority_down_rect_for_slot(slot_rect: Rect2) -> Rect2:
+	return Rect2(Vector2(slot_rect.end.x - 58.0, slot_rect.position.y + 6.0), Vector2(20.0, 20.0))
+
+func _source_priority_reset_rect() -> Rect2:
+	var rect := _software_group_rect()
+	return Rect2(Vector2(rect.end.x - 46.0, rect.position.y + 5.0), Vector2(34.0, 18.0))
+
+func _has_source_priority_entries() -> bool:
+	for raw_entry in software_entries:
+		if raw_entry is Dictionary and bool(Dictionary(raw_entry).get("source_code_priority", false)):
+			return true
+	return false
+
+func _draw_source_priority_button(rect: Rect2, label: String, enabled: bool, color: Color) -> void:
+	var font := ThemeDB.get_fallback_font()
+	var bg := Color(color.r, color.g, color.b, 0.28) if enabled else Color(0.08, 0.09, 0.1, 0.72)
+	var fg := Color(0.92, 0.88, 1.0, 1.0) if enabled else Color(0.54, 0.58, 0.62, 0.72)
+	draw_rect(rect, bg, true)
+	draw_rect(rect, color.lerp(Color.WHITE, 0.18) if enabled else Color(0.22, 0.24, 0.26, 0.7), false, 1.0)
+	draw_string(font, rect.position + Vector2(2.0, 14.0), label, HORIZONTAL_ALIGNMENT_CENTER, rect.size.x - 4.0, 11, fg)
 
 func _close_rect() -> Rect2:
 	return Rect2(Vector2(size.x - 34.0, 8.0), Vector2(24.0, 22.0))

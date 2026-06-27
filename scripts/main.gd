@@ -73,6 +73,7 @@ const UnitEditorAssemblyGuideService = preload("res://scripts/services/unit_edit
 const UnitEditorAssemblyTemplateService = preload("res://scripts/services/unit_editor_assembly_template_service.gd")
 const UnitEditorEngineAllocationService = preload("res://scripts/services/unit_editor_engine_allocation_service.gd")
 const UnitEditorAutoConnectionService = preload("res://scripts/services/unit_editor_auto_connection_service.gd")
+const SourceCodePriorityService = preload("res://scripts/services/source_code_priority_service.gd")
 const BattleController = preload("res://scripts/controllers/battle_controller.gd")
 const SavedUnitsController = preload("res://scripts/controllers/saved_units_controller.gd")
 const SettingsController = preload("res://scripts/controllers/settings_controller.gd")
@@ -1993,6 +1994,7 @@ var unit_editor_assembly_guide_service: UnitEditorAssemblyGuideService
 var unit_editor_assembly_template_service: UnitEditorAssemblyTemplateService
 var unit_editor_engine_allocation_service: UnitEditorEngineAllocationService
 var unit_editor_auto_connection_service: UnitEditorAutoConnectionService
+var source_code_priority_service: SourceCodePriorityService
 var unit_build_rule_service: UnitBuildRuleService
 var unit_editor_legality_service: UnitEditorLegalityService
 var team_legality_service: TeamLegalityService
@@ -13272,6 +13274,129 @@ func _payload_detail_line(payload_kind: String, part: Dictionary) -> String:
 	return ("价 %d  质 %.0f" if _ui_is_zh() else "C %d  M %.0f") % [int(part.get("cost", 0)), float(part.get("mass", 0.0))]
 
 
+func _payload_is_source_code_payload(payload: Dictionary, part: Dictionary) -> bool:
+	return String(payload.get("kind", "")) == "special" and (String(payload.get("software_kind", "")) == "code" or String(part.get("kind", "")) == "code")
+
+
+func _source_code_construct_body_id_for_payload(unit_bp: Dictionary, payload: Dictionary) -> String:
+	var explicit_id := String(payload.get("construct_body_id", "")).strip_edges()
+	if explicit_id != "":
+		return explicit_id
+	var torso_node := _payload_torso_node_index(payload, unit_bp)
+	var topology: Dictionary = unit_bp.get("custom_topology", {})
+	var nodes: Array = Array(topology.get("nodes", []))
+	if torso_node >= 0 and torso_node < nodes.size() and nodes[torso_node] is Dictionary:
+		var node: Dictionary = nodes[torso_node]
+		for key in ["construct_body_id", "body_id", "runtime_construct_body_id"]:
+			var body_id := String(node.get(key, "")).strip_edges()
+			if body_id != "":
+				return body_id
+	return "torso:%d" % torso_node if torso_node >= 0 else "torso:0"
+
+
+func _source_code_carrier_label(unit_bp: Dictionary, payload: Dictionary) -> String:
+	var torso_node := _payload_torso_node_index(payload, unit_bp)
+	var topology: Dictionary = unit_bp.get("custom_topology", {})
+	var nodes: Array = Array(topology.get("nodes", []))
+	if torso_node >= 0 and torso_node < nodes.size() and nodes[torso_node] is Dictionary:
+		var node: Dictionary = nodes[torso_node]
+		var label := String(node.get("label", node.get("part_name", ""))).strip_edges()
+		if label != "":
+			return label
+	return ("核心 %02d" if _ui_is_zh() else "CORE %02d") % (torso_node + 1 if torso_node >= 0 else 1)
+
+
+func _source_code_priority_default_entries(unit_bp: Dictionary) -> Array:
+	var entries: Array = []
+	var role_key: String = String(unit_bp.get("role", ROLE_ORDER[editor_role_index]))
+	var payloads: Array = Array(unit_bp.get("slot_payloads", []))
+	for i in range(payloads.size()):
+		if not (payloads[i] is Dictionary):
+			continue
+		var payload: Dictionary = Dictionary(payloads[i])
+		var part := _payload_part_for_payload(role_key, payload)
+		if not _payload_is_source_code_payload(payload, part):
+			continue
+		var body_id := _source_code_construct_body_id_for_payload(unit_bp, payload)
+		entries.append({
+			"entry_id": "%s:%d" % [body_id, i],
+			"construct_body_id": body_id,
+			"payload_index": i,
+			"source_code_name": _part_display_name(part, "CODE"),
+			"carrier_label": _source_code_carrier_label(unit_bp, payload),
+			"group_count": int(part.get("group_count", 1)),
+		})
+	return _source_code_priority_service().normalize(entries)
+
+
+func _source_code_priority_entries_for_blueprint(unit_bp: Dictionary) -> Array:
+	var defaults := _source_code_priority_default_entries(unit_bp)
+	if defaults.is_empty():
+		return []
+	var existing_by_id := {}
+	var existing_by_payload := {}
+	for raw_entry in _source_code_priority_service().normalize(Array(unit_bp.get("source_code_priority", []))):
+		if not (raw_entry is Dictionary):
+			continue
+		var entry: Dictionary = raw_entry
+		existing_by_id[String(entry.get("entry_id", ""))] = entry
+		existing_by_payload[int(entry.get("payload_index", -1))] = entry
+	var raw_entries: Array = []
+	for raw_default in defaults:
+		if not (raw_default is Dictionary):
+			continue
+		var default_entry: Dictionary = Dictionary(raw_default).duplicate(true)
+		var entry_id := String(default_entry.get("entry_id", ""))
+		var payload_index := int(default_entry.get("payload_index", -1))
+		var existing: Dictionary = Dictionary(existing_by_id.get(entry_id, existing_by_payload.get(payload_index, {})))
+		if not existing.is_empty() and existing.has("priority"):
+			default_entry["priority"] = int(existing.get("priority", 0))
+		raw_entries.append(default_entry)
+	return _source_code_priority_service().normalize(raw_entries)
+
+
+func _source_code_priority_entry_for_payload_index(unit_bp: Dictionary, payload_index: int) -> Dictionary:
+	for raw_entry in _source_code_priority_entries_for_blueprint(unit_bp):
+		if raw_entry is Dictionary and int(Dictionary(raw_entry).get("payload_index", -1)) == payload_index:
+			return Dictionary(raw_entry)
+	return {}
+
+
+func _set_source_code_priority_entries(unit_bp: Dictionary, entries: Array) -> void:
+	if entries.is_empty():
+		unit_bp.erase("source_code_priority")
+	else:
+		unit_bp["source_code_priority"] = _source_code_priority_service().normalize(entries)
+
+
+func _move_source_code_priority_for_payload(payload_index: int, direction: int) -> void:
+	var unit_bp: Dictionary = _editor_current_blueprint()
+	var entries := _source_code_priority_entries_for_blueprint(unit_bp)
+	var entry := _source_code_priority_entry_for_payload_index(unit_bp, payload_index)
+	if entry.is_empty() or direction == 0:
+		return
+	var moved := _source_code_priority_service().move(entries, String(entry.get("entry_id", "")), direction)
+	if moved == entries:
+		return
+	_record_editor_undo_state("调整源代码优先级" if _ui_is_zh() else "adjust Source Code priority")
+	_set_source_code_priority_entries(unit_bp, moved)
+	if editor_summary_label != null:
+		editor_summary_label.text = "已调整源代码优先级。" if _ui_is_zh() else "Adjusted Source Code priority."
+	_update_editor_ui()
+	_refresh_torso_detail_view()
+
+
+func _reset_source_code_priority() -> void:
+	var unit_bp: Dictionary = _editor_current_blueprint()
+	var defaults := _source_code_priority_default_entries(unit_bp)
+	_record_editor_undo_state("重置源代码优先级" if _ui_is_zh() else "reset Source Code priority")
+	_set_source_code_priority_entries(unit_bp, defaults)
+	if editor_summary_label != null:
+		editor_summary_label.text = "已重置源代码优先级。" if _ui_is_zh() else "Reset Source Code priority."
+	_update_editor_ui()
+	_refresh_torso_detail_view()
+
+
 func _module_binding_for_payload_index(unit_bp: Dictionary, payload_index: int) -> Dictionary:
 	for raw_binding in Array(unit_bp.get("module_bindings", [])):
 		if raw_binding is Dictionary and int(Dictionary(raw_binding).get("software_slot_index", -1)) == payload_index:
@@ -13565,13 +13690,24 @@ func _torso_payload_entries(unit_bp: Dictionary, torso_node_index: int, group_ki
 		var binding_invalid := false
 		var can_rebind := false
 		var rebind_label := ""
+		var source_priority_entry: Dictionary = _source_code_priority_entry_for_payload_index(unit_bp, i) if _payload_is_source_code_payload(payload, part) else {}
 		if payload_kind == "module" and _module_requires_execution_binding(part):
 			var binding_status := _module_binding_status_for_payload(unit_bp, i, payload, part)
 			line = String(binding_status.get("line", line))
 			binding_invalid = not bool(binding_status.get("valid", true))
 			can_rebind = true
 			rebind_label = "重绑" if _ui_is_zh() else "BIND"
-		entries.append({
+		elif not source_priority_entry.is_empty():
+			var priority_number := int(source_priority_entry.get("priority", 0)) + 1
+			var priority_total := _source_code_priority_entries_for_blueprint(unit_bp).size()
+			var carrier_label := String(source_priority_entry.get("carrier_label", _source_code_carrier_label(unit_bp, payload)))
+			line = ("优先 %d/%d · %s · 小队%d" if _ui_is_zh() else "P%d/%d · %s · group %d") % [
+				priority_number,
+				priority_total,
+				_trim_text(carrier_label, 12),
+				int(source_priority_entry.get("group_count", part.get("group_count", 1))),
+			]
+		var entry := {
 			"payload_index": i,
 			"kind": payload_kind,
 			"name": _part_display_name(part, payload_kind),
@@ -13581,7 +13717,17 @@ func _torso_payload_entries(unit_bp: Dictionary, torso_node_index: int, group_ki
 			"can_rebind": can_rebind,
 			"rebind_label": rebind_label,
 			"binding_invalid": binding_invalid,
-		})
+		}
+		if not source_priority_entry.is_empty():
+			var source_priority := int(source_priority_entry.get("priority", 0)) + 1
+			var source_total := _source_code_priority_entries_for_blueprint(unit_bp).size()
+			entry["source_code_priority"] = true
+			entry["source_priority"] = source_priority
+			entry["source_priority_total"] = source_total
+			entry["source_priority_can_up"] = source_priority > 1
+			entry["source_priority_can_down"] = source_priority < source_total
+			entry["source_priority_label"] = ("优先 %d" if _ui_is_zh() else "P%d") % source_priority
+		entries.append(entry)
 	return entries
 
 
@@ -25349,6 +25495,12 @@ func _unit_stats_service() -> UnitStatsService:
 		unit_stats_service = UnitStatsService.new()
 		unit_stats_service.bind(self, derived_state_cache)
 	return unit_stats_service
+
+
+func _source_code_priority_service() -> SourceCodePriorityService:
+	if source_code_priority_service == null:
+		source_code_priority_service = SourceCodePriorityService.new()
+	return source_code_priority_service
 
 
 func _unit_stats_base_constants() -> Dictionary:
@@ -44947,6 +45099,8 @@ func _build_editor_ui() -> void:
 	editor_torso_detail_view.engine_allocation_requested.connect(_open_engine_momentum_allocation_for_payload)
 	editor_torso_detail_view.remove_payload.connect(_remove_torso_payload_at)
 	editor_torso_detail_view.rebind_payload.connect(_rebind_torso_payload_at)
+	editor_torso_detail_view.source_priority_move.connect(_move_source_code_priority_for_payload)
+	editor_torso_detail_view.source_priority_reset.connect(_reset_source_code_priority)
 	editor_torso_detail_view.binding_candidate_selected.connect(_select_torso_detail_binding_candidate)
 	editor_torso_detail_view.binding_action_side_selected.connect(_select_torso_detail_binding_action_side)
 	editor_torso_detail_view.binding_key_selected.connect(_select_torso_detail_binding_key)
