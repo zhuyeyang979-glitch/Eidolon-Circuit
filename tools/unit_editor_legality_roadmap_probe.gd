@@ -35,6 +35,8 @@ func _init() -> void:
 		"tools/unit_editor_socket_size_rejection_probe.gd",
 		"tools/unit_editor_topology_socket_size_gate_probe.gd",
 		"tools/construct_body_manufacturer_rejection_probe.gd",
+		"tools/unit_editor_puppet_source_code_main_gate_probe.gd",
+		"tools/unit_editor_barrier_ether_main_gate_probe.gd",
 	]:
 		_require(roadmap, owner, "legality roadmap")
 	for evidence in [

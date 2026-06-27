@@ -6,10 +6,10 @@ Status: gameplay baseline polished; the items below have reviewed ownership and 
 
 Unit editor legality:
 
-- Pure `scripts/services/unit_editor_legality_service.gd` baseline is implemented and integrated through `_training_blueprint_illegal_note()`; role identity, explicit socket-size records, custom-topology socket-size records, explicit construct-body manufacturer records, custom-topology manufacturer records, localized messages, and the hero main save/training rejection path are covered by `tools/role_identity_software_rejection_probe.gd`, `tools/unit_editor_socket_size_rejection_probe.gd`, `tools/unit_editor_topology_socket_size_gate_probe.gd`, `tools/construct_body_manufacturer_rejection_probe.gd`, `tools/unit_editor_topology_manufacturer_gate_probe.gd`, and `tools/unit_editor_legality_main_gate_probe.gd`.
+- Pure `scripts/services/unit_editor_legality_service.gd` baseline is implemented and integrated through `_training_blueprint_illegal_note()`; role identity, explicit socket-size records, custom-topology socket-size records, explicit construct-body manufacturer records, custom-topology manufacturer records, localized messages, and hero/puppet/barrier main save/training rejection paths are covered by `tools/role_identity_software_rejection_probe.gd`, `tools/unit_editor_socket_size_rejection_probe.gd`, `tools/unit_editor_topology_socket_size_gate_probe.gd`, `tools/construct_body_manufacturer_rejection_probe.gd`, `tools/unit_editor_topology_manufacturer_gate_probe.gd`, `tools/unit_editor_legality_main_gate_probe.gd`, `tools/unit_editor_puppet_source_code_main_gate_probe.gd`, and `tools/unit_editor_barrier_ether_main_gate_probe.gd`.
 - Continue validating exact socket `part_size <= socket_capacity` rejection across broader saved-unit, team, and battle-entry fixtures now that live topology socket records materialize automatically.
 - Continue validating per-construct-body manufacturer rejection across broader saved-unit, team, and battle-entry fixtures now that custom topology connected components materialize manufacturer records automatically.
-- Add dedicated puppet Source Code and barrier Ether main-gate probes, plus focused save/team/battle-entry probes, before claiming full unit-editor legality completion.
+- Add focused team-validation and battle-entry probes before claiming full unit-editor legality completion.
 - Follow `docs/plans/2026-06-24-unit-editor-legality-roadmap.md` for the remaining topology-adapter and entrypoint coverage work.
 
 Hardware fault runtime:
