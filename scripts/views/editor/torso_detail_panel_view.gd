@@ -43,6 +43,11 @@ var binding_action_side := ""
 var binding_scroll := 0.0
 var last_detail_signature := ""
 var last_binding_signature := ""
+var source_priority_focus_payload_index := -1
+
+
+func _init() -> void:
+	focus_mode = Control.FOCUS_ALL
 
 func set_detail(next_title: String, next_subtitle: String, next_plugins: Array, next_plugin_capacity: int, next_software: Array, next_software_capacity: int, next_selected_kind: String, next_selected_index: int, next_language: String) -> void:
 	var signature := "%s|%s|%d|%d|%s|%d|%s|%s|%s" % [
@@ -68,6 +73,7 @@ func set_detail(next_title: String, next_subtitle: String, next_plugins: Array, 
 	selected_kind = next_selected_kind
 	selected_index = next_selected_index
 	ui_language = next_language
+	_sync_source_priority_focus()
 	visible = true
 	_clamp_scroll_offsets()
 	queue_redraw()
@@ -186,6 +192,10 @@ func _gui_input(event: InputEvent) -> void:
 		else:
 			_update_payload_hover((event as InputEventMouseMotion).position)
 		return
+	if event is InputEventKey:
+		if _handle_source_priority_key(event as InputEventKey):
+			accept_event()
+		return
 	if not (event is InputEventMouseButton):
 		return
 	var mouse_event := event as InputEventMouseButton
@@ -256,6 +266,7 @@ func _gui_input(event: InputEvent) -> void:
 		return
 	var action := String(hit.get("action", "none"))
 	if action == "source_priority_up" or action == "source_priority_down":
+		source_priority_focus_payload_index = int(hit.get("payload_index", -1))
 		source_priority_move.emit(int(hit.get("payload_index", -1)), -1 if action == "source_priority_up" else 1)
 		accept_event()
 		queue_redraw()
@@ -391,6 +402,8 @@ func _draw_slot_group(kind: String, rect: Rect2, entries: Array, capacity: int, 
 			draw_string(font, slot_rect.position + Vector2(text_x, 15.0), _trim(String(entry.get("name", "")), 18), HORIZONTAL_ALIGNMENT_LEFT, slot_rect.size.x - text_x - action_width, 10, Color(0.92, 0.98, 1.0, 0.95))
 			draw_string(font, slot_rect.position + Vector2(text_x, 30.0), _trim(String(entry.get("line", "")), 24), HORIZONTAL_ALIGNMENT_LEFT, slot_rect.size.x - text_x - action_width, 8, line_color)
 			if has_source_priority:
+				if int(entry.get("payload_index", -1)) == source_priority_focus_payload_index:
+					draw_rect(slot_rect.grow(-2.0), Color(1.0, 0.84, 0.28, 0.95), false, 1.4)
 				_draw_source_priority_button(_priority_up_rect_for_slot(slot_rect), "^", bool(entry.get("source_priority_can_up", false)), color)
 				_draw_source_priority_button(_priority_down_rect_for_slot(slot_rect), "v", bool(entry.get("source_priority_can_down", false)), color)
 			if bool(entry.get("can_rebind", false)):
@@ -605,6 +618,67 @@ func _source_priority_reset_rect() -> Rect2:
 func _has_source_priority_entries() -> bool:
 	for raw_entry in software_entries:
 		if raw_entry is Dictionary and bool(Dictionary(raw_entry).get("source_code_priority", false)):
+			return true
+	return false
+
+func _source_priority_entries() -> Array:
+	var entries: Array = []
+	for raw_entry in software_entries:
+		if raw_entry is Dictionary and bool(Dictionary(raw_entry).get("source_code_priority", false)):
+			entries.append(Dictionary(raw_entry))
+	return entries
+
+func _sync_source_priority_focus() -> void:
+	var entries := _source_priority_entries()
+	if entries.is_empty():
+		source_priority_focus_payload_index = -1
+		return
+	for raw_entry in entries:
+		var entry: Dictionary = raw_entry
+		if int(entry.get("payload_index", -1)) == source_priority_focus_payload_index:
+			return
+	source_priority_focus_payload_index = int(Dictionary(entries[0]).get("payload_index", -1))
+
+func _source_priority_focused_entry() -> Dictionary:
+	_sync_source_priority_focus()
+	for raw_entry in _source_priority_entries():
+		var entry: Dictionary = raw_entry
+		if int(entry.get("payload_index", -1)) == source_priority_focus_payload_index:
+			return entry
+	return {}
+
+func _cycle_source_priority_focus(direction: int) -> void:
+	var entries := _source_priority_entries()
+	if entries.is_empty():
+		source_priority_focus_payload_index = -1
+		return
+	var current_index := 0
+	for i in range(entries.size()):
+		if int(Dictionary(entries[i]).get("payload_index", -1)) == source_priority_focus_payload_index:
+			current_index = i
+			break
+	var next_index := wrapi(current_index + signi(direction), 0, entries.size())
+	source_priority_focus_payload_index = int(Dictionary(entries[next_index]).get("payload_index", -1))
+	queue_redraw()
+
+func _handle_source_priority_key(event: InputEventKey) -> bool:
+	if not event.pressed or event.echo or binding_mode or not _has_source_priority_entries():
+		return false
+	match event.keycode:
+		KEY_TAB:
+			_cycle_source_priority_focus(-1 if event.shift_pressed else 1)
+			return true
+		KEY_UP, KEY_DOWN:
+			var entry := _source_priority_focused_entry()
+			if entry.is_empty():
+				return true
+			var direction := -1 if event.keycode == KEY_UP else 1
+			var can_move := bool(entry.get("source_priority_can_up", false)) if direction < 0 else bool(entry.get("source_priority_can_down", false))
+			if can_move:
+				source_priority_move.emit(int(entry.get("payload_index", -1)), direction)
+			return true
+		KEY_R:
+			source_priority_reset.emit()
 			return true
 	return false
 

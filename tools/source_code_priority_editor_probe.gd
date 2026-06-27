@@ -42,14 +42,30 @@ func _source_entry_for_payload(entries: Array, payload_index: int) -> Dictionary
 	return {}
 
 
-func _build_puppet_blueprint(code_a: int, code_b: int) -> Dictionary:
+func _torso_index_with_software(main) -> int:
+	var catalog: Array = main._catalog_for("puppet", "muscle")
+	for i in range(catalog.size()):
+		if catalog[i] is Dictionary and main._component_is_torso(Dictionary(catalog[i])) and main._torso_software_capacity_for_part(Dictionary(catalog[i])) > 0:
+			return i
+	return -1
+
+
+func _key_event(keycode: int, shift: bool = false) -> InputEventKey:
+	var event := InputEventKey.new()
+	event.pressed = true
+	event.keycode = keycode
+	event.shift_pressed = shift
+	return event
+
+
+func _build_puppet_blueprint(torso_index: int, code_a: int, code_b: int) -> Dictionary:
 	return {
 		"role": "puppet",
 		"blank_canvas": false,
 		"custom_topology": {
 			"nodes": [
-				{"slot": "muscle", "part_index": 0, "label": "Core A", "construct_body_id": "body-a"},
-				{"slot": "muscle", "part_index": 0, "label": "Core B", "construct_body_id": "body-b"},
+				{"slot": "muscle", "part_index": torso_index, "label": "Core A", "construct_body_id": "body-a"},
+				{"slot": "muscle", "part_index": torso_index, "label": "Core B", "construct_body_id": "body-b"},
 			],
 			"edges": [],
 		},
@@ -70,10 +86,12 @@ func _init() -> void:
 	main.editor_working_role_key = "puppet"
 	var codes := _code_indices(main, 2)
 	_require(codes.size() >= 2, "Probe needs at least two puppet Source Code catalog entries.")
+	var torso_index := _torso_index_with_software(main)
+	_require(torso_index >= 0, "Probe needs a puppet torso with software slots.")
 	if failed:
 		quit(1)
 		return
-	var unit_bp := _build_puppet_blueprint(int(codes[0]), int(codes[1]))
+	var unit_bp := _build_puppet_blueprint(torso_index, int(codes[0]), int(codes[1]))
 	main.editor_working_blueprint = unit_bp
 	main.editor_open_torso_node_index = 0
 	for method_name in [
@@ -96,8 +114,17 @@ func _init() -> void:
 	_require(bool(entry_a.get("source_code_priority", false)), "Source Code row A should expose priority metadata: %s" % str(entry_a))
 	_require(bool(entry_b.get("source_code_priority", false)), "Source Code row B should expose priority metadata: %s" % str(entry_b))
 	_require(int(entry_a.get("source_priority", -1)) == 1 and int(entry_b.get("source_priority", -1)) == 2, "Rows should show 1-based priority labels: %s / %s" % [str(entry_a), str(entry_b)])
+	main._refresh_torso_detail_view()
+	_require(main.editor_torso_detail_view.focus_mode != Control.FOCUS_NONE, "Torso detail view should be keyboard focusable for Source Code priority rows.")
+	var keyboard_moves: Array = []
+	main.editor_torso_detail_view.source_priority_move.connect(func(payload_index: int, direction: int) -> void:
+		keyboard_moves.append("%d:%d" % [payload_index, direction])
+	)
+	main.editor_torso_detail_view._gui_input(_key_event(KEY_DOWN))
+	_require(keyboard_moves == ["0:1"], "Down arrow should move the focused Source Code row down: %s entries=%s focus=%d" % [str(keyboard_moves), str(main.editor_torso_detail_view.software_entries), int(main.editor_torso_detail_view.source_priority_focus_payload_index)])
 	main._move_source_code_priority_for_payload(0, 1)
 	_require(_priority_payloads(unit_bp) == [1, 0], "Moving first Source Code down should write reversed priority order: %s" % str(unit_bp.get("source_code_priority", [])))
+	_require(main.editor_summary_label != null and String(main.editor_summary_label.text).contains("2/2") and String(main.editor_summary_label.text).contains("CODE"), "Priority move announcement should name the Source Code and new rank: %s" % String(main.editor_summary_label.text))
 	torso_a_entries = main._torso_software_slot_summary(unit_bp, 0)
 	torso_b_entries = main._torso_software_slot_summary(unit_bp, 1)
 	entry_a = _source_entry_for_payload(torso_a_entries, 0)

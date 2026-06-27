@@ -13369,6 +13369,21 @@ func _set_source_code_priority_entries(unit_bp: Dictionary, entries: Array) -> v
 		unit_bp["source_code_priority"] = _source_code_priority_service().normalize(entries)
 
 
+func _source_code_priority_move_announcement(unit_bp: Dictionary, payload_index: int) -> String:
+	var entry := _source_code_priority_entry_for_payload_index(unit_bp, payload_index)
+	if entry.is_empty():
+		return "已调整源代码优先级。" if _ui_is_zh() else "Adjusted Source Code priority."
+	var name := String(entry.get("source_code_name", "SOURCE CODE"))
+	var rank := int(entry.get("priority", 0)) + 1
+	var total := _source_code_priority_entries_for_blueprint(unit_bp).size()
+	return ("源代码优先级：%s 现在为 %d/%d。" if _ui_is_zh() else "SOURCE PRIORITY: %s is now %d/%d.") % [name, rank, total]
+
+
+func _source_code_priority_reset_announcement(unit_bp: Dictionary) -> String:
+	var total := _source_code_priority_entries_for_blueprint(unit_bp).size()
+	return ("已重置源代码优先级：%d 项恢复为槽位顺序。" if _ui_is_zh() else "SOURCE PRIORITY reset: %d Source Codes restored to slot order.") % total
+
+
 func _move_source_code_priority_for_payload(payload_index: int, direction: int) -> void:
 	var unit_bp: Dictionary = _editor_current_blueprint()
 	var entries := _source_code_priority_entries_for_blueprint(unit_bp)
@@ -13380,9 +13395,10 @@ func _move_source_code_priority_for_payload(payload_index: int, direction: int) 
 		return
 	_record_editor_undo_state("调整源代码优先级" if _ui_is_zh() else "adjust Source Code priority")
 	_set_source_code_priority_entries(unit_bp, moved)
-	if editor_summary_label != null:
-		editor_summary_label.text = "已调整源代码优先级。" if _ui_is_zh() else "Adjusted Source Code priority."
+	var summary_text := _source_code_priority_move_announcement(unit_bp, payload_index)
 	_update_editor_ui()
+	if editor_summary_label != null:
+		editor_summary_label.text = summary_text
 	_refresh_torso_detail_view()
 
 
@@ -13391,9 +13407,10 @@ func _reset_source_code_priority() -> void:
 	var defaults := _source_code_priority_default_entries(unit_bp)
 	_record_editor_undo_state("重置源代码优先级" if _ui_is_zh() else "reset Source Code priority")
 	_set_source_code_priority_entries(unit_bp, defaults)
-	if editor_summary_label != null:
-		editor_summary_label.text = "已重置源代码优先级。" if _ui_is_zh() else "Reset Source Code priority."
+	var summary_text := _source_code_priority_reset_announcement(unit_bp)
 	_update_editor_ui()
+	if editor_summary_label != null:
+		editor_summary_label.text = summary_text
 	_refresh_torso_detail_view()
 
 
