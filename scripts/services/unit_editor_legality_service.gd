@@ -5,6 +5,9 @@ const HERO_SOUL_COUNT := "hero_soul_count"
 const PUPPET_SOURCE_CODE_MISSING := "puppet_source_code_missing"
 const BARRIER_ETHER_MISSING := "barrier_ether_missing"
 const SOCKET_PART_TOO_LARGE := "socket_part_too_large"
+const CONSTRUCT_BODY_MIXED_MANUFACTURER := "construct_body_mixed_manufacturer"
+
+const SOFTWARE_MANUFACTURERS := ["NULL SOFTWARE", "BOOTLEG GHOST"]
 
 const ROLE_IDENTITY_MESSAGES := {
 	HERO_SOUL_COUNT: {
@@ -25,6 +28,13 @@ const SOCKET_SIZE_MESSAGES := {
 	SOCKET_PART_TOO_LARGE: {
 		"zh": "部件尺寸超过插槽容量。",
 		"en": "Part size exceeds socket capacity.",
+	},
+}
+
+const MANUFACTURER_MESSAGES := {
+	CONSTRUCT_BODY_MIXED_MANUFACTURER: {
+		"zh": "同一构件体只能使用同一硬件厂商。",
+		"en": "Each construct body can only use one hardware manufacturer.",
 	},
 }
 
@@ -71,6 +81,34 @@ func audit_socket_sizes(blueprint: Dictionary) -> Dictionary:
 		"oversized_socket_count": issues.size(),
 		"socket_record_count": records.size(),
 	}, issues)
+
+
+func audit_construct_body_manufacturers(blueprint: Dictionary) -> Dictionary:
+	var records := construct_body_manufacturer_records(blueprint)
+	var issues: Array = []
+	var checked_count := 0
+	for raw_record in records:
+		if not (raw_record is Dictionary):
+			continue
+		var record: Dictionary = raw_record
+		var manufacturers := _hardware_manufacturers_for_body(record)
+		if manufacturers.is_empty():
+			continue
+		checked_count += 1
+		if manufacturers.size() > 1:
+			issues.append(_manufacturer_issue(record, manufacturers))
+	return _report(String(blueprint.get("role", "")).strip_edges(), {
+		"checked_construct_body_count": checked_count,
+		"mixed_construct_body_count": issues.size(),
+		"construct_body_record_count": records.size(),
+	}, issues)
+
+
+func construct_body_manufacturer_records(blueprint: Dictionary) -> Array:
+	var records: Array = []
+	for key in ["construct_bodies", "construct_body_manufacturer_records", "construct_body_records"]:
+		_append_dictionary_array(records, blueprint.get(key, []))
+	return records
 
 
 func socket_size_records(blueprint: Dictionary) -> Array:
@@ -211,6 +249,56 @@ func _size_rank(raw_value) -> int:
 	return 0
 
 
+func _hardware_manufacturers_for_body(record: Dictionary) -> Array:
+	var manufacturers: Array = []
+	for raw_part in Array(record.get("parts", record.get("hardware_parts", []))):
+		if not (raw_part is Dictionary):
+			continue
+		var part_record: Dictionary = Dictionary(raw_part)
+		if not _manufacturer_record_counts_as_hardware(part_record):
+			continue
+		var maker := _manufacturer_for_record(part_record)
+		if maker == "" or SOFTWARE_MANUFACTURERS.has(maker) or manufacturers.has(maker):
+			continue
+		manufacturers.append(maker)
+	return manufacturers
+
+
+func _manufacturer_record_counts_as_hardware(record: Dictionary) -> bool:
+	var part: Dictionary = Dictionary(record.get("part", {})) if record.get("part") is Dictionary else {}
+	if bool(record.get("software", part.get("software", false))):
+		return false
+	var slot_key := String(record.get("slot_key", record.get("slot", part.get("slot_key", part.get("slot", ""))))).strip_edges().to_lower()
+	if slot_key in ["special", "module", "code", "ether"]:
+		return false
+	var kind := _normalize_identity_kind(String(record.get("kind", part.get("kind", part.get("identity_kind", part.get("software_kind", ""))))))
+	if kind in ["soul", "source_code", "ether", "module"]:
+		return false
+	return true
+
+
+func _manufacturer_for_record(record: Dictionary) -> String:
+	var maker := String(record.get("maker", record.get("manufacturer", ""))).strip_edges()
+	if maker != "":
+		return maker
+	if record.get("part") is Dictionary:
+		var part: Dictionary = Dictionary(record.get("part", {}))
+		return String(part.get("maker", part.get("manufacturer", ""))).strip_edges()
+	return ""
+
+
+func _manufacturer_issue(record: Dictionary, manufacturers: Array) -> Dictionary:
+	var messages: Dictionary = _messages_for_code(CONSTRUCT_BODY_MIXED_MANUFACTURER)
+	return {
+		"code": CONSTRUCT_BODY_MIXED_MANUFACTURER,
+		"body_id": String(record.get("body_id", record.get("construct_body_id", ""))),
+		"manufacturers": manufacturers.duplicate(),
+		"manufacturer_count": manufacturers.size(),
+		"message_zh": String(messages.get("zh", CONSTRUCT_BODY_MIXED_MANUFACTURER)),
+		"message_en": String(messages.get("en", CONSTRUCT_BODY_MIXED_MANUFACTURER)),
+	}
+
+
 func _socket_size_issue(record: Dictionary, part_size: int, socket_capacity: int) -> Dictionary:
 	var messages: Dictionary = _messages_for_code(SOCKET_PART_TOO_LARGE)
 	var part_name := String(record.get("part_name", ""))
@@ -276,6 +364,9 @@ func _messages_for_code(code: String) -> Dictionary:
 	var socket_messages = SOCKET_SIZE_MESSAGES.get(code, {})
 	if socket_messages is Dictionary:
 		return Dictionary(socket_messages)
+	var manufacturer_messages = MANUFACTURER_MESSAGES.get(code, {})
+	if manufacturer_messages is Dictionary:
+		return Dictionary(manufacturer_messages)
 	return {}
 
 
