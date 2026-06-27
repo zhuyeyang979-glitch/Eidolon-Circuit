@@ -26,7 +26,7 @@ Source Code priority:
 - Keep `scripts/services/source_code_priority_service.gd` as the pure ordering and surviving-carrier boundary.
 - Basic `源代码优先级 / SOURCE PRIORITY` editor metadata, Torso Detail Up/Down controls, and Reset writeback are implemented through `tools/source_code_priority_editor_probe.gd`; continue with keyboard focus and announcement polish.
 - Stable runtime construct-body IDs and deterministic body-to-code assignment tables are materialized in puppet stats/spawn through `tools/source_code_priority_runtime_assignment_probe.gd` and `tools/source_code_priority_main_runtime_probe.gd`.
-- Rebuild assignments after carrier destruction without removing Source Codes on surviving bodies.
+- Carrier destruction now rebuilds runtime assignment tables without removing Source Codes on surviving bodies through `tools/source_code_priority_destruction_rebuild_probe.gd`.
 - Follow `docs/plans/2026-06-24-source-code-priority-ui.md`.
 
 Mode families:

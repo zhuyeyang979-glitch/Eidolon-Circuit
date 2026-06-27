@@ -13461,13 +13461,103 @@ func _apply_source_code_runtime_assignment_stats(stats: Dictionary, player_id: i
 		return
 	var body_records := _source_code_runtime_body_records_for_blueprint(player_id, role_key, unit_index, unit_bp, puppet_group_slot)
 	var source_parts := _source_code_runtime_source_parts_by_payload(unit_bp)
-	var result := _source_code_priority_service().runtime_assignment(_source_code_priority_entries_for_blueprint(unit_bp), source_parts, body_records, live_construct_body_ids)
+	var priority_entries := _source_code_priority_entries_for_blueprint(unit_bp)
+	stats["source_code_runtime_priority_entries"] = priority_entries.duplicate(true)
+	stats["source_code_runtime_source_parts_by_payload"] = source_parts.duplicate(true)
+	var result := _source_code_priority_service().runtime_assignment(priority_entries, source_parts, body_records, live_construct_body_ids)
+	_write_source_code_runtime_assignment_result(stats, result, live_construct_body_ids)
+	_apply_source_code_construct_body_ids_to_runtime_topology(stats, Array(result.get("body_records", [])))
+
+
+func _write_source_code_runtime_assignment_result(stats: Dictionary, result: Dictionary, live_construct_body_ids: Array = []) -> void:
 	stats["source_code_runtime_body_records"] = Array(result.get("body_records", []))
 	stats["source_code_runtime_entries"] = Array(result.get("entries", []))
 	stats["source_code_runtime_assignments"] = Array(result.get("assignments", []))
 	stats["source_code_runtime_assignment_by_body"] = Dictionary(result.get("assignment_by_body", {}))
 	stats["source_code_runtime_diagnostics"] = Array(result.get("diagnostics", []))
-	_apply_source_code_construct_body_ids_to_runtime_topology(stats, Array(result.get("body_records", [])))
+	stats["source_code_runtime_live_construct_body_ids"] = live_construct_body_ids.duplicate(true)
+
+
+func _source_code_runtime_destroyed_body_ids_for_unit(unit) -> Dictionary:
+	var result := {}
+	if unit == null or not is_instance_valid(unit):
+		return result
+	if unit.has_meta("hardware_fault_construct_body_destroyed") and unit.get_meta("hardware_fault_construct_body_destroyed") is Dictionary:
+		for raw_id in Dictionary(unit.get_meta("hardware_fault_construct_body_destroyed")).keys():
+			var body_id := String(raw_id).strip_edges()
+			if body_id != "" and bool(Dictionary(unit.get_meta("hardware_fault_construct_body_destroyed")).get(raw_id, false)):
+				result[body_id] = true
+	if unit.get("stats") != null and unit.stats is Dictionary:
+		for raw_id in Array(unit.stats.get("source_code_runtime_destroyed_construct_body_ids", [])):
+			var body_id := String(raw_id).strip_edges()
+			if body_id != "":
+				result[body_id] = true
+	return result
+
+
+func _source_code_runtime_live_body_ids_from_stats(stats: Dictionary, destroyed_ids: Dictionary) -> Array:
+	var live_ids: Array = []
+	for raw_record in Array(stats.get("source_code_runtime_body_records", [])):
+		if not (raw_record is Dictionary):
+			continue
+		var body_id := String(Dictionary(raw_record).get("construct_body_id", "")).strip_edges()
+		if body_id == "" or bool(destroyed_ids.get(body_id, false)):
+			continue
+		live_ids.append(body_id)
+	live_ids.sort()
+	return live_ids
+
+
+func _source_code_runtime_priority_entries_from_stats(stats: Dictionary) -> Array:
+	var raw_entries = stats.get("source_code_runtime_priority_entries", [])
+	if raw_entries is Array and not Array(raw_entries).is_empty():
+		return Array(raw_entries).duplicate(true)
+	return Array(stats.get("source_code_runtime_entries", [])).duplicate(true)
+
+
+func _source_code_runtime_source_parts_from_stats(stats: Dictionary) -> Dictionary:
+	var raw_parts = stats.get("source_code_runtime_source_parts_by_payload", {})
+	if raw_parts is Dictionary and not Dictionary(raw_parts).is_empty():
+		return Dictionary(raw_parts).duplicate(true)
+	var result := {}
+	for raw_entry in Array(stats.get("source_code_runtime_entries", [])):
+		if not (raw_entry is Dictionary):
+			continue
+		var entry: Dictionary = raw_entry
+		var payload_index := int(entry.get("payload_index", -1))
+		var source_part = entry.get("source_part", {})
+		if payload_index >= 0 and source_part is Dictionary:
+			result[payload_index] = Dictionary(source_part).duplicate(true)
+	return result
+
+
+func _rebuild_source_code_runtime_assignments_for_unit(unit) -> Dictionary:
+	if unit == null or not is_instance_valid(unit) or unit.get("stats") == null or not (unit.stats is Dictionary):
+		return {"changed": false, "reason": "invalid_unit"}
+	if String(unit.role) != "puppet":
+		return {"changed": false, "reason": "not_puppet"}
+	var stats: Dictionary = unit.stats
+	var body_records: Array = Array(stats.get("source_code_runtime_body_records", []))
+	if body_records.is_empty():
+		return {"changed": false, "reason": "missing_body_records"}
+	var priority_entries := _source_code_runtime_priority_entries_from_stats(stats)
+	var source_parts := _source_code_runtime_source_parts_from_stats(stats)
+	if priority_entries.is_empty() or source_parts.is_empty():
+		return {"changed": false, "reason": "missing_source_code_inputs"}
+	var destroyed_ids := _source_code_runtime_destroyed_body_ids_for_unit(unit)
+	var live_ids := _source_code_runtime_live_body_ids_from_stats(stats, destroyed_ids)
+	var result := _source_code_priority_service().runtime_assignment(priority_entries, source_parts, body_records, live_ids)
+	_write_source_code_runtime_assignment_result(stats, result, live_ids)
+	var destroyed_list := destroyed_ids.keys()
+	destroyed_list.sort()
+	stats["source_code_runtime_destroyed_construct_body_ids"] = destroyed_list
+	return {
+		"changed": true,
+		"live_construct_body_ids": live_ids,
+		"destroyed_construct_body_ids": destroyed_list,
+		"assignments": Array(result.get("assignments", [])),
+		"diagnostics": Array(result.get("diagnostics", [])),
+	}
 
 
 func _apply_source_code_construct_body_ids_to_runtime_topology(stats: Dictionary, body_records: Array) -> void:
@@ -31739,6 +31829,7 @@ func _consume_hardware_fault_destruction_for_target(target, transition: Dictiona
 				"simulation_tick": int(transition.get("simulation_tick", 0)),
 				"contact_sequence": int(transition.get("contact_sequence", 0)),
 			}])
+		_rebuild_source_code_runtime_assignments_for_unit(target)
 		if _is_live_unit(target):
 			_handle_unit_killed(target, killer_id)
 		if target != null and is_instance_valid(target) and target.has_method("retire"):
