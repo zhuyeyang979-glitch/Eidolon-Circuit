@@ -42,6 +42,7 @@ func _init() -> void:
 		"tools/unit_editor_legality_formal_entry_probe.gd",
 		"tools/unit_editor_legality_combined_rule_probe.gd",
 		"tools/unit_editor_legality_preview_slot_kind_probe.gd",
+		"tools/unit_editor_legality_cross_entrypoint_probe.gd",
 		"tools/ai_entry_probe.gd",
 	]:
 		_require(roadmap, owner, "legality roadmap")

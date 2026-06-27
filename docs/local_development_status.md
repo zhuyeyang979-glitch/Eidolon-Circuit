@@ -1833,3 +1833,9 @@ Next safe chunk: continue only with narrow pure-rule extraction where `main.gd` 
 - `main.gd` materializes those records from live `custom_topology` edges, checks the shared report before legacy topology notes, and renders a persistent bilingual `LegalityStatus` line in Unit Edit.
 - `tools/unit_editor_legality_preview_slot_kind_probe.gd` covers explicit records, legal and corrupted live topology, the training/save gate, and the player-facing status model without persisting transient reports.
 - The same UI pass removed the reproducible English core-tutorial overflow and moved the guide copy clear of the Core Detail button; all editor layout/overflow counts now return zero without expanding panel bounds.
+
+2026-06-27 Unit Editor cross-entrypoint legality follow-up:
+
+- `tools/unit_editor_legality_cross_entrypoint_probe.gd` now builds socket-size, socket-kind, and manufacturer-illegal topology variants from the legal starter fixture and verifies that the shared report preserves the expected stable code.
+- The probe covers editor save rejection, saved-unit readback legality notes, team-normalized saved entries, direct battle-entry legality, saved-team load/import rejection, and the formal battle-entry summary without changing saved-unit topology storage.
+- The Unit Editor legality roadmap now marks the broader saved-unit, saved-team, team-validation, and battle-entry fixture item as done; the next active guardrail remains schema invariance until a separate saved-unit migration plan exists.

@@ -6,11 +6,9 @@ Status: gameplay baseline polished; the items below have reviewed ownership and 
 
 Unit editor legality:
 
-- Pure `scripts/services/unit_editor_legality_service.gd` baseline is implemented and integrated through `_training_blueprint_illegal_note()`; role identity, explicit/custom-topology socket size and exact socket-kind ownership, per-socket occupancy, explicit/custom-topology construct-body manufacturers, localized messages, a persistent bilingual editor status, hero/puppet/barrier main save/training rejection paths, team validation, battle-entry legality, saved-team load/import, formal PVP/BP battle-start rechecks, and combined-rule report merging are covered by the registered Unit Editor legality probes, including `tools/unit_editor_legality_preview_slot_kind_probe.gd`.
-- Continue validating exact socket `part_size <= socket_capacity` rejection across broader saved-unit, team, and battle-entry fixtures now that live topology socket records materialize automatically.
-- Continue validating per-construct-body manufacturer rejection across broader saved-unit, team, and battle-entry fixtures now that custom topology connected components materialize manufacturer records automatically.
-- Add broader saved-unit, saved-team, team-validation, and battle-entry fixtures for socket-size, socket-kind, and manufacturer failures before claiming exhaustive entrypoint coverage.
-- Follow `docs/plans/2026-06-24-unit-editor-legality-roadmap.md` for the remaining topology-adapter and entrypoint coverage work.
+- Pure `scripts/services/unit_editor_legality_service.gd` baseline is implemented and integrated through `_training_blueprint_illegal_note()`; role identity, explicit/custom-topology socket size and exact socket-kind ownership, per-socket occupancy, explicit/custom-topology construct-body manufacturers, localized messages, a persistent bilingual editor status, hero/puppet/barrier main save/training rejection paths, team validation, battle-entry legality, saved-unit readback, saved-team load/import, formal PVP/BP battle-start rechecks, combined-rule report merging, and cross-entrypoint topology failures are covered by the registered Unit Editor legality probes, including `tools/unit_editor_legality_preview_slot_kind_probe.gd` and `tools/unit_editor_legality_cross_entrypoint_probe.gd`.
+- Continue with schema-invariance guardrails before any saved-unit topology migration; keep `momentum_chain_v3`, `single_unit` / `puppet_group`, and `custom_topology` storage unchanged until a separate migration plan exists.
+- Follow `docs/plans/2026-06-24-unit-editor-legality-roadmap.md` for the remaining schema-invariance and future path-specific coverage work.
 
 Hardware fault runtime:
 
