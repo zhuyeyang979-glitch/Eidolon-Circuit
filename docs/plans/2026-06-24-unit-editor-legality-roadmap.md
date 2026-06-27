@@ -34,7 +34,7 @@ The reusable entry point is `_training_blueprint_illegal_note()` in `scripts/mai
 4. Write `tools/construct_body_manufacturer_rejection_probe.gd`.
 5. Integrate one structured report into `_training_blueprint_illegal_note()`, preserving existing save, training, and team gates.
 6. Localize each error through stable reason codes in Chinese and English; do not make UI text the source of truth.
-7. Keep legacy topology keys and saved-unit schema unchanged until a separate migration.
+7. Keep legacy topology keys and saved-unit schema unchanged until a separate migration. Guarded by `tools/unit_editor_schema_invariance_probe.gd`, which verifies `momentum_chain_v3`, `single_unit` / `puppet_group`, `custom_topology` keys, and absence of persisted transient legality reports.
 
 ## Acceptance For The Follow-Up
 
@@ -42,3 +42,4 @@ The reusable entry point is `_training_blueprint_illegal_note()` in `scripts/mai
 - Editor preview, save, training import, saved-unit load, team validation, and battle entry use the same report.
 - No invalid build is silently repaired or admitted to battle.
 - Each new hard rule has a failing probe before implementation.
+- `tools/unit_editor_schema_invariance_probe.gd` proves the legality work keeps legacy topology keys and saved-unit schema unchanged until a dedicated migration plan exists.
