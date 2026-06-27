@@ -71,7 +71,7 @@ func _runtime_action_count(fighter) -> int:
 
 
 func _fault_dependency(main, fighter, binding: Dictionary) -> void:
-	var body_id := main._hardware_fault_construct_body_id(fighter, binding)
+	var body_id: String = main._hardware_fault_construct_body_id(fighter, binding)
 	main.hardware_fault_state_table = {
 		body_id: {
 			FAULT_NODE_ID: {

@@ -107,6 +107,7 @@
     "hardware_fault_runtime_state_exposure_probe",
     "hardware_fault_gun_activation_dependency_probe",
     "hardware_fault_direct_module_dependency_probe",
+    "hardware_fault_true_bullet_queue_dependency_probe",
     "hardware_fault_destruction_consumption_probe",
     "hardware_fault_core_destruction_probe",
     "source_code_priority_service_probe",

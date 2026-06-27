@@ -98,7 +98,7 @@ func _make_fixture(main) -> Dictionary:
 
 
 func _fault_gun(main, fighter, binding: Dictionary) -> void:
-	var body_id := main._hardware_fault_construct_body_id(fighter, binding)
+	var body_id: String = main._hardware_fault_construct_body_id(fighter, binding)
 	main.hardware_fault_state_table = {
 		body_id: {
 			GUN_NODE_ID: {

@@ -27514,6 +27514,17 @@ func _runtime_module_blocked_by_hardware_fault(player_id: int, attack_index: int
 	return true
 
 
+func _runtime_event_blocked_by_hardware_fault(player_id: int, unit, event: Dictionary, label: String = "Action") -> bool:
+	var report := _hardware_fault_dependency_report_for_event(unit, event)
+	if not bool(report.get("blocked", false)):
+		return false
+	var reason := _record_hardware_fault_action_gate(unit, report)
+	_record_attack_feedback(player_id, _attack_feedback_index_for_event(event), "block", reason, 1.0, 0.9)
+	_play_module_fail_sfx()
+	_show_battle_message("%s 被硬件故障拦截：%s" % [label, reason] if _ui_is_zh() else "%s blocked: %s" % [label, reason], 0.55)
+	return true
+
+
 func _binding_drive_allocation_for_node(binding: Dictionary, node_index: int, fallback: float = 0.0) -> float:
 	return _gun_activation_service().binding_drive_allocation_for_node(binding, node_index, fallback)
 
@@ -32000,6 +32011,36 @@ func _hardware_fault_dependency_report_for_binding(unit, binding: Dictionary) ->
 	return report
 
 
+func _hardware_fault_binding_for_event(event: Dictionary) -> Dictionary:
+	var raw_binding = event.get("binding", {})
+	var binding: Dictionary = Dictionary(raw_binding).duplicate(true) if raw_binding is Dictionary else {}
+	if event.has("construct_body_id"):
+		binding["construct_body_id"] = String(event.get("construct_body_id", ""))
+	if event.has("attack_key"):
+		binding["attack_key"] = int(event.get("attack_key", 1))
+	if event.has("root_index"):
+		binding["root_index"] = event.get("root_index")
+	if event.has("hardware_node_id"):
+		binding["hardware_node_id"] = event.get("hardware_node_id")
+	var source_node := _projectile_source_node_for_event(event, -999999)
+	if source_node != -999999:
+		binding["source_node"] = source_node
+	var raw_target_nodes = event.get("runtime_target_nodes", event.get("target_nodes", binding.get("target_nodes", [])))
+	var target_nodes: Array = []
+	for raw_node in Array(raw_target_nodes):
+		if not target_nodes.has(raw_node):
+			target_nodes.append(raw_node)
+	if not target_nodes.is_empty():
+		binding["target_nodes"] = target_nodes
+	return binding
+
+
+func _hardware_fault_dependency_report_for_event(unit, event: Dictionary) -> Dictionary:
+	if event.is_empty():
+		return {"allowed": true, "blocked": false}
+	return _hardware_fault_dependency_report_for_binding(unit, _hardware_fault_binding_for_event(event))
+
+
 func _hardware_fault_gate_reason(report: Dictionary) -> String:
 	var hardware_id := String(report.get("blocked_hardware_id", "")).strip_edges()
 	var state := String(report.get("blocking_state", HardwareFaultRuntimeService.STATE_NORMAL)).strip_edges()
@@ -34215,6 +34256,9 @@ func _update_true_bullet_locks(delta: float) -> void:
 				effect.queue_free()
 			pending_true_bullet_shots.remove_at(index)
 			var event: Dictionary = shot.get("event", {})
+			if _runtime_event_blocked_by_hardware_fault(int(attacker.owner_id), attacker, event, "True Bullet"):
+				_clear_runtime_gun_pose_for_payload(attacker, event)
+				continue
 			var direction := _true_bullet_direction_to_target(attacker, target)
 			if attacker.has_method("set_aim_pose"):
 				attacker.set_aim_pose(_projectile_source_node_for_event(event), direction, 0.2)
