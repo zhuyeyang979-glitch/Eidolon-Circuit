@@ -31344,6 +31344,15 @@ func _hardware_fault_construct_body_id(unit, collider: Dictionary) -> String:
 	return "p%d:%s:%s:body0" % [int(unit.owner_id), String(unit.role), unit_key]
 
 
+func _hardware_fault_actor_id(unit) -> String:
+	if unit == null or not is_instance_valid(unit):
+		return ""
+	var unit_key := String(unit.stats.get("unit_id", unit.unit_name)).strip_edges() if unit.get("stats") != null else String(unit.unit_name).strip_edges()
+	if unit_key == "":
+		unit_key = "unit"
+	return "p%d:%s:%s" % [int(unit.owner_id), String(unit.role), unit_key]
+
+
 func _hardware_fault_node_id(collider: Dictionary):
 	if collider.has("hardware_node_id"):
 		return collider.get("hardware_node_id")
@@ -31377,7 +31386,7 @@ func _hardware_fault_contact_context(attacker, attacker_collider: Dictionary, ta
 	var state_entry := _hardware_fault_state_entry(body_id, hardware_id)
 	return {
 		"simulation_tick": int(Engine.get_physics_frames()),
-		"attacker_actor_id": str(attacker.get_instance_id()) if attacker != null and is_instance_valid(attacker) else "",
+		"attacker_actor_id": _hardware_fault_actor_id(attacker),
 		"target_construct_body_id": body_id,
 		"target_hardware_node_id": hardware_id,
 		"raw_momentum": contact_momentum,
