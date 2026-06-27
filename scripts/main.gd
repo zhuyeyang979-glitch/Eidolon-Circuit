@@ -31446,10 +31446,33 @@ func _apply_hardware_fault_fields_to_event(event: Dictionary, transition: Dictio
 	event["target_hardware_node_id"] = transition.get("target_hardware_node_id", transition.get("hardware_node_id", ""))
 
 
-func _consume_hardware_fault_destruction_for_target(target, transition: Dictionary) -> void:
+func _consume_hardware_fault_destruction_for_target(target, transition: Dictionary, killer_id: int = 0) -> void:
 	if target == null or not is_instance_valid(target) or transition.is_empty():
 		return
 	var destruction_intent := String(transition.get("destruction_intent", HardwareFaultRuntimeService.DESTRUCTION_NONE))
+	if destruction_intent == HardwareFaultRuntimeService.DESTRUCTION_CONSTRUCT_BODY:
+		var body_id := String(transition.get("target_construct_body_id", transition.get("construct_body_id", "")))
+		var consumed_bodies := {}
+		if target.has_meta("hardware_fault_construct_body_destroyed") and target.get_meta("hardware_fault_construct_body_destroyed") is Dictionary:
+			consumed_bodies = Dictionary(target.get_meta("hardware_fault_construct_body_destroyed")).duplicate(true)
+		var consume_key := body_id if body_id != "" else str(transition.get("target_hardware_node_id", transition.get("hardware_node_id", -1)))
+		if bool(consumed_bodies.get(consume_key, false)):
+			return
+		consumed_bodies[consume_key] = true
+		target.set_meta("hardware_fault_construct_body_destroyed", consumed_bodies)
+		if target.has_method("consume_runtime_hardware_destruction_intents"):
+			target.consume_runtime_hardware_destruction_intents([{
+				"destruction_intent": HardwareFaultRuntimeService.DESTRUCTION_HARDWARE,
+				"construct_body_id": body_id,
+				"hardware_node_id": transition.get("target_hardware_node_id", transition.get("hardware_node_id", -1)),
+				"simulation_tick": int(transition.get("simulation_tick", 0)),
+				"contact_sequence": int(transition.get("contact_sequence", 0)),
+			}])
+		if _is_live_unit(target):
+			_handle_unit_killed(target, killer_id)
+		if target != null and is_instance_valid(target) and target.has_method("retire"):
+			target.retire()
+		return
 	if destruction_intent != HardwareFaultRuntimeService.DESTRUCTION_HARDWARE:
 		return
 	if not target.has_method("consume_runtime_hardware_destruction_intents"):
@@ -31601,7 +31624,7 @@ func _apply_runtime_contact_damage(attacker, attacker_collider: Dictionary, targ
 				"target_part_name": event["target_part_name"],
 				"damage_type": damage_type,
 			})
-		_consume_hardware_fault_destruction_for_target(target, hardware_fault_transition)
+		_consume_hardware_fault_destruction_for_target(target, hardware_fault_transition, int(attacker.owner_id))
 		return
 	var damage: int = max(1, int(roundf(damage_float)))
 	damage = _melee_damage_adjusted(event, damage)
@@ -31623,7 +31646,7 @@ func _apply_runtime_contact_damage(attacker, attacker_collider: Dictionary, targ
 		})
 	var killed: bool = target.take_hit(damage, "normal", int(attacker.owner_id), damage_type, material_class)
 	if not killed:
-		_consume_hardware_fault_destruction_for_target(target, hardware_fault_transition)
+		_consume_hardware_fault_destruction_for_target(target, hardware_fault_transition, int(attacker.owner_id))
 	if contact_source == "active_melee":
 		_training_validation_sample_record_hit(int(attacker.owner_id), float(damage), event)
 	if not killed and _is_back_hit(attacker, target, event):

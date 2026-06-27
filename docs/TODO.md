@@ -15,10 +15,10 @@ Unit editor legality:
 
 Hardware fault runtime:
 
-- Pure state service, deterministic pure contact replay, the save round-trip guard, the basic live contact adapter, deterministic live replay coverage, and non-core `destroy_hardware` intent consumption are implemented through `tools/hardware_fault_contract_probe.gd`, `tools/hardware_fault_save_roundtrip_probe.gd`, `tools/hardware_fault_live_adapter_probe.gd`, `tools/hardware_fault_live_replay_probe.gd`, and `tools/hardware_fault_destruction_consumption_probe.gd`; core `destroy_construct_body` routing remains pending.
+- Pure state service, deterministic pure contact replay, the save round-trip guard, the basic live contact adapter, deterministic live replay coverage, non-core `destroy_hardware` intent consumption, and core `destroy_construct_body` kill-flow routing are implemented through `tools/hardware_fault_contract_probe.gd`, `tools/hardware_fault_save_roundtrip_probe.gd`, `tools/hardware_fault_live_adapter_probe.gd`, `tools/hardware_fault_live_replay_probe.gd`, `tools/hardware_fault_destruction_consumption_probe.gd`, and `tools/hardware_fault_core_destruction_probe.gd`.
 - Continue with the runtime adapter described in `docs/plans/2026-06-24-hardware-fault-runtime.md`.
 - Add `normal`, `faulted`, and `destroyed` hardware states without serializing battle state into blueprints.
-- Cap damage momentum at hardware capacity, disable dependent actions, and route primary-core destruction through the existing construct-body destruction flow.
+- Cap damage momentum at hardware capacity, disable dependent actions, and keep extending construct-body destruction coverage beyond the current primary-core kill-flow route.
 - Add equality, first-overload, second-overload, action dependency, save round-trip, and deterministic replay probes first.
 
 Source Code priority:
