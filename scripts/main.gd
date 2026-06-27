@@ -13397,6 +13397,122 @@ func _reset_source_code_priority() -> void:
 	_refresh_torso_detail_view()
 
 
+func _source_code_runtime_context(player_id: int, role_key: String, unit_index: int, puppet_group_slot: int = -1) -> Dictionary:
+	return {
+		"owner_id": player_id,
+		"role_key": role_key,
+		"unit_index": unit_index,
+		"puppet_group_slot": puppet_group_slot,
+	}
+
+
+func _source_code_runtime_body_records_for_blueprint(player_id: int, role_key: String, unit_index: int, unit_bp: Dictionary, puppet_group_slot: int = -1) -> Array:
+	if role_key != "puppet" or not unit_bp.has("custom_topology"):
+		return []
+	var topology: Dictionary = unit_bp.get("custom_topology", {})
+	var nodes: Array = Array(topology.get("nodes", []))
+	var edges: Array = Array(topology.get("edges", []))
+	var records: Array = []
+	var visited_nodes := {}
+	var context := _source_code_runtime_context(player_id, role_key, unit_index, puppet_group_slot)
+	for node_index in range(nodes.size()):
+		if visited_nodes.has(node_index) or not (nodes[node_index] is Dictionary):
+			continue
+		var node: Dictionary = nodes[node_index]
+		if not _topology_node_is_torso(role_key, node, unit_bp):
+			continue
+		var component_nodes := _topology_connected_component_indices(edges, nodes.size(), [node_index])
+		for raw_index in component_nodes:
+			visited_nodes[int(raw_index)] = true
+		var explicit_id := ""
+		for key in ["construct_body_id", "body_id", "runtime_construct_body_id"]:
+			explicit_id = String(node.get(key, "")).strip_edges()
+			if explicit_id != "":
+				break
+		var blueprint_id := explicit_id if explicit_id != "" else "torso:%d" % node_index
+		var body_index := records.size()
+		records.append({
+			"construct_body_id": _source_code_priority_service().stable_construct_body_id(context, body_index),
+			"blueprint_construct_body_id": blueprint_id,
+			"body_index": body_index,
+			"torso_node_index": node_index,
+			"node_indices": component_nodes,
+			"label": _source_code_carrier_label(unit_bp, {"torso_node": node_index}),
+		})
+	return records
+
+
+func _source_code_runtime_source_parts_by_payload(unit_bp: Dictionary) -> Dictionary:
+	var role_key: String = String(unit_bp.get("role", "puppet"))
+	var result := {}
+	var payloads: Array = Array(unit_bp.get("slot_payloads", []))
+	for payload_index in range(payloads.size()):
+		if not (payloads[payload_index] is Dictionary):
+			continue
+		var payload: Dictionary = payloads[payload_index]
+		var part := _payload_part_for_payload(role_key, payload)
+		if _payload_is_source_code_payload(payload, part):
+			result[payload_index] = part
+	return result
+
+
+func _apply_source_code_runtime_assignment_stats(stats: Dictionary, player_id: int, role_key: String, unit_index: int, unit_bp: Dictionary, puppet_group_slot: int = -1, live_construct_body_ids: Array = []) -> void:
+	if role_key != "puppet":
+		return
+	var body_records := _source_code_runtime_body_records_for_blueprint(player_id, role_key, unit_index, unit_bp, puppet_group_slot)
+	var source_parts := _source_code_runtime_source_parts_by_payload(unit_bp)
+	var result := _source_code_priority_service().runtime_assignment(_source_code_priority_entries_for_blueprint(unit_bp), source_parts, body_records, live_construct_body_ids)
+	stats["source_code_runtime_body_records"] = Array(result.get("body_records", []))
+	stats["source_code_runtime_entries"] = Array(result.get("entries", []))
+	stats["source_code_runtime_assignments"] = Array(result.get("assignments", []))
+	stats["source_code_runtime_assignment_by_body"] = Dictionary(result.get("assignment_by_body", {}))
+	stats["source_code_runtime_diagnostics"] = Array(result.get("diagnostics", []))
+	_apply_source_code_construct_body_ids_to_runtime_topology(stats, Array(result.get("body_records", [])))
+
+
+func _apply_source_code_construct_body_ids_to_runtime_topology(stats: Dictionary, body_records: Array) -> void:
+	if body_records.is_empty():
+		return
+	var node_to_body := {}
+	for raw_record in body_records:
+		if not (raw_record is Dictionary):
+			continue
+		var record: Dictionary = raw_record
+		var body_id := String(record.get("construct_body_id", ""))
+		if body_id == "":
+			continue
+		for raw_node_index in Array(record.get("node_indices", [])):
+			node_to_body[int(raw_node_index)] = body_id
+	var nodes: Array = Array(stats.get("runtime_topology_nodes", [])).duplicate(true)
+	for i in range(nodes.size()):
+		if not (nodes[i] is Dictionary):
+			continue
+		var node: Dictionary = Dictionary(nodes[i]).duplicate(true)
+		var node_index := int(node.get("id", i))
+		var body_id := String(node_to_body.get(node_index, ""))
+		if body_id == "":
+			continue
+		node["construct_body_id"] = body_id
+		node["runtime_construct_body_id"] = body_id
+		nodes[i] = node
+	if not nodes.is_empty():
+		stats["runtime_topology_nodes"] = nodes
+	var segments: Array = Array(stats.get("runtime_topology_segments", [])).duplicate(true)
+	for i in range(segments.size()):
+		if not (segments[i] is Dictionary):
+			continue
+		var segment: Dictionary = Dictionary(segments[i]).duplicate(true)
+		var node_index := int(segment.get("node_index", -1))
+		var body_id := String(node_to_body.get(node_index, ""))
+		if body_id == "":
+			continue
+		segment["construct_body_id"] = body_id
+		segment["runtime_construct_body_id"] = body_id
+		segments[i] = segment
+	if not segments.is_empty():
+		stats["runtime_topology_segments"] = segments
+
+
 func _module_binding_for_payload_index(unit_bp: Dictionary, payload_index: int) -> Dictionary:
 	for raw_binding in Array(unit_bp.get("module_bindings", [])):
 		if raw_binding is Dictionary and int(Dictionary(raw_binding).get("software_slot_index", -1)) == payload_index:
@@ -29099,11 +29215,14 @@ func _finish_summon_role(player_id: int, role_key: String) -> bool:
 		var exception_group := _live_temporary_fracture_puppets(player_id)
 		for i in range(count):
 			var offset: float = (float(i) - float(count - 1) * 0.5) * 0.12
-			var member_stats := stats
+			var member_stats: Dictionary = stats.duplicate(true)
+			var member_bp: Dictionary = _blueprint_for(player_id, "puppet", int(stats.get("unit_index", active_roster_indices[player_id].get("puppet", 0)))).duplicate(true)
 			if not runtime_group_blueprints.is_empty() and runtime_group_blueprints[i] is Dictionary:
-				member_stats = _compute_unit_stats(player_id, "puppet", -1, Dictionary(runtime_group_blueprints[i]))
+				member_bp = Dictionary(runtime_group_blueprints[i]).duplicate(true)
+				member_stats = _compute_unit_stats(player_id, "puppet", -1, member_bp)
 			member_stats["puppet_group_size"] = count
 			member_stats["puppet_group_slot"] = i
+			_apply_source_code_runtime_assignment_stats(member_stats, player_id, role_key, int(member_stats.get("unit_index", stats.get("unit_index", active_roster_indices[player_id].get("puppet", 0)))), member_bp, i)
 			var puppet_name := "P%d 傀儡 %d" % [player_id, i + 1] if _ui_is_zh() else "P%d PUPPET %d" % [player_id, i + 1]
 			var unit = _create_unit(player_id, role_key, member_stats, puppet_name, wrapf(spawn_ring + offset, 0.0, RING_LENGTH), clampf(spawn_lane + offset * 0.7, -BATTLE_HALF_HEIGHT, BATTLE_HALF_HEIGHT))
 			unit.set_meta("puppet_group_size", count)
@@ -38185,6 +38304,8 @@ func _compute_unit_stats(player_id: int, role_key: String, unit_index: int = -1,
 		stats["runtime_topology_edges"] = []
 		stats["runtime_module_bindings"] = []
 		stats["legacy_topology_note"] = "OLD TOPOLOGY REJECTED: rebuild this unit in TeamEdit."
+	if role_key == "puppet":
+		_apply_source_code_runtime_assignment_stats(stats, player_id, role_key, resolved_index, unit_bp, int(unit_bp.get("puppet_group_slot", -1)))
 	_ensure_projectile_ammo_capacity(stats)
 	_unit_stats_service().apply_role_deploy_profile(stats, role_key)
 

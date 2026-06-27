@@ -108,6 +108,8 @@
     "hardware_fault_core_destruction_probe",
     "source_code_priority_service_probe",
     "source_code_priority_editor_probe",
+    "source_code_priority_runtime_assignment_probe",
+    "source_code_priority_main_runtime_probe",
     "star_soul_loop_balance_examples_probe",
     "star_soul_loop_docs_reconciliation_probe",
     "star_soul_bp_service_probe",
