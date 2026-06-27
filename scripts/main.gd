@@ -49,6 +49,7 @@ const HeldMeleeActivationService = preload("res://scripts/services/held_melee_ac
 const DriveSystemService = preload("res://scripts/services/drive_system_service.gd")
 const UnitBlueprintValidator = preload("res://scripts/services/unit_blueprint_validator.gd")
 const UnitBuildRuleService = preload("res://scripts/services/unit_build_rule_service.gd")
+const UnitEditorLegalityService = preload("res://scripts/services/unit_editor_legality_service.gd")
 const TeamLegalityService = preload("res://scripts/services/team_legality_service.gd")
 const TrainingValidationReportService = preload("res://scripts/services/training_validation_report_service.gd")
 const DataRuleService = preload("res://scripts/services/data_rule_service.gd")
@@ -1977,6 +1978,7 @@ var unit_editor_assembly_template_service: UnitEditorAssemblyTemplateService
 var unit_editor_engine_allocation_service: UnitEditorEngineAllocationService
 var unit_editor_auto_connection_service: UnitEditorAutoConnectionService
 var unit_build_rule_service: UnitBuildRuleService
+var unit_editor_legality_service: UnitEditorLegalityService
 var team_legality_service: TeamLegalityService
 var training_validation_report_service: TrainingValidationReportService
 var editor_connection_evaluation := {
@@ -2311,6 +2313,7 @@ func _initialize_hot_path_state_layer() -> void:
 	drive_system_service = DriveSystemService.new()
 	unit_blueprint_validator = UnitBlueprintValidator.new()
 	unit_build_rule_service = UnitBuildRuleService.new()
+	unit_editor_legality_service = UnitEditorLegalityService.new()
 	team_legality_service = TeamLegalityService.new()
 	training_validation_report_service = TrainingValidationReportService.new()
 	data_rule_service = DataRuleService.new()
@@ -10852,6 +10855,134 @@ func _training_validation_report_text(report_data: Dictionary = {}) -> String:
 	return training_validation_report_service.report_text(report_data_to_render, ui_language)
 
 
+func _unit_editor_legality_service() -> UnitEditorLegalityService:
+	if unit_editor_legality_service == null:
+		unit_editor_legality_service = UnitEditorLegalityService.new()
+	return unit_editor_legality_service
+
+
+func _unit_editor_legality_identity_blueprint(role_key: String, unit_bp: Dictionary) -> Dictionary:
+	var identity_bp := unit_bp.duplicate(true)
+	identity_bp["role"] = role_key
+	var payloads: Array = []
+	var seen_specials := {}
+	var primary_special_index := int(unit_bp.get("special", -1))
+	if primary_special_index >= 0:
+		payloads.append({"kind": "special", "slot": "special", "special": primary_special_index})
+		seen_specials[primary_special_index] = true
+	for raw_payload in Array(unit_bp.get("slot_payloads", [])):
+		if not (raw_payload is Dictionary):
+			continue
+		var payload: Dictionary = Dictionary(raw_payload).duplicate(true)
+		if payload.has("special"):
+			var special_index := int(payload.get("special", -1))
+			if seen_specials.has(special_index):
+				continue
+			seen_specials[special_index] = true
+		payloads.append(payload)
+	identity_bp["slot_payloads"] = payloads
+	return identity_bp
+
+
+func _unit_editor_legality_has_socket_records(unit_bp: Dictionary) -> bool:
+	for key in ["socket_attachments", "socket_size_records", "socket_records"]:
+		if not Array(unit_bp.get(key, [])).is_empty():
+			return true
+	for raw_payload in Array(unit_bp.get("slot_payloads", [])):
+		if not (raw_payload is Dictionary):
+			continue
+		var payload: Dictionary = raw_payload
+		if payload.has("socket_capacity") or payload.has("socket_size") or payload.has("slot_capacity"):
+			return true
+	return false
+
+
+func _unit_editor_legality_has_construct_body_records(unit_bp: Dictionary) -> bool:
+	for key in ["construct_bodies", "construct_body_manufacturer_records", "construct_body_records"]:
+		if not Array(unit_bp.get(key, [])).is_empty():
+			return true
+	return false
+
+
+func _unit_editor_legality_report(role_key: String, unit_bp: Dictionary) -> Dictionary:
+	var service := _unit_editor_legality_service()
+	var reports: Array = [
+		service.audit_role_identity(role_key, _unit_editor_legality_identity_blueprint(role_key, unit_bp), {"special": _catalog_for(role_key, "special")}),
+	]
+	if _unit_editor_legality_has_socket_records(unit_bp):
+		reports.append(service.audit_socket_sizes(unit_bp))
+	if _unit_editor_legality_has_construct_body_records(unit_bp):
+		reports.append(service.audit_construct_body_manufacturers(unit_bp))
+	return _merge_unit_editor_legality_reports(role_key, reports)
+
+
+func _merge_unit_editor_legality_reports(role_key: String, reports: Array) -> Dictionary:
+	var blocking_codes: Array = []
+	var issues: Array = []
+	var messages_zh: Array = []
+	var messages_en: Array = []
+	var metrics := {}
+	for raw_report in reports:
+		if not (raw_report is Dictionary):
+			continue
+		var report: Dictionary = raw_report
+		for raw_code in Array(report.get("blocking_codes", [])):
+			var code := String(raw_code)
+			if code != "" and not blocking_codes.has(code):
+				blocking_codes.append(code)
+		for raw_issue in Array(report.get("issues", [])):
+			if raw_issue is Dictionary:
+				issues.append(Dictionary(raw_issue).duplicate(true))
+		var raw_messages = report.get("messages", {})
+		var messages: Dictionary = Dictionary(raw_messages) if raw_messages is Dictionary else {}
+		for raw_message in Array(messages.get("zh", [])):
+			var message_zh := String(raw_message).strip_edges()
+			if message_zh != "":
+				messages_zh.append(message_zh)
+		for raw_message in Array(messages.get("en", [])):
+			var message_en := String(raw_message).strip_edges()
+			if message_en != "":
+				messages_en.append(message_en)
+		var raw_metrics = report.get("metrics", {})
+		var report_metrics: Dictionary = Dictionary(raw_metrics) if raw_metrics is Dictionary else {}
+		for metric_key in report_metrics.keys():
+			metrics[metric_key] = report_metrics[metric_key]
+	return {
+		"role": role_key,
+		"valid": blocking_codes.is_empty(),
+		"blocking_codes": blocking_codes,
+		"blocking_notes": blocking_codes.duplicate(),
+		"issues": issues,
+		"messages": {
+			"zh": messages_zh,
+			"en": messages_en,
+		},
+		"metrics": metrics,
+	}
+
+
+func _unit_editor_legality_note(role_key: String, unit_bp: Dictionary) -> String:
+	var report := _unit_editor_legality_report(role_key, unit_bp)
+	if bool(report.get("valid", true)):
+		return ""
+	var issues: Array = Array(report.get("issues", []))
+	var issue: Dictionary = Dictionary(issues[0]) if not issues.is_empty() and issues[0] is Dictionary else {}
+	var code := String(issue.get("code", "unit_editor_legality")).strip_edges()
+	if code == "":
+		code = "unit_editor_legality"
+	var message_key := "message_zh" if _ui_is_zh() else "message_en"
+	var message := String(issue.get(message_key, issue.get("message_en", code))).strip_edges()
+	if message == "":
+		var raw_messages = report.get("messages", {})
+		var messages: Dictionary = Dictionary(raw_messages) if raw_messages is Dictionary else {}
+		var localized_messages: Array = Array(messages.get("zh" if _ui_is_zh() else "en", []))
+		if not localized_messages.is_empty():
+			message = String(localized_messages[0]).strip_edges()
+	if message == "":
+		message = code
+	return "INVALID: %s [%s]." % [message, code]
+
+
 func _training_blueprint_illegal_note(player_id: int, role_key: String, unit_bp: Dictionary) -> String:
 	if not ROLE_ORDER.has(role_key):
 		return "INVALID: unknown unit role."
@@ -10885,6 +11016,9 @@ func _training_blueprint_illegal_note(player_id: int, role_key: String, unit_bp:
 	var topology_note := _topology_rule_note(candidate, role_key, stats)
 	if topology_note.begins_with("INVALID"):
 		return topology_note
+	var unit_editor_legality_note := _unit_editor_legality_note(role_key, candidate)
+	if unit_editor_legality_note.begins_with("INVALID"):
+		return unit_editor_legality_note
 	var build_rule_audit := _unit_build_rule_audit(role_key, candidate, stats)
 	var build_rule_note := unit_build_rule_service.first_hard_invalid_note(build_rule_audit) if unit_build_rule_service != null else ""
 	if build_rule_note.begins_with("INVALID"):
