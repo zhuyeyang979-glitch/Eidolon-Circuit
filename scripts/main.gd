@@ -27503,6 +27503,17 @@ func _runtime_gun_activation_blocked_by_hardware_fault(player_id: int, attack_in
 	return true
 
 
+func _runtime_module_blocked_by_hardware_fault(player_id: int, attack_index: int, unit, binding: Dictionary, label: String = "Module") -> bool:
+	var report := _hardware_fault_dependency_report_for_binding(unit, binding)
+	if not bool(report.get("blocked", false)):
+		return false
+	var reason := _record_hardware_fault_action_gate(unit, report)
+	_record_attack_feedback(player_id, attack_index, "block", reason, 1.0, 0.9)
+	_play_module_fail_sfx()
+	_show_battle_message("%s 被硬件故障拦截：%s" % [label, reason] if _ui_is_zh() else "%s blocked: %s" % [label, reason], 0.55)
+	return true
+
+
 func _binding_drive_allocation_for_node(binding: Dictionary, node_index: int, fallback: float = 0.0) -> float:
 	return _gun_activation_service().binding_drive_allocation_for_node(binding, node_index, fallback)
 
@@ -27747,6 +27758,8 @@ func _start_runtime_held_melee_activation(player_id: int, prefix: String, attack
 	if not _is_live_unit(unit):
 		return
 	if not _runtime_binding_is_held_melee_activation(binding):
+		return
+	if _runtime_module_blocked_by_hardware_fault(player_id, attack_index, unit, binding, "Boot Driver"):
 		return
 	var module_part: Dictionary = binding.get("module_part", {}) if binding.get("module_part", {}) is Dictionary else {}
 	var profile := _runtime_binding_profile(binding)
@@ -28194,6 +28207,8 @@ func _hero_runtime_module_attack(player_id: int, prefix: String, input_vector: V
 		_record_attack_feedback(player_id, attack_index, "empty", "unbound", 1.0, 0.9)
 		_play_module_fail_sfx()
 		_show_battle_message("攻击键 %d 未绑定行动模块" % [attack_index + 1] if _ui_is_zh() else "Attack key %d has no module binding" % [attack_index + 1], 0.55)
+		return
+	if _runtime_module_blocked_by_hardware_fault(player_id, attack_index, hero, binding, "Module"):
 		return
 	var action_state := _runtime_module_state_for_binding(player_id, hero, binding, input_vector, requested_state)
 	var runtime_binding := binding.duplicate(true)
