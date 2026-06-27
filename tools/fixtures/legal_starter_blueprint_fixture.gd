@@ -4,17 +4,9 @@ class_name LegalStarterBlueprintFixture
 
 static func build(main, unit_name: String = "Legal Starter Fixture") -> Dictionary:
 	var unit: Dictionary = main._make_editor_blank_blueprint("hero")
-	var torso_index := _find(main, "muscle", func(part: Dictionary) -> bool:
-		return main._component_is_torso(part) \
-			and main._part_slot_volume_rank(part, "muscle") <= 2.0 \
-			and main._torso_plugin_capacity_for_part(part) >= 3 \
-			and main._torso_software_capacity_for_part(part) >= 1
-	)
-	var limb_index := _find(main, "limb_muscle", func(part: Dictionary) -> bool:
-		return main._part_slot_volume_rank(part, "limb_muscle") <= 2.0 \
-			and main._limb_momentum_max_for_part(part, "limb_muscle") > main._limb_momentum_min_for_part(part, "limb_muscle") \
-			and String(part.get("joint_drive_kind", main._joint_drive_kind_for_part(part, "limb_muscle"))).find("rigid") < 0
-	)
+	var pair := _find_torso_limb_pair(main)
+	var torso_index := int(pair.get("torso", -1))
+	var limb_index := int(pair.get("limb", -1))
 	var engine_index := _find(main, "engine", func(part: Dictionary) -> bool:
 		return main._payload_slot_volume_rank("engine", part, {"kind": "engine"}, "engine") <= 2.0 and main._engine_momentum_output_for_part(part) > 0.0
 	)
@@ -64,3 +56,43 @@ static func _find(main, slot: String, predicate: Callable) -> int:
 		if bool(predicate.call(part)):
 			return i
 	return -1
+
+
+static func _maker_for(main, slot: String, index: int) -> String:
+	var part: Dictionary = main._selected_component("hero", slot, index)
+	return String(part.get("maker", part.get("manufacturer", ""))).strip_edges()
+
+
+static func _torso_fixture_candidate(main, part: Dictionary) -> bool:
+	return main._component_is_torso(part) \
+		and main._part_slot_volume_rank(part, "muscle") <= 2.0 \
+		and main._torso_plugin_capacity_for_part(part) >= 3 \
+		and main._torso_software_capacity_for_part(part) >= 1
+
+
+static func _limb_fixture_candidate(main, part: Dictionary) -> bool:
+	return main._part_slot_volume_rank(part, "limb_muscle") <= 2.0 \
+		and main._limb_momentum_max_for_part(part, "limb_muscle") > main._limb_momentum_min_for_part(part, "limb_muscle") \
+		and String(part.get("joint_drive_kind", main._joint_drive_kind_for_part(part, "limb_muscle"))).find("rigid") < 0
+
+
+static func _find_torso_limb_pair(main) -> Dictionary:
+	for torso_index in range(main._catalog_for("hero", "muscle").size()):
+		var torso_part: Dictionary = main._selected_component("hero", "muscle", torso_index)
+		if not _torso_fixture_candidate(main, torso_part):
+			continue
+		var torso_maker := _maker_for(main, "muscle", torso_index)
+		for limb_index in range(main._catalog_for("hero", "limb_muscle").size()):
+			var limb_part: Dictionary = main._selected_component("hero", "limb_muscle", limb_index)
+			if _limb_fixture_candidate(main, limb_part) and _maker_for(main, "limb_muscle", limb_index) == torso_maker:
+				return {"torso": torso_index, "limb": limb_index}
+	var fallback_torso := _find(main, "muscle", func(part: Dictionary) -> bool:
+		return _torso_fixture_candidate(main, part)
+	)
+	var fallback_limb := _find(main, "limb_muscle", func(part: Dictionary) -> bool:
+		return _limb_fixture_candidate(main, part)
+	)
+	return {
+		"torso": fallback_torso,
+		"limb": fallback_limb,
+	}

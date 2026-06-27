@@ -10954,6 +10954,60 @@ func _unit_editor_legality_has_construct_body_records(unit_bp: Dictionary) -> bo
 	return false
 
 
+func _unit_editor_legality_topology_manufacturer_records(role_key: String, unit_bp: Dictionary) -> Array:
+	if not _role_uses_body_board(role_key) or not unit_bp.has("custom_topology"):
+		return []
+	var topology: Dictionary = unit_bp.get("custom_topology", {})
+	var nodes: Array = Array(topology.get("nodes", []))
+	var edges: Array = Array(topology.get("edges", []))
+	var records: Array = []
+	var visited := {}
+	for i in range(nodes.size()):
+		if visited.has(i):
+			continue
+		var component_indices := _topology_connected_component_indices(edges, nodes.size(), [i])
+		for raw_index in component_indices:
+			visited[int(raw_index)] = true
+		var parts: Array = []
+		for raw_index in component_indices:
+			var node_index := int(raw_index)
+			if node_index < 0 or node_index >= nodes.size() or not (nodes[node_index] is Dictionary):
+				continue
+			var node: Dictionary = nodes[node_index]
+			if not _topology_node_is_component(node):
+				continue
+			var slot_key := _topology_node_slot(node)
+			var part := _topology_node_part(role_key, node, unit_bp)
+			var maker := _manufacturer_for_part(part, slot_key)
+			parts.append({
+				"name": String(part.get("name", node.get("part_name", ""))),
+				"maker": maker,
+				"manufacturer": maker,
+				"slot_key": slot_key,
+				"kind": String(part.get("kind", "")),
+				"node_index": node_index,
+				"part_index": _topology_node_resolved_part_index(role_key, node, unit_bp),
+			})
+		if not parts.is_empty():
+			records.append({
+				"body_id": "topology_body_%d" % int(component_indices[0]) if not component_indices.is_empty() else "topology_body_%d" % i,
+				"node_indices": component_indices.duplicate(),
+				"parts": parts,
+			})
+	return records
+
+
+func _unit_editor_legality_construct_body_blueprint(role_key: String, unit_bp: Dictionary) -> Dictionary:
+	var legality_bp := unit_bp.duplicate(true)
+	var records: Array = Array(legality_bp.get("construct_body_manufacturer_records", [])).duplicate(true)
+	for raw_record in _unit_editor_legality_topology_manufacturer_records(role_key, unit_bp):
+		if raw_record is Dictionary:
+			records.append(Dictionary(raw_record).duplicate(true))
+	if not records.is_empty():
+		legality_bp["construct_body_manufacturer_records"] = records
+	return legality_bp
+
+
 func _unit_editor_legality_report(role_key: String, unit_bp: Dictionary) -> Dictionary:
 	var service := _unit_editor_legality_service()
 	var reports: Array = [
@@ -10961,8 +11015,9 @@ func _unit_editor_legality_report(role_key: String, unit_bp: Dictionary) -> Dict
 	]
 	if _unit_editor_legality_has_socket_records(unit_bp):
 		reports.append(service.audit_socket_sizes(unit_bp))
-	if _unit_editor_legality_has_construct_body_records(unit_bp):
-		reports.append(service.audit_construct_body_manufacturers(unit_bp))
+	var construct_body_bp := _unit_editor_legality_construct_body_blueprint(role_key, unit_bp)
+	if _unit_editor_legality_has_construct_body_records(construct_body_bp):
+		reports.append(service.audit_construct_body_manufacturers(construct_body_bp))
 	return _merge_unit_editor_legality_reports(role_key, reports)
 
 
