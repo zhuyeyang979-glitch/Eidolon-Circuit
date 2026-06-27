@@ -332,7 +332,10 @@ func damage_intent(context: Dictionary) -> Dictionary:
 	var target_collider: Dictionary = Dictionary(context.get("target_collider", {}))
 	var normal: Vector2 = context.get("normal", Vector2.ZERO)
 	var attacker_path_stiffness := maxf(1.0, float(context.get("attacker_path_stiffness", 1.0)))
-	var usable_momentum := minf(contact_momentum, attacker_path_stiffness)
+	var path_capped_momentum := minf(contact_momentum, attacker_path_stiffness)
+	var usable_momentum := path_capped_momentum
+	if context.has("hardware_capped_momentum"):
+		usable_momentum = clampf(float(context.get("hardware_capped_momentum", path_capped_momentum)), 0.0, path_capped_momentum)
 	var damage_float := usable_momentum * maxf(0.0, float(context.get("damage_coeff", 0.0))) * float(context.get("contact_damage_scale", 0.09))
 	damage_float *= maxf(0.0, float(context.get("vulnerability_multiplier", 1.0)))
 	if damage_float <= 0.001:
@@ -358,6 +361,9 @@ func damage_intent(context: Dictionary) -> Dictionary:
 		"momentum_magnitude": usable_momentum,
 		"raw_momentum": contact_momentum,
 		"capped_momentum": usable_momentum,
+		"path_capped_momentum": path_capped_momentum,
+		"hardware_capped_momentum": usable_momentum,
+		"runtime_momentum_capacity": maxf(1.0, float(context.get("runtime_momentum_capacity", target_collider.get("runtime_momentum_capacity", usable_momentum)))),
 		"usable_contact_momentum": usable_momentum,
 		"damage_coefficient": maxf(0.0, float(context.get("damage_coeff", 0.0))),
 		"adjustment_coefficient": float(context.get("contact_damage_scale", 0.09)) * maxf(0.0, float(context.get("vulnerability_multiplier", 1.0))),

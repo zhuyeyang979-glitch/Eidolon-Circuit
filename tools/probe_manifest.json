@@ -102,6 +102,7 @@
     "hardware_fault_design_probe",
     "hardware_fault_contract_probe",
     "hardware_fault_save_roundtrip_probe",
+    "hardware_fault_live_adapter_probe",
     "source_code_priority_service_probe",
     "star_soul_loop_balance_examples_probe",
     "star_soul_loop_docs_reconciliation_probe",

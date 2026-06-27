@@ -20,6 +20,7 @@ const SavedUnitLibraryService = preload("res://scripts/services/saved_unit_libra
 const BattleInputService = preload("res://scripts/services/battle_input_service.gd")
 const ProjectileRuntimeService = preload("res://scripts/services/projectile_runtime_service.gd")
 const RuntimeContactService = preload("res://scripts/services/runtime_contact_service.gd")
+const HardwareFaultRuntimeService = preload("res://scripts/services/hardware_fault_runtime_service.gd")
 const RuntimeColliderGeometryService = preload("res://scripts/services/runtime_collider_geometry_service.gd")
 const BattleVfxBudgetService = preload("res://scripts/services/battle_vfx_budget_service.gd")
 const BattleFrameOrchestratorService = preload("res://scripts/services/battle_frame_orchestrator_service.gd")
@@ -1947,6 +1948,11 @@ var saved_unit_library_service: SavedUnitLibraryService
 var battle_input_service: BattleInputService
 var projectile_runtime_service: ProjectileRuntimeService
 var runtime_contact_service: RuntimeContactService
+var hardware_fault_runtime_service: HardwareFaultRuntimeService
+var hardware_fault_state_table := {}
+var hardware_fault_transition_events: Array = []
+var hardware_fault_destruction_intents: Array = []
+var hardware_fault_contact_sequence := 0
 var runtime_collider_geometry_service: RuntimeColliderGeometryService
 var battle_vfx_budget_service: BattleVfxBudgetService
 var battle_frame_orchestrator_service: BattleFrameOrchestratorService
@@ -2289,6 +2295,7 @@ func _initialize_hot_path_state_layer() -> void:
 	battle_input_service = BattleInputService.new()
 	projectile_runtime_service = ProjectileRuntimeService.new()
 	runtime_contact_service = RuntimeContactService.new()
+	hardware_fault_runtime_service = HardwareFaultRuntimeService.new()
 	runtime_collider_geometry_service = RuntimeColliderGeometryService.new()
 	battle_vfx_budget_service = BattleVfxBudgetService.new()
 	battle_frame_orchestrator_service = BattleFrameOrchestratorService.new()
@@ -10561,6 +10568,14 @@ func _attack_rule_breakdown_for_result(event: Dictionary, context: Dictionary = 
 		"raw_momentum": float(context.get("raw_momentum", event.get("raw_momentum", event.get("momentum", 0.0)))),
 		"momentum": float(context.get("momentum", event.get("momentum", event.get("momentum_magnitude", 0.0)))),
 		"capped_momentum": float(context.get("capped_momentum", event.get("capped_momentum", event.get("momentum", event.get("momentum_magnitude", 0.0))))),
+		"path_capped_momentum": float(context.get("path_capped_momentum", event.get("path_capped_momentum", event.get("capped_momentum", event.get("momentum", 0.0))))),
+		"hardware_capped_momentum": float(context.get("hardware_capped_momentum", event.get("hardware_capped_momentum", event.get("capped_momentum", event.get("momentum", 0.0))))),
+		"runtime_momentum_capacity": float(context.get("runtime_momentum_capacity", event.get("runtime_momentum_capacity", 0.0))),
+		"hardware_fault_pre_state": String(context.get("hardware_fault_pre_state", event.get("hardware_fault_pre_state", ""))),
+		"hardware_fault_post_state": String(context.get("hardware_fault_post_state", event.get("hardware_fault_post_state", ""))),
+		"hardware_fault_transition": String(context.get("hardware_fault_transition", event.get("hardware_fault_transition", ""))),
+		"hardware_fault_transition_sequence": int(context.get("hardware_fault_transition_sequence", event.get("hardware_fault_transition_sequence", 0))),
+		"hardware_fault_destruction_intent": String(context.get("hardware_fault_destruction_intent", event.get("hardware_fault_destruction_intent", ""))),
 		"damage_coefficient": float(context.get("damage_coefficient", event.get("damage_coefficient", 0.0))),
 		"adjustment_coefficient": float(context.get("adjustment_coefficient", event.get("adjustment_coefficient", 1.0))),
 		"break_value": float(context.get("break_value", event.get("break_value", event.get("break_threshold", 0.0)))),
@@ -25138,6 +25153,12 @@ func _runtime_contact_service() -> RuntimeContactService:
 	return runtime_contact_service
 
 
+func _hardware_fault_runtime_service() -> HardwareFaultRuntimeService:
+	if hardware_fault_runtime_service == null:
+		hardware_fault_runtime_service = HardwareFaultRuntimeService.new()
+	return hardware_fault_runtime_service
+
+
 func _training_entry_service() -> TrainingEntryService:
 	if training_entry_service == null:
 		training_entry_service = TrainingEntryService.new()
@@ -31289,6 +31310,178 @@ func _cleanup_active_melee_contact_suppression() -> void:
 			active_melee_contact_suppression.erase(key)
 
 
+func _reset_hardware_fault_runtime_state() -> void:
+	hardware_fault_state_table.clear()
+	hardware_fault_transition_events.clear()
+	hardware_fault_destruction_intents.clear()
+	hardware_fault_contact_sequence = 0
+
+
+func _hardware_fault_live_state_table() -> Dictionary:
+	return hardware_fault_state_table.duplicate(true)
+
+
+func _hardware_fault_transition_events() -> Array:
+	return hardware_fault_transition_events.duplicate(true)
+
+
+func _hardware_fault_destruction_intents() -> Array:
+	return hardware_fault_destruction_intents.duplicate(true)
+
+
+func _hardware_fault_construct_body_id(unit, collider: Dictionary) -> String:
+	var explicit_id := String(collider.get("construct_body_id", "")).strip_edges()
+	if explicit_id != "":
+		return explicit_id
+	if unit == null or not is_instance_valid(unit):
+		return ""
+	var stats_id := String(unit.stats.get("construct_body_id", "")).strip_edges() if unit.get("stats") != null else ""
+	if stats_id != "":
+		return stats_id
+	var unit_key := String(unit.stats.get("unit_id", unit.unit_name)).strip_edges() if unit.get("stats") != null else String(unit.unit_name).strip_edges()
+	if unit_key == "":
+		unit_key = "unit"
+	return "p%d:%s:%s:body0" % [int(unit.owner_id), String(unit.role), unit_key]
+
+
+func _hardware_fault_node_id(collider: Dictionary):
+	if collider.has("hardware_node_id"):
+		return collider.get("hardware_node_id")
+	return collider.get("node_index", collider.get("part_index", -1))
+
+
+func _hardware_fault_state_entry(body_id: String, hardware_id) -> Dictionary:
+	var raw_body = hardware_fault_state_table.get(body_id, {})
+	if not (raw_body is Dictionary):
+		return {}
+	var body: Dictionary = raw_body
+	var raw_state = body.get(hardware_id, body.get(str(hardware_id), {}))
+	return Dictionary(raw_state).duplicate(true) if raw_state is Dictionary else {}
+
+
+func _hardware_fault_runtime_capacity(target, target_collider: Dictionary) -> float:
+	if target_collider.has("runtime_momentum_capacity"):
+		return maxf(1.0, float(target_collider.get("runtime_momentum_capacity", 1.0)))
+	var part_kind := String(target_collider.get("hardware_kind", target_collider.get("part_kind", "")))
+	var fallback := _runtime_contact_part_stiffness(target, target_collider)
+	return _hardware_fault_runtime_service().runtime_momentum_capacity(target_collider, fallback, part_kind)
+
+
+func _hardware_fault_contact_context(attacker, attacker_collider: Dictionary, target, target_collider: Dictionary, contact_momentum: float, attacker_path_stiffness: float) -> Dictionary:
+	var body_id := _hardware_fault_construct_body_id(target, target_collider)
+	if body_id == "":
+		return {}
+	var hardware_id = _hardware_fault_node_id(target_collider)
+	if (hardware_id is int or hardware_id is float) and int(hardware_id) < 0:
+		return {}
+	var state_entry := _hardware_fault_state_entry(body_id, hardware_id)
+	return {
+		"simulation_tick": int(Engine.get_physics_frames()),
+		"attacker_actor_id": str(attacker.get_instance_id()) if attacker != null and is_instance_valid(attacker) else "",
+		"target_construct_body_id": body_id,
+		"target_hardware_node_id": hardware_id,
+		"raw_momentum": contact_momentum,
+		"path_stiffness_momentum": attacker_path_stiffness,
+		"runtime_momentum_capacity": _hardware_fault_runtime_capacity(target, target_collider),
+		"pre_state": String(state_entry.get("state", HardwareFaultRuntimeService.STATE_NORMAL)),
+		"transition_sequence": int(state_entry.get("transition_sequence", 0)),
+		"primary_core_node_id": target_collider.get("primary_core_node_id", state_entry.get("primary_core_node_id", "")),
+	}
+
+
+func _hardware_fault_contact_preview(context: Dictionary) -> Dictionary:
+	if context.is_empty():
+		return {}
+	var transition_context := context.duplicate(true)
+	transition_context["construct_body_id"] = String(context.get("target_construct_body_id", ""))
+	transition_context["hardware_node_id"] = context.get("target_hardware_node_id", "")
+	return _hardware_fault_runtime_service().hit_transition(transition_context)
+
+
+func _apply_hardware_fault_contact_transition(context: Dictionary) -> Dictionary:
+	if context.is_empty():
+		return {}
+	hardware_fault_contact_sequence += 1
+	var contact := context.duplicate(true)
+	contact["contact_sequence"] = hardware_fault_contact_sequence
+	var batch := _hardware_fault_runtime_service().contact_transition_batch(hardware_fault_state_table, [contact])
+	hardware_fault_state_table = Dictionary(batch.get("state_table", {})).duplicate(true)
+	var events: Array = Array(batch.get("transition_events", []))
+	for raw_event in events:
+		if raw_event is Dictionary:
+			hardware_fault_transition_events.append(Dictionary(raw_event).duplicate(true))
+	var intents: Array = Array(batch.get("destruction_intents", []))
+	for raw_intent in intents:
+		if raw_intent is Dictionary:
+			hardware_fault_destruction_intents.append(Dictionary(raw_intent).duplicate(true))
+	hardware_fault_destruction_intents = _hardware_fault_runtime_service().ordered_destruction_intents(hardware_fault_destruction_intents)
+	return Dictionary(events[0]).duplicate(true) if not events.is_empty() and events[0] is Dictionary else _hardware_fault_contact_preview(context)
+
+
+func _apply_hardware_fault_fields_to_event(event: Dictionary, transition: Dictionary) -> void:
+	if transition.is_empty():
+		return
+	event["path_capped_momentum"] = float(transition.get("path_capped_momentum", event.get("path_capped_momentum", event.get("capped_momentum", 0.0))))
+	event["hardware_capped_momentum"] = float(transition.get("hardware_capped_momentum", event.get("hardware_capped_momentum", event.get("capped_momentum", 0.0))))
+	event["runtime_momentum_capacity"] = float(transition.get("runtime_momentum_capacity", event.get("runtime_momentum_capacity", 1.0)))
+	event["capped_momentum"] = float(transition.get("hardware_capped_momentum", event.get("capped_momentum", 0.0)))
+	event["momentum"] = float(transition.get("hardware_capped_momentum", event.get("momentum", 0.0)))
+	event["momentum_magnitude"] = event["momentum"]
+	event["knock_momentum"] = float(transition.get("hardware_capped_momentum", event.get("knock_momentum", event["momentum"])))
+	event["hardware_fault_pre_state"] = String(transition.get("pre_state", ""))
+	event["hardware_fault_post_state"] = String(transition.get("post_state", ""))
+	event["hardware_fault_transition"] = String(transition.get("transition", "none"))
+	event["hardware_fault_transition_sequence"] = int(transition.get("transition_sequence", 0))
+	event["hardware_fault_destruction_intent"] = String(transition.get("destruction_intent", "none"))
+	event["target_construct_body_id"] = String(transition.get("target_construct_body_id", transition.get("construct_body_id", "")))
+	event["target_hardware_node_id"] = transition.get("target_hardware_node_id", transition.get("hardware_node_id", ""))
+
+
+func _hardware_fault_state_by_hardware_id(body_id: String) -> Dictionary:
+	var raw_body = hardware_fault_state_table.get(body_id, {})
+	var result := {}
+	if not (raw_body is Dictionary):
+		return result
+	for raw_id in Dictionary(raw_body).keys():
+		var entry = Dictionary(raw_body)[raw_id]
+		if entry is Dictionary:
+			result[raw_id] = String(Dictionary(entry).get("state", HardwareFaultRuntimeService.STATE_NORMAL))
+			result[str(raw_id)] = result[raw_id]
+	return result
+
+
+func _hardware_fault_required_ids_for_binding(binding: Dictionary) -> Array:
+	var required: Array = []
+	for key in ["root_index", "source_node", "hardware_node_id"]:
+		if binding.has(key) and not required.has(binding[key]):
+			required.append(binding[key])
+	for raw_node in Array(binding.get("target_nodes", [])):
+		if not required.has(raw_node):
+			required.append(raw_node)
+	return required
+
+
+func _hardware_fault_action_blocked(unit, attack_index: int) -> bool:
+	if unit == null or not is_instance_valid(unit) or unit.get("stats") == null:
+		return false
+	for raw_binding in Array(unit.stats.get("runtime_module_bindings", [])):
+		if not (raw_binding is Dictionary):
+			continue
+		var binding: Dictionary = raw_binding
+		if int(binding.get("attack_key", 0)) != attack_index + 1:
+			continue
+		var body_id := _hardware_fault_construct_body_id(unit, binding)
+		if body_id == "":
+			continue
+		var required := _hardware_fault_required_ids_for_binding(binding)
+		if required.is_empty():
+			continue
+		var report := _hardware_fault_runtime_service().action_dependency_report(required, _hardware_fault_state_by_hardware_id(body_id))
+		if bool(report.get("blocked", false)):
+			return true
+	return false
+
+
 func _runtime_collider_uses_torso_damage(collider: Dictionary) -> bool:
 	return _runtime_contact_service().collider_uses_torso_damage(collider)
 
@@ -31327,12 +31520,14 @@ func _apply_runtime_contact_damage(attacker, attacker_collider: Dictionary, targ
 	var damage_type := _runtime_contact_damage_type(attacker_collider)
 	var material_class := _runtime_contact_material_class(attacker_collider)
 	var attacker_path_stiffness := _runtime_contact_path_stiffness(attacker, attacker_collider)
+	var hardware_fault_context := _hardware_fault_contact_context(attacker, attacker_collider, target, target_collider, contact_momentum, attacker_path_stiffness)
+	var hardware_fault_preview := _hardware_fault_contact_preview(hardware_fault_context)
 	var vulnerability_event := {
 		"damage_type": damage_type,
 		"passive_contact": true,
 		"runtime_contact": true,
 	}
-	var intent := _runtime_contact_service().damage_intent({
+	var damage_context := {
 		"attacker_id": int(attacker.get_instance_id()) if attacker != null and is_instance_valid(attacker) else 0,
 		"target_id": int(target.get_instance_id()) if target != null and is_instance_valid(target) else 0,
 		"attacker_collider": attacker_collider,
@@ -31349,10 +31544,17 @@ func _apply_runtime_contact_damage(attacker, attacker_collider: Dictionary, targ
 		"damage_type": damage_type,
 		"material_class": material_class,
 		"vulnerability_multiplier": _vulnerability_multiplier(target, vulnerability_event),
-	})
+	}
+	if not hardware_fault_preview.is_empty():
+		damage_context["path_capped_momentum"] = float(hardware_fault_preview.get("path_capped_momentum", contact_momentum))
+		damage_context["hardware_capped_momentum"] = float(hardware_fault_preview.get("hardware_capped_momentum", contact_momentum))
+		damage_context["runtime_momentum_capacity"] = float(hardware_fault_preview.get("runtime_momentum_capacity", 1.0))
+	var intent := _runtime_contact_service().damage_intent(damage_context)
 	if not bool(intent.get("should_apply", false)):
 		return
 	var event: Dictionary = Dictionary(intent.get("event", {}))
+	if not hardware_fault_preview.is_empty():
+		_apply_hardware_fault_fields_to_event(event, _apply_hardware_fault_contact_transition(hardware_fault_context))
 	event["attack_key"] = int(attacker_collider.get("attack_key", int(attacker_collider.get("part_index", 0)) + 1))
 	event["group_name"] = String(attacker_collider.get("name", attacker_collider.get("part_name", "CONTACT")))
 	event["target_part_kind"] = String(target_collider.get("part_kind", "core"))
@@ -36054,8 +36256,9 @@ func _part_disabled(unit, attack_index: int) -> bool:
 		return false
 	if unit.has_meta("severed_limbs") and unit.get_meta("severed_limbs") is Dictionary:
 		var severed: Dictionary = unit.get_meta("severed_limbs")
-		return bool(severed.get(str(clampi(attack_index, 0, ATTACK_GROUP_COUNT - 1)), false))
-	return false
+		if bool(severed.get(str(clampi(attack_index, 0, ATTACK_GROUP_COUNT - 1)), false)):
+			return true
+	return _hardware_fault_action_blocked(unit, attack_index)
 
 
 func _module_fail_feedback(unit, attack_index: int) -> void:
