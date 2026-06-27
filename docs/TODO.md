@@ -6,12 +6,11 @@ Status: gameplay baseline polished; the items below have reviewed ownership and 
 
 Unit editor legality:
 
-- Implement `scripts/services/unit_editor_legality_service.gd`.
-- Add exact socket `part_size <= socket_capacity` validation.
-- Reject mixed hardware manufacturers inside each connected construct body while excluding software makers.
-- Enforce exactly one Soul for heroes, at least one Source Code for puppets, and Ether for barriers.
-- Return stable reason codes plus Chinese and English messages through the existing save, training, team, and battle-entry gates.
-- Follow `docs/plans/2026-06-24-unit-editor-legality-roadmap.md` and write the named rejection probes before each rule.
+- Pure `scripts/services/unit_editor_legality_service.gd` baseline is implemented and integrated through `_training_blueprint_illegal_note()`; role identity, explicit socket-size records, explicit construct-body manufacturer records, localized messages, and the hero main save/training rejection path are covered by `tools/role_identity_software_rejection_probe.gd`, `tools/unit_editor_socket_size_rejection_probe.gd`, `tools/construct_body_manufacturer_rejection_probe.gd`, and `tools/unit_editor_legality_main_gate_probe.gd`.
+- Continue expanding exact socket `part_size <= socket_capacity` validation from explicit records to automatically materialized live topology socket records.
+- Continue expanding per-construct-body manufacturer rejection from explicit records to automatically materialized connected-component hardware records while excluding software makers.
+- Add dedicated puppet Source Code and barrier Ether main-gate probes, plus focused save/team/battle-entry probes, before claiming full unit-editor legality completion.
+- Follow `docs/plans/2026-06-24-unit-editor-legality-roadmap.md` for the remaining topology-adapter and entrypoint coverage work.
 
 Hardware fault runtime:
 
