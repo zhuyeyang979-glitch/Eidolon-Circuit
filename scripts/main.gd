@@ -8727,6 +8727,39 @@ func _training_begin_from_scout_intent() -> Dictionary:
 	return {"handled": true, "action": "configure_and_begin_training", "pending_mode": pending_battle_mode}
 
 
+func _formal_battle_start_blocking_summary(mode: String) -> Dictionary:
+	if mode == MODE_TRAINING:
+		return {}
+	_normalize_initial_sortie_for_cost(1)
+	_normalize_initial_sortie_for_cost(2)
+	_ensure_sortie_loadout(1)
+	_ensure_sortie_loadout(2)
+	for player_id in [1, 2]:
+		var summary := _repair_ai_battle_entry_if_needed(player_id, mode)
+		if bool(summary.get("valid", false)):
+			continue
+		return {"player_id": player_id, "summary": summary}
+	return {}
+
+
+func _block_formal_battle_start(blocking: Dictionary) -> void:
+	var player_id := int(blocking.get("player_id", 1))
+	var summary: Dictionary = Dictionary(blocking.get("summary", {}))
+	var note := String(summary.get("note", "check starter and topology"))
+	scout_timer = maxf(scout_timer, 8.0)
+	if scout_hint_label != null:
+		scout_hint_label.text = "P%d 出战仍不合法：%s" % [player_id, _localized_system_text(note)] if _ui_is_zh() else "P%d battle entry is not legal yet: %s" % [player_id, note]
+	if star_soul_bp_view != null:
+		star_soul_bp_view.close()
+	star_soul_bp_active = false
+	star_soul_bp_pending_mode = ""
+	star_soul_bp_model = {}
+	star_soul_battle_draft_payload = {}
+	_set_visible_layer(scout_layer)
+	_update_scout_ui()
+	_play_sfx_wave("alarm", 170.0, 0.08, -16.0)
+
+
 func _begin_page_navigation(target_state: String, reason: String, return_target: String = "", payload: Dictionary = {}) -> void:
 	if navigation_service == null:
 		return
@@ -12576,18 +12609,9 @@ func _try_begin_battle_from_scout() -> void:
 					return
 				_begin_battle(String(training_begin_intent.get("pending_mode", pending_battle_mode)), true)
 				return
-	_normalize_initial_sortie_for_cost(1)
-	_normalize_initial_sortie_for_cost(2)
-	_ensure_sortie_loadout(1)
-	_ensure_sortie_loadout(2)
-	var players_to_check := [1, 2] if pending_battle_mode == MODE_AI and ai_battle_seat == 3 else [1, 2]
-	for player_id in players_to_check:
-		var summary := _repair_ai_battle_entry_if_needed(player_id, pending_battle_mode)
-		if bool(summary.get("valid", false)):
-			continue
-		scout_timer = maxf(scout_timer, 8.0)
-		scout_hint_label.text = "P%d 出战仍不合法：%s" % [player_id, _localized_system_text(String(summary.get("note", "check starter and topology")))] if _ui_is_zh() else "P%d battle entry is not legal yet: %s" % [player_id, String(summary.get("note", "check starter and topology"))]
-		_update_scout_ui()
+	var blocking := _formal_battle_start_blocking_summary(pending_battle_mode)
+	if not blocking.is_empty():
+		_block_formal_battle_start(blocking)
 		return
 	if pending_battle_mode == MODE_PVP:
 		_show_star_soul_bp(pending_battle_mode)
@@ -12643,6 +12667,10 @@ func _complete_star_soul_bp() -> void:
 		star_soul_bp_view.close()
 	var mode := star_soul_bp_pending_mode if star_soul_bp_pending_mode != "" else MODE_PVP
 	star_soul_bp_pending_mode = ""
+	var blocking := _formal_battle_start_blocking_summary(mode)
+	if not blocking.is_empty():
+		_block_formal_battle_start(blocking)
+		return
 	_begin_battle(mode, true, "star_soul_bp_complete")
 
 

@@ -39,6 +39,9 @@ func _init() -> void:
 		"tools/unit_editor_barrier_ether_main_gate_probe.gd",
 		"tools/unit_editor_legality_team_validation_probe.gd",
 		"tools/unit_editor_legality_battle_entry_probe.gd",
+		"tools/unit_editor_legality_formal_entry_probe.gd",
+		"tools/unit_editor_legality_combined_rule_probe.gd",
+		"tools/ai_entry_probe.gd",
 	]:
 		_require(roadmap, owner, "legality roadmap")
 	for evidence in [
@@ -58,6 +61,7 @@ func _init() -> void:
 		"func _topology_rule_note",
 		"func _unit_editor_legality_topology_socket_size_records",
 		"unit_legality_note",
+		"func _formal_battle_start_blocking_summary",
 	]:
 		_require(main_source, gate, "main legality gate")
 	if failed:
