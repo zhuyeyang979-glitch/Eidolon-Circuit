@@ -27492,6 +27492,17 @@ func _runtime_gun_activation_active(player_id: int) -> bool:
 	return _gun_activation_service().activation_state_active(state)
 
 
+func _runtime_gun_activation_blocked_by_hardware_fault(player_id: int, attack_index: int, unit, binding: Dictionary, label: String) -> bool:
+	var report := _hardware_fault_dependency_report_for_binding(unit, binding)
+	if not bool(report.get("blocked", false)):
+		return false
+	var reason := _record_hardware_fault_action_gate(unit, report)
+	_record_attack_feedback(player_id, attack_index, "block", reason, 1.0, 0.9)
+	_play_module_fail_sfx()
+	_show_battle_message("%s 被硬件故障拦截：%s" % [label, reason] if _ui_is_zh() else "%s blocked: %s" % [label, reason], 0.55)
+	return true
+
+
 func _binding_drive_allocation_for_node(binding: Dictionary, node_index: int, fallback: float = 0.0) -> float:
 	return _gun_activation_service().binding_drive_allocation_for_node(binding, node_index, fallback)
 
@@ -27586,6 +27597,10 @@ func _runtime_gun_activation_event_for(player_id: int) -> Dictionary:
 	var binding: Dictionary = state.get("binding", {}) if state.get("binding", {}) is Dictionary else {}
 	if binding.is_empty():
 		return {}
+	var attack_index := int(state.get("attack_index", int(binding.get("attack_key", 1)) - 1))
+	if _hardware_fault_binding_dependency_blocked(unit, binding):
+		_record_attack_feedback(player_id, attack_index, "block", String(unit.get_meta("last_module_gate_reason", "hardware fault")), 1.0, 0.86)
+		return {}
 	var group := _runtime_gun_group_for_binding(unit, binding)
 	if group.is_empty():
 		return {}
@@ -27646,6 +27661,8 @@ func _runtime_gun_activation_event_for(player_id: int) -> Dictionary:
 func _start_runtime_gun_activation(player_id: int, prefix: String, attack_index: int, action_name: String, binding: Dictionary) -> void:
 	var unit = active_units[player_id]["hero"]
 	if not _is_live_unit(unit):
+		return
+	if _runtime_gun_activation_blocked_by_hardware_fault(player_id, attack_index, unit, binding, "Gun Activate"):
 		return
 	var segment := _runtime_gun_segment_for_binding(unit, binding)
 	var source_gate := _gun_activation_service().activation_source_gate(segment)
@@ -27860,6 +27877,11 @@ func _tick_runtime_gun_activation(player_id: int, prefix: String, delta: float) 
 		_clear_salvo_landing_preview(player_id)
 		return
 	var binding: Dictionary = state.get("binding", {}) if state.get("binding", {}) is Dictionary else {}
+	if _runtime_gun_activation_blocked_by_hardware_fault(player_id, int(state.get("attack_index", int(binding.get("attack_key", 1)) - 1)), unit, binding, "Gun Activate"):
+		_clear_salvo_landing_preview(player_id)
+		_clear_runtime_gun_pose_for_payload(unit, state)
+		gun_activation_state[player_id] = {}
+		return
 	state = _gun_activation_service().tick_state_payload(state, delta, _runtime_binding_gun_aim_input_mode(binding))
 	var current_direction := _runtime_gun_activation_direction(unit, binding)
 	if state.get("aim_direction", Vector2.ZERO) is Vector2:
@@ -27920,6 +27942,12 @@ func _release_runtime_gun_activation(player_id: int) -> void:
 	if not _is_live_unit(unit):
 		gun_activation_state[player_id] = {}
 		_clear_salvo_landing_preview(player_id)
+		return
+	var binding: Dictionary = state.get("binding", {}) if state.get("binding", {}) is Dictionary else {}
+	if _runtime_gun_activation_blocked_by_hardware_fault(player_id, int(state.get("attack_index", int(binding.get("attack_key", 1)) - 1)), unit, binding, "Gun Activate"):
+		gun_activation_state[player_id] = {}
+		_clear_salvo_landing_preview(player_id)
+		_clear_runtime_gun_pose_for_payload(unit, state)
 		return
 	var event := _runtime_gun_activation_event_for(player_id)
 	gun_activation_state[player_id] = {}
@@ -28227,8 +28255,11 @@ func _hero_normal_attack(player_id: int, prefix: String, input_vector: Vector2, 
 		_hero_runtime_module_attack(player_id, prefix, input_vector, attack_index, requested_state)
 		return
 	if _part_disabled(hero, attack_index):
-		_record_attack_feedback(player_id, attack_index, "block", "limb severed", 1.0, 0.9)
-		_module_fail_feedback(hero, attack_index)
+		var disabled_reason := String(hero.get_meta("last_module_gate_reason", "limb severed"))
+		if disabled_reason.strip_edges() == "":
+			disabled_reason = "limb severed"
+		_record_attack_feedback(player_id, attack_index, "block", disabled_reason, 1.0, 0.9)
+		_module_fail_feedback(hero, attack_index, disabled_reason)
 		return
 	var group := override_group.duplicate(true) if not override_group.is_empty() else _attack_group(hero, attack_index)
 	if override_group.is_empty() and bool(group.get("requires_joint_pair", false)):
@@ -31939,6 +31970,46 @@ func _hardware_fault_required_ids_for_binding(binding: Dictionary) -> Array:
 	return required
 
 
+func _hardware_fault_dependency_report_for_binding(unit, binding: Dictionary) -> Dictionary:
+	if unit == null or not is_instance_valid(unit) or unit.get("stats") == null or binding.is_empty():
+		return {"allowed": true, "blocked": false}
+	var body_id := _hardware_fault_construct_body_id(unit, binding)
+	if body_id == "":
+		return {"allowed": true, "blocked": false}
+	var required := _hardware_fault_required_ids_for_binding(binding)
+	if required.is_empty():
+		return {"allowed": true, "blocked": false, "construct_body_id": body_id}
+	var report := _hardware_fault_runtime_service().action_dependency_report(required, _hardware_fault_state_by_hardware_id(body_id))
+	report["construct_body_id"] = body_id
+	report["required_hardware_ids"] = required.duplicate(true)
+	return report
+
+
+func _hardware_fault_gate_reason(report: Dictionary) -> String:
+	var hardware_id := String(report.get("blocked_hardware_id", "")).strip_edges()
+	var state := String(report.get("blocking_state", HardwareFaultRuntimeService.STATE_NORMAL)).strip_edges()
+	if hardware_id == "":
+		hardware_id = "?"
+	if state == "":
+		state = HardwareFaultRuntimeService.STATE_FAULTED
+	return "hardware %s %s" % [hardware_id, state]
+
+
+func _record_hardware_fault_action_gate(unit, report: Dictionary) -> String:
+	var reason := _hardware_fault_gate_reason(report)
+	if unit != null and is_instance_valid(unit):
+		unit.set_meta("last_module_gate_reason", reason)
+	return reason
+
+
+func _hardware_fault_binding_dependency_blocked(unit, binding: Dictionary) -> bool:
+	var report := _hardware_fault_dependency_report_for_binding(unit, binding)
+	if not bool(report.get("blocked", false)):
+		return false
+	_record_hardware_fault_action_gate(unit, report)
+	return true
+
+
 func _hardware_fault_action_blocked(unit, attack_index: int) -> bool:
 	if unit == null or not is_instance_valid(unit) or unit.get("stats") == null:
 		return false
@@ -31948,14 +32019,7 @@ func _hardware_fault_action_blocked(unit, attack_index: int) -> bool:
 		var binding: Dictionary = raw_binding
 		if int(binding.get("attack_key", 0)) != attack_index + 1:
 			continue
-		var body_id := _hardware_fault_construct_body_id(unit, binding)
-		if body_id == "":
-			continue
-		var required := _hardware_fault_required_ids_for_binding(binding)
-		if required.is_empty():
-			continue
-		var report := _hardware_fault_runtime_service().action_dependency_report(required, _hardware_fault_state_by_hardware_id(body_id))
-		if bool(report.get("blocked", false)):
+		if _hardware_fault_binding_dependency_blocked(unit, binding):
 			return true
 	return false
 
@@ -36741,16 +36805,19 @@ func _part_disabled(unit, attack_index: int) -> bool:
 	if unit.has_meta("severed_limbs") and unit.get_meta("severed_limbs") is Dictionary:
 		var severed: Dictionary = unit.get_meta("severed_limbs")
 		if bool(severed.get(str(clampi(attack_index, 0, ATTACK_GROUP_COUNT - 1)), false)):
+			unit.set_meta("last_module_gate_reason", "limb severed")
 			return true
 	return _hardware_fault_action_blocked(unit, attack_index)
 
 
-func _module_fail_feedback(unit, attack_index: int) -> void:
+func _module_fail_feedback(unit, attack_index: int, reason: String = "limb severed") -> void:
 	if unit == null or not is_instance_valid(unit):
 		return
+	if reason.strip_edges() == "":
+		reason = "limb severed"
 	_play_module_fail_sfx()
 	_spawn_hit_effect(unit, 1, "laser", false, "web_snap")
-	_show_battle_message("%s action %d cannot solve: limb severed" % [unit.unit_name, attack_index + 1], 0.65)
+	_show_battle_message("%s action %d cannot solve: %s" % [unit.unit_name, attack_index + 1, reason], 0.65)
 
 
 func _play_module_fail_sfx() -> void:
