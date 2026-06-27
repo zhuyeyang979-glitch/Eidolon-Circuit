@@ -100,6 +100,7 @@
     "unit_editor_socket_size_rejection_probe",
     "construct_body_manufacturer_rejection_probe",
     "hardware_fault_design_probe",
+    "hardware_fault_contract_probe",
     "source_code_priority_service_probe",
     "star_soul_loop_balance_examples_probe",
     "star_soul_loop_docs_reconciliation_probe",
