@@ -178,6 +178,11 @@ const HARDWARE_FAULT_TRANSIENT_SAVE_KEYS = {
 	"post_state": true,
 	"destruction_intent": true,
 }
+const UNIT_EDITOR_LEGALITY_TRANSIENT_SAVE_KEYS = {
+	"unit_editor_legality_report": true,
+	"blocking_codes": true,
+	"blocking_notes": true,
+}
 const SAVE_KIND_SINGLE_UNIT = "single_unit"
 const SAVE_KIND_PUPPET_GROUP = "puppet_group"
 const BUILTIN_HERO_PRESET_SOURCE_PREFIX = "builtin://hero_presets/"
@@ -3778,7 +3783,8 @@ func _strip_hardware_fault_transient_save_fields(value):
 		var source: Dictionary = value
 		var cleaned := {}
 		for raw_key in source.keys():
-			if HARDWARE_FAULT_TRANSIENT_SAVE_KEYS.has(String(raw_key)):
+			var key := String(raw_key)
+			if HARDWARE_FAULT_TRANSIENT_SAVE_KEYS.has(key) or UNIT_EDITOR_LEGALITY_TRANSIENT_SAVE_KEYS.has(key):
 				continue
 			cleaned[raw_key] = _strip_hardware_fault_transient_save_fields(source[raw_key])
 		return cleaned
@@ -5978,7 +5984,15 @@ func _save_puppet_group_from_saved_unit_selection(group_name: String, selection:
 			saved_unit_hint_label.text = String(intent.get("note", ""))
 		_play_sfx_wave("alarm", 170.0, 0.08, -16.0)
 		return ""
-	var members: Array = Array(intent.get("members", []))
+	var members: Array = []
+	for raw_member in Array(intent.get("members", [])):
+		if not (raw_member is Dictionary):
+			continue
+		var member: Dictionary = _canonical_saved_unit_blueprint_for_library(Dictionary(raw_member))
+		member["role"] = "puppet"
+		member["schema_version"] = SAVED_UNIT_SCHEMA_VERSION
+		member["save_kind"] = SAVE_KIND_SINGLE_UNIT
+		members.append(member)
 	var first_bp: Dictionary = Dictionary(members[0]).duplicate(true)
 	var clean_name := group_name.strip_edges()
 	if clean_name == "":

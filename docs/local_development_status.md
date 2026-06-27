@@ -1839,3 +1839,9 @@ Next safe chunk: continue only with narrow pure-rule extraction where `main.gd` 
 - `tools/unit_editor_legality_cross_entrypoint_probe.gd` now builds socket-size, socket-kind, and manufacturer-illegal topology variants from the legal starter fixture and verifies that the shared report preserves the expected stable code.
 - The probe covers editor save rejection, saved-unit readback legality notes, team-normalized saved entries, direct battle-entry legality, saved-team load/import rejection, and the formal battle-entry summary without changing saved-unit topology storage.
 - The Unit Editor legality roadmap now marks the broader saved-unit, saved-team, team-validation, and battle-entry fixture item as done; the next active guardrail remains schema invariance until a separate saved-unit migration plan exists.
+
+2026-06-27 Unit Editor schema invariance follow-up:
+
+- `tools/unit_editor_schema_invariance_probe.gd` now injects transient legality report fields into single-unit and puppet-group save inputs, then verifies those fields are absent from saved JSON while `momentum_chain_v3`, `single_unit` / `puppet_group`, and `custom_topology` keys remain stable.
+- `main.gd` now strips Unit Editor legality transient save keys through the same recursive save-cleanup boundary that already removes hardware fault transient runtime fields.
+- Puppet-group saves now normalize member blueprints through the canonical saved-unit blueprint path before writing the group payload, so nested member blueprints do not persist transient legality reports.

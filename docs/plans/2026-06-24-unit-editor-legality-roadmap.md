@@ -42,7 +42,7 @@ The reusable entry point is `_training_blueprint_illegal_note()` in `scripts/mai
 11. Done: add broader saved-team load, PVP/AI battle-start, and combined-rule fixtures. Covered by `tools/unit_editor_legality_formal_entry_probe.gd`, `tools/unit_editor_legality_combined_rule_probe.gd`, and existing `tools/ai_entry_probe.gd`.
 12. Done: add a persistent bilingual editor legality status and move exact socket-kind ownership, compatible pairing, and per-socket occupancy into `scripts/services/unit_editor_legality_service.gd`. Covered by `tools/unit_editor_legality_preview_slot_kind_probe.gd`.
 13. Done: add broader saved-unit, saved-team, team-validation, and battle-entry fixtures for socket-size, socket-kind, and manufacturer failures. Covered by `tools/unit_editor_legality_cross_entrypoint_probe.gd`.
-14. Next: continue keeping legacy topology keys and saved-unit schema unchanged until a separate migration. Guarded by `tools/unit_editor_schema_invariance_probe.gd`, which verifies `momentum_chain_v3`, `single_unit` / `puppet_group`, `custom_topology` keys, and absence of persisted transient legality reports.
+14. Done: continue keeping legacy topology keys and saved-unit schema unchanged until a separate migration. Guarded by `tools/unit_editor_schema_invariance_probe.gd`, which verifies `momentum_chain_v3`, `single_unit` / `puppet_group`, `custom_topology` keys, and absence of persisted transient legality reports.
 
 ## Acceptance For The Follow-Up
 
@@ -51,4 +51,4 @@ The reusable entry point is `_training_blueprint_illegal_note()` in `scripts/mai
 - No invalid build is silently repaired or admitted to battle.
 - Each new hard rule has a failing probe before implementation.
 - `tools/unit_editor_legality_cross_entrypoint_probe.gd` covers socket-size, socket-kind, and manufacturer failures across saved-unit readback, saved-team load/import, team normalization, direct battle entry, and formal battle summary paths.
-- `tools/unit_editor_schema_invariance_probe.gd` proves the legality work keeps legacy topology keys and saved-unit schema unchanged until a dedicated migration plan exists.
+- `tools/unit_editor_schema_invariance_probe.gd` proves the legality work keeps legacy topology keys and saved-unit schema unchanged for single-unit and puppet-group saves until a dedicated migration plan exists.

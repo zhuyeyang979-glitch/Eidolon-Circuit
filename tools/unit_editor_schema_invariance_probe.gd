@@ -8,6 +8,12 @@ const SERVICE_PATH := "res://scripts/services/unit_editor_legality_service.gd"
 const MANIFEST_PATH := "res://tools/probe_manifest.json"
 const ROADMAP_PATH := "res://docs/plans/2026-06-24-unit-editor-legality-roadmap.md"
 
+const TRANSIENT_LEGALITY_SAVE_KEYS := [
+	"unit_editor_legality_report",
+	"blocking_codes",
+	"blocking_notes",
+]
+
 var failed := false
 
 
@@ -33,6 +39,38 @@ func _json_stable(value: Variant) -> String:
 func _remove_saved_file(path: String) -> void:
 	if FileAccess.file_exists(path):
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
+
+
+func _contains_key(value, key: String) -> bool:
+	if value is Dictionary:
+		var dict: Dictionary = value
+		if dict.has(key):
+			return true
+		for raw_key in dict.keys():
+			if _contains_key(dict[raw_key], key):
+				return true
+	if value is Array:
+		for item in Array(value):
+			if _contains_key(item, key):
+				return true
+	return false
+
+
+func _assert_no_transient_legality_fields(label: String, value) -> void:
+	for key in TRANSIENT_LEGALITY_SAVE_KEYS:
+		_require(not _contains_key(value, key), "%s should not persist transient legality key %s: %s" % [label, key, str(value)])
+
+
+func _pollute_transient_legality_fields(unit_bp: Dictionary) -> Dictionary:
+	var polluted := unit_bp.duplicate(true)
+	polluted["unit_editor_legality_report"] = {
+		"valid": false,
+		"blocking_codes": ["probe_transient_legality"],
+		"blocking_notes": ["probe_transient_legality"],
+	}
+	polluted["blocking_codes"] = ["probe_transient_legality"]
+	polluted["blocking_notes"] = ["probe_transient_legality"]
+	return polluted
 
 
 func _init() -> void:
@@ -85,6 +123,7 @@ func _runtime_save_contract_checks() -> void:
 		main.queue_free()
 		return
 
+	legal_bp = _pollute_transient_legality_fields(legal_bp)
 	legal_bp["schema_version"] = "legacy_probe_input"
 	legal_bp["save_kind"] = "legacy_probe_input_kind"
 	var topology_before := _json_stable(legal_bp.get("custom_topology", {}))
@@ -115,7 +154,65 @@ func _runtime_save_contract_checks() -> void:
 			_require(String(payload.get("save_kind", "")) == MainScene.SAVE_KIND_SINGLE_UNIT, "Payload save kind should remain single_unit.")
 			_require(blueprint.has("custom_topology"), "Saved blueprint should keep custom_topology.")
 			_require(topology.has("nodes") and topology.has("edges") and topology.has("edge_snap_version"), "Saved custom_topology should keep nodes/edges/edge_snap_version keys.")
-			_require(not payload.has("unit_editor_legality_report") and not blueprint.has("unit_editor_legality_report"), "Saved payload should not persist transient legality reports.")
-			_require(not payload.has("blocking_codes") and not blueprint.has("blocking_codes"), "Saved payload should not persist transient blocking codes.")
+			_assert_no_transient_legality_fields("Saved single-unit payload", payload)
 		_remove_saved_file(save_path)
+	_runtime_puppet_group_save_contract_checks(main)
 	main.queue_free()
+
+
+func _runtime_puppet_group_save_contract_checks(main) -> void:
+	var puppet_a := _pollute_transient_legality_fields(_minimal_puppet(main, "Schema Invariance Puppet A"))
+	var puppet_b := _pollute_transient_legality_fields(_minimal_puppet(main, "Schema Invariance Puppet B"))
+	var selection := [
+		{"unit_library": true, "role": "puppet", "path": "probe://schema_puppet_a", "unit_name": "Schema Invariance Puppet A", "blueprint": puppet_a},
+		{"unit_library": true, "role": "puppet", "path": "probe://schema_puppet_b", "unit_name": "Schema Invariance Puppet B", "blueprint": puppet_b},
+	]
+	var group_path: String = main._save_puppet_group_from_saved_unit_selection("Schema Invariance Puppet Group", selection)
+	_require(group_path != "" and FileAccess.file_exists(group_path), "Puppet group should save with the current schema, got %s" % group_path)
+	if group_path == "" or not FileAccess.file_exists(group_path):
+		return
+	var payload_raw := FileAccess.get_file_as_string(ProjectSettings.globalize_path(group_path))
+	var parsed = JSON.parse_string(payload_raw)
+	_require(parsed is Dictionary, "Puppet group payload should be JSON dictionary.")
+	if parsed is Dictionary:
+		var payload: Dictionary = parsed
+		var blueprint: Dictionary = Dictionary(payload.get("blueprint", {})) if payload.get("blueprint", {}) is Dictionary else {}
+		var group_blueprints: Array = Array(payload.get("puppet_group_blueprints", []))
+		_require(String(payload.get("schema_version", "")) == MainScene.SAVED_UNIT_SCHEMA_VERSION, "Puppet group payload schema should stay at the current saved-unit schema.")
+		_require(String(payload.get("save_kind", "")) == MainScene.SAVE_KIND_PUPPET_GROUP, "Puppet group payload save kind should remain puppet_group.")
+		_require(String(blueprint.get("schema_version", "")) == MainScene.SAVED_UNIT_SCHEMA_VERSION, "Puppet group blueprint schema should stay at the current saved-unit schema.")
+		_require(String(blueprint.get("save_kind", "")) == MainScene.SAVE_KIND_PUPPET_GROUP, "Puppet group blueprint save kind should remain puppet_group.")
+		_require(group_blueprints.size() == 2, "Puppet group payload should keep two member blueprints.")
+		for i in range(group_blueprints.size()):
+			_require(group_blueprints[i] is Dictionary, "Puppet group member %d should be a dictionary." % i)
+			if group_blueprints[i] is Dictionary:
+				var member: Dictionary = group_blueprints[i]
+				var topology: Dictionary = Dictionary(member.get("custom_topology", {})) if member.get("custom_topology", {}) is Dictionary else {}
+				_require(String(member.get("schema_version", "")) == MainScene.SAVED_UNIT_SCHEMA_VERSION, "Puppet group member %d schema should stay current." % i)
+				_require(String(member.get("save_kind", "")) == MainScene.SAVE_KIND_SINGLE_UNIT, "Puppet group member %d should remain a single unit." % i)
+				_require(topology.has("nodes") and topology.has("edges") and topology.has("edge_snap_version"), "Puppet group member %d should keep custom_topology keys." % i)
+		_assert_no_transient_legality_fields("Saved puppet-group payload", payload)
+	_remove_saved_file(group_path)
+
+
+func _minimal_puppet(main, unit_name: String) -> Dictionary:
+	var core_index: int = int(main._component_index_by_name("puppet", "muscle", "FLOATING BIT CORE", 95))
+	var node: Dictionary = main._topology_component_node(0, "CORE", Vector2(0.5, 0.5), "muscle", core_index)
+	return {
+		"name": unit_name,
+		"unit_name": unit_name,
+		"role": "puppet",
+		"archetype": "custom",
+		"special": 0,
+		"joint": 0,
+		"limb_muscle": 0,
+		"muscle": core_index,
+		"booster": 0,
+		"engine": 0,
+		"cooling": 0,
+		"module": 0,
+		"blank_canvas": false,
+		"custom_topology": {"nodes": [node], "edges": [], "edge_snap_version": MainScene.TOPOLOGY_SNAP_VERSION},
+		"slot_payloads": [],
+		"purchased_parts": {},
+	}
