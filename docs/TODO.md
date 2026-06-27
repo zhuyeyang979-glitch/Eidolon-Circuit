@@ -15,7 +15,7 @@ Unit editor legality:
 
 Hardware fault runtime:
 
-- Pure state service and `tools/hardware_fault_contract_probe.gd` are implemented, including deterministic pure contact replay; live battle adapter, save round-trip, and live replay probes remain pending.
+- Pure state service, deterministic pure contact replay, and the save round-trip guard are implemented through `tools/hardware_fault_contract_probe.gd` and `tools/hardware_fault_save_roundtrip_probe.gd`; live battle adapter and live replay probes remain pending.
 - Continue with the runtime adapter described in `docs/plans/2026-06-24-hardware-fault-runtime.md`.
 - Add `normal`, `faulted`, and `destroyed` hardware states without serializing battle state into blueprints.
 - Cap damage momentum at hardware capacity, disable dependent actions, and route primary-core destruction through the existing construct-body destruction flow.

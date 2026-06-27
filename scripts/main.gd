@@ -163,6 +163,16 @@ const SAVED_TEAMS_DIR = "user://saved_teams"
 const SAVED_TEAM_SCHEMA_VERSION = "momentum_chain_v3"
 const SAVED_UNITS_DIR = "user://saved_units"
 const SAVED_UNIT_SCHEMA_VERSION = "momentum_chain_v3"
+const HARDWARE_FAULT_TRANSIENT_SAVE_KEYS = {
+	"hardware_fault_state_table": true,
+	"hardware_fault_transition_events": true,
+	"hardware_fault_destruction_intents": true,
+	"runtime_momentum_capacity": true,
+	"transition_sequence": true,
+	"pre_state": true,
+	"post_state": true,
+	"destruction_intent": true,
+}
 const SAVE_KIND_SINGLE_UNIT = "single_unit"
 const SAVE_KIND_PUPPET_GROUP = "puppet_group"
 const BUILTIN_HERO_PRESET_SOURCE_PREFIX = "builtin://hero_presets/"
@@ -3708,7 +3718,27 @@ func _sanitize_saved_unit_blueprint_for_library(unit_bp: Dictionary) -> Dictiona
 	return unit_bp.duplicate(true)
 
 
+func _strip_hardware_fault_transient_save_fields(value):
+	if value is Array:
+		var cleaned_array: Array = []
+		for item in Array(value):
+			cleaned_array.append(_strip_hardware_fault_transient_save_fields(item))
+		return cleaned_array
+	if value is Dictionary:
+		var source: Dictionary = value
+		var cleaned := {}
+		for raw_key in source.keys():
+			if HARDWARE_FAULT_TRANSIENT_SAVE_KEYS.has(String(raw_key)):
+				continue
+			cleaned[raw_key] = _strip_hardware_fault_transient_save_fields(source[raw_key])
+		return cleaned
+	return value
+
+
 func _canonical_saved_unit_blueprint_for_library(unit_bp: Dictionary) -> Dictionary:
+	var cleaned = _strip_hardware_fault_transient_save_fields(unit_bp)
+	if cleaned is Dictionary:
+		return Dictionary(cleaned).duplicate(true)
 	return unit_bp.duplicate(true)
 
 
