@@ -32,6 +32,7 @@
     "terrain_awareness_metadata_probe",
     "terrain_collision_runtime_probe",
     "authored_arena_terrain_runtime_probe",
+    "barrier_terrain_map_independent_save_probe",
     "battle_map_occlusion_service_contract_probe",
     "battle_target_acquisition_service_contract_probe",
     "projectile_runtime_service_contract_probe",
