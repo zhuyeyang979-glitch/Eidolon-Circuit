@@ -3471,7 +3471,23 @@ func _runtime_geometry_signature(include_torso: bool, include_dynamic: bool, kin
 
 func _runtime_visual_redraw_signature() -> String:
 	var visible_facing_angle := presentation_facing_angle if presentation_pose_enabled else facing_angle
-	return "%s|%.4f|%s|%d|%d|%d|%s|%d|%d|%d|%d" % [
+	var hardware_fault_visual_parts: Array[String] = []
+	var hardware_fault_pulse_bucket := -1
+	for raw_segment in Array(stats.get("runtime_topology_segments", [])):
+		if not (raw_segment is Dictionary):
+			continue
+		var segment: Dictionary = raw_segment
+		var fault_state := String(segment.get("hardware_fault_state", "normal")).strip_edges().to_lower()
+		if fault_state == "" or fault_state == "normal":
+			continue
+		hardware_fault_visual_parts.append("%d:%s:%d" % [
+			int(segment.get("node_index", -1)),
+			fault_state,
+			int(segment.get("hardware_fault_transition_sequence", 0)),
+		])
+		if fault_state == "faulted":
+			hardware_fault_pulse_bucket = int(Time.get_ticks_msec() / 120)
+	return "%s|%.4f|%s|%d|%d|%d|%s|%d|%d|%d|%d|%s|%d" % [
 		String(current_state),
 		visible_facing_angle,
 		_runtime_actions_cache_signature(),
@@ -3483,6 +3499,8 @@ func _runtime_visual_redraw_signature() -> String:
 		aim_pose_part_index,
 		int(round(aim_pose_timer * 1000.0)),
 		int(round(aim_pose_direction.angle() * 1000.0)),
+		",".join(hardware_fault_visual_parts),
+		hardware_fault_pulse_bucket,
 	]
 
 
@@ -3798,6 +3816,22 @@ func _draw_runtime_status_curve_overlay() -> void:
 			runtime_status_curve_overlay_last_count += 1
 
 
+func _hardware_fault_visual_overlay_for_segment(segment: Dictionary) -> Dictionary:
+	var fault_state := String(segment.get("hardware_fault_state", "normal")).strip_edges().to_lower()
+	if fault_state != "faulted":
+		return {"visible": false}
+	var sequence := maxi(0, int(segment.get("hardware_fault_transition_sequence", 0)))
+	var pulse := 0.5 + 0.5 * sin(Time.get_ticks_msec() * 0.006 + float(sequence) * 0.73)
+	var alpha := lerpf(0.38, 0.74, pulse)
+	return {
+		"visible": true,
+		"label": "FAULT / 故障",
+		"marker": "!",
+		"color": Color(1.0, 0.58 + pulse * 0.10, 0.10, alpha),
+		"outline_width": 3.0 + pulse * 0.9,
+	}
+
+
 func _draw_runtime_assembly_segment(segment: Dictionary, material_color: Color) -> void:
 	var part_kind := String(segment.get("part_kind", "limb_muscle"))
 	var visual_group := _runtime_contact_group_for_segment(segment)
@@ -3835,6 +3869,23 @@ func _draw_runtime_assembly_segment(segment: Dictionary, material_color: Color) 
 	AssemblyBoardRenderer.draw_runtime_segment(self, draw_segment, _runtime_visual_origin(), rotation, _runtime_visual_scale(), material_color, primary_color)
 	if feedback_power > 0.04:
 		AssemblyBoardRenderer.draw_runtime_segment_status_overlay(self, draw_segment, _runtime_visual_origin(), rotation, _runtime_visual_scale(), _attack_feedback_overlay_color(attack_index), 2.4 + feedback_power * 2.2)
+	var hardware_fault_overlay := _hardware_fault_visual_overlay_for_segment(draw_segment)
+	if bool(hardware_fault_overlay.get("visible", false)):
+		var overlay_color: Color = hardware_fault_overlay.get("color", Color(1.0, 0.62, 0.10, 0.58))
+		var outline_width := float(hardware_fault_overlay.get("outline_width", 3.0))
+		if AssemblyBoardRenderer.draw_runtime_segment_status_overlay(self, draw_segment, _runtime_visual_origin(), rotation, _runtime_visual_scale(), overlay_color, outline_width):
+			var marker_polygon := AssemblyBoardRenderer.runtime_segment_overlay_polygon(draw_segment, _runtime_visual_origin(), rotation, _runtime_visual_scale())
+			if marker_polygon.size() >= 3:
+				var marker_bounds := Rect2(marker_polygon[0], Vector2.ZERO)
+				for marker_point in marker_polygon:
+					marker_bounds = marker_bounds.expand(marker_point)
+				var marker_center := marker_bounds.get_center()
+				var marker_radius := clampf(minf(marker_bounds.size.x, marker_bounds.size.y) * 0.28, 4.5, 8.0)
+				var marker_color := Color(overlay_color.r, overlay_color.g, overlay_color.b, clampf(overlay_color.a + 0.18, 0.5, 0.96))
+				var marker_text := String(hardware_fault_overlay.get("marker", "!"))
+				draw_circle(marker_center, marker_radius, marker_color)
+				draw_string(ThemeDB.get_fallback_font(), marker_center + Vector2(-marker_radius * 0.55, marker_radius * 0.52), marker_text, HORIZONTAL_ALIGNMENT_CENTER, marker_radius * 1.1, int(marker_radius * 1.7), Color(0.08, 0.05, 0.02, 0.92))
+				set_meta("hardware_fault_last_visual_label", String(hardware_fault_overlay.get("label", "")))
 
 
 func _runtime_group_for_segment(segment: Dictionary) -> Dictionary:

@@ -1,6 +1,6 @@
 # Eidolon Circuit Local Development Status
 
-Last updated: 2026-06-18
+Last updated: 2026-06-28
 
 This file is the local execution board for the active Linear project `Eidolon Circuit Codebase Slimdown 2026-05-27`. The checked-in backlog remains `docs/development_backlog.md`; this file records local baseline and the next safe implementation order between Linear updates.
 
@@ -20,6 +20,12 @@ This file is the local execution board for the active Linear project `Eidolon Ci
 - Future projectile/control families remain frozen: seeker, MIRV, rotary/barrage/starburst/eclipse/light-sink/homing/area entries and the old dynamic gun/tether/hijack module entrances.
 - Rule guard: philosophy muscle backfill must not invent new action profiles, projectile behavior, AI, save schema, input, settings, or HUD. It only exposes existing action/profile/barrier/runtime facts.
 - New/updated probes: `philosophy_muscle_live_catalog_probe`, `philosophy_muscle_editor_runtime_probe`, `backfilled_projectile_weapons_live_probe`, `weapon_subcategory_filter_probe`, and `barrier_panel_probe`.
+
+## 2026-06-28 Hardware Fault Runtime Follow-Up
+
+- Added `tools/hardware_fault_visual_overlay_probe.gd` to guard faulted hardware's in-battle visual contract.
+- `scripts/fighter.gd` now renders faulted runtime topology segments through the shared assembly-board status overlay with an amber pulse and a compact `!` marker, while normal and destroyed hardware stay out of this visual path.
+- The runtime redraw signature includes faulted hardware state and a low-frequency pulse bucket so the overlay can refresh while the unit is otherwise idle.
 
 ## Large File Watch
 
