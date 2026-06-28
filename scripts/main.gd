@@ -26750,6 +26750,8 @@ func _unit_in_speed_lane(lane_node, unit) -> bool:
 
 
 func _apply_speed_lane_to_unit(lane_node, unit, delta: float) -> void:
+	var radius := maxf(0.1, float(lane_node.stats.get("speed_lane_radius", 0.72)))
+	var terrain_features := _terrain_field_features_for_barrier(lane_node, "speed_lane", radius)
 	var intent := _battle_field_runtime_service().speed_lane_intent({
 		"delta": delta,
 		"stats": lane_node.stats,
@@ -26757,7 +26759,9 @@ func _apply_speed_lane_to_unit(lane_node, unit, delta: float) -> void:
 		"facing": float(lane_node.facing),
 		"speed_lane_affinity": float(unit.stats.get("speed_lane_affinity", 0.0)),
 		"unit_speed": float(unit.stats.get("speed", 0.8)),
+		"terrain_features": terrain_features,
 	})
+	_remember_terrain_field_response(lane_node, "speed_lane", intent)
 	unit.velocity = intent.get("velocity", unit.velocity)
 	unit.set_meta("speed_lane_timer", float(intent.get("timer", 0.18)))
 	unit.set_meta("speed_lane_mult", float(intent.get("mult", 1.0)))
@@ -31578,6 +31582,57 @@ func _apply_barrier_utility_components(barrier, player_id: int, delta: float) ->
 				_apply_cage_wall(barrier, player_id, delta)
 
 
+func _terrain_field_features_for_barrier(barrier, field_tag: String, radius: float) -> Array:
+	var result: Array = []
+	if barrier == null or not is_instance_valid(barrier):
+		return result
+	var snapshot := _battle_terrain_runtime_snapshot()
+	if Array(snapshot.get("features", [])).is_empty():
+		return result
+	var query_radius := maxf(0.08, radius * 0.18)
+	if _barrier_has_map_tiles(barrier):
+		var has_tagged_tiles := _barrier_has_tile_effect_tag(barrier, field_tag)
+		for raw_tile in Array(barrier.stats.get("barrier_map_tiles", [])):
+			if not (raw_tile is Dictionary):
+				continue
+			var tile: Dictionary = raw_tile
+			if not _barrier_tile_matches_field(tile, field_tag, has_tagged_tiles):
+				continue
+			var tile_pos := _barrier_tile_world_position(barrier, tile, true)
+			var tile_query_radius := maxf(query_radius, maxf(float(tile.get("radius", 0.08)), float(tile.get("length", 0.2)) * 0.5))
+			_append_terrain_field_features(result, snapshot, tile_pos, tile_query_radius)
+		return result
+	_append_terrain_field_features(result, snapshot, Vector2(float(barrier.ring_pos), float(barrier.lane)), query_radius)
+	return result
+
+
+func _append_terrain_field_features(result: Array, snapshot: Dictionary, point: Vector2, query_radius: float) -> void:
+	for raw_feature in _battle_terrain_service().features_overlapping_point(snapshot, point, query_radius):
+		if not (raw_feature is Dictionary):
+			continue
+		var feature: Dictionary = raw_feature
+		var feature_id := String(feature.get("feature_id", ""))
+		var duplicate := false
+		for existing in result:
+			if existing is Dictionary and String(Dictionary(existing).get("feature_id", "")) == feature_id:
+				duplicate = true
+				break
+		if duplicate:
+			continue
+		result.append(feature.duplicate(true))
+
+
+func _remember_terrain_field_response(field_owner, field_kind: String, intent: Dictionary) -> void:
+	if field_owner == null or not is_instance_valid(field_owner):
+		return
+	var response = intent.get("terrain_response", {})
+	var key := "terrain_field_response_%s" % field_kind
+	if response is Dictionary and bool(Dictionary(response).get("active", false)):
+		field_owner.set_meta(key, Dictionary(response).duplicate(true))
+	else:
+		field_owner.set_meta(key, {})
+
+
 func _apply_cage_wall(barrier, player_id: int, delta: float) -> void:
 	var base_intent := _battle_field_runtime_service().field_effect_intent({"kind": "cage", "stats": barrier.stats, "delta": delta})
 	var radius := float(base_intent.get("radius", maxf(0.1, float(barrier.stats.get("cage_radius", barrier.stats.get("radius", 0.4))))))
@@ -31635,7 +31690,10 @@ func _apply_gravity_field(barrier, player_id: int, delta: float) -> void:
 		var effect: Dictionary = raw_effect
 		if String(effect.get("kind", "gravity")) != "gravity":
 			continue
-		var intent := _battle_field_runtime_service().field_effect_intent({"kind": "gravity", "stats": barrier.stats, "effect": effect, "delta": delta})
+		var effect_radius := maxf(0.1, float(effect.get("radius", barrier.stats.get("gravity_radius", 0.7))))
+		var terrain_features := _terrain_field_features_for_barrier(barrier, "gravity", effect_radius)
+		var intent := _battle_field_runtime_service().field_effect_intent({"kind": "gravity", "stats": barrier.stats, "effect": effect, "delta": delta, "terrain_features": terrain_features})
+		_remember_terrain_field_response(barrier, "gravity", intent)
 		var radius := float(intent.get("radius", 0.7))
 		var mode := String(intent.get("mode", "forward"))
 		var force := float(intent.get("force", 0.32))
@@ -31643,7 +31701,10 @@ func _apply_gravity_field(barrier, player_id: int, delta: float) -> void:
 		for unit in all_units:
 			if not _is_live_unit(unit) or unit == barrier or not _unit_is_mech_physics_subject(unit) or not _unit_in_barrier_aura(barrier, unit, radius, "gravity"):
 				continue
+			var terrain_direction = intent.get("direction_vector", Vector2.ZERO)
 			var dir := _gravity_direction_vector(mode, barrier, unit)
+			if terrain_direction is Vector2 and Vector2(terrain_direction).length() > 0.01:
+				dir = Vector2(terrain_direction)
 			if dir.length() > 0.01:
 				unit.velocity += Vector2(dir.normalized().x, dir.normalized().y * 0.62) * force * delta
 
@@ -31677,7 +31738,10 @@ func _gravity_direction_vector(mode: String, barrier, unit) -> Vector2:
 
 func _apply_coolant_field(barrier, player_id: int, delta: float) -> void:
 	var targets := _friendly_units(player_id) if String(barrier.stats.get("coolant_affects", "ally")) == "ally" else all_units
-	var intent := _battle_field_runtime_service().field_effect_intent({"kind": "coolant", "stats": barrier.stats, "delta": delta})
+	var coolant_radius := maxf(0.1, float(barrier.stats.get("coolant_radius", 0.68)))
+	var terrain_features := _terrain_field_features_for_barrier(barrier, "coolant", coolant_radius)
+	var intent := _battle_field_runtime_service().field_effect_intent({"kind": "coolant", "stats": barrier.stats, "delta": delta, "terrain_features": terrain_features})
+	_remember_terrain_field_response(barrier, "coolant", intent)
 	var radius := float(intent.get("radius", 0.68))
 	_update_field_aura_visual(barrier, String(intent.get("aura_kind", "coolant")), radius, float(intent.get("aura_strength", 1.0)), delta)
 	for unit in targets:
@@ -31686,13 +31750,16 @@ func _apply_coolant_field(barrier, player_id: int, delta: float) -> void:
 
 
 func _apply_heat_field(barrier, player_id: int, delta: float) -> void:
-	var base_intent := _battle_field_runtime_service().field_effect_intent({"kind": "heat", "stats": barrier.stats, "delta": delta})
+	var heat_radius := maxf(0.1, float(barrier.stats.get("heat_field_radius", 0.62)))
+	var terrain_features := _terrain_field_features_for_barrier(barrier, "heat", heat_radius)
+	var base_intent := _battle_field_runtime_service().field_effect_intent({"kind": "heat", "stats": barrier.stats, "delta": delta, "terrain_features": terrain_features})
+	_remember_terrain_field_response(barrier, "heat", base_intent)
 	var radius := float(base_intent.get("radius", 0.62))
 	_update_field_aura_visual(barrier, String(base_intent.get("aura_kind", "heat")), radius, float(base_intent.get("aura_strength", 1.0)), delta)
 	for unit in _field_targets_for(player_id, String(barrier.stats.get("heat_field_affects", "all"))):
 		if not _is_live_unit(unit) or unit == barrier or not _unit_is_mech_physics_subject(unit) or not _unit_in_barrier_aura(barrier, unit, radius, "heat"):
 			continue
-		var intent := _battle_field_runtime_service().field_effect_intent({"kind": "heat", "stats": barrier.stats, "delta": delta, "target_cooling": float(unit.stats.get("cooling", 0.0))})
+		var intent := _battle_field_runtime_service().field_effect_intent({"kind": "heat", "stats": barrier.stats, "delta": delta, "target_cooling": float(unit.stats.get("cooling", 0.0)), "terrain_features": terrain_features})
 		_add_unit_heat_event(unit, float(intent.get("heat_delta", 0.0)), ["external", "laser"], "heat_field")
 		if randf() < delta * float(intent.get("vfx_rate", 1.2)):
 			_spawn_hit_effect(unit, 1, "laser", false, "field")

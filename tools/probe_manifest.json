@@ -31,6 +31,7 @@
     "terrain_occlusion_runtime_probe",
     "terrain_awareness_metadata_probe",
     "terrain_collision_runtime_probe",
+    "terrain_field_response_probe",
     "authored_arena_terrain_runtime_probe",
     "barrier_terrain_map_independent_save_probe",
     "barrier_terrain_editor_preview_probe",

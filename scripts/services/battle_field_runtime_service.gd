@@ -118,8 +118,9 @@ func speed_lane_intent(context: Dictionary) -> Dictionary:
 	var velocity: Vector2 = context.get("velocity", Vector2.ZERO) if context.get("velocity", Vector2.ZERO) is Vector2 else Vector2.ZERO
 	var base_mult := float(stats.get("speed_lane_mult", 1.5))
 	var affinity := float(context.get("speed_lane_affinity", 0.0))
-	var mult := clampf(base_mult + affinity, 1.0, 3.5)
-	var pull := maxf(0.02, float(stats.get("speed_lane_pull", 0.32)))
+	var terrain_response := _terrain_field_response("speed_lane", context)
+	var mult := clampf((base_mult + affinity) * float(terrain_response.get("mult", 1.0)), 1.0, 3.8)
+	var pull := maxf(0.02, float(stats.get("speed_lane_pull", 0.32)) * float(terrain_response.get("pull_mult", 1.0)))
 	var dir_sign := float(context.get("facing", 1.0))
 	if bool(stats.get("speed_lane_bidirectional", true)) and absf(velocity.x) > 0.03:
 		dir_sign = signf(velocity.x)
@@ -128,7 +129,7 @@ func speed_lane_intent(context: Dictionary) -> Dictionary:
 	var unit_speed := maxf(0.12, float(context.get("unit_speed", 0.8)))
 	var base_speed := maxf(absf(velocity.x), unit_speed * 0.55)
 	var desired := clampf(base_speed * mult, 0.0, unit_speed * mult + 1.2)
-	return {
+	var result := {
 		"velocity": Vector2(
 			move_toward(velocity.x, dir_sign * desired, (pull + desired) * delta * 2.2),
 			move_toward(velocity.y, 0.0, pull * delta * 0.45)
@@ -137,6 +138,11 @@ func speed_lane_intent(context: Dictionary) -> Dictionary:
 		"mult": mult,
 		"vfx_rate": 3.5,
 	}
+	if bool(terrain_response.get("active", false)):
+		result["terrain_response"] = terrain_response
+		result["route_connected"] = bool(terrain_response.get("route_connected", false))
+		result["route_feature_id"] = String(terrain_response.get("feature_id", ""))
+	return result
 
 
 func coin_generator_intent(context: Dictionary) -> Dictionary:
@@ -200,20 +206,32 @@ func field_effect_intent(context: Dictionary) -> Dictionary:
 	var kind := String(context.get("kind", ""))
 	var stats := _dict(context.get("stats", {}))
 	var delta := float(context.get("delta", 0.0))
+	var terrain_response := _terrain_field_response(kind, context)
 	match kind:
 		"gravity":
 			var effect := _dict(context.get("effect", {}))
 			var mode := String(effect.get("direction", stats.get("gravity_direction", "forward")))
 			var radius := maxf(0.1, float(effect.get("radius", stats.get("gravity_radius", 0.7))))
-			var force := float(effect.get("force", stats.get("gravity_force", 0.32)))
-			return {"active": true, "kind": kind, "radius": radius, "force": force, "mode": mode, "aura_kind": "gravity_%s" % mode if mode != "" else "gravity", "aura_strength": force * 2.0}
+			var force := float(effect.get("force", stats.get("gravity_force", 0.32))) * float(terrain_response.get("mult", 1.0))
+			var result := {"active": true, "kind": kind, "radius": radius, "force": force, "mode": mode, "aura_kind": "gravity_%s" % mode if mode != "" else "gravity", "aura_strength": force * 2.0}
+			var terrain_direction = terrain_response.get("direction_vector", Vector2.ZERO)
+			if terrain_direction is Vector2 and Vector2(terrain_direction).length() > 0.01:
+				result["mode"] = "terrain_surface"
+				result["aura_kind"] = "gravity_terrain_surface"
+				result["direction_vector"] = Vector2(terrain_direction).normalized()
+			_add_terrain_response(result, terrain_response)
+			return result
 		"coolant":
-			var coolant_boost := float(stats.get("coolant_boost", 18.0))
-			return {"active": true, "kind": kind, "radius": maxf(0.1, float(stats.get("coolant_radius", 0.68))), "aura_kind": "coolant", "aura_strength": coolant_boost / 18.0, "heat_delta": coolant_boost * delta}
+			var coolant_boost := float(stats.get("coolant_boost", 18.0)) * float(terrain_response.get("mult", 1.0))
+			var result := {"active": true, "kind": kind, "radius": maxf(0.1, float(stats.get("coolant_radius", 0.68))), "aura_kind": "coolant", "aura_strength": coolant_boost / 18.0, "heat_delta": coolant_boost * delta}
+			_add_terrain_response(result, terrain_response)
+			return result
 		"heat":
-			var heat_rate := float(stats.get("heat_field_rate", 18.0))
+			var heat_rate := float(stats.get("heat_field_rate", 18.0)) * float(terrain_response.get("mult", 1.0))
 			var cooling_factor := clampf(1.18 - float(context.get("target_cooling", 0.0)) / 90.0, 0.42, 1.18)
-			return {"active": true, "kind": kind, "radius": maxf(0.1, float(stats.get("heat_field_radius", 0.62))), "aura_kind": "heat", "aura_strength": heat_rate / 18.0, "heat_delta": heat_rate * cooling_factor * delta, "vfx_rate": 1.2}
+			var result := {"active": true, "kind": kind, "radius": maxf(0.1, float(stats.get("heat_field_radius", 0.62))), "aura_kind": "heat", "aura_strength": heat_rate / 18.0, "heat_delta": heat_rate * cooling_factor * delta, "vfx_rate": 1.2}
+			_add_terrain_response(result, terrain_response)
+			return result
 		"repulsion":
 			var repulsion_radius := maxf(0.1, float(stats.get("repulsion_radius", 0.68)))
 			var repulsion_force := float(stats.get("repulsion_force", 0.46))
@@ -366,6 +384,80 @@ func hatchling_stats_intent(context: Dictionary) -> Dictionary:
 	}
 
 
+func _terrain_field_response(kind: String, context: Dictionary) -> Dictionary:
+	var features := _terrain_features(context)
+	for raw_feature in features:
+		var feature := _dict(raw_feature)
+		if feature.is_empty():
+			continue
+		var tags := _normalized_token_list(feature.get("surface_tags", []))
+		var feature_id := String(feature.get("feature_id", feature.get("id", "")))
+		var terrain_kind := _normalize_token(feature.get("terrain_kind", feature.get("kind", "")))
+		var response := {
+			"active": false,
+			"mult": 1.0,
+			"feature_id": feature_id,
+			"terrain_kind": terrain_kind,
+			"surface_tags": tags.duplicate(true),
+		}
+		match kind:
+			"gravity":
+				if tags.has("gravity_vector") or tags.has("surface_vector") or tags.has("gravity_surface") or tags.has("route"):
+					var orientation := _normalized_or(_vec(feature.get("orientation", Vector2.RIGHT)), Vector2.RIGHT)
+					response["active"] = true
+					response["direction_vector"] = orientation
+					response["mode"] = "terrain_surface"
+				if tags.has("gravity_amp"):
+					response["active"] = true
+					response["mult"] = float(response.get("mult", 1.0)) * 1.18
+				if tags.has("gravity_damp"):
+					response["active"] = true
+					response["mult"] = float(response.get("mult", 1.0)) * 0.78
+			"coolant":
+				if tags.has("coolant_amp") or tags.has("coolant") or tags.has("coolant_channel"):
+					response["active"] = true
+					response["mult"] = float(response.get("mult", 1.0)) * 1.25
+				if tags.has("heat") or tags.has("hazard"):
+					response["active"] = true
+					response["mult"] = float(response.get("mult", 1.0)) * 0.72
+			"heat":
+				if tags.has("heat_amp") or tags.has("heat") or tags.has("hazard") or terrain_kind == "hazard":
+					response["active"] = true
+					response["mult"] = float(response.get("mult", 1.0)) * 1.25
+				if tags.has("heat_damp") or tags.has("coolant") or tags.has("coolant_channel"):
+					response["active"] = true
+					response["mult"] = float(response.get("mult", 1.0)) * 0.72
+			"speed_lane":
+				if tags.has("route") or tags.has("speed_lane") or tags.has("speed_route"):
+					response["active"] = true
+					response["route_connected"] = true
+					response["mult"] = float(response.get("mult", 1.0)) * 1.12
+					response["pull_mult"] = 1.08
+		if bool(response.get("active", false)):
+			response["mult"] = clampf(float(response.get("mult", 1.0)), 0.42, 1.65)
+			return response
+	return {"active": false, "mult": 1.0}
+
+
+func _terrain_features(context: Dictionary) -> Array:
+	var result: Array = []
+	if context.get("terrain_features", []) is Array:
+		for raw_feature in Array(context.get("terrain_features", [])):
+			if raw_feature is Dictionary:
+				result.append(Dictionary(raw_feature))
+	if context.get("terrain_feature", {}) is Dictionary:
+		var feature: Dictionary = Dictionary(context.get("terrain_feature", {}))
+		if not feature.is_empty():
+			result.append(feature)
+	return result
+
+
+func _add_terrain_response(result: Dictionary, terrain_response: Dictionary) -> void:
+	if not bool(terrain_response.get("active", false)):
+		return
+	result["terrain_response"] = terrain_response.duplicate(true)
+
+
 func _support_aura_kind(kind: String) -> String:
 	match kind:
 		"ammo":
@@ -400,6 +492,40 @@ func _directed_velocity(direction: Vector2, power: float) -> Vector2:
 	if direction.length() <= 0.01:
 		return Vector2.ZERO
 	return Vector2(direction.normalized().x, direction.normalized().y * 0.62) * power
+
+
+func _normalized_or(value: Vector2, fallback: Vector2) -> Vector2:
+	var result := value
+	if result.length() <= 0.0001:
+		result = fallback
+	if result.length() <= 0.0001:
+		result = Vector2.RIGHT
+	return result.normalized()
+
+
+func _normalized_token_list(value) -> Array:
+	var result: Array = []
+	if value is Array:
+		for item in value:
+			_append_unique_token(result, item)
+	else:
+		_append_unique_token(result, value)
+	result.sort()
+	return result
+
+
+func _append_unique_token(result: Array, value) -> void:
+	var token := _normalize_token(value)
+	if token != "" and not result.has(token):
+		result.append(token)
+
+
+func _normalize_token(value) -> String:
+	return String(value).strip_edges().to_lower().replace(" ", "_").replace("-", "_")
+
+
+func _vec(value, fallback: Vector2 = Vector2.ZERO) -> Vector2:
+	return value if value is Vector2 else fallback
 
 
 func _dict(value) -> Dictionary:
