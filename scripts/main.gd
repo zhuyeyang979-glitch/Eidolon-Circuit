@@ -43022,7 +43022,7 @@ func _apply_barrier_tile_stats(stats: Dictionary, role_key: String, unit_bp: Dic
 		var tile_mass := maxf(0.05, float(tile_part.get("mass", 1.0)) * part_scale)
 		var tile_hp := maxf(1.0, float(tile_part.get("hp", 8.0)) * part_scale)
 		var tile_threshold_coeff := maxf(0.08, float(tile_part.get("barrier_momentum_threshold_coeff", 1.0)) * ether_threshold_coeff)
-		runtime_tiles.append({
+		var runtime_tile := {
 			"index": cell_index,
 			"pos": screen_pos,
 			"col": col,
@@ -43042,7 +43042,14 @@ func _apply_barrier_tile_stats(stats: Dictionary, role_key: String, unit_bp: Dic
 			"name": String(tile_part.get("name", "BARRIER TILE")),
 			"effect_tags": _barrier_tile_effect_tags(tile_part),
 			"field_radius": maxf(float(tile_part.get("support_radius", 0.0)), maxf(float(tile_part.get("gravity_radius", 0.0)), maxf(float(tile_part.get("coolant_radius", 0.0)), maxf(float(tile_part.get("heat_field_radius", 0.0)), float(tile_part.get("trap_radius", 0.0)))))),
-		})
+		}
+		if tile.has("tile_id"):
+			runtime_tile["tile_id"] = String(tile.get("tile_id", ""))
+		if tile.get("terrain_policy", {}) is Dictionary:
+			var terrain_policy: Dictionary = Dictionary(tile.get("terrain_policy", {}))
+			if not terrain_policy.is_empty():
+				runtime_tile["terrain_policy"] = terrain_policy.duplicate(true)
+		runtime_tiles.append(runtime_tile)
 		stats["cost"] = int(stats["cost"]) + int(roundf(float(tile_part.get("cost", 0)) * part_scale))
 		stats["health"] = int(stats["health"]) + int(roundf(float(tile_part.get("hp", 0)) * part_scale))
 		stats["mass"] = float(stats["mass"]) + float(tile_part.get("mass", 0.0)) * part_scale
