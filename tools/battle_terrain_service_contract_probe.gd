@@ -162,6 +162,28 @@ func _init() -> void:
 	if not _expect_eq(String(bridge.get("outcome", "")), "bridge", "bridge placement outcome"):
 		return
 
+	var reinforce: Dictionary = service.placement_query({
+		"snapshot": snapshot,
+		"position": Vector2(2.0, 0.0),
+		"radius": 0.05,
+		"reinforce_kinds": ["wall"],
+	})
+	if not _expect_eq(String(reinforce.get("outcome", "")), "reinforce", "reinforce placement outcome"):
+		return
+	if not _expect_eq(String(reinforce.get("reason", "")), "reinforce_terrain_feature", "reinforce placement reason"):
+		return
+
+	var breach: Dictionary = service.placement_query({
+		"snapshot": snapshot,
+		"position": Vector2(2.0, 0.0),
+		"radius": 0.05,
+		"breach_kinds": ["wall"],
+	})
+	if not _expect_eq(String(breach.get("outcome", "")), "breach", "breach placement outcome"):
+		return
+	if not _expect_eq(String(breach.get("reason", "")), "breach_terrain_feature", "breach placement reason"):
+		return
+
 	var traversal_blocked: Dictionary = service.traversal_query({
 		"snapshot": snapshot,
 		"start": Vector2(4.2, 0.0),

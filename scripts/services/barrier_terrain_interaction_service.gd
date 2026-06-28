@@ -6,6 +6,8 @@ const BattleTerrainServiceScript := preload("res://scripts/services/battle_terra
 const OUTCOME_FREE := "free"
 const OUTCOME_ATTACH := "attach"
 const OUTCOME_BRIDGE := "bridge"
+const OUTCOME_REINFORCE := "reinforce"
+const OUTCOME_BREACH := "breach"
 const OUTCOME_OVERLAP := "overlap"
 const OUTCOME_REPLACE := "replace"
 const OUTCOME_BLOCKED := "blocked"
@@ -23,11 +25,15 @@ func barrier_tile_policy(context: Dictionary) -> Dictionary:
 	return {
 		"attach_kinds": _normalized_token_list(tile_policy.get("attach_kinds", component_policy.get("attach_kinds", []))),
 		"bridge_kinds": _normalized_token_list(tile_policy.get("bridge_kinds", component_policy.get("bridge_kinds", []))),
+		"reinforce_kinds": _normalized_token_list(tile_policy.get("reinforce_kinds", component_policy.get("reinforce_kinds", []))),
+		"breach_kinds": _normalized_token_list(tile_policy.get("breach_kinds", component_policy.get("breach_kinds", []))),
 		"blocked_kinds": _normalized_token_list(tile_policy.get("blocked_kinds", component_policy.get("blocked_kinds", []))),
 		"overlap_kinds": _normalized_token_list(tile_policy.get("overlap_kinds", component_policy.get("overlap_kinds", []))),
 		"replace_kinds": _normalized_token_list(tile_policy.get("replace_kinds", component_policy.get("replace_kinds", []))),
 		"anchor_support": _normalize_token(tile_policy.get("anchor_support", component_policy.get("anchor_support", ""))),
 		"inherit_orientation": bool(tile_policy.get("inherit_orientation", component_policy.get("inherit_orientation", false))),
+		"reinforce_amount": maxf(0.0, float(tile_policy.get("reinforce_amount", component_policy.get("reinforce_amount", component.get("terrain_reinforce_amount", tile.get("terrain_reinforce_amount", 0.0)))))),
+		"breach_damage": maxf(0.0, float(tile_policy.get("breach_damage", component_policy.get("breach_damage", component.get("terrain_breach_damage", component.get("entry_breach_damage", tile.get("terrain_breach_damage", tile.get("entry_breach_damage", 0.0)))))))),
 		"radius": maxf(0.0, radius),
 	}
 
@@ -45,6 +51,8 @@ func barrier_placement_intent(context: Dictionary) -> Dictionary:
 		"radius": maxf(float(tile.get("radius", policy.get("radius", 0.0))), float(policy.get("radius", 0.0))),
 		"blocked_kinds": Array(policy.get("blocked_kinds", [])),
 		"replace_kinds": Array(policy.get("replace_kinds", [])),
+		"reinforce_kinds": Array(policy.get("reinforce_kinds", [])),
+		"breach_kinds": Array(policy.get("breach_kinds", [])),
 		"attach_kinds": Array(policy.get("attach_kinds", [])),
 		"bridge_kinds": Array(policy.get("bridge_kinds", [])),
 		"overlap_kinds": Array(policy.get("overlap_kinds", [])),
@@ -59,6 +67,12 @@ func barrier_placement_intent(context: Dictionary) -> Dictionary:
 			result["orientation"] = _terrain_orientation_from_result(result, _vec(tile.get("orientation", Vector2.RIGHT), Vector2.RIGHT))
 	if String(result.get("outcome", "")) == OUTCOME_BRIDGE:
 		result["reason"] = "bridge_terrain_gap"
+		result["allowed"] = true
+	if String(result.get("outcome", "")) == OUTCOME_REINFORCE:
+		result["reason"] = "reinforce_terrain_feature"
+		result["allowed"] = true
+	if String(result.get("outcome", "")) == OUTCOME_BREACH:
+		result["reason"] = "breach_terrain_feature"
 		result["allowed"] = true
 	if String(result.get("outcome", "")) == OUTCOME_ATTACH:
 		result["reason"] = "attach_to_terrain"
@@ -97,6 +111,22 @@ func terrain_deployment_intents(placement_intent: Dictionary) -> Array:
 			"tile_id": tile_id,
 			"feature_id": feature_id,
 			"terrain_kind": String(placement_intent.get("terrain_kind", "")),
+		}]
+	if outcome == OUTCOME_REINFORCE:
+		return [{
+			"action": "reinforce_terrain_feature",
+			"tile_id": tile_id,
+			"feature_id": feature_id,
+			"terrain_kind": String(placement_intent.get("terrain_kind", "")),
+			"reinforce_amount": maxf(0.0, float(_dict(placement_intent.get("policy", {})).get("reinforce_amount", 0.0))),
+		}]
+	if outcome == OUTCOME_BREACH:
+		return [{
+			"action": "breach_terrain_feature",
+			"tile_id": tile_id,
+			"feature_id": feature_id,
+			"terrain_kind": String(placement_intent.get("terrain_kind", "")),
+			"breach_damage": maxf(0.0, float(_dict(placement_intent.get("policy", {})).get("breach_damage", 0.0))),
 		}]
 	if outcome == OUTCOME_REPLACE:
 		return [{
@@ -171,13 +201,17 @@ func _terrain_orientation_from_result(result: Dictionary, fallback: Vector2) -> 
 
 func _merge_policy(base: Dictionary, override_policy: Dictionary) -> Dictionary:
 	var result := base.duplicate(true)
-	for key in ["attach_kinds", "bridge_kinds", "blocked_kinds", "overlap_kinds", "replace_kinds"]:
+	for key in ["attach_kinds", "bridge_kinds", "reinforce_kinds", "breach_kinds", "blocked_kinds", "overlap_kinds", "replace_kinds"]:
 		if override_policy.has(key):
 			result[key] = _normalized_token_list(override_policy.get(key, []))
 	if override_policy.has("anchor_support"):
 		result["anchor_support"] = _normalize_token(override_policy.get("anchor_support", ""))
 	if override_policy.has("inherit_orientation"):
 		result["inherit_orientation"] = bool(override_policy.get("inherit_orientation", false))
+	if override_policy.has("reinforce_amount"):
+		result["reinforce_amount"] = maxf(0.0, float(override_policy.get("reinforce_amount", 0.0)))
+	if override_policy.has("breach_damage"):
+		result["breach_damage"] = maxf(0.0, float(override_policy.get("breach_damage", 0.0)))
 	if override_policy.has("radius"):
 		result["radius"] = maxf(0.0, float(override_policy.get("radius", 0.0)))
 	return result

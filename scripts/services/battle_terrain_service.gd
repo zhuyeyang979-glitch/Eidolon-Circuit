@@ -9,6 +9,8 @@ const TERRAIN_KIND_HAZARD := "hazard"
 const PLACEMENT_FREE := "free"
 const PLACEMENT_ATTACH := "attach"
 const PLACEMENT_BRIDGE := "bridge"
+const PLACEMENT_REINFORCE := "reinforce"
+const PLACEMENT_BREACH := "breach"
 const PLACEMENT_OVERLAP := "overlap"
 const PLACEMENT_REPLACE := "replace"
 const PLACEMENT_BLOCKED := "blocked"
@@ -99,6 +101,16 @@ func placement_query(context: Dictionary) -> Dictionary:
 	var blocked := _first_matching_kind(overlaps, context.get("blocked_kinds", []))
 	if not blocked.is_empty():
 		return _placement_result(PLACEMENT_BLOCKED, "blocked_by_terrain", blocked, overlaps)
+	var breach := _first_matching_kind(overlaps, context.get("breach_kinds", []))
+	if not breach.is_empty():
+		if not bool(breach.get("destructible", false)):
+			return _placement_result(PLACEMENT_BLOCKED, "blocked_indestructible_terrain", breach, overlaps)
+		return _placement_result(PLACEMENT_BREACH, "breach_terrain_feature", breach, overlaps)
+	var reinforce := _first_matching_kind(overlaps, context.get("reinforce_kinds", []))
+	if not reinforce.is_empty():
+		if not bool(reinforce.get("destructible", false)):
+			return _placement_result(PLACEMENT_BLOCKED, "blocked_indestructible_terrain", reinforce, overlaps)
+		return _placement_result(PLACEMENT_REINFORCE, "reinforce_terrain_feature", reinforce, overlaps)
 	var replace := _first_matching_kind(overlaps, context.get("replace_kinds", []))
 	if not replace.is_empty():
 		return _placement_result(PLACEMENT_REPLACE, "replace_terrain", replace, overlaps)
@@ -201,6 +213,7 @@ func _placement_result(outcome: String, reason: String, feature: Dictionary, ove
 		"reason_text": reason.replace("_", " "),
 		"feature_id": String(feature.get("feature_id", "")),
 		"terrain_kind": String(feature.get("terrain_kind", "")),
+		"destructible": bool(feature.get("destructible", false)),
 		"overlaps": overlaps,
 	}
 	if not anchor.is_empty():

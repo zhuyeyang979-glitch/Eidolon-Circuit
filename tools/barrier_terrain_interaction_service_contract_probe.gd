@@ -79,6 +79,24 @@ func _init() -> void:
 				"surface_tags": ["heat"],
 				"effect_channels": ["hazard"],
 			},
+			{
+				"id": "weak-wall-delta",
+				"kind": "wall",
+				"collider": {"shape": "circle", "center": Vector2(10.0, 0.0), "radius": 0.45},
+				"surface_tags": ["cover"],
+				"effect_channels": ["collision", "occlusion"],
+				"destructible": true,
+				"metadata": {"terrain_hp": 40.0, "max_terrain_hp": 60.0},
+			},
+			{
+				"id": "weak-wall-epsilon",
+				"kind": "wall",
+				"collider": {"shape": "circle", "center": Vector2(11.2, 0.0), "radius": 0.45},
+				"surface_tags": ["cover"],
+				"effect_channels": ["collision", "occlusion"],
+				"destructible": true,
+				"metadata": {"terrain_hp": 40.0, "max_terrain_hp": 60.0},
+			},
 		],
 	})
 
@@ -157,6 +175,64 @@ func _init() -> void:
 	if not _expect(bool(bridge.get("allowed", false)) and String(bridge.get("outcome", "")) == "bridge", "bridge should be allowed: %s" % str(bridge)):
 		return
 	if not _expect_eq(String(Dictionary(service.terrain_deployment_intents(bridge)[0]).get("action", "")), "bridge_terrain_gap", "bridge intent action"):
+		return
+
+	var destructible_policy: Dictionary = service.barrier_tile_policy({
+		"tile": {
+			"tile_id": "terrain-state-panel",
+			"terrain_policy": {
+				"reinforce_kinds": ["wall"],
+				"breach_kinds": ["wall"],
+				"reinforce_amount": 18.0,
+				"breach_damage": 44.0,
+			},
+		},
+	})
+	if not _expect_eq(Array(destructible_policy.get("reinforce_kinds", [])), ["wall"], "reinforce policy normalized"):
+		return
+	if not _expect_eq(Array(destructible_policy.get("breach_kinds", [])), ["wall"], "breach policy normalized"):
+		return
+	if not _expect(float(destructible_policy.get("reinforce_amount", 0.0)) == 18.0, "reinforce amount policy normalized"):
+		return
+	if not _expect(float(destructible_policy.get("breach_damage", 0.0)) == 44.0, "breach damage policy normalized"):
+		return
+	var reinforce: Dictionary = service.barrier_placement_intent({
+		"snapshot": snapshot,
+		"tile": {
+			"tile_id": "reinforce-a",
+			"position": Vector2(10.0, 0.0),
+			"radius": 0.08,
+			"terrain_policy": {
+				"reinforce_kinds": ["wall"],
+				"reinforce_amount": 18.0,
+			},
+		},
+	})
+	if not _expect(bool(reinforce.get("allowed", false)) and String(reinforce.get("outcome", "")) == "reinforce", "reinforce should be allowed: %s" % str(reinforce)):
+		return
+	var reinforce_intent: Dictionary = Dictionary(service.terrain_deployment_intents(reinforce)[0])
+	if not _expect_eq(String(reinforce_intent.get("action", "")), "reinforce_terrain_feature", "reinforce intent action"):
+		return
+	if not _expect(float(reinforce_intent.get("reinforce_amount", 0.0)) == 18.0, "reinforce intent amount"):
+		return
+	var breach: Dictionary = service.barrier_placement_intent({
+		"snapshot": snapshot,
+		"tile": {
+			"tile_id": "breach-a",
+			"position": Vector2(11.2, 0.0),
+			"radius": 0.08,
+			"terrain_policy": {
+				"breach_kinds": ["wall"],
+				"breach_damage": 44.0,
+			},
+		},
+	})
+	if not _expect(bool(breach.get("allowed", false)) and String(breach.get("outcome", "")) == "breach", "breach should be allowed: %s" % str(breach)):
+		return
+	var breach_intent: Dictionary = Dictionary(service.terrain_deployment_intents(breach)[0])
+	if not _expect_eq(String(breach_intent.get("action", "")), "breach_terrain_feature", "breach intent action"):
+		return
+	if not _expect(float(breach_intent.get("breach_damage", 0.0)) == 44.0, "breach intent damage"):
 		return
 
 	var blocked: Dictionary = service.barrier_placement_intent({

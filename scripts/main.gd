@@ -30447,7 +30447,7 @@ func _barrier_visible_tile_positions(barrier) -> Array:
 	return positions
 
 
-func _apply_barrier_terrain_deployment(barrier) -> void:
+func _apply_barrier_terrain_deployment(barrier, apply_arena_state: bool = false) -> void:
 	if barrier == null or not is_instance_valid(barrier):
 		return
 	if String(barrier.role) != "barrier":
@@ -30480,6 +30480,128 @@ func _apply_barrier_terrain_deployment(barrier) -> void:
 	barrier.set_meta("barrier_terrain_deployment_intents", deployment_intents)
 	barrier.set_meta("barrier_terrain_blocked_tiles", blocked_tiles)
 	barrier.set_meta("barrier_terrain_snapshot_arena_id", String(snapshot.get("arena_id", "")))
+	if apply_arena_state:
+		_apply_barrier_terrain_arena_state(barrier, deployment_intents)
+
+
+func _apply_barrier_terrain_arena_state(barrier, deployment_intents: Array) -> void:
+	if barrier == null or not is_instance_valid(barrier):
+		return
+	var state_intents: Array = []
+	var snapshot := _battle_terrain_runtime_snapshot()
+	var features: Array = Array(snapshot.get("features", [])).duplicate(true)
+	for raw_intent in deployment_intents:
+		if not (raw_intent is Dictionary):
+			continue
+		var intent: Dictionary = raw_intent
+		var action := String(intent.get("action", ""))
+		if not action in ["reinforce_terrain_feature", "breach_terrain_feature"]:
+			continue
+		var result := _terrain_state_apply_deployment_intent(features, intent)
+		if result.is_empty():
+			continue
+		features = Array(result.get("features", features))
+		state_intents.append(Dictionary(result.get("state_intent", {})).duplicate(true))
+	barrier.set_meta("barrier_terrain_arena_state_intents", state_intents)
+	if state_intents.is_empty():
+		return
+	snapshot["features"] = features
+	snapshot["version"] = int(snapshot.get("version", 0)) + 1
+	battle_terrain_runtime_snapshot = snapshot.duplicate(true)
+	barrier.set_meta("barrier_terrain_snapshot_version_after", int(snapshot.get("version", 0)))
+
+
+func _terrain_state_apply_deployment_intent(features: Array, intent: Dictionary) -> Dictionary:
+	var feature_id := String(intent.get("feature_id", ""))
+	if feature_id == "":
+		return {}
+	for i in range(features.size()):
+		if not (features[i] is Dictionary):
+			continue
+		var feature: Dictionary = Dictionary(features[i]).duplicate(true)
+		if String(feature.get("feature_id", "")) != feature_id:
+			continue
+		if not bool(feature.get("destructible", false)):
+			return {}
+		var action := String(intent.get("action", ""))
+		if action == "reinforce_terrain_feature":
+			return _terrain_state_reinforce_feature(features, i, feature, intent)
+		if action == "breach_terrain_feature":
+			return _terrain_state_breach_feature(features, i, feature, intent)
+	return {}
+
+
+func _terrain_state_reinforce_feature(features: Array, feature_index: int, feature: Dictionary, intent: Dictionary) -> Dictionary:
+	var amount := maxf(0.0, float(intent.get("reinforce_amount", 0.0)))
+	var metadata: Dictionary = Dictionary(feature.get("metadata", {})).duplicate(true)
+	var hp_before := _terrain_feature_runtime_hp(feature)
+	var max_before := _terrain_feature_runtime_max_hp(feature, hp_before)
+	var hp_after := hp_before + amount
+	var max_after := max_before + amount
+	metadata["terrain_hp"] = hp_after
+	metadata["max_terrain_hp"] = max_after
+	metadata["reinforced_by_tile_id"] = String(intent.get("tile_id", ""))
+	metadata["last_terrain_state_action"] = "reinforce"
+	feature["metadata"] = metadata
+	var tags: Array = Array(feature.get("surface_tags", [])).duplicate(true)
+	_append_unique_terrain_runtime_token(tags, "reinforced")
+	feature["surface_tags"] = tags
+	features[feature_index] = feature
+	var state_intent := intent.duplicate(true)
+	state_intent["hp_before"] = hp_before
+	state_intent["hp_after"] = hp_after
+	state_intent["max_hp_after"] = max_after
+	state_intent["destroyed"] = false
+	return {"features": features, "state_intent": state_intent}
+
+
+func _terrain_state_breach_feature(features: Array, feature_index: int, feature: Dictionary, intent: Dictionary) -> Dictionary:
+	var damage := maxf(0.0, float(intent.get("breach_damage", 0.0)))
+	var metadata: Dictionary = Dictionary(feature.get("metadata", {})).duplicate(true)
+	var hp_before := _terrain_feature_runtime_hp(feature)
+	var hp_after := hp_before - damage
+	var destroyed := hp_after <= 0.0
+	var state_intent := intent.duplicate(true)
+	state_intent["hp_before"] = hp_before
+	state_intent["hp_after"] = maxf(0.0, hp_after)
+	state_intent["destroyed"] = destroyed
+	if destroyed:
+		state_intent["removed_feature"] = feature.duplicate(true)
+		features.remove_at(feature_index)
+		return {"features": features, "state_intent": state_intent}
+	metadata["terrain_hp"] = hp_after
+	metadata["last_terrain_state_action"] = "breach"
+	metadata["breached_by_tile_id"] = String(intent.get("tile_id", ""))
+	feature["metadata"] = metadata
+	var tags: Array = Array(feature.get("surface_tags", [])).duplicate(true)
+	_append_unique_terrain_runtime_token(tags, "breached")
+	feature["surface_tags"] = tags
+	features[feature_index] = feature
+	return {"features": features, "state_intent": state_intent}
+
+
+func _terrain_feature_runtime_hp(feature: Dictionary) -> float:
+	var metadata: Dictionary = Dictionary(feature.get("metadata", {}))
+	if metadata.has("terrain_hp"):
+		return maxf(0.0, float(metadata.get("terrain_hp", 0.0)))
+	if metadata.has("hp"):
+		return maxf(0.0, float(metadata.get("hp", 0.0)))
+	return maxf(1.0, float(metadata.get("max_terrain_hp", 100.0)))
+
+
+func _terrain_feature_runtime_max_hp(feature: Dictionary, fallback_hp: float) -> float:
+	var metadata: Dictionary = Dictionary(feature.get("metadata", {}))
+	if metadata.has("max_terrain_hp"):
+		return maxf(fallback_hp, float(metadata.get("max_terrain_hp", fallback_hp)))
+	if metadata.has("max_hp"):
+		return maxf(fallback_hp, float(metadata.get("max_hp", fallback_hp)))
+	return maxf(fallback_hp, 100.0)
+
+
+func _append_unique_terrain_runtime_token(tokens: Array, value: String) -> void:
+	var token := value.strip_edges().to_lower().replace(" ", "_").replace("-", "_")
+	if token != "" and not tokens.has(token):
+		tokens.append(token)
 
 
 func _barrier_has_visible_tile(barrier) -> bool:
@@ -30739,7 +30861,7 @@ func _create_unit(player_id: int, role_key: String, stats: Dictionary, unit_name
 		unit.set_facing_immediate(1 if player_id == 1 else -1)
 	_initialize_unit_runtime_resources(unit)
 	if role_key == "barrier":
-		_apply_barrier_terrain_deployment(unit)
+		_apply_barrier_terrain_deployment(unit, true)
 	_mark_unit_attack_executed(unit)
 	all_units.append(unit)
 	return unit
