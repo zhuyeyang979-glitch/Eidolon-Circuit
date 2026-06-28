@@ -34,6 +34,8 @@ const BattleImpactQueryService = preload("res://scripts/services/battle_impact_q
 const BattleRuntimeLifecycleService = preload("res://scripts/services/battle_runtime_lifecycle_service.gd")
 const BattleIdentityRuntimeService = preload("res://scripts/services/battle_identity_runtime_service.gd")
 const BattleSpatialRuntimeService = preload("res://scripts/services/battle_spatial_runtime_service.gd")
+const BattleTerrainService = preload("res://scripts/services/battle_terrain_service.gd")
+const BarrierTerrainInteractionService = preload("res://scripts/services/barrier_terrain_interaction_service.gd")
 const BattleMapOcclusionService = preload("res://scripts/services/battle_map_occlusion_service.gd")
 const BattleTargetAcquisitionService = preload("res://scripts/services/battle_target_acquisition_service.gd")
 const BattleHudStateService = preload("res://scripts/services/battle_hud_state_service.gd")
@@ -1618,6 +1620,7 @@ var attack_command_windows := {1: {}, 2: {}}
 var pending_deploys := {}
 var pending_deploy_data := {}
 var pending_deploy_previews := {}
+var battle_terrain_runtime_snapshot := {}
 var aim_holding := {1: false, 2: false}
 var aim_directions := {1: Vector2.RIGHT, 2: Vector2.LEFT}
 var aim_auto_phase := {1: 0.0, 2: 0.0}
@@ -1979,6 +1982,8 @@ var battle_impact_query_service: BattleImpactQueryService
 var battle_runtime_lifecycle_service: BattleRuntimeLifecycleService
 var battle_identity_runtime_service: BattleIdentityRuntimeService
 var battle_spatial_runtime_service: BattleSpatialRuntimeService
+var battle_terrain_service: BattleTerrainService
+var barrier_terrain_interaction_service: BarrierTerrainInteractionService
 var battle_map_occlusion_service: BattleMapOcclusionService
 var battle_target_acquisition_service: BattleTargetAcquisitionService
 var battle_hud_state_service: BattleHudStateService
@@ -2326,6 +2331,8 @@ func _initialize_hot_path_state_layer() -> void:
 	battle_runtime_lifecycle_service = BattleRuntimeLifecycleService.new()
 	battle_identity_runtime_service = BattleIdentityRuntimeService.new()
 	battle_spatial_runtime_service = BattleSpatialRuntimeService.new()
+	battle_terrain_service = BattleTerrainService.new()
+	barrier_terrain_interaction_service = BarrierTerrainInteractionService.new()
 	battle_map_occlusion_service = BattleMapOcclusionService.new()
 	battle_target_acquisition_service = BattleTargetAcquisitionService.new()
 	battle_hud_state_service = BattleHudStateService.new()
@@ -26022,6 +26029,28 @@ func _battle_field_runtime_service() -> BattleFieldRuntimeService:
 	return battle_field_runtime_service
 
 
+func _battle_terrain_service() -> BattleTerrainService:
+	if battle_terrain_service == null:
+		battle_terrain_service = BattleTerrainService.new()
+	return battle_terrain_service
+
+
+func _barrier_terrain_interaction_service() -> BarrierTerrainInteractionService:
+	if barrier_terrain_interaction_service == null:
+		barrier_terrain_interaction_service = BarrierTerrainInteractionService.new()
+	return barrier_terrain_interaction_service
+
+
+func _battle_terrain_runtime_snapshot() -> Dictionary:
+	if not (battle_terrain_runtime_snapshot is Dictionary) or battle_terrain_runtime_snapshot.is_empty():
+		battle_terrain_runtime_snapshot = _battle_terrain_service().arena_snapshot({
+			"arena_id": "default_empty_arena",
+			"version": 1,
+			"features": [],
+		})
+	return Dictionary(battle_terrain_runtime_snapshot).duplicate(true)
+
+
 func _battle_hit_resolution_service() -> BattleHitResolutionService:
 	if battle_hit_resolution_service == null:
 		battle_hit_resolution_service = BattleHitResolutionService.new()
@@ -30191,6 +30220,41 @@ func _barrier_visible_tile_positions(barrier) -> Array:
 	return positions
 
 
+func _apply_barrier_terrain_deployment(barrier) -> void:
+	if barrier == null or not is_instance_valid(barrier):
+		return
+	if String(barrier.role) != "barrier":
+		return
+	var placements: Array = []
+	var deployment_intents: Array = []
+	var blocked_tiles: Array = []
+	var snapshot := _battle_terrain_runtime_snapshot()
+	for raw_tile in Array(barrier.stats.get("barrier_map_tiles", [])):
+		if not (raw_tile is Dictionary):
+			continue
+		var tile: Dictionary = Dictionary(raw_tile).duplicate(true)
+		tile["tile_id"] = String(tile.get("tile_id", "tile_%03d" % int(tile.get("index", placements.size()))))
+		tile["position"] = _barrier_tile_world_position(barrier, tile, true)
+		tile["orientation"] = _barrier_tile_axis(tile)
+		var placement: Dictionary = _barrier_terrain_interaction_service().barrier_placement_intent({
+			"snapshot": snapshot,
+			"tile": tile,
+		})
+		placements.append(placement)
+		if not bool(placement.get("allowed", false)):
+			blocked_tiles.append({
+				"tile_id": String(placement.get("tile_id", tile.get("tile_id", ""))),
+				"reason": String(placement.get("reason", "")),
+				"feature_id": String(placement.get("feature_id", "")),
+			})
+			continue
+		deployment_intents.append_array(_barrier_terrain_interaction_service().terrain_deployment_intents(placement))
+	barrier.set_meta("barrier_terrain_placement_intents", placements)
+	barrier.set_meta("barrier_terrain_deployment_intents", deployment_intents)
+	barrier.set_meta("barrier_terrain_blocked_tiles", blocked_tiles)
+	barrier.set_meta("barrier_terrain_snapshot_arena_id", String(snapshot.get("arena_id", "")))
+
+
 func _barrier_has_visible_tile(barrier) -> bool:
 	for tile_pos in _barrier_visible_tile_positions(barrier):
 		if tile_pos is Vector2:
@@ -30446,6 +30510,8 @@ func _create_unit(player_id: int, role_key: String, stats: Dictionary, unit_name
 	if unit.has_method("set_facing_immediate"):
 		unit.set_facing_immediate(1 if player_id == 1 else -1)
 	_initialize_unit_runtime_resources(unit)
+	if role_key == "barrier":
+		_apply_barrier_terrain_deployment(unit)
 	_mark_unit_attack_executed(unit)
 	all_units.append(unit)
 	return unit
