@@ -1867,3 +1867,8 @@ Next safe chunk: continue only with narrow pure-rule extraction where `main.gd` 
 
 - `tools/hardware_fault_non_primary_core_destruction_probe.gd` now covers a multi-core-like construct body whose secondary `torso` segment points back to a different `primary_core_node_id`.
 - The probe verifies that destroying that secondary core-like segment emits `destroy_hardware`, keeps the hero deployed, preserves VP and the real primary-core collider, removes the destroyed branch, and disables the dependent bound action.
+
+2026-06-28 Hardware fault disabled module merge follow-up:
+
+- `tools/hardware_fault_disabled_modules_merge_probe.gd` now covers the `_battle_actor_disabled_modules()` compatibility adapter when authored `stats.disabled_modules` and runtime hardware-fault disabled actions coexist.
+- The adapter now preserves authored disabled attack indices, merges in fault-disabled runtime bindings without duplicates, and leaves `stats.disabled_modules` plus `runtime_module_bindings` unchanged for save/schema compatibility.

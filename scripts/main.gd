@@ -30883,8 +30883,22 @@ func _battle_actor_unit_snapshot(unit) -> Dictionary:
 
 func _battle_actor_disabled_modules(unit) -> Array:
 	var disabled: Array = []
+	if unit != null and is_instance_valid(unit) and unit.get("stats") != null:
+		for raw_index in Array(unit.stats.get("disabled_modules", [])):
+			var index := -1
+			if raw_index is int or raw_index is float:
+				index = int(raw_index)
+			else:
+				var index_text := String(raw_index).strip_edges()
+				if not index_text.is_valid_int():
+					continue
+				index = int(index_text)
+			if index < 0 or index >= ATTACK_GROUP_COUNT:
+				continue
+			if not disabled.has(index):
+				disabled.append(index)
 	for attack_index in range(ATTACK_GROUP_COUNT):
-		if _part_disabled(unit, attack_index):
+		if _part_disabled(unit, attack_index) and not disabled.has(attack_index):
 			disabled.append(attack_index)
 	return disabled
 
