@@ -15801,7 +15801,7 @@ func _apply_editor_board_pose_dynamic_fields(snapshot: Dictionary, role_key: Str
 
 
 func _editor_board_visual_domain_key(role_key: String, unit_bp: Dictionary, custom_board_enabled: bool, custom_board_cache_key: String, visual_stats: Dictionary) -> String:
-	return "%s|%s|%s|%s|%d|%d|%s|%s|%s|%s|%s|%s|%d" % [
+	return "%s|%s|%s|%s|%d|%d|%s|%s|%s|%s|%s|%s|%d|%s" % [
 		role_key,
 		str(custom_board_enabled),
 		custom_board_cache_key,
@@ -15815,6 +15815,7 @@ func _editor_board_visual_domain_key(role_key: String, unit_bp: Dictionary, cust
 		str(editor_pending_payload_index),
 		_editor_visual_stats_revision_key(visual_stats),
 		1 if editor_barrier_grid_guides_enabled else 0,
+		_battle_terrain_snapshot_revision_key() if role_key == "barrier" and _barrier_uses_screen_board(unit_bp) else "",
 	]
 
 
@@ -21009,6 +21010,117 @@ func _barrier_tiles_with_screen_pos_for_save(tiles: Array) -> Array:
 	return saved_tiles
 
 
+func _barrier_terrain_editor_preview_origin(snapshot: Dictionary) -> Vector2:
+	var fallback := Vector2.ZERO
+	for raw_feature in Array(snapshot.get("features", [])):
+		if not (raw_feature is Dictionary):
+			continue
+		var feature: Dictionary = raw_feature
+		var collider: Dictionary = Dictionary(feature.get("collider", {}))
+		if collider.get("center", null) is Vector2 and fallback == Vector2.ZERO:
+			fallback = Vector2(collider.get("center"))
+		if Array(feature.get("anchor_points", [])).is_empty():
+			continue
+		if Array(feature.get("surface_tags", [])).has("midfield") or Array(feature.get("surface_tags", [])).has("anchor"):
+			if collider.get("center", null) is Vector2:
+				return Vector2(collider.get("center"))
+			var anchor: Dictionary = Dictionary(Array(feature.get("anchor_points", []))[0])
+			if anchor.get("position", null) is Vector2:
+				return Vector2(anchor.get("position"))
+	for raw_feature in Array(snapshot.get("features", [])):
+		if not (raw_feature is Dictionary):
+			continue
+		var feature: Dictionary = raw_feature
+		if Array(feature.get("anchor_points", [])).is_empty():
+			continue
+		var collider: Dictionary = Dictionary(feature.get("collider", {}))
+		if collider.get("center", null) is Vector2:
+			return Vector2(collider.get("center"))
+		var anchor: Dictionary = Dictionary(Array(feature.get("anchor_points", []))[0])
+		if anchor.get("position", null) is Vector2:
+			return Vector2(anchor.get("position"))
+	return fallback
+
+
+func _barrier_terrain_editor_preview(unit_bp: Dictionary, context: Dictionary = {}) -> Dictionary:
+	var snapshot := {}
+	if context.get("snapshot", {}) is Dictionary and not Dictionary(context.get("snapshot", {})).is_empty():
+		snapshot = Dictionary(context.get("snapshot", {})).duplicate(true)
+	else:
+		snapshot = _battle_terrain_runtime_snapshot()
+	var preview_origin := Vector2.ZERO
+	if context.get("preview_origin", null) is Vector2:
+		preview_origin = Vector2(context.get("preview_origin"))
+	else:
+		preview_origin = _barrier_terrain_editor_preview_origin(snapshot)
+	var result := {
+		"arena_id": String(snapshot.get("arena_id", "")),
+		"snapshot_revision_key": _battle_terrain_snapshot_revision_key(snapshot),
+		"preview_origin": preview_origin,
+		"tiles": [],
+		"placement_intents": [],
+		"deployment_intents": [],
+		"blocked_tiles": [],
+	}
+	if String(unit_bp.get("role", "barrier")) != "barrier" or not unit_bp.has("barrier_tiles"):
+		result["revision_key"] = "%s|empty" % String(result.get("snapshot_revision_key", ""))
+		return result
+	var tiles: Array = Array(unit_bp.get("barrier_tiles", []))
+	for i in range(tiles.size()):
+		if not (tiles[i] is Dictionary):
+			continue
+		var source_tile: Dictionary = Dictionary(tiles[i])
+		var tile := source_tile.duplicate(true)
+		var tile_slot := "joint" if tile.has("joint") else "muscle"
+		var part_index := int(tile.get(tile_slot, unit_bp.get(tile_slot, unit_bp.get("muscle", 0))))
+		var component := _selected_component("barrier", tile_slot, part_index).duplicate(true)
+		var screen_pos := _barrier_tile_screen_pos(tile)
+		var local_pos := Vector2(
+			screen_pos.x * BARRIER_BLUEPRINT_WIDTH - BARRIER_BLUEPRINT_WIDTH * 0.5,
+			screen_pos.y * BARRIER_BLUEPRINT_HEIGHT - BARRIER_BLUEPRINT_HEIGHT * 0.5
+		)
+		var preview_tile := tile.duplicate(true)
+		preview_tile["tile_id"] = String(tile.get("tile_id", "editor_tile_%d" % i))
+		preview_tile["position"] = preview_origin + local_pos
+		preview_tile["screen_pos"] = screen_pos
+		preview_tile["local_pos"] = local_pos
+		preview_tile["radius"] = maxf(maxf(0.035, float(component.get("radius", 0.08))), float(tile.get("radius", 0.0)))
+		preview_tile["orientation"] = Vector2.RIGHT
+		var placement: Dictionary = _barrier_terrain_interaction_service().barrier_placement_intent({
+			"tile": preview_tile,
+			"component": component,
+			"snapshot": snapshot,
+		})
+		var deployment_intents: Array = _barrier_terrain_interaction_service().terrain_deployment_intents(placement)
+		var tile_preview := {
+			"tile_index": i,
+			"tile_id": String(preview_tile.get("tile_id", "")),
+			"slot": tile_slot,
+			"part_index": part_index,
+			"part_name": String(component.get("name", "")),
+			"screen_pos": screen_pos,
+			"position": Vector2(preview_tile.get("position", preview_origin)),
+			"placement": placement.duplicate(true),
+			"deployment_intents": deployment_intents.duplicate(true),
+		}
+		Array(result["tiles"]).append(tile_preview)
+		Array(result["placement_intents"]).append(placement.duplicate(true))
+		Array(result["deployment_intents"]).append_array(deployment_intents.duplicate(true))
+		if not bool(placement.get("allowed", false)):
+			Array(result["blocked_tiles"]).append({
+				"tile_index": i,
+				"reason": String(placement.get("reason", "blocked_unknown")),
+				"feature_id": String(placement.get("feature_id", "")),
+			})
+	result["revision_key"] = "%s|%d|%d|%d" % [
+		String(result.get("snapshot_revision_key", "")),
+		tiles.hash(),
+		Array(result.get("placement_intents", [])).hash(),
+		Array(result.get("deployment_intents", [])).hash(),
+	]
+	return result
+
+
 func _barrier_editor_rect_for_size(board_size: Vector2) -> Rect2:
 	var margin := Vector2(8.0, 44.0)
 	var available := Vector2(maxf(64.0, board_size.x - margin.x * 2.0), maxf(64.0, board_size.y - margin.y * 2.0))
@@ -26101,6 +26213,15 @@ func _battle_terrain_runtime_snapshot() -> Dictionary:
 	if not (battle_terrain_runtime_snapshot is Dictionary) or battle_terrain_runtime_snapshot.is_empty():
 		battle_terrain_runtime_snapshot = _battle_terrain_service().arena_snapshot(_default_battle_terrain_snapshot_context())
 	return Dictionary(battle_terrain_runtime_snapshot).duplicate(true)
+
+
+func _battle_terrain_snapshot_revision_key(snapshot: Dictionary = {}) -> String:
+	var source := snapshot if not snapshot.is_empty() else _battle_terrain_runtime_snapshot()
+	return "%s:%d:%d" % [
+		String(source.get("arena_id", "")),
+		int(source.get("version", 0)),
+		Array(source.get("features", [])).hash(),
+	]
 
 
 func _battle_hit_resolution_service() -> BattleHitResolutionService:
@@ -51920,7 +52041,7 @@ func _refresh_editor_selected_part_preview(slot_key: String, part: Dictionary, s
 
 
 func _editor_visual_revision_signature(role_key: String, unit_bp: Dictionary, stats: Dictionary, custom_board_cache_key: String, update_side_panels: bool) -> String:
-	return "%s|%s|%s|%d|%d|%s|%s|%s|%s|%s|%d|%s|%s|%s|%s|%s|%s|%s|%d|%d|%d|%d" % [
+	return "%s|%s|%s|%d|%d|%s|%s|%s|%s|%s|%d|%s|%s|%s|%s|%s|%s|%s|%d|%d|%d|%d|%s" % [
 		role_key,
 		custom_board_cache_key,
 		editor_selected_body_part,
@@ -51943,6 +52064,7 @@ func _editor_visual_revision_signature(role_key: String, unit_bp: Dictionary, st
 		Array(unit_bp.get("barrier_tiles", [])).hash(),
 		1 if editor_barrier_grid_guides_enabled else 0,
 		1 if editor_assembly_template_collapsed else 0,
+		_battle_terrain_snapshot_revision_key() if role_key == "barrier" and _barrier_uses_screen_board(unit_bp) else "",
 	]
 
 
@@ -52172,6 +52294,13 @@ func _refresh_editor_visual_views(precomputed_stats: Dictionary = {}, update_sid
 		board_mode = "custom"
 	elif barrier_screen_board:
 		board_mode = "barrier"
+		var terrain_preview: Dictionary = _barrier_terrain_editor_preview(unit_bp)
+		var terrain_preview_tiles_by_index := {}
+		for raw_preview_tile in Array(terrain_preview.get("tiles", [])):
+			if raw_preview_tile is Dictionary:
+				var preview_tile: Dictionary = raw_preview_tile
+				terrain_preview_tiles_by_index[int(preview_tile.get("tile_index", -1))] = preview_tile
+		snapshot["terrain_preview"] = terrain_preview
 		snapshot["barrier_columns"] = BARRIER_MAP_COLUMNS
 		snapshot["barrier_rows"] = BARRIER_MAP_ROWS
 		snapshot["barrier_width"] = BARRIER_BLUEPRINT_WIDTH
@@ -52185,6 +52314,7 @@ func _refresh_editor_visual_views(precomputed_stats: Dictionary = {}, update_sid
 			str(editor_board_view_offset),
 			1 if editor_barrier_grid_guides_enabled else 0,
 		]
+		snapshot["revision_key"] = "%s|terrain:%s" % [String(snapshot.get("revision_key", "")), String(terrain_preview.get("revision_key", ""))]
 		for i in range(Array(unit_bp.get("barrier_tiles", [])).size()):
 			var tile: Dictionary = Array(unit_bp.get("barrier_tiles", []))[i]
 			var tile_slot := "joint" if tile.has("joint") else "muscle"
@@ -52195,6 +52325,7 @@ func _refresh_editor_visual_views(precomputed_stats: Dictionary = {}, update_sid
 				"pos": tile_pos,
 				"kind": String(muscle_part.get("shape", "ether_pin")),
 				"damage_type": String(muscle_part.get("projectile_damage_type", muscle_part.get("damage_type", "blunt"))),
+				"terrain_preview": Dictionary(terrain_preview_tiles_by_index.get(i, {})).duplicate(true),
 			}
 	if board_mode == "custom" and not snapshot.is_empty():
 		snapshot = _apply_editor_board_dynamic_fields(snapshot, role_key, unit_bp, custom_board_cache_key, visual_stats)

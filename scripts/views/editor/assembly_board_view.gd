@@ -970,20 +970,32 @@ func _draw_barrier_board() -> void:
 			center = screen_rect.position + Vector2(clampf(tile_pos.x, 0.0, 1.0) * screen_rect.size.x, clampf(tile_pos.y, 0.0, 1.0) * screen_rect.size.y)
 		var pulse := snap_amount if String(key) == snap_part else 0.0
 		var kind := String(item.get("kind", "ether_pin"))
+		var tile_color := ether_color
+		var terrain_preview: Dictionary = Dictionary(item.get("terrain_preview", {}))
+		var placement: Dictionary = Dictionary(terrain_preview.get("placement", {}))
+		var outcome := String(placement.get("outcome", ""))
+		if outcome == "attach" or outcome == "bridge":
+			tile_color = Color(0.36, 1.0, 0.72, 0.95)
+		elif outcome == "blocked":
+			tile_color = Color(1.0, 0.26, 0.18, 0.95)
+		elif not Array(placement.get("overlaps", [])).is_empty():
+			tile_color = Color(1.0, 0.82, 0.26, 0.95)
 		if kind == "question_block":
 			var block_size := minf(cell_rect.size.x, cell_rect.size.y) * 0.62
 			var rect := Rect2(center - Vector2.ONE * block_size * 0.5 - Vector2.ONE * pulse * 4.0, Vector2.ONE * block_size + Vector2.ONE * pulse * 8.0)
-			draw_rect(rect, Color(0.96, 0.72, 0.18, 0.98), true)
+			draw_rect(rect, tile_color, true)
 			draw_rect(rect, Color(0.18, 0.09, 0.02, 0.9), false, 2.0)
 			draw_string(ThemeDB.get_fallback_font(), center + Vector2(-5.0, 7.0), "?", HORIZONTAL_ALIGNMENT_CENTER, 10.0, 24, Color(0.16, 0.08, 0.02, 1.0))
 			draw_circle(center + Vector2(12.0, -12.0), 3.0 + pulse * 2.0, Color.WHITE)
 		else:
 			var radius := minf(cell_rect.size.x, cell_rect.size.y) * 0.28
-			draw_arc(center, radius + pulse * 6.0, 0.0, TAU, 32, ether_color, 3.0)
-			draw_circle(center, radius * 0.42, ether_color.lerp(Color.WHITE, 0.35))
+			draw_arc(center, radius + pulse * 6.0, 0.0, TAU, 32, tile_color, 3.0)
+			draw_circle(center, radius * 0.42, tile_color.lerp(Color.WHITE, 0.35))
 			for i in range(4):
 				var angle := TAU * float(i) / 4.0 + 0.4
-				draw_line(center, center + Vector2(cos(angle), sin(angle)) * (radius * 1.34 + pulse * 7.0), Color(0.34, 0.92, 1.0, 0.44), 2.0)
+				draw_line(center, center + Vector2(cos(angle), sin(angle)) * (radius * 1.34 + pulse * 7.0), tile_color.lerp(Color(0.34, 0.92, 1.0, 0.44), 0.45), 2.0)
+		if outcome == "attach" or outcome == "bridge" or outcome == "blocked":
+			draw_circle(center, minf(cell_rect.size.x, cell_rect.size.y) * 0.42 + pulse * 4.0, tile_color, false, 2.0)
 	var barrier_hint := "结界屏幕蓝图 / 最大一屏 / 以太固定不相连组件" if _board_is_zh() else "BARRIER SCREEN BLUEPRINT / max one viewport; ether binds disconnected tiles"
 	draw_string(ThemeDB.get_fallback_font(), Vector2(38.0, size.y - 22.0), barrier_hint, HORIZONTAL_ALIGNMENT_LEFT, size.x - 76.0, 13, Color(0.78, 0.9, 1.0, 0.72))
 

@@ -50,7 +50,7 @@ Status: planned after the local two-player formal battle feels complete.
 
 ## Barrier-Terrain Integration
 
-Status: high-priority planned extension. Current barriers already create runtime collision, projectile occlusion, walls, lanes, triggers, and local fields. The independent authored-terrain contract is implemented through `scripts/services/battle_terrain_service.gd`; the first barrier-terrain interaction intent layer is implemented through `scripts/services/barrier_terrain_interaction_service.gd`; runtime barrier creation records terrain placement/deployment intents; runtime map occlusion now consumes terrain-plus-barrier candidates, runtime collision now resolves authored terrain as static blockers, the default Mobius arena now ships authored terrain content, and saved barrier blueprints strip arena/runtime terrain metadata while preserving authored `terrain_policy`. Editor preview still needs to consume these services.
+Status: high-priority planned extension. Current barriers already create runtime collision, projectile occlusion, walls, lanes, triggers, and local fields. The independent authored-terrain contract is implemented through `scripts/services/battle_terrain_service.gd`; the first barrier-terrain interaction intent layer is implemented through `scripts/services/barrier_terrain_interaction_service.gd`; runtime barrier creation records terrain placement/deployment intents; runtime map occlusion now consumes terrain-plus-barrier candidates, runtime collision now resolves authored terrain as static blockers, the default Mobius arena now ships authored terrain content, saved barrier blueprints strip arena/runtime terrain metadata while preserving authored `terrain_policy`, and editor barrier previews now consume the same terrain placement services.
 
 - Normalized terrain-feature snapshots now carry stable feature ID, terrain kind, collider geometry, orientation, surface tags, ownership, destructibility, anchor points, and effect channels.
 - Keep saved barrier blueprints map-independent. Resolve terrain attachment and interaction only when previewing or deploying into a specific arena.
@@ -59,20 +59,21 @@ Status: high-priority planned extension. Current barriers already create runtime
 - Runtime barrier creation now calls the barrier-terrain interaction layer and stores placement, deployment, blocked-tile, and arena snapshot metadata on the live barrier unit without mutating input stats or saved blueprints.
 - The default runtime terrain snapshot now uses `mobius_default_arena`, with two midfield cover walls that feed collision/occlusion/barrier anchors and a bridgeable north-route gap marker for later traversal rules.
 - Saved-unit canonicalization now removes live terrain placement/deployment and collision metadata from stored unit-library blueprints and payloads while keeping map-independent barrier tile `terrain_policy`.
+- Editor barrier board snapshots now include a read-only terrain preview generated from `BattleTerrainService` and `BarrierTerrainInteractionService`, so UI rendering can distinguish free, attached, bridged, overlapping, or blocked terrain outcomes without mutating the blueprint.
 - Define barrier interactions with map walls, floors, gaps, hazards, cover, traversal lanes, portals, and scripted arena mechanisms.
 - Allow appropriate barrier panels to attach to terrain anchors, bridge valid gaps, reinforce or breach destructible terrain, and inherit a wall or lane orientation.
 - Runtime projectile occlusion and line-of-sight helpers now route through combined terrain-plus-barrier occlusion candidates; target awareness facts now preserve terrain occlusion source metadata. Runtime collision now pushes live physics subjects out of authored terrain collision candidates while preserving terrain source metadata. Later path planning still needs terrain-backed integration.
 - Let local fields react to terrain tags where designed: gravity may follow a surface vector, heat/coolant may be amplified or damped, and speed lanes may connect to authored routes.
 - Define cleanup and restoration behavior when either the supporting terrain or attached barrier component is destroyed, transformed, or removed.
 - Preserve deterministic, replayable results from map state and authored rules; this feature does not require a large language model or external model service.
-- Add focused probes for editor preview consumption, destruction invalidation, and identical replay results inside battle/editor entrypoints.
+- Add focused probes for destruction invalidation and identical replay results inside battle/editor entrypoints.
 
 Suggested future ownership boundary:
 
 - `BattleTerrainService`: exposes immutable arena terrain snapshots and spatial queries.
 - `BarrierTerrainInteractionService`: evaluates placement and produces terrain interaction intents. Pure service baseline implemented; battle/editor application remains next.
 - Battle runtime: applies accepted intents and owns temporary collision/effect instances.
-- Editor and scout UI: preview interaction outcomes without mutating the arena.
+- Editor and scout UI: preview interaction outcomes without mutating the arena. Editor barrier board preview consumption is implemented; scout-side surfacing remains future UI polish.
 
 ## Player-Bound Unit Library
 
