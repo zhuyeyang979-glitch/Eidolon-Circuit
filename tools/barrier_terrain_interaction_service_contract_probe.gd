@@ -97,6 +97,22 @@ func _init() -> void:
 				"destructible": true,
 				"metadata": {"terrain_hp": 40.0, "max_terrain_hp": 60.0},
 			},
+			{
+				"id": "portal-zeta",
+				"kind": "portal",
+				"collider": {"shape": "circle", "center": Vector2(12.4, 0.0), "radius": 0.45},
+				"surface_tags": ["portal", "scripted_mechanism"],
+				"effect_channels": ["portal"],
+				"metadata": {"portal_index": 0, "portal_name": "ZETA FOLD"},
+			},
+			{
+				"id": "mechanism-eta",
+				"kind": "mechanism",
+				"collider": {"shape": "circle", "center": Vector2(13.6, 0.0), "radius": 0.45},
+				"surface_tags": ["scripted_mechanism"],
+				"effect_channels": ["scripted_mechanism"],
+				"metadata": {"mechanism_id": "eta"},
+			},
 		],
 	})
 
@@ -175,6 +191,54 @@ func _init() -> void:
 	if not _expect(bool(bridge.get("allowed", false)) and String(bridge.get("outcome", "")) == "bridge", "bridge should be allowed: %s" % str(bridge)):
 		return
 	if not _expect_eq(String(Dictionary(service.terrain_deployment_intents(bridge)[0]).get("action", "")), "bridge_terrain_gap", "bridge intent action"):
+		return
+
+	var portal_policy: Dictionary = service.barrier_tile_policy({
+		"tile": {
+			"tile_id": "portal-trigger",
+			"terrain_policy": {
+				"portal_kinds": ["portal"],
+			},
+		},
+	})
+	if not _expect_eq(Array(portal_policy.get("portal_kinds", [])), ["portal"], "portal policy normalized"):
+		return
+	var portal: Dictionary = service.barrier_placement_intent({
+		"snapshot": snapshot,
+		"tile": {
+			"tile_id": "portal-trigger",
+			"position": Vector2(12.4, 0.0),
+			"radius": 0.08,
+			"terrain_policy": portal_policy,
+		},
+	})
+	if not _expect(bool(portal.get("allowed", false)) and String(portal.get("outcome", "")) == "portal", "portal should be allowed: %s" % str(portal)):
+		return
+	if not _expect_eq(String(Dictionary(service.terrain_deployment_intents(portal)[0]).get("action", "")), "activate_terrain_portal", "portal intent action"):
+		return
+
+	var mechanism_policy: Dictionary = service.barrier_tile_policy({
+		"tile": {
+			"tile_id": "mechanism-trigger",
+			"terrain_policy": {
+				"mechanism_kinds": ["mechanism"],
+			},
+		},
+	})
+	if not _expect_eq(Array(mechanism_policy.get("mechanism_kinds", [])), ["mechanism"], "mechanism policy normalized"):
+		return
+	var mechanism: Dictionary = service.barrier_placement_intent({
+		"snapshot": snapshot,
+		"tile": {
+			"tile_id": "mechanism-trigger",
+			"position": Vector2(13.6, 0.0),
+			"radius": 0.08,
+			"terrain_policy": mechanism_policy,
+		},
+	})
+	if not _expect(bool(mechanism.get("allowed", false)) and String(mechanism.get("outcome", "")) == "mechanism", "mechanism should be allowed: %s" % str(mechanism)):
+		return
+	if not _expect_eq(String(Dictionary(service.terrain_deployment_intents(mechanism)[0]).get("action", "")), "trigger_arena_mechanism", "mechanism intent action"):
 		return
 
 	var destructible_policy: Dictionary = service.barrier_tile_policy({

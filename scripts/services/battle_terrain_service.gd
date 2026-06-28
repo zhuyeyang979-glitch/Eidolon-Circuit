@@ -5,12 +5,15 @@ const TERRAIN_KIND_FLOOR := "floor"
 const TERRAIN_KIND_WALL := "wall"
 const TERRAIN_KIND_GAP := "gap"
 const TERRAIN_KIND_HAZARD := "hazard"
+const TERRAIN_KIND_PORTAL := "portal"
 
 const PLACEMENT_FREE := "free"
 const PLACEMENT_ATTACH := "attach"
 const PLACEMENT_BRIDGE := "bridge"
 const PLACEMENT_REINFORCE := "reinforce"
 const PLACEMENT_BREACH := "breach"
+const PLACEMENT_PORTAL := "portal"
+const PLACEMENT_MECHANISM := "mechanism"
 const PLACEMENT_OVERLAP := "overlap"
 const PLACEMENT_REPLACE := "replace"
 const PLACEMENT_BLOCKED := "blocked"
@@ -120,6 +123,12 @@ func placement_query(context: Dictionary) -> Dictionary:
 	var bridge := _first_matching_kind(overlaps, context.get("bridge_kinds", []))
 	if not bridge.is_empty():
 		return _placement_result(PLACEMENT_BRIDGE, "bridge_terrain_gap", bridge, overlaps)
+	var portal := _first_matching_kind(overlaps, context.get("portal_kinds", []))
+	if not portal.is_empty():
+		return _placement_result(PLACEMENT_PORTAL, "activate_terrain_portal", portal, overlaps)
+	var mechanism := _first_matching_kind(overlaps, context.get("mechanism_kinds", []))
+	if not mechanism.is_empty():
+		return _placement_result(PLACEMENT_MECHANISM, "trigger_arena_mechanism", mechanism, overlaps)
 	var overlap := _first_matching_kind(overlaps, context.get("overlap_kinds", []))
 	if not overlap.is_empty():
 		return _placement_result(PLACEMENT_OVERLAP, "overlap_terrain", overlap, overlaps)

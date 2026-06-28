@@ -163,6 +163,12 @@ func portal_spawn_intent(context: Dictionary) -> Dictionary:
 	if String(context.get("role_key", "")) == "barrier":
 		return {"ring": player_center, "lane": player_lane, "reason": "barrier_camera"}
 	var portal := _dict(context.get("portal", {}))
+	if portal.has("absolute_ring") or portal.has("absolute_lane"):
+		return {
+			"ring": wrapf(float(portal.get("absolute_ring", player_center)), 0.0, maxf(0.001, float(context.get("ring_length", 1.0)))),
+			"lane": _clamp_lane(float(portal.get("absolute_lane", player_lane)), context),
+			"reason": String(portal.get("reason", "terrain_portal")),
+		}
 	var portal_lane := float(portal.get("lane", 0.0))
 	var lane_value := _clamp_lane(player_lane + portal_lane * 1.35, context)
 	var delta_value := float(portal.get("delta", 0.0))

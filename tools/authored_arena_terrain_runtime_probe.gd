@@ -29,6 +29,7 @@ func _init() -> void:
 		"mobius_default_arena",
 		"mobius_mid_cover_north",
 		"mobius_gap_north_route",
+		"mobius_midfield_fold_gate",
 	]:
 		if not main_source.contains(token):
 			_fail("main.gd missing authored arena terrain token: %s" % token)
@@ -56,6 +57,11 @@ func _init() -> void:
 		return
 	var gap := _feature_by_id(features, "mobius_gap_north_route")
 	if not _expect(not gap.is_empty() and String(gap.get("terrain_kind", "")) == "gap", "default arena should include a gap marker"):
+		return
+	var portal := _feature_by_id(features, "mobius_midfield_fold_gate")
+	if not _expect(not portal.is_empty() and String(portal.get("terrain_kind", "")) == "portal", "default arena should include a portal marker"):
+		return
+	if not _expect(Array(portal.get("effect_channels", [])).has("portal"), "default portal should expose portal effect channel"):
 		return
 
 	var collision_candidates: Array = main._terrain_collision_candidates_for_runtime()

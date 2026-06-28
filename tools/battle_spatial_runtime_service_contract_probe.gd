@@ -122,6 +122,9 @@ func _init() -> void:
 	var large_spawn := service.portal_spawn_intent({"role_key": "hero", "portal": {"delta": -2.0, "lane": 0.8}, "radius": 0.7, "camera_center": 6.0, "camera_lane": 0.4, "ring_length": 24.0, "lane_limit": 1.0})
 	if not _expect(_approx(float(large_spawn.get("ring", 0.0)), 3.0) and _approx(float(large_spawn.get("lane", 0.0)), 0.4), "large mech portal fallback mismatch: %s" % str(large_spawn)):
 		return
+	var terrain_portal_spawn := service.portal_spawn_intent({"role_key": "hero", "portal": {"absolute_ring": 21.5, "absolute_lane": -0.65, "reason": "terrain_portal"}, "radius": 0.2, "camera_center": 6.0, "camera_lane": 0.4, "ring_length": 24.0, "lane_limit": 1.0})
+	if not _expect(_approx(float(terrain_portal_spawn.get("ring", 0.0)), 21.5) and _approx(float(terrain_portal_spawn.get("lane", 0.0)), -0.65) and String(terrain_portal_spawn.get("reason", "")) == "terrain_portal", "terrain portal absolute spawn mismatch: %s" % str(terrain_portal_spawn)):
+		return
 	var short_input := service.surface_input_intent({"mobius_enabled": true, "readable_input": Vector2(0.01, 0.0), "surface_input": Vector2.RIGHT})
 	if not _expect(short_input.get("input", Vector2.ZERO) == Vector2(0.01, 0.0), "short surface input should use readable input: %s" % str(short_input)):
 		return

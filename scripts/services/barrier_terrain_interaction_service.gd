@@ -8,6 +8,8 @@ const OUTCOME_ATTACH := "attach"
 const OUTCOME_BRIDGE := "bridge"
 const OUTCOME_REINFORCE := "reinforce"
 const OUTCOME_BREACH := "breach"
+const OUTCOME_PORTAL := "portal"
+const OUTCOME_MECHANISM := "mechanism"
 const OUTCOME_OVERLAP := "overlap"
 const OUTCOME_REPLACE := "replace"
 const OUTCOME_BLOCKED := "blocked"
@@ -27,6 +29,8 @@ func barrier_tile_policy(context: Dictionary) -> Dictionary:
 		"bridge_kinds": _normalized_token_list(tile_policy.get("bridge_kinds", component_policy.get("bridge_kinds", []))),
 		"reinforce_kinds": _normalized_token_list(tile_policy.get("reinforce_kinds", component_policy.get("reinforce_kinds", []))),
 		"breach_kinds": _normalized_token_list(tile_policy.get("breach_kinds", component_policy.get("breach_kinds", []))),
+		"portal_kinds": _normalized_token_list(tile_policy.get("portal_kinds", component_policy.get("portal_kinds", []))),
+		"mechanism_kinds": _normalized_token_list(tile_policy.get("mechanism_kinds", component_policy.get("mechanism_kinds", []))),
 		"blocked_kinds": _normalized_token_list(tile_policy.get("blocked_kinds", component_policy.get("blocked_kinds", []))),
 		"overlap_kinds": _normalized_token_list(tile_policy.get("overlap_kinds", component_policy.get("overlap_kinds", []))),
 		"replace_kinds": _normalized_token_list(tile_policy.get("replace_kinds", component_policy.get("replace_kinds", []))),
@@ -53,6 +57,8 @@ func barrier_placement_intent(context: Dictionary) -> Dictionary:
 		"replace_kinds": Array(policy.get("replace_kinds", [])),
 		"reinforce_kinds": Array(policy.get("reinforce_kinds", [])),
 		"breach_kinds": Array(policy.get("breach_kinds", [])),
+		"portal_kinds": Array(policy.get("portal_kinds", [])),
+		"mechanism_kinds": Array(policy.get("mechanism_kinds", [])),
 		"attach_kinds": Array(policy.get("attach_kinds", [])),
 		"bridge_kinds": Array(policy.get("bridge_kinds", [])),
 		"overlap_kinds": Array(policy.get("overlap_kinds", [])),
@@ -73,6 +79,12 @@ func barrier_placement_intent(context: Dictionary) -> Dictionary:
 		result["allowed"] = true
 	if String(result.get("outcome", "")) == OUTCOME_BREACH:
 		result["reason"] = "breach_terrain_feature"
+		result["allowed"] = true
+	if String(result.get("outcome", "")) == OUTCOME_PORTAL:
+		result["reason"] = "activate_terrain_portal"
+		result["allowed"] = true
+	if String(result.get("outcome", "")) == OUTCOME_MECHANISM:
+		result["reason"] = "trigger_arena_mechanism"
 		result["allowed"] = true
 	if String(result.get("outcome", "")) == OUTCOME_ATTACH:
 		result["reason"] = "attach_to_terrain"
@@ -127,6 +139,20 @@ func terrain_deployment_intents(placement_intent: Dictionary) -> Array:
 			"feature_id": feature_id,
 			"terrain_kind": String(placement_intent.get("terrain_kind", "")),
 			"breach_damage": maxf(0.0, float(_dict(placement_intent.get("policy", {})).get("breach_damage", 0.0))),
+		}]
+	if outcome == OUTCOME_PORTAL:
+		return [{
+			"action": "activate_terrain_portal",
+			"tile_id": tile_id,
+			"feature_id": feature_id,
+			"terrain_kind": String(placement_intent.get("terrain_kind", "")),
+		}]
+	if outcome == OUTCOME_MECHANISM:
+		return [{
+			"action": "trigger_arena_mechanism",
+			"tile_id": tile_id,
+			"feature_id": feature_id,
+			"terrain_kind": String(placement_intent.get("terrain_kind", "")),
 		}]
 	if outcome == OUTCOME_REPLACE:
 		return [{
@@ -201,7 +227,7 @@ func _terrain_orientation_from_result(result: Dictionary, fallback: Vector2) -> 
 
 func _merge_policy(base: Dictionary, override_policy: Dictionary) -> Dictionary:
 	var result := base.duplicate(true)
-	for key in ["attach_kinds", "bridge_kinds", "reinforce_kinds", "breach_kinds", "blocked_kinds", "overlap_kinds", "replace_kinds"]:
+	for key in ["attach_kinds", "bridge_kinds", "reinforce_kinds", "breach_kinds", "portal_kinds", "mechanism_kinds", "blocked_kinds", "overlap_kinds", "replace_kinds"]:
 		if override_policy.has(key):
 			result[key] = _normalized_token_list(override_policy.get(key, []))
 	if override_policy.has("anchor_support"):

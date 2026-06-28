@@ -1595,6 +1595,7 @@ var star_soul_battle_draft_payload := {}
 var star_soul_bp_active := false
 var star_soul_bp_pending_mode := ""
 var portal_index := {}
+var terrain_portal_overrides := {}
 var camera_center := 0.0
 var camera_lane_center := 0.0
 var camera_mobius_s := 0.0
@@ -2953,6 +2954,7 @@ func _initialize_state() -> void:
 	if battle_controller != null:
 		battle_controller.clear_star_soul_runtime()
 	portal_index = {1: 3, 2: 4}
+	terrain_portal_overrides = _empty_terrain_portal_overrides()
 	camera_center = 0.0
 	camera_lane_center = 0.0
 	camera_mobius_s = 0.0
@@ -11579,6 +11581,8 @@ func _begin_battle(mode: String, preloaded: bool = false, reason: String = "") -
 	victory_points = {1: 0, 2: 0}
 	_start_star_soul_runtime_for_battle(mode)
 	portal_index = {1: 3, 2: 4}
+	terrain_portal_overrides = _empty_terrain_portal_overrides()
+	battle_terrain_runtime_snapshot = {}
 	ai_timer = 0.0
 	ai_buy_timer = 0.0
 	ai_action_timers = {1: 0.0, 2: 0.0}
@@ -26205,6 +26209,22 @@ func _default_battle_terrain_snapshot_context() -> Dictionary:
 					{"id": "north-gap-bridge-b", "position": Vector2(RING_LENGTH * 0.25 + 0.36, 5.6), "normal": Vector2(-1.0, 0.0), "supports": ["barrier_panel", "bridge_panel"]},
 				],
 			},
+			{
+				"id": "mobius_midfield_fold_gate",
+				"name": "MOBIUS MIDFIELD FOLD GATE",
+				"kind": "portal",
+				"collider": {"shape": "circle", "center": Vector2(RING_LENGTH * 0.5, 0.0), "radius": 0.42},
+				"orientation": Vector2(1.0, 0.0),
+				"surface_tags": ["portal", "midfield", "scripted_mechanism"],
+				"effect_channels": ["portal", "scripted_mechanism"],
+				"metadata": {
+					"portal_index": 1,
+					"portal_name": "MIDFIELD FOLD GATE",
+					"portal_ring": RING_LENGTH * 0.5,
+					"portal_lane": 0.0,
+					"owner_scope": "owner",
+				},
+			},
 		],
 	}
 
@@ -26222,6 +26242,99 @@ func _battle_terrain_snapshot_revision_key(snapshot: Dictionary = {}) -> String:
 		int(source.get("version", 0)),
 		Array(source.get("features", [])).hash(),
 	]
+
+
+func _empty_terrain_portal_overrides() -> Dictionary:
+	return {1: {}, 2: {}}
+
+
+func _portal_for_player_index(player_id: int, portal_slot: int) -> Dictionary:
+	var resolved_slot := clampi(portal_slot, 0, PORTALS.size() - 1)
+	var portal: Dictionary = Dictionary(PORTALS[resolved_slot]).duplicate(true)
+	var override := _terrain_portal_override_for(player_id, resolved_slot)
+	if not override.is_empty():
+		for key in override.keys():
+			portal[key] = override[key]
+		portal["terrain_portal_active"] = true
+	return portal
+
+
+func _terrain_portal_override_for(player_id: int, portal_slot: int) -> Dictionary:
+	if not (terrain_portal_overrides is Dictionary):
+		return {}
+	var by_player = terrain_portal_overrides.get(player_id, {})
+	if not (by_player is Dictionary):
+		return {}
+	var player_overrides: Dictionary = by_player
+	var override = player_overrides.get(portal_slot, player_overrides.get(str(portal_slot), {}))
+	return Dictionary(override).duplicate(true) if override is Dictionary else {}
+
+
+func _terrain_feature_by_id(snapshot: Dictionary, feature_id: String) -> Dictionary:
+	if feature_id == "":
+		return {}
+	for raw_feature in Array(snapshot.get("features", [])):
+		if not (raw_feature is Dictionary):
+			continue
+		var feature: Dictionary = raw_feature
+		if String(feature.get("feature_id", "")) == feature_id:
+			return feature.duplicate(true)
+	return {}
+
+
+func _terrain_feature_center(feature: Dictionary) -> Vector2:
+	var collider: Dictionary = Dictionary(feature.get("collider", {}))
+	if collider.get("center", null) is Vector2:
+		return Vector2(collider.get("center", Vector2.ZERO))
+	if collider.get("position", null) is Vector2:
+		return Vector2(collider.get("position", Vector2.ZERO))
+	if collider.get("a", null) is Vector2 and collider.get("b", null) is Vector2:
+		return (Vector2(collider.get("a")) + Vector2(collider.get("b"))) * 0.5
+	return Vector2.ZERO
+
+
+func _terrain_portal_target_players(owner_id: int, owner_scope: String) -> Array:
+	var owner := clampi(owner_id, 1, 2)
+	match owner_scope.strip_edges().to_lower():
+		"all", "both", "global":
+			return [1, 2]
+		"enemy", "opponent":
+			return [2 if owner == 1 else 1]
+	return [owner]
+
+
+func _activate_terrain_portal_override(owner_id: int, feature: Dictionary, intent: Dictionary) -> Dictionary:
+	if feature.is_empty():
+		return {}
+	var metadata: Dictionary = Dictionary(feature.get("metadata", {}))
+	var center := _terrain_feature_center(feature)
+	var fallback_slot := int(portal_index.get(clampi(owner_id, 1, 2), 0))
+	var portal_slot := clampi(int(metadata.get("portal_index", metadata.get("target_portal_index", intent.get("portal_index", fallback_slot)))), 0, PORTALS.size() - 1)
+	var target_ring := float(metadata.get("portal_ring", metadata.get("ring", center.x)))
+	var target_lane := float(metadata.get("portal_lane", metadata.get("lane", center.y)))
+	var override := {
+		"name": String(metadata.get("portal_name", feature.get("name", "TERRAIN PORTAL"))),
+		"absolute_ring": wrapf(target_ring, 0.0, RING_LENGTH),
+		"absolute_lane": clampf(target_lane, -BATTLE_HALF_HEIGHT, BATTLE_HALF_HEIGHT),
+		"terrain_feature_id": String(feature.get("feature_id", "")),
+		"terrain_portal_active": true,
+		"reason": "terrain_portal",
+	}
+	var players := _terrain_portal_target_players(owner_id, String(metadata.get("owner_scope", intent.get("owner_scope", "owner"))))
+	if not (terrain_portal_overrides is Dictionary) or terrain_portal_overrides.is_empty():
+		terrain_portal_overrides = _empty_terrain_portal_overrides()
+	for target_player in players:
+		if not terrain_portal_overrides.has(target_player) or not (terrain_portal_overrides[target_player] is Dictionary):
+			terrain_portal_overrides[target_player] = {}
+		terrain_portal_overrides[target_player][portal_slot] = override.duplicate(true)
+	var state_intent := intent.duplicate(true)
+	state_intent["action"] = "activate_terrain_portal"
+	state_intent["portal_index"] = portal_slot
+	state_intent["portal_name"] = String(override.get("name", ""))
+	state_intent["absolute_ring"] = float(override.get("absolute_ring", 0.0))
+	state_intent["absolute_lane"] = float(override.get("absolute_lane", 0.0))
+	state_intent["target_players"] = players.duplicate(true)
+	return state_intent
 
 
 func _terrain_traversal_bridge_intents() -> Array:
@@ -27418,7 +27531,7 @@ func _select_summon_portal_for_input(player_id: int, input_vector: Vector2) -> D
 
 
 func _summon_portal_feedback_text(player_id: int, selection: String) -> String:
-	var portal: Dictionary = PORTALS[int(portal_index[player_id])]
+	var portal := _portal_for_player_index(player_id, int(portal_index[player_id]))
 	var selection_label := "直选" if selection == "direct" else "切换"
 	if not _ui_is_zh():
 		selection_label = "DIRECT" if selection == "direct" else "CYCLE"
@@ -27644,7 +27757,7 @@ func _summon_sortie_slot(player_id: int, slot_index: int) -> bool:
 	var base_deploy_cost: int = int(stats.get("deploy_cost", stats.get("cost", 0)))
 	var deploy_cost: int = _discounted_deploy_cost(player_id, role_key, unit_index, base_deploy_cost)
 	var wait_time := maxf(0.4, float(stats.get("deploy_wait", DEPLOY_WAIT_SECONDS)))
-	var portal: Dictionary = PORTALS[int(portal_index[player_id])]
+	var portal := _portal_for_player_index(player_id, int(portal_index[player_id]))
 	var accepted := _summon_role(player_id, role_key, false)
 	if accepted:
 		_show_battle_message(_summon_commit_feedback_text(player_id, slot_index, role_key, unit_index, String(portal["name"]), deploy_cost, base_deploy_cost, wait_time), 1.05)
@@ -30490,24 +30603,39 @@ func _apply_barrier_terrain_arena_state(barrier, deployment_intents: Array) -> v
 	var state_intents: Array = []
 	var snapshot := _battle_terrain_runtime_snapshot()
 	var features: Array = Array(snapshot.get("features", [])).duplicate(true)
+	var snapshot_changed := false
 	for raw_intent in deployment_intents:
 		if not (raw_intent is Dictionary):
 			continue
 		var intent: Dictionary = raw_intent
 		var action := String(intent.get("action", ""))
-		if not action in ["reinforce_terrain_feature", "breach_terrain_feature"]:
-			continue
-		var result := _terrain_state_apply_deployment_intent(features, intent)
-		if result.is_empty():
-			continue
-		features = Array(result.get("features", features))
-		state_intents.append(Dictionary(result.get("state_intent", {})).duplicate(true))
+		if action in ["reinforce_terrain_feature", "breach_terrain_feature"]:
+			var result := _terrain_state_apply_deployment_intent(features, intent)
+			if result.is_empty():
+				continue
+			features = Array(result.get("features", features))
+			snapshot_changed = true
+			state_intents.append(Dictionary(result.get("state_intent", {})).duplicate(true))
+		elif action == "activate_terrain_portal":
+			var feature := _terrain_feature_by_id(snapshot, String(intent.get("feature_id", "")))
+			var state_intent := _activate_terrain_portal_override(int(barrier.owner_id), feature, intent)
+			if not state_intent.is_empty():
+				state_intents.append(state_intent)
+		elif action == "trigger_arena_mechanism":
+			var feature := _terrain_feature_by_id(snapshot, String(intent.get("feature_id", "")))
+			if feature.is_empty():
+				continue
+			var state_intent := intent.duplicate(true)
+			state_intent["mechanism_name"] = String(feature.get("name", feature.get("feature_id", "")))
+			state_intent["action"] = "trigger_arena_mechanism"
+			state_intents.append(state_intent)
 	barrier.set_meta("barrier_terrain_arena_state_intents", state_intents)
 	if state_intents.is_empty():
 		return
-	snapshot["features"] = features
-	snapshot["version"] = int(snapshot.get("version", 0)) + 1
-	battle_terrain_runtime_snapshot = snapshot.duplicate(true)
+	if snapshot_changed:
+		snapshot["features"] = features
+		snapshot["version"] = int(snapshot.get("version", 0)) + 1
+		battle_terrain_runtime_snapshot = snapshot.duplicate(true)
 	barrier.set_meta("barrier_terrain_snapshot_version_after", int(snapshot.get("version", 0)))
 
 
@@ -39077,6 +39205,7 @@ func _clear_all_units() -> void:
 	}
 	pending_deploy_data = _empty_pending_deploy_data()
 	pending_deploy_previews = {}
+	terrain_portal_overrides = _empty_terrain_portal_overrides()
 
 
 func _barrier_extra_ether_indices(unit_bp: Dictionary) -> Array:
@@ -53984,7 +54113,7 @@ func _battle_hud_terms() -> Dictionary:
 
 
 func _battle_hud_player_snapshot(player_id: int) -> Dictionary:
-	var portal: Dictionary = PORTALS[int(portal_index[player_id])]
+	var portal := _portal_for_player_index(player_id, int(portal_index[player_id]))
 	var roles := {}
 	for role_key in ROLE_ORDER:
 		roles[String(role_key)] = _battle_hud_role_state(player_id, String(role_key))
@@ -54964,7 +55093,7 @@ func _update_space_debris(unit, delta: float) -> bool:
 
 
 func _spawn_for_selected_portal(player_id: int, role_key: String, stats: Dictionary) -> Dictionary:
-	var portal: Dictionary = PORTALS[int(portal_index[player_id])]
+	var portal := _portal_for_player_index(player_id, int(portal_index[player_id]))
 	return _battle_spatial_runtime_service().portal_spawn_intent({
 		"role_key": role_key,
 		"portal": portal,

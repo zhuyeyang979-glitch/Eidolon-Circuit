@@ -110,17 +110,37 @@ func _init() -> void:
 		return
 	if not _expect_eq(Array(gap.get("surface_tags", [])), ["void"], "single tag normalized"):
 		return
+	var portal_feature: Dictionary = service.normalize_feature({
+		"id": "fold-gate",
+		"kind": "portal",
+		"collider": {"shape": "circle", "center": Vector2(6.5, 0.0), "radius": 0.35},
+		"surface_tags": ["portal", "scripted_mechanism"],
+		"effect_channels": ["portal"],
+		"metadata": {"portal_index": 1, "portal_ring": 6.5, "portal_lane": 0.0},
+	}, 5)
+	if not _expect_eq(String(portal_feature.get("terrain_kind", "")), "portal", "portal terrain kind"):
+		return
+	var mechanism_feature: Dictionary = service.normalize_feature({
+		"id": "arena-switch",
+		"kind": "mechanism",
+		"collider": {"shape": "circle", "center": Vector2(7.4, 0.0), "radius": 0.35},
+		"surface_tags": ["scripted_mechanism"],
+		"effect_channels": ["scripted_mechanism"],
+		"metadata": {"mechanism_id": "switch_a"},
+	}, 6)
+	if not _expect_eq(String(mechanism_feature.get("terrain_kind", "")), "mechanism", "mechanism terrain kind"):
+		return
 
 	var snapshot: Dictionary = service.arena_snapshot({
 		"arena_id": "mobius_test",
 		"version": 7,
-		"features": [wall, gap],
+		"features": [wall, gap, portal_feature, mechanism_feature],
 	})
 	if not _expect_eq(String(snapshot.get("arena_id", "")), "mobius_test", "snapshot arena id"):
 		return
 	if not _expect_eq(int(snapshot.get("version", 0)), 7, "snapshot version"):
 		return
-	if not _expect_eq(Array(snapshot.get("features", [])).size(), 2, "snapshot feature count"):
+	if not _expect_eq(Array(snapshot.get("features", [])).size(), 4, "snapshot feature count"):
 		return
 	if not _expect_eq(Array(service.features_with_tag(snapshot, "stone")).size(), 1, "tag query"):
 		return
@@ -160,6 +180,28 @@ func _init() -> void:
 		"bridge_kinds": ["gap"],
 	})
 	if not _expect_eq(String(bridge.get("outcome", "")), "bridge", "bridge placement outcome"):
+		return
+
+	var portal: Dictionary = service.placement_query({
+		"snapshot": snapshot,
+		"position": Vector2(6.5, 0.0),
+		"radius": 0.05,
+		"portal_kinds": ["portal"],
+	})
+	if not _expect_eq(String(portal.get("outcome", "")), "portal", "portal placement outcome"):
+		return
+	if not _expect_eq(String(portal.get("reason", "")), "activate_terrain_portal", "portal placement reason"):
+		return
+
+	var mechanism: Dictionary = service.placement_query({
+		"snapshot": snapshot,
+		"position": Vector2(7.4, 0.0),
+		"radius": 0.05,
+		"mechanism_kinds": ["mechanism"],
+	})
+	if not _expect_eq(String(mechanism.get("outcome", "")), "mechanism", "mechanism placement outcome"):
+		return
+	if not _expect_eq(String(mechanism.get("reason", "")), "trigger_arena_mechanism", "mechanism placement reason"):
 		return
 
 	var reinforce: Dictionary = service.placement_query({
