@@ -59,11 +59,11 @@ Status: high-priority planned extension. Current barriers already create runtime
 - Runtime barrier creation now calls the barrier-terrain interaction layer and stores placement, deployment, blocked-tile, and arena snapshot metadata on the live barrier unit without mutating input stats or saved blueprints.
 - Define barrier interactions with map walls, floors, gaps, hazards, cover, traversal lanes, portals, and scripted arena mechanisms.
 - Allow appropriate barrier panels to attach to terrain anchors, bridge valid gaps, reinforce or breach destructible terrain, and inherit a wall or lane orientation.
-- Runtime projectile occlusion and line-of-sight helpers now route through combined terrain-plus-barrier occlusion candidates; collision, target awareness enrichment, and later path planning still need terrain-backed integration.
+- Runtime projectile occlusion and line-of-sight helpers now route through combined terrain-plus-barrier occlusion candidates; target awareness facts now preserve terrain occlusion source metadata. Collision and later path planning still need terrain-backed integration.
 - Let local fields react to terrain tags where designed: gravity may follow a surface vector, heat/coolant may be amplified or damped, and speed lanes may connect to authored routes.
 - Define cleanup and restoration behavior when either the supporting terrain or attached barrier component is destroyed, transformed, or removed.
 - Preserve deterministic, replayable results from map state and authored rules; this feature does not require a large language model or external model service.
-- Add focused probes for editor preview consumption, authored arena terrain content, collision integration, target-awareness terrain metadata, destruction invalidation, map-independent saves, and identical replay results inside battle/editor entrypoints.
+- Add focused probes for editor preview consumption, authored arena terrain content, collision integration, destruction invalidation, map-independent saves, and identical replay results inside battle/editor entrypoints.
 
 Suggested future ownership boundary:
 

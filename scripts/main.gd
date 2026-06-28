@@ -54583,12 +54583,21 @@ func _source_target_distance(unit, target) -> float:
 
 
 func _source_target_candidate_facts(unit, target, player_id: int, policy: String) -> Dictionary:
+	return _source_target_awareness_facts(unit, target, player_id, policy)
+
+
+func _source_target_awareness_facts(unit, target, player_id: int, policy: String) -> Dictionary:
 	var distance: float = _source_target_distance(unit, target)
 	var hp_ratio: float = float(target.health_ratio()) if target != null and target.has_method("health_ratio") else 1.0
 	var target_role := String(target.role)
 	var sight_delta := _mobius_delta_vec_between(unit, target, 0.65)
 	var sight_event := {"direction": sight_delta.normalized() if sight_delta.length() > 0.01 else _unit_forward_vector(unit), "range": maxf(0.1, sight_delta.length()), "lane_range": 0.08, "ai_line_of_sight": true}
-	var sight_blocked := _map_line_occluded(unit, target, sight_event)
+	var sight_query := _map_occlusion_query_between(unit, target, sight_event)
+	var sight_blocked := _battle_map_occlusion_service().line_occluded(sight_query)
+	var sight_occlusion_kind := _battle_map_occlusion_service().occlusion_kind_from_query(sight_query) if sight_blocked else ""
+	var sight_blocker_source := String(sight_query.get("blocker_source", "")) if sight_blocked else ""
+	var sight_terrain_feature_id := String(sight_query.get("terrain_feature_id", "")) if sight_blocker_source == "terrain" else ""
+	var sight_terrain_kind := String(sight_query.get("terrain_kind", "")) if sight_blocker_source == "terrain" else ""
 	var hero_distance := 999999.0
 	if policy == "protect_hero":
 		var own_hero = active_units[player_id]["hero"]
@@ -54600,6 +54609,10 @@ func _source_target_candidate_facts(unit, target, player_id: int, policy: String
 		"hp_ratio": hp_ratio,
 		"role": target_role,
 		"sight_blocked": sight_blocked,
+		"sight_occlusion_kind": sight_occlusion_kind,
+		"sight_blocker_source": sight_blocker_source,
+		"sight_terrain_feature_id": sight_terrain_feature_id,
+		"sight_terrain_kind": sight_terrain_kind,
 		"heat_focus_ratio": clampf(float(unit.stats.get("source_heat_focus_ratio", 0.68)), 0.0, 1.0),
 		"heat_ratio": _source_target_heat_ratio(target),
 		"overheated": bool(target.overheated) if target != null and is_instance_valid(target) else false,
