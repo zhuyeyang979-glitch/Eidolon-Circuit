@@ -26041,13 +26041,55 @@ func _barrier_terrain_interaction_service() -> BarrierTerrainInteractionService:
 	return barrier_terrain_interaction_service
 
 
+func _default_battle_terrain_snapshot_context() -> Dictionary:
+	return {
+		"arena_id": "mobius_default_arena",
+		"version": 1,
+		"features": [
+			{
+				"id": "mobius_mid_cover_north",
+				"name": "MOBIUS MID COVER NORTH",
+				"kind": "wall",
+				"collider": {"shape": "circle", "center": Vector2(RING_LENGTH * 0.5, 2.85), "radius": 0.36},
+				"orientation": Vector2(1.0, 0.0),
+				"surface_tags": ["cover", "midfield", "anchor"],
+				"effect_channels": ["collision", "occlusion"],
+				"anchor_points": [
+					{"id": "north-cover-anchor", "position": Vector2(RING_LENGTH * 0.5, 2.85), "normal": Vector2(0.0, 1.0), "supports": ["barrier_panel"]},
+				],
+			},
+			{
+				"id": "mobius_mid_cover_south",
+				"name": "MOBIUS MID COVER SOUTH",
+				"kind": "wall",
+				"collider": {"shape": "circle", "center": Vector2(RING_LENGTH * 0.5, -2.85), "radius": 0.36},
+				"orientation": Vector2(1.0, 0.0),
+				"surface_tags": ["cover", "midfield", "anchor"],
+				"effect_channels": ["collision", "occlusion"],
+				"anchor_points": [
+					{"id": "south-cover-anchor", "position": Vector2(RING_LENGTH * 0.5, -2.85), "normal": Vector2(0.0, -1.0), "supports": ["barrier_panel"]},
+				],
+			},
+			{
+				"id": "mobius_gap_north_route",
+				"name": "MOBIUS NORTH ROUTE GAP",
+				"kind": "gap",
+				"collider": {"shape": "circle", "center": Vector2(RING_LENGTH * 0.25, 5.6), "radius": 0.48},
+				"orientation": Vector2(1.0, 0.0),
+				"surface_tags": ["gap", "route", "bridgeable"],
+				"effect_channels": ["traversal"],
+				"anchor_points": [
+					{"id": "north-gap-bridge-a", "position": Vector2(RING_LENGTH * 0.25 - 0.36, 5.6), "normal": Vector2(1.0, 0.0), "supports": ["barrier_panel", "bridge_panel"]},
+					{"id": "north-gap-bridge-b", "position": Vector2(RING_LENGTH * 0.25 + 0.36, 5.6), "normal": Vector2(-1.0, 0.0), "supports": ["barrier_panel", "bridge_panel"]},
+				],
+			},
+		],
+	}
+
+
 func _battle_terrain_runtime_snapshot() -> Dictionary:
 	if not (battle_terrain_runtime_snapshot is Dictionary) or battle_terrain_runtime_snapshot.is_empty():
-		battle_terrain_runtime_snapshot = _battle_terrain_service().arena_snapshot({
-			"arena_id": "default_empty_arena",
-			"version": 1,
-			"features": [],
-		})
+		battle_terrain_runtime_snapshot = _battle_terrain_service().arena_snapshot(_default_battle_terrain_snapshot_context())
 	return Dictionary(battle_terrain_runtime_snapshot).duplicate(true)
 
 
