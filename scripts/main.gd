@@ -30468,6 +30468,7 @@ func _remove_barrier_tile_by_index(barrier, tile_index: int) -> bool:
 	if removed:
 		barrier.stats["barrier_map_tiles"] = next_tiles
 		barrier.stats["barrier_tile_count"] = next_tiles.size()
+		_apply_barrier_terrain_deployment(barrier)
 		if barrier.has_method("_refresh_visuals"):
 			barrier._refresh_visuals()
 	return removed

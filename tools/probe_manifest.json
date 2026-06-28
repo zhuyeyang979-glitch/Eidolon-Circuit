@@ -34,6 +34,7 @@
     "authored_arena_terrain_runtime_probe",
     "barrier_terrain_map_independent_save_probe",
     "barrier_terrain_editor_preview_probe",
+    "barrier_terrain_destruction_invalidation_probe",
     "battle_map_occlusion_service_contract_probe",
     "battle_target_acquisition_service_contract_probe",
     "projectile_runtime_service_contract_probe",
