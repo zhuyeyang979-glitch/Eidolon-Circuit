@@ -1887,3 +1887,8 @@ Next safe chunk: continue only with narrow pure-rule extraction where `main.gd` 
 
 - `tools/hardware_fault_direct_module_dependency_probe.gd` now requires a blocked direct runtime action to include the first failed hardware dependency name in `last_module_gate_reason`.
 - Hardware fault dependency reports now keep the pure service's blocked hardware ID while the main battle adapter maps that ID back to the live runtime segment label, producing reasons such as `hardware Right Connector faulted` without mutating module bindings.
+
+2026-06-28 Hardware fault battle log telemetry follow-up:
+
+- `tools/hardware_fault_live_adapter_probe.gd` now requires `_battle_attack_rule_summary_text()` to expose hardware fault transitions in the battle log summary.
+- Post-review attack result reasons now append a compact `HW pre>post raw/path/hardware/capacity/seq` payload when a breakdown contains a real hardware fault transition, so the same raw, path-capped, hardware-capped, capacity, and sequence data is inspectable outside the diagnostics overlay.

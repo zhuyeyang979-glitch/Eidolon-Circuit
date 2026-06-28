@@ -145,6 +145,9 @@ func _init() -> void:
 	_require_close(float(first_breakdown.get("capped_momentum", 0.0)), 10.0, "Damage telemetry capped momentum")
 	_require(String(first_breakdown.get("hardware_fault_pre_state", "")) == "normal", "First breakdown should show normal pre-state: %s" % str(first_breakdown))
 	_require(String(first_breakdown.get("hardware_fault_post_state", "")) == "faulted", "First breakdown should show faulted post-state: %s" % str(first_breakdown))
+	var first_summary := main._battle_attack_rule_summary_text(1)
+	for token in ["normal>faulted", "raw:80.0", "path:60.0", "hardware:10.0", "capacity:10.0"]:
+		_require(first_summary.contains(token), "Battle log summary should include hardware fault telemetry token %s: %s" % [token, first_summary])
 	_apply_probe_hit(main, attacker, target, attacker_collider, target_collider)
 	var second_state := _state_for(main, BODY_ID, TARGET_NODE_ID)
 	_require(String(second_state.get("state", "")) == "destroyed", "Second overload should destroy target hardware: %s" % str(second_state))

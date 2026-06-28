@@ -27653,7 +27653,27 @@ func _attack_rule_post_review_reason_text(breakdown: Dictionary, zh: bool) -> St
 				labels.append("命中" if zh else "HIT")
 		if labels.size() >= 3:
 			break
+	var hardware_fault_text := _attack_rule_hardware_fault_post_review_text(breakdown)
+	if hardware_fault_text != "":
+		labels.append(hardware_fault_text)
 	return "/".join(labels) if not labels.is_empty() else ("结果" if zh else "RESULT")
+
+
+func _attack_rule_hardware_fault_post_review_text(breakdown: Dictionary) -> String:
+	var pre_state := String(breakdown.get("hardware_fault_pre_state", "")).strip_edges()
+	var post_state := String(breakdown.get("hardware_fault_post_state", "")).strip_edges()
+	var transition := String(breakdown.get("hardware_fault_transition", "")).strip_edges()
+	if pre_state == "" or post_state == "" or transition == "" or transition == HardwareFaultRuntimeService.TRANSITION_NONE:
+		return ""
+	return "HW %s>%s raw:%.1f path:%.1f hardware:%.1f capacity:%.1f seq:%d" % [
+		pre_state,
+		post_state,
+		float(breakdown.get("raw_momentum", 0.0)),
+		float(breakdown.get("path_capped_momentum", breakdown.get("capped_momentum", 0.0))),
+		float(breakdown.get("hardware_capped_momentum", breakdown.get("capped_momentum", 0.0))),
+		float(breakdown.get("runtime_momentum_capacity", 0.0)),
+		int(breakdown.get("hardware_fault_transition_sequence", 0)),
+	]
 
 
 func _battle_review_diagnostic_summary_text() -> String:
