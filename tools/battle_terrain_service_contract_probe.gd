@@ -45,6 +45,7 @@ func _init() -> void:
 		"func features_overlapping_point",
 		"func placement_query",
 		"func combined_occlusion_candidates",
+		"func combined_collision_candidates",
 	]:
 		if not source.contains(token):
 			_fail("BattleTerrainService missing boundary token: %s" % token)
@@ -180,6 +181,18 @@ func _init() -> void:
 	if not _expect_eq(String(terrain_candidate.get("source", "")), "terrain", "terrain candidate source"):
 		return
 	if not _expect_eq(String(terrain_candidate.get("feature_id", "")), "wall-alpha", "terrain candidate feature id"):
+		return
+	var collision_candidates: Array = service.combined_collision_candidates(snapshot, [
+		{"source": "static", "feature_id": "scripted-lock"},
+	])
+	if not _expect_eq(collision_candidates.size(), 2, "combined collision candidate count"):
+		return
+	var terrain_collision_candidate := Dictionary(collision_candidates[0])
+	if not _expect_eq(String(terrain_collision_candidate.get("source", "")), "terrain", "terrain collision candidate source"):
+		return
+	if not _expect_eq(String(terrain_collision_candidate.get("feature_id", "")), "wall-alpha", "terrain collision candidate feature id"):
+		return
+	if not _expect_eq(Array(terrain_collision_candidate.get("surface_tags", [])), ["cover", "stone"], "terrain collision candidate tags"):
 		return
 	if failed:
 		quit(1)

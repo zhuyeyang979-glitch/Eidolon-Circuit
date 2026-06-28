@@ -31890,6 +31890,9 @@ func _resolve_unit_body_spacing(delta: float) -> void:
 				if not _is_live_unit(b):
 					continue
 				_separate_unit_pair(a, b, delta)
+	for unit in live_subjects:
+		if _is_live_unit(unit):
+			_separate_unit_from_terrain(unit, delta)
 	if bool(plan.get("cleanup_active_pairs", false)):
 		for key in runtime_contact_pairs_active.keys():
 			if not runtime_contact_pairs_seen.has(key):
@@ -32028,6 +32031,69 @@ func _separate_unit_part_pair(a, b, delta: float) -> void:
 				_flush_runtime_contact_velocity_responses(deferred_runtime_responses)
 				return
 	_flush_runtime_contact_velocity_responses(deferred_runtime_responses)
+
+
+func _terrain_collision_candidates_for_runtime() -> Array:
+	return _battle_terrain_service().combined_collision_candidates(_battle_terrain_runtime_snapshot(), [])
+
+
+func _separate_unit_from_terrain(unit, delta: float) -> void:
+	if not _is_live_unit(unit) or _unit_is_anchored_barrier(unit):
+		return
+	var terrain_candidates := _terrain_collision_candidates_for_runtime()
+	if terrain_candidates.is_empty():
+		return
+	var unit_colliders := _unit_part_colliders(unit)
+	if unit_colliders.is_empty():
+		return
+	var patch_origin := _combat_patch_origin_for_unit(unit)
+	var origin_x: float = patch_origin.x
+	var origin_lane: float = patch_origin.y
+	var resolved_count := 0
+	for raw_unit_collider in unit_colliders:
+		if not (raw_unit_collider is Dictionary):
+			continue
+		patch_origin = _combat_patch_origin_for_unit(unit)
+		origin_x = patch_origin.x
+		origin_lane = patch_origin.y
+		var unit_raw: Dictionary = raw_unit_collider
+		var unit_collider := _shift_collider_to_origin(unit_raw, origin_x, origin_lane)
+		for raw_candidate in terrain_candidates:
+			if not (raw_candidate is Dictionary):
+				continue
+			var terrain_candidate: Dictionary = raw_candidate
+			var terrain_collider := _shift_collider_to_origin(Dictionary(terrain_candidate.get("collider", {})), origin_x, origin_lane)
+			if terrain_collider.is_empty():
+				continue
+			var broadphase_gap := _collider_broadphase_gap(unit_collider, terrain_collider)
+			if broadphase_gap > 0.02:
+				collision_broadphase_skip_count += 1
+				continue
+			collision_polygon_precise_check_count += 1
+			var gap := _collider_gap(unit_collider, terrain_collider)
+			if gap >= 0.0:
+				continue
+			var direction := _collider_center(unit_collider) - _collider_center(terrain_collider)
+			if direction.length() <= 0.001:
+				direction = Vector2(float(1 if int(unit.owner_id) <= 1 else -1), 0.0)
+			direction = direction.normalized()
+			var penetration := minf(-gap, 0.35)
+			var correction := penetration * clampf(0.52 + delta * 8.0, 0.52, 0.9)
+			_apply_unit_displacement(unit, direction, correction)
+			unit.velocity += direction * maxf(0.08, correction * 1.8)
+			if unit.has_method("apply_physics_impulse"):
+				unit.apply_physics_impulse(direction, correction * 1.2, int(unit_raw.get("part_index", -1)), 0.0)
+			unit.set_meta("terrain_collision_feature_id", String(terrain_candidate.get("feature_id", "")))
+			unit.set_meta("terrain_collision_kind", String(terrain_candidate.get("terrain_kind", "")))
+			unit.set_meta("terrain_collision_source", String(terrain_candidate.get("source", "terrain")))
+			unit.set_meta("terrain_collision_blocker_name", String(terrain_candidate.get("blocker_name", terrain_candidate.get("feature_id", "TERRAIN"))))
+			patch_origin = _combat_patch_origin_for_unit(unit)
+			origin_x = patch_origin.x
+			origin_lane = patch_origin.y
+			unit_collider = _shift_collider_to_origin(unit_raw, origin_x, origin_lane)
+			resolved_count += 1
+			if resolved_count >= 6:
+				return
 
 
 func _gpu_collision_and_response_step(live_subjects: Array, delta: float) -> void:

@@ -30,6 +30,7 @@
     "barrier_terrain_runtime_integration_probe",
     "terrain_occlusion_runtime_probe",
     "terrain_awareness_metadata_probe",
+    "terrain_collision_runtime_probe",
     "battle_map_occlusion_service_contract_probe",
     "battle_target_acquisition_service_contract_probe",
     "projectile_runtime_service_contract_probe",

@@ -142,6 +142,30 @@ func combined_occlusion_candidates(snapshot: Dictionary, barrier_candidates: Arr
 	return candidates
 
 
+func combined_collision_candidates(snapshot: Dictionary, static_candidates: Array = []) -> Array:
+	var candidates: Array = []
+	for feature in Array(snapshot.get("features", [])):
+		var item := _dict(feature)
+		var channels := Array(item.get("effect_channels", []))
+		if not channels.has("collision"):
+			continue
+		candidates.append({
+			"source": "terrain",
+			"feature_id": String(item.get("feature_id", "")),
+			"blocker_name": String(item.get("name", item.get("feature_id", ""))),
+			"collider": _dict(item.get("collider", {})).duplicate(true),
+			"terrain_kind": String(item.get("terrain_kind", "")),
+			"surface_tags": Array(item.get("surface_tags", [])).duplicate(true),
+			"destructible": bool(item.get("destructible", false)),
+		})
+	for candidate in static_candidates:
+		var item := _dict(candidate)
+		if item.is_empty():
+			continue
+		candidates.append(item.duplicate(true))
+	return candidates
+
+
 func _placement_result(outcome: String, reason: String, feature: Dictionary, overlaps: Array = [], anchor: Dictionary = {}) -> Dictionary:
 	var result := {
 		"outcome": outcome,
