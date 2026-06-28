@@ -34760,6 +34760,7 @@ func _map_occlusion_query_for_path(attacker, path_collider: Dictionary, event: D
 	direction = direction / path_length
 	var candidates: Array = []
 	var candidate_blockers: Array = []
+	var candidate_metadata: Array = []
 	for blocker in all_units:
 		if blocker == attacker or skip_units.has(blocker) or not _is_live_unit(blocker):
 			continue
@@ -34773,6 +34774,7 @@ func _map_occlusion_query_for_path(attacker, path_collider: Dictionary, event: D
 			var blocker_collider := _shift_collider_to_origin(raw_blocker_collider, start.x, start.y)
 			var candidate_index := candidate_blockers.size()
 			candidate_blockers.append(blocker)
+			candidate_metadata.append({"blocker_source": "unit"})
 			var candidate := _battle_map_occlusion_service().blocker_candidate_intent({
 				"kind": kind,
 				"blocker_name": String(blocker.unit_name),
@@ -34787,10 +34789,45 @@ func _map_occlusion_query_for_path(attacker, path_collider: Dictionary, event: D
 				"collider": blocker_collider,
 			})
 			candidates.append(candidate)
+	for raw_terrain_candidate in _battle_terrain_service().combined_occlusion_candidates(_battle_terrain_runtime_snapshot(), []):
+		if not (raw_terrain_candidate is Dictionary):
+			continue
+		var terrain_candidate: Dictionary = raw_terrain_candidate
+		var terrain_kind := String(terrain_candidate.get("kind", MAP_OCCLUSION_NONE))
+		if terrain_kind == MAP_OCCLUSION_NONE:
+			continue
+		var terrain_collider := _shift_collider_to_origin(Dictionary(terrain_candidate.get("collider", {})), start.x, start.y)
+		if terrain_collider.is_empty():
+			continue
+		var terrain_candidate_index := candidate_blockers.size()
+		candidate_blockers.append(null)
+		candidate_metadata.append({
+			"blocker_source": "terrain",
+			"terrain_feature_id": String(terrain_candidate.get("feature_id", "")),
+			"terrain_kind": String(terrain_candidate.get("terrain_kind", "")),
+		})
+		var terrain_blocker := _battle_map_occlusion_service().blocker_candidate_intent({
+			"kind": terrain_kind,
+			"blocker_name": String(terrain_candidate.get("blocker_name", terrain_candidate.get("feature_id", "TERRAIN"))),
+			"start": start,
+			"direction": direction,
+			"path_length": path_length,
+			"gap": _collider_gap(path_collider, terrain_collider),
+			"one_way_pass": false,
+			"center": _collider_center(terrain_collider),
+			"extent": _collider_extent_radius(terrain_collider),
+			"candidate_index": terrain_candidate_index,
+			"collider": terrain_collider,
+		})
+		candidates.append(terrain_blocker)
 	var query := _battle_map_occlusion_service().occlusion_query_from_candidates({"candidates": candidates})
 	var index := int(query.get("candidate_index", -1))
 	if index >= 0 and index < candidate_blockers.size():
-		query["blocker"] = candidate_blockers[index]
+		var metadata: Dictionary = candidate_metadata[index] if index < candidate_metadata.size() and candidate_metadata[index] is Dictionary else {}
+		for key in metadata.keys():
+			query[key] = metadata[key]
+		if candidate_blockers[index] != null:
+			query["blocker"] = candidate_blockers[index]
 	return query
 
 
