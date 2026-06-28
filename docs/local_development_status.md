@@ -26,6 +26,7 @@ This file is the local execution board for the active Linear project `Eidolon Ci
 - Added `tools/hardware_fault_visual_overlay_probe.gd` to guard faulted hardware's in-battle visual contract.
 - `scripts/fighter.gd` now renders faulted runtime topology segments through the shared assembly-board status overlay with an amber pulse and a compact `!` marker, while normal and destroyed hardware stay out of this visual path.
 - The runtime redraw signature includes faulted hardware state and a low-frequency pulse bucket so the overlay can refresh while the unit is otherwise idle.
+- Movement and boost hardware-fault gates now preserve the first blocked dependency's stable part name in `movement_gate_reason`, matching the named module-action gate feedback.
 
 ## Large File Watch
 

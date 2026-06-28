@@ -146,6 +146,7 @@ func _init() -> void:
 	_require(target.velocity.length() <= 0.001, "Faulted primary core should block movement, got velocity %s." % str(target.velocity))
 	_require(bool(target.get_meta("hardware_fault_movement_blocked", false)), "Faulted primary core should mark the unit movement gate.")
 	_require(String(target.get_meta("movement_gate_reason", "")).contains("hardware_fault"), "Movement gate reason should name hardware fault, got %s." % String(target.get_meta("movement_gate_reason", "")))
+	_require(String(target.get_meta("movement_gate_reason", "")).contains("Movement Probe Core"), "Movement gate reason should name the first failed hardware dependency, got %s." % String(target.get_meta("movement_gate_reason", "")))
 	if failed:
 		quit(1)
 		return

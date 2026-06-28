@@ -32236,10 +32236,13 @@ func _hardware_fault_movement_gate_for_unit(unit, segments: Array) -> Dictionary
 		var payload := _hardware_fault_runtime_state_payload(unit, segment)
 		var state := String(payload.get("hardware_fault_state", HardwareFaultRuntimeService.STATE_NORMAL))
 		if state == HardwareFaultRuntimeService.STATE_FAULTED or state == HardwareFaultRuntimeService.STATE_DESTROYED:
+			var body_id := _hardware_fault_construct_body_id(unit, segment)
+			var hardware_label := _hardware_fault_node_label_for_unit(unit, body_id, hardware_id)
 			return {
 				"blocked": true,
-				"reason": "hardware_fault:%s:%s" % [str(hardware_id), state],
+				"reason": "hardware_fault:%s:%s" % [hardware_label, state],
 				"hardware_node_id": hardware_id,
+				"hardware_label": hardware_label,
 				"state": state,
 			}
 	return {"blocked": false, "reason": "", "hardware_node_id": "", "state": HardwareFaultRuntimeService.STATE_NORMAL}
@@ -32435,7 +32438,7 @@ func _hardware_fault_required_ids_for_binding(binding: Dictionary) -> Array:
 
 
 func _hardware_fault_node_label_for_unit(unit, body_id: String, hardware_id) -> String:
-	var fallback := String(hardware_id).strip_edges()
+	var fallback := str(hardware_id).strip_edges()
 	if unit == null or not is_instance_valid(unit) or unit.get("stats") == null:
 		return fallback
 	for raw_segment in Array(unit.stats.get("runtime_topology_segments", [])):

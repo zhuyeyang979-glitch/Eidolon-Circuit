@@ -157,6 +157,7 @@ func _init() -> void:
 	_require(not boosted_after_fault, "Faulted primary core should block boost.")
 	_require(target.boost_drive_timer <= 0.001, "Fault-blocked boost should not start the boost timer.")
 	_require(String(target.get_meta("movement_gate_reason", "")).contains("hardware_fault"), "Boost gate reason should name hardware fault, got %s." % String(target.get_meta("movement_gate_reason", "")))
+	_require(String(target.get_meta("movement_gate_reason", "")).contains("Boost Probe Core"), "Boost gate reason should name the first failed hardware dependency, got %s." % String(target.get_meta("movement_gate_reason", "")))
 	if failed:
 		quit(1)
 		return
