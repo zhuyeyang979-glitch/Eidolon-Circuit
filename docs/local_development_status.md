@@ -1851,3 +1851,9 @@ Next safe chunk: continue only with narrow pure-rule extraction where `main.gd` 
 - `tools/hardware_fault_movement_dependency_probe.gd` now covers a live unit whose primary core faults on the first overload: the unit remains alive, normal movement works before the fault, and `move_by_gameplay()` is blocked afterward with a hardware fault gate reason.
 - `main.gd` syncs primary-core hardware fault state into unit movement gate metadata, while `fighter.gd` consumes that metadata before applying drive movement.
 - This extends the non-module hardware dependency audit from gun/module queues into core movement dependency behavior; remaining non-module sources should continue to be audited separately.
+
+2026-06-28 Hardware fault generated primary core follow-up:
+
+- `tools/hardware_fault_primary_core_materialization_probe.gd` now computes puppet runtime topology from a real custom-topology blueprint and verifies each generated construct body carries its stable `construct_body_id` and `primary_core_node_id`.
+- Runtime topology generation marks each connected component with its torso primary core, and Source Code body assignment writes that same primary core alongside stable body IDs on runtime nodes and segments.
+- The probe then uses generated colliders to confirm a primary core's second overload emits `destroy_construct_body`, retires the live unit, and awards VP, instead of depending on hand-authored fixture metadata.

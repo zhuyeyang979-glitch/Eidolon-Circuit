@@ -13799,6 +13799,7 @@ func _source_code_runtime_body_records_for_blueprint(player_id: int, role_key: S
 			"blueprint_construct_body_id": blueprint_id,
 			"body_index": body_index,
 			"torso_node_index": node_index,
+			"primary_core_node_id": node_index,
 			"node_indices": component_nodes,
 			"label": _source_code_carrier_label(unit_bp, {"torso_node": node_index}),
 		})
@@ -13927,6 +13928,7 @@ func _apply_source_code_construct_body_ids_to_runtime_topology(stats: Dictionary
 	if body_records.is_empty():
 		return
 	var node_to_body := {}
+	var node_to_primary_core := {}
 	for raw_record in body_records:
 		if not (raw_record is Dictionary):
 			continue
@@ -13934,8 +13936,16 @@ func _apply_source_code_construct_body_ids_to_runtime_topology(stats: Dictionary
 		var body_id := String(record.get("construct_body_id", ""))
 		if body_id == "":
 			continue
+		var primary_core = record.get("primary_core_node_id", record.get("torso_node_index", -1))
+		if int(primary_core) < 0:
+			var record_nodes: Array = Array(record.get("node_indices", []))
+			if not record_nodes.is_empty():
+				primary_core = int(record_nodes[0])
 		for raw_node_index in Array(record.get("node_indices", [])):
-			node_to_body[int(raw_node_index)] = body_id
+			var node_index := int(raw_node_index)
+			node_to_body[node_index] = body_id
+			if int(primary_core) >= 0:
+				node_to_primary_core[node_index] = int(primary_core)
 	var nodes: Array = Array(stats.get("runtime_topology_nodes", [])).duplicate(true)
 	for i in range(nodes.size()):
 		if not (nodes[i] is Dictionary):
@@ -13947,6 +13957,8 @@ func _apply_source_code_construct_body_ids_to_runtime_topology(stats: Dictionary
 			continue
 		node["construct_body_id"] = body_id
 		node["runtime_construct_body_id"] = body_id
+		if node_to_primary_core.has(node_index):
+			node["primary_core_node_id"] = int(node_to_primary_core[node_index])
 		nodes[i] = node
 	if not nodes.is_empty():
 		stats["runtime_topology_nodes"] = nodes
@@ -13961,6 +13973,8 @@ func _apply_source_code_construct_body_ids_to_runtime_topology(stats: Dictionary
 			continue
 		segment["construct_body_id"] = body_id
 		segment["runtime_construct_body_id"] = body_id
+		if node_to_primary_core.has(node_index):
+			segment["primary_core_node_id"] = int(node_to_primary_core[node_index])
 		segments[i] = segment
 	if not segments.is_empty():
 		stats["runtime_topology_segments"] = segments
@@ -43537,6 +43551,16 @@ func _runtime_topology_segments_for_blueprint(role_key: String, unit_bp: Diction
 	if origin_index < 0:
 		return []
 	var origin := _topology_node_position(nodes[origin_index])
+	var primary_core_by_node := {}
+	for i in range(nodes.size()):
+		if not (nodes[i] is Dictionary):
+			continue
+		if not _topology_node_is_torso(role_key, nodes[i], unit_bp):
+			continue
+		for raw_node_index in _topology_connected_component_indices(edges, nodes.size(), [i]):
+			var node_index := int(raw_node_index)
+			if not primary_core_by_node.has(node_index):
+				primary_core_by_node[node_index] = i
 	var segments: Array = []
 	for i in range(nodes.size()):
 		if not (nodes[i] is Dictionary):
@@ -43628,6 +43652,8 @@ func _runtime_topology_segments_for_blueprint(role_key: String, unit_bp: Diction
 			"joint_angle_range": float(part.get("joint_angle_range", float(_embedded_joint_profile_for_part(part, slot_key).get("angle", 0.0)))) if slot_key in ["limb_muscle", "muscle"] and not _component_is_torso(part) else 0.0,
 			"joint_extension_m": float(part.get("joint_extension_m", float(_embedded_joint_profile_for_part(part, slot_key).get("extension", 0.0)))) if slot_key in ["limb_muscle", "muscle"] and not _component_is_torso(part) else 0.0,
 		}
+		if primary_core_by_node.has(i):
+			segment["primary_core_node_id"] = int(primary_core_by_node[i])
 		if _topology_node_is_torso(role_key, node, unit_bp):
 			var torso_part := part
 			# PartArt.torso_hull_local_points() is the shared source for the
