@@ -1917,3 +1917,10 @@ Next safe chunk: continue only with narrow pure-rule extraction where `main.gd` 
 - `BattleHitResolutionService.projectile_preflight_intent()` now keeps explicit `explosion_damage` and `explosion_damage_type` payloads available for `_apply_explosion_damage()` while still normalizing explosive projectile behavior, speed, radius, and style.
 - `tools/projectile_momentum_probe.gd` now exits nonzero on failure and is registered in `tools/probe_manifest.json`; it guards explosive direct damage, wide splash damage, and momentum stagger in the same runtime scenario.
 - `tools/battle_projectile_lifecycle_service_contract_probe.gd` now exits nonzero on failure and guards the preflight payload contract before the explosion lifecycle handoff checks.
+
+2026-06-28 Battle terrain service baseline:
+
+- `scripts/services/battle_terrain_service.gd` introduces the pure terrain-feature contract for Barrier-Terrain Integration: normalized feature IDs, terrain kinds, colliders, orientation vectors, surface tags, owner/destructible metadata, anchor points, and effect channels.
+- The service produces immutable arena snapshots, tag/kind/point-overlap spatial queries, terrain-only placement outcomes (`free`, `attach`, `bridge`, `overlap`, `replace`, `blocked`) with stable reasons, and combined occlusion candidates that can later merge terrain with barrier blockers.
+- `tools/battle_terrain_service_contract_probe.gd` is registered in `tools/probe_manifest.json`; the first RED/GREEN cycle failed on the missing service, then passed after the pure service was added.
+- Focused verification passed on macOS Godot `4.6.2.stable.official.71f334935`: `battle_terrain_service_contract_probe`, `battle_map_occlusion_service_contract_probe`, `map_occlusion_kind_probe`, `map_occlusion_projectile_integration_probe`, `barrier_panel_probe`, `resource_entry_probe`, `probe_manifest_no_legacy_fixture_probe` (`current=258`), `formal_battle_wording_probe`, `battle_runtime_frame_budget_probe` (`fixture=generated_training_starter`, `avg_ms=1.029`, `max_ms=1.945`), and Godot `--check-only`.

@@ -50,18 +50,18 @@ Status: planned after the local two-player formal battle feels complete.
 
 ## Barrier-Terrain Integration
 
-Status: high-priority planned extension. Current barriers already create runtime collision, projectile occlusion, walls, lanes, triggers, and local fields, but the arena has no independent authored-terrain layer for barriers to query or modify.
+Status: high-priority planned extension. Current barriers already create runtime collision, projectile occlusion, walls, lanes, triggers, and local fields. The first independent authored-terrain contract is now implemented through `scripts/services/battle_terrain_service.gd` and `tools/battle_terrain_service_contract_probe.gd`; runtime barrier deployment still needs to consume it.
 
-- Introduce a normalized terrain-feature contract containing stable feature ID, terrain kind, collider geometry, orientation, surface tags, ownership, destructibility, anchor points, and effect channels.
+- Normalized terrain-feature snapshots now carry stable feature ID, terrain kind, collider geometry, orientation, surface tags, ownership, destructibility, anchor points, and effect channels.
 - Keep saved barrier blueprints map-independent. Resolve terrain attachment and interaction only when previewing or deploying into a specific arena.
-- Add a placement query that returns explicit outcomes such as `free`, `attach`, `bridge`, `overlap`, `replace`, or `blocked`, with a player-readable reason.
+- `BattleTerrainService.placement_query()` now returns explicit `free`, `attach`, `bridge`, `overlap`, `replace`, or `blocked` outcomes with stable player-readable reasons for terrain-only placement checks.
 - Define barrier interactions with map walls, floors, gaps, hazards, cover, traversal lanes, portals, and scripted arena mechanisms.
 - Allow appropriate barrier panels to attach to terrain anchors, bridge valid gaps, reinforce or breach destructible terrain, and inherit a wall or lane orientation.
 - Route projectile occlusion, line of sight, collision, target awareness, and later path planning through a combined terrain-plus-barrier spatial query.
 - Let local fields react to terrain tags where designed: gravity may follow a surface vector, heat/coolant may be amplified or damped, and speed lanes may connect to authored routes.
 - Define cleanup and restoration behavior when either the supporting terrain or attached barrier component is destroyed, transformed, or removed.
 - Preserve deterministic, replayable results from map state and authored rules; this feature does not require a large language model or external model service.
-- Add focused probes for attachment legality, combined occlusion, destruction invalidation, map-independent saves, and identical replay results.
+- Add focused runtime probes for barrier attachment legality, combined occlusion integration, destruction invalidation, map-independent saves, and identical replay results.
 
 Suggested future ownership boundary:
 

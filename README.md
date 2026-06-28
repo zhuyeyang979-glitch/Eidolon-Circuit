@@ -13,6 +13,7 @@ The current runtime contract is intentionally narrower than many older notes in 
 - Unit legality and old-data rejection are governed through `UnitBlueprintValidator`. Old drive fields, old topology pointers, and old attack/action group pointers are rejection data, not migration data.
 - Probe governance is tracked in `tools/probe_manifest.json`; current probes must not use old drive fixtures unless they are listed as legacy rejection checks.
 - The baseline verification command is `tools/run_godot_checked.ps1 -CheckOnly -TimeoutSec 120`, followed by the governance probes listed in the manifest.
+- No large language model controls puppets, opponents, Source Code behavior, or formal battle decisions; those paths stay local and authored-rule driven.
 
 The current prototype opens to a main menu:
 
