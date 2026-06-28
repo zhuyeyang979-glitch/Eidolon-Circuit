@@ -32387,6 +32387,22 @@ func _hardware_fault_state_by_hardware_id(body_id: String) -> Dictionary:
 	return result
 
 
+func _hardware_fault_dependency_states_for_unit(unit, body_id: String) -> Dictionary:
+	var states := _hardware_fault_state_by_hardware_id(body_id)
+	if unit == null or not is_instance_valid(unit) or not unit.has_meta("runtime_hardware_destroyed_nodes"):
+		return states
+	var raw_destroyed = unit.get_meta("runtime_hardware_destroyed_nodes")
+	if not (raw_destroyed is Dictionary):
+		return states
+	var destroyed: Dictionary = raw_destroyed
+	for raw_id in destroyed.keys():
+		if not bool(destroyed.get(raw_id, false)):
+			continue
+		states[raw_id] = HardwareFaultRuntimeService.STATE_DESTROYED
+		states[str(raw_id)] = HardwareFaultRuntimeService.STATE_DESTROYED
+	return states
+
+
 func _hardware_fault_required_ids_for_binding(binding: Dictionary) -> Array:
 	var required: Array = []
 	for key in ["root_index", "source_node", "hardware_node_id"]:
@@ -32407,7 +32423,7 @@ func _hardware_fault_dependency_report_for_binding(unit, binding: Dictionary) ->
 	var required := _hardware_fault_required_ids_for_binding(binding)
 	if required.is_empty():
 		return {"allowed": true, "blocked": false, "construct_body_id": body_id}
-	var report := _hardware_fault_runtime_service().action_dependency_report(required, _hardware_fault_state_by_hardware_id(body_id))
+	var report := _hardware_fault_runtime_service().action_dependency_report(required, _hardware_fault_dependency_states_for_unit(unit, body_id))
 	report["construct_body_id"] = body_id
 	report["required_hardware_ids"] = required.duplicate(true)
 	return report

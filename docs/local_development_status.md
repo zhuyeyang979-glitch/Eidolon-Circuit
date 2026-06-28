@@ -1872,3 +1872,8 @@ Next safe chunk: continue only with narrow pure-rule extraction where `main.gd` 
 
 - `tools/hardware_fault_disabled_modules_merge_probe.gd` now covers the `_battle_actor_disabled_modules()` compatibility adapter when authored `stats.disabled_modules` and runtime hardware-fault disabled actions coexist.
 - The adapter now preserves authored disabled attack indices, merges in fault-disabled runtime bindings without duplicates, and leaves `stats.disabled_modules` plus `runtime_module_bindings` unchanged for save/schema compatibility.
+
+2026-06-28 Hardware fault destroyed branch dependency follow-up:
+
+- `tools/hardware_fault_destruction_consumption_probe.gd` now covers a future action bound only to a downstream child removed with a destroyed non-core branch.
+- Hardware dependency reports now merge Fighter runtime destroyed-node metadata as `destroyed`, so child-only bindings stay disabled after their collider and segment are removed without mutating blueprint/runtime module bindings.
