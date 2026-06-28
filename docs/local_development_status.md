@@ -1857,3 +1857,8 @@ Next safe chunk: continue only with narrow pure-rule extraction where `main.gd` 
 - `tools/hardware_fault_primary_core_materialization_probe.gd` now computes puppet runtime topology from a real custom-topology blueprint and verifies each generated construct body carries its stable `construct_body_id` and `primary_core_node_id`.
 - Runtime topology generation marks each connected component with its torso primary core, and Source Code body assignment writes that same primary core alongside stable body IDs on runtime nodes and segments.
 - The probe then uses generated colliders to confirm a primary core's second overload emits `destroy_construct_body`, retires the live unit, and awards VP, instead of depending on hand-authored fixture metadata.
+
+2026-06-28 Hardware fault boost dependency follow-up:
+
+- `tools/hardware_fault_boost_dependency_probe.gd` now covers the Boost action path separately from normal drive movement: a healthy primary core can boost, but a faulted primary core blocks Boost and reports a hardware fault gate reason.
+- `fighter.gd` now checks `hardware_fault_movement_blocked` at the Boost entry point before starting boost timers, heat events, projection guards, or thruster visuals.

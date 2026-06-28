@@ -4693,6 +4693,12 @@ func begin_cooling_exposure(duration: float, kind: String = "manual") -> void:
 
 
 func boost(direction: Vector2, ring_length: float) -> bool:
+	if bool(get_meta("hardware_fault_movement_blocked", false)):
+		var hardware_fault_reason := String(get_meta("hardware_fault_movement_gate_reason", "hardware_fault"))
+		if hardware_fault_reason == "":
+			hardware_fault_reason = "hardware_fault"
+		set_meta("movement_gate_reason", hardware_fault_reason)
+		return false
 	var intent := _movement_model().boost_intent(_movement_model_context(direction))
 	if not bool(intent.get("allowed", false)):
 		if bool(intent.get("should_brake", false)):
