@@ -1845,3 +1845,9 @@ Next safe chunk: continue only with narrow pure-rule extraction where `main.gd` 
 - `tools/unit_editor_schema_invariance_probe.gd` now injects transient legality report fields into single-unit and puppet-group save inputs, then verifies those fields are absent from saved JSON while `momentum_chain_v3`, `single_unit` / `puppet_group`, and `custom_topology` keys remain stable.
 - `main.gd` now strips Unit Editor legality transient save keys through the same recursive save-cleanup boundary that already removes hardware fault transient runtime fields.
 - Puppet-group saves now normalize member blueprints through the canonical saved-unit blueprint path before writing the group payload, so nested member blueprints do not persist transient legality reports.
+
+2026-06-28 Hardware fault movement dependency follow-up:
+
+- `tools/hardware_fault_movement_dependency_probe.gd` now covers a live unit whose primary core faults on the first overload: the unit remains alive, normal movement works before the fault, and `move_by_gameplay()` is blocked afterward with a hardware fault gate reason.
+- `main.gd` syncs primary-core hardware fault state into unit movement gate metadata, while `fighter.gd` consumes that metadata before applying drive movement.
+- This extends the non-module hardware dependency audit from gun/module queues into core movement dependency behavior; remaining non-module sources should continue to be audited separately.

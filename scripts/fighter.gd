@@ -339,6 +339,8 @@ func deploy(spawn_ring_pos: float, spawn_lane: float) -> void:
 	boost_projection_guard_direction = Vector2.RIGHT
 	set_meta("boost_projection_guard_timer", 0.0)
 	set_meta("boost_projection_guard_direction", boost_projection_guard_direction)
+	set_meta("hardware_fault_movement_blocked", false)
+	set_meta("hardware_fault_movement_gate_reason", "")
 	boost_cooldown_timer = 0.0
 	brake_reverse_ready_dir = Vector2.ZERO
 	brake_reverse_ready_timer = 0.0
@@ -836,6 +838,12 @@ func move_by(input_vector: Vector2, delta: float, ring_length: float) -> void:
 
 func move_by_gameplay(input_vector: Vector2, delta: float, ring_length: float) -> void:
 	set_meta("movement_gate_reason", "")
+	if bool(get_meta("hardware_fault_movement_blocked", false)):
+		var hardware_fault_reason := String(get_meta("hardware_fault_movement_gate_reason", "hardware_fault"))
+		if hardware_fault_reason == "":
+			hardware_fault_reason = "hardware_fault"
+		set_meta("movement_gate_reason", hardware_fault_reason)
+		return
 	var intent := _movement_model().movement_drive_intent(_movement_model_context(input_vector, delta))
 	var gate_reason := String(intent.get("gate_reason", ""))
 	var meta_mode := String(intent.get("meta_mode", ""))

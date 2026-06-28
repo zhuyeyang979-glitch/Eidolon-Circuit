@@ -32175,12 +32175,43 @@ func _hardware_fault_runtime_state_payload(unit, segment: Dictionary) -> Diction
 	}
 
 
+func _hardware_fault_movement_gate_for_unit(unit, segments: Array) -> Dictionary:
+	for raw_segment in segments:
+		if not (raw_segment is Dictionary):
+			continue
+		var segment: Dictionary = raw_segment
+		if not segment.has("primary_core_node_id"):
+			continue
+		var hardware_id = _hardware_fault_node_id(segment)
+		if str(hardware_id) != str(segment.get("primary_core_node_id", "")):
+			continue
+		var payload := _hardware_fault_runtime_state_payload(unit, segment)
+		var state := String(payload.get("hardware_fault_state", HardwareFaultRuntimeService.STATE_NORMAL))
+		if state == HardwareFaultRuntimeService.STATE_FAULTED or state == HardwareFaultRuntimeService.STATE_DESTROYED:
+			return {
+				"blocked": true,
+				"reason": "hardware_fault:%s:%s" % [str(hardware_id), state],
+				"hardware_node_id": hardware_id,
+				"state": state,
+			}
+	return {"blocked": false, "reason": "", "hardware_node_id": "", "state": HardwareFaultRuntimeService.STATE_NORMAL}
+
+
+func _sync_hardware_fault_movement_gate_to_unit(unit, segments: Array) -> void:
+	if unit == null or not is_instance_valid(unit):
+		return
+	var gate := _hardware_fault_movement_gate_for_unit(unit, segments)
+	unit.set_meta("hardware_fault_movement_blocked", bool(gate.get("blocked", false)))
+	unit.set_meta("hardware_fault_movement_gate_reason", String(gate.get("reason", "")))
+
+
 func _sync_hardware_fault_runtime_state_to_unit(unit) -> void:
 	if unit == null or not is_instance_valid(unit) or unit.get("stats") == null:
 		return
 	var segments: Array = Array(unit.stats.get("runtime_topology_segments", [])).duplicate(true)
 	if segments.is_empty():
 		return
+	_sync_hardware_fault_movement_gate_to_unit(unit, segments)
 	var changed := false
 	for i in range(segments.size()):
 		if not (segments[i] is Dictionary):
