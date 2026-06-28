@@ -1882,3 +1882,8 @@ Next safe chunk: continue only with narrow pure-rule extraction where `main.gd` 
 
 - Battle action telemetry now carries normalized hardware state counts, affected-node identity, capacity, transition sequence, and the latest matching runtime transition for each live unit.
 - The optional diagnostics overlay shows a non-color-only `FAULT / 故障` marker plus raw, path-capped, hardware-capped, capacity, pre/post-state, and sequence data; its verified height now fits the enriched probe scenario without clipping lines.
+
+2026-06-28 Hardware fault named gate reason follow-up:
+
+- `tools/hardware_fault_direct_module_dependency_probe.gd` now requires a blocked direct runtime action to include the first failed hardware dependency name in `last_module_gate_reason`.
+- Hardware fault dependency reports now keep the pure service's blocked hardware ID while the main battle adapter maps that ID back to the live runtime segment label, producing reasons such as `hardware Right Connector faulted` without mutating module bindings.

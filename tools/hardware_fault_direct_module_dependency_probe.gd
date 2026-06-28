@@ -5,8 +5,11 @@ const FighterScene := preload("res://scripts/fighter.gd")
 
 const FAULT_NODE_ID := 2
 
+var failed := false
+
 
 func _fail(message: String) -> void:
+	failed = true
 	push_error(message)
 	quit(1)
 
@@ -49,9 +52,9 @@ func _make_fighter(main, unit_id: String) -> Dictionary:
 			"mass": 32.0,
 			"teamedit_runtime_topology": true,
 			"runtime_topology_segments": [
-				{"node_index": 0, "part_index": 0, "part_kind": "torso", "a_local": Vector2(-0.35, 0.0), "b_local": Vector2(0.0, 0.0), "radius": 0.22, "runtime_momentum_capacity": 80.0},
-				{"node_index": 1, "part_index": 1, "part_kind": "limb_muscle", "a_local": Vector2(0.0, 0.0), "b_local": Vector2(0.7, 0.0), "radius": 0.07, "runtime_momentum_capacity": 40.0},
-				{"node_index": FAULT_NODE_ID, "part_index": FAULT_NODE_ID, "part_kind": "limb_muscle", "a_local": Vector2(0.7, 0.0), "b_local": Vector2(1.1, 0.0), "radius": 0.07, "runtime_momentum_capacity": 10.0},
+				{"node_index": 0, "part_index": 0, "part_kind": "torso", "name": "Probe Core", "a_local": Vector2(-0.35, 0.0), "b_local": Vector2(0.0, 0.0), "radius": 0.22, "runtime_momentum_capacity": 80.0},
+				{"node_index": 1, "part_index": 1, "part_kind": "limb_muscle", "name": "Upper Link", "a_local": Vector2(0.0, 0.0), "b_local": Vector2(0.7, 0.0), "radius": 0.07, "runtime_momentum_capacity": 40.0},
+				{"node_index": FAULT_NODE_ID, "part_index": FAULT_NODE_ID, "part_kind": "limb_muscle", "name": "Right Connector", "a_local": Vector2(0.7, 0.0), "b_local": Vector2(1.1, 0.0), "radius": 0.07, "runtime_momentum_capacity": 10.0},
 			],
 			"runtime_module_bindings": [binding],
 		},
@@ -107,6 +110,8 @@ func _assert_faulted_direct_module_blocks(main) -> void:
 	var reason := String(fighter.get_meta("last_module_gate_reason", ""))
 	if not reason.contains("hardware") or not reason.contains("faulted"):
 		_fail("Faulted direct module should record a hardware fault gate reason, got: %s" % reason)
+	if not reason.contains("Right Connector"):
+		_fail("Faulted direct module should name the first failed hardware dependency, got: %s" % reason)
 
 
 func _init() -> void:
@@ -116,6 +121,10 @@ func _init() -> void:
 	main.game_state = MainScene.STATE_BATTLE
 	main.battle_mode = MainScene.MODE_TRAINING
 	_assert_normal_direct_module_starts(main)
+	if failed:
+		return
 	_assert_faulted_direct_module_blocks(main)
+	if failed:
+		return
 	print("HARDWARE_FAULT_DIRECT_MODULE_DEPENDENCY_PROBE ok")
 	quit(0)

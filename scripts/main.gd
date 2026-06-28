@@ -32414,6 +32414,26 @@ func _hardware_fault_required_ids_for_binding(binding: Dictionary) -> Array:
 	return required
 
 
+func _hardware_fault_node_label_for_unit(unit, body_id: String, hardware_id) -> String:
+	var fallback := String(hardware_id).strip_edges()
+	if unit == null or not is_instance_valid(unit) or unit.get("stats") == null:
+		return fallback
+	for raw_segment in Array(unit.stats.get("runtime_topology_segments", [])):
+		if not (raw_segment is Dictionary):
+			continue
+		var segment: Dictionary = raw_segment
+		if body_id != "" and _hardware_fault_construct_body_id(unit, segment) != body_id:
+			continue
+		if str(_hardware_fault_node_id(segment)) != str(hardware_id):
+			continue
+		for key in ["name", "part_name", "component_name", "label"]:
+			var label := String(segment.get(key, "")).strip_edges()
+			if label != "":
+				return label
+		return fallback
+	return fallback
+
+
 func _hardware_fault_dependency_report_for_binding(unit, binding: Dictionary) -> Dictionary:
 	if unit == null or not is_instance_valid(unit) or unit.get("stats") == null or binding.is_empty():
 		return {"allowed": true, "blocked": false}
@@ -32426,6 +32446,9 @@ func _hardware_fault_dependency_report_for_binding(unit, binding: Dictionary) ->
 	var report := _hardware_fault_runtime_service().action_dependency_report(required, _hardware_fault_dependency_states_for_unit(unit, body_id))
 	report["construct_body_id"] = body_id
 	report["required_hardware_ids"] = required.duplicate(true)
+	if bool(report.get("blocked", false)):
+		var blocked_id = report.get("blocked_hardware_id", "")
+		report["blocked_hardware_label"] = _hardware_fault_node_label_for_unit(unit, body_id, blocked_id)
 	return report
 
 
@@ -32461,12 +32484,15 @@ func _hardware_fault_dependency_report_for_event(unit, event: Dictionary) -> Dic
 
 func _hardware_fault_gate_reason(report: Dictionary) -> String:
 	var hardware_id := String(report.get("blocked_hardware_id", "")).strip_edges()
+	var hardware_label := String(report.get("blocked_hardware_label", "")).strip_edges()
 	var state := String(report.get("blocking_state", HardwareFaultRuntimeService.STATE_NORMAL)).strip_edges()
-	if hardware_id == "":
-		hardware_id = "?"
+	if hardware_label == "":
+		hardware_label = hardware_id
+	if hardware_label == "":
+		hardware_label = "?"
 	if state == "":
 		state = HardwareFaultRuntimeService.STATE_FAULTED
-	return "hardware %s %s" % [hardware_id, state]
+	return "hardware %s %s" % [hardware_label, state]
 
 
 func _record_hardware_fault_action_gate(unit, report: Dictionary) -> String:
