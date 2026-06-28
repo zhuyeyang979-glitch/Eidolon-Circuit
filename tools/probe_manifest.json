@@ -123,6 +123,7 @@
     "hardware_fault_laser_telegraph_dependency_probe",
     "hardware_fault_destruction_consumption_probe",
     "hardware_fault_core_destruction_probe",
+    "hardware_fault_non_primary_core_destruction_probe",
     "hardware_fault_primary_core_materialization_probe",
     "source_code_priority_service_probe",
     "source_code_priority_editor_probe",

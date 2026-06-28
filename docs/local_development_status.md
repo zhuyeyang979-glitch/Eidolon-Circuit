@@ -1862,3 +1862,8 @@ Next safe chunk: continue only with narrow pure-rule extraction where `main.gd` 
 
 - `tools/hardware_fault_boost_dependency_probe.gd` now covers the Boost action path separately from normal drive movement: a healthy primary core can boost, but a faulted primary core blocks Boost and reports a hardware fault gate reason.
 - `fighter.gd` now checks `hardware_fault_movement_blocked` at the Boost entry point before starting boost timers, heat events, projection guards, or thruster visuals.
+
+2026-06-28 Hardware fault non-primary core destruction follow-up:
+
+- `tools/hardware_fault_non_primary_core_destruction_probe.gd` now covers a multi-core-like construct body whose secondary `torso` segment points back to a different `primary_core_node_id`.
+- The probe verifies that destroying that secondary core-like segment emits `destroy_hardware`, keeps the hero deployed, preserves VP and the real primary-core collider, removes the destroyed branch, and disables the dependent bound action.
