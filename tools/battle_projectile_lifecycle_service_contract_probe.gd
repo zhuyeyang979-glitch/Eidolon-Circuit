@@ -4,8 +4,11 @@ const SERVICE_PATH := "res://scripts/services/battle_projectile_lifecycle_servic
 const MAIN_PATH := "res://scripts/main.gd"
 const BattleProjectileLifecycleServiceScript := preload("res://scripts/services/battle_projectile_lifecycle_service.gd")
 
+var failed := false
+
 
 func _fail(message: String) -> void:
+	failed = true
 	push_error(message)
 	quit(1)
 
@@ -154,6 +157,7 @@ func _init() -> void:
 	_check_missile_tick(service)
 	_check_firework(service)
 	_check_web(service)
+	_check_projectile_preflight()
 	_check_explosion(service)
 	_check_reflection(service)
 	_check_projectile_source_node(service)
@@ -161,6 +165,9 @@ func _init() -> void:
 	_check_runtime_melee_projectile_clear(service)
 	_check_runtime_gun_pose_clear_node(service)
 	_check_true_bullet_classification(service)
+	if failed:
+		quit(1)
+		return
 	print("BATTLE_PROJECTILE_LIFECYCLE_SERVICE_CONTRACT_PROBE ok")
 	quit(0)
 
@@ -372,6 +379,28 @@ func _check_web(service) -> void:
 		"strength": 2.0,
 		"break_force": 0.5,
 	}).get("action", "")), "snap", "web swing snap")
+
+
+func _check_projectile_preflight() -> void:
+	var hit_service = load("res://scripts/services/battle_hit_resolution_service.gd").new()
+	var preflight: Dictionary = hit_service.projectile_preflight_intent({
+		"event": {
+			"projectile": true,
+			"projectile_behavior": "explosive",
+			"projectile_style": "explosive",
+			"explosion_radius": 0.82,
+			"explosion_damage": 28,
+			"explosion_damage_type": "bullet",
+		},
+		"behavior": "explosive",
+		"standard_missile_explosion_radius": 0.72,
+	})
+	var patch: Dictionary = Dictionary(preflight.get("event_patch", {}))
+	if bool(patch.get("erase_explosion_damage", false)) or bool(patch.get("erase_explosion_damage_type", false)):
+		_fail("Explosive preflight should preserve explicit explosion payload for _apply_explosion_damage: %s" % str(patch))
+		return
+	_assert_eq(int(patch.get("explosion_damage", 28)), 28, "explosive preflight explicit damage")
+	_assert_eq(String(patch.get("explosion_damage_type", "bullet")), "bullet", "explosive preflight explicit type")
 
 
 func _check_explosion(service) -> void:

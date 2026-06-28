@@ -2,8 +2,11 @@ extends SceneTree
 
 const MainScene := preload("res://scripts/main.gd")
 
+var failed := false
+
 
 func _fail(message: String) -> void:
+	failed = true
 	push_error(message)
 	quit(1)
 
@@ -259,6 +262,9 @@ func _init() -> void:
 	var laser_stagger := float(stable_target.get_meta("melee_stagger_timer", 0.0))
 	if laser_stagger > 0.01:
 		_fail("Low-momentum laser should not stagger a stable target.")
+	if failed:
+		quit(1)
+		return
 
 	print("PROJECTILE_MOMENTUM true=%.0f bullet_hell=%.0f laser=%.0f chemical=%.0f explosive=%.0f mass=%.2f speed=%.1f approach=%.1f recede=%.1f true_stagger=%.3f laser_stagger=%.3f cannon=%.0f" % [
 		true_bullet_momentum,

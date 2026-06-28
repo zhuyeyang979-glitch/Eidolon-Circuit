@@ -1911,3 +1911,9 @@ Next safe chunk: continue only with narrow pure-rule extraction where `main.gd` 
 - Runtime Source Code assignment now records the primary construct body's selected assignment/entry and applies that Source Code back to unit behavior stats: `ai`, `sequence`, normalized `source_rules`, `module_sequence_limit`, `condition_slots`, and selected source targeting/movement hints.
 - Carrier destruction rebuilds the selected behavior fields after removing the destroyed carrier's Source Code, so surviving Source Codes continue driving runtime commands instead of leaving the previous payload's AI/rules stale.
 - Focused verification passed on macOS Godot `4.6.2.stable.official.71f334935`: `source_code_priority_main_runtime_probe`, `source_code_priority_destruction_rebuild_probe`, `battle_action_diagnostics_overlay_probe`, and `battle_runtime_action_telemetry_service_contract_probe`.
+
+2026-06-28 Explosive projectile preflight contract follow-up:
+
+- `BattleHitResolutionService.projectile_preflight_intent()` now keeps explicit `explosion_damage` and `explosion_damage_type` payloads available for `_apply_explosion_damage()` while still normalizing explosive projectile behavior, speed, radius, and style.
+- `tools/projectile_momentum_probe.gd` now exits nonzero on failure and is registered in `tools/probe_manifest.json`; it guards explosive direct damage, wide splash damage, and momentum stagger in the same runtime scenario.
+- `tools/battle_projectile_lifecycle_service_contract_probe.gd` now exits nonzero on failure and guards the preflight payload contract before the explosion lifecycle handoff checks.

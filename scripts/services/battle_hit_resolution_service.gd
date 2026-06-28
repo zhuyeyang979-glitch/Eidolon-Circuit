@@ -34,8 +34,6 @@ func projectile_preflight_intent(context: Dictionary) -> Dictionary:
 		patch["projectile_speed_mult"] = speed_mult
 		var style := String(patch.get("projectile_style", event.get("projectile_style", "")))
 		patch["explosion_radius"] = maxf(float(event.get("explosion_radius", 0.0)), float(context.get("standard_missile_explosion_radius", 0.0)) if style == "missile" else 0.58)
-		patch["erase_explosion_damage"] = true
-		patch["erase_explosion_damage_type"] = true
 		if String(event.get("explosion_style", "")) == "":
 			patch["explosion_style"] = style if style != "" else "explosive"
 	if bool(context.get("laser_telegraph", false)):

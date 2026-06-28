@@ -221,6 +221,7 @@
     "module_detail_action_page_probe",
     "module_detail_special_moves_probe",
     "projectile_profile_whitelist_probe",
+    "projectile_momentum_probe",
     "gun_activation_mobility_contract_probe",
     "gun_activation_move_while_fire_all_profiles_probe",
     "gun_activation_training_move_fire_probe",

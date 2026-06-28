@@ -35,7 +35,7 @@ Mode families:
 
 Combat contract cleanup:
 
-- Reconcile the existing explosive projectile preflight contract with `_apply_explosion_damage()` before treating missile/explosion probes as a completion gate.
+- Explosive projectile preflight now preserves explicit `explosion_damage` / `explosion_damage_type` payloads for `_apply_explosion_damage()`, with `projectile_momentum_probe` guarding direct damage, splash damage, and explosive momentum stagger.
 - Preserve the current electric/laser naming bridge until a saved-data migration is explicitly planned.
 
 ## Online Battle / Deferred
