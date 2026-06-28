@@ -149,9 +149,15 @@ func source_target_score(facts: Dictionary, policy: String) -> float:
 	var hp_ratio := clampf(float(facts.get("hp_ratio", 1.0)), 0.0, 1.0)
 	var target_role := String(facts.get("role", ""))
 	var sight_blocked := bool(facts.get("sight_blocked", false))
+	var terrain_path_blocked := bool(facts.get("terrain_path_blocked", false))
+	var terrain_path_bridge_active := bool(facts.get("terrain_path_bridge_active", false))
 	var score := -distance * 8.0 + (1.0 - hp_ratio) * 18.0
 	if sight_blocked:
 		score -= 30.0
+	if terrain_path_blocked:
+		score -= 24.0
+	elif terrain_path_bridge_active:
+		score += 8.0
 	match policy:
 		"heat_pressure_first":
 			var heat_focus_ratio := clampf(float(facts.get("heat_focus_ratio", 0.68)), 0.0, 1.0)
@@ -164,6 +170,7 @@ func source_target_score(facts: Dictionary, policy: String) -> float:
 			score += (1.0 - hp_ratio) * 16.0
 			score -= distance * 1.4
 			score -= 48.0 if sight_blocked else 0.0
+			score -= 32.0 if terrain_path_blocked else 0.0
 		"hero_low_hp_ranged":
 			score += 120.0 if target_role == "hero" else 0.0
 			score += (1.0 - hp_ratio) * 54.0
@@ -171,24 +178,29 @@ func source_target_score(facts: Dictionary, policy: String) -> float:
 			score -= 42.0 if target_role == "barrier" else 0.0
 			score -= distance * 2.5
 			score -= 72.0 if sight_blocked else 0.0
+			score -= 42.0 if terrain_path_blocked else 0.0
 		"low_hp_first":
 			score += (1.0 - hp_ratio) * 118.0
 			score += 22.0 if target_role == "hero" else 0.0
 			score += 10.0 if target_role == "puppet" else 0.0
 			score -= distance * 1.7
+			score -= 22.0 if terrain_path_blocked else 0.0
 		"protect_hero":
 			score += maxf(0.0, 80.0 - float(facts.get("hero_distance", 999999.0)) * 32.0)
 			score += 36.0 if target_role == "hero" else 0.0
 			score += 24.0 if float(facts.get("projectile_signal", 0.0)) > 0.0 else 0.0
+			score -= 18.0 if terrain_path_blocked else 0.0
 		"protect_puppet_group":
 			score += float(facts.get("group_threat_score", 0.0))
 			score += 18.0 if float(facts.get("projectile_signal", 0.0)) > 0.0 else 0.0
 			score += 10.0 if target_role == "puppet" else 0.0
 			score -= 34.0 if target_role == "barrier" else 0.0
 			score -= distance * 1.1
+			score -= 18.0 if terrain_path_blocked else 0.0
 		"hero_siege":
 			score += 180.0 if target_role == "hero" else 0.0
 			score += 28.0 if target_role == "barrier" else 0.0
 			score += (1.0 - hp_ratio) * 26.0
 			score -= distance * 1.2
+			score -= 30.0 if terrain_path_blocked else 0.0
 	return score

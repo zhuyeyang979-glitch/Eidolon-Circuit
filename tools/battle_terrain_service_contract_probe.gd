@@ -46,6 +46,7 @@ func _init() -> void:
 		"func placement_query",
 		"func combined_occlusion_candidates",
 		"func combined_collision_candidates",
+		"func traversal_query",
 	]:
 		if not source.contains(token):
 			_fail("BattleTerrainService missing boundary token: %s" % token)
@@ -159,6 +160,28 @@ func _init() -> void:
 		"bridge_kinds": ["gap"],
 	})
 	if not _expect_eq(String(bridge.get("outcome", "")), "bridge", "bridge placement outcome"):
+		return
+
+	var traversal_blocked: Dictionary = service.traversal_query({
+		"snapshot": snapshot,
+		"start": Vector2(4.2, 0.0),
+		"target": Vector2(5.8, 0.0),
+		"radius": 0.05,
+	})
+	if not _expect_eq(String(traversal_blocked.get("mode", "")), "blocked", "unbridged gap traversal mode"):
+		return
+	if not _expect_eq(String(traversal_blocked.get("feature_id", "")), "terrain_004", "traversal blocked feature id"):
+		return
+	var traversal_bridged: Dictionary = service.traversal_query({
+		"snapshot": snapshot,
+		"start": Vector2(4.2, 0.0),
+		"target": Vector2(5.8, 0.0),
+		"radius": 0.05,
+		"bridge_intents": [{"action": "bridge_terrain_gap", "feature_id": "terrain_004"}],
+	})
+	if not _expect_eq(String(traversal_bridged.get("mode", "")), "bridged", "bridged gap traversal mode"):
+		return
+	if not _expect(not bool(traversal_bridged.get("blocked", true)), "bridged traversal should be open: %s" % str(traversal_bridged)):
 		return
 
 	var free: Dictionary = service.placement_query({

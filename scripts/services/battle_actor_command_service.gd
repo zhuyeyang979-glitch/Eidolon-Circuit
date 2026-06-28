@@ -852,7 +852,17 @@ func puppet_move_intent(context: Dictionary) -> Dictionary:
 	var source_rule: Dictionary = Dictionary(context.get("source_rule", {}))
 	if not source_rule.is_empty():
 		move = _source_move_vector(context, phase, String(source_rule.get("move", "approach")))
-	return {"move": move.limit_length(1.0), "phase": phase, "ai_kind": ai_kind}
+	var raw_terrain_plan = context.get("terrain_path_plan", {})
+	var terrain_plan: Dictionary = raw_terrain_plan if raw_terrain_plan is Dictionary else {}
+	move = _terrain_path_adjusted_move(move, terrain_plan)
+	return {
+		"move": move.limit_length(1.0),
+		"phase": phase,
+		"ai_kind": ai_kind,
+		"terrain_path_plan": terrain_plan.duplicate(true),
+		"terrain_path_mode": String(terrain_plan.get("mode", "clear")),
+		"terrain_path_feature_id": String(terrain_plan.get("feature_id", "")),
+	}
 
 
 func puppet_attack_intent(context: Dictionary) -> Dictionary:
@@ -970,6 +980,30 @@ func command_diagnostics(context: Dictionary) -> Dictionary:
 		"source_code_name": String(context.get("source_code_name", "")),
 		"source_code_rejection_reason": String(context.get("source_code_rejection_reason", "")),
 	}
+
+
+func _terrain_path_adjusted_move(move: Vector2, terrain_plan: Dictionary) -> Vector2:
+	if terrain_plan.is_empty():
+		return move
+	var mode := String(terrain_plan.get("mode", "clear"))
+	if mode == "" or mode == "clear":
+		return move
+	var recommended = terrain_plan.get("recommended_direction", Vector2.ZERO)
+	if not (recommended is Vector2):
+		return move
+	var direction := Vector2(recommended)
+	if direction.length() <= 0.04:
+		return move
+	direction = direction.normalized()
+	if bool(terrain_plan.get("blocked", false)) or mode == "hazard":
+		return (move.limit_length(1.0) * 0.45 + direction * 0.75).limit_length(1.0)
+	if mode == "bridged" or mode == "route":
+		var base := move.limit_length(1.0)
+		if base.length() <= 0.04:
+			return direction
+		var route_pull := 0.28 if base.normalized().dot(direction) < 0.35 else 0.14
+		return (base + direction * route_pull).limit_length(1.0)
+	return move
 
 
 func _source_move_vector(context: Dictionary, phase: float, move_kind: String) -> Vector2:

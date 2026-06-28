@@ -26224,6 +26224,56 @@ func _battle_terrain_snapshot_revision_key(snapshot: Dictionary = {}) -> String:
 	]
 
 
+func _terrain_traversal_bridge_intents() -> Array:
+	var result: Array = []
+	for player_id in [1, 2]:
+		if not active_units.has(player_id):
+			continue
+		var barrier = active_units[player_id]["barrier"]
+		if not _is_live_unit(barrier):
+			continue
+		for raw_intent in Array(barrier.get_meta("barrier_terrain_deployment_intents", [])):
+			if not (raw_intent is Dictionary):
+				continue
+			var intent: Dictionary = raw_intent
+			if String(intent.get("action", "")) != "bridge_terrain_gap":
+				continue
+			result.append(intent.duplicate(true))
+	return result
+
+
+func _terrain_path_plan_between(unit, target) -> Dictionary:
+	if not _is_live_unit(unit) or not _is_live_unit(target):
+		return {}
+	var snapshot := _battle_terrain_runtime_snapshot()
+	if Array(snapshot.get("features", [])).is_empty():
+		return {}
+	var delta := _mobius_delta_vec_between(unit, target, 0.65)
+	var start := Vector2(float(unit.ring_pos), float(unit.lane))
+	var target_pos := start + delta
+	return _battle_terrain_service().traversal_query({
+		"snapshot": snapshot,
+		"start": start,
+		"target": target_pos,
+		"radius": maxf(0.05, float(unit.stats.get("radius", 0.18)) * 0.62),
+		"ring_length": RING_LENGTH,
+		"bridge_intents": _terrain_traversal_bridge_intents(),
+	})
+
+
+func _remember_unit_terrain_path_plan(unit, plan: Dictionary) -> void:
+	if unit == null or not is_instance_valid(unit):
+		return
+	if plan.is_empty() or String(plan.get("mode", "clear")) == "clear":
+		unit.set_meta("terrain_path_plan", {})
+		unit.set_meta("terrain_path_mode", "clear")
+		unit.set_meta("terrain_path_feature_id", "")
+		return
+	unit.set_meta("terrain_path_plan", plan.duplicate(true))
+	unit.set_meta("terrain_path_mode", String(plan.get("mode", "")))
+	unit.set_meta("terrain_path_feature_id", String(plan.get("feature_id", "")))
+
+
 func _battle_hit_resolution_service() -> BattleHitResolutionService:
 	if battle_hit_resolution_service == null:
 		battle_hit_resolution_service = BattleHitResolutionService.new()
@@ -31325,6 +31375,7 @@ func _puppet_move_vector(unit, target, player_id: int, unit_index: int, group_si
 	if ai_kind == "vanguard_cover" or source_move_kind in ["intercept", "cover_group", "cover_retreat"]:
 		guard_anchor = _source_guard_anchor_for(unit, target, player_id)
 	var blind_strength := _unit_blind_strength(unit)
+	var terrain_path_plan := _terrain_path_plan_between(unit, target)
 	var intent := _battle_actor_command_service().puppet_move_intent({
 		"unit": _battle_actor_unit_snapshot(unit),
 		"target": _battle_actor_unit_snapshot(target),
@@ -31340,8 +31391,10 @@ func _puppet_move_vector(unit, target, player_id: int, unit_index: int, group_si
 		"blind_strength": blind_strength,
 		"blind_escape_vector": _blind_escape_vector(unit) if blind_strength > 0.08 else Vector2.ZERO,
 		"source_rule": source_rule,
+		"terrain_path_plan": terrain_path_plan,
 	})
 	unit.set_meta("phase", float(intent.get("phase", unit.get_meta("phase", 0.0))))
+	_remember_unit_terrain_path_plan(unit, Dictionary(intent.get("terrain_path_plan", terrain_path_plan)))
 	return intent.get("move", Vector2.ZERO) if intent.get("move", Vector2.ZERO) is Vector2 else Vector2.ZERO
 
 
@@ -54922,6 +54975,7 @@ func _source_target_awareness_facts(unit, target, player_id: int, policy: String
 	var sight_blocker_source := String(sight_query.get("blocker_source", "")) if sight_blocked else ""
 	var sight_terrain_feature_id := String(sight_query.get("terrain_feature_id", "")) if sight_blocker_source == "terrain" else ""
 	var sight_terrain_kind := String(sight_query.get("terrain_kind", "")) if sight_blocker_source == "terrain" else ""
+	var terrain_path_plan := _terrain_path_plan_between(unit, target)
 	var hero_distance := 999999.0
 	if policy == "protect_hero":
 		var own_hero = active_units[player_id]["hero"]
@@ -54937,6 +54991,11 @@ func _source_target_awareness_facts(unit, target, player_id: int, policy: String
 		"sight_blocker_source": sight_blocker_source,
 		"sight_terrain_feature_id": sight_terrain_feature_id,
 		"sight_terrain_kind": sight_terrain_kind,
+		"terrain_path_mode": String(terrain_path_plan.get("mode", "clear")),
+		"terrain_path_blocked": bool(terrain_path_plan.get("blocked", false)),
+		"terrain_path_feature_id": String(terrain_path_plan.get("feature_id", "")),
+		"terrain_path_kind": String(terrain_path_plan.get("terrain_kind", "")),
+		"terrain_path_bridge_active": bool(terrain_path_plan.get("bridge_active", false)),
 		"heat_focus_ratio": clampf(float(unit.stats.get("source_heat_focus_ratio", 0.68)), 0.0, 1.0),
 		"heat_ratio": _source_target_heat_ratio(target),
 		"overheated": bool(target.overheated) if target != null and is_instance_valid(target) else false,
