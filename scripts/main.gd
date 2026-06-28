@@ -46815,7 +46815,7 @@ func _build_battle_ui() -> void:
 	battle_action_diagnostics_view = BattleActionDiagnosticsView.new()
 	battle_action_diagnostics_view.name = "BattleActionDiagnostics"
 	battle_action_diagnostics_view.position = Vector2(454.0, 108.0)
-	battle_action_diagnostics_view.size = Vector2(372.0, 340.0)
+	battle_action_diagnostics_view.size = Vector2(372.0, 360.0)
 	battle_action_diagnostics_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	battle_action_diagnostics_view.visible = false
 	battle_action_diagnostics_view.z_index = 90
@@ -53618,6 +53618,7 @@ func _battle_command_diagnostics_unit_snapshot(unit) -> Dictionary:
 	var source_rule := _battle_command_diagnostics_source_rule(stats, source_condition)
 	var sequence: Array = Array(source_rule.get("states", stats.get("sequence", [])))
 	var role_switch_target := String(stats.get("role_switch", ""))
+	var source_code_diagnostics := _battle_source_code_command_diagnostics(stats)
 	return _battle_actor_command_service().command_diagnostics({
 		"ai_kind": String(stats.get("ai", "")),
 		"source_condition": source_condition,
@@ -53631,7 +53632,39 @@ func _battle_command_diagnostics_unit_snapshot(unit) -> Dictionary:
 		"movement_gate_reason": String(unit.get_meta("movement_gate_reason", "")),
 		"role_switch_configured": role_switch_target != "",
 		"role_switch_target": role_switch_target,
+		"source_code_entry_id": String(source_code_diagnostics.get("source_code_entry_id", "")),
+		"source_code_name": String(source_code_diagnostics.get("source_code_name", "")),
+		"source_code_rejection_reason": String(source_code_diagnostics.get("source_code_rejection_reason", "")),
 	})
+
+
+func _battle_source_code_command_diagnostics(stats: Dictionary) -> Dictionary:
+	var selected_assignment: Dictionary = {}
+	for raw_assignment in Array(stats.get("source_code_runtime_assignments", [])):
+		if not (raw_assignment is Dictionary):
+			continue
+		selected_assignment = Dictionary(raw_assignment)
+		break
+	return {
+		"source_code_entry_id": String(selected_assignment.get("source_entry_id", selected_assignment.get("entry_id", ""))),
+		"source_code_name": String(selected_assignment.get("source_code_name", "")),
+		"source_code_rejection_reason": _battle_source_code_rejection_reason(stats),
+	}
+
+
+func _battle_source_code_rejection_reason(stats: Dictionary) -> String:
+	var fallback_reason := ""
+	for raw_diagnostic in Array(stats.get("source_code_runtime_diagnostics", [])):
+		if not (raw_diagnostic is Dictionary):
+			continue
+		var reason := String(Dictionary(raw_diagnostic).get("reason", "")).strip_edges()
+		if reason == "":
+			continue
+		if fallback_reason == "":
+			fallback_reason = reason
+		if reason != "unassigned_body":
+			return reason
+	return fallback_reason
 
 
 func _battle_command_diagnostics_source_rule(stats: Dictionary, source_condition: String) -> Dictionary:

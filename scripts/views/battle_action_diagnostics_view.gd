@@ -108,6 +108,12 @@ func text() -> String:
 			str(bool(command.get("role_switch_configured", false))),
 			String(command.get("role_switch_target", "")),
 		])
+		if _command_has_source_code_diagnostics(command):
+			lines.append("  source src:%s src_name:%s src_reason:%s" % [
+				String(command.get("source_code_entry_id", "")),
+				String(command.get("source_code_name", "")),
+				String(command.get("source_code_rejection_reason", "")),
+			])
 		var projectile: Dictionary = Dictionary(row.get("projectile_diagnostics", {}))
 		lines.append("  proj signal:%.2f pending:%d incoming:%d locks:%d targeted:%d beh:%s targets:%s err:%s" % [
 			float(projectile.get("projectile_signal", 0.0)),
@@ -204,6 +210,10 @@ func _counts_line(counts: Dictionary) -> String:
 		var key := String(raw_key)
 		parts.append("%s:%d" % [key, int(counts.get(key, 0))])
 	return ", ".join(parts)
+
+
+func _command_has_source_code_diagnostics(command: Dictionary) -> bool:
+	return String(command.get("source_code_entry_id", "")) != "" or String(command.get("source_code_name", "")) != "" or String(command.get("source_code_rejection_reason", "")) != ""
 
 
 func _nodes_line(nodes: Array) -> String:

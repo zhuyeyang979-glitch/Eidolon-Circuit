@@ -966,6 +966,9 @@ func command_diagnostics(context: Dictionary) -> Dictionary:
 		"movement_gate_reason": String(context.get("movement_gate_reason", "")),
 		"role_switch_configured": bool(context.get("role_switch_configured", role_switch_target != "")),
 		"role_switch_target": role_switch_target,
+		"source_code_entry_id": String(context.get("source_code_entry_id", "")),
+		"source_code_name": String(context.get("source_code_name", "")),
+		"source_code_rejection_reason": String(context.get("source_code_rejection_reason", "")),
 	}
 
 

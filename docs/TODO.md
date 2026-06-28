@@ -23,6 +23,7 @@ Source Code priority:
 - Basic `源代码优先级 / SOURCE PRIORITY` editor metadata, Torso Detail Up/Down controls, Reset writeback, keyboard focus, and rank announcements are implemented through `tools/source_code_priority_editor_probe.gd`.
 - Stable runtime construct-body IDs and deterministic body-to-code assignment tables are materialized in puppet stats/spawn through `tools/source_code_priority_runtime_assignment_probe.gd` and `tools/source_code_priority_main_runtime_probe.gd`.
 - Carrier destruction now rebuilds runtime assignment tables without removing Source Codes on surviving bodies through `tools/source_code_priority_destruction_rebuild_probe.gd`.
+- Runtime command diagnostics now expose the selected Source Code entry/name and the first rejection reason in the battle action diagnostics overlay through `tools/battle_action_diagnostics_overlay_probe.gd`.
 - Follow `docs/plans/2026-06-24-source-code-priority-ui.md`.
 
 Mode families:

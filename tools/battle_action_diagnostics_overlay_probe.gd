@@ -95,6 +95,9 @@ func _init() -> void:
 				"movement_gate_reason": "",
 				"role_switch_configured": true,
 				"role_switch_target": "puppet",
+				"source_code_entry_id": "torso:1:1",
+				"source_code_name": "Signal Monarch",
+				"source_code_rejection_reason": "carrier_destroyed",
 			},
 			"projectile_diagnostics": {
 				"projectile_signal": 0.44,
@@ -161,7 +164,7 @@ func _init() -> void:
 		if not standalone_text.contains(required):
 			_fail("BattleActionDiagnosticsView text missing gate token %s: %s" % [required, standalone_text])
 			return
-	for required in ["cmds ai:line:1", "cond:default:1", "mm:drive:1", "cmd ai:line", "cond:default", "move:hold", "fire:0.18", "step:1/2", "mm:drive", "role:true", "target:puppet"]:
+	for required in ["cmds ai:line:1", "cond:default:1", "mm:drive:1", "cmd ai:line", "cond:default", "move:hold", "fire:0.18", "step:1/2", "mm:drive", "role:true", "target:puppet", "source src:torso:1:1", "src_name:Signal Monarch", "src_reason:carrier_destroyed"]:
 		if not standalone_text.contains(required):
 			_fail("BattleActionDiagnosticsView text missing command token %s: %s" % [required, standalone_text])
 			return
@@ -198,6 +201,18 @@ func _init() -> void:
 			"sequence": ["normal", "armor"],
 			"source_attack_preference": "ranged_first",
 			"role_switch": "puppet",
+			"source_code_runtime_assignments": [{
+				"construct_body_id": "p1:hero:overlay-probe:body0",
+				"source_entry_id": "torso:1:1",
+				"source_code_name": "Signal Monarch",
+				"source_priority": 0,
+				"reason": "assigned",
+			}],
+			"source_code_runtime_diagnostics": [{
+				"entry_id": "torso:0:0",
+				"construct_body_id": "p1:hero:overlay-probe:body1",
+				"reason": "carrier_destroyed",
+			}],
 			"teamedit_runtime_topology": true,
 			"runtime_topology_segments": [{
 				"node_index": 4,
@@ -272,7 +287,7 @@ func _init() -> void:
 		_fail("Battle action diagnostics overlay should become visible when enabled.")
 		return
 	var text := main._battle_action_diagnostics_overlay_text()
-	for required in ["units:", "action", "profile:two_link_forward_snap", "phase:", "unit P1 hero Overlay Probe", "key:1", "nodes:1/2", "pose:", "target:", "variant:balance_string", "cmd:normal_sweep", "speed:", "soul:true", "gate", "reason:cooldown", "cd:0.22", "cancel:false", "last:cooldown", "cmds", "cmd ai:line", "cond:default", "fire:0.18", "step:1/2", "mm:drive", "role:true", "target:puppet", "projectiles", "behavior:explosive:1, true_bullet:1", "targets:hero:2", "proj signal:0.44", "pending:2", "locks:2", "hardware states", "faulted:1", "FAULT / 故障", "node:4", "Right Connector", "state:faulted", "normal>faulted", "raw:18.00", "path:14.00", "capped:12.00", "capacity:12.00", "seq:1"]:
+	for required in ["units:", "action", "profile:two_link_forward_snap", "phase:", "unit P1 hero Overlay Probe", "key:1", "nodes:1/2", "pose:", "target:", "variant:balance_string", "cmd:normal_sweep", "speed:", "soul:true", "gate", "reason:cooldown", "cd:0.22", "cancel:false", "last:cooldown", "cmds", "cmd ai:line", "cond:default", "fire:0.18", "step:1/2", "mm:drive", "role:true", "target:puppet", "source src:torso:1:1", "src_name:Signal Monarch", "src_reason:carrier_destroyed", "projectiles", "behavior:explosive:1, true_bullet:1", "targets:hero:2", "proj signal:0.44", "pending:2", "locks:2", "hardware states", "faulted:1", "FAULT / 故障", "node:4", "Right Connector", "state:faulted", "normal>faulted", "raw:18.00", "path:14.00", "capped:12.00", "capacity:12.00", "seq:1"]:
 		if not text.contains(required):
 			_fail("Battle action diagnostics overlay text missing token %s: %s" % [required, text])
 			return

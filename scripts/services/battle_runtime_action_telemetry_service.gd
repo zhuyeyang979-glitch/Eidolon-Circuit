@@ -413,6 +413,9 @@ func _normalized_command_diagnostics(raw_command) -> Dictionary:
 		"movement_gate_reason": String(command.get("movement_gate_reason", "")),
 		"role_switch_configured": bool(command.get("role_switch_configured", false)),
 		"role_switch_target": String(command.get("role_switch_target", "")),
+		"source_code_entry_id": String(command.get("source_code_entry_id", "")),
+		"source_code_name": String(command.get("source_code_name", "")),
+		"source_code_rejection_reason": String(command.get("source_code_rejection_reason", "")),
 	}
 
 

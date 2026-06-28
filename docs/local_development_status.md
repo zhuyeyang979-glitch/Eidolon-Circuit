@@ -1899,3 +1899,9 @@ Next safe chunk: continue only with narrow pure-rule extraction where `main.gd` 
 
 - `tools/hardware_fault_live_adapter_probe.gd` now requires `_battle_attack_rule_summary_text()` to expose hardware fault transitions in the battle log summary.
 - Post-review attack result reasons now append a compact `HW pre>post raw/path/hardware/capacity/seq` payload when a breakdown contains a real hardware fault transition, so the same raw, path-capped, hardware-capped, capacity, and sequence data is inspectable outside the diagnostics overlay.
+
+2026-06-28 Source Code runtime diagnostics follow-up:
+
+- Battle command diagnostics now carry the selected Source Code entry ID, display name, and the first runtime rejection reason from `source_code_runtime_assignments` / `source_code_runtime_diagnostics`.
+- `BattleRuntimeActionTelemetryService` preserves those fields into the action diagnostics model, and `BattleActionDiagnosticsView` renders a compact `source src:... src_name:... src_reason:...` row when available.
+- Focused verification passed on macOS Godot `4.6.2.stable.official.71f334935`: `battle_action_diagnostics_overlay_probe` (`text_lines=24`), `source_code_priority_main_runtime_probe`, `source_code_priority_destruction_rebuild_probe`, and `battle_runtime_action_telemetry_service_contract_probe`.
