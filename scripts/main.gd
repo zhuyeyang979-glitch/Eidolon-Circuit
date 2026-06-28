@@ -13834,12 +13834,122 @@ func _apply_source_code_runtime_assignment_stats(stats: Dictionary, player_id: i
 
 
 func _write_source_code_runtime_assignment_result(stats: Dictionary, result: Dictionary, live_construct_body_ids: Array = []) -> void:
-	stats["source_code_runtime_body_records"] = Array(result.get("body_records", []))
-	stats["source_code_runtime_entries"] = Array(result.get("entries", []))
-	stats["source_code_runtime_assignments"] = Array(result.get("assignments", []))
+	var body_records := Array(result.get("body_records", []))
+	var entries := Array(result.get("entries", []))
+	var assignments := Array(result.get("assignments", []))
+	stats["source_code_runtime_body_records"] = body_records
+	stats["source_code_runtime_entries"] = entries
+	stats["source_code_runtime_assignments"] = assignments
 	stats["source_code_runtime_assignment_by_body"] = Dictionary(result.get("assignment_by_body", {}))
 	stats["source_code_runtime_diagnostics"] = Array(result.get("diagnostics", []))
+	_apply_source_code_runtime_selected_assignment_stats(stats, entries, assignments, body_records)
 	stats["source_code_runtime_live_construct_body_ids"] = live_construct_body_ids.duplicate(true)
+
+
+func _apply_source_code_runtime_selected_assignment_stats(stats: Dictionary, entries: Array, assignments: Array, body_records: Array) -> void:
+	var selected_assignment := _source_code_runtime_selected_assignment(assignments, body_records)
+	stats["source_code_runtime_selected_assignment"] = selected_assignment.duplicate(true)
+	var selected_entry := _source_code_runtime_entry_for_assignment(entries, selected_assignment)
+	stats["source_code_runtime_selected_entry"] = selected_entry.duplicate(true)
+	if selected_assignment.is_empty() or selected_entry.is_empty():
+		return
+	_apply_source_code_runtime_behavior_stats(stats, selected_entry)
+
+
+func _source_code_runtime_selected_assignment(assignments: Array, body_records: Array) -> Dictionary:
+	var preferred_body_id := _source_code_runtime_primary_body_id(body_records)
+	if preferred_body_id != "":
+		for raw_assignment in assignments:
+			if not (raw_assignment is Dictionary):
+				continue
+			var assignment: Dictionary = raw_assignment
+			if String(assignment.get("construct_body_id", "")) == preferred_body_id:
+				return assignment.duplicate(true)
+	for raw_assignment in assignments:
+		if raw_assignment is Dictionary:
+			return Dictionary(raw_assignment).duplicate(true)
+	return {}
+
+
+func _source_code_runtime_primary_body_id(body_records: Array) -> String:
+	var selected_body_id := ""
+	var selected_index := 999999
+	for raw_record in body_records:
+		if not (raw_record is Dictionary):
+			continue
+		var record: Dictionary = raw_record
+		var body_id := String(record.get("construct_body_id", "")).strip_edges()
+		if body_id == "":
+			continue
+		var body_index := int(record.get("body_index", selected_index))
+		if selected_body_id == "" or body_index < selected_index:
+			selected_body_id = body_id
+			selected_index = body_index
+	return selected_body_id
+
+
+func _source_code_runtime_entry_for_assignment(entries: Array, assignment: Dictionary) -> Dictionary:
+	var entry_id := String(assignment.get("source_entry_id", assignment.get("entry_id", "")))
+	if entry_id == "":
+		return {}
+	for raw_entry in entries:
+		if not (raw_entry is Dictionary):
+			continue
+		var entry: Dictionary = raw_entry
+		if String(entry.get("entry_id", "")) == entry_id:
+			return entry.duplicate(true)
+	return {}
+
+
+func _apply_source_code_runtime_behavior_stats(stats: Dictionary, selected_entry: Dictionary) -> void:
+	var source_part: Dictionary = selected_entry.get("source_part", {}) if selected_entry.get("source_part", {}) is Dictionary else {}
+	var selected_source := source_part.duplicate(true)
+	for key in ["ai", "sequence", "source_rules", "source_target_policy", "source_attack_preference", "module_sequence_limit", "condition_slots"]:
+		if selected_entry.has(key):
+			selected_source[key] = _source_code_runtime_stat_value(selected_entry[key])
+	var ai_kind := String(selected_source.get("ai", "line")).strip_edges()
+	if ai_kind == "":
+		ai_kind = "line"
+	stats["ai"] = ai_kind
+	var sequence := Array(selected_source.get("sequence", ["normal"])).duplicate(true)
+	if sequence.is_empty():
+		sequence = ["normal"]
+	stats["sequence"] = sequence
+	stats["module_sequence_limit"] = maxi(1, int(selected_source.get("module_sequence_limit", 1)))
+	stats["condition_slots"] = maxi(1, int(selected_source.get("condition_slots", 1)))
+	var rule_stats := {
+		"ai": ai_kind,
+		"sequence": sequence,
+		"module_sequence_limit": int(stats.get("module_sequence_limit", 1)),
+		"condition_slots": int(stats.get("condition_slots", 1)),
+	}
+	if selected_source.has("source_rules") and selected_source["source_rules"] is Dictionary and not Dictionary(selected_source["source_rules"]).is_empty():
+		rule_stats["source_rules"] = Dictionary(selected_source["source_rules"]).duplicate(true)
+	stats["source_rules"] = _source_rules_for_blueprint({}, rule_stats)
+	for key in [
+		"source_target_policy",
+		"source_attack_preference",
+		"source_close_response",
+		"source_keep_range",
+		"source_threat_override_range",
+		"source_heat_focus_ratio",
+		"orbit_radius",
+		"hold_range",
+		"flank_width",
+	]:
+		if selected_source.has(key):
+			stats[key] = _source_code_runtime_stat_value(selected_source[key])
+		else:
+			stats.erase(key)
+	for key in ["barrier_logic", "role_switch"]:
+		if selected_source.has(key):
+			stats[key] = _source_code_runtime_stat_value(selected_source[key])
+
+
+func _source_code_runtime_stat_value(value):
+	if value is Dictionary or value is Array:
+		return value.duplicate(true)
+	return value
 
 
 func _source_code_runtime_destroyed_body_ids_for_unit(unit) -> Dictionary:
@@ -53639,12 +53749,12 @@ func _battle_command_diagnostics_unit_snapshot(unit) -> Dictionary:
 
 
 func _battle_source_code_command_diagnostics(stats: Dictionary) -> Dictionary:
-	var selected_assignment: Dictionary = {}
-	for raw_assignment in Array(stats.get("source_code_runtime_assignments", [])):
-		if not (raw_assignment is Dictionary):
-			continue
-		selected_assignment = Dictionary(raw_assignment)
-		break
+	var selected_assignment: Dictionary = stats.get("source_code_runtime_selected_assignment", {}) if stats.get("source_code_runtime_selected_assignment", {}) is Dictionary else {}
+	if selected_assignment.is_empty():
+		selected_assignment = _source_code_runtime_selected_assignment(
+			Array(stats.get("source_code_runtime_assignments", [])),
+			Array(stats.get("source_code_runtime_body_records", []))
+		)
 	return {
 		"source_code_entry_id": String(selected_assignment.get("source_entry_id", selected_assignment.get("entry_id", ""))),
 		"source_code_name": String(selected_assignment.get("source_code_name", "")),

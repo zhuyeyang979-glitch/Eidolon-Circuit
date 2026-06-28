@@ -1905,3 +1905,9 @@ Next safe chunk: continue only with narrow pure-rule extraction where `main.gd` 
 - Battle command diagnostics now carry the selected Source Code entry ID, display name, and the first runtime rejection reason from `source_code_runtime_assignments` / `source_code_runtime_diagnostics`.
 - `BattleRuntimeActionTelemetryService` preserves those fields into the action diagnostics model, and `BattleActionDiagnosticsView` renders a compact `source src:... src_name:... src_reason:...` row when available.
 - Focused verification passed on macOS Godot `4.6.2.stable.official.71f334935`: `battle_action_diagnostics_overlay_probe` (`text_lines=24`), `source_code_priority_main_runtime_probe`, `source_code_priority_destruction_rebuild_probe`, and `battle_runtime_action_telemetry_service_contract_probe`.
+
+2026-06-28 Source Code selected runtime behavior follow-up:
+
+- Runtime Source Code assignment now records the primary construct body's selected assignment/entry and applies that Source Code back to unit behavior stats: `ai`, `sequence`, normalized `source_rules`, `module_sequence_limit`, `condition_slots`, and selected source targeting/movement hints.
+- Carrier destruction rebuilds the selected behavior fields after removing the destroyed carrier's Source Code, so surviving Source Codes continue driving runtime commands instead of leaving the previous payload's AI/rules stale.
+- Focused verification passed on macOS Godot `4.6.2.stable.official.71f334935`: `source_code_priority_main_runtime_probe`, `source_code_priority_destruction_rebuild_probe`, `battle_action_diagnostics_overlay_probe`, and `battle_runtime_action_telemetry_service_contract_probe`.

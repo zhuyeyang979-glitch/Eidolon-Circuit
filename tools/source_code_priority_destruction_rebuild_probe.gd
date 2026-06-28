@@ -33,6 +33,13 @@ func _source_code_indices(main, count: int, group_count: int = -1) -> Array:
 	return result
 
 
+func _source_code_part(main, index: int) -> Dictionary:
+	var catalog: Array = main._catalog_for("puppet", "special")
+	if index < 0 or index >= catalog.size() or not (catalog[index] is Dictionary):
+		return {}
+	return Dictionary(catalog[index])
+
+
 func _torso_index(main) -> int:
 	var catalog: Array = main._catalog_for("puppet", "muscle")
 	for i in range(catalog.size()):
@@ -99,6 +106,7 @@ func _init() -> void:
 		quit(1)
 		return
 	var unit_bp := _blueprint(torso, int(codes[0]), int(codes[1]))
+	var surviving_code_part := _source_code_part(main, int(codes[0]))
 	var stats: Dictionary = main._compute_unit_stats(1, "puppet", 2, unit_bp)
 	var unit = main._create_unit(1, "puppet", stats, "Source Rebuild Probe", 1.0, 0.0)
 	unit.set_meta("hardware_fault_construct_body_destroyed", {"p1:puppet:u2:body1": true})
@@ -111,6 +119,9 @@ func _init() -> void:
 	], "Destroyed carrier should remove only its Source Code and let survivors keep operating: %s" % str(assignments))
 	_require(_diag_reasons(diagnostics).has("carrier_destroyed"), "Rebuild diagnostics should explain the removed carrier: %s" % str(diagnostics))
 	_require(Dictionary(unit.stats.get("assignment_by_body", {})).is_empty(), "Probe guard: legacy assignment_by_body should not be written at top level.")
+	_require(String(Dictionary(unit.stats.get("source_code_runtime_selected_assignment", {})).get("source_entry_id", "")) == "torso:0:0", "Rebuild should select the surviving Source Code for the primary body: %s" % str(unit.stats.get("source_code_runtime_selected_assignment", {})))
+	_require(String(unit.stats.get("ai", "")) == String(surviving_code_part.get("ai", "")), "Rebuild should update runtime AI from the surviving Source Code: %s" % str(unit.stats))
+	_require(String(Dictionary(Dictionary(unit.stats.get("source_rules", {})).get("default", {})).get("move", "")) == "approach", "Rebuild should refresh source rules for the surviving Source Code: %s" % str(unit.stats.get("source_rules", {})))
 	var hooked_stats: Dictionary = main._compute_unit_stats(1, "puppet", 2, unit_bp)
 	var hooked_unit = main._create_unit(1, "puppet", hooked_stats, "Source Rebuild Hook Probe", 1.0, 0.0)
 	main._consume_hardware_fault_destruction_for_target(hooked_unit, {
@@ -124,6 +135,7 @@ func _init() -> void:
 		"p1:puppet:u2:body2<=torso:0:0",
 	], "Construct-body destruction consume should rebuild Source Code assignment stats: %s" % str(hooked_assignments))
 	_require(Array(hooked_unit.stats.get("source_code_runtime_destroyed_construct_body_ids", [])) == ["p1:puppet:u2:body1"], "Consumed construct-body destruction should persist destroyed Source Code body IDs: %s" % str(hooked_unit.stats))
+	_require(String(Dictionary(hooked_unit.stats.get("source_code_runtime_selected_assignment", {})).get("source_entry_id", "")) == "torso:0:0" and String(hooked_unit.stats.get("ai", "")) == String(surviving_code_part.get("ai", "")), "Construct-body destruction consume should refresh selected Source Code behavior: %s" % str(hooked_unit.stats))
 	if failed:
 		quit(1)
 		return
