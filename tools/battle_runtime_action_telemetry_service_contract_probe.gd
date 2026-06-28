@@ -183,6 +183,28 @@ func _init() -> void:
 				"target_role_counts": {"hero": 1},
 				"last_source_error": "",
 			},
+			"hardware_fault_diagnostics": {
+				"state_counts": {"normal": 2, "faulted": 1, "destroyed": 0},
+				"affected_nodes": [{
+					"construct_body_id": "p1:hero:left:body0",
+					"hardware_node_id": 4,
+					"name": "Right Connector",
+					"state": "faulted",
+					"runtime_momentum_capacity": 12.0,
+					"transition_sequence": 1,
+				}],
+				"latest_transition": {
+					"target_construct_body_id": "p1:hero:left:body0",
+					"target_hardware_node_id": 4,
+					"raw_momentum": 18.0,
+					"path_capped_momentum": 14.0,
+					"hardware_capped_momentum": 12.0,
+					"runtime_momentum_capacity": 12.0,
+					"pre_state": "normal",
+					"post_state": "faulted",
+					"transition_sequence": 1,
+				},
+			},
 		},
 		{
 			"id": 12,
@@ -269,6 +291,13 @@ func _init() -> void:
 	if int(telemetry.get("projectile_signal_unit_count", 0)) != 1 or int(telemetry.get("projectile_targeted_unit_count", 0)) != 1:
 		_fail("Battle action telemetry projectile unit counts mismatch: %s" % str(telemetry))
 		return
+	var hardware_state_counts: Dictionary = Dictionary(telemetry.get("hardware_fault_state_counts", {}))
+	if int(hardware_state_counts.get("normal", 0)) != 2 or int(hardware_state_counts.get("faulted", 0)) != 1 or int(hardware_state_counts.get("destroyed", 0)) != 0:
+		_fail("Battle action telemetry hardware fault state counts mismatch: %s" % str(telemetry))
+		return
+	if int(telemetry.get("hardware_faulted_unit_count", 0)) != 1 or int(telemetry.get("hardware_destroyed_unit_count", 0)) != 0:
+		_fail("Battle action telemetry hardware fault unit counts mismatch: %s" % str(telemetry))
+		return
 	var projectile_behavior_counts: Dictionary = Dictionary(telemetry.get("projectile_behavior_counts", {}))
 	if int(projectile_behavior_counts.get("true_bullet", 0)) != 1 or int(projectile_behavior_counts.get("laser", 0)) != 1 or int(projectile_behavior_counts.get("explosive", 0)) != 1:
 		_fail("Battle action telemetry projectile behavior counts mismatch: %s" % str(projectile_behavior_counts))
@@ -348,6 +377,15 @@ func _init() -> void:
 		return
 	if absf(float(first_projectile.get("projectile_signal", 0.0)) - 0.42) > 0.001 or String(first_projectile.get("last_source_error", "x")) != "":
 		_fail("Battle action diagnostics projectile signal/source mismatch: %s" % str(first_projectile))
+		return
+	var first_hardware: Dictionary = Dictionary(first_row.get("hardware_fault_diagnostics", {}))
+	var affected_nodes: Array = Array(first_hardware.get("affected_nodes", []))
+	var latest_transition: Dictionary = Dictionary(first_hardware.get("latest_transition", {}))
+	if affected_nodes.size() != 1 or String(Dictionary(affected_nodes[0]).get("name", "")) != "Right Connector" or String(Dictionary(affected_nodes[0]).get("state", "")) != "faulted":
+		_fail("Battle action diagnostics hardware fault node mismatch: %s" % str(first_hardware))
+		return
+	if absf(float(latest_transition.get("raw_momentum", 0.0)) - 18.0) > 0.001 or absf(float(latest_transition.get("hardware_capped_momentum", 0.0)) - 12.0) > 0.001:
+		_fail("Battle action diagnostics hardware fault transition mismatch: %s" % str(first_hardware))
 		return
 	var first_action: Dictionary = Dictionary(first_actions[0])
 	var diagnostic_nodes: Array = Array(first_action.get("target_nodes", []))

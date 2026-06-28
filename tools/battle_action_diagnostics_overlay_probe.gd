@@ -57,6 +57,9 @@ func _init() -> void:
 		"projectile_locked_target_count": 2,
 		"projectile_signal_unit_count": 1,
 		"projectile_targeted_unit_count": 1,
+		"hardware_fault_state_counts": {"normal": 2, "faulted": 1, "destroyed": 0},
+		"hardware_faulted_unit_count": 1,
+		"hardware_destroyed_unit_count": 0,
 		"has_feint_retarget": false,
 		"has_runtime_contact_speed": true,
 		"displayed_unit_count": 1,
@@ -103,6 +106,28 @@ func _init() -> void:
 				"target_role_counts": {"hero": 2},
 				"last_source_error": "",
 			},
+			"hardware_fault_diagnostics": {
+				"state_counts": {"normal": 2, "faulted": 1, "destroyed": 0},
+				"affected_nodes": [{
+					"construct_body_id": "p1:hero:standalone:body0",
+					"hardware_node_id": 4,
+					"name": "Right Connector",
+					"state": "faulted",
+					"runtime_momentum_capacity": 12.0,
+					"transition_sequence": 1,
+				}],
+				"latest_transition": {
+					"target_construct_body_id": "p1:hero:standalone:body0",
+					"target_hardware_node_id": 4,
+					"raw_momentum": 18.0,
+					"path_capped_momentum": 14.0,
+					"hardware_capped_momentum": 12.0,
+					"runtime_momentum_capacity": 12.0,
+					"pre_state": "normal",
+					"post_state": "faulted",
+					"transition_sequence": 1,
+				},
+			},
 			"actions": [{
 				"profile": "two_link_forward_snap",
 				"phase_label": "startup",
@@ -144,6 +169,10 @@ func _init() -> void:
 		if not standalone_text.contains(required):
 			_fail("BattleActionDiagnosticsView text missing projectile token %s: %s" % [required, standalone_text])
 			return
+	for required in ["hardware states destroyed:0, faulted:1, normal:2", "faulted_units:1", "destroyed_units:0", "FAULT / 故障", "node:4", "Right Connector", "state:faulted", "capacity:12.00", "seq:1", "normal>faulted", "raw:18.00", "path:14.00", "capped:12.00"]:
+		if not standalone_text.contains(required):
+			_fail("BattleActionDiagnosticsView text missing hardware fault token %s: %s" % [required, standalone_text])
+			return
 	standalone_view.free()
 	var main = MainScene.new()
 	root.add_child(main)
@@ -160,7 +189,26 @@ func _init() -> void:
 		"unit_name": "Overlay Probe",
 		"owner_id": 1,
 		"role": "hero",
-		"stats": {"health": 100, "mass": 10.0, "ai": "line", "source_rules": {"default": {"move": "hold"}}, "sequence": ["normal", "armor"], "source_attack_preference": "ranged_first", "role_switch": "puppet"},
+		"stats": {
+			"unit_id": "overlay-probe",
+			"health": 100,
+			"mass": 10.0,
+			"ai": "line",
+			"source_rules": {"default": {"move": "hold"}},
+			"sequence": ["normal", "armor"],
+			"source_attack_preference": "ranged_first",
+			"role_switch": "puppet",
+			"teamedit_runtime_topology": true,
+			"runtime_topology_segments": [{
+				"node_index": 4,
+				"part_kind": "limb_muscle",
+				"name": "Right Connector",
+				"construct_body_id": "p1:hero:overlay-probe:body0",
+				"hardware_fault_state": "faulted",
+				"hardware_fault_runtime_momentum_capacity": 12.0,
+				"hardware_fault_transition_sequence": 1,
+			}],
+		},
 	})
 	fighter.deploy(1.0, 0.0)
 	fighter.runtime_module_actions = [{
@@ -207,15 +255,41 @@ func _init() -> void:
 		"event": {"projectile": true, "projectile_behavior": "explosive", "projectile_style": "missile", "aim_locked": true},
 		"timer": 0.6,
 	}]
+	main.hardware_fault_transition_events = [{
+		"target_construct_body_id": "p1:hero:overlay-probe:body0",
+		"target_hardware_node_id": 4,
+		"raw_momentum": 18.0,
+		"path_capped_momentum": 14.0,
+		"hardware_capped_momentum": 12.0,
+		"runtime_momentum_capacity": 12.0,
+		"pre_state": "normal",
+		"post_state": "faulted",
+		"transition_sequence": 1,
+	}]
 	main.all_units = [fighter, target]
 	main._set_battle_action_diagnostics_overlay_enabled(true)
 	if not main.battle_action_diagnostics_view.visible:
 		_fail("Battle action diagnostics overlay should become visible when enabled.")
 		return
 	var text := main._battle_action_diagnostics_overlay_text()
-	for required in ["units:", "action", "profile:two_link_forward_snap", "phase:", "unit P1 hero Overlay Probe", "key:1", "nodes:1/2", "pose:", "target:", "variant:balance_string", "cmd:normal_sweep", "speed:", "soul:true", "gate", "reason:cooldown", "cd:0.22", "cancel:false", "last:cooldown", "cmds", "cmd ai:line", "cond:default", "fire:0.18", "step:1/2", "mm:drive", "role:true", "target:puppet", "projectiles", "behavior:explosive:1, true_bullet:1", "targets:hero:2", "proj signal:0.44", "pending:2", "locks:2"]:
+	for required in ["units:", "action", "profile:two_link_forward_snap", "phase:", "unit P1 hero Overlay Probe", "key:1", "nodes:1/2", "pose:", "target:", "variant:balance_string", "cmd:normal_sweep", "speed:", "soul:true", "gate", "reason:cooldown", "cd:0.22", "cancel:false", "last:cooldown", "cmds", "cmd ai:line", "cond:default", "fire:0.18", "step:1/2", "mm:drive", "role:true", "target:puppet", "projectiles", "behavior:explosive:1, true_bullet:1", "targets:hero:2", "proj signal:0.44", "pending:2", "locks:2", "hardware states", "faulted:1", "FAULT / 故障", "node:4", "Right Connector", "state:faulted", "normal>faulted", "raw:18.00", "path:14.00", "capped:12.00", "capacity:12.00", "seq:1"]:
 		if not text.contains(required):
 			_fail("Battle action diagnostics overlay text missing token %s: %s" % [required, text])
+			return
+	var text_line_count := text.split("\n").size()
+	var required_height := 26.0 + maxf(0.0, float(text_line_count - 1)) * 14.0
+	if main.battle_action_diagnostics_view.size.y < required_height:
+		_fail("Battle action diagnostics overlay should fit all rendered lines: height=%.1f required=%.1f lines=%d" % [main.battle_action_diagnostics_view.size.y, required_height, text_line_count])
+		return
+	var fallback_font := ThemeDB.get_fallback_font()
+	var available_width: float = main.battle_action_diagnostics_view.size.x - 20.0
+	for raw_line in text.split("\n"):
+		var line := String(raw_line)
+		if not (line.contains("hardware") or line.contains("FAULT / 故障") or line.strip_edges().begins_with("part:") or line.strip_edges().begins_with("transition") or line.strip_edges().begins_with("momentum")):
+			continue
+		var line_width := fallback_font.get_string_size(line, HORIZONTAL_ALIGNMENT_LEFT, -1, 10).x
+		if line_width > available_width:
+			_fail("Hardware fault diagnostics line should fit overlay width: width=%.1f available=%.1f line=%s" % [line_width, available_width, line])
 			return
 	main._set_battle_action_diagnostics_overlay_enabled(false)
 	if main.battle_action_diagnostics_view.visible:

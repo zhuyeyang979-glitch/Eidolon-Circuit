@@ -46766,7 +46766,7 @@ func _build_battle_ui() -> void:
 	battle_action_diagnostics_view = BattleActionDiagnosticsView.new()
 	battle_action_diagnostics_view.name = "BattleActionDiagnostics"
 	battle_action_diagnostics_view.position = Vector2(454.0, 108.0)
-	battle_action_diagnostics_view.size = Vector2(372.0, 192.0)
+	battle_action_diagnostics_view.size = Vector2(372.0, 340.0)
 	battle_action_diagnostics_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	battle_action_diagnostics_view.visible = false
 	battle_action_diagnostics_view.z_index = 90
@@ -53463,6 +53463,83 @@ func _battle_awareness_units_for_ids(ids: Array, refs: Dictionary) -> Array:
 	return units
 
 
+func _battle_hardware_fault_diagnostics_unit_snapshot(unit) -> Dictionary:
+	if not _is_live_unit(unit) or unit.get("stats") == null:
+		return {}
+	var records: Dictionary = {}
+	var body_ids: Dictionary = {}
+	for raw_segment in Array(unit.stats.get("runtime_topology_segments", [])):
+		if not (raw_segment is Dictionary):
+			continue
+		var segment: Dictionary = raw_segment
+		var body_id := _hardware_fault_construct_body_id(unit, segment)
+		if body_id == "":
+			continue
+		var hardware_id = _hardware_fault_node_id(segment)
+		var record_key := "%s|%s" % [body_id, str(hardware_id)]
+		body_ids[body_id] = true
+		records[record_key] = {
+			"construct_body_id": body_id,
+			"hardware_node_id": hardware_id,
+			"name": String(segment.get("name", segment.get("part_name", "Node %s" % str(hardware_id)))),
+			"state": _hardware_fault_runtime_service().normalized_state(String(segment.get("hardware_fault_state", HardwareFaultRuntimeService.STATE_NORMAL))),
+			"runtime_momentum_capacity": maxf(0.0, float(segment.get("hardware_fault_runtime_momentum_capacity", segment.get("runtime_momentum_capacity", 0.0)))),
+			"transition_sequence": maxi(0, int(segment.get("hardware_fault_transition_sequence", 0))),
+		}
+	if unit.has_meta("hardware_fault_construct_body_destroyed") and unit.get_meta("hardware_fault_construct_body_destroyed") is Dictionary:
+		var destroyed_bodies: Dictionary = unit.get_meta("hardware_fault_construct_body_destroyed")
+		for raw_body_id in destroyed_bodies.keys():
+			if bool(destroyed_bodies.get(raw_body_id, false)):
+				body_ids[String(raw_body_id)] = true
+	for raw_body_id in body_ids.keys():
+		var body_id := String(raw_body_id)
+		var raw_body_state = hardware_fault_state_table.get(body_id, {})
+		if not (raw_body_state is Dictionary):
+			continue
+		var body_state: Dictionary = raw_body_state
+		for hardware_id in body_state.keys():
+			var raw_entry = body_state.get(hardware_id, {})
+			if not (raw_entry is Dictionary):
+				continue
+			var entry: Dictionary = raw_entry
+			var record_key := "%s|%s" % [body_id, str(hardware_id)]
+			var record: Dictionary = Dictionary(records.get(record_key, {
+				"construct_body_id": body_id,
+				"hardware_node_id": hardware_id,
+				"name": "Node %s" % str(hardware_id),
+			})).duplicate(true)
+			record["state"] = _hardware_fault_runtime_service().normalized_state(String(entry.get("state", HardwareFaultRuntimeService.STATE_NORMAL)))
+			record["runtime_momentum_capacity"] = maxf(0.0, float(entry.get("runtime_momentum_capacity", record.get("runtime_momentum_capacity", 0.0))))
+			record["transition_sequence"] = maxi(0, int(entry.get("transition_sequence", record.get("transition_sequence", 0))))
+			records[record_key] = record
+	var state_counts: Dictionary = {"normal": 0, "faulted": 0, "destroyed": 0}
+	var affected_nodes: Array = []
+	var record_keys := records.keys()
+	record_keys.sort()
+	for record_key in record_keys:
+		var record: Dictionary = records[record_key]
+		var state := _hardware_fault_runtime_service().normalized_state(String(record.get("state", HardwareFaultRuntimeService.STATE_NORMAL)))
+		state_counts[state] = int(state_counts.get(state, 0)) + 1
+		if state != HardwareFaultRuntimeService.STATE_NORMAL:
+			affected_nodes.append(record.duplicate(true))
+	var latest_transition: Dictionary = {}
+	for event_index in range(hardware_fault_transition_events.size() - 1, -1, -1):
+		var raw_event = hardware_fault_transition_events[event_index]
+		if not (raw_event is Dictionary):
+			continue
+		var event: Dictionary = raw_event
+		var event_body_id := String(event.get("target_construct_body_id", event.get("construct_body_id", "")))
+		if not body_ids.has(event_body_id):
+			continue
+		latest_transition = event.duplicate(true)
+		break
+	return {
+		"state_counts": state_counts,
+		"affected_nodes": affected_nodes,
+		"latest_transition": latest_transition,
+	}
+
+
 func _battle_runtime_action_telemetry_unit_snapshot(unit) -> Dictionary:
 	if not _is_live_unit(unit):
 		return {"live": false}
@@ -53480,6 +53557,7 @@ func _battle_runtime_action_telemetry_unit_snapshot(unit) -> Dictionary:
 		"action_telemetry": telemetry,
 		"command_diagnostics": _battle_command_diagnostics_unit_snapshot(unit),
 		"projectile_diagnostics": _battle_projectile_target_diagnostics_unit_snapshot(unit),
+		"hardware_fault_diagnostics": _battle_hardware_fault_diagnostics_unit_snapshot(unit),
 	}
 
 

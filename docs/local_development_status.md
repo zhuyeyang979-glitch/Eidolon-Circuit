@@ -1877,3 +1877,8 @@ Next safe chunk: continue only with narrow pure-rule extraction where `main.gd` 
 
 - `tools/hardware_fault_destruction_consumption_probe.gd` now covers a future action bound only to a downstream child removed with a destroyed non-core branch.
 - Hardware dependency reports now merge Fighter runtime destroyed-node metadata as `destroyed`, so child-only bindings stay disabled after their collider and segment are removed without mutating blueprint/runtime module bindings.
+
+2026-06-28 Hardware fault diagnostics feedback follow-up:
+
+- Battle action telemetry now carries normalized hardware state counts, affected-node identity, capacity, transition sequence, and the latest matching runtime transition for each live unit.
+- The optional diagnostics overlay shows a non-color-only `FAULT / 故障` marker plus raw, path-capped, hardware-capped, capacity, pre/post-state, and sequence data; its verified height now fits the enriched probe scenario without clipping lines.

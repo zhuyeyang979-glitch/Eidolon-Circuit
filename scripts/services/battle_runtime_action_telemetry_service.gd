@@ -61,6 +61,9 @@ func battle_action_telemetry(unit_snapshots: Array) -> Dictionary:
 	var projectile_locked_target_count := 0
 	var projectile_signal_unit_count := 0
 	var projectile_targeted_unit_count := 0
+	var hardware_fault_state_counts: Dictionary = {"normal": 0, "faulted": 0, "destroyed": 0}
+	var hardware_faulted_unit_count := 0
+	var hardware_destroyed_unit_count := 0
 	for raw_unit in unit_snapshots:
 		if not (raw_unit is Dictionary):
 			continue
@@ -71,6 +74,7 @@ func battle_action_telemetry(unit_snapshots: Array) -> Dictionary:
 		var gate_diagnostics := _normalized_gate_diagnostics(telemetry.get("gate_diagnostics", {}))
 		var command_diagnostics := _normalized_command_diagnostics(unit.get("command_diagnostics", telemetry.get("command_diagnostics", {})))
 		var projectile_diagnostics := _normalized_projectile_diagnostics(unit.get("projectile_diagnostics", telemetry.get("projectile_diagnostics", {})))
+		var hardware_fault_diagnostics := _normalized_hardware_fault_diagnostics(unit.get("hardware_fault_diagnostics", telemetry.get("hardware_fault_diagnostics", {})))
 		var gate_reason := String(gate_diagnostics.get("reason", ""))
 		if gate_reason != "":
 			gate_reason_counts[gate_reason] = int(gate_reason_counts.get(gate_reason, 0)) + 1
@@ -99,6 +103,12 @@ func battle_action_telemetry(unit_snapshots: Array) -> Dictionary:
 			projectile_targeted_unit_count += 1
 		_merge_count_dict(projectile_behavior_counts, Dictionary(projectile_diagnostics.get("behavior_counts", {})))
 		_merge_count_dict(projectile_target_role_counts, Dictionary(projectile_diagnostics.get("target_role_counts", {})))
+		var unit_hardware_state_counts: Dictionary = Dictionary(hardware_fault_diagnostics.get("state_counts", {}))
+		_merge_count_dict(hardware_fault_state_counts, unit_hardware_state_counts)
+		if int(unit_hardware_state_counts.get("faulted", 0)) > 0:
+			hardware_faulted_unit_count += 1
+		if int(unit_hardware_state_counts.get("destroyed", 0)) > 0:
+			hardware_destroyed_unit_count += 1
 		var actions: Array = Array(telemetry.get("actions", []))
 		var active_count: int = max(0, int(telemetry.get("active_count", actions.size())))
 		var unit_summary: Dictionary = {
@@ -119,6 +129,7 @@ func battle_action_telemetry(unit_snapshots: Array) -> Dictionary:
 			"gate_diagnostics": gate_diagnostics,
 			"command_diagnostics": command_diagnostics,
 			"projectile_diagnostics": projectile_diagnostics,
+			"hardware_fault_diagnostics": hardware_fault_diagnostics,
 			"actions": actions.duplicate(true),
 		}
 		units.append(unit_summary)
@@ -160,6 +171,9 @@ func battle_action_telemetry(unit_snapshots: Array) -> Dictionary:
 		"projectile_locked_target_count": projectile_locked_target_count,
 		"projectile_signal_unit_count": projectile_signal_unit_count,
 		"projectile_targeted_unit_count": projectile_targeted_unit_count,
+		"hardware_fault_state_counts": hardware_fault_state_counts,
+		"hardware_faulted_unit_count": hardware_faulted_unit_count,
+		"hardware_destroyed_unit_count": hardware_destroyed_unit_count,
 		"earliest_timer": 0.0 if active_action_count == 0 else earliest_timer,
 		"latest_phase": latest_phase,
 		"has_feint_retarget": has_feint_retarget,
@@ -188,6 +202,7 @@ func battle_action_diagnostics_model(telemetry: Dictionary, options: Dictionary 
 		var gate_diagnostics := _normalized_gate_diagnostics(unit.get("gate_diagnostics", {}))
 		var command_diagnostics := _normalized_command_diagnostics(unit.get("command_diagnostics", {}))
 		var projectile_diagnostics := _normalized_projectile_diagnostics(unit.get("projectile_diagnostics", {}))
+		var hardware_fault_diagnostics := _normalized_hardware_fault_diagnostics(unit.get("hardware_fault_diagnostics", {}))
 		for raw_action in actions:
 			if action_rows.size() >= max_actions_per_unit:
 				break
@@ -258,6 +273,7 @@ func battle_action_diagnostics_model(telemetry: Dictionary, options: Dictionary 
 			"gate_diagnostics": gate_diagnostics,
 			"command_diagnostics": command_diagnostics,
 			"projectile_diagnostics": projectile_diagnostics,
+			"hardware_fault_diagnostics": hardware_fault_diagnostics,
 			"displayed_action_count": action_rows.size(),
 			"omitted_action_count": maxi(0, source_action_count - action_rows.size()),
 			"actions": action_rows,
@@ -287,6 +303,9 @@ func battle_action_diagnostics_model(telemetry: Dictionary, options: Dictionary 
 		"projectile_locked_target_count": maxi(0, int(telemetry.get("projectile_locked_target_count", 0))),
 		"projectile_signal_unit_count": maxi(0, int(telemetry.get("projectile_signal_unit_count", 0))),
 		"projectile_targeted_unit_count": maxi(0, int(telemetry.get("projectile_targeted_unit_count", 0))),
+		"hardware_fault_state_counts": _hardware_fault_state_counts(telemetry.get("hardware_fault_state_counts", {})),
+		"hardware_faulted_unit_count": maxi(0, int(telemetry.get("hardware_faulted_unit_count", 0))),
+		"hardware_destroyed_unit_count": maxi(0, int(telemetry.get("hardware_destroyed_unit_count", 0))),
 		"earliest_timer": maxf(0.0, float(telemetry.get("earliest_timer", 0.0))),
 		"latest_phase": clampf(float(telemetry.get("latest_phase", 0.0)), 0.0, 1.0),
 		"has_feint_retarget": bool(telemetry.get("has_feint_retarget", false)),
@@ -410,6 +429,60 @@ func _normalized_projectile_diagnostics(raw_projectile) -> Dictionary:
 		"last_source_error": String(projectile.get("last_source_error", "")),
 		"source_target_policy": String(projectile.get("source_target_policy", "")),
 	}
+
+
+func _normalized_hardware_fault_diagnostics(raw_diagnostics) -> Dictionary:
+	var diagnostics: Dictionary = raw_diagnostics if raw_diagnostics is Dictionary else {}
+	var affected_nodes: Array = []
+	for raw_node in Array(diagnostics.get("affected_nodes", [])):
+		if not (raw_node is Dictionary):
+			continue
+		var node: Dictionary = raw_node
+		var state := _hardware_fault_state(String(node.get("state", "normal")))
+		if state == "normal":
+			continue
+		affected_nodes.append({
+			"construct_body_id": String(node.get("construct_body_id", "")),
+			"hardware_node_id": node.get("hardware_node_id", ""),
+			"name": String(node.get("name", "")),
+			"state": state,
+			"runtime_momentum_capacity": maxf(0.0, float(node.get("runtime_momentum_capacity", 0.0))),
+			"transition_sequence": maxi(0, int(node.get("transition_sequence", 0))),
+		})
+	var latest_transition: Dictionary = {}
+	var raw_transition = diagnostics.get("latest_transition", {})
+	if raw_transition is Dictionary and not Dictionary(raw_transition).is_empty():
+		var transition: Dictionary = raw_transition
+		latest_transition = {
+			"target_construct_body_id": String(transition.get("target_construct_body_id", transition.get("construct_body_id", ""))),
+			"target_hardware_node_id": transition.get("target_hardware_node_id", transition.get("hardware_node_id", "")),
+			"raw_momentum": maxf(0.0, float(transition.get("raw_momentum", 0.0))),
+			"path_capped_momentum": maxf(0.0, float(transition.get("path_capped_momentum", 0.0))),
+			"hardware_capped_momentum": maxf(0.0, float(transition.get("hardware_capped_momentum", 0.0))),
+			"runtime_momentum_capacity": maxf(0.0, float(transition.get("runtime_momentum_capacity", 0.0))),
+			"pre_state": _hardware_fault_state(String(transition.get("pre_state", "normal"))),
+			"post_state": _hardware_fault_state(String(transition.get("post_state", "normal"))),
+			"transition_sequence": maxi(0, int(transition.get("transition_sequence", 0))),
+		}
+	return {
+		"state_counts": _hardware_fault_state_counts(diagnostics.get("state_counts", {})),
+		"affected_nodes": affected_nodes,
+		"latest_transition": latest_transition,
+	}
+
+
+func _hardware_fault_state_counts(raw_counts) -> Dictionary:
+	var counts: Dictionary = raw_counts if raw_counts is Dictionary else {}
+	return {
+		"normal": maxi(0, int(counts.get("normal", 0))),
+		"faulted": maxi(0, int(counts.get("faulted", 0))),
+		"destroyed": maxi(0, int(counts.get("destroyed", 0))),
+	}
+
+
+func _hardware_fault_state(raw_state: String) -> String:
+	var state := raw_state.strip_edges().to_lower()
+	return state if state in ["faulted", "destroyed"] else "normal"
 
 
 func _string_int_counts(raw_counts) -> Dictionary:

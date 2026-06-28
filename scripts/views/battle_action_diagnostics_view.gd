@@ -62,6 +62,13 @@ func text() -> String:
 		int(model.get("projectile_signal_unit_count", 0)),
 		int(model.get("projectile_targeted_unit_count", 0)),
 	])
+	var hardware_state_counts: Dictionary = Dictionary(model.get("hardware_fault_state_counts", {}))
+	if not hardware_state_counts.is_empty() or int(model.get("hardware_faulted_unit_count", 0)) > 0 or int(model.get("hardware_destroyed_unit_count", 0)) > 0:
+		lines.append("hardware states %s" % _counts_line(hardware_state_counts))
+		lines.append("hardware faulted_units:%d destroyed_units:%d" % [
+			int(model.get("hardware_faulted_unit_count", 0)),
+			int(model.get("hardware_destroyed_unit_count", 0)),
+		])
 	for raw_row in unit_rows:
 		if not (raw_row is Dictionary):
 			continue
@@ -112,6 +119,37 @@ func text() -> String:
 			_counts_line(Dictionary(projectile.get("target_role_counts", {}))),
 			String(projectile.get("last_source_error", "")),
 		])
+		var hardware: Dictionary = Dictionary(row.get("hardware_fault_diagnostics", {}))
+		var affected_nodes: Array = Array(hardware.get("affected_nodes", []))
+		for node_index in range(mini(2, affected_nodes.size())):
+			if not (affected_nodes[node_index] is Dictionary):
+				continue
+			var node: Dictionary = affected_nodes[node_index]
+			lines.append("  hardware FAULT / 故障 node:%s state:%s seq:%d" % [
+				str(node.get("hardware_node_id", "")),
+				String(node.get("state", "")),
+				int(node.get("transition_sequence", 0)),
+			])
+			lines.append("    part:%s capacity:%.2f" % [
+				String(node.get("name", "")),
+				float(node.get("runtime_momentum_capacity", 0.0)),
+			])
+		if affected_nodes.size() > 2:
+			lines.append("    affected_omitted:%d" % (affected_nodes.size() - 2))
+		var latest_transition: Dictionary = Dictionary(hardware.get("latest_transition", {}))
+		if not latest_transition.is_empty():
+			lines.append("  transition node:%s %s>%s seq:%d" % [
+				str(latest_transition.get("target_hardware_node_id", "")),
+				String(latest_transition.get("pre_state", "")),
+				String(latest_transition.get("post_state", "")),
+				int(latest_transition.get("transition_sequence", 0)),
+			])
+			lines.append("    momentum raw:%.2f path:%.2f capped:%.2f capacity:%.2f" % [
+				float(latest_transition.get("raw_momentum", 0.0)),
+				float(latest_transition.get("path_capped_momentum", 0.0)),
+				float(latest_transition.get("hardware_capped_momentum", 0.0)),
+				float(latest_transition.get("runtime_momentum_capacity", 0.0)),
+			])
 		for raw_action in actions:
 			if not (raw_action is Dictionary):
 				continue
