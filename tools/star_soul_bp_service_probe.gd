@@ -55,6 +55,26 @@ func _init() -> void:
 	_require(String(Dictionary(catalog.get("punishment_tower_f", {})).get("spawn_relation", "")) == "midfield", "Punishment tower F should be a midfield Star Soul.")
 	_require(String(Dictionary(catalog.get("coward_a", {})).get("movement", "")) == "flee_from_any_unit", "Coward should flee from nearby units.")
 
+	var standard_picks := int(service.DEFAULT_PICKS_PER_PLAYER)
+	var standard_turns: Array = service.draft_turns(1)
+	_require(standard_picks == 10, "Standard BP should require ten picks per player.")
+	_require(standard_turns.size() == 20, "Standard BP should create twenty turns: %s" % str(standard_turns))
+	_require(_count_value(_players(standard_turns), 1) == 10 and _count_value(_players(standard_turns), 2) == 10, "Standard BP should give each player ten turns: %s" % str(standard_turns))
+	var standard_ids := _catalog_ids(service.base_catalog())
+	_require(standard_ids.size() >= standard_turns.size(), "Base Star Soul catalog should contain enough unique entries for standard BP.")
+	var standard_draft: Array = []
+	for i in range(standard_turns.size()):
+		var turn: Dictionary = Dictionary(standard_turns[i])
+		standard_draft.append({"player": int(turn.get("player", 1)), "star_soul_id": String(standard_ids[i])})
+	var standard_validation: Dictionary = service.validate_draft(standard_draft, 1, standard_picks, standard_ids)
+	_require(bool(standard_validation.get("valid", false)), "Standard ten-pick draft should validate: %s" % str(standard_validation))
+	var standard_queue_result: Dictionary = service.build_spawn_queue(standard_draft, 1, standard_picks, {"pool_ids": standard_ids})
+	_require(bool(standard_queue_result.get("valid", false)), "Standard ten-pick draft should build a spawn queue: %s" % str(standard_queue_result))
+	var standard_queue: Array = Array(standard_queue_result.get("queue", []))
+	_require(standard_queue.size() == 20, "Standard BP spawn queue should contain twenty Star Souls.")
+	_require(_count_value(_owners(standard_queue), 1) == 10 and _count_value(_owners(standard_queue), 2) == 10, "Standard BP spawn queue should alternate ten entries per owner: %s" % str(standard_queue))
+	_require(_owners(standard_queue).slice(0, 6) == [1, 2, 1, 2, 1, 2], "Standard BP spawn queue should start with BP first player and alternate owners: %s" % str(standard_queue))
+
 	var draft := [
 		{"player": 2, "star_soul_id": "defense_tower_a"},
 		{"player": 1, "star_soul_id": "punishment_tower_a"},
@@ -117,6 +137,24 @@ func _players(turns: Array) -> Array:
 		if raw_turn is Dictionary:
 			result.append(int(Dictionary(raw_turn).get("player", 0)))
 	return result
+
+
+func _catalog_ids(catalog_entries: Array) -> Array:
+	var result: Array = []
+	for raw_entry in catalog_entries:
+		if raw_entry is Dictionary:
+			var id := String(Dictionary(raw_entry).get("id", "")).strip_edges()
+			if id != "" and not result.has(id):
+				result.append(id)
+	return result
+
+
+func _count_value(values: Array, target: int) -> int:
+	var count := 0
+	for raw_value in values:
+		if int(raw_value) == target:
+			count += 1
+	return count
 
 
 func _owners(queue: Array) -> Array:

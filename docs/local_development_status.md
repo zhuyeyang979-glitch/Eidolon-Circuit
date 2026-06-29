@@ -2115,3 +2115,9 @@ Next safe chunk: continue only with narrow pure-rule extraction where `main.gd` 
 - `tools/star_soul_hud_state_probe.gd` now verifies the Task 6 scoreboard/readability contract that `BattleHudStateService.star_soul_hud_model()` and `heavy_hud_text_state()` derive display state from battle/runtime data without mutating the input VP/runtime snapshots.
 - The probe also verifies returned Star Soul summary rows are detached from runtime history, so UI consumers cannot accidentally mutate the authoritative Star Soul history by editing display rows.
 - Focused verification passed on macOS Godot `4.6.2.stable.official.71f334935`: `star_soul_hud_state_probe`.
+
+2026-06-29 Standard Star Soul BP size guard pass:
+
+- `tools/star_soul_bp_service_probe.gd` now verifies the standard rule that BP defaults to ten picks per player, producing twenty alternating draft turns and a twenty-entry alternating Star Soul spawn queue from the base catalog.
+- `tools/star_soul_bp_screen_service_probe.gd` now drives the default BP screen model through all twenty shared-pool picks, verifies the base catalog is exactly consumed, confirms both players, and checks that the completed draft payload contains twenty queued Star Souls.
+- Focused verification passed on macOS Godot `4.6.2.stable.official.71f334935`: `star_soul_bp_service_probe`, `star_soul_bp_screen_service_probe`, `star_soul_bp_view_probe`, `star_soul_main_bp_flow_probe`, `star_soul_runtime_queue_service_probe`, `star_soul_entity_service_probe`, `star_soul_hud_state_probe`, `battle_controller_star_soul_runtime_probe`, `pvp_timeout_vp_resolution_probe`, `probe_manifest_no_legacy_fixture_probe` (`current=259`), `jq empty tools/probe_manifest.json`, `git diff --check`, and Godot `--check-only --quit-after 1`.

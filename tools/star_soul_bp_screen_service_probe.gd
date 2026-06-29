@@ -18,7 +18,41 @@ func _init() -> void:
 	if failed:
 		quit(1)
 		return
+	var RuleScript = load(RULE_SERVICE_PATH)
+	_require(RuleScript != null, "Cannot load StarSoulBPService script.")
+	if failed:
+		quit(1)
+		return
 	var service = ServiceScript.new()
+	var rule_service = RuleScript.new()
+	var standard_model: Dictionary = service.initial_model(1)
+	_require(int(standard_model.get("picks_per_player", 0)) == 10, "Default BP screen model should use ten picks per player.")
+	_require(Array(standard_model.get("turns", [])).size() == 20, "Default BP screen model should expose twenty turns.")
+	_require(Array(standard_model.get("available_ids", [])).size() >= 20, "Default BP screen model should expose enough shared-pool entries for standard BP.")
+	while not Dictionary(standard_model.get("current_turn", {})).is_empty():
+		var current_turn: Dictionary = Dictionary(standard_model.get("current_turn", {}))
+		var available_ids: Array = Array(standard_model.get("available_ids", []))
+		_require(not available_ids.is_empty(), "Standard BP should not exhaust the shared pool before all twenty picks.")
+		if available_ids.is_empty():
+			break
+		var picked: Dictionary = service.pick_intent(standard_model, int(current_turn.get("player", 1)), String(available_ids[0]))
+		_require(bool(picked.get("accepted", false)), "Standard BP default pick should be accepted: %s" % str(picked))
+		standard_model = Dictionary(picked.get("model", {}))
+	_require(Array(standard_model.get("draft_picks", [])).size() == 20, "Standard BP screen flow should collect twenty picks.")
+	_require(Array(standard_model.get("available_ids", [])).is_empty(), "Standard BP screen flow should consume the shared pool when the base catalog has twenty entries.")
+	_require(String(standard_model.get("status", "")) == "ready_to_confirm", "Standard BP screen flow should be ready to confirm after twenty picks.")
+	_require(bool(Dictionary(standard_model.get("confirm_ready_by_player", {})).get(1, false)) and bool(Dictionary(standard_model.get("confirm_ready_by_player", {})).get(2, false)), "Both players should be confirm-ready after ten picks each.")
+	for player in [1, 2]:
+		var confirmed: Dictionary = service.confirm_intent(standard_model, player)
+		_require(bool(confirmed.get("accepted", false)), "Standard BP confirmation should be accepted for P%d." % player)
+		standard_model = Dictionary(confirmed.get("model", {}))
+	_require(bool(standard_model.get("complete", false)), "Standard BP screen flow should complete after both confirmations.")
+	var standard_payload: Dictionary = Dictionary(standard_model.get("draft_payload", {}))
+	_require(bool(standard_payload.get("valid", false)), "Standard BP screen flow should produce a valid draft payload: %s" % str(standard_payload))
+	_require(Array(standard_payload.get("queue", [])).size() == 20, "Standard BP payload should contain twenty queued Star Souls.")
+	_require(_queue_owners(Array(standard_payload.get("queue", []))).slice(0, 6) == [1, 2, 1, 2, 1, 2], "Standard BP payload should alternate owners from first player.")
+	_require(Array(rule_service.base_catalog()).size() == 20, "Base Star Soul catalog should currently contain the standard twenty entries.")
+
 	var catalog := [
 		{"id": "defense_tower_a", "family": "defense_tower", "vp": 1},
 		{"id": "punishment_tower_a", "family": "punishment_tower", "vp": 1},
