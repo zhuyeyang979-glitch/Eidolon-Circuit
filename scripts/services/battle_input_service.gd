@@ -2,6 +2,7 @@ extends RefCounted
 class_name BattleInputService
 
 const INPUT_FRAME_SCHEMA_VERSION := 1
+const BATTLE_START_PAYLOAD_SCHEMA_VERSION := 1
 
 
 func battle_action_names(prefixes: Array, attack_group_count: int) -> Array:
@@ -166,6 +167,38 @@ func deserialize_replay_input_frame_payload(serialized_payload: String) -> Dicti
 	return _canonical_replay_input_frame_payload(Dictionary(parsed))
 
 
+func battle_start_payload(mode: String, ai_seat: int, replay_seed: int, action_names: Array = [], options: Dictionary = {}) -> Dictionary:
+	var normalized_mode := mode.strip_edges()
+	var normalized_seat := clampi(ai_seat, 1, 3)
+	var runtime_menu_visible := bool(options.get("runtime_menu_visible", false))
+	return {
+		"schema_version": BATTLE_START_PAYLOAD_SCHEMA_VERSION,
+		"input_frame_schema_version": INPUT_FRAME_SCHEMA_VERSION,
+		"mode": normalized_mode,
+		"ai_seat": normalized_seat,
+		"replay_seed": replay_seed,
+		"simulation_hz": maxi(1, int(options.get("simulation_hz", 120))),
+		"runtime_menu_visible": runtime_menu_visible,
+		"action_names": _sorted_action_names(action_names),
+		"control_route": _canonical_control_route(battle_control_routes(normalized_mode, normalized_seat, runtime_menu_visible)),
+		"remote_input_slots": _canonical_remote_input_slots(options.get("remote_input_slots", [])),
+	}
+
+
+func serialize_battle_start_payload(payload: Dictionary) -> String:
+	return JSON.stringify(_canonical_battle_start_payload(payload))
+
+
+func deserialize_battle_start_payload(serialized_payload: String) -> Dictionary:
+	var json := JSON.new()
+	if json.parse(serialized_payload) != OK:
+		return {}
+	var parsed = json.get_data()
+	if not (parsed is Dictionary):
+		return {}
+	return _canonical_battle_start_payload(Dictionary(parsed))
+
+
 func action_just_pressed(action_name: String, frame_state: Dictionary, fallback_fn: Callable) -> bool:
 	if not bool(frame_state.get("frame_active", false)):
 		return bool(fallback_fn.call(action_name)) if fallback_fn.is_valid() else false
@@ -273,6 +306,24 @@ func _canonical_replay_input_frame_payload(payload: Dictionary) -> Dictionary:
 	}
 
 
+func _canonical_battle_start_payload(payload: Dictionary) -> Dictionary:
+	var mode := String(payload.get("mode", "")).strip_edges()
+	var ai_seat := clampi(int(payload.get("ai_seat", 1)), 1, 3)
+	var runtime_menu_visible := bool(payload.get("runtime_menu_visible", false))
+	return {
+		"schema_version": BATTLE_START_PAYLOAD_SCHEMA_VERSION,
+		"input_frame_schema_version": INPUT_FRAME_SCHEMA_VERSION,
+		"mode": mode,
+		"ai_seat": ai_seat,
+		"replay_seed": int(payload.get("replay_seed", 0)),
+		"simulation_hz": maxi(1, int(payload.get("simulation_hz", 120))),
+		"runtime_menu_visible": runtime_menu_visible,
+		"action_names": _sorted_action_names(payload.get("action_names", [])),
+		"control_route": _canonical_control_route(payload.get("control_route", battle_control_routes(mode, ai_seat, runtime_menu_visible))),
+		"remote_input_slots": _canonical_remote_input_slots(payload.get("remote_input_slots", [])),
+	}
+
+
 func _canonical_control_route(route_value) -> Dictionary:
 	var route := Dictionary(route_value) if route_value is Dictionary else {}
 	var action := String(route.get("action", "none"))
@@ -290,6 +341,49 @@ func _canonical_control_route(route_value) -> Dictionary:
 		})
 	if not routes.is_empty():
 		result["routes"] = routes
+	return result
+
+
+func _canonical_remote_input_slots(slots_value) -> Array:
+	var slots: Array = []
+	for raw_slot in Array(slots_value):
+		if not (raw_slot is Dictionary):
+			continue
+		var slot: Dictionary = Dictionary(raw_slot)
+		var player_id := clampi(int(slot.get("player_id", 0)), 0, 2)
+		var prefix := String(slot.get("prefix", ""))
+		var source := String(slot.get("source", "local"))
+		var slot_id := String(slot.get("slot_id", "p%d:%s:%s" % [player_id, prefix, source]))
+		slots.append({
+			"player_id": player_id,
+			"prefix": prefix,
+			"source": source,
+			"slot_id": slot_id,
+		})
+	slots.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		if int(a.get("player_id", 0)) != int(b.get("player_id", 0)):
+			return int(a.get("player_id", 0)) < int(b.get("player_id", 0))
+		if String(a.get("prefix", "")) != String(b.get("prefix", "")):
+			return String(a.get("prefix", "")) < String(b.get("prefix", ""))
+		return String(a.get("slot_id", "")) < String(b.get("slot_id", ""))
+	)
+	return slots
+
+
+func _sorted_action_names(action_names_value) -> Array:
+	var names: Array = []
+	for raw_action_name in Array(action_names_value):
+		var action_name := String(raw_action_name)
+		if action_name != "":
+			names.append(action_name)
+	names.sort()
+	var result: Array = []
+	var seen := {}
+	for action_name in names:
+		if bool(seen.get(action_name, false)):
+			continue
+		seen[action_name] = true
+		result.append(action_name)
 	return result
 
 
