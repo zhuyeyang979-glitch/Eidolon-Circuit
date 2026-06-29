@@ -26391,6 +26391,78 @@ func _terrain_hazard_candidates_for_runtime() -> Array:
 	return _battle_terrain_service().hazard_candidates(_battle_terrain_runtime_snapshot())
 
 
+func _terrain_surface_candidates_for_runtime() -> Array:
+	return _battle_terrain_service().surface_candidates(_battle_terrain_runtime_snapshot())
+
+
+func _apply_terrain_surfaces(delta: float) -> void:
+	if delta <= 0.0:
+		return
+	var surfaces := _terrain_surface_candidates_for_runtime()
+	if surfaces.is_empty():
+		return
+	for unit in all_units.duplicate():
+		if not _is_live_unit(unit) or not _unit_is_mech_physics_subject(unit) or _unit_is_anchored_barrier(unit):
+			continue
+		for raw_surface in surfaces:
+			if not (raw_surface is Dictionary):
+				continue
+			var surface: Dictionary = raw_surface
+			if not _terrain_feature_overlaps_unit(surface, unit):
+				continue
+			_apply_terrain_surface_to_unit(surface, unit, delta)
+
+
+func _apply_terrain_surface_to_unit(surface: Dictionary, unit, delta: float) -> void:
+	var metadata: Dictionary = Dictionary(surface.get("metadata", {}))
+	var feature_id := String(surface.get("feature_id", ""))
+	var speed_mult := clampf(float(metadata.get("speed_mult", metadata.get("surface_speed_mult", 1.0))), 0.1, 3.0)
+	var response_rate := maxf(0.0, float(metadata.get("response_rate", metadata.get("surface_response_rate", 6.0))))
+	if absf(speed_mult - 1.0) > 0.001 and response_rate > 0.0:
+		_apply_terrain_surface_speed(unit, speed_mult, response_rate, delta)
+	var push := float(metadata.get("push", metadata.get("surface_push", 0.0)))
+	if absf(push) > 0.0:
+		var direction := _terrain_surface_direction(surface)
+		unit.velocity += direction * push * delta
+	var cooling_rate := maxf(0.0, float(metadata.get("cooling_rate", metadata.get("surface_cooling_rate", 0.0))))
+	if cooling_rate > 0.0:
+		_cool_unit_heat(unit, cooling_rate * delta, float(metadata.get("overheat_clear_ratio", metadata.get("clear_ratio", 0.42))))
+	var heat_rate := maxf(0.0, float(metadata.get("heat_rate", metadata.get("surface_heat_rate", 0.0))))
+	if heat_rate > 0.0:
+		_add_unit_heat_event(unit, heat_rate * delta, ["external", "terrain", "surface"], "terrain_surface")
+	unit.set_meta("terrain_surface_feature_id", feature_id)
+	unit.set_meta("terrain_surface_kind", String(surface.get("terrain_kind", "")))
+	unit.set_meta("terrain_surface_source", String(surface.get("source", "terrain")))
+	unit.set_meta("terrain_surface_name", String(surface.get("surface_name", feature_id)))
+	unit.set_meta("terrain_surface_speed_mult", speed_mult)
+	unit.set_meta("terrain_surface_cooling_rate", cooling_rate)
+	unit.set_meta("terrain_surface_heat_rate", heat_rate)
+
+
+func _apply_terrain_surface_speed(unit, speed_mult: float, response_rate: float, delta: float) -> void:
+	var velocity := Vector2(unit.velocity)
+	var current_speed := velocity.length()
+	if current_speed <= 0.001:
+		return
+	var base_speed := maxf(0.05, float(unit.stats.get("speed", 0.8)))
+	var target_speed := maxf(0.0, base_speed * speed_mult)
+	var should_adjust := current_speed > target_speed if speed_mult < 1.0 else current_speed < target_speed
+	if not should_adjust:
+		return
+	var response := clampf(delta * response_rate, 0.0, 1.0)
+	unit.velocity = velocity.lerp(velocity.normalized() * target_speed, response)
+
+
+func _terrain_surface_direction(surface: Dictionary) -> Vector2:
+	var direction = surface.get("orientation", Vector2.RIGHT)
+	if not (direction is Vector2):
+		return Vector2.RIGHT
+	var vector := Vector2(direction)
+	if vector.length() <= 0.001:
+		return Vector2.RIGHT
+	return vector.normalized()
+
+
 func _apply_terrain_hazards(delta: float) -> void:
 	if delta <= 0.0:
 		return
@@ -26811,6 +26883,7 @@ func _tick_battle_simulation(delta: float, _input_frame: Dictionary = {}) -> voi
 				_apply_homing_launchers(delta)
 				_apply_barrage_emitters(delta)
 				_apply_support_components(delta)
+				_apply_terrain_surfaces(delta)
 				_apply_terrain_hazards(delta)
 				_apply_speed_lanes(delta)
 				_apply_coin_generators(delta)

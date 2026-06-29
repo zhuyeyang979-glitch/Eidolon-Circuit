@@ -47,6 +47,7 @@ func _init() -> void:
 		"func combined_occlusion_candidates",
 		"func combined_collision_candidates",
 		"func hazard_candidates",
+		"func surface_candidates",
 		"func traversal_query",
 	]:
 		if not source.contains(token):
@@ -301,6 +302,31 @@ func _init() -> void:
 	if not _expect_eq(String(hazard_candidate.get("feature_id", "")), "heat-floor", "hazard candidate feature id"):
 		return
 	if not _expect_eq(String(hazard_candidate.get("source", "")), "terrain", "hazard candidate source"):
+		return
+	var surface_candidates: Array = service.surface_candidates(service.arena_snapshot({
+		"arena_id": "surface_contract",
+		"features": [
+			{
+				"id": "route-floor",
+				"kind": "floor",
+				"collider": {"shape": "circle", "center": Vector2(9.0, 0.0), "radius": 0.5},
+				"orientation": Vector2(0.0, 2.0),
+				"surface_tags": ["floor", "route"],
+				"effect_channels": ["surface"],
+				"metadata": {"speed_mult": 1.3, "cooling_rate": 8.0},
+			},
+		],
+	}))
+	if not _expect_eq(surface_candidates.size(), 1, "surface candidate count"):
+		return
+	var surface_candidate: Dictionary = Dictionary(surface_candidates[0])
+	if not _expect_eq(String(surface_candidate.get("feature_id", "")), "route-floor", "surface candidate feature id"):
+		return
+	if not _expect_eq(String(surface_candidate.get("terrain_kind", "")), "floor", "surface candidate terrain kind"):
+		return
+	if not _expect_eq(String(surface_candidate.get("source", "")), "terrain", "surface candidate source"):
+		return
+	if not _expect_close(Vector2(surface_candidate.get("orientation", Vector2.ZERO)).length(), 1.0, "surface candidate orientation normalized"):
 		return
 	if failed:
 		quit(1)

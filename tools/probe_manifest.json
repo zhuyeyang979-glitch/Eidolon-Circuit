@@ -33,6 +33,7 @@
     "terrain_collision_runtime_probe",
     "terrain_field_response_probe",
     "terrain_hazard_runtime_probe",
+    "terrain_surface_runtime_probe",
     "terrain_path_planning_probe",
     "terrain_destructible_state_probe",
     "terrain_portal_mechanism_probe",
