@@ -187,6 +187,31 @@ func combined_collision_candidates(snapshot: Dictionary, static_candidates: Arra
 	return candidates
 
 
+func hazard_candidates(snapshot: Dictionary) -> Array:
+	var candidates: Array = []
+	for feature in Array(snapshot.get("features", [])):
+		var item := _dict(feature)
+		if item.is_empty():
+			continue
+		var terrain_kind := String(item.get("terrain_kind", ""))
+		var channels := Array(item.get("effect_channels", []))
+		var tags := Array(item.get("surface_tags", []))
+		if terrain_kind != TERRAIN_KIND_HAZARD and not channels.has("hazard") and not tags.has("hazard"):
+			continue
+		candidates.append({
+			"source": "terrain",
+			"feature_id": String(item.get("feature_id", "")),
+			"blocker_name": String(item.get("name", item.get("feature_id", ""))),
+			"collider": _dict(item.get("collider", {})).duplicate(true),
+			"terrain_kind": terrain_kind,
+			"surface_tags": tags.duplicate(true),
+			"effect_channels": channels.duplicate(true),
+			"metadata": _dict(item.get("metadata", {})).duplicate(true),
+			"owner_id": int(item.get("owner_id", 0)),
+		})
+	return candidates
+
+
 func traversal_query(context: Dictionary) -> Dictionary:
 	var snapshot := _dict(context.get("snapshot", {}))
 	var start := _vec(context.get("start", Vector2.INF), Vector2.INF)

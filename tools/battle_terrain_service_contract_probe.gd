@@ -46,6 +46,7 @@ func _init() -> void:
 		"func placement_query",
 		"func combined_occlusion_candidates",
 		"func combined_collision_candidates",
+		"func hazard_candidates",
 		"func traversal_query",
 	]:
 		if not source.contains(token):
@@ -280,6 +281,26 @@ func _init() -> void:
 	if not _expect_eq(String(terrain_collision_candidate.get("feature_id", "")), "wall-alpha", "terrain collision candidate feature id"):
 		return
 	if not _expect_eq(Array(terrain_collision_candidate.get("surface_tags", [])), ["cover", "stone"], "terrain collision candidate tags"):
+		return
+	var hazard_candidates: Array = service.hazard_candidates(service.arena_snapshot({
+		"arena_id": "hazard_contract",
+		"features": [
+			{
+				"id": "heat-floor",
+				"kind": "hazard",
+				"collider": {"shape": "circle", "center": Vector2(8.0, 0.0), "radius": 0.5},
+				"surface_tags": ["hazard", "heat"],
+				"effect_channels": ["hazard"],
+				"metadata": {"heat_rate": 12.0, "damage_per_tick": 3},
+			},
+		],
+	}))
+	if not _expect_eq(hazard_candidates.size(), 1, "hazard candidate count"):
+		return
+	var hazard_candidate: Dictionary = Dictionary(hazard_candidates[0])
+	if not _expect_eq(String(hazard_candidate.get("feature_id", "")), "heat-floor", "hazard candidate feature id"):
+		return
+	if not _expect_eq(String(hazard_candidate.get("source", "")), "terrain", "hazard candidate source"):
 		return
 	if failed:
 		quit(1)

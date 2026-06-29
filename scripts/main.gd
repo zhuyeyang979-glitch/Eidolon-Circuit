@@ -26078,7 +26078,7 @@ func _capture_battle_motion_after_step() -> void:
 
 
 func _capture_battle_unit_motion_snapshots(before_step: bool) -> void:
-	for unit in all_units:
+	for unit in all_units.duplicate():
 		if _is_live_unit(unit) and unit.has_method("capture_motion_snapshot"):
 			unit.capture_motion_snapshot(before_step)
 
@@ -26385,6 +26385,84 @@ func _remember_unit_terrain_path_plan(unit, plan: Dictionary) -> void:
 	unit.set_meta("terrain_path_plan", plan.duplicate(true))
 	unit.set_meta("terrain_path_mode", String(plan.get("mode", "")))
 	unit.set_meta("terrain_path_feature_id", String(plan.get("feature_id", "")))
+
+
+func _terrain_hazard_candidates_for_runtime() -> Array:
+	return _battle_terrain_service().hazard_candidates(_battle_terrain_runtime_snapshot())
+
+
+func _apply_terrain_hazards(delta: float) -> void:
+	if delta <= 0.0:
+		return
+	var hazards := _terrain_hazard_candidates_for_runtime()
+	if hazards.is_empty():
+		return
+	for unit in all_units:
+		if not _is_live_unit(unit) or not _unit_is_mech_physics_subject(unit) or _unit_is_anchored_barrier(unit):
+			continue
+		for raw_hazard in hazards:
+			if not (raw_hazard is Dictionary):
+				continue
+			var hazard: Dictionary = raw_hazard
+			if not _terrain_feature_overlaps_unit(hazard, unit):
+				continue
+			_apply_terrain_hazard_to_unit(hazard, unit, delta)
+			if not _is_live_unit(unit):
+				break
+
+
+func _terrain_feature_overlaps_unit(feature: Dictionary, unit) -> bool:
+	if not _is_live_unit(unit):
+		return false
+	var point := Vector2(float(unit.ring_pos), float(unit.lane))
+	var radius := maxf(0.0, float(unit.stats.get("radius", 0.2)))
+	var snapshot := {"features": [feature]}
+	return not _battle_terrain_service().features_overlapping_point(snapshot, point, radius).is_empty()
+
+
+func _apply_terrain_hazard_to_unit(hazard: Dictionary, unit, delta: float) -> void:
+	var metadata: Dictionary = Dictionary(hazard.get("metadata", {}))
+	var feature_id := String(hazard.get("feature_id", ""))
+	var heat_rate := maxf(0.0, float(metadata.get("heat_rate", metadata.get("hazard_heat_rate", 0.0))))
+	if heat_rate > 0.0:
+		_add_unit_heat_event(unit, heat_rate * delta, ["external", "terrain", "hazard"], "terrain_hazard")
+	var damage := _terrain_hazard_damage_for_tick(unit, hazard, metadata, delta)
+	if damage > 0:
+		var damage_type := String(metadata.get("damage_type", metadata.get("hazard_damage_type", "chemical")))
+		var owner := int(metadata.get("owner_id", hazard.get("owner_id", 0)))
+		var event := {"damage_type": damage_type, "projectile": false}
+		var final_damage := maxi(1, int(roundf(float(damage) * _vulnerability_multiplier(unit, event))))
+		final_damage = _projectile_material_adjusted_damage(unit, event, final_damage)
+		var blocked := final_damage <= 0 or bool(event.get("contact_gate_blocked", false))
+		_spawn_hit_effect(unit, 1, damage_type, blocked, "field")
+		if not blocked:
+			var killed: bool = unit.take_hit(final_damage, "normal", owner, damage_type, "field")
+			unit.set_meta("terrain_hazard_damage_last", final_damage)
+			if killed:
+				_handle_unit_killed(unit, owner)
+	unit.set_meta("terrain_hazard_feature_id", feature_id)
+	unit.set_meta("terrain_hazard_kind", String(hazard.get("terrain_kind", "")))
+	unit.set_meta("terrain_hazard_source", String(hazard.get("source", "terrain")))
+	unit.set_meta("terrain_hazard_blocker_name", String(hazard.get("blocker_name", feature_id)))
+	unit.set_meta("terrain_hazard_heat_rate", heat_rate)
+
+
+func _terrain_hazard_damage_for_tick(unit, hazard: Dictionary, metadata: Dictionary, delta: float) -> int:
+	var damage_per_tick := int(metadata.get("damage_per_tick", metadata.get("hazard_damage_per_tick", metadata.get("damage", 0))))
+	var damage_rate := maxf(0.0, float(metadata.get("damage_per_second", metadata.get("hazard_damage_per_second", 0.0))))
+	if damage_per_tick <= 0 and damage_rate <= 0.0:
+		return 0
+	var feature_id := _terrain_runtime_token(hazard.get("feature_id", "terrain_hazard"))
+	var interval := maxf(0.01, float(metadata.get("damage_interval", metadata.get("hazard_damage_interval", 0.5))))
+	var timer_key := "terrain_hazard_damage_timer_%s" % feature_id
+	var timer := maxf(0.0, float(unit.get_meta(timer_key, 0.0)) - delta)
+	if timer > 0.0:
+		unit.set_meta(timer_key, timer)
+		return 0
+	unit.set_meta(timer_key, interval)
+	if damage_per_tick > 0:
+		return damage_per_tick
+	return maxi(1, int(roundf(damage_rate * interval)))
 
 
 func _battle_hit_resolution_service() -> BattleHitResolutionService:
@@ -26733,6 +26811,7 @@ func _tick_battle_simulation(delta: float, _input_frame: Dictionary = {}) -> voi
 				_apply_homing_launchers(delta)
 				_apply_barrage_emitters(delta)
 				_apply_support_components(delta)
+				_apply_terrain_hazards(delta)
 				_apply_speed_lanes(delta)
 				_apply_coin_generators(delta)
 				_update_field_coins(delta)
