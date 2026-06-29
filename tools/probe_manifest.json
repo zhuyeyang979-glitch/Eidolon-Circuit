@@ -14,6 +14,7 @@
     "battle_input_service_contract_probe",
     "battle_input_frame_serialization_probe",
     "battle_start_payload_probe",
+    "local_battle_replay_consistency_probe",
     "battle_frame_orchestrator_service_contract_probe",
     "battle_runtime_facade_contract_probe",
     "battle_presentation_frame_service_contract_probe",
