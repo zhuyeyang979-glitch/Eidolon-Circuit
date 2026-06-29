@@ -30859,6 +30859,9 @@ func _terrain_mechanism_runtime_effect_intents(owner_id: int, mechanism_feature:
 	var force_intent := _terrain_mechanism_force_pulse_intent(owner_id, mechanism_feature, intent)
 	if not force_intent.is_empty():
 		result.append(force_intent)
+	var damage_intent := _terrain_mechanism_damage_pulse_intent(owner_id, mechanism_feature, intent)
+	if not damage_intent.is_empty():
+		result.append(damage_intent)
 	return result
 
 
@@ -31009,6 +31012,76 @@ func _terrain_mechanism_force_direction(metadata: Dictionary, mechanism_feature:
 		var inward := center - point
 		return inward.normalized() if inward.length() > 0.001 else -_terrain_surface_direction(mechanism_feature)
 	return _terrain_surface_direction(mechanism_feature)
+
+
+func _terrain_mechanism_damage_pulse_intent(owner_id: int, mechanism_feature: Dictionary, intent: Dictionary) -> Dictionary:
+	var metadata: Dictionary = Dictionary(mechanism_feature.get("metadata", {}))
+	var raw_damage := int(roundf(float(metadata.get("damage_pulse", metadata.get("mechanism_damage", metadata.get("pulse_damage", metadata.get("damage", 0)))))))
+	if raw_damage <= 0:
+		return {}
+	var players := _terrain_mechanism_target_players(owner_id, metadata, intent, "damage")
+	if players.is_empty():
+		return {}
+	var center := _terrain_feature_center(mechanism_feature)
+	var radius := maxf(0.0, float(metadata.get("damage_radius", metadata.get("effect_radius", 0.0))))
+	var source_owner := clampi(int(metadata.get("damage_owner_id", metadata.get("owner_id", owner_id))), 0, 2)
+	var damage_type := String(metadata.get("damage_type", metadata.get("mechanism_damage_type", "blunt")))
+	var damage_state := String(metadata.get("damage_state", "normal"))
+	var include_anchored_barriers := bool(metadata.get("damage_affects_anchored_barriers", false))
+	var affected_units: Array = []
+	for unit in all_units.duplicate():
+		if not _is_live_unit(unit) or not players.has(clampi(int(unit.owner_id), 1, 2)):
+			continue
+		if not _unit_is_mech_physics_subject(unit):
+			continue
+		if _unit_is_anchored_barrier(unit) and not include_anchored_barriers:
+			continue
+		if radius > 0.0:
+			var point := Vector2(float(unit.ring_pos), float(unit.lane))
+			if point.distance_to(center) > radius + float(unit.stats.get("radius", 0.2)):
+				continue
+		var health_before := int(unit.health)
+		var event := {
+			"damage_type": damage_type,
+			"projectile": false,
+		}
+		var final_damage := maxi(1, int(roundf(float(raw_damage) * _vulnerability_multiplier(unit, event))))
+		final_damage = _projectile_material_adjusted_damage(unit, event, final_damage)
+		var blocked := final_damage <= 0 or bool(event.get("contact_gate_blocked", false))
+		if blocked:
+			final_damage = 0
+		var killed := false
+		if final_damage > 0:
+			killed = unit.take_hit(final_damage, damage_state, source_owner, damage_type, "field")
+			unit.set_meta("terrain_mechanism_damage_feature_id", String(mechanism_feature.get("feature_id", "")))
+			unit.set_meta("terrain_mechanism_damage_last", final_damage)
+			if killed:
+				_handle_unit_killed(unit, source_owner)
+		var health_after := int(unit.health) if is_instance_valid(unit) else 0
+		affected_units.append({
+			"owner_id": int(unit.owner_id) if is_instance_valid(unit) else 0,
+			"role": String(unit.role) if is_instance_valid(unit) else "",
+			"unit_name": String(unit.unit_name) if is_instance_valid(unit) else "",
+			"health_before": health_before,
+			"health_after": health_after,
+			"damage": final_damage,
+			"damage_type": damage_type,
+			"blocked": blocked,
+			"defeated": killed,
+		})
+	if affected_units.is_empty():
+		return {}
+	var state_intent := intent.duplicate(true)
+	state_intent["action"] = "trigger_arena_mechanism"
+	state_intent["mechanism_name"] = String(mechanism_feature.get("name", mechanism_feature.get("feature_id", "")))
+	state_intent["mechanism_effect"] = _terrain_runtime_token(metadata.get("mechanism_effect", metadata.get("effect", "damage_pulse")))
+	state_intent["runtime_effect"] = "damage_pulse"
+	state_intent["damage"] = raw_damage
+	state_intent["damage_type"] = damage_type
+	state_intent["target_players"] = players.duplicate(true)
+	state_intent["affected_units"] = affected_units
+	state_intent["snapshot_changed"] = false
+	return state_intent
 
 
 func _terrain_mechanism_target_players(owner_id: int, metadata: Dictionary, intent: Dictionary, prefix: String = "") -> Array:
