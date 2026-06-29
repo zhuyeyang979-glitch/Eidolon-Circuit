@@ -217,6 +217,35 @@ func _damage_snapshot() -> Dictionary:
 	})
 
 
+func _status_snapshot() -> Dictionary:
+	var terrain_service = BattleTerrainServiceScript.new()
+	return terrain_service.arena_snapshot({
+		"arena_id": "terrain_mechanism_status_probe",
+		"version": 1,
+		"features": [
+			{
+				"id": "status-switch",
+				"name": "STATUS SWITCH",
+				"kind": "mechanism",
+				"collider": {"shape": "circle", "center": Vector2(13.0, 0.0), "radius": 0.42},
+				"surface_tags": ["scripted_mechanism", "status"],
+				"effect_channels": ["scripted_mechanism"],
+				"metadata": {
+					"mechanism_effect": "status_pulse",
+					"status_owner_scope": "enemy",
+					"status_radius": 0.7,
+					"status_duration": 1.25,
+					"status_effects": {
+						"move_speed_mult": 0.5,
+						"damage_mult": 0.5,
+						"break_value_mult": 0.5,
+					},
+				},
+			},
+		],
+	})
+
+
 func _spawn_hero(main, owner: int, name: String, ring: float, lane: float):
 	var stats := {
 		"name": name,
@@ -643,6 +672,77 @@ func _check_runtime_mechanism_damage_pulse() -> void:
 		return
 
 
+func _check_runtime_mechanism_status_pulse() -> void:
+	var main = MainScene.new()
+	root.add_child(main)
+	main._ready()
+	main._clear_all_units()
+	main.battle_terrain_runtime_snapshot = _status_snapshot()
+
+	var ally = _spawn_hero(main, 1, "P1 Status Ally", 12.55, 0.0)
+	var enemy = _spawn_hero(main, 2, "P2 Status Enemy", 13.45, 0.0)
+	var distant_enemy = _spawn_hero(main, 2, "P2 Distant Status Enemy", 14.2, 0.0)
+	var stats := {
+		"health": 100,
+		"max_health": 100,
+		"mass": 10.0,
+		"radius": 0.2,
+		"barrier_map_tiles": [
+			{
+				"index": 0,
+				"tile_id": "status-trigger",
+				"local_ring": 0.0,
+				"local_lane": 0.0,
+				"radius": 0.14,
+				"length": 0.28,
+				"orientation": "horizontal",
+				"shape": "barrier_tile",
+				"material_class": "barrier_wall",
+				"terrain_policy": {
+					"mechanism_kinds": ["mechanism"],
+					"radius": 0.25,
+				},
+			},
+		],
+	}
+	var barrier = main._create_unit(1, "barrier", stats, "P1 Status Mechanism Barrier", 13.0, 0.0)
+	main._assign_unit_role(barrier, "barrier")
+
+	if not _expect(float(ally.get_meta("slow_timer", 0.0)) == 0.0, "Status mechanism should not slow owner ally"):
+		return
+	if not _expect(float(enemy.get_meta("slow_timer", 0.0)) == 1.25 and float(enemy.get_meta("slow_mult", 1.0)) == 0.5, "Status mechanism should slow enemy hero"):
+		return
+	if not _expect(float(enemy.get_meta("star_soul_damage_debuff_timer", 0.0)) == 1.25 and float(enemy.get_meta("star_soul_damage_debuff_mult", 1.0)) == 0.5, "Status mechanism should debuff enemy damage"):
+		return
+	if not _expect(float(enemy.get_meta("vuln_timer", 0.0)) == 1.25 and float(enemy.get_meta("vuln_mult", 1.0)) == 2.0, "Status mechanism should mark enemy vulnerability"):
+		return
+	if not _expect(float(distant_enemy.get_meta("slow_timer", 0.0)) == 0.0, "Status mechanism should respect effect radius"):
+		return
+	if not _expect(int(main._battle_terrain_runtime_snapshot().get("version", 0)) == 1, "Status-only mechanism should not change terrain snapshot version"):
+		return
+	var state_intents: Array = Array(barrier.get_meta("barrier_terrain_arena_state_intents", []))
+	if not _expect(_has_action(state_intents, "trigger_arena_mechanism", "status-switch"), "Runtime barrier should record status mechanism state intent: %s" % str(state_intents)):
+		return
+	var status_intent: Dictionary = Dictionary(state_intents[0])
+	if not _expect(String(status_intent.get("runtime_effect", "")) == "status_pulse", "Status mechanism should record runtime effect: %s" % str(status_intent)):
+		return
+	if not _expect(float(status_intent.get("status_duration", 0.0)) == 1.25, "Status mechanism should record duration: %s" % str(status_intent)):
+		return
+	if not _expect(Array(status_intent.get("target_players", [])).has(2), "Status mechanism should target enemy player: %s" % str(status_intent)):
+		return
+	var affected: Array = Array(status_intent.get("affected_units", []))
+	if not _expect(affected.size() == 1 and int(Dictionary(affected[0]).get("owner_id", 0)) == 2 and String(Dictionary(affected[0]).get("role", "")) == "hero", "Status mechanism should record affected enemy hero only: %s" % str(status_intent)):
+		return
+	var applied: Dictionary = Dictionary(Dictionary(affected[0]).get("applied_effects", {}))
+	if not _expect(float(applied.get("move_speed_mult", 0.0)) == 0.5 and float(applied.get("damage_mult", 0.0)) == 0.5 and float(applied.get("break_value_mult", 0.0)) == 0.5, "Status mechanism should record applied effects: %s" % str(applied)):
+		return
+	main._update_unit_status_meta(enemy, 0.25)
+	if not _expect(float(enemy.get_meta("slow_timer", 0.0)) == 1.0 and float(enemy.get_meta("star_soul_damage_debuff_timer", 0.0)) == 1.0 and float(enemy.get_meta("vuln_timer", 0.0)) == 1.0, "Status timers should decay through shared status tick"):
+		return
+	if not _expect(String(enemy.get_meta("terrain_mechanism_status_feature_id", "")) == "status-switch", "Status mechanism should tag affected unit source feature"):
+		return
+
+
 func _candidate_has_feature(candidates: Array, feature_id: String) -> bool:
 	for raw_candidate in candidates:
 		if raw_candidate is Dictionary and String(Dictionary(raw_candidate).get("feature_id", "")) == feature_id:
@@ -661,6 +761,7 @@ func _init() -> void:
 		"_terrain_mechanism_thermal_pulse_intent",
 		"_terrain_mechanism_force_pulse_intent",
 		"_terrain_mechanism_damage_pulse_intent",
+		"_terrain_mechanism_status_pulse_intent",
 		"trigger_arena_mechanism",
 	]:
 		if not source.contains(token):
@@ -673,5 +774,6 @@ func _init() -> void:
 	_check_runtime_mechanism_thermal_pulse()
 	_check_runtime_mechanism_force_pulse()
 	_check_runtime_mechanism_damage_pulse()
+	_check_runtime_mechanism_status_pulse()
 	print("TERRAIN_MECHANISM_STATE_PROBE ok")
 	quit(0)

@@ -11,6 +11,8 @@ func _init() -> void:
 	main._ready()
 	main.loading_auto_transitions_enabled = false
 	main._show_scout(MainScene.MODE_PVP, true)
+	main._legalize_ai_player_roster(1, true)
+	main._legalize_ai_player_roster(2, true)
 	main._show_star_soul_bp(MainScene.MODE_PVP)
 	_require(main.star_soul_bp_active, "PVP Star Soul BP should become active before battle.")
 	_require(main.star_soul_bp_view != null and main.star_soul_bp_view.visible, "PVP Star Soul BP view should be visible.")

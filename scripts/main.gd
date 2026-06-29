@@ -30862,6 +30862,9 @@ func _terrain_mechanism_runtime_effect_intents(owner_id: int, mechanism_feature:
 	var damage_intent := _terrain_mechanism_damage_pulse_intent(owner_id, mechanism_feature, intent)
 	if not damage_intent.is_empty():
 		result.append(damage_intent)
+	var status_intent := _terrain_mechanism_status_pulse_intent(owner_id, mechanism_feature, intent)
+	if not status_intent.is_empty():
+		result.append(status_intent)
 	return result
 
 
@@ -31082,6 +31085,126 @@ func _terrain_mechanism_damage_pulse_intent(owner_id: int, mechanism_feature: Di
 	state_intent["affected_units"] = affected_units
 	state_intent["snapshot_changed"] = false
 	return state_intent
+
+
+func _terrain_mechanism_status_pulse_intent(owner_id: int, mechanism_feature: Dictionary, intent: Dictionary) -> Dictionary:
+	var metadata: Dictionary = Dictionary(mechanism_feature.get("metadata", {}))
+	var effects := _terrain_mechanism_status_effects(metadata)
+	if effects.is_empty():
+		return {}
+	var players := _terrain_mechanism_target_players(owner_id, metadata, intent, "status")
+	if players.is_empty():
+		return {}
+	var center := _terrain_feature_center(mechanism_feature)
+	var radius := maxf(0.0, float(metadata.get("status_radius", metadata.get("effect_radius", 0.0))))
+	var timer := maxf(0.05, float(metadata.get("status_duration", metadata.get("status_timer", metadata.get("duration", 0.22)))))
+	var include_anchored_barriers := bool(metadata.get("status_affects_anchored_barriers", false))
+	var affected_units: Array = []
+	for unit in all_units:
+		if not _is_live_unit(unit) or not players.has(clampi(int(unit.owner_id), 1, 2)):
+			continue
+		if not _unit_is_mech_physics_subject(unit):
+			continue
+		if _unit_is_anchored_barrier(unit) and not include_anchored_barriers:
+			continue
+		if radius > 0.0:
+			var point := Vector2(float(unit.ring_pos), float(unit.lane))
+			if point.distance_to(center) > radius + float(unit.stats.get("radius", 0.2)):
+				continue
+		var before := _terrain_mechanism_status_snapshot(unit)
+		var applied := _terrain_mechanism_apply_status_effects(unit, effects, timer, metadata)
+		if applied.is_empty():
+			continue
+		unit.set_meta("terrain_mechanism_status_feature_id", String(mechanism_feature.get("feature_id", "")))
+		unit.set_meta("terrain_mechanism_status_timer", timer)
+		var after := _terrain_mechanism_status_snapshot(unit)
+		affected_units.append({
+			"owner_id": int(unit.owner_id),
+			"role": String(unit.role),
+			"unit_name": String(unit.unit_name),
+			"status_before": before,
+			"status_after": after,
+			"applied_effects": applied,
+		})
+	if affected_units.is_empty():
+		return {}
+	var state_intent := intent.duplicate(true)
+	state_intent["action"] = "trigger_arena_mechanism"
+	state_intent["mechanism_name"] = String(mechanism_feature.get("name", mechanism_feature.get("feature_id", "")))
+	state_intent["mechanism_effect"] = _terrain_runtime_token(metadata.get("mechanism_effect", metadata.get("effect", "status_pulse")))
+	state_intent["runtime_effect"] = "status_pulse"
+	state_intent["status_duration"] = timer
+	state_intent["status_effects"] = effects.duplicate(true)
+	state_intent["target_players"] = players.duplicate(true)
+	state_intent["affected_units"] = affected_units
+	state_intent["snapshot_changed"] = false
+	return state_intent
+
+
+func _terrain_mechanism_status_effects(metadata: Dictionary) -> Dictionary:
+	var effects: Dictionary = {}
+	var raw_effects = metadata.get("status_effects", metadata.get("status_pulse", metadata.get("effects", {})))
+	if raw_effects is Dictionary:
+		for raw_key in Dictionary(raw_effects).keys():
+			var key := String(raw_key)
+			effects[key] = float(Dictionary(raw_effects).get(raw_key, 1.0))
+	for effect_key in ["move_speed_mult", "damage_mult", "break_value_mult"]:
+		var status_key := "status_%s" % effect_key
+		if metadata.has(status_key):
+			effects[effect_key] = float(metadata.get(status_key, 1.0))
+		elif metadata.has(effect_key):
+			effects[effect_key] = float(metadata.get(effect_key, 1.0))
+	return effects
+
+
+func _terrain_mechanism_apply_status_effects(unit, effects: Dictionary, timer: float, metadata: Dictionary) -> Dictionary:
+	var applied: Dictionary = {}
+	for raw_key in effects.keys():
+		var key := String(raw_key)
+		var mult := float(effects[raw_key])
+		match key:
+			"move_speed_mult", "nearby_ally_speed_mult":
+				if mult >= 1.0:
+					unit.set_meta("speed_lane_timer", maxf(float(unit.get_meta("speed_lane_timer", 0.0)), timer))
+					unit.set_meta("speed_lane_mult", maxf(float(unit.get_meta("speed_lane_mult", 1.0)), mult))
+				else:
+					unit.set_meta("slow_timer", maxf(float(unit.get_meta("slow_timer", 0.0)), timer))
+					unit.set_meta("slow_mult", minf(float(unit.get_meta("slow_mult", 1.0)), clampf(mult, 0.1, 1.0)))
+				applied[key] = mult
+			"damage_mult":
+				if mult >= 1.0:
+					unit.set_meta("field_damage_boost_type", String(metadata.get("damage_boost_type", metadata.get("status_damage_type", "all"))))
+					unit.set_meta("field_damage_boost_mult", maxf(float(unit.get_meta("field_damage_boost_mult", 1.0)), mult))
+					unit.set_meta("field_damage_boost_timer", maxf(float(unit.get_meta("field_damage_boost_timer", 0.0)), timer))
+				else:
+					unit.set_meta("star_soul_damage_debuff_timer", maxf(float(unit.get_meta("star_soul_damage_debuff_timer", 0.0)), timer))
+					unit.set_meta("star_soul_damage_debuff_mult", clampf(mult, 0.1, 1.0))
+				applied[key] = mult
+			"break_value_mult":
+				if mult < 1.0:
+					_apply_vulnerability(unit, String(metadata.get("vulnerability_kind", metadata.get("vuln_kind", "all"))), 1.0 / maxf(0.1, mult), timer)
+				else:
+					unit.set_meta("star_soul_break_value_buff_timer", maxf(float(unit.get_meta("star_soul_break_value_buff_timer", 0.0)), timer))
+					unit.set_meta("star_soul_break_value_buff_mult", mult)
+				applied[key] = mult
+	return applied
+
+
+func _terrain_mechanism_status_snapshot(unit) -> Dictionary:
+	return {
+		"slow_timer": float(unit.get_meta("slow_timer", 0.0)),
+		"slow_mult": float(unit.get_meta("slow_mult", 1.0)),
+		"speed_lane_timer": float(unit.get_meta("speed_lane_timer", 0.0)),
+		"speed_lane_mult": float(unit.get_meta("speed_lane_mult", 1.0)),
+		"field_damage_boost_timer": float(unit.get_meta("field_damage_boost_timer", 0.0)),
+		"field_damage_boost_mult": float(unit.get_meta("field_damage_boost_mult", 1.0)),
+		"star_soul_damage_debuff_timer": float(unit.get_meta("star_soul_damage_debuff_timer", 0.0)),
+		"star_soul_damage_debuff_mult": float(unit.get_meta("star_soul_damage_debuff_mult", 1.0)),
+		"vuln_timer": float(unit.get_meta("vuln_timer", 0.0)),
+		"vuln_mult": float(unit.get_meta("vuln_mult", 1.0)),
+		"star_soul_break_value_buff_timer": float(unit.get_meta("star_soul_break_value_buff_timer", 0.0)),
+		"star_soul_break_value_buff_mult": float(unit.get_meta("star_soul_break_value_buff_mult", 1.0)),
+	}
 
 
 func _terrain_mechanism_target_players(owner_id: int, metadata: Dictionary, intent: Dictionary, prefix: String = "") -> Array:
@@ -39145,7 +39268,7 @@ func _update_takeover_status(unit, delta: float) -> void:
 
 
 func _update_unit_status_meta(unit, delta: float) -> void:
-	for key in ["morph_timer", "trap_cooldown_timer", "hack_warning_timer", "jam_warning_timer", "jammed_timer", "part_fail_flash", "slow_timer", "field_damage_boost_timer", "vuln_timer", "served_ball_timer", "active_cool_lock", "takeover_warning_timer", "lease_warn_timer", "annuity_tick", "projectile_shield_timer", "support_armor_timer", "speed_lane_timer", "shield_flash_timer", "rear_heat_flash_timer"]:
+	for key in ["morph_timer", "trap_cooldown_timer", "hack_warning_timer", "jam_warning_timer", "jammed_timer", "part_fail_flash", "slow_timer", "field_damage_boost_timer", "vuln_timer", "served_ball_timer", "active_cool_lock", "takeover_warning_timer", "lease_warn_timer", "annuity_tick", "projectile_shield_timer", "support_armor_timer", "speed_lane_timer", "shield_flash_timer", "rear_heat_flash_timer", "star_soul_buff_timer", "star_soul_debuff_timer", "star_soul_damage_debuff_timer", "star_soul_break_value_buff_timer", "terrain_mechanism_status_timer"]:
 		if unit.has_meta(key):
 			unit.set_meta(key, maxf(0.0, float(unit.get_meta(key, 0.0)) - delta))
 	if float(unit.get_meta("support_armor_timer", 0.0)) <= 0.0 and float(unit.get_meta("support_armor_hp", 0.0)) > 0.0:
