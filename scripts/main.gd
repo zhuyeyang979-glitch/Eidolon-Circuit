@@ -30778,15 +30778,20 @@ func _apply_barrier_terrain_arena_state(barrier, deployment_intents: Array) -> v
 			if feature.is_empty():
 				continue
 			var result := _terrain_state_apply_mechanism_intent(features, feature, intent)
-			if result.is_empty():
+			var runtime_effect_intents := _terrain_mechanism_runtime_effect_intents(int(barrier.owner_id), feature, intent)
+			if result.is_empty() and runtime_effect_intents.is_empty():
 				var state_intent := intent.duplicate(true)
 				state_intent["mechanism_name"] = String(feature.get("name", feature.get("feature_id", "")))
 				state_intent["action"] = "trigger_arena_mechanism"
 				state_intents.append(state_intent)
 				continue
-			features = Array(result.get("features", features))
-			snapshot_changed = true
-			state_intents.append(Dictionary(result.get("state_intent", {})).duplicate(true))
+			if not result.is_empty():
+				features = Array(result.get("features", features))
+				snapshot_changed = true
+				state_intents.append(Dictionary(result.get("state_intent", {})).duplicate(true))
+			for runtime_intent in runtime_effect_intents:
+				if runtime_intent is Dictionary:
+					state_intents.append(Dictionary(runtime_intent).duplicate(true))
 	barrier.set_meta("barrier_terrain_arena_state_intents", state_intents)
 	if state_intents.is_empty():
 		return
@@ -30841,6 +30846,60 @@ func _terrain_state_apply_mechanism_intent(features: Array, mechanism_feature: D
 	state_intent["mutated_feature_ids"] = mutated_ids.duplicate(true)
 	state_intent["snapshot_changed"] = true
 	return {"features": next_features, "state_intent": state_intent}
+
+
+func _terrain_mechanism_runtime_effect_intents(owner_id: int, mechanism_feature: Dictionary, intent: Dictionary) -> Array:
+	var result: Array = []
+	var resource_intent := _terrain_mechanism_resource_pulse_intent(owner_id, mechanism_feature, intent)
+	if not resource_intent.is_empty():
+		result.append(resource_intent)
+	return result
+
+
+func _terrain_mechanism_resource_pulse_intent(owner_id: int, mechanism_feature: Dictionary, intent: Dictionary) -> Dictionary:
+	var metadata: Dictionary = Dictionary(mechanism_feature.get("metadata", {}))
+	var resource_delta := float(metadata.get("resource_delta", metadata.get("resource_gain", metadata.get("resource_pulse", 0.0))))
+	if absf(resource_delta) <= 0.0001:
+		return {}
+	var players := _terrain_mechanism_target_players(owner_id, metadata, intent, "resource")
+	if players.is_empty():
+		return {}
+	var before: Dictionary = {}
+	var after: Dictionary = {}
+	for player_id in players:
+		var player := clampi(int(player_id), 1, 2)
+		var current := float(runtime_resource.get(player, 0.0))
+		var next_value := maxf(0.0, current + resource_delta)
+		runtime_resource[player] = next_value
+		before[player] = current
+		after[player] = next_value
+	var state_intent := intent.duplicate(true)
+	state_intent["action"] = "trigger_arena_mechanism"
+	state_intent["mechanism_name"] = String(mechanism_feature.get("name", mechanism_feature.get("feature_id", "")))
+	state_intent["mechanism_effect"] = _terrain_runtime_token(metadata.get("mechanism_effect", metadata.get("effect", "resource_pulse")))
+	state_intent["runtime_effect"] = "resource_pulse"
+	state_intent["resource_delta"] = resource_delta
+	state_intent["target_players"] = players.duplicate(true)
+	state_intent["resource_before"] = before
+	state_intent["resource_after"] = after
+	state_intent["snapshot_changed"] = false
+	return state_intent
+
+
+func _terrain_mechanism_target_players(owner_id: int, metadata: Dictionary, intent: Dictionary, prefix: String = "") -> Array:
+	var explicit_key := "%s_target_players" % prefix if prefix != "" else "target_players"
+	var raw_players = metadata.get(explicit_key, metadata.get("target_players", intent.get("target_players", null)))
+	var players: Array = []
+	if raw_players is Array:
+		for raw_player in Array(raw_players):
+			var player := clampi(int(raw_player), 1, 2)
+			if not players.has(player):
+				players.append(player)
+	if not players.is_empty():
+		return players
+	var scope_key := "%s_owner_scope" % prefix if prefix != "" else "owner_scope"
+	var owner_scope := String(metadata.get(scope_key, metadata.get("owner_scope", intent.get("owner_scope", "owner"))))
+	return _terrain_portal_target_players(owner_id, owner_scope)
 
 
 func _terrain_state_remove_feature_ids(features: Array, value) -> Array:

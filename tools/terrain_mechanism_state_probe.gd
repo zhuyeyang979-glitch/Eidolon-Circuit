@@ -120,6 +120,29 @@ func _mutation_snapshot() -> Dictionary:
 	})
 
 
+func _resource_snapshot() -> Dictionary:
+	var terrain_service = BattleTerrainServiceScript.new()
+	return terrain_service.arena_snapshot({
+		"arena_id": "terrain_mechanism_resource_probe",
+		"version": 1,
+		"features": [
+			{
+				"id": "resource-switch",
+				"name": "RESOURCE SWITCH",
+				"kind": "mechanism",
+				"collider": {"shape": "circle", "center": Vector2(9.0, 0.0), "radius": 0.42},
+				"surface_tags": ["scripted_mechanism", "resource"],
+				"effect_channels": ["scripted_mechanism"],
+				"metadata": {
+					"mechanism_effect": "resource_pulse",
+					"resource_delta": 18.0,
+					"resource_owner_scope": "all",
+				},
+			},
+		],
+	})
+
+
 func _check_pure_mechanism_intent() -> void:
 	var service = BarrierTerrainInteractionServiceScript.new()
 	var placement: Dictionary = service.barrier_placement_intent({
@@ -281,6 +304,64 @@ func _check_runtime_mechanism_mutation() -> void:
 		return
 
 
+func _check_runtime_mechanism_resource_pulse() -> void:
+	var main = MainScene.new()
+	root.add_child(main)
+	main._ready()
+	main._clear_all_units()
+	main.runtime_resource = {1: 10.0, 2: 5.0}
+	main.battle_terrain_runtime_snapshot = _resource_snapshot()
+
+	var stats := {
+		"health": 100,
+		"max_health": 100,
+		"mass": 10.0,
+		"radius": 0.2,
+		"barrier_map_tiles": [
+			{
+				"index": 0,
+				"tile_id": "resource-trigger",
+				"local_ring": 0.0,
+				"local_lane": 0.0,
+				"radius": 0.14,
+				"length": 0.28,
+				"orientation": "horizontal",
+				"shape": "barrier_tile",
+				"material_class": "barrier_wall",
+				"terrain_policy": {
+					"mechanism_kinds": ["mechanism"],
+					"radius": 0.25,
+				},
+			},
+		],
+	}
+	var barrier = main._create_unit(1, "barrier", stats, "P1 Resource Mechanism Barrier", 9.0, 0.0)
+	main._assign_unit_role(barrier, "barrier")
+
+	if not _expect(float(main.runtime_resource.get(1, 0.0)) == 28.0, "Resource mechanism should grant P1 resource: %s" % str(main.runtime_resource)):
+		return
+	if not _expect(float(main.runtime_resource.get(2, 0.0)) == 23.0, "Resource mechanism should grant P2 resource: %s" % str(main.runtime_resource)):
+		return
+	if not _expect(int(main._battle_terrain_runtime_snapshot().get("version", 0)) == 1, "Resource-only mechanism should not change terrain snapshot version"):
+		return
+	if not _expect(int(barrier.get_meta("barrier_terrain_snapshot_version_after", 0)) == 1, "Resource-only mechanism should record unchanged snapshot version"):
+		return
+	var state_intents: Array = Array(barrier.get_meta("barrier_terrain_arena_state_intents", []))
+	if not _expect(_has_action(state_intents, "trigger_arena_mechanism", "resource-switch"), "Runtime barrier should record resource mechanism state intent: %s" % str(state_intents)):
+		return
+	var resource_intent: Dictionary = Dictionary(state_intents[0])
+	if not _expect(String(resource_intent.get("runtime_effect", "")) == "resource_pulse", "Resource mechanism should record runtime effect: %s" % str(resource_intent)):
+		return
+	if not _expect(float(resource_intent.get("resource_delta", 0.0)) == 18.0, "Resource mechanism should record delta: %s" % str(resource_intent)):
+		return
+	if not _expect(Array(resource_intent.get("target_players", [])).has(1) and Array(resource_intent.get("target_players", [])).has(2), "Resource mechanism should record target players: %s" % str(resource_intent)):
+		return
+	var before: Dictionary = Dictionary(resource_intent.get("resource_before", {}))
+	var after: Dictionary = Dictionary(resource_intent.get("resource_after", {}))
+	if not _expect(float(before.get(1, 0.0)) == 10.0 and float(after.get(2, 0.0)) == 23.0, "Resource mechanism should record before/after resources: %s" % str(resource_intent)):
+		return
+
+
 func _candidate_has_feature(candidates: Array, feature_id: String) -> bool:
 	for raw_candidate in candidates:
 		if raw_candidate is Dictionary and String(Dictionary(raw_candidate).get("feature_id", "")) == feature_id:
@@ -295,6 +376,7 @@ func _init() -> void:
 		"_terrain_state_remove_feature_ids",
 		"_terrain_state_upsert_features",
 		"_terrain_state_mutate_features",
+		"_terrain_mechanism_resource_pulse_intent",
 		"trigger_arena_mechanism",
 	]:
 		if not source.contains(token):
@@ -303,5 +385,6 @@ func _init() -> void:
 	_check_pure_mechanism_intent()
 	_check_runtime_mechanism_state()
 	_check_runtime_mechanism_mutation()
+	_check_runtime_mechanism_resource_pulse()
 	print("TERRAIN_MECHANISM_STATE_PROBE ok")
 	quit(0)
