@@ -30856,6 +30856,9 @@ func _terrain_mechanism_runtime_effect_intents(owner_id: int, mechanism_feature:
 	var thermal_intent := _terrain_mechanism_thermal_pulse_intent(owner_id, mechanism_feature, intent)
 	if not thermal_intent.is_empty():
 		result.append(thermal_intent)
+	var force_intent := _terrain_mechanism_force_pulse_intent(owner_id, mechanism_feature, intent)
+	if not force_intent.is_empty():
+		result.append(force_intent)
 	return result
 
 
@@ -30937,6 +30940,75 @@ func _terrain_mechanism_thermal_pulse_intent(owner_id: int, mechanism_feature: D
 	state_intent["affected_units"] = affected_units
 	state_intent["snapshot_changed"] = false
 	return state_intent
+
+
+func _terrain_mechanism_force_pulse_intent(owner_id: int, mechanism_feature: Dictionary, intent: Dictionary) -> Dictionary:
+	var metadata: Dictionary = Dictionary(mechanism_feature.get("metadata", {}))
+	var force_delta := float(metadata.get("force_delta", metadata.get("force_pulse", metadata.get("impulse_delta", metadata.get("push_delta", 0.0)))))
+	if absf(force_delta) <= 0.0001:
+		return {}
+	var players := _terrain_mechanism_target_players(owner_id, metadata, intent, "force")
+	if players.is_empty():
+		return {}
+	var center := _terrain_feature_center(mechanism_feature)
+	var radius := maxf(0.0, float(metadata.get("force_radius", metadata.get("effect_radius", 0.0))))
+	var affected_units: Array = []
+	for unit in all_units:
+		if not _is_live_unit(unit) or not players.has(clampi(int(unit.owner_id), 1, 2)):
+			continue
+		if not _unit_is_mech_physics_subject(unit) or _unit_is_anchored_barrier(unit):
+			continue
+		if radius > 0.0:
+			var point := Vector2(float(unit.ring_pos), float(unit.lane))
+			if point.distance_to(center) > radius + float(unit.stats.get("radius", 0.2)):
+				continue
+		var direction := _terrain_mechanism_force_direction(metadata, mechanism_feature, unit, center)
+		if direction.length() <= 0.001:
+			continue
+		var velocity_before := Vector2(unit.velocity) if unit.get("velocity") != null else Vector2.ZERO
+		unit.velocity = velocity_before + direction.normalized() * force_delta
+		var velocity_after := Vector2(unit.velocity) if unit.get("velocity") != null else velocity_before
+		if velocity_after.distance_to(velocity_before) <= 0.0001:
+			continue
+		unit.set_meta("terrain_mechanism_force_feature_id", String(mechanism_feature.get("feature_id", "")))
+		unit.set_meta("terrain_mechanism_force_delta", force_delta)
+		unit.set_meta("terrain_mechanism_force_direction", direction.normalized())
+		affected_units.append({
+			"owner_id": int(unit.owner_id),
+			"role": String(unit.role),
+			"unit_name": String(unit.unit_name),
+			"velocity_before": velocity_before,
+			"velocity_after": velocity_after,
+		})
+	if affected_units.is_empty():
+		return {}
+	var state_intent := intent.duplicate(true)
+	state_intent["action"] = "trigger_arena_mechanism"
+	state_intent["mechanism_name"] = String(mechanism_feature.get("name", mechanism_feature.get("feature_id", "")))
+	state_intent["mechanism_effect"] = _terrain_runtime_token(metadata.get("mechanism_effect", metadata.get("effect", "force_pulse")))
+	state_intent["runtime_effect"] = "force_pulse"
+	state_intent["force_delta"] = force_delta
+	state_intent["target_players"] = players.duplicate(true)
+	state_intent["affected_units"] = affected_units
+	state_intent["snapshot_changed"] = false
+	return state_intent
+
+
+func _terrain_mechanism_force_direction(metadata: Dictionary, mechanism_feature: Dictionary, unit, center: Vector2) -> Vector2:
+	var mode := _terrain_runtime_token(metadata.get("force_mode", metadata.get("direction_mode", "")))
+	var explicit_direction = metadata.get("force_direction", metadata.get("direction", metadata.get("force_vector", null)))
+	if explicit_direction is Vector2:
+		var vector := Vector2(explicit_direction)
+		if vector.length() > 0.001:
+			return vector.normalized()
+	var point := Vector2(float(unit.ring_pos), float(unit.lane))
+	if mode in ["radial", "radial_out", "outward", "repel", "away"]:
+		var outward := point - center
+		return outward.normalized() if outward.length() > 0.001 else _terrain_surface_direction(mechanism_feature)
+	if mode in ["radial_in", "inward", "pull", "toward_center"]:
+		var inward := center - point
+		return inward.normalized() if inward.length() > 0.001 else -_terrain_surface_direction(mechanism_feature)
+	return _terrain_surface_direction(mechanism_feature)
 
 
 func _terrain_mechanism_target_players(owner_id: int, metadata: Dictionary, intent: Dictionary, prefix: String = "") -> Array:

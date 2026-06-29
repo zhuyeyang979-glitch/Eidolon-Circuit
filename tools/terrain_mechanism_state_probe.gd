@@ -166,6 +166,32 @@ func _thermal_snapshot() -> Dictionary:
 	})
 
 
+func _force_snapshot() -> Dictionary:
+	var terrain_service = BattleTerrainServiceScript.new()
+	return terrain_service.arena_snapshot({
+		"arena_id": "terrain_mechanism_force_probe",
+		"version": 1,
+		"features": [
+			{
+				"id": "force-switch",
+				"name": "FORCE SWITCH",
+				"kind": "mechanism",
+				"collider": {"shape": "circle", "center": Vector2(11.0, 0.0), "radius": 0.42},
+				"orientation": Vector2(0.0, 1.0),
+				"surface_tags": ["scripted_mechanism", "force"],
+				"effect_channels": ["scripted_mechanism"],
+				"metadata": {
+					"mechanism_effect": "force_pulse",
+					"force_delta": 0.75,
+					"force_owner_scope": "enemy",
+					"force_radius": 0.7,
+					"force_mode": "radial_out",
+				},
+			},
+		],
+	})
+
+
 func _spawn_hero(main, owner: int, name: String, ring: float, lane: float):
 	var stats := {
 		"name": name,
@@ -461,6 +487,73 @@ func _check_runtime_mechanism_thermal_pulse() -> void:
 		return
 
 
+func _check_runtime_mechanism_force_pulse() -> void:
+	var main = MainScene.new()
+	root.add_child(main)
+	main._ready()
+	main._clear_all_units()
+	main.battle_terrain_runtime_snapshot = _force_snapshot()
+
+	var ally = _spawn_hero(main, 1, "P1 Force Ally", 10.55, 0.0)
+	ally.velocity = Vector2(0.1, 0.0)
+	var enemy = _spawn_hero(main, 2, "P2 Force Enemy", 11.45, 0.0)
+	enemy.velocity = Vector2(0.1, 0.2)
+	var distant_enemy = _spawn_hero(main, 2, "P2 Distant Force Enemy", 12.2, 0.0)
+	distant_enemy.velocity = Vector2(0.3, 0.0)
+	var stats := {
+		"health": 100,
+		"max_health": 100,
+		"mass": 10.0,
+		"radius": 0.2,
+		"barrier_map_tiles": [
+			{
+				"index": 0,
+				"tile_id": "force-trigger",
+				"local_ring": 0.0,
+				"local_lane": 0.0,
+				"radius": 0.14,
+				"length": 0.28,
+				"orientation": "horizontal",
+				"shape": "barrier_tile",
+				"material_class": "barrier_wall",
+				"terrain_policy": {
+					"mechanism_kinds": ["mechanism"],
+					"radius": 0.25,
+				},
+			},
+		],
+	}
+	var barrier = main._create_unit(1, "barrier", stats, "P1 Force Mechanism Barrier", 11.0, 0.0)
+	main._assign_unit_role(barrier, "barrier")
+
+	if not _expect(ally.velocity.is_equal_approx(Vector2(0.1, 0.0)), "Force mechanism should not push owner ally: %s" % str(ally.velocity)):
+		return
+	if not _expect(enemy.velocity.is_equal_approx(Vector2(0.85, 0.2)), "Force mechanism should push enemy hero outward: %s" % str(enemy.velocity)):
+		return
+	if not _expect(distant_enemy.velocity.is_equal_approx(Vector2(0.3, 0.0)), "Force mechanism should respect effect radius: %s" % str(distant_enemy.velocity)):
+		return
+	if not _expect(int(main._battle_terrain_runtime_snapshot().get("version", 0)) == 1, "Force-only mechanism should not change terrain snapshot version"):
+		return
+	var state_intents: Array = Array(barrier.get_meta("barrier_terrain_arena_state_intents", []))
+	if not _expect(_has_action(state_intents, "trigger_arena_mechanism", "force-switch"), "Runtime barrier should record force mechanism state intent: %s" % str(state_intents)):
+		return
+	var force_intent: Dictionary = Dictionary(state_intents[0])
+	if not _expect(String(force_intent.get("runtime_effect", "")) == "force_pulse", "Force mechanism should record runtime effect: %s" % str(force_intent)):
+		return
+	if not _expect(float(force_intent.get("force_delta", 0.0)) == 0.75, "Force mechanism should record force delta: %s" % str(force_intent)):
+		return
+	if not _expect(Array(force_intent.get("target_players", [])).has(2), "Force mechanism should target enemy player: %s" % str(force_intent)):
+		return
+	var affected: Array = Array(force_intent.get("affected_units", []))
+	if not _expect(affected.size() == 1 and int(Dictionary(affected[0]).get("owner_id", 0)) == 2 and String(Dictionary(affected[0]).get("role", "")) == "hero", "Force mechanism should record affected enemy hero only: %s" % str(force_intent)):
+		return
+	var affected_unit: Dictionary = Dictionary(affected[0])
+	if not _expect(Vector2(affected_unit.get("velocity_before", Vector2.ZERO)).is_equal_approx(Vector2(0.1, 0.2)) and Vector2(affected_unit.get("velocity_after", Vector2.ZERO)).is_equal_approx(Vector2(0.85, 0.2)), "Force mechanism should record velocity before/after: %s" % str(affected_unit)):
+		return
+	if not _expect(String(enemy.get_meta("terrain_mechanism_force_feature_id", "")) == "force-switch", "Force mechanism should tag affected unit source feature"):
+		return
+
+
 func _candidate_has_feature(candidates: Array, feature_id: String) -> bool:
 	for raw_candidate in candidates:
 		if raw_candidate is Dictionary and String(Dictionary(raw_candidate).get("feature_id", "")) == feature_id:
@@ -477,6 +570,7 @@ func _init() -> void:
 		"_terrain_state_mutate_features",
 		"_terrain_mechanism_resource_pulse_intent",
 		"_terrain_mechanism_thermal_pulse_intent",
+		"_terrain_mechanism_force_pulse_intent",
 		"trigger_arena_mechanism",
 	]:
 		if not source.contains(token):
@@ -487,5 +581,6 @@ func _init() -> void:
 	_check_runtime_mechanism_mutation()
 	_check_runtime_mechanism_resource_pulse()
 	_check_runtime_mechanism_thermal_pulse()
+	_check_runtime_mechanism_force_pulse()
 	print("TERRAIN_MECHANISM_STATE_PROBE ok")
 	quit(0)
