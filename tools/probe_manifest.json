@@ -167,6 +167,7 @@
     "star_soul_main_coward_behavior_probe",
     "star_soul_hud_state_probe",
     "battle_controller_star_soul_runtime_probe",
+    "pvp_timeout_vp_resolution_probe",
     "part_gradient_curve_probe",
     "part_gradient_outlier_probe",
     "thruster_dual_gradient_probe",

@@ -4,6 +4,10 @@
 
 Status: gameplay baseline polished; the items below have reviewed ownership and probe-first plans but are not all active runtime behavior.
 
+Star Soul loop:
+
+- BP, shared-pool selection, queue announcement/spawn sequencing, VP awards for destroyed Star Souls, family behaviors, HUD/readout, post-battle Star Soul summaries, and PVP timeout winner resolution by highest VP are covered by the registered Star Soul probes, including `tools/star_soul_main_spawn_probe.gd`, `tools/star_soul_main_cart_behavior_probe.gd`, `tools/star_soul_main_chaser_behavior_probe.gd`, `tools/star_soul_main_coward_behavior_probe.gd`, `tools/star_soul_main_economy_behavior_probe.gd`, and `tools/pvp_timeout_vp_resolution_probe.gd`.
+
 Unit editor legality:
 
 - Pure `scripts/services/unit_editor_legality_service.gd` baseline is implemented and integrated through `_training_blueprint_illegal_note()`; role identity, explicit/custom-topology socket size and exact socket-kind ownership, per-socket occupancy, explicit/custom-topology construct-body manufacturers, localized messages, a persistent bilingual editor status, hero/puppet/barrier main save/training rejection paths, team validation, battle-entry legality, saved-unit readback, saved-team load/import, formal PVP/BP battle-start rechecks, combined-rule report merging, and cross-entrypoint topology failures are covered by the registered Unit Editor legality probes, including `tools/unit_editor_legality_preview_slot_kind_probe.gd` and `tools/unit_editor_legality_cross_entrypoint_probe.gd`.
