@@ -67,13 +67,26 @@ func _init() -> void:
 	if complete_rows.size() >= 2:
 		_require(String(Dictionary(complete_rows[1]).get("text", "")) == "#2 P2 punishment_tower_a timeout +0VP 40.0s", "Timeout summary row mismatch: %s" % str(complete_rows[1]))
 
-	var heavy_model: Dictionary = hud_service.heavy_hud_text_state({
+	var readonly_state := state.duplicate(true)
+	var readonly_before := str(readonly_state)
+	var readonly_model: Dictionary = hud_service.star_soul_hud_model(readonly_state, terms)
+	_require(str(readonly_state) == readonly_before, "Star Soul HUD model should not mutate runtime state input.")
+	var readonly_rows: Array = Array(readonly_model.get("summary_rows", []))
+	if not readonly_rows.is_empty():
+		Dictionary(readonly_rows[0])["star_soul_id"] = "mutated_by_probe"
+		var history: Array = Array(readonly_state.get("history", []))
+		_require(String(Dictionary(history[0]).get("star_soul_id", "")) == "defense_tower_c", "Star Soul HUD summary rows should be detached from runtime history.")
+
+	var heavy_snapshot := {
 		"terms": terms,
 		"win_points": 5,
 		"role_order": [],
 		"players": {1: {"victory_points": 0}, 2: {"victory_points": 3}},
 		"star_soul_runtime": state,
-	})
+	}
+	var heavy_snapshot_before := str(heavy_snapshot)
+	var heavy_model: Dictionary = hud_service.heavy_hud_text_state(heavy_snapshot)
+	_require(str(heavy_snapshot) == heavy_snapshot_before, "Heavy HUD text state should not mutate scoreboard or Star Soul snapshot input.")
 	_require(heavy_model.has("star_soul"), "Heavy HUD text state should include Star Soul model when runtime state is present.")
 	_require(String(Dictionary(heavy_model.get("star_soul", {})).get("text", "")) == "SOUL DONE  P1 0 - 3 P2", "Heavy HUD Star Soul text mismatch: %s" % str(heavy_model))
 	var empty_model: Dictionary = hud_service.heavy_hud_text_state({"terms": terms, "win_points": 5, "role_order": [], "players": {}})

@@ -6,7 +6,7 @@ Status: gameplay baseline polished; the items below have reviewed ownership and 
 
 Star Soul loop:
 
-- BP, shared-pool selection, queue announcement/spawn sequencing, VP awards for destroyed Star Souls, family behaviors, HUD/readout, post-battle Star Soul summaries, and PVP timeout winner resolution by highest VP are covered by the registered Star Soul probes, including `tools/star_soul_main_spawn_probe.gd`, `tools/star_soul_main_cart_behavior_probe.gd`, `tools/star_soul_main_chaser_behavior_probe.gd`, `tools/star_soul_main_coward_behavior_probe.gd`, `tools/star_soul_main_economy_behavior_probe.gd`, and `tools/pvp_timeout_vp_resolution_probe.gd`.
+- BP, shared-pool selection, queue announcement/spawn sequencing, VP awards for destroyed Star Souls, family behaviors, HUD/readout, post-battle Star Soul summaries, pure HUD derivation without mutating VP/runtime state, and PVP timeout winner resolution by highest VP are covered by the registered Star Soul probes, including `tools/star_soul_main_spawn_probe.gd`, `tools/star_soul_main_cart_behavior_probe.gd`, `tools/star_soul_main_chaser_behavior_probe.gd`, `tools/star_soul_main_coward_behavior_probe.gd`, `tools/star_soul_main_economy_behavior_probe.gd`, `tools/star_soul_hud_state_probe.gd`, and `tools/pvp_timeout_vp_resolution_probe.gd`.
 
 Unit editor legality:
 
