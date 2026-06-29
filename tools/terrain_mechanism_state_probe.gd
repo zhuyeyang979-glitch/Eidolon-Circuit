@@ -17,6 +17,10 @@ func _expect(condition: bool, message: String) -> bool:
 	return true
 
 
+func _nearly_equal(actual: float, expected: float) -> bool:
+	return absf(actual - expected) <= 0.01
+
+
 func _feature_by_id(snapshot: Dictionary, feature_id: String) -> Dictionary:
 	for raw_feature in Array(snapshot.get("features", [])):
 		if raw_feature is Dictionary and String(Dictionary(raw_feature).get("feature_id", "")) == feature_id:
@@ -240,6 +244,30 @@ func _status_snapshot() -> Dictionary:
 						"damage_mult": 0.5,
 						"break_value_mult": 0.5,
 					},
+				},
+			},
+		],
+	})
+
+
+func _economy_snapshot() -> Dictionary:
+	var terrain_service = BattleTerrainServiceScript.new()
+	return terrain_service.arena_snapshot({
+		"arena_id": "terrain_mechanism_economy_probe",
+		"version": 1,
+		"features": [
+			{
+				"id": "economy-switch",
+				"name": "ECONOMY SWITCH",
+				"kind": "mechanism",
+				"collider": {"shape": "circle", "center": Vector2(14.0, 0.0), "radius": 0.42},
+				"surface_tags": ["scripted_mechanism", "economy"],
+				"effect_channels": ["scripted_mechanism"],
+				"metadata": {
+					"mechanism_effect": "economy_rate_pulse",
+					"economy_owner_scope": "owner",
+					"economy_rate_mult": 1.4,
+					"economy_rate_duration": 2.0,
 				},
 			},
 		],
@@ -743,6 +771,78 @@ func _check_runtime_mechanism_status_pulse() -> void:
 		return
 
 
+func _check_runtime_mechanism_economy_rate_pulse() -> void:
+	var main = MainScene.new()
+	root.add_child(main)
+	main._ready()
+	main._clear_all_units()
+	main.runtime_resource = {1: 0.0, 2: 0.0}
+	main.terrain_mechanism_economy_rate_timers = {1: 0.0, 2: 0.0}
+	main.terrain_mechanism_economy_rate_mults = {1: 1.0, 2: 1.0}
+	main.battle_terrain_runtime_snapshot = _economy_snapshot()
+
+	var stats := {
+		"health": 100,
+		"max_health": 100,
+		"mass": 10.0,
+		"radius": 0.2,
+		"barrier_map_tiles": [
+			{
+				"index": 0,
+				"tile_id": "economy-trigger",
+				"local_ring": 0.0,
+				"local_lane": 0.0,
+				"radius": 0.14,
+				"length": 0.28,
+				"orientation": "horizontal",
+				"shape": "barrier_tile",
+				"material_class": "barrier_wall",
+				"terrain_policy": {
+					"mechanism_kinds": ["mechanism"],
+					"radius": 0.25,
+				},
+			},
+		],
+	}
+	var barrier = main._create_unit(1, "barrier", stats, "P1 Economy Mechanism Barrier", 14.0, 0.0)
+	main._assign_unit_role(barrier, "barrier")
+
+	if not _expect(_nearly_equal(float(main.terrain_mechanism_economy_rate_timers.get(1, 0.0)), 2.0), "Economy mechanism should arm P1 economy timer: %s" % str(main.terrain_mechanism_economy_rate_timers)):
+		return
+	if not _expect(_nearly_equal(float(main.terrain_mechanism_economy_rate_mults.get(1, 1.0)), 1.4), "Economy mechanism should arm P1 economy multiplier: %s" % str(main.terrain_mechanism_economy_rate_mults)):
+		return
+	if not _expect(_nearly_equal(float(main.terrain_mechanism_economy_rate_timers.get(2, 0.0)), 0.0) and _nearly_equal(float(main.terrain_mechanism_economy_rate_mults.get(2, 1.0)), 1.0), "Economy mechanism should not affect P2: timers=%s mults=%s" % [str(main.terrain_mechanism_economy_rate_timers), str(main.terrain_mechanism_economy_rate_mults)]):
+		return
+	var base_gain := main._resource_gain_for_player(2, 1.0)
+	var boosted_gain := main._resource_gain_for_player(1, 1.0)
+	if not _expect(_nearly_equal(boosted_gain, base_gain * 1.4), "Economy mechanism should multiply owner gain: boosted=%.2f base=%.2f" % [boosted_gain, base_gain]):
+		return
+	main._update_terrain_mechanism_economy_rate_modifiers(0.5)
+	if not _expect(_nearly_equal(float(main.terrain_mechanism_economy_rate_timers.get(1, 0.0)), 1.5), "Economy timer should decay after tick: %s" % str(main.terrain_mechanism_economy_rate_timers)):
+		return
+	main._update_terrain_mechanism_economy_rate_modifiers(2.0)
+	if not _expect(_nearly_equal(float(main.terrain_mechanism_economy_rate_timers.get(1, 0.0)), 0.0) and _nearly_equal(float(main.terrain_mechanism_economy_rate_mults.get(1, 1.0)), 1.0), "Economy timer should reset multiplier when expired: timers=%s mults=%s" % [str(main.terrain_mechanism_economy_rate_timers), str(main.terrain_mechanism_economy_rate_mults)]):
+		return
+	if not _expect(int(main._battle_terrain_runtime_snapshot().get("version", 0)) == 1, "Economy-only mechanism should not change terrain snapshot version"):
+		return
+	var state_intents: Array = Array(barrier.get_meta("barrier_terrain_arena_state_intents", []))
+	if not _expect(_has_action(state_intents, "trigger_arena_mechanism", "economy-switch"), "Runtime barrier should record economy mechanism state intent: %s" % str(state_intents)):
+		return
+	var economy_intent: Dictionary = Dictionary(state_intents[0])
+	if not _expect(String(economy_intent.get("runtime_effect", "")) == "economy_rate_pulse", "Economy mechanism should record runtime effect: %s" % str(economy_intent)):
+		return
+	if not _expect(_nearly_equal(float(economy_intent.get("economy_rate_mult", 0.0)), 1.4) and _nearly_equal(float(economy_intent.get("economy_rate_duration", 0.0)), 2.0), "Economy mechanism should record multiplier and duration: %s" % str(economy_intent)):
+		return
+	if not _expect(Array(economy_intent.get("target_players", [])).has(1), "Economy mechanism should target owner player: %s" % str(economy_intent)):
+		return
+	var before: Dictionary = Dictionary(economy_intent.get("economy_rate_before", {}))
+	var after: Dictionary = Dictionary(economy_intent.get("economy_rate_after", {}))
+	var before_p1: Dictionary = Dictionary(before.get(1, {}))
+	var after_p1: Dictionary = Dictionary(after.get(1, {}))
+	if not _expect(_nearly_equal(float(before_p1.get("timer", -1.0)), 0.0) and _nearly_equal(float(before_p1.get("multiplier", 0.0)), 1.0) and _nearly_equal(float(after_p1.get("timer", 0.0)), 2.0) and _nearly_equal(float(after_p1.get("multiplier", 0.0)), 1.4), "Economy mechanism should record before/after state: %s" % str(economy_intent)):
+		return
+
+
 func _candidate_has_feature(candidates: Array, feature_id: String) -> bool:
 	for raw_candidate in candidates:
 		if raw_candidate is Dictionary and String(Dictionary(raw_candidate).get("feature_id", "")) == feature_id:
@@ -762,6 +862,7 @@ func _init() -> void:
 		"_terrain_mechanism_force_pulse_intent",
 		"_terrain_mechanism_damage_pulse_intent",
 		"_terrain_mechanism_status_pulse_intent",
+		"_terrain_mechanism_economy_rate_pulse_intent",
 		"trigger_arena_mechanism",
 	]:
 		if not source.contains(token):
@@ -775,5 +876,6 @@ func _init() -> void:
 	_check_runtime_mechanism_force_pulse()
 	_check_runtime_mechanism_damage_pulse()
 	_check_runtime_mechanism_status_pulse()
+	_check_runtime_mechanism_economy_rate_pulse()
 	print("TERRAIN_MECHANISM_STATE_PROBE ok")
 	quit(0)

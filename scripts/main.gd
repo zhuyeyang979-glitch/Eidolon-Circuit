@@ -1588,6 +1588,8 @@ var team_custom_colors := {
 }
 var runtime_resource := {}
 var victory_points := {}
+var terrain_mechanism_economy_rate_timers := {1: 0.0, 2: 0.0}
+var terrain_mechanism_economy_rate_mults := {1: 1.0, 2: 1.0}
 var star_soul_runtime_state := {}
 var active_star_soul_units: Array = []
 var star_soul_bp_model := {}
@@ -2945,6 +2947,8 @@ func _initialize_state() -> void:
 	}
 	runtime_resource = {1: RUNTIME_START_RESOURCE, 2: RUNTIME_START_RESOURCE}
 	victory_points = {1: 0, 2: 0}
+	terrain_mechanism_economy_rate_timers = {1: 0.0, 2: 0.0}
+	terrain_mechanism_economy_rate_mults = {1: 1.0, 2: 1.0}
 	star_soul_runtime_state = {}
 	active_star_soul_units = []
 	star_soul_bp_model = {}
@@ -11579,6 +11583,8 @@ func _begin_battle(mode: String, preloaded: bool = false, reason: String = "") -
 	spectator_view_mode = SPECTATOR_VIEW_MID
 	runtime_resource = {1: RUNTIME_START_RESOURCE, 2: RUNTIME_START_RESOURCE}
 	victory_points = {1: 0, 2: 0}
+	terrain_mechanism_economy_rate_timers = {1: 0.0, 2: 0.0}
+	terrain_mechanism_economy_rate_mults = {1: 1.0, 2: 1.0}
 	_start_star_soul_runtime_for_battle(mode)
 	portal_index = {1: 3, 2: 4}
 	terrain_portal_overrides = _empty_terrain_portal_overrides()
@@ -26859,6 +26865,7 @@ func _tick_battle_simulation(delta: float, _input_frame: Dictionary = {}) -> voi
 				runtime_resource[1] = float(runtime_resource[1]) + _resource_gain_for_player(1, delta)
 				if battle_mode != MODE_TRAINING:
 					runtime_resource[2] = float(runtime_resource[2]) + _resource_gain_for_player(2, delta)
+				_update_terrain_mechanism_economy_rate_modifiers(delta)
 				_tick_sortie_price_discounts(delta)
 				_apply_lease_costs(delta)
 				_apply_annuity_income(delta)
@@ -26936,7 +26943,39 @@ func _refresh_battle_camera_projection_now() -> void:
 
 
 func _resource_gain_for_player(player_id: int, delta: float) -> float:
-	return RESOURCE_GAIN_PER_SECOND * maxf(0.0, delta) * _star_soul_resource_rate_multiplier(player_id)
+	return RESOURCE_GAIN_PER_SECOND * maxf(0.0, delta) * _star_soul_resource_rate_multiplier(player_id) * _terrain_mechanism_economy_rate_delta_multiplier(player_id, delta)
+
+
+func _update_terrain_mechanism_economy_rate_modifiers(delta: float) -> void:
+	var tick := maxf(0.0, delta)
+	for player_id in [1, 2]:
+		var timer := maxf(0.0, float(terrain_mechanism_economy_rate_timers.get(player_id, 0.0)) - tick)
+		if timer <= 0.0001:
+			terrain_mechanism_economy_rate_timers[player_id] = 0.0
+			terrain_mechanism_economy_rate_mults[player_id] = 1.0
+		else:
+			terrain_mechanism_economy_rate_timers[player_id] = timer
+
+
+func _terrain_mechanism_economy_rate_multiplier(player_id: int) -> float:
+	var owner := clampi(player_id, 1, 2)
+	if float(terrain_mechanism_economy_rate_timers.get(owner, 0.0)) <= 0.0:
+		return 1.0
+	return maxf(0.0, float(terrain_mechanism_economy_rate_mults.get(owner, 1.0)))
+
+
+func _terrain_mechanism_economy_rate_delta_multiplier(player_id: int, delta: float) -> float:
+	var tick := maxf(0.0, delta)
+	if tick <= 0.0:
+		return _terrain_mechanism_economy_rate_multiplier(player_id)
+	var owner := clampi(player_id, 1, 2)
+	var timer := maxf(0.0, float(terrain_mechanism_economy_rate_timers.get(owner, 0.0)))
+	if timer <= 0.0:
+		return 1.0
+	var active_delta := minf(tick, timer)
+	var inactive_delta := maxf(0.0, tick - active_delta)
+	var active_mult := _terrain_mechanism_economy_rate_multiplier(owner)
+	return ((active_delta * active_mult) + inactive_delta) / tick
 
 
 func _star_soul_resource_rate_multiplier(player_id: int) -> float:
@@ -30853,6 +30892,9 @@ func _terrain_mechanism_runtime_effect_intents(owner_id: int, mechanism_feature:
 	var resource_intent := _terrain_mechanism_resource_pulse_intent(owner_id, mechanism_feature, intent)
 	if not resource_intent.is_empty():
 		result.append(resource_intent)
+	var economy_intent := _terrain_mechanism_economy_rate_pulse_intent(owner_id, mechanism_feature, intent)
+	if not economy_intent.is_empty():
+		result.append(economy_intent)
 	var thermal_intent := _terrain_mechanism_thermal_pulse_intent(owner_id, mechanism_feature, intent)
 	if not thermal_intent.is_empty():
 		result.append(thermal_intent)
@@ -30894,6 +30936,53 @@ func _terrain_mechanism_resource_pulse_intent(owner_id: int, mechanism_feature: 
 	state_intent["target_players"] = players.duplicate(true)
 	state_intent["resource_before"] = before
 	state_intent["resource_after"] = after
+	state_intent["snapshot_changed"] = false
+	return state_intent
+
+
+func _terrain_mechanism_economy_rate_pulse_intent(owner_id: int, mechanism_feature: Dictionary, intent: Dictionary) -> Dictionary:
+	var metadata: Dictionary = Dictionary(mechanism_feature.get("metadata", {}))
+	var economy_rate_mult := 1.0
+	for key in ["economy_rate_mult", "economy_rate_pulse", "economy_pulse", "economy_mult", "resource_rate_mult", "income_rate_mult", "owner_economy_rate_mult", "star_soul_economy_rate_mult", "star_soul_owner_economy_rate_mult"]:
+		if metadata.has(key):
+			economy_rate_mult = float(metadata.get(key, 1.0))
+			break
+	if absf(economy_rate_mult - 1.0) <= 0.0001:
+		return {}
+	var duration := 10.0
+	for key in ["economy_rate_duration", "economy_duration", "resource_rate_duration", "income_rate_duration", "duration"]:
+		if metadata.has(key):
+			duration = float(metadata.get(key, 10.0))
+			break
+	duration = maxf(0.05, duration)
+	var players := _terrain_mechanism_target_players(owner_id, metadata, intent, "economy")
+	if players.is_empty():
+		return {}
+	var applied_mult := maxf(0.0, economy_rate_mult)
+	var before: Dictionary = {}
+	var after: Dictionary = {}
+	for player_id in players:
+		var player := clampi(int(player_id), 1, 2)
+		before[player] = {
+			"timer": float(terrain_mechanism_economy_rate_timers.get(player, 0.0)),
+			"multiplier": _terrain_mechanism_economy_rate_multiplier(player),
+		}
+		terrain_mechanism_economy_rate_timers[player] = duration
+		terrain_mechanism_economy_rate_mults[player] = applied_mult
+		after[player] = {
+			"timer": duration,
+			"multiplier": applied_mult,
+		}
+	var state_intent := intent.duplicate(true)
+	state_intent["action"] = "trigger_arena_mechanism"
+	state_intent["mechanism_name"] = String(mechanism_feature.get("name", mechanism_feature.get("feature_id", "")))
+	state_intent["mechanism_effect"] = _terrain_runtime_token(metadata.get("mechanism_effect", metadata.get("effect", "economy_rate_pulse")))
+	state_intent["runtime_effect"] = "economy_rate_pulse"
+	state_intent["economy_rate_mult"] = applied_mult
+	state_intent["economy_rate_duration"] = duration
+	state_intent["target_players"] = players.duplicate(true)
+	state_intent["economy_rate_before"] = before
+	state_intent["economy_rate_after"] = after
 	state_intent["snapshot_changed"] = false
 	return state_intent
 
