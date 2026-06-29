@@ -35,6 +35,7 @@
     "terrain_path_planning_probe",
     "terrain_destructible_state_probe",
     "terrain_portal_mechanism_probe",
+    "terrain_mechanism_state_probe",
     "authored_arena_terrain_runtime_probe",
     "barrier_terrain_map_independent_save_probe",
     "barrier_terrain_editor_preview_probe",

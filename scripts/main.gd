@@ -30625,10 +30625,16 @@ func _apply_barrier_terrain_arena_state(barrier, deployment_intents: Array) -> v
 			var feature := _terrain_feature_by_id(snapshot, String(intent.get("feature_id", "")))
 			if feature.is_empty():
 				continue
-			var state_intent := intent.duplicate(true)
-			state_intent["mechanism_name"] = String(feature.get("name", feature.get("feature_id", "")))
-			state_intent["action"] = "trigger_arena_mechanism"
-			state_intents.append(state_intent)
+			var result := _terrain_state_apply_mechanism_intent(features, feature, intent)
+			if result.is_empty():
+				var state_intent := intent.duplicate(true)
+				state_intent["mechanism_name"] = String(feature.get("name", feature.get("feature_id", "")))
+				state_intent["action"] = "trigger_arena_mechanism"
+				state_intents.append(state_intent)
+				continue
+			features = Array(result.get("features", features))
+			snapshot_changed = true
+			state_intents.append(Dictionary(result.get("state_intent", {})).duplicate(true))
 	barrier.set_meta("barrier_terrain_arena_state_intents", state_intents)
 	if state_intents.is_empty():
 		return
@@ -30657,6 +30663,93 @@ func _terrain_state_apply_deployment_intent(features: Array, intent: Dictionary)
 		if action == "breach_terrain_feature":
 			return _terrain_state_breach_feature(features, i, feature, intent)
 	return {}
+
+
+func _terrain_state_apply_mechanism_intent(features: Array, mechanism_feature: Dictionary, intent: Dictionary) -> Dictionary:
+	var metadata: Dictionary = Dictionary(mechanism_feature.get("metadata", {}))
+	var effect := _terrain_runtime_token(metadata.get("mechanism_effect", metadata.get("effect", "")))
+	if effect == "" and (metadata.has("restore_features") or metadata.has("add_features") or metadata.has("remove_feature_ids")):
+		effect = "terrain_transform"
+	if effect == "" or effect == "none":
+		return {}
+	var next_features: Array = features.duplicate(true)
+	var removed_ids := _terrain_state_remove_feature_ids(next_features, metadata.get("remove_feature_ids", []))
+	var restored_ids := _terrain_state_upsert_features(next_features, metadata.get("restore_features", []))
+	var added_ids := _terrain_state_upsert_features(next_features, metadata.get("add_features", []))
+	if removed_ids.is_empty() and restored_ids.is_empty() and added_ids.is_empty():
+		return {}
+	var state_intent := intent.duplicate(true)
+	state_intent["action"] = "trigger_arena_mechanism"
+	state_intent["mechanism_name"] = String(mechanism_feature.get("name", mechanism_feature.get("feature_id", "")))
+	state_intent["mechanism_effect"] = effect
+	state_intent["removed_feature_ids"] = removed_ids.duplicate(true)
+	state_intent["restored_feature_ids"] = restored_ids.duplicate(true)
+	state_intent["added_feature_ids"] = added_ids.duplicate(true)
+	state_intent["snapshot_changed"] = true
+	return {"features": next_features, "state_intent": state_intent}
+
+
+func _terrain_state_remove_feature_ids(features: Array, value) -> Array:
+	var ids := _terrain_state_feature_ids(value)
+	var removed: Array = []
+	for feature_id in ids:
+		for i in range(features.size() - 1, -1, -1):
+			if not (features[i] is Dictionary):
+				continue
+			var feature: Dictionary = features[i]
+			if String(feature.get("feature_id", "")) != String(feature_id):
+				continue
+			features.remove_at(i)
+			removed.append(String(feature_id))
+			break
+	return removed
+
+
+func _terrain_state_upsert_features(features: Array, value) -> Array:
+	var changed_ids: Array = []
+	var raw_features: Array = []
+	if value is Dictionary:
+		raw_features = [value]
+	elif value is Array:
+		raw_features = Array(value)
+	for raw_feature in raw_features:
+		if not (raw_feature is Dictionary):
+			continue
+		var normalized: Dictionary = _battle_terrain_service().normalize_feature(Dictionary(raw_feature), features.size())
+		var feature_id := String(normalized.get("feature_id", ""))
+		if feature_id == "":
+			continue
+		var existing_index := _terrain_state_feature_index(features, feature_id)
+		if existing_index >= 0:
+			features[existing_index] = normalized
+		else:
+			features.append(normalized)
+		if not changed_ids.has(feature_id):
+			changed_ids.append(feature_id)
+	return changed_ids
+
+
+func _terrain_state_feature_index(features: Array, feature_id: String) -> int:
+	for i in range(features.size()):
+		if features[i] is Dictionary and String(Dictionary(features[i]).get("feature_id", "")) == feature_id:
+			return i
+	return -1
+
+
+func _terrain_state_feature_ids(value) -> Array:
+	var result: Array = []
+	if value == null:
+		return result
+	if value is Array:
+		for item in value:
+			var feature_id := String(item).strip_edges()
+			if feature_id != "" and not result.has(feature_id):
+				result.append(feature_id)
+	else:
+		var feature_id := String(value).strip_edges()
+		if feature_id != "":
+			result.append(feature_id)
+	return result
 
 
 func _terrain_state_reinforce_feature(features: Array, feature_index: int, feature: Dictionary, intent: Dictionary) -> Dictionary:
@@ -30727,9 +30820,13 @@ func _terrain_feature_runtime_max_hp(feature: Dictionary, fallback_hp: float) ->
 
 
 func _append_unique_terrain_runtime_token(tokens: Array, value: String) -> void:
-	var token := value.strip_edges().to_lower().replace(" ", "_").replace("-", "_")
+	var token := _terrain_runtime_token(value)
 	if token != "" and not tokens.has(token):
 		tokens.append(token)
+
+
+func _terrain_runtime_token(value) -> String:
+	return String(value).strip_edges().to_lower().replace(" ", "_").replace("-", "_")
 
 
 func _barrier_has_visible_tile(barrier) -> bool:
