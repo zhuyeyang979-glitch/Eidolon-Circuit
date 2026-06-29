@@ -1,6 +1,8 @@
 extends RefCounted
 class_name BattleInputService
 
+const INPUT_FRAME_SCHEMA_VERSION := 1
+
 
 func battle_action_names(prefixes: Array, attack_group_count: int) -> Array:
 	var actions: Array = ["battle_pause"]
@@ -107,6 +109,63 @@ func consume_edges_once(input_frame: Dictionary, consume_edges: bool) -> Diction
 	}
 
 
+func canonical_input_frame(input_frame: Dictionary, action_names: Array = []) -> Dictionary:
+	var allowlist := _action_allowlist(action_names)
+	return {
+		"schema_version": INPUT_FRAME_SCHEMA_VERSION,
+		"pressed": _sorted_edge_action_names(input_frame.get("pressed", {}), allowlist),
+		"released": _sorted_edge_action_names(input_frame.get("released", {}), allowlist),
+	}
+
+
+func input_frame_from_canonical(canonical_frame: Dictionary) -> Dictionary:
+	return {
+		"pressed": _edge_dict_from_tokens(canonical_frame.get("pressed", [])),
+		"released": _edge_dict_from_tokens(canonical_frame.get("released", [])),
+	}
+
+
+func serialize_input_frame(input_frame: Dictionary, action_names: Array = []) -> String:
+	return JSON.stringify(canonical_input_frame(input_frame, action_names))
+
+
+func deserialize_input_frame(serialized_frame: String) -> Dictionary:
+	var json := JSON.new()
+	if json.parse(serialized_frame) != OK:
+		return {"pressed": {}, "released": {}}
+	var parsed = json.get_data()
+	if not (parsed is Dictionary):
+		return {"pressed": {}, "released": {}}
+	return input_frame_from_canonical(Dictionary(parsed))
+
+
+func replay_input_frame_payload(mode: String, ai_seat: int, runtime_menu_visible: bool, input_frame: Dictionary, action_names: Array = []) -> Dictionary:
+	var normalized_mode := mode.strip_edges()
+	var normalized_seat := clampi(ai_seat, 1, 3)
+	return {
+		"schema_version": INPUT_FRAME_SCHEMA_VERSION,
+		"mode": normalized_mode,
+		"ai_seat": normalized_seat,
+		"runtime_menu_visible": runtime_menu_visible,
+		"control_route": _canonical_control_route(battle_control_routes(normalized_mode, normalized_seat, runtime_menu_visible)),
+		"input_frame": canonical_input_frame(input_frame, action_names),
+	}
+
+
+func serialize_replay_input_frame_payload(payload: Dictionary) -> String:
+	return JSON.stringify(_canonical_replay_input_frame_payload(payload))
+
+
+func deserialize_replay_input_frame_payload(serialized_payload: String) -> Dictionary:
+	var json := JSON.new()
+	if json.parse(serialized_payload) != OK:
+		return {}
+	var parsed = json.get_data()
+	if not (parsed is Dictionary):
+		return {}
+	return _canonical_replay_input_frame_payload(Dictionary(parsed))
+
+
 func action_just_pressed(action_name: String, frame_state: Dictionary, fallback_fn: Callable) -> bool:
 	if not bool(frame_state.get("frame_active", false)):
 		return bool(fallback_fn.call(action_name)) if fallback_fn.is_valid() else false
@@ -197,6 +256,88 @@ func spectator_input_intent(prefix: String, input_vector: Vector2, pressed_fn: C
 	elif _pressed(pressed_fn, "%s_attack_4" % prefix):
 		intent["view_mode"] = "free"
 	return intent
+
+
+func _canonical_replay_input_frame_payload(payload: Dictionary) -> Dictionary:
+	var mode := String(payload.get("mode", "")).strip_edges()
+	var ai_seat := clampi(int(payload.get("ai_seat", 1)), 1, 3)
+	var runtime_menu_visible := bool(payload.get("runtime_menu_visible", false))
+	var input_frame := Dictionary(payload.get("input_frame", {})) if payload.get("input_frame", {}) is Dictionary else {}
+	return {
+		"schema_version": INPUT_FRAME_SCHEMA_VERSION,
+		"mode": mode,
+		"ai_seat": ai_seat,
+		"runtime_menu_visible": runtime_menu_visible,
+		"control_route": _canonical_control_route(payload.get("control_route", battle_control_routes(mode, ai_seat, runtime_menu_visible))),
+		"input_frame": canonical_input_frame(input_frame),
+	}
+
+
+func _canonical_control_route(route_value) -> Dictionary:
+	var route := Dictionary(route_value) if route_value is Dictionary else {}
+	var action := String(route.get("action", "none"))
+	var result := {"action": action}
+	if route.has("prefix"):
+		result["prefix"] = String(route.get("prefix", ""))
+	var routes: Array = []
+	for raw_route in Array(route.get("routes", [])):
+		if not (raw_route is Dictionary):
+			continue
+		var player_route: Dictionary = Dictionary(raw_route)
+		routes.append({
+			"player_id": int(player_route.get("player_id", 0)),
+			"prefix": String(player_route.get("prefix", "")),
+		})
+	if not routes.is_empty():
+		result["routes"] = routes
+	return result
+
+
+func _action_allowlist(action_names: Array) -> Dictionary:
+	var allowlist := {}
+	for raw_action_name in action_names:
+		var action_name := String(raw_action_name)
+		if action_name != "":
+			allowlist[action_name] = true
+	return allowlist
+
+
+func _sorted_edge_action_names(edge_source, allowlist: Dictionary) -> Array:
+	var actions: Array = []
+	if edge_source is Dictionary:
+		for raw_action_name in Dictionary(edge_source).keys():
+			var action_name := String(raw_action_name)
+			if action_name == "":
+				continue
+			if not bool(Dictionary(edge_source).get(raw_action_name, false)):
+				continue
+			if not allowlist.is_empty() and not bool(allowlist.get(action_name, false)):
+				continue
+			actions.append(action_name)
+	elif edge_source is Array:
+		for raw_action_name in Array(edge_source):
+			var action_name := String(raw_action_name)
+			if action_name == "":
+				continue
+			if not allowlist.is_empty() and not bool(allowlist.get(action_name, false)):
+				continue
+			actions.append(action_name)
+	actions.sort()
+	var unique_actions: Array = []
+	var seen := {}
+	for action_name in actions:
+		if bool(seen.get(action_name, false)):
+			continue
+		seen[action_name] = true
+		unique_actions.append(action_name)
+	return unique_actions
+
+
+func _edge_dict_from_tokens(edge_source) -> Dictionary:
+	var result := {}
+	for action_name in _sorted_edge_action_names(edge_source, {}):
+		result[String(action_name)] = true
+	return result
 
 
 func _pressed(pressed_fn: Callable, action_name: String) -> bool:

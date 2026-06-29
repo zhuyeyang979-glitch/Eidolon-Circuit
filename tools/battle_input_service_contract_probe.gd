@@ -23,6 +23,13 @@ func _init() -> void:
 		"battle_action_names",
 		"capture_edge_frame",
 		"consume_edges_once",
+		"canonical_input_frame",
+		"input_frame_from_canonical",
+		"serialize_input_frame",
+		"deserialize_input_frame",
+		"replay_input_frame_payload",
+		"serialize_replay_input_frame_payload",
+		"deserialize_replay_input_frame_payload",
 		"action_just_pressed",
 		"action_just_released",
 		"battle_control_routes",
@@ -35,7 +42,7 @@ func _init() -> void:
 		if service_source.find(token) < 0:
 			_fail("BattleInputService missing token: %s" % token)
 			return
-	for forbidden in ["Input.", "FileAccess", "DirAccess", "JSON.parse_string", "Button", "extends Control", "Control.new", "_begin_battle", "_summon_role", "_toggle_battle_runtime_menu", "active_units"]:
+	for forbidden in ["Input.", "FileAccess", "DirAccess", "Button", "extends Control", "Control.new", "_begin_battle", "_summon_role", "_toggle_battle_runtime_menu", "active_units"]:
 		if service_source.find(forbidden) >= 0:
 			_fail("BattleInputService should stay pure; found forbidden token: %s" % forbidden)
 			return

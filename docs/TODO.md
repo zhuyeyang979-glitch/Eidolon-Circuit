@@ -48,9 +48,10 @@ Status: planned after the local two-player formal battle feels complete.
 
 - Prioritize local two-player formal battle first: two controllers, deterministic round start, clear seat ownership, stable resource reset, and readable post-match state.
 - Preserve network-ready interfaces while keeping implementation local: fixed battle tick, deterministic input frames, replay seed capture, seat-to-player abstraction, and a battle-start payload that can later accept remote inputs.
+- `BattleInputService` now exposes deterministic input-frame canonicalization, JSON serialization/deserialization, and a replay payload that carries the current seat-to-player control route for local PVP, AI seat, spectator, and runtime-menu cases.
 - Keep computer-controlled matches as local authored-rule opponents for testing and accessibility; they are not a replacement for the local versus priority.
 - Defer matchmaking, lobby, rollback, reconnection, anti-cheat, and cloud profile synchronization until local battle rules, team selection, and spectator behavior are stable.
-- Add future probes for identical local replay results, seat abstraction compatibility, and deterministic input-frame serialization before online work begins.
+- Add future probes for identical local replay results before online work begins; deterministic input-frame serialization and seat abstraction compatibility are now guarded by `tools/battle_input_frame_serialization_probe.gd`.
 
 ## Barrier-Terrain Integration
 
