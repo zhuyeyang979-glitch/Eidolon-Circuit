@@ -30820,7 +30820,7 @@ func _terrain_state_apply_deployment_intent(features: Array, intent: Dictionary)
 func _terrain_state_apply_mechanism_intent(features: Array, mechanism_feature: Dictionary, intent: Dictionary) -> Dictionary:
 	var metadata: Dictionary = Dictionary(mechanism_feature.get("metadata", {}))
 	var effect := _terrain_runtime_token(metadata.get("mechanism_effect", metadata.get("effect", "")))
-	if effect == "" and (metadata.has("restore_features") or metadata.has("add_features") or metadata.has("remove_feature_ids")):
+	if effect == "" and (metadata.has("restore_features") or metadata.has("add_features") or metadata.has("remove_feature_ids") or metadata.has("mutate_features") or metadata.has("feature_mutations")):
 		effect = "terrain_transform"
 	if effect == "" or effect == "none":
 		return {}
@@ -30828,7 +30828,8 @@ func _terrain_state_apply_mechanism_intent(features: Array, mechanism_feature: D
 	var removed_ids := _terrain_state_remove_feature_ids(next_features, metadata.get("remove_feature_ids", []))
 	var restored_ids := _terrain_state_upsert_features(next_features, metadata.get("restore_features", []))
 	var added_ids := _terrain_state_upsert_features(next_features, metadata.get("add_features", []))
-	if removed_ids.is_empty() and restored_ids.is_empty() and added_ids.is_empty():
+	var mutated_ids := _terrain_state_mutate_features(next_features, metadata.get("mutate_features", metadata.get("feature_mutations", [])))
+	if removed_ids.is_empty() and restored_ids.is_empty() and added_ids.is_empty() and mutated_ids.is_empty():
 		return {}
 	var state_intent := intent.duplicate(true)
 	state_intent["action"] = "trigger_arena_mechanism"
@@ -30837,6 +30838,7 @@ func _terrain_state_apply_mechanism_intent(features: Array, mechanism_feature: D
 	state_intent["removed_feature_ids"] = removed_ids.duplicate(true)
 	state_intent["restored_feature_ids"] = restored_ids.duplicate(true)
 	state_intent["added_feature_ids"] = added_ids.duplicate(true)
+	state_intent["mutated_feature_ids"] = mutated_ids.duplicate(true)
 	state_intent["snapshot_changed"] = true
 	return {"features": next_features, "state_intent": state_intent}
 
@@ -30879,6 +30881,77 @@ func _terrain_state_upsert_features(features: Array, value) -> Array:
 		if not changed_ids.has(feature_id):
 			changed_ids.append(feature_id)
 	return changed_ids
+
+
+func _terrain_state_mutate_features(features: Array, value) -> Array:
+	var changed_ids: Array = []
+	var mutations: Array = []
+	if value is Dictionary:
+		mutations = [value]
+	elif value is Array:
+		mutations = Array(value)
+	for raw_mutation in mutations:
+		if not (raw_mutation is Dictionary):
+			continue
+		var mutation: Dictionary = raw_mutation
+		var feature_id := String(mutation.get("feature_id", mutation.get("target_feature_id", mutation.get("id", "")))).strip_edges()
+		if feature_id == "":
+			continue
+		var feature_index := _terrain_state_feature_index(features, feature_id)
+		if feature_index < 0 or not (features[feature_index] is Dictionary):
+			continue
+		var feature: Dictionary = Dictionary(features[feature_index]).duplicate(true)
+		var set_values: Dictionary = Dictionary(mutation.get("set", {}))
+		for key in set_values.keys():
+			feature[key] = set_values[key]
+		for key in ["name", "terrain_kind", "kind", "collider", "orientation", "owner_id", "destructible", "anchor_points", "surface_tags", "effect_channels"]:
+			if mutation.has(key):
+				feature[key] = mutation[key]
+		if mutation.has("kind") and not mutation.has("terrain_kind"):
+			feature["terrain_kind"] = mutation["kind"]
+		feature["feature_id"] = feature_id
+		feature["surface_tags"] = _terrain_state_mutated_tokens(
+			feature.get("surface_tags", []),
+			mutation.get("add_surface_tags", mutation.get("add_tags", [])),
+			mutation.get("remove_surface_tags", mutation.get("remove_tags", []))
+		)
+		feature["effect_channels"] = _terrain_state_mutated_tokens(
+			feature.get("effect_channels", []),
+			mutation.get("add_effect_channels", mutation.get("add_channels", [])),
+			mutation.get("remove_effect_channels", mutation.get("remove_channels", []))
+		)
+		var feature_metadata: Dictionary = Dictionary(feature.get("metadata", {})).duplicate(true)
+		var metadata_patch: Dictionary = Dictionary(mutation.get("metadata", mutation.get("metadata_patch", {})))
+		for key in metadata_patch.keys():
+			feature_metadata[key] = metadata_patch[key]
+		for key in Array(mutation.get("remove_metadata_keys", [])):
+			feature_metadata.erase(String(key))
+		feature["metadata"] = feature_metadata
+		features[feature_index] = _battle_terrain_service().normalize_feature(feature, feature_index)
+		if not changed_ids.has(feature_id):
+			changed_ids.append(feature_id)
+	return changed_ids
+
+
+func _terrain_state_mutated_tokens(base_value, add_value, remove_value) -> Array:
+	var tokens := _terrain_state_token_list(base_value)
+	for token in _terrain_state_token_list(add_value):
+		_append_unique_terrain_runtime_token(tokens, String(token))
+	for token in _terrain_state_token_list(remove_value):
+		tokens.erase(_terrain_runtime_token(token))
+	return tokens
+
+
+func _terrain_state_token_list(value) -> Array:
+	var result: Array = []
+	if value == null:
+		return result
+	if value is Array:
+		for item in Array(value):
+			_append_unique_terrain_runtime_token(result, String(item))
+	else:
+		_append_unique_terrain_runtime_token(result, String(value))
+	return result
 
 
 func _terrain_state_feature_index(features: Array, feature_id: String) -> int:

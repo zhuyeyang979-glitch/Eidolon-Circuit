@@ -75,6 +75,51 @@ func _mechanism_snapshot() -> Dictionary:
 	})
 
 
+func _mutation_snapshot() -> Dictionary:
+	var terrain_service = BattleTerrainServiceScript.new()
+	return terrain_service.arena_snapshot({
+		"arena_id": "terrain_mechanism_mutation_probe",
+		"version": 1,
+		"features": [
+			{
+				"id": "dormant-vent-floor",
+				"name": "DORMANT VENT FLOOR",
+				"kind": "floor",
+				"collider": {"shape": "circle", "center": Vector2(7.25, 0.0), "radius": 0.5},
+				"orientation": Vector2(0.0, 1.0),
+				"surface_tags": ["floor", "dormant"],
+				"effect_channels": ["surface"],
+				"metadata": {"speed_mult": 1.0},
+			},
+			{
+				"id": "vent-arm-switch",
+				"name": "VENT ARM SWITCH",
+				"kind": "mechanism",
+				"collider": {"shape": "circle", "center": Vector2(8.0, 0.0), "radius": 0.42},
+				"surface_tags": ["scripted_mechanism"],
+				"effect_channels": ["scripted_mechanism"],
+				"metadata": {
+					"mechanism_effect": "arm_terrain_feature",
+					"mutate_features": [
+						{
+							"feature_id": "dormant-vent-floor",
+							"add_surface_tags": ["armed", "hazard"],
+							"remove_surface_tags": ["dormant"],
+							"add_effect_channels": ["hazard"],
+							"metadata": {
+								"speed_mult": 0.65,
+								"heat_rate": 9.0,
+								"damage_per_tick": 2,
+								"damage_interval": 0.05,
+							},
+						},
+					],
+				},
+			},
+		],
+	})
+
+
 func _check_pure_mechanism_intent() -> void:
 	var service = BarrierTerrainInteractionServiceScript.new()
 	var placement: Dictionary = service.barrier_placement_intent({
@@ -166,12 +211,90 @@ func _check_runtime_mechanism_state() -> void:
 		return
 
 
+func _check_runtime_mechanism_mutation() -> void:
+	var main = MainScene.new()
+	root.add_child(main)
+	main._ready()
+	main._clear_all_units()
+	main.battle_terrain_runtime_snapshot = _mutation_snapshot()
+
+	var before_snapshot: Dictionary = main._battle_terrain_runtime_snapshot()
+	var dormant := _feature_by_id(before_snapshot, "dormant-vent-floor")
+	if not _expect(not dormant.is_empty(), "Probe should start with dormant vent floor"):
+		return
+	if not _expect(not Array(dormant.get("surface_tags", [])).has("hazard"), "Dormant vent should start without hazard tag: %s" % str(dormant)):
+		return
+
+	var stats := {
+		"health": 100,
+		"max_health": 100,
+		"mass": 10.0,
+		"radius": 0.2,
+		"barrier_map_tiles": [
+			{
+				"index": 0,
+				"tile_id": "vent-arm-trigger",
+				"local_ring": 0.0,
+				"local_lane": 0.0,
+				"radius": 0.14,
+				"length": 0.28,
+				"orientation": "horizontal",
+				"shape": "barrier_tile",
+				"material_class": "barrier_wall",
+				"terrain_policy": {
+					"mechanism_kinds": ["mechanism"],
+					"radius": 0.25,
+				},
+			},
+		],
+	}
+	var barrier = main._create_unit(1, "barrier", stats, "P1 Arm Vent Mechanism Barrier", 8.0, 0.0)
+	main._assign_unit_role(barrier, "barrier")
+
+	var state_intents: Array = Array(barrier.get_meta("barrier_terrain_arena_state_intents", []))
+	if not _expect(_has_action(state_intents, "trigger_arena_mechanism", "vent-arm-switch"), "Runtime barrier should record mutation mechanism state intent: %s" % str(state_intents)):
+		return
+	var state_intent: Dictionary = Dictionary(state_intents[0])
+	if not _expect(Array(state_intent.get("mutated_feature_ids", [])).has("dormant-vent-floor"), "Mechanism state intent should record mutated floor: %s" % str(state_intent)):
+		return
+
+	var after_snapshot: Dictionary = main._battle_terrain_runtime_snapshot()
+	if not _expect(int(after_snapshot.get("version", 0)) == 2, "Mutation mechanism should increment terrain snapshot version: %s" % str(after_snapshot)):
+		return
+	var armed := _feature_by_id(after_snapshot, "dormant-vent-floor")
+	if not _expect(not armed.is_empty(), "Mutation mechanism should keep mutated feature: %s" % str(after_snapshot)):
+		return
+	if not _expect(Array(armed.get("surface_tags", [])).has("armed") and Array(armed.get("surface_tags", [])).has("hazard"), "Mutated feature should gain armed hazard tags: %s" % str(armed)):
+		return
+	if not _expect(not Array(armed.get("surface_tags", [])).has("dormant"), "Mutated feature should remove dormant tag: %s" % str(armed)):
+		return
+	if not _expect(Array(armed.get("effect_channels", [])).has("surface") and Array(armed.get("effect_channels", [])).has("hazard"), "Mutated feature should keep surface and gain hazard channels: %s" % str(armed)):
+		return
+	var armed_metadata: Dictionary = Dictionary(armed.get("metadata", {}))
+	if not _expect(float(armed_metadata.get("heat_rate", 0.0)) == 9.0 and int(armed_metadata.get("damage_per_tick", 0)) == 2, "Mutated feature should merge metadata: %s" % str(armed_metadata)):
+		return
+	var hazard_candidates: Array = main._terrain_hazard_candidates_for_runtime()
+	var surface_candidates: Array = main._terrain_surface_candidates_for_runtime()
+	if not _expect(_candidate_has_feature(hazard_candidates, "dormant-vent-floor"), "Mutated floor should feed hazard candidates: %s" % str(hazard_candidates)):
+		return
+	if not _expect(_candidate_has_feature(surface_candidates, "dormant-vent-floor"), "Mutated floor should remain a surface candidate: %s" % str(surface_candidates)):
+		return
+
+
+func _candidate_has_feature(candidates: Array, feature_id: String) -> bool:
+	for raw_candidate in candidates:
+		if raw_candidate is Dictionary and String(Dictionary(raw_candidate).get("feature_id", "")) == feature_id:
+			return true
+	return false
+
+
 func _init() -> void:
 	var source := FileAccess.get_file_as_string("res://scripts/main.gd")
 	for token in [
 		"_terrain_state_apply_mechanism_intent",
 		"_terrain_state_remove_feature_ids",
 		"_terrain_state_upsert_features",
+		"_terrain_state_mutate_features",
 		"trigger_arena_mechanism",
 	]:
 		if not source.contains(token):
@@ -179,5 +302,6 @@ func _init() -> void:
 			return
 	_check_pure_mechanism_intent()
 	_check_runtime_mechanism_state()
+	_check_runtime_mechanism_mutation()
 	print("TERRAIN_MECHANISM_STATE_PROBE ok")
 	quit(0)
