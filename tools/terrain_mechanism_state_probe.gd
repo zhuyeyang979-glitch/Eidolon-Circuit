@@ -143,6 +143,44 @@ func _resource_snapshot() -> Dictionary:
 	})
 
 
+func _thermal_snapshot() -> Dictionary:
+	var terrain_service = BattleTerrainServiceScript.new()
+	return terrain_service.arena_snapshot({
+		"arena_id": "terrain_mechanism_thermal_probe",
+		"version": 1,
+		"features": [
+			{
+				"id": "thermal-switch",
+				"name": "THERMAL SWITCH",
+				"kind": "mechanism",
+				"collider": {"shape": "circle", "center": Vector2(10.0, 0.0), "radius": 0.42},
+				"surface_tags": ["scripted_mechanism", "thermal"],
+				"effect_channels": ["scripted_mechanism"],
+				"metadata": {
+					"mechanism_effect": "thermal_pulse",
+					"heat_delta": 12.0,
+					"thermal_owner_scope": "enemy",
+				},
+			},
+		],
+	})
+
+
+func _spawn_hero(main, owner: int, name: String, ring: float, lane: float):
+	var stats := {
+		"name": name,
+		"health": 100,
+		"max_health": 100,
+		"mass": 12.0,
+		"radius": 0.18,
+		"heat_capacity": 100.0,
+		"speed": 1.0,
+	}
+	var hero = main._create_unit(owner, "hero", stats, name, ring, lane)
+	main._assign_unit_role(hero, "hero")
+	return hero
+
+
 func _check_pure_mechanism_intent() -> void:
 	var service = BarrierTerrainInteractionServiceScript.new()
 	var placement: Dictionary = service.barrier_placement_intent({
@@ -362,6 +400,67 @@ func _check_runtime_mechanism_resource_pulse() -> void:
 		return
 
 
+func _check_runtime_mechanism_thermal_pulse() -> void:
+	var main = MainScene.new()
+	root.add_child(main)
+	main._ready()
+	main._clear_all_units()
+	main.battle_terrain_runtime_snapshot = _thermal_snapshot()
+
+	var ally = _spawn_hero(main, 1, "P1 Thermal Ally", 9.5, 0.0)
+	ally.heat = 10.0
+	var enemy = _spawn_hero(main, 2, "P2 Thermal Enemy", 10.5, 0.0)
+	enemy.heat = 20.0
+	var stats := {
+		"health": 100,
+		"max_health": 100,
+		"mass": 10.0,
+		"radius": 0.2,
+		"barrier_map_tiles": [
+			{
+				"index": 0,
+				"tile_id": "thermal-trigger",
+				"local_ring": 0.0,
+				"local_lane": 0.0,
+				"radius": 0.14,
+				"length": 0.28,
+				"orientation": "horizontal",
+				"shape": "barrier_tile",
+				"material_class": "barrier_wall",
+				"terrain_policy": {
+					"mechanism_kinds": ["mechanism"],
+					"radius": 0.25,
+				},
+			},
+		],
+	}
+	var barrier = main._create_unit(1, "barrier", stats, "P1 Thermal Mechanism Barrier", 10.0, 0.0)
+	main._assign_unit_role(barrier, "barrier")
+
+	if not _expect(float(ally.heat) == 10.0, "Thermal mechanism should not heat owner ally: %.2f" % float(ally.heat)):
+		return
+	if not _expect(float(enemy.heat) == 32.0, "Thermal mechanism should heat enemy hero: %.2f" % float(enemy.heat)):
+		return
+	if not _expect(int(main._battle_terrain_runtime_snapshot().get("version", 0)) == 1, "Thermal-only mechanism should not change terrain snapshot version"):
+		return
+	var state_intents: Array = Array(barrier.get_meta("barrier_terrain_arena_state_intents", []))
+	if not _expect(_has_action(state_intents, "trigger_arena_mechanism", "thermal-switch"), "Runtime barrier should record thermal mechanism state intent: %s" % str(state_intents)):
+		return
+	var thermal_intent: Dictionary = Dictionary(state_intents[0])
+	if not _expect(String(thermal_intent.get("runtime_effect", "")) == "thermal_pulse", "Thermal mechanism should record runtime effect: %s" % str(thermal_intent)):
+		return
+	if not _expect(float(thermal_intent.get("heat_delta", 0.0)) == 12.0, "Thermal mechanism should record heat delta: %s" % str(thermal_intent)):
+		return
+	if not _expect(Array(thermal_intent.get("target_players", [])).has(2), "Thermal mechanism should target enemy player: %s" % str(thermal_intent)):
+		return
+	var affected: Array = Array(thermal_intent.get("affected_units", []))
+	if not _expect(affected.size() == 1 and int(Dictionary(affected[0]).get("owner_id", 0)) == 2 and String(Dictionary(affected[0]).get("role", "")) == "hero", "Thermal mechanism should record affected enemy hero only: %s" % str(thermal_intent)):
+		return
+	var affected_unit: Dictionary = Dictionary(affected[0])
+	if not _expect(float(affected_unit.get("heat_before", 0.0)) == 20.0 and float(affected_unit.get("heat_after", 0.0)) == 32.0, "Thermal mechanism should record heat before/after: %s" % str(affected_unit)):
+		return
+
+
 func _candidate_has_feature(candidates: Array, feature_id: String) -> bool:
 	for raw_candidate in candidates:
 		if raw_candidate is Dictionary and String(Dictionary(raw_candidate).get("feature_id", "")) == feature_id:
@@ -377,6 +476,7 @@ func _init() -> void:
 		"_terrain_state_upsert_features",
 		"_terrain_state_mutate_features",
 		"_terrain_mechanism_resource_pulse_intent",
+		"_terrain_mechanism_thermal_pulse_intent",
 		"trigger_arena_mechanism",
 	]:
 		if not source.contains(token):
@@ -386,5 +486,6 @@ func _init() -> void:
 	_check_runtime_mechanism_state()
 	_check_runtime_mechanism_mutation()
 	_check_runtime_mechanism_resource_pulse()
+	_check_runtime_mechanism_thermal_pulse()
 	print("TERRAIN_MECHANISM_STATE_PROBE ok")
 	quit(0)

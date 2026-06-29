@@ -30853,6 +30853,9 @@ func _terrain_mechanism_runtime_effect_intents(owner_id: int, mechanism_feature:
 	var resource_intent := _terrain_mechanism_resource_pulse_intent(owner_id, mechanism_feature, intent)
 	if not resource_intent.is_empty():
 		result.append(resource_intent)
+	var thermal_intent := _terrain_mechanism_thermal_pulse_intent(owner_id, mechanism_feature, intent)
+	if not thermal_intent.is_empty():
+		result.append(thermal_intent)
 	return result
 
 
@@ -30882,6 +30885,56 @@ func _terrain_mechanism_resource_pulse_intent(owner_id: int, mechanism_feature: 
 	state_intent["target_players"] = players.duplicate(true)
 	state_intent["resource_before"] = before
 	state_intent["resource_after"] = after
+	state_intent["snapshot_changed"] = false
+	return state_intent
+
+
+func _terrain_mechanism_thermal_pulse_intent(owner_id: int, mechanism_feature: Dictionary, intent: Dictionary) -> Dictionary:
+	var metadata: Dictionary = Dictionary(mechanism_feature.get("metadata", {}))
+	var heat_delta := float(metadata.get("heat_delta", metadata.get("thermal_delta", metadata.get("heat_pulse", 0.0))))
+	if absf(heat_delta) <= 0.0001 and metadata.has("cooling_delta"):
+		heat_delta = -maxf(0.0, float(metadata.get("cooling_delta", 0.0)))
+	if absf(heat_delta) <= 0.0001:
+		return {}
+	var players := _terrain_mechanism_target_players(owner_id, metadata, intent, "thermal")
+	if players.is_empty():
+		return {}
+	var center := _terrain_feature_center(mechanism_feature)
+	var radius := maxf(0.0, float(metadata.get("thermal_radius", metadata.get("effect_radius", 0.0))))
+	var clear_ratio := float(metadata.get("overheat_clear_ratio", metadata.get("clear_ratio", 0.42)))
+	var affected_units: Array = []
+	for unit in all_units:
+		if not _is_live_unit(unit) or not players.has(clampi(int(unit.owner_id), 1, 2)):
+			continue
+		if radius > 0.0:
+			var point := Vector2(float(unit.ring_pos), float(unit.lane))
+			if point.distance_to(center) > radius + float(unit.stats.get("radius", 0.2)):
+				continue
+		var heat_before := float(unit.heat) if unit.get("heat") != null else 0.0
+		if heat_delta > 0.0:
+			_add_unit_heat_event(unit, heat_delta, ["external", "terrain", "mechanism"], "terrain_mechanism")
+		else:
+			_cool_unit_heat(unit, -heat_delta, clear_ratio)
+		var heat_after := float(unit.heat) if unit.get("heat") != null else heat_before
+		if absf(heat_after - heat_before) <= 0.0001:
+			continue
+		affected_units.append({
+			"owner_id": int(unit.owner_id),
+			"role": String(unit.role),
+			"unit_name": String(unit.unit_name),
+			"heat_before": heat_before,
+			"heat_after": heat_after,
+		})
+	if affected_units.is_empty():
+		return {}
+	var state_intent := intent.duplicate(true)
+	state_intent["action"] = "trigger_arena_mechanism"
+	state_intent["mechanism_name"] = String(mechanism_feature.get("name", mechanism_feature.get("feature_id", "")))
+	state_intent["mechanism_effect"] = _terrain_runtime_token(metadata.get("mechanism_effect", metadata.get("effect", "thermal_pulse")))
+	state_intent["runtime_effect"] = "thermal_pulse"
+	state_intent["heat_delta"] = heat_delta
+	state_intent["target_players"] = players.duplicate(true)
+	state_intent["affected_units"] = affected_units
 	state_intent["snapshot_changed"] = false
 	return state_intent
 
