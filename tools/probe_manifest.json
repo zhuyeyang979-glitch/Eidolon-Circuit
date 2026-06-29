@@ -41,6 +41,7 @@
     "authored_arena_terrain_runtime_probe",
     "barrier_terrain_map_independent_save_probe",
     "barrier_terrain_editor_preview_probe",
+    "barrier_terrain_scout_preview_probe",
     "barrier_terrain_destruction_invalidation_probe",
     "barrier_terrain_entrypoint_replay_probe",
     "battle_map_occlusion_service_contract_probe",

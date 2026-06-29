@@ -274,7 +274,7 @@ Barrier ether now supports space-control logic:
 - `ETHER: DRAG NET` damps enemy velocity inside its area.
 - `ETHER: RIPOSTE MIRROR` pulses only when enemies enter its area.
 
-Barrier tiles currently act as player-deployed terrain-like objects: they can provide collision, projectile occlusion, walls, lanes, triggers, and local fields. The arena does not yet expose an independent authored-terrain layer, so barriers cannot currently attach to, read, transform, or inherit properties from native map terrain. This is a planned high-priority extension tracked in `docs/TODO.md`.
+Barrier tiles currently act as player-deployed terrain-like objects: they can provide collision, projectile occlusion, walls, lanes, triggers, and local fields. The default arena now also exposes independent authored terrain, and map-independent barrier `terrain_policy` rules can preview and resolve attachment, bridging, reinforcement, breach, portal, and scripted mechanism interactions against that arena. Editor boards and scout details surface these terrain outcomes without mutating saved barrier blueprints.
 
 The arena is now treated as a horizontal bullet-hell top-down strip: left and right wrap, top and bottom are the paper strip's width, and the camera eases around the ring while keeping both heroes readable.
 

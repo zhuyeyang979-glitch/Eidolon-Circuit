@@ -49264,6 +49264,68 @@ func _scout_sortie_control_text(player_id: int) -> String:
 	return "出 %d/%d  首 %s  %s" % [loadout.size(), _current_sortie_cap(), _role_short(String(starter.get("role", "hero"))), ok_text] if _ui_is_zh() else "OUT %d/%d  START %s  %s" % [loadout.size(), _current_sortie_cap(), _role_short(String(starter.get("role", "hero"))), ok_text]
 
 
+func _barrier_terrain_scout_preview_lines(unit_bp: Dictionary, context: Dictionary = {}) -> Array:
+	if String(unit_bp.get("role", "barrier")) != "barrier":
+		return []
+	var source_tiles: Array = Array(unit_bp.get("barrier_tiles", []))
+	if source_tiles.is_empty():
+		return []
+	var preview: Dictionary = _barrier_terrain_editor_preview(unit_bp, context)
+	var tiles: Array = Array(preview.get("tiles", []))
+	if tiles.is_empty():
+		return []
+	var outcome_counts := {}
+	for raw_tile in tiles:
+		if not (raw_tile is Dictionary):
+			continue
+		var tile_preview: Dictionary = Dictionary(raw_tile)
+		var placement: Dictionary = Dictionary(tile_preview.get("placement", {}))
+		var outcome := String(placement.get("outcome", "free"))
+		if outcome == "":
+			outcome = "free"
+		outcome_counts[outcome] = int(outcome_counts.get(outcome, 0)) + 1
+	var ordered_outcomes := ["attach", "bridge", "reinforce", "breach", "portal", "mechanism", "overlap", "replace", "blocked", "free"]
+	var count_bits: Array = []
+	for outcome in ordered_outcomes:
+		var count := int(outcome_counts.get(outcome, 0))
+		if count > 0:
+			count_bits.append("%s %d" % [outcome, count])
+	if count_bits.is_empty():
+		count_bits.append("free 0")
+	var lines: Array = []
+	var arena_id := String(preview.get("arena_id", ""))
+	if arena_id == "":
+		arena_id = "unknown_arena"
+	lines.append("地形预览：%s / %d块 / %s" % [arena_id, tiles.size(), "，".join(count_bits)] if _ui_is_zh() else "TERRAIN PREVIEW: %s / %d tiles / %s" % [arena_id, tiles.size(), ", ".join(count_bits)])
+	var limit := mini(tiles.size(), 4)
+	for i in range(limit):
+		if not (tiles[i] is Dictionary):
+			continue
+		var tile_preview: Dictionary = Dictionary(tiles[i])
+		var placement: Dictionary = Dictionary(tile_preview.get("placement", {}))
+		var outcome := String(placement.get("outcome", "free"))
+		if outcome == "":
+			outcome = "free"
+		var feature_id := String(placement.get("feature_id", ""))
+		if feature_id == "":
+			feature_id = "-"
+		var terrain_kind := String(placement.get("terrain_kind", ""))
+		if terrain_kind == "":
+			terrain_kind = "-"
+		var actions: Array = []
+		for raw_intent in Array(tile_preview.get("deployment_intents", [])):
+			if raw_intent is Dictionary:
+				var intent: Dictionary = Dictionary(raw_intent)
+				var action := String(intent.get("action", ""))
+				if action != "":
+					actions.append(action)
+		var action_text := "+".join(actions) if not actions.is_empty() else "no_deployment_intent"
+		lines.append("  T%02d %s %s %s / %s" % [int(tile_preview.get("tile_index", i)), outcome, terrain_kind, feature_id, action_text])
+	if tiles.size() > limit:
+		lines.append("  +%d terrain preview tiles" % [tiles.size() - limit])
+	return lines
+
+
 func _scout_unit_detail(player_id: int, entry: Dictionary) -> String:
 	var role_key := String(entry.get("role", "hero"))
 	var unit_index := int(entry.get("index", 0))
@@ -49381,6 +49443,7 @@ func _scout_unit_detail(player_id: int, entry: Dictionary) -> String:
 				])
 		if Array(stats.get("barrier_map_tiles", [])).size() > 0:
 			special_lines.append("BARRIER BLUEPRINT: %d separated tiles on %dx%d screen grid; max footprint %.1fx%.1f, unit HP is shared" % [Array(stats.get("barrier_map_tiles", [])).size(), int(stats.get("barrier_map_columns", BARRIER_MAP_COLUMNS)), int(stats.get("barrier_map_rows", BARRIER_MAP_ROWS)), float(stats.get("barrier_map_width", BARRIER_BLUEPRINT_WIDTH)), float(stats.get("barrier_map_height", BARRIER_BLUEPRINT_HEIGHT))])
+			special_lines.append_array(_barrier_terrain_scout_preview_lines(unit_bp))
 	if bool(stats.get("projectile", false)) or String(stats.get("projectile_style", "")) != "":
 		var projectile_behavior := String(stats.get("projectile_behavior", ""))
 		var projectile_note := ""
