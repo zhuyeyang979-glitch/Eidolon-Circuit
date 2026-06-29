@@ -52,7 +52,7 @@ Status: planned after the local two-player formal battle feels complete.
 - `BattleInputService` now also exposes a deterministic battle-start payload with replay seed, simulation Hz, sorted action names, current control route, and sorted remote-input slot placeholders for later remote-input handoff.
 - Keep computer-controlled matches as local authored-rule opponents for testing and accessibility; they are not a replacement for the local versus priority.
 - Defer matchmaking, lobby, rollback, reconnection, anti-cheat, and cloud profile synchronization until local battle rules, team selection, and spectator behavior are stable.
-- Local battle initial-state and short fixed-step repeatability are now guarded by `tools/local_battle_replay_consistency_probe.gd`; deterministic input-frame serialization, seat abstraction compatibility, and battle-start payload stability are guarded by `tools/battle_input_frame_serialization_probe.gd` and `tools/battle_start_payload_probe.gd`. Add broader full-match replay probes before online work begins.
+- Local initial-state/short-step repeatability is guarded by `tools/local_battle_replay_consistency_probe.gd`, and complete-lifecycle replay with deterministic start seeds, held/analog input frames, Star Soul spawning, and timeout resolution is guarded by `tools/battle_full_match_replay_probe.gd`. Input serialization, seat abstraction, and battle-start payload stability remain guarded by `tools/battle_input_frame_serialization_probe.gd` and `tools/battle_start_payload_probe.gd`. Add longer attack-heavy replay, desync diagnostics, rollback, and reconnect probes before online work begins.
 
 ## Barrier-Terrain Integration
 

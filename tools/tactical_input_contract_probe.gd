@@ -45,7 +45,9 @@ func _init() -> void:
 	_assert_contains("README", readme, "deploy through the selected portal")
 	_assert_not_contains("README", readme, "Cycle summon portal: `Q`")
 	var main_source := FileAccess.get_file_as_string("res://scripts/main.gd")
-	_assert_contains("main.gd", main_source, "Input.is_action_pressed(\"%s_cool\" % prefix)")
+	_assert_contains("main.gd", main_source, "_battle_action_pressed(\"%s_cool\" % prefix)")
+	_assert_contains("main.gd", main_source, "_battle_action_strength(\"%s_right\" % prefix)")
+	_assert_not_contains("main.gd", main_source, "if Input.is_action_pressed(\"%s_cool\" % prefix)")
 	_assert_contains("main.gd", main_source, "hero.manual_cool(delta)")
 
 	var service = BattleInputServiceScript.new()

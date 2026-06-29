@@ -1,7 +1,7 @@
 extends RefCounted
 class_name BattleInputService
 
-const INPUT_FRAME_SCHEMA_VERSION := 1
+const INPUT_FRAME_SCHEMA_VERSION := 2
 const BATTLE_START_PAYLOAD_SCHEMA_VERSION := 1
 
 
@@ -101,6 +101,18 @@ func capture_edge_frame(action_names: Array, pending_pressed: Dictionary, pendin
 	}
 
 
+func capture_input_frame(action_names: Array, pending_pressed: Dictionary, pending_released: Dictionary, just_pressed_fn: Callable, just_released_fn: Callable, strength_fn: Callable) -> Dictionary:
+	var frame := capture_edge_frame(action_names, pending_pressed, pending_released, just_pressed_fn, just_released_fn)
+	var strengths := {}
+	for raw_action in action_names:
+		var action_name := String(raw_action)
+		var action_strength := clampf(float(strength_fn.call(action_name)), 0.0, 1.0) if strength_fn.is_valid() else 0.0
+		if action_strength > 0.0001:
+			strengths[action_name] = action_strength
+	frame["strengths"] = strengths
+	return frame
+
+
 func consume_edges_once(input_frame: Dictionary, consume_edges: bool) -> Dictionary:
 	return {
 		"active_frame": input_frame.duplicate(true),
@@ -116,6 +128,7 @@ func canonical_input_frame(input_frame: Dictionary, action_names: Array = []) ->
 		"schema_version": INPUT_FRAME_SCHEMA_VERSION,
 		"pressed": _sorted_edge_action_names(input_frame.get("pressed", {}), allowlist),
 		"released": _sorted_edge_action_names(input_frame.get("released", {}), allowlist),
+		"strengths": _sorted_action_strengths(input_frame.get("strengths", {}), allowlist),
 	}
 
 
@@ -123,6 +136,7 @@ func input_frame_from_canonical(canonical_frame: Dictionary) -> Dictionary:
 	return {
 		"pressed": _edge_dict_from_tokens(canonical_frame.get("pressed", [])),
 		"released": _edge_dict_from_tokens(canonical_frame.get("released", [])),
+		"strengths": _strength_dict_from_tokens(canonical_frame.get("strengths", [])),
 	}
 
 
@@ -213,6 +227,30 @@ func action_just_released(action_name: String, frame_state: Dictionary, fallback
 	if not bool(frame_state.get("edges_enabled", false)):
 		return false
 	return bool(Dictionary(Dictionary(frame_state.get("active_frame", {})).get("released", {})).get(action_name, false))
+
+
+func action_pressed(action_name: String, frame_state: Dictionary, fallback_fn: Callable) -> bool:
+	if not bool(frame_state.get("frame_active", false)):
+		return bool(fallback_fn.call(action_name)) if fallback_fn.is_valid() else false
+	var active_frame := Dictionary(frame_state.get("active_frame", {}))
+	var strengths := Dictionary(active_frame.get("strengths", {}))
+	if strengths.has(action_name):
+		return float(strengths.get(action_name, 0.0)) > 0.0001
+	if bool(frame_state.get("edges_enabled", false)):
+		return bool(Dictionary(active_frame.get("pressed", {})).get(action_name, false))
+	return false
+
+
+func action_strength(action_name: String, frame_state: Dictionary, fallback_fn: Callable) -> float:
+	if not bool(frame_state.get("frame_active", false)):
+		return clampf(float(fallback_fn.call(action_name)), 0.0, 1.0) if fallback_fn.is_valid() else 0.0
+	var active_frame := Dictionary(frame_state.get("active_frame", {}))
+	var strengths := Dictionary(active_frame.get("strengths", {}))
+	if strengths.has(action_name):
+		return clampf(float(strengths.get(action_name, 0.0)), 0.0, 1.0)
+	if bool(frame_state.get("edges_enabled", false)) and bool(Dictionary(active_frame.get("pressed", {})).get(action_name, false)):
+		return 1.0
+	return 0.0
 
 
 func battle_control_routes(mode: String, ai_seat: int, runtime_menu_visible: bool) -> Dictionary:
@@ -427,10 +465,52 @@ func _sorted_edge_action_names(edge_source, allowlist: Dictionary) -> Array:
 	return unique_actions
 
 
+func _sorted_action_strengths(strength_source, allowlist: Dictionary) -> Array:
+	var strengths := {}
+	if strength_source is Dictionary:
+		for raw_action_name in Dictionary(strength_source).keys():
+			var action_name := String(raw_action_name)
+			if action_name == "" or (not allowlist.is_empty() and not bool(allowlist.get(action_name, false))):
+				continue
+			var value := clampf(float(Dictionary(strength_source).get(raw_action_name, 0.0)), 0.0, 1.0)
+			if value > 0.0001:
+				strengths[action_name] = value
+	elif strength_source is Array:
+		for raw_entry in Array(strength_source):
+			if not (raw_entry is Dictionary):
+				continue
+			var entry: Dictionary = Dictionary(raw_entry)
+			var action_name := String(entry.get("action", ""))
+			if action_name == "" or (not allowlist.is_empty() and not bool(allowlist.get(action_name, false))):
+				continue
+			var value := clampf(float(entry.get("strength", entry.get("value", 0.0))), 0.0, 1.0)
+			if value > 0.0001:
+				strengths[action_name] = value
+	var action_names: Array = strengths.keys()
+	action_names.sort()
+	var result: Array = []
+	for action_name in action_names:
+		result.append({"action": action_name, "strength": float(strengths[action_name])})
+	return result
+
+
 func _edge_dict_from_tokens(edge_source) -> Dictionary:
 	var result := {}
 	for action_name in _sorted_edge_action_names(edge_source, {}):
 		result[String(action_name)] = true
+	return result
+
+
+func _strength_dict_from_tokens(strength_source) -> Dictionary:
+	var result := {}
+	for raw_entry in Array(strength_source):
+		if not (raw_entry is Dictionary):
+			continue
+		var entry: Dictionary = Dictionary(raw_entry)
+		var action_name := String(entry.get("action", ""))
+		var value := clampf(float(entry.get("strength", entry.get("value", 0.0))), 0.0, 1.0)
+		if action_name != "" and value > 0.0001:
+			result[action_name] = value
 	return result
 
 

@@ -1568,6 +1568,7 @@ var battle_input_frame_active := false
 var battle_active_input_frame := {}
 var battle_pending_pressed_actions := {}
 var battle_pending_released_actions := {}
+var battle_replay_seed := 0
 var battle_presentation_active := false
 var battle_presentation_alpha := 1.0
 var battle_camera_snapshot_initialized := false
@@ -11570,6 +11571,7 @@ func _begin_battle(mode: String, preloaded: bool = false, reason: String = "") -
 	battle_active_input_frame = {}
 	battle_pending_pressed_actions.clear()
 	battle_pending_released_actions.clear()
+	battle_replay_seed = 0
 	battle_presentation_active = false
 	battle_presentation_alpha = 1.0
 	battle_camera_snapshot_initialized = false
@@ -11676,6 +11678,23 @@ func _begin_battle(mode: String, preloaded: bool = false, reason: String = "") -
 		_show_battle_message("PVP：双控制器启用。键盘保留为 P1 练习备用。" if _ui_is_zh() else "PVP: two controllers active. Keyboard remains P1 practice fallback.", 2.2)
 	_refresh_battle_camera_projection_now()
 	_update_battle_ui()
+
+
+func _begin_battle_from_start_payload(payload: Dictionary, preloaded: bool = false, reason: String = "") -> bool:
+	var canonical_payload := _battle_input_service().deserialize_battle_start_payload(_battle_input_service().serialize_battle_start_payload(payload))
+	if canonical_payload.is_empty():
+		return false
+	var mode := String(canonical_payload.get("mode", MODE_PVP))
+	var nav_reason := reason if reason != "" else "battle_replay:%s" % mode
+	if not preloaded and _should_queue_loading_transition(STATE_BATTLE):
+		queue_loading_transition(STATE_BATTLE, nav_reason, preload_battle_content(mode), Callable(self, "_begin_battle_from_start_payload").bind(canonical_payload, true, nav_reason))
+		return true
+	var replay_seed := int(canonical_payload.get("replay_seed", 0))
+	seed(replay_seed)
+	ai_battle_seat = clampi(int(canonical_payload.get("ai_seat", ai_battle_seat)), 1, 3)
+	_begin_battle(mode, preloaded, nav_reason)
+	battle_replay_seed = replay_seed
+	return game_state == STATE_BATTLE
 
 
 func _start_star_soul_runtime_for_battle(mode: String) -> void:
@@ -26026,7 +26045,7 @@ func _battle_input_action_names() -> Array:
 
 
 func _capture_battle_input_frame() -> Dictionary:
-	return _battle_input_service().capture_edge_frame(_battle_input_action_names(), battle_pending_pressed_actions, battle_pending_released_actions, Callable(self, "_input_action_just_pressed_for_service"), Callable(self, "_input_action_just_released_for_service"))
+	return _battle_input_service().capture_input_frame(_battle_input_action_names(), battle_pending_pressed_actions, battle_pending_released_actions, Callable(self, "_input_action_just_pressed_for_service"), Callable(self, "_input_action_just_released_for_service"), Callable(self, "_input_action_strength_for_service"))
 
 
 func _input_action_just_pressed_for_service(action_name: String) -> bool:
@@ -26035,6 +26054,14 @@ func _input_action_just_pressed_for_service(action_name: String) -> bool:
 
 func _input_action_just_released_for_service(action_name: String) -> bool:
 	return Input.is_action_just_released(action_name)
+
+
+func _input_action_pressed_for_service(action_name: String) -> bool:
+	return Input.is_action_pressed(action_name)
+
+
+func _input_action_strength_for_service(action_name: String) -> float:
+	return Input.get_action_strength(action_name)
 
 
 func _consume_battle_input_edges_once(input_frame: Dictionary, consume_edges: bool) -> void:
@@ -26053,6 +26080,14 @@ func _battle_action_just_pressed(action_name: String) -> bool:
 
 func _battle_action_just_released(action_name: String) -> bool:
 	return _battle_input_service().action_just_released(action_name, _battle_input_frame_state(), Callable(self, "_input_action_just_released_for_service"))
+
+
+func _battle_action_pressed(action_name: String) -> bool:
+	return _battle_input_service().action_pressed(action_name, _battle_input_frame_state(), Callable(self, "_input_action_pressed_for_service"))
+
+
+func _battle_action_strength(action_name: String) -> float:
+	return _battle_input_service().action_strength(action_name, _battle_input_frame_state(), Callable(self, "_input_action_strength_for_service"))
 
 
 func _battle_input_frame_state() -> Dictionary:
@@ -26814,6 +26849,14 @@ func _gun_activation_constants() -> Dictionary:
 
 
 func _tick_battle(delta: float) -> void:
+	_tick_battle_frame(delta, {}, false)
+
+
+func _tick_battle_with_input_frame(delta: float, input_frame: Dictionary) -> void:
+	_tick_battle_frame(delta, input_frame, true)
+
+
+func _tick_battle_frame(delta: float, supplied_input_frame: Dictionary, use_supplied_input_frame: bool) -> void:
 	_reset_battle_vfx_frame_budget()
 	var plan := _battle_runtime_facade().frame_step_plan(delta, battle_simulation_accumulator, {
 		"game_over": game_over,
@@ -26825,7 +26868,7 @@ func _tick_battle(delta: float) -> void:
 		return
 	var frame_delta := float(plan.get("frame_delta", 0.0))
 	var steps := int(plan.get("steps", 0))
-	var input_frame := _capture_battle_input_frame()
+	var input_frame := supplied_input_frame.duplicate(true) if use_supplied_input_frame else _capture_battle_input_frame()
 	for step_index in range(steps):
 		_capture_battle_motion_before_step()
 		_consume_battle_input_edges_once(input_frame, step_index == 0)
@@ -27590,7 +27633,7 @@ func _consume_attack_chord(unit, prefix: String, chord: Array, latch_key: String
 	var any_just_pressed := false
 	for raw_index in chord:
 		var action_name := "%s_attack_%d" % [prefix, int(raw_index) + 1]
-		if not Input.is_action_pressed(action_name):
+		if not _battle_action_pressed(action_name):
 			all_pressed = false
 		if _battle_action_just_pressed(action_name):
 			any_just_pressed = true
@@ -27735,8 +27778,8 @@ func _summon_portal_feedback_text(player_id: int, selection: String) -> String:
 func _handle_player_battle_input(player_id: int, delta: float, prefix: String) -> void:
 	var input_vector := _input_vector_for(prefix)
 	var facing_unit = active_units[player_id]["hero"]
-	var face_left_held := Input.is_action_pressed("%s_face_left" % prefix)
-	var face_right_held := Input.is_action_pressed("%s_face_right" % prefix)
+	var face_left_held := _battle_action_pressed("%s_face_left" % prefix)
+	var face_right_held := _battle_action_pressed("%s_face_right" % prefix)
 	var turn_keys_reserved_for_weapon_aim := _held_aim_uses_turn_keys(player_id, prefix)
 	if _is_live_unit(facing_unit) and not turn_keys_reserved_for_weapon_aim:
 		var turn_sign := (-1 if face_left_held else 0) + (1 if face_right_held else 0)
@@ -27772,7 +27815,7 @@ func _handle_player_battle_input(player_id: int, delta: float, prefix: String) -
 	var hero = active_units[player_id]["hero"]
 	if not _is_live_unit(hero):
 		return
-	if Input.is_action_pressed("%s_cool" % prefix) and hero.has_method("manual_cool"):
+	if _battle_action_pressed("%s_cool" % prefix) and hero.has_method("manual_cool"):
 		hero.manual_cool(delta)
 	if float(hero.get_meta("active_cool_lock", 0.0)) > 0.0:
 		hero.set_meta("movement_gate_reason", "active_cool_lock")
@@ -27831,7 +27874,7 @@ func _handle_player_battle_input(player_id: int, delta: float, prefix: String) -
 		return
 	if bool(aim_holding[player_id]):
 		var held_action := String(aim_action_name[player_id])
-		if held_action != "" and Input.is_action_pressed(held_action):
+		if held_action != "" and _battle_action_pressed(held_action):
 			_update_held_aim(player_id, prefix, input_vector, delta)
 		if held_action == "" or _battle_action_just_released(held_action):
 			var locked_target = aim_locked_targets[player_id]
@@ -27924,7 +27967,7 @@ func _try_attack_pair_summon(player_id: int, prefix: String, input_vector: Vecto
 			continue
 		var action_a := "%s_attack_%d" % [prefix, int(pair[0])]
 		var action_b := "%s_attack_%d" % [prefix, int(pair[1])]
-		var both_pressed := Input.is_action_pressed(action_a) and Input.is_action_pressed(action_b)
+		var both_pressed := _battle_action_pressed(action_a) and _battle_action_pressed(action_b)
 		var fresh_pair := _battle_action_just_pressed(action_a) or _battle_action_just_pressed(action_b)
 		if both_pressed and fresh_pair:
 			_summon_sortie_slot(player_id, slot_index)
@@ -28062,17 +28105,17 @@ func _start_or_fire_attack_button(player_id: int, prefix: String, input_vector: 
 
 func _input_vector_for(prefix: String) -> Vector2:
 	return _battle_input_service().input_vector_from_strengths(
-		Input.get_action_strength("%s_right" % prefix),
-		Input.get_action_strength("%s_left" % prefix),
-		Input.get_action_strength("%s_down" % prefix),
-		Input.get_action_strength("%s_up" % prefix)
+		_battle_action_strength("%s_right" % prefix),
+		_battle_action_strength("%s_left" % prefix),
+		_battle_action_strength("%s_down" % prefix),
+		_battle_action_strength("%s_up" % prefix)
 	)
 
 
 func _gun_turn_input_vector_for(prefix: String) -> Vector2:
 	return _battle_input_service().gun_turn_input_vector_from_strengths(
-		Input.get_action_strength("%s_face_right" % prefix),
-		Input.get_action_strength("%s_face_left" % prefix)
+		_battle_action_strength("%s_face_right" % prefix),
+		_battle_action_strength("%s_face_left" % prefix)
 	)
 
 
@@ -28122,7 +28165,7 @@ func _handle_face_chord_boost(player_id: int, prefix: String, input_vector: Vect
 		return
 	if _held_aim_uses_turn_keys(player_id):
 		return
-	var chord_pressed := Input.is_action_pressed("%s_face_left" % prefix) and Input.is_action_pressed("%s_face_right" % prefix)
+	var chord_pressed := _battle_action_pressed("%s_face_left" % prefix) and _battle_action_pressed("%s_face_right" % prefix)
 	if not chord_pressed:
 		hero.set_meta("face_chord_boost_latch", false)
 		return
@@ -28154,9 +28197,9 @@ func _update_held_aim(player_id: int, prefix: String, input_vector: Vector2, del
 	elif mode == "manual":
 		if _gun_aim_input_mode_for_data(group) == "turn_keys":
 			var steer := 0.0
-			if Input.is_action_pressed("%s_face_left" % prefix):
+			if _battle_action_pressed("%s_face_left" % prefix):
 				steer -= 1.0
-			if Input.is_action_pressed("%s_face_right" % prefix):
+			if _battle_action_pressed("%s_face_right" % prefix):
 				steer += 1.0
 			if steer != 0.0:
 				var turn_rate := float(group.get("manual_turn_rate", hero.stats.get("aim_swing", 5.5)))
@@ -28870,14 +28913,14 @@ func _tick_runtime_held_melee_activation(player_id: int, prefix: String, delta: 
 	if not _is_live_unit(unit):
 		held_melee_activation_state[player_id] = {}
 		return
-	if _held_melee_activation_service().should_release_hold(action_name, _battle_action_just_released(action_name), Input.is_action_pressed(action_name)):
+	if _held_melee_activation_service().should_release_hold(action_name, _battle_action_just_released(action_name), _battle_action_pressed(action_name)):
 		if unit.has_method("release_boot_action_driver_hold"):
 			unit.release_boot_action_driver_hold(action_name)
 		held_melee_activation_state[player_id] = {}
 		return
 	var turn_input := _held_melee_activation_service().turn_input_from_strengths(
-		Input.get_action_strength("%s_face_right" % prefix),
-		Input.get_action_strength("%s_face_left" % prefix)
+		_battle_action_strength("%s_face_right" % prefix),
+		_battle_action_strength("%s_face_left" % prefix)
 	)
 	if unit.has_method("update_boot_action_driver_hold"):
 		unit.update_boot_action_driver_hold(action_name, turn_input, delta)
@@ -28939,7 +28982,7 @@ func _tick_runtime_gun_activation(player_id: int, prefix: String, delta: float) 
 		return
 	var state: Dictionary = gun_activation_state[player_id]
 	var action_name := String(state.get("action_name", ""))
-	if _gun_activation_service().should_release_activation(action_name, _battle_action_just_released(action_name), Input.is_action_pressed(action_name)):
+	if _gun_activation_service().should_release_activation(action_name, _battle_action_just_released(action_name), _battle_action_pressed(action_name)):
 		_release_runtime_gun_activation(player_id)
 		return
 	var unit = active_units[player_id]["hero"]
@@ -29119,7 +29162,7 @@ func _tick_attack_command_windows(player_id: int, prefix: String, delta: float) 
 		var action_name := "%s_attack_%d" % [prefix, attack_index + 1]
 		var tick_intent := _battle_action_event_service().command_window_tick_intent(
 			window,
-			Input.is_action_pressed(action_name),
+			_battle_action_pressed(action_name),
 			delta,
 			ATTACK_WINDOW_TIMEOUT,
 			ATTACK_WINDOW_HOLD_CANCEL

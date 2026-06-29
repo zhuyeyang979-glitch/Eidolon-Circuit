@@ -23,17 +23,24 @@ func _find_part(main, slot_key: String, predicate: Callable) -> int:
 	return -1
 
 
+func _unbranded(part: Dictionary) -> bool:
+	return String(part.get("maker", part.get("manufacturer", ""))).strip_edges() == ""
+
+
 func _build_unit(main) -> Dictionary:
-	var torso_index := _find_part(main, "muscle", func(part: Dictionary) -> bool: return main._component_is_torso(part))
-	var limb_index := 0
+	var topology_maker := "HUMANOVA ATELIER"
+	var torso_index := _find_part(main, "muscle", func(part: Dictionary) -> bool: return main._component_is_torso(part) and String(part.get("maker", "")) == topology_maker)
+	var limb_index := _find_part(main, "limb_muscle", func(part: Dictionary) -> bool: return String(part.get("maker", "")) == topology_maker)
 	var rifle_index := _find_part(main, "muscle", func(part: Dictionary) -> bool:
-		return main._component_is_gun_muscle(part, "muscle") and String(part.get("gun_kind", main._gun_kind_for_data(part))) == "rifle" and String(part.get("ammo_kind", main._ammo_kind_for_data(part))) == "bullet"
+		return String(part.get("maker", "")) == topology_maker and main._component_is_gun_muscle(part, "muscle") and String(part.get("gun_kind", main._gun_kind_for_data(part))) == "rifle" and String(part.get("ammo_kind", main._ammo_kind_for_data(part))) == "bullet"
 	)
 	var module_index := _find_part(main, "module", func(part: Dictionary) -> bool: return String(part.get("module_action_profile", "")) == "rifle_burst_activate")
-	var engine_index := _find_part(main, "engine", func(part: Dictionary) -> bool: return main._engine_momentum_output_for_part(part) >= 120.0)
-	var booster_index := _find_part(main, "booster", func(part: Dictionary) -> bool: return main._thruster_drive_demand_for_part(part) > 0.0)
-	var cooling_index := _find_part(main, "cooling", func(_part: Dictionary) -> bool: return true)
-	if [torso_index, rifle_index, module_index, engine_index, booster_index, cooling_index].has(-1):
+	var drive_maker := "LONGSIGHT AEGIS"
+	var engine_index := _find_part(main, "engine", func(part: Dictionary) -> bool: return String(part.get("maker", "")) == drive_maker and main._engine_momentum_output_for_part(part) >= 120.0)
+	var booster_index := _find_part(main, "booster", func(part: Dictionary) -> bool: return String(part.get("maker", "")) == drive_maker and main._thruster_drive_demand_for_part(part) > 0.0)
+	var cooling_index := _find_part(main, "cooling", func(part: Dictionary) -> bool: return _unbranded(part))
+	if [torso_index, limb_index, rifle_index, module_index, engine_index, booster_index, cooling_index].has(-1):
+		_fail("Missing legal fixture part torso=%d limb=%d rifle=%d module=%d engine=%d booster=%d cooling=%d." % [torso_index, limb_index, rifle_index, module_index, engine_index, booster_index, cooling_index])
 		return {}
 	var unit_bp: Dictionary = main._make_editor_blank_blueprint("hero")
 	var nodes: Array = []
@@ -94,9 +101,14 @@ func _enter_training(main, unit_bp: Dictionary) -> void:
 	main.ai_battle_seat = 1
 	main.training_seat_confirmed = true
 	if not main._prepare_editor_canvas_training_import():
-		_fail("Training import rejected: %s" % String(main.training_import_error_note))
+		var library_bp: Dictionary = main._unit_blueprint_for_library("hero", unit_bp)
+		var legal_note: String = String(main._training_blueprint_illegal_note(main._editor_player(), "hero", library_bp))
+		var legality_report: Dictionary = main._unit_editor_legality_report("hero", library_bp)
+		_fail("Training import rejected: %s report=%s" % [legal_note, str(legality_report)])
+		return
 	if not main._prepare_training_battle_loadouts():
 		_fail("Training loadout rejected: %s" % String(main.training_import_error_note))
+		return
 	main._begin_battle(MainScene.MODE_TRAINING, true)
 	main.set_process(false)
 	if main.game_state != MainScene.STATE_BATTLE or main.battle_mode != MainScene.MODE_TRAINING:
@@ -121,6 +133,8 @@ func _run() -> void:
 		_fail("Built rifle unit has no runtime binding before training.")
 		return
 	_enter_training(main, unit_bp)
+	if main.game_state != MainScene.STATE_BATTLE:
+		return
 	var hero = Dictionary(main.active_units.get(1, {})).get("hero", null)
 	if not main._is_live_unit(hero):
 		_fail("Training did not spawn controllable hero.")
