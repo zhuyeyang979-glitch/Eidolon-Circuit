@@ -117,7 +117,7 @@ func _run() -> void:
 	if not bool(main.gun_activation_state[1].get("direction_boost_while_firing", false)):
 		_fail("Gun activation state should allow direction boost while firing.")
 	main.gun_activation_state[1]["fire_timer"] = 10.0
-	main.last_direction_taps[1]["right"] = Time.get_ticks_msec() * 0.001
+	main.last_direction_taps[1]["right"] = main.battle_simulation_time_seconds
 	var heat_before := float(fighter.heat)
 	Input.action_press("p1_right")
 	main._handle_player_battle_input(1, 0.05, "p1")

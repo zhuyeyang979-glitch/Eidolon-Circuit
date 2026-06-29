@@ -213,6 +213,64 @@ func deserialize_battle_start_payload(serialized_payload: String) -> Dictionary:
 	return _canonical_battle_start_payload(Dictionary(parsed))
 
 
+func replay_checkpoint(step: int, simulation_time: float, state: Dictionary) -> Dictionary:
+	return {
+		"step": maxi(0, step),
+		"simulation_time": snappedf(maxf(0.0, simulation_time), 0.000001),
+		"digest": replay_checkpoint_digest(state),
+	}
+
+
+func replay_checkpoint_digest(state: Dictionary) -> String:
+	return JSON.stringify(_canonical_replay_checkpoint_value(state)).sha256_text()
+
+
+func first_replay_desync(expected_checkpoints: Array, actual_checkpoints: Array) -> Dictionary:
+	var shared_count := mini(expected_checkpoints.size(), actual_checkpoints.size())
+	for index in range(shared_count):
+		var expected := Dictionary(expected_checkpoints[index]) if expected_checkpoints[index] is Dictionary else {}
+		var actual := Dictionary(actual_checkpoints[index]) if actual_checkpoints[index] is Dictionary else {}
+		var expected_step := int(expected.get("step", -1))
+		var actual_step := int(actual.get("step", -1))
+		var expected_time := float(expected.get("simulation_time", -1.0))
+		var actual_time := float(actual.get("simulation_time", -1.0))
+		var expected_digest := String(expected.get("digest", ""))
+		var actual_digest := String(actual.get("digest", ""))
+		if expected_step != actual_step or expected_time != actual_time or expected_digest != actual_digest:
+			return {
+				"matched": false,
+				"reason": "checkpoint_mismatch",
+				"index": index,
+				"expected_step": expected_step,
+				"actual_step": actual_step,
+				"expected_time": expected_time,
+				"actual_time": actual_time,
+				"expected_digest": expected_digest,
+				"actual_digest": actual_digest,
+			}
+	if expected_checkpoints.size() != actual_checkpoints.size():
+		var expected := Dictionary(expected_checkpoints[shared_count]) if shared_count < expected_checkpoints.size() and expected_checkpoints[shared_count] is Dictionary else {}
+		var actual := Dictionary(actual_checkpoints[shared_count]) if shared_count < actual_checkpoints.size() and actual_checkpoints[shared_count] is Dictionary else {}
+		return {
+			"matched": false,
+			"reason": "checkpoint_count_mismatch",
+			"index": shared_count,
+			"expected_count": expected_checkpoints.size(),
+			"actual_count": actual_checkpoints.size(),
+			"expected_step": int(expected.get("step", -1)),
+			"actual_step": int(actual.get("step", -1)),
+			"expected_time": float(expected.get("simulation_time", -1.0)),
+			"actual_time": float(actual.get("simulation_time", -1.0)),
+			"expected_digest": String(expected.get("digest", "")),
+			"actual_digest": String(actual.get("digest", "")),
+		}
+	return {
+		"matched": true,
+		"reason": "match",
+		"checkpoint_count": shared_count,
+	}
+
+
 func action_just_pressed(action_name: String, frame_state: Dictionary, fallback_fn: Callable) -> bool:
 	if not bool(frame_state.get("frame_active", false)):
 		return bool(fallback_fn.call(action_name)) if fallback_fn.is_valid() else false
@@ -512,6 +570,57 @@ func _strength_dict_from_tokens(strength_source) -> Dictionary:
 		if action_name != "" and value > 0.0001:
 			result[action_name] = value
 	return result
+
+
+func _canonical_replay_checkpoint_value(value):
+	match typeof(value):
+		TYPE_NIL, TYPE_BOOL, TYPE_INT, TYPE_STRING:
+			return value
+		TYPE_FLOAT:
+			return snappedf(float(value), 0.000001)
+		TYPE_STRING_NAME:
+			return String(value)
+		TYPE_VECTOR2:
+			var vector: Vector2 = value
+			return {"type": "vector2", "x": snappedf(vector.x, 0.000001), "y": snappedf(vector.y, 0.000001)}
+		TYPE_VECTOR2I:
+			var vector: Vector2i = value
+			return {"type": "vector2i", "x": vector.x, "y": vector.y}
+		TYPE_COLOR:
+			var color: Color = value
+			return {
+				"type": "color",
+				"r": snappedf(color.r, 0.000001),
+				"g": snappedf(color.g, 0.000001),
+				"b": snappedf(color.b, 0.000001),
+				"a": snappedf(color.a, 0.000001),
+			}
+		TYPE_ARRAY:
+			var items: Array = []
+			for item in Array(value):
+				items.append(_canonical_replay_checkpoint_value(item))
+			return {"type": "array", "items": items}
+		TYPE_DICTIONARY:
+			var rows: Array = []
+			for raw_key in Dictionary(value).keys():
+				rows.append({
+					"sort_key": "%03d:%s" % [typeof(raw_key), str(raw_key)],
+					"key_type": typeof(raw_key),
+					"key": str(raw_key),
+					"value": _canonical_replay_checkpoint_value(Dictionary(value).get(raw_key)),
+				})
+			rows.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+				return String(a.get("sort_key", "")) < String(b.get("sort_key", ""))
+			)
+			var entries: Array = []
+			for row in rows:
+				entries.append({
+					"key_type": int(Dictionary(row).get("key_type", TYPE_NIL)),
+					"key": String(Dictionary(row).get("key", "")),
+					"value": Dictionary(row).get("value"),
+				})
+			return {"type": "dictionary", "entries": entries}
+	return {"type": "unsupported", "variant_type": typeof(value)}
 
 
 func _pressed(pressed_fn: Callable, action_name: String) -> bool:

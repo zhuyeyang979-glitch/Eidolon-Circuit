@@ -1562,6 +1562,7 @@ var battle_projectile_trace_spawn_count := 0
 var battle_hit_effect_spawn_count := 0
 var battle_simulation_accumulator := 0.0
 var battle_simulation_step_count := 0
+var battle_simulation_time_seconds := 0.0
 var battle_simulation_last_frame_steps := 0
 var battle_input_edges_enabled := true
 var battle_input_frame_active := false
@@ -1629,6 +1630,7 @@ var command_buffers := {1: [], 2: []}
 var command_timers := {1: 0.0, 2: 0.0}
 var battle_command_log: Array = []
 var battle_attack_rule_log: Array = []
+var battle_attack_execution_count := 0
 var battle_command_log_last_cache := {1: "", 2: ""}
 var attack_command_windows := {1: {}, 2: {}}
 var pending_deploys := {}
@@ -11565,12 +11567,14 @@ func _begin_battle(mode: String, preloaded: bool = false, reason: String = "") -
 	camera_mobius_s = 0.0
 	battle_simulation_accumulator = 0.0
 	battle_simulation_step_count = 0
+	battle_simulation_time_seconds = 0.0
 	battle_simulation_last_frame_steps = 0
 	battle_input_frame_active = false
 	battle_input_edges_enabled = true
 	battle_active_input_frame = {}
 	battle_pending_pressed_actions.clear()
 	battle_pending_released_actions.clear()
+	battle_attack_execution_count = 0
 	battle_replay_seed = 0
 	battle_presentation_active = false
 	battle_presentation_alpha = 1.0
@@ -26048,6 +26052,126 @@ func _capture_battle_input_frame() -> Dictionary:
 	return _battle_input_service().capture_input_frame(_battle_input_action_names(), battle_pending_pressed_actions, battle_pending_released_actions, Callable(self, "_input_action_just_pressed_for_service"), Callable(self, "_input_action_just_released_for_service"), Callable(self, "_input_action_strength_for_service"))
 
 
+func _battle_replay_checkpoint_state() -> Dictionary:
+	var units: Array = []
+	for unit_index in range(all_units.size()):
+		var unit = all_units[unit_index]
+		if unit == null or not is_instance_valid(unit):
+			units.append({"ordinal": unit_index, "valid": false})
+			continue
+		units.append(_battle_replay_unit_checkpoint_state(unit, unit_index))
+	var player_states := {}
+	for player_id in [1, 2]:
+		var gun_state: Dictionary = Dictionary(gun_activation_state.get(player_id, {}))
+		var melee_state: Dictionary = Dictionary(held_melee_activation_state.get(player_id, {}))
+		player_states[player_id] = {
+			"aim_holding": bool(aim_holding.get(player_id, false)),
+			"aim_direction": Vector2(aim_directions.get(player_id, Vector2.ZERO)),
+			"aim_attack_index": int(aim_attack_index.get(player_id, 0)),
+			"aim_hold_fire_timer": float(aim_hold_fire_timers.get(player_id, 0.0)),
+			"gun_active": not gun_state.is_empty(),
+			"gun_attack_index": int(gun_state.get("attack_index", -1)),
+			"gun_aim_direction": Vector2(gun_state.get("aim_direction", Vector2.ZERO)),
+			"gun_fire_timer": float(gun_state.get("fire_timer", 0.0)),
+			"gun_hold_time": float(gun_state.get("hold_time", 0.0)),
+			"melee_active": not melee_state.is_empty(),
+			"melee_attack_index": int(melee_state.get("attack_index", -1)),
+			"melee_hold_time": float(melee_state.get("hold_time", 0.0)),
+			"attack_windows": _battle_replay_attack_window_state(player_id),
+		}
+	return {
+		"game_state": game_state,
+		"battle_mode": battle_mode,
+		"game_over": game_over,
+		"winner": post_battle_review_winner_id,
+		"reason": post_battle_review_reason,
+		"replay_seed": battle_replay_seed,
+		"simulation_step": battle_simulation_step_count,
+		"simulation_time": battle_simulation_time_seconds,
+		"match_time_remaining": match_time_remaining,
+		"runtime_resource": {
+			1: float(runtime_resource.get(1, 0.0)),
+			2: float(runtime_resource.get(2, 0.0)),
+		},
+		"victory_points": {
+			1: int(victory_points.get(1, 0)),
+			2: int(victory_points.get(2, 0)),
+		},
+		"portal_index": {
+			1: int(portal_index.get(1, 0)),
+			2: int(portal_index.get(2, 0)),
+		},
+		"star_soul_runtime": star_soul_runtime_state.duplicate(true),
+		"units": units,
+		"pending_counts": {
+			"laser": pending_laser_shots.size(),
+			"true_bullet": pending_true_bullet_shots.size(),
+			"chemical": pending_chemical_projectiles.size(),
+			"missile": pending_missile_projectiles.size(),
+			"web_tether": active_web_tethers.size(),
+			"web_swing": active_web_swings.size(),
+			"deploy": pending_deploys.size(),
+		},
+		"event_counts": {
+			"attack_executions": battle_attack_execution_count,
+			"attack_rules": battle_attack_rule_log.size(),
+			"commands": battle_command_log.size(),
+			"contact_pairs": runtime_contact_pairs_active.size(),
+			"melee_suppressions": active_melee_contact_suppression.size(),
+		},
+		"players": player_states,
+	}
+
+
+func _battle_replay_unit_checkpoint_state(unit, ordinal: int) -> Dictionary:
+	return {
+		"ordinal": ordinal,
+		"valid": true,
+		"owner": int(unit.owner_id),
+		"role": String(unit.role),
+		"name": String(unit.unit_name),
+		"active": bool(unit.active),
+		"health": int(unit.health),
+		"max_health": int(unit.max_health),
+		"heat": float(unit.heat),
+		"overheated": bool(unit.overheated),
+		"ring_pos": float(unit.ring_pos),
+		"lane": float(unit.lane),
+		"mobius_s": float(unit.mobius_s),
+		"mobius_v": float(unit.mobius_v),
+		"velocity": Vector2(unit.velocity),
+		"facing": int(unit.facing),
+		"facing_angle": float(unit.facing_angle),
+		"state": String(unit.current_state),
+		"state_timer": float(unit.state_timer),
+		"action_cooldown": float(unit.action_cooldown),
+		"melee_stagger_timer": float(unit.melee_stagger_timer),
+		"last_attack_time": float(unit.get_meta("last_attack_time", 0.0)),
+		"ammo": {
+			"bullet": _current_ammo(unit, "bullet"),
+			"chemical": _current_ammo(unit, "chemical"),
+			"laser": _current_ammo(unit, "laser"),
+		},
+	}
+
+
+func _battle_replay_attack_window_state(player_id: int) -> Array:
+	var result: Array = []
+	var windows: Dictionary = Dictionary(attack_command_windows.get(player_id, {}))
+	var keys: Array = windows.keys()
+	keys.sort_custom(func(a, b) -> bool: return String(a) < String(b))
+	for raw_key in keys:
+		var window: Dictionary = Dictionary(windows.get(raw_key, {}))
+		result.append({
+			"key": String(raw_key),
+			"attack_index": int(window.get("attack_index", -1)),
+			"timer": float(window.get("timer", 0.0)),
+			"hold_time": float(window.get("hold_time", 0.0)),
+			"opened_at": float(window.get("opened_at", 0.0)),
+		})
+	return result
+
+
 func _input_action_just_pressed_for_service(action_name: String) -> bool:
 	return Input.is_action_just_pressed(action_name)
 
@@ -26887,6 +27011,7 @@ func _tick_battle_frame(delta: float, supplied_input_frame: Dictionary, use_supp
 
 
 func _tick_battle_simulation(delta: float, _input_frame: Dictionary = {}) -> void:
+	battle_simulation_time_seconds += delta
 	if battle_controller != null:
 		battle_controller.note_tick()
 	var plan := _battle_runtime_facade().simulation_phase_plan({
@@ -28128,7 +28253,7 @@ func _refresh_boost_visibility_after_start(unit) -> void:
 
 func _handle_direction_taps(player_id: int, prefix: String, delta: float = BATTLE_SIMULATION_DELTA) -> void:
 	var tap_window := 0.28
-	var now := Time.get_ticks_msec() * 0.001
+	var now := battle_simulation_time_seconds
 	var directions := {
 		"left": Vector2.LEFT,
 		"right": Vector2.RIGHT,
@@ -29126,7 +29251,7 @@ func _attack_window_key(attack_index: int) -> String:
 
 func _open_attack_command_window(player_id: int, prefix: String, attack_index: int, binding: Dictionary) -> void:
 	var windows := _ensure_attack_command_windows(player_id)
-	var now := Time.get_ticks_msec() * 0.001
+	var now := battle_simulation_time_seconds
 	windows[_attack_window_key(attack_index)] = {
 		"attack_index": attack_index,
 		"attack_key": attack_index + 1,
@@ -30214,7 +30339,7 @@ func _ai_try_summon_from_sortie(player_id: int) -> bool:
 func _update_anti_stall_summons(delta: float) -> void:
 	for player_id in [1, 2]:
 		var hero = active_units[player_id]["hero"] if active_units.has(player_id) else null
-		var now := Time.get_ticks_msec() * 0.001
+		var now := battle_simulation_time_seconds
 		var intent := _battle_actor_command_service().auto_summon_intent({
 			"delta": delta,
 			"auto_timer": float(auto_mech_summon_timers.get(player_id, 0.0)),
@@ -31824,15 +31949,17 @@ func _create_unit(player_id: int, role_key: String, stats: Dictionary, unit_name
 	_initialize_unit_runtime_resources(unit)
 	if role_key == "barrier":
 		_apply_barrier_terrain_deployment(unit, true)
-	_mark_unit_attack_executed(unit)
+	_mark_unit_attack_executed(unit, false)
 	all_units.append(unit)
 	return unit
 
 
-func _mark_unit_attack_executed(unit) -> void:
+func _mark_unit_attack_executed(unit, count_execution: bool = true) -> void:
 	if unit == null or not is_instance_valid(unit):
 		return
-	unit.set_meta("last_attack_time", Time.get_ticks_msec() * 0.001)
+	if count_execution:
+		battle_attack_execution_count += 1
+	unit.set_meta("last_attack_time", battle_simulation_time_seconds)
 
 
 func _initialize_unit_runtime_resources(unit) -> void:
@@ -33728,7 +33855,7 @@ func _mark_active_melee_contact_suppression(attacker, attacker_collider: Diction
 	if attacker == null or target == null or not is_instance_valid(attacker) or not is_instance_valid(target):
 		return
 	var reverse_key := _runtime_directed_contact_key(target, target_collider, attacker, attacker_collider)
-	var now := Time.get_ticks_msec() * 0.001
+	var now := battle_simulation_time_seconds
 	active_melee_contact_suppression[reverse_key] = {
 		"expires": now + 2.0,
 		"grace_until": now + 0.24,
@@ -33744,13 +33871,13 @@ func _active_melee_contact_damage_suppressed(attacker, attacker_collider: Dictio
 		return false
 	var entry = active_melee_contact_suppression.get(key, {})
 	var expires := float(entry.get("expires", 0.0)) if entry is Dictionary else float(entry)
-	return Time.get_ticks_msec() * 0.001 <= expires
+	return battle_simulation_time_seconds <= expires
 
 
 func _cleanup_active_melee_contact_suppression() -> void:
 	if active_melee_contact_suppression.is_empty():
 		return
-	var now := Time.get_ticks_msec() * 0.001
+	var now := battle_simulation_time_seconds
 	for key in active_melee_contact_suppression.keys():
 		var entry = active_melee_contact_suppression.get(key, {})
 		var expires := float(entry.get("expires", 0.0)) if entry is Dictionary else float(entry)
@@ -34521,7 +34648,7 @@ func _open_stagger_combo(staggered, source_attacker, base_duration: float, initi
 	staggered.set_meta("stagger_combo_attacker_hits", attacker_hits)
 	staggered.set_meta("stagger_combo_opening_momentum", momentum_cap)
 	staggered.set_meta("combo_transfer_momentum_cap", momentum_cap)
-	staggered.set_meta("stagger_combo_last_refresh", Time.get_ticks_msec() * 0.001)
+	staggered.set_meta("stagger_combo_last_refresh", battle_simulation_time_seconds)
 
 
 func _refresh_stagger_combo(unit) -> void:
@@ -34529,7 +34656,7 @@ func _refresh_stagger_combo(unit) -> void:
 		return
 	var base_duration := maxf(COMBO_REFRESH_FLOOR_SECONDS, float(unit.get_meta("stagger_combo_base_duration", 0.0)))
 	_set_unit_stagger_timer(unit, base_duration)
-	unit.set_meta("stagger_combo_last_refresh", Time.get_ticks_msec() * 0.001)
+	unit.set_meta("stagger_combo_last_refresh", battle_simulation_time_seconds)
 
 
 func _combo_damage_multiplier(hit_index: int) -> float:
@@ -34848,7 +34975,7 @@ func _apply_projectile_momentum_stagger(attacker, target, event: Dictionary, mom
 	var projectile_momentum := _projectile_collision_momentum(attacker, target, event, momentum_scale)
 	var direction := _event_direction_vector(attacker, target, event, Vector2(float(target.facing), 0.0))
 	var threshold := _unit_melee_stability_threshold(target)
-	var now := Time.get_ticks_msec() * 0.001
+	var now := battle_simulation_time_seconds
 	var intent := _battle_hit_resolution_service().momentum_response_intent({
 		"kind": "projectile_stagger",
 		"projectile": bool(event.get("projectile", false)),
@@ -34915,7 +35042,7 @@ func _apply_melee_momentum_stagger_pair(a, momentum_a: float, b, momentum_b: flo
 	var staggered_candidate = a if momentum_a < momentum_b else b
 	var candidate_ready := unit_a_mech and unit_b_mech
 	var threshold := _unit_melee_stability_threshold(staggered_candidate) if candidate_ready else 0.0
-	var now := Time.get_ticks_msec() * 0.001
+	var now := battle_simulation_time_seconds
 	var intent := _battle_hit_resolution_service().momentum_response_intent({
 		"kind": "melee_momentum_stagger_pair",
 		"unit_a_mech": unit_a_mech,
@@ -35436,10 +35563,10 @@ func _guard_camera_to_unit_projection(unit, coord: Vector2) -> void:
 
 
 func _projection_last_finite_position(unit) -> Vector2:
-	var last_finite = unit.get_meta("last_finite_screen_position", null)
+	var last_finite = unit.get_meta("last_finite_screen_position") if unit.has_meta("last_finite_screen_position") else null
 	if last_finite is Vector2 and _screen_position_is_finite(last_finite):
 		return last_finite
-	var last_position = unit.get_meta("last_screen_position", null)
+	var last_position = unit.get_meta("last_screen_position") if unit.has_meta("last_screen_position") else null
 	if last_position is Vector2 and _screen_position_is_finite(last_position):
 		return last_position
 	return _battle_screen_center()
@@ -38387,7 +38514,7 @@ func _melee_module_heat_key(group: Dictionary, attack_index: int) -> String:
 
 
 func _melee_module_repeat_info(attacker, group: Dictionary, attack_index: int) -> Dictionary:
-	var now := Time.get_ticks_msec() * 0.001
+	var now := battle_simulation_time_seconds
 	var key := _melee_module_heat_key(group, attack_index)
 	var ledger: Dictionary = {}
 	if attacker.has_meta("melee_module_heat_ledger") and attacker.get_meta("melee_module_heat_ledger") is Dictionary:

@@ -5156,7 +5156,7 @@ func set_screen_position(screen_position: Vector2, is_visible_in_view: bool) -> 
 func set_mobius_screen_projection(projection: Dictionary, is_visible_in_view: bool, frame_delta: float = 1.0 / 120.0) -> void:
 	var screen_position: Vector2 = projection.get("position", position)
 	if not (is_finite(screen_position.x) and is_finite(screen_position.y)):
-		var last_finite = get_meta("last_finite_screen_position", null)
+		var last_finite = get_meta("last_finite_screen_position") if has_meta("last_finite_screen_position") else null
 		screen_position = last_finite if last_finite is Vector2 else position
 	var projection_visible := bool(projection.get("visible", is_visible_in_view))
 	var projection_guarded := bool(projection.get("guarded", false))

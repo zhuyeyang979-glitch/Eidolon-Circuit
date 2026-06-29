@@ -4,8 +4,11 @@ const SERVICE_PATH := "res://scripts/services/battle_hit_resolution_service.gd"
 const MAIN_PATH := "res://scripts/main.gd"
 const BattleHitResolutionServiceScript := preload("res://scripts/services/battle_hit_resolution_service.gd")
 
+var failed := false
+
 
 func _fail(message: String) -> void:
+	failed = true
 	push_error(message)
 	quit(1)
 
@@ -111,6 +114,10 @@ func _init() -> void:
 	_check_part_damage(service)
 	_check_momentum_response(service)
 	_check_status_ticks(service)
+	if failed:
+		print("BATTLE_HIT_RESOLUTION_SERVICE_CONTRACT_PROBE failed")
+		quit(1)
+		return
 	print("BATTLE_HIT_RESOLUTION_SERVICE_CONTRACT_PROBE ok")
 	quit(0)
 
@@ -138,7 +145,13 @@ func _check_projectile_preflight(service) -> void:
 	if not bool(bullet.get("apply_recoil", false)) or not bool(bullet.get("needs_first_impact", false)) or not bool(bullet.get("spawn_trace", false)):
 		_fail("default projectile preflight should request recoil, first impact, and trace: %s" % str(bullet))
 	var explosive: Dictionary = service.projectile_preflight_intent({
-		"event": {"projectile": true, "projectile_style": "missile", "projectile_speed_mult": 99.0},
+		"event": {
+			"projectile": true,
+			"projectile_style": "missile",
+			"projectile_speed_mult": 99.0,
+			"explosion_damage": 9,
+			"explosion_damage_type": "bullet",
+		},
 		"behavior": "explosive",
 		"standard_missile_explosion_radius": 1.3,
 	})
@@ -146,8 +159,8 @@ func _check_projectile_preflight(service) -> void:
 	_assert_eq(String(explosive_patch.get("projectile_behavior", "")), "explosive", "explosive behavior")
 	_assert_close(float(explosive_patch.get("projectile_speed_mult", 0.0)), 2.4, "explosive speed clamp")
 	_assert_close(float(explosive_patch.get("explosion_radius", 0.0)), 1.3, "missile explosion radius")
-	if not bool(explosive_patch.get("erase_explosion_damage", false)) or not bool(explosive_patch.get("erase_explosion_damage_type", false)):
-		_fail("explosive preflight should request legacy explosion damage cleanup: %s" % str(explosive_patch))
+	if explosive_patch.has("erase_explosion_damage") or explosive_patch.has("erase_explosion_damage_type"):
+		_fail("explosive preflight should preserve authored explosion damage payload: %s" % str(explosive_patch))
 	_assert_eq(String(service.projectile_preflight_intent({"event": {"projectile": true}, "laser_telegraph": true}).get("action", "")), "queue_laser_telegraph", "laser telegraph route")
 	_assert_eq(String(service.projectile_preflight_intent({"event": {"projectile": true}, "true_bullet": true}).get("action", "")), "queue_true_bullet", "true bullet route")
 	_assert_eq(String(service.projectile_preflight_intent({"event": {"projectile": true}, "chemical_projectile": true, "chemical_ready": false}).get("action", "")), "queue_chemical", "chemical queue route")
