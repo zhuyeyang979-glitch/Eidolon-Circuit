@@ -191,6 +191,40 @@ func _init() -> void:
 	if String(Dictionary(Array(fresh_build_specs.get("canvas_tools", []))[0]).get("key", "")) != "blank_canvas":
 		_fail("UILifecycleService should return fresh editor action build specs.")
 		return
+	var panel_role_plan: Dictionary = UILifecycleService.editor_panel_role_chrome_presentation(
+		"parts",
+		"barrier",
+		true,
+		["load", "parts", "mystery"],
+		["pilot", "barrier"],
+		["pilot", "barrier"],
+		{"pilot": "驾驶", "barrier": "屏障"},
+		true
+	)
+	var panel_buttons: Dictionary = Dictionary(panel_role_plan.get("panel_buttons", {}))
+	var load_panel_button: Dictionary = Dictionary(panel_buttons.get("load", {}))
+	var parts_panel_button: Dictionary = Dictionary(panel_buttons.get("parts", {}))
+	var mystery_panel_button: Dictionary = Dictionary(panel_buttons.get("mystery", {}))
+	if String(load_panel_button.get("text", "")) != "单位库" or String(parts_panel_button.get("text", "")) != "零件库" or String(mystery_panel_button.get("text", "")) != "MYSTERY":
+		_fail("UILifecycleService panel chrome text contract failed.")
+		return
+	_assert_color(parts_panel_button, "modulate", Color(0.35, 0.95, 1.0, 1.0), "active panel chrome")
+	_assert_color(load_panel_button, "modulate", Color(0.86, 0.9, 0.94, 1.0), "inactive panel chrome")
+	var role_buttons: Dictionary = Dictionary(panel_role_plan.get("role_buttons", {}))
+	var barrier_role_button: Dictionary = Dictionary(role_buttons.get("barrier", {}))
+	if bool(barrier_role_button.get("visible", true)) or not bool(barrier_role_button.get("disabled", false)) or String(barrier_role_button.get("text", "")) != "身份:屏障":
+		_fail("UILifecycleService role chrome hidden/text contract failed.")
+		return
+	_assert_vector(barrier_role_button, "position", Vector2(1028.0, 118.0), "role chrome presentation")
+	_assert_vector(barrier_role_button, "size", Vector2(86.0, 24.0), "role chrome presentation")
+	_assert_color(barrier_role_button, "modulate", Color(0.35, 0.95, 1.0, 1.0), "selected role chrome")
+	var hidden_panel_role_plan: Dictionary = UILifecycleService.editor_panel_role_chrome_presentation("load", "pilot", false, ["load"], ["pilot"], ["pilot"], {"pilot": "PILOT"}, false)
+	var hidden_pilot_button: Dictionary = Dictionary(Dictionary(hidden_panel_role_plan.get("role_buttons", {})).get("pilot", {}))
+	if String(hidden_pilot_button.get("text", "")) != "ROLE:PILOT":
+		_fail("UILifecycleService english role chrome text failed.")
+		return
+	_assert_vector(hidden_pilot_button, "position", Vector2(936.0, 212.0), "hidden role chrome presentation")
+	_assert_vector(hidden_pilot_button, "size", Vector2(86.0, 32.0), "hidden role chrome presentation")
 	var group_plan: Dictionary = UILifecycleService.editor_part_group_button_presentation("terminal_weapon", ["torso", "limb", "terminal_weapon", "software"], "terminal_weapon", true, "武器")
 	if not bool(group_plan.get("visible", false)) or bool(group_plan.get("disabled", true)) or String(group_plan.get("text", "")) != "武器":
 		_fail("UILifecycleService part group presentation visibility contract failed.")

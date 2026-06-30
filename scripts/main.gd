@@ -49634,21 +49634,35 @@ func _apply_editor_panel_visibility(role_key: String, unit_bp: Dictionary) -> vo
 	var color_visible := bool(visibility_plan.get("color_visible", false))
 	var stats_visible := bool(visibility_plan.get("stats_visible", false))
 	var custom_board_enabled := bool(visibility_plan.get("custom_board_enabled", false))
-	var panel_texts_zh := {"load": "单位库", "parts": "零件库"}
-	var panel_texts_en := {"load": "UNITS", "parts": "PARTS"}
+	var role_short_labels := {}
+	for role_key_button in editor_role_buttons.keys():
+		role_short_labels[String(role_key_button)] = _role_short(String(role_key_button))
+	var panel_role_chrome_plan := UILifecycleService.editor_panel_role_chrome_presentation(
+		mode,
+		role_key,
+		parts_visible,
+		editor_panel_buttons.keys(),
+		editor_role_buttons.keys(),
+		ROLE_ORDER,
+		role_short_labels,
+		_ui_is_zh()
+	)
+	var panel_button_plans: Dictionary = Dictionary(panel_role_chrome_plan.get("panel_buttons", {}))
 	for panel_key in editor_panel_buttons.keys():
 		var panel_button: Button = editor_panel_buttons[panel_key]
-		_set_control_text_if_changed(panel_button, String((panel_texts_zh if _ui_is_zh() else panel_texts_en).get(String(panel_key), String(panel_key).to_upper())))
-		_set_canvas_item_modulate_if_changed(panel_button, Color(0.35, 0.95, 1.0, 1.0) if String(panel_key) == mode else Color(0.86, 0.9, 0.94, 1.0))
+		var panel_button_plan := Dictionary(panel_button_plans.get(String(panel_key), {}))
+		_set_control_text_if_changed(panel_button, String(panel_button_plan.get("text", "")))
+		_set_canvas_item_modulate_if_changed(panel_button, panel_button_plan.get("modulate", Color(0.86, 0.9, 0.94, 1.0)))
+	var role_button_plans: Dictionary = Dictionary(panel_role_chrome_plan.get("role_buttons", {}))
 	for role_key_button in editor_role_buttons.keys():
 		var role_button: Button = editor_role_buttons[role_key_button]
-		var role_visible := false
-		_set_canvas_item_visible_if_changed(role_button, role_visible)
-		_set_button_disabled_if_changed(role_button, not role_visible)
-		_set_control_position_if_changed(role_button, Vector2(936.0 + float(ROLE_ORDER.find(String(role_key_button))) * 92.0, 118.0 if parts_visible else 212.0))
-		_set_control_size_if_changed(role_button, Vector2(86.0, 24.0 if parts_visible else 32.0))
-		_set_control_text_if_changed(role_button, ("身份:%s" if _ui_is_zh() else "ROLE:%s") % _role_short(String(role_key_button)))
-		_set_canvas_item_modulate_if_changed(role_button, Color(0.35, 0.95, 1.0, 1.0) if String(role_key_button) == role_key else Color(0.84, 0.9, 0.94, 1.0))
+		var role_button_plan := Dictionary(role_button_plans.get(String(role_key_button), {}))
+		_set_canvas_item_visible_if_changed(role_button, bool(role_button_plan.get("visible", false)))
+		_set_button_disabled_if_changed(role_button, bool(role_button_plan.get("disabled", true)))
+		_set_control_position_if_changed(role_button, role_button_plan.get("position", Vector2.ZERO))
+		_set_control_size_if_changed(role_button, role_button_plan.get("size", Vector2(86.0, 24.0)))
+		_set_control_text_if_changed(role_button, String(role_button_plan.get("text", "")))
+		_set_canvas_item_modulate_if_changed(role_button, role_button_plan.get("modulate", Color(0.84, 0.9, 0.94, 1.0)))
 	_refresh_editor_assembly_guide_ui(parts_visible, role_key)
 	for group_key in editor_part_group_buttons.keys():
 		var group_button: Button = editor_part_group_buttons[group_key]

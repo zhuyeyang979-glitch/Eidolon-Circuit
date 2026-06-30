@@ -171,6 +171,33 @@ static func editor_action_build_specs() -> Dictionary:
 	}
 
 
+static func editor_panel_role_chrome_presentation(mode: String, active_role_key: String, parts_visible: bool, panel_keys: Array, role_keys: Array, role_order: Array, role_short_labels: Dictionary, zh: bool) -> Dictionary:
+	var panel_texts := {"load": "单位库", "parts": "零件库"} if zh else {"load": "UNITS", "parts": "PARTS"}
+	var panel_buttons := {}
+	for raw_panel_key in panel_keys:
+		var panel_key := String(raw_panel_key)
+		panel_buttons[panel_key] = {
+			"text": String(panel_texts.get(panel_key, panel_key.to_upper())),
+			"modulate": Color(0.35, 0.95, 1.0, 1.0) if panel_key == String(mode) else Color(0.86, 0.9, 0.94, 1.0),
+		}
+	var role_buttons := {}
+	for raw_role_key in role_keys:
+		var role_key := String(raw_role_key)
+		var role_index := role_order.find(role_key)
+		role_buttons[role_key] = {
+			"visible": false,
+			"disabled": true,
+			"position": Vector2(936.0 + float(role_index) * 92.0, 118.0 if parts_visible else 212.0),
+			"size": Vector2(86.0, 24.0 if parts_visible else 32.0),
+			"text": ("身份:%s" if zh else "ROLE:%s") % String(role_short_labels.get(role_key, role_key.to_upper())),
+			"modulate": Color(0.35, 0.95, 1.0, 1.0) if role_key == String(active_role_key) else Color(0.84, 0.9, 0.94, 1.0),
+		}
+	return {
+		"panel_buttons": panel_buttons,
+		"role_buttons": role_buttons,
+	}
+
+
 static func editor_part_group_button_presentation(group_key: String, group_order: Array, active_group: String, parts_visible: bool, text: String) -> Dictionary:
 	var key := String(group_key)
 	var group_index := group_order.find(key)
