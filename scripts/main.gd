@@ -775,10 +775,10 @@ const PART_GRADIENT_TAG_LABELS_EN = {
 	"projectile": "Projectile",
 }
 const DEFAULT_LIMB_DRIVE_IDLE_HEAT_COEFF = 0.018
-const ECONOMY_MEDIAN_MASS_BY_RANK = {1: 12.0, 2: 24.0, 3: 48.0, 4: 96.0, 5: 192.0}
+const ECONOMY_MEDIAN_MASS_BY_RANK = UnitStatsService.ECONOMY_MEDIAN_MASS_BY_RANK
 const ECONOMY_THRUSTER_TARGET_SPEED = 2.0
-const ECONOMY_THRUSTER_TARGET_DURATION = 0.3
-const ECONOMY_BOOST_MOMENTUM_MULT = 2.0
+const ECONOMY_THRUSTER_TARGET_DURATION = UnitStatsService.ECONOMY_THRUSTER_TARGET_DURATION
+const ECONOMY_BOOST_MOMENTUM_MULT = UnitStatsService.ECONOMY_BOOST_MOMENTUM_MULT
 const THRUSTER_MOMENTUM_MULT = 2.0
 const TORSO_GEOMETRY_SCALE = 2.0
 const BUILD_SLOTS = ["special", "limb_muscle", "muscle", "booster", "engine", "cooling", "module"]
@@ -38267,13 +38267,11 @@ func _booster_style_momentum_mult(style: String, sustain: float) -> float:
 
 
 func _booster_normal_momentum_for_part(part: Dictionary) -> float:
-	return maxf(0.0, _thruster_drive_demand_for_part(part) * _thruster_move_efficiency_for_part(part))
+	return _unit_stats_service().booster_normal_momentum_for_part(part)
 
 
 func _booster_boost_momentum_for_part(part: Dictionary) -> float:
-	if part.has("boost_momentum"):
-		return maxf(0.0, float(part.get("boost_momentum", 0.0)))
-	return 0.0
+	return _unit_stats_service().booster_boost_momentum_for_part(part)
 
 
 func _thruster_drive_allocation_min_for_part(part: Dictionary) -> float:
@@ -38317,12 +38315,7 @@ func _thruster_boost_brake_allocated_for_payload(payload: Dictionary, part: Dict
 
 
 func _thruster_boost_total_momentum_for_part(part: Dictionary) -> float:
-	var boost_extra := _booster_boost_momentum_for_part(part)
-	var duration := maxf(0.0, float(part.get("boost_duration", ECONOMY_THRUSTER_TARGET_DURATION)))
-	if boost_extra <= 0.0 or duration <= 0.0:
-		return 0.0
-	var demand := _thruster_drive_demand_for_part(part)
-	return maxf(0.0, (demand + boost_extra) * _thruster_boost_efficiency_for_part(part))
+	return _unit_stats_service().thruster_boost_total_momentum_for_part(part)
 
 
 func _boost_duration_for_stats(stats: Dictionary) -> float:
@@ -40295,18 +40288,7 @@ func _thruster_engine_demand_for_part(part: Dictionary, scale: float = 1.0) -> f
 
 
 func _thruster_drive_demand_for_part(part: Dictionary, scale: float = 1.0) -> float:
-	if part.has("drive_demand"):
-		return maxf(0.0, float(part.get("drive_demand", 0.0)) * scale)
-	if part.has("momentum_min"):
-		return maxf(0.0, float(part.get("momentum_min", 0.0)) * scale)
-	if part.has("allocated_momentum"):
-		return maxf(1.0, float(part.get("allocated_momentum", 0.0)) * 0.55) * scale
-	var rank := 1
-	if part.has("slot_volume_tier"):
-		rank = _volume_rank_from_value(part.get("slot_volume_tier", "XS"), 1)
-	elif part.has("size_tier") or part.has("size_class"):
-		rank = _size_tier_rank(_part_size_tier_label(part, "booster"))
-	return maxf(1.0, _economy_median_mass_for_rank(rank) * 0.82 * 0.55) * scale
+	return _unit_stats_service().thruster_drive_demand_for_part(part, scale)
 
 
 func _thruster_allocated_momentum_for_part(part: Dictionary, scale: float = 1.0) -> float:
@@ -40314,17 +40296,11 @@ func _thruster_allocated_momentum_for_part(part: Dictionary, scale: float = 1.0)
 
 
 func _thruster_move_efficiency_for_part(part: Dictionary) -> float:
-	if part.has("move_efficiency"):
-		return clampf(float(part["move_efficiency"]), 0.2, 3.0)
-	return 1.0
+	return _unit_stats_service().thruster_move_efficiency_for_part(part)
 
 
 func _thruster_boost_efficiency_for_part(part: Dictionary) -> float:
-	if part.has("boost_efficiency"):
-		return clampf(float(part["boost_efficiency"]), 0.2, 4.0)
-	if part.has("allocated_momentum") and not part.has("boost_momentum"):
-		return ECONOMY_BOOST_MOMENTUM_MULT
-	return ECONOMY_BOOST_MOMENTUM_MULT
+	return _unit_stats_service().thruster_boost_efficiency_for_part(part)
 
 
 func _booster_idle_heat_for_part(part: Dictionary, scale: float = 1.0) -> float:
@@ -41559,10 +41535,7 @@ func _payload_slot_key_for_kind(payload_kind: String, fallback_slot: String = "m
 
 
 func _payload_slot_volume_rank(payload_kind: String, part: Dictionary, payload: Dictionary = {}, fallback_slot: String = "muscle") -> float:
-	var slot_key := _payload_slot_key_for_kind(payload_kind, fallback_slot)
-	return _unit_stats_service().payload_slot_volume_rank(payload_kind, part, payload, fallback_slot, {
-		"booster_boost_momentum": _thruster_boost_total_momentum_for_part(part) if slot_key == "booster" else 0.0,
-	})
+	return _unit_stats_service().payload_slot_volume_rank(payload_kind, part, payload, fallback_slot)
 
 
 func _internal_slot_accepts_payload(slot_rank: int, payload_rank: int) -> bool:
@@ -41593,9 +41566,7 @@ func _legacy_mass_limit_to_volume_rank(mass_limit: float) -> float:
 
 
 func _part_slot_volume_rank(part: Dictionary, slot_key: String) -> float:
-	return _unit_stats_service().part_slot_volume_rank(part, slot_key, {
-		"booster_boost_momentum": _thruster_boost_total_momentum_for_part(part) if slot_key == "booster" else 0.0,
-	})
+	return _unit_stats_service().part_slot_volume_rank(part, slot_key)
 
 
 func _movement_profile_priority(profile: String) -> int:
@@ -45797,7 +45768,7 @@ func _format_unit_stats_zh(stats: Dictionary) -> String:
 
 
 func _economy_median_mass_for_rank(rank_value: int) -> float:
-	return float(ECONOMY_MEDIAN_MASS_BY_RANK.get(clampi(rank_value, 1, 5), 48.0))
+	return _unit_stats_service().economy_median_mass_for_rank(rank_value)
 
 
 func _economy_engine_idle_heat_target(rank_value: int) -> float:

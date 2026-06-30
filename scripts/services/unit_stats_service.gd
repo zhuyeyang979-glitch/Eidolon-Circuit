@@ -19,6 +19,9 @@ const MISSILE_COPY_KEYS := ["missile_lock_priority", "missile_lock_cone_degrees"
 const TORSO_MODULE_PAYLOAD_LOGIC_KEYS := ["command", "skill_state", "motion", "aim_mode", "module_effect", "module_state", "role_switch", "switch_cooldown", "fracture_trigger", "fracture_exception_group", "fracture_ai", "morph_modes", "morph_cooldown", "combine_range", "combine_bonus_hp", "identity_receiver_role", "identity_receiver_order"]
 const DEFAULT_AMMO_TYPES := ["bullet", "laser", "chemical", "explosive", "web"]
 const DEFAULT_AMMO_UNIT_MASS := {"bullet": 0.16, "laser": 0.11, "chemical": 0.24, "explosive": 0.42, "web": 0.09}
+const ECONOMY_MEDIAN_MASS_BY_RANK := {1: 12.0, 2: 24.0, 3: 48.0, 4: 96.0, 5: 192.0}
+const ECONOMY_THRUSTER_TARGET_DURATION := 0.3
+const ECONOMY_BOOST_MOMENTUM_MULT := 2.0
 
 
 func bind(main: Object, next_cache) -> void:
@@ -810,6 +813,56 @@ func part_size_tier_rank(part: Dictionary) -> float:
 	return float(size_tier_rank(part_size_tier_label(part)))
 
 
+func economy_median_mass_for_rank(rank_value: int) -> float:
+	return float(ECONOMY_MEDIAN_MASS_BY_RANK.get(clampi(rank_value, 1, 5), 48.0))
+
+
+func thruster_drive_demand_for_part(part: Dictionary, scale: float = 1.0) -> float:
+	if part.has("drive_demand"):
+		return maxf(0.0, float(part.get("drive_demand", 0.0)) * scale)
+	if part.has("momentum_min"):
+		return maxf(0.0, float(part.get("momentum_min", 0.0)) * scale)
+	if part.has("allocated_momentum"):
+		return maxf(1.0, float(part.get("allocated_momentum", 0.0)) * 0.55) * scale
+	var rank := 1
+	if part.has("slot_volume_tier"):
+		rank = volume_rank_from_value(part.get("slot_volume_tier", "XS"), 1)
+	elif part.has("size_tier") or part.has("size_class"):
+		rank = int(part_size_tier_rank(part))
+	return maxf(1.0, economy_median_mass_for_rank(rank) * 0.82 * 0.55) * scale
+
+
+func thruster_move_efficiency_for_part(part: Dictionary) -> float:
+	if part.has("move_efficiency"):
+		return clampf(float(part["move_efficiency"]), 0.2, 3.0)
+	return 1.0
+
+
+func thruster_boost_efficiency_for_part(part: Dictionary) -> float:
+	if part.has("boost_efficiency"):
+		return clampf(float(part["boost_efficiency"]), 0.2, 4.0)
+	return ECONOMY_BOOST_MOMENTUM_MULT
+
+
+func booster_normal_momentum_for_part(part: Dictionary) -> float:
+	return maxf(0.0, thruster_drive_demand_for_part(part) * thruster_move_efficiency_for_part(part))
+
+
+func booster_boost_momentum_for_part(part: Dictionary) -> float:
+	if part.has("boost_momentum"):
+		return maxf(0.0, float(part.get("boost_momentum", 0.0)))
+	return 0.0
+
+
+func thruster_boost_total_momentum_for_part(part: Dictionary) -> float:
+	var boost_extra := booster_boost_momentum_for_part(part)
+	var duration := maxf(0.0, float(part.get("boost_duration", ECONOMY_THRUSTER_TARGET_DURATION)))
+	if boost_extra <= 0.0 or duration <= 0.0:
+		return 0.0
+	var demand := thruster_drive_demand_for_part(part)
+	return maxf(0.0, (demand + boost_extra) * thruster_boost_efficiency_for_part(part))
+
+
 func volume_tier_rank(tier: String) -> int:
 	match tier.to_upper():
 		"XS":
@@ -940,7 +993,7 @@ func part_slot_volume_rank(part: Dictionary, slot_key: String, context: Dictiona
 			return 2.0
 		return 1.0
 	if slot_key == "booster":
-		var boost_momentum := float(context.get("booster_boost_momentum", part.get("boost_momentum", 0.0)))
+		var boost_momentum := float(context.get("booster_boost_momentum", thruster_boost_total_momentum_for_part(part)))
 		var mass := float(part.get("mass", 0.0))
 		if boost_momentum >= 720.0 or mass >= 80.0:
 			return 5.0

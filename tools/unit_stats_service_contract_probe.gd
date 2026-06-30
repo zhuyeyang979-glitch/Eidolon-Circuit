@@ -522,7 +522,7 @@ func _init() -> void:
 		_fail("failed oath note/flag mismatch: %s" % str(failed_oath_stats))
 	_assert_near(float(failed_oath_stats.get("speed", 0.0)), 1.0, "failed oath speed unchanged")
 	_assert_near(float(failed_oath_stats.get("pierce_range_bonus", 0.0)), 0.02, "failed oath pierce unchanged")
-	for method_name in ["normalize_size_tier_label", "size_tier_rank", "size_tier_from_footprint", "part_size_tier_label", "part_size_tier_rank", "payload_slot_key_for_kind", "volume_tier_rank", "volume_rank_from_value", "payload_slot_volume_rank", "internal_slot_accepts_payload", "torso_internal_slot_size_ranks", "best_internal_slot_for_payload"]:
+	for method_name in ["normalize_size_tier_label", "size_tier_rank", "size_tier_from_footprint", "part_size_tier_label", "part_size_tier_rank", "economy_median_mass_for_rank", "thruster_drive_demand_for_part", "thruster_move_efficiency_for_part", "thruster_boost_efficiency_for_part", "booster_normal_momentum_for_part", "booster_boost_momentum_for_part", "thruster_boost_total_momentum_for_part", "payload_slot_key_for_kind", "volume_tier_rank", "volume_rank_from_value", "payload_slot_volume_rank", "internal_slot_accepts_payload", "torso_internal_slot_size_ranks", "best_internal_slot_for_payload"]:
 		if not service.has_method(method_name):
 			_fail("UnitStatsService missing %s." % method_name)
 			return
@@ -542,6 +542,20 @@ func _init() -> void:
 		_fail("explicit part size-tier identity mismatch.")
 	if String(service.part_size_tier_label({"length": 0.4, "radius": 0.16, "mass": 3.0})) != "S":
 		_fail("part footprint size-tier inference mismatch.")
+	_assert_near(float(service.economy_median_mass_for_rank(1)), 12.0, "XS economy median mass")
+	_assert_near(float(service.economy_median_mass_for_rank(5)), 192.0, "XL economy median mass")
+	_assert_near(float(service.thruster_drive_demand_for_part({"drive_demand": 80.0, "momentum_min": 40.0})), 80.0, "explicit thruster drive demand")
+	_assert_near(float(service.thruster_drive_demand_for_part({"momentum_min": 40.0, "allocated_momentum": 999.0})), 40.0, "minimum thruster drive demand")
+	_assert_near(float(service.thruster_drive_demand_for_part({"allocated_momentum": 20.0})), 11.0, "legacy allocated thruster demand")
+	_assert_near(float(service.thruster_drive_demand_for_part({"slot_volume_tier": "M"})), 21.648, "rank fallback thruster demand")
+	_assert_near(float(service.thruster_move_efficiency_for_part({"move_efficiency": 9.0})), 3.0, "thruster move efficiency clamp")
+	_assert_near(float(service.thruster_boost_efficiency_for_part({"boost_efficiency": 9.0})), 4.0, "thruster boost efficiency clamp")
+	_assert_near(float(service.booster_normal_momentum_for_part({"momentum_min": 20.0, "move_efficiency": 1.5})), 30.0, "booster normal momentum")
+	_assert_near(float(service.booster_boost_momentum_for_part({"boost_momentum": -4.0})), 0.0, "booster extra momentum clamp")
+	var boost_formula_part := {"drive_demand": 80.0, "boost_momentum": 40.0, "boost_efficiency": 2.5, "boost_duration": 0.3}
+	_assert_near(float(service.thruster_boost_total_momentum_for_part(boost_formula_part)), 300.0, "booster total momentum")
+	boost_formula_part["boost_duration"] = 0.0
+	_assert_near(float(service.thruster_boost_total_momentum_for_part(boost_formula_part)), 0.0, "zero-duration booster total momentum")
 	if String(service.payload_slot_key_for_kind("engine", "muscle")) != "engine" or String(service.payload_slot_key_for_kind("electronic_armor", "limb_muscle")) != "muscle":
 		_fail("payload slot-key mapping mismatch.")
 	if String(service.payload_slot_key_for_kind("unknown_payload", "custom_slot")) != "custom_slot":
@@ -567,6 +581,7 @@ func _init() -> void:
 	_assert_near(float(service.part_slot_volume_rank({"engine_momentum_output": 84.0, "mass": 4.0}, "engine")), 4.0, "engine output volume rank")
 	_assert_near(float(service.part_slot_volume_rank({"cooling": 38.0, "mass": 3.0}, "cooling")), 4.0, "cooling payload volume rank")
 	_assert_near(float(service.part_slot_volume_rank({"mass": 5.0}, "booster", {"booster_boost_momentum": 361.0})), 4.0, "booster payload volume rank")
+	_assert_near(float(service.part_slot_volume_rank({"drive_demand": 80.0, "boost_momentum": 40.0, "boost_efficiency": 2.5, "boost_duration": 0.3, "mass": 5.0}, "booster")), 3.0, "service-derived booster volume rank")
 	_assert_near(float(service.part_slot_volume_rank({"radius": 0.16, "length": 0.4, "mass": 3.0}, "muscle")), 3.0, "footprint payload volume rank")
 	_assert_near(float(service.part_slot_volume_rank({"radius": 0.16, "length": 0.4, "mass": 3.0}, "limb_muscle")), 2.0, "limb footprint volume rank")
 	if not bool(service.internal_slot_accepts_payload(6, 5)) or bool(service.internal_slot_accepts_payload(2, 3)) or not bool(service.internal_slot_accepts_payload(0, 1)):
@@ -886,6 +901,13 @@ func _init() -> void:
 		"_unit_stats_service().size_tier_rank(",
 		"_unit_stats_service().size_tier_from_footprint(",
 		"_unit_stats_service().part_size_tier_label(",
+		"_unit_stats_service().economy_median_mass_for_rank(",
+		"_unit_stats_service().thruster_drive_demand_for_part(",
+		"_unit_stats_service().thruster_move_efficiency_for_part(",
+		"_unit_stats_service().thruster_boost_efficiency_for_part(",
+		"_unit_stats_service().booster_normal_momentum_for_part(",
+		"_unit_stats_service().booster_boost_momentum_for_part(",
+		"_unit_stats_service().thruster_boost_total_momentum_for_part(",
 		"_unit_stats_service().payload_slot_key_for_kind(",
 		"_unit_stats_service().volume_tier_rank(",
 		"_unit_stats_service().volume_rank_from_value(",
@@ -909,6 +931,9 @@ func _init() -> void:
 			return
 	if main_source.contains("\"size_tier_rank\": float(_size_tier_rank(_part_size_tier_label(part, slot_key)))"):
 		_fail("main.gd should not derive part size-tier rank inside slot-volume adapters.")
+		return
+	if main_source.contains("\"booster_boost_momentum\":"):
+		_fail("main.gd should not derive booster momentum inside slot-volume adapters.")
 		return
 	if failed:
 		return
