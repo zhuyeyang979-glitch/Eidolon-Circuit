@@ -49888,32 +49888,42 @@ func _apply_editor_panel_visibility(role_key: String, unit_bp: Dictionary) -> vo
 		_set_canvas_item_visible_if_changed(editor_shop_pending_label, bool(shop_pending_plan.get("visible", false)))
 		_set_control_text_if_changed(editor_shop_pending_label, String(shop_pending_plan.get("text", "")))
 		_set_canvas_item_modulate_if_changed(editor_shop_pending_label, shop_pending_plan.get("modulate", Color(0.72, 0.88, 1.0, 0.78)))
+	var color_controls_plan := UILifecycleService.editor_color_controls_presentation(
+		color_visible,
+		_editor_player(),
+		_team_color_name(_editor_player()),
+		_team_color_index(_editor_player()),
+		TEAM_COLOR_PRESETS,
+		editor_color_buttons.size(),
+		_ui_is_zh()
+	)
 	if editor_color_panel != null:
-		_set_canvas_item_visible_if_changed(editor_color_panel, color_visible)
+		_set_canvas_item_visible_if_changed(editor_color_panel, bool(Dictionary(color_controls_plan.get("panel", {})).get("visible", false)))
 	if editor_color_label != null:
-		_set_canvas_item_visible_if_changed(editor_color_label, color_visible)
-		_set_control_text_if_changed(editor_color_label, "P%d 队伍颜色：%s" % [_editor_player(), _team_color_name(_editor_player())] if _ui_is_zh() else "P%d TEAM COLOR: %s" % [_editor_player(), _team_color_name(_editor_player())])
+		var color_label_plan := Dictionary(color_controls_plan.get("label", {}))
+		_set_canvas_item_visible_if_changed(editor_color_label, bool(color_label_plan.get("visible", false)))
+		_set_control_text_if_changed(editor_color_label, String(color_label_plan.get("text", "")))
+	var color_button_plans: Array = Array(color_controls_plan.get("buttons", []))
 	for i in range(editor_color_buttons.size()):
 		var color_button: Button = editor_color_buttons[i]
-		_set_canvas_item_visible_if_changed(color_button, color_visible)
-		_set_button_disabled_if_changed(color_button, not color_visible)
-		if color_visible and i < TEAM_COLOR_PRESETS.size():
-			var preset: Dictionary = TEAM_COLOR_PRESETS[i]
-			var selected := i == _team_color_index(_editor_player())
-			var preset_name := String(preset.get("name", preset.get("name_en", "颜色"))) if _ui_is_zh() else String(preset.get("name_en", preset.get("name", "COLOR")))
-			_set_control_text_if_changed(color_button, "%s%s\n主色/辅色" % ["已选 " if selected else "", preset_name] if _ui_is_zh() else "%s%s\nPRIMARY/ACCENT" % ["* " if selected else "", preset_name])
-			var primary: Color = preset.get("primary", Color.WHITE)
-			var accent: Color = preset.get("accent", Color.WHITE)
-			_set_canvas_item_modulate_if_changed(color_button, primary.lerp(accent, 0.34 if selected else 0.12))
+		var color_button_plan := Dictionary(color_button_plans[i]) if i < color_button_plans.size() and color_button_plans[i] is Dictionary else {}
+		_set_canvas_item_visible_if_changed(color_button, bool(color_button_plan.get("visible", false)))
+		_set_button_disabled_if_changed(color_button, bool(color_button_plan.get("disabled", true)))
+		if color_button_plan.has("text"):
+			_set_control_text_if_changed(color_button, String(color_button_plan.get("text", "")))
+		if color_button_plan.has("modulate"):
+			_set_canvas_item_modulate_if_changed(color_button, color_button_plan.get("modulate", Color.WHITE))
 	if editor_primary_color_picker != null:
-		editor_primary_color_picker.visible = color_visible
-		editor_primary_color_picker.disabled = not color_visible
-		editor_primary_color_picker.text = "主色" if _ui_is_zh() else "PRIMARY"
+		var primary_picker_plan := Dictionary(color_controls_plan.get("primary_picker", {}))
+		_set_canvas_item_visible_if_changed(editor_primary_color_picker, bool(primary_picker_plan.get("visible", false)))
+		_set_button_disabled_if_changed(editor_primary_color_picker, bool(primary_picker_plan.get("disabled", true)))
+		_set_control_text_if_changed(editor_primary_color_picker, String(primary_picker_plan.get("text", "")))
 	if editor_accent_color_picker != null:
-		editor_accent_color_picker.visible = color_visible
-		editor_accent_color_picker.disabled = not color_visible
-		editor_accent_color_picker.text = "辅色" if _ui_is_zh() else "ACCENT"
-	if color_visible:
+		var accent_picker_plan := Dictionary(color_controls_plan.get("accent_picker", {}))
+		_set_canvas_item_visible_if_changed(editor_accent_color_picker, bool(accent_picker_plan.get("visible", false)))
+		_set_button_disabled_if_changed(editor_accent_color_picker, bool(accent_picker_plan.get("disabled", true)))
+		_set_control_text_if_changed(editor_accent_color_picker, String(accent_picker_plan.get("text", "")))
+	if bool(color_controls_plan.get("sync_pickers", false)):
 		editor_color_picker_sync = true
 		if editor_primary_color_picker != null:
 			editor_primary_color_picker.color = _team_primary_color(_editor_player())

@@ -336,6 +336,43 @@ static func editor_shop_feedback_presentation(shop_visible: bool, pending_kind: 
 	}
 
 
+static func editor_color_controls_presentation(color_visible: bool, player_id: int, team_color_name: String, selected_color_index: int, color_presets: Array, button_count: int, zh: bool) -> Dictionary:
+	var button_plans := []
+	for i in range(button_count):
+		var button_plan := {
+			"visible": color_visible,
+			"disabled": not color_visible,
+		}
+		if i < color_presets.size() and color_presets[i] is Dictionary:
+			var preset: Dictionary = color_presets[i]
+			var selected := i == selected_color_index
+			var preset_name := String(preset.get("name", preset.get("name_en", "颜色"))) if zh else String(preset.get("name_en", preset.get("name", "COLOR")))
+			button_plan["text"] = "%s%s\n主色/辅色" % ["已选 " if selected else "", preset_name] if zh else "%s%s\nPRIMARY/ACCENT" % ["* " if selected else "", preset_name]
+			var primary: Color = preset.get("primary", Color.WHITE)
+			var accent: Color = preset.get("accent", Color.WHITE)
+			button_plan["modulate"] = primary.lerp(accent, 0.34 if selected else 0.12)
+		button_plans.append(button_plan)
+	return {
+		"panel": {"visible": color_visible},
+		"label": {
+			"visible": color_visible,
+			"text": "P%d 队伍颜色：%s" % [player_id, team_color_name] if zh else "P%d TEAM COLOR: %s" % [player_id, team_color_name],
+		},
+		"buttons": button_plans,
+		"primary_picker": {
+			"visible": color_visible,
+			"disabled": not color_visible,
+			"text": "主色" if zh else "PRIMARY",
+		},
+		"accent_picker": {
+			"visible": color_visible,
+			"disabled": not color_visible,
+			"text": "辅色" if zh else "ACCENT",
+		},
+		"sync_pickers": color_visible,
+	}
+
+
 static func editor_panel_visibility_plan(panel_mode: String, load_mode: String, body_board_enabled: bool, barrier_screen_board: bool, has_custom_topology: bool, part_group_mode: String, part_filter_mode: String, roster_count: int) -> Dictionary:
 	var normalized_load_mode := String(load_mode)
 	if normalized_load_mode == "team":

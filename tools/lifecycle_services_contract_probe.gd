@@ -341,6 +341,36 @@ func _init() -> void:
 	if String(Dictionary(empty_shop_plan.get("pending", {})).get("text", "")).find("No pending physical part") != 0:
 		_fail("UILifecycleService empty shop pending text failed.")
 		return
+	var color_presets := [
+		{"name": "红", "name_en": "Red", "primary": Color(1.0, 0.0, 0.0, 1.0), "accent": Color(0.0, 0.0, 1.0, 1.0)},
+		{"name": "蓝", "name_en": "Blue", "primary": Color(0.0, 1.0, 0.0, 1.0), "accent": Color(0.0, 0.0, 0.0, 1.0)},
+	]
+	var color_plan: Dictionary = UILifecycleService.editor_color_controls_presentation(true, 2, "Crimson", 1, color_presets, 2, true)
+	if not bool(Dictionary(color_plan.get("panel", {})).get("visible", false)):
+		_fail("UILifecycleService color panel visibility contract failed.")
+		return
+	var color_label: Dictionary = Dictionary(color_plan.get("label", {}))
+	if not bool(color_label.get("visible", false)) or String(color_label.get("text", "")) != "P2 队伍颜色：Crimson":
+		_fail("UILifecycleService color label presentation contract failed.")
+		return
+	var color_buttons: Array = Array(color_plan.get("buttons", []))
+	if color_buttons.size() != 2:
+		_fail("UILifecycleService color button count failed.")
+		return
+	var selected_color_button: Dictionary = Dictionary(color_buttons[1])
+	if String(selected_color_button.get("text", "")) != "已选 蓝\n主色/辅色" or bool(selected_color_button.get("disabled", true)):
+		_fail("UILifecycleService selected color button presentation failed.")
+		return
+	_assert_color(selected_color_button, "modulate", Color(0.0, 0.66, 0.0, 1.0), "selected color button presentation")
+	var primary_picker: Dictionary = Dictionary(color_plan.get("primary_picker", {}))
+	var accent_picker: Dictionary = Dictionary(color_plan.get("accent_picker", {}))
+	if String(primary_picker.get("text", "")) != "主色" or String(accent_picker.get("text", "")) != "辅色":
+		_fail("UILifecycleService color picker text contract failed.")
+		return
+	var hidden_color_plan: Dictionary = UILifecycleService.editor_color_controls_presentation(false, 1, "Azure", 0, color_presets, 1, false)
+	if bool(Dictionary(hidden_color_plan.get("panel", {})).get("visible", true)) or not bool(Dictionary(Array(hidden_color_plan.get("buttons", []))[0]).get("disabled", false)) or bool(Dictionary(hidden_color_plan.get("primary_picker", {})).get("visible", true)):
+		_fail("UILifecycleService hidden color controls contract failed.")
+		return
 
 	var task := LoadingTask.create("idle", "Idle", 1.0, Callable(), LoadingTask.PHASE_IDLE, false, true)
 	var prepared := LoadingLifecycleService.prepare_task(task, "editor", 4)
