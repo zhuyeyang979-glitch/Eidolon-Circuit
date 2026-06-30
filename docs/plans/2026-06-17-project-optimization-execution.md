@@ -538,10 +538,20 @@ GREEN: core manifest membership check returned true
 
 The stale probe mixed a board-local input with `_topology_position_to_board()`, which returns a global point. Its diagnostic offset was exactly the board global origin `(8,94)`, while the hard-coded input was also 16px outside the valid topology square and was correctly clamped. The probe now derives a valid board-local point from a topology reference, verifies the local-input/local-rendering roundtrip, returns immediately from every failure branch, exits explicitly with `0` only on success, and is registered in the manifest `core` set.
 
+Follow-up verification for the power-allocation duration estimate probe:
+
+```text
+RED: power_allocation_panel_duration_estimate_probe emitted two monotonicity errors but exited 0
+RED: core manifest membership check returned false
+GREEN: POWER_ALLOCATION_PANEL_DURATION_ESTIMATE_PROBE ok base=0.300 slow=1.979 high=0.990 heavy=2.969 capped=6.000
+GREEN: core manifest membership check returned true
+```
+
+The stale fixture multiplied driven mass by 20 before comparing allocation and mass sensitivity, which put every comparison on `MotionBudget`'s intentional 6-second ceiling. The probe now uses a non-saturated 2x-mass fixture for monotonicity, verifies the 6-second ceiling separately, returns immediately from every failure branch, exits explicitly with `0` only on success, and is registered in the manifest `core` set.
+
 Remaining items after this batch:
 
 - Run a headed/manual visual check for `part_identity_language_probe` and `unit_editor_assembly_template_probe` when a display session is available.
 - Decide whether `assets/concepts/` is Git-tracked, Git LFS-managed, or local-reference-only.
 - Continue editor UI extraction with `_build_editor_ui` and the remaining action presentation/control-mutation sections of `_apply_editor_panel_visibility`, then continue `_resolve_attack` and `_refresh_editor_visual_views` extraction.
-- `power_allocation_panel_duration_estimate_probe` is not registered in the manifest and still prints stale assertion errors before exiting `0`; do not use it as completion evidence until its expectations are reviewed.
 - `thruster_fixed_drive_demand_probe`, `thruster_dual_budget_legality_probe`, and `thruster_philosophy_probe` are outside the current registered gate set and emit stale assertions on the unchanged `ce7e436` baseline; review or retire them before using them as completion evidence.
