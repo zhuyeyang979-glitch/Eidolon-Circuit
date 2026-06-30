@@ -271,9 +271,23 @@ ENGINE_POWER_ALLOCATION_OPEN_PROBE ok detail_open=true dock_visible=true entries
 POWER_ALLOCATION_PANEL_HEAT_LIVE_UPDATE_PROBE ok heat=20.917
 ```
 
+Follow-up verification for the ether payload stat extraction:
+
+```text
+RED: unit_stats_service_contract_probe failed on missing UnitStatsService.apply_ether_payload_stats()
+UNIT_STATS_SERVICE_CONTRACT_PROBE ok
+MAIN_FILE_EXTRACTION_CONTRACT_PROBE ok services=9
+Godot --check-only --quit-after 1: pass
+ETHER_HEAT_ECONOMY_PROBE ok
+EDITOR_COST_ACCOUNTING_PROBE node_cost=117 engine_cost=14 team_cost=234
+UNIT_BUILD_RULE_TRAINING_GATE_PROBE ok
+INTERNAL_SLOT_SIZE_PROBE ok profiles=5 explicit=[5, 2, 2, 2, 2, 2]
+BARRIER_PANEL_PROBE ok
+```
+
 Remaining items after this batch:
 
 - Run a headed/manual visual check for `part_identity_language_probe` and `unit_editor_assembly_template_probe` when a display session is available.
 - Decide whether `assets/concepts/` is Git-tracked, Git LFS-managed, or local-reference-only.
-- Continue deeper `main.gd` extraction with the remaining `_compute_unit_stats` payload catalog lookup, adapter context derivation for size-tier/booster/torso-capacity facts, concrete engine/cooling/booster internal payload callbacks, ether/soul-bonus callbacks, `_build_editor_ui`, `_apply_editor_panel_visibility`, `_resolve_attack`, and `_refresh_editor_visual_views`.
+- Continue deeper `main.gd` extraction with the remaining `_compute_unit_stats` payload catalog lookup, adapter context derivation for size-tier/booster/torso-capacity facts, concrete engine/cooling/booster internal payload callbacks, soul-bonus callbacks, `_build_editor_ui`, `_apply_editor_panel_visibility`, `_resolve_attack`, and `_refresh_editor_visual_views`.
 - `power_allocation_panel_duration_estimate_probe` is not registered in the manifest and still prints stale assertion errors before exiting `0`; do not use it as completion evidence until its expectations are reviewed.

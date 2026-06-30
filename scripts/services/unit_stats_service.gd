@@ -956,6 +956,45 @@ func apply_torso_special_payload_logic_stats(stats: Dictionary, special_part: Di
 	return intent
 
 
+func apply_ether_payload_stats(stats: Dictionary, ether_part: Dictionary, context: Dictionary = {}) -> Dictionary:
+	stats["ether_count"] = int(stats.get("ether_count", 0)) + 1
+	var material_slot_count := int(ether_part.get("material_slots", ether_part.get("fixed", 0)))
+	stats["material_slots"] = int(stats.get("material_slots", 0)) + material_slot_count
+	var space_size := float(ether_part.get("space_size", 0.0))
+	var ether_power := float(ether_part.get("power", 0.0))
+	var default_threshold := float(context.get("default_momentum_threshold_coeff", 1.15))
+	var threshold_coeff := float(ether_part.get("ether_momentum_threshold_coeff", default_threshold + ether_power * 0.09 + space_size * 0.62))
+	stats["ether_momentum_threshold_coeff"] = maxf(float(stats.get("ether_momentum_threshold_coeff", 0.0)), threshold_coeff)
+	stats["space_size"] = maxf(float(stats.get("space_size", 0.0)), space_size)
+	var current_aura := 0.0 if int(stats.get("ether_count", 0)) == 1 and ether_part.has("aura_range") else float(stats.get("aura_range", 0.0))
+	stats["aura_range"] = maxf(current_aura, float(ether_part.get("aura_range", space_size)))
+	stats["active_range"] = maxf(float(stats.get("active_range", 0.0)), float(ether_part.get("active_range", space_size * 0.78)))
+	stats["barrier_disconnected"] = bool(stats.get("barrier_disconnected", false)) or bool(ether_part.get("barrier_disconnected", false))
+	stats["ether_bind_radius_m"] = maxf(float(stats.get("ether_bind_radius_m", 0.0)), float(ether_part.get("ether_bind_radius_m", ether_part.get("ether_radius_m", 0.0))))
+	var part_link_limit := int(ether_part.get("ether_link_capacity", 0))
+	var current_link_limit := int(stats.get("ether_group_link_limit", -1))
+	if current_link_limit < 0:
+		current_link_limit = part_link_limit
+	else:
+		current_link_limit = mini(current_link_limit, part_link_limit)
+	stats["ether_group_link_limit"] = current_link_limit
+	stats["ether_group_capacity"] = maxi(1, current_link_limit + 1)
+	if String(stats.get("ether_group_kind", "")) == "":
+		stats["ether_group_kind"] = String(ether_part.get("ether_group_kind", "single_space"))
+	elif String(ether_part.get("ether_group_kind", "")) != "" and String(stats.get("ether_group_kind", "")) != String(ether_part.get("ether_group_kind", "")):
+		stats["ether_group_kind"] = "mixed"
+	if bool(ether_part.get("is_gravity_field", false)):
+		var effects: Array = Array(stats.get("ether_effects", [])).duplicate(true)
+		effects.append({
+			"kind": "gravity",
+			"direction": String(ether_part.get("gravity_direction", "forward")),
+			"force": float(ether_part.get("gravity_force", 0.0)),
+			"radius": float(ether_part.get("gravity_radius", ether_part.get("aura_range", space_size))),
+		})
+		stats["ether_effects"] = effects
+	return stats
+
+
 func apply_soul_heat_capacity_stats(stats: Dictionary, soul_part: Dictionary) -> Dictionary:
 	var soul_capacity := maxf(1.0, float(soul_part.get("soul_heat_capacity", 74.0)))
 	stats["soul_heat_capacity"] = soul_capacity

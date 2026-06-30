@@ -341,6 +341,56 @@ func _init() -> void:
 		_fail("code payload special stats mismatch: %s" % str(special_logic_stats))
 	if bool(code_intent.get("apply_ether", false)) or bool(code_intent.get("apply_soul_bonus", false)):
 		_fail("code payload should not request special callbacks: %s" % str(code_intent))
+	if not service.has_method("apply_ether_payload_stats"):
+		_fail("UnitStatsService missing apply_ether_payload_stats.")
+		return
+	var ether_stats := {
+		"ether_count": 0,
+		"material_slots": 1,
+		"aura_range": 9.0,
+		"active_range": 0.0,
+		"ether_effects": [{"kind": "legacy"}],
+	}
+	service.apply_ether_payload_stats(ether_stats, {
+		"material_slots": 8,
+		"space_size": 0.5,
+		"power": 2.0,
+		"aura_range": 0.25,
+		"active_range": 0.4,
+		"barrier_disconnected": true,
+		"ether_bind_radius_m": 4.0,
+		"ether_link_capacity": 3,
+		"ether_group_kind": "plain",
+		"is_gravity_field": true,
+		"gravity_direction": "up",
+		"gravity_force": 0.42,
+		"gravity_radius": 0.7,
+	}, {"default_momentum_threshold_coeff": 1.15})
+	if int(ether_stats.get("ether_count", 0)) != 1 or int(ether_stats.get("material_slots", 0)) != 9:
+		_fail("ether merge count/material mismatch: %s" % str(ether_stats))
+	_assert_near(float(ether_stats.get("ether_momentum_threshold_coeff", 0.0)), 1.64, "ether threshold coeff")
+	_assert_near(float(ether_stats.get("space_size", 0.0)), 0.5, "ether space size")
+	_assert_near(float(ether_stats.get("aura_range", 0.0)), 0.25, "first ether explicit aura should replace old aura")
+	_assert_near(float(ether_stats.get("active_range", 0.0)), 0.4, "ether active range")
+	if not bool(ether_stats.get("barrier_disconnected", false)) or int(ether_stats.get("ether_group_capacity", 0)) != 4:
+		_fail("ether merge disconnected/group mismatch: %s" % str(ether_stats))
+	if String(ether_stats.get("ether_group_kind", "")) != "plain" or Array(ether_stats.get("ether_effects", [])).size() != 2:
+		_fail("ether merge kind/effects mismatch: %s" % str(ether_stats))
+	var gravity_effect: Dictionary = Dictionary(Array(ether_stats.get("ether_effects", []))[1])
+	if String(gravity_effect.get("direction", "")) != "up" or not _near(float(gravity_effect.get("force", 0.0)), 0.42) or not _near(float(gravity_effect.get("radius", 0.0)), 0.7):
+		_fail("ether gravity effect mismatch: %s" % str(gravity_effect))
+	service.apply_ether_payload_stats(ether_stats, {
+		"fixed": 6,
+		"space_size": 0.8,
+		"ether_radius_m": 7.0,
+		"ether_link_capacity": 1,
+		"ether_group_kind": "gravity",
+	})
+	if int(ether_stats.get("ether_count", 0)) != 2 or int(ether_stats.get("material_slots", 0)) != 15:
+		_fail("second ether merge count/material mismatch: %s" % str(ether_stats))
+	if int(ether_stats.get("ether_group_capacity", 0)) != 2 or String(ether_stats.get("ether_group_kind", "")) != "mixed":
+		_fail("second ether merge group mismatch: %s" % str(ether_stats))
+	_assert_near(float(ether_stats.get("ether_bind_radius_m", 0.0)), 7.0, "second ether bind radius")
 	if not service.has_method("apply_soul_heat_capacity_stats"):
 		_fail("UnitStatsService missing apply_soul_heat_capacity_stats.")
 		return
@@ -702,6 +752,7 @@ func _init() -> void:
 		"_unit_stats_service().record_torso_payload_summary_entry(",
 		"_unit_stats_service().torso_payload_processing_plan(",
 		"_unit_stats_service().apply_torso_payload_plan(",
+		"_unit_stats_service().apply_ether_payload_stats(stats,",
 		"_unit_stats_service().apply_soul_heat_capacity_stats(stats,",
 		"_unit_stats_service().apply_internal_payload_merge_plan(stats,",
 		"_unit_stats_service().apply_torso_payload_summary(stats,",

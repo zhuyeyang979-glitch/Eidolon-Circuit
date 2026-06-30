@@ -2212,3 +2212,10 @@ Next safe chunk: continue only with narrow pure-rule extraction where `main.gd` 
 - `main.gd` keeps the concrete helper callbacks in `_merge_internal_payload_stats()`: cooling v3 defaults, cooling heat-capacity sampling, engine stat merge, cooling profile/rate merge, and thruster drive merge.
 - `tools/unit_stats_service_contract_probe.gd` first failed on the missing `UnitStatsService.apply_internal_payload_merge_plan()`, then passed after the service method and `main.gd` delegation were added. The same probe verifies engine, cooling, and booster merge intents and base stat changes.
 - Focused verification passed on macOS Godot `4.6.2.stable.official.71f334935`: `unit_stats_service_contract_probe`, `main_file_extraction_contract_probe`, `editor_cost_accounting_probe`, `unit_build_rule_training_gate_probe`, `internal_slot_size_probe`, `thruster_dual_motion_formula_probe`, `engine_momentum_allocation_open_probe`, and `power_allocation_panel_heat_live_update_probe`.
+
+2026-06-30 UnitStatsService ether payload stat pass:
+
+- `UnitStatsService.apply_ether_payload_stats()` now owns ether count/material slots, momentum threshold, space/aura/active ranges, disconnected barrier flag, bind radius, group capacity/kind resolution, and gravity effect row accumulation.
+- `main.gd` keeps `_merge_ether_stats()` as a compatibility adapter that supplies `BARRIER_DEFAULT_MOMENTUM_THRESHOLD_COEFF` as service context.
+- `tools/unit_stats_service_contract_probe.gd` first failed on the missing `UnitStatsService.apply_ether_payload_stats()`, then passed after the service method and `main.gd` delegation were added. The same probe verifies first-ether aura replacement, mixed group kind/capacity, bind radius fallback, and gravity effect append behavior.
+- Focused verification passed on macOS Godot `4.6.2.stable.official.71f334935`: `unit_stats_service_contract_probe`, `main_file_extraction_contract_probe`, Godot `--check-only --quit-after 1`, `ether_heat_economy_probe`, `editor_cost_accounting_probe`, `unit_build_rule_training_gate_probe`, `internal_slot_size_probe`, and `barrier_panel_probe`.
