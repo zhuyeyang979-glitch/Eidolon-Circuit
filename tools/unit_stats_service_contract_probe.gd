@@ -522,7 +522,7 @@ func _init() -> void:
 		_fail("failed oath note/flag mismatch: %s" % str(failed_oath_stats))
 	_assert_near(float(failed_oath_stats.get("speed", 0.0)), 1.0, "failed oath speed unchanged")
 	_assert_near(float(failed_oath_stats.get("pierce_range_bonus", 0.0)), 0.02, "failed oath pierce unchanged")
-	for method_name in ["normalize_size_tier_label", "size_tier_rank", "size_tier_from_footprint", "part_size_tier_label", "part_size_tier_rank", "economy_median_mass_for_rank", "thruster_drive_demand_for_part", "thruster_move_efficiency_for_part", "thruster_boost_efficiency_for_part", "booster_normal_momentum_for_part", "booster_boost_momentum_for_part", "thruster_boost_total_momentum_for_part", "payload_slot_key_for_kind", "payload_catalog_selection", "volume_tier_rank", "volume_rank_from_value", "payload_slot_volume_rank", "internal_slot_accepts_payload", "torso_internal_slot_size_ranks", "best_internal_slot_for_payload"]:
+	for method_name in ["normalize_size_tier_label", "size_tier_rank", "size_tier_from_footprint", "part_size_tier_label", "part_size_tier_rank", "component_is_torso", "component_is_brain_torso", "torso_size_rank_for_slots", "torso_baseline_slot_capacity", "torso_plugin_capacity_for_part", "torso_software_capacity_for_part", "economy_median_mass_for_rank", "thruster_drive_demand_for_part", "thruster_move_efficiency_for_part", "thruster_boost_efficiency_for_part", "booster_normal_momentum_for_part", "booster_boost_momentum_for_part", "thruster_boost_total_momentum_for_part", "payload_slot_key_for_kind", "payload_catalog_selection", "volume_tier_rank", "volume_rank_from_value", "payload_slot_volume_rank", "internal_slot_accepts_payload", "torso_internal_slot_size_ranks", "best_internal_slot_for_payload"]:
 		if not service.has_method(method_name):
 			_fail("UnitStatsService missing %s." % method_name)
 			return
@@ -542,6 +542,36 @@ func _init() -> void:
 		_fail("explicit part size-tier identity mismatch.")
 	if String(service.part_size_tier_label({"length": 0.4, "radius": 0.16, "mass": 3.0})) != "S":
 		_fail("part footprint size-tier inference mismatch.")
+	if not bool(service.component_is_torso({"is_torso": true})) or not bool(service.component_is_torso({"material_class": "torso"})):
+		_fail("torso identity should accept explicit torso flags and material class.")
+	if bool(service.component_is_torso({"material_class": "weapon"})):
+		_fail("non-torso material should not be classified as a torso.")
+	if not bool(service.component_is_brain_torso({"is_torso": true, "torso_subpart": "brain"})):
+		_fail("brain torso subpart should classify as brain torso.")
+	if not bool(service.component_is_brain_torso({"material_class": "torso", "name": "CONTROL HEAD"})):
+		_fail("control/head torso naming should classify as brain torso.")
+	if bool(service.component_is_brain_torso({"name": "BRAIN ONLY"})):
+		_fail("brain naming without torso identity should not classify as brain torso.")
+	if int(service.torso_size_rank_for_slots({"size_class": "small"})) != 2:
+		_fail("torso slot size-rank should use part size-class rules.")
+	if int(service.torso_baseline_slot_capacity({"size_class": "XS"}, "plugin")) != 3 or int(service.torso_baseline_slot_capacity({"size_class": "S"}, "plugin")) != 4:
+		_fail("small torso baseline plugin capacity mismatch.")
+	if int(service.torso_baseline_slot_capacity({"size_class": "M"}, "plugin")) != 5 or int(service.torso_baseline_slot_capacity({"size_class": "L"}, "plugin")) != 6:
+		_fail("medium/large torso baseline plugin capacity mismatch.")
+	if int(service.torso_baseline_slot_capacity({"size_class": "XL"}, "plugin")) != 8 or int(service.torso_baseline_slot_capacity({"size_class": "XL"}, "software")) != 7:
+		_fail("XL torso baseline should diverge between plugin and software capacity.")
+	if int(service.torso_plugin_capacity_for_part({"size_class": "medium", "torso_slots": 3})) != 6:
+		_fail("torso plugin capacity should apply baseline plus one.")
+	if int(service.torso_plugin_capacity_for_part({"size_class": "medium", "engine_slots": 1, "cooling_slots": 2, "booster_slots": 1, "spare_weapon_slots": 2})) != 7:
+		_fail("torso plugin capacity should fall back to summed hardware slot fields.")
+	if int(service.torso_plugin_capacity_for_part({"size_class": "XL", "torso_slots": 99})) != 12:
+		_fail("torso plugin capacity should clamp to UI maximum.")
+	if int(service.torso_software_capacity_for_part({"size_class": "medium", "module_slots": 2})) != 6:
+		_fail("torso software capacity should apply baseline plus one.")
+	if int(service.torso_software_capacity_for_part({"is_torso": true, "torso_subpart": "brain", "size_class": "small", "module_slots": 2})) != 9:
+		_fail("brain torso software capacity should receive the software floor plus one.")
+	if int(service.torso_software_capacity_for_part({"size_class": "XL", "module_slots": 99})) != 12:
+		_fail("torso software capacity should clamp to UI maximum.")
 	_assert_near(float(service.economy_median_mass_for_rank(1)), 12.0, "XS economy median mass")
 	_assert_near(float(service.economy_median_mass_for_rank(5)), 192.0, "XL economy median mass")
 	_assert_near(float(service.thruster_drive_demand_for_part({"drive_demand": 80.0, "momentum_min": 40.0})), 80.0, "explicit thruster drive demand")
@@ -613,6 +643,8 @@ func _init() -> void:
 		_fail("default internal slot sizes should trim by capacity.")
 	if service.torso_internal_slot_size_ranks({}, {"capacity": 7, "torso_size_rank": 1}) != [2, 1, 1, 1, 1, 1, 1]:
 		_fail("default internal slot sizes should pad by capacity.")
+	if service.torso_internal_slot_size_ranks({"size_class": "small", "torso_slots": 3}) != [3, 2, 2, 1, 1]:
+		_fail("context-free internal slot sizes should derive capacity and size rank from torso rules.")
 	if int(service.best_internal_slot_for_payload([5, 3, 2], {1: true}, 2)) != 2:
 		_fail("best internal slot should choose smallest compatible open slot.")
 	if int(service.best_internal_slot_for_payload([5, 3, 2], {2: true}, 2, 2)) != -1:
@@ -922,6 +954,12 @@ func _init() -> void:
 		"_unit_stats_service().size_tier_rank(",
 		"_unit_stats_service().size_tier_from_footprint(",
 		"_unit_stats_service().part_size_tier_label(",
+		"_unit_stats_service().component_is_torso(",
+		"_unit_stats_service().component_is_brain_torso(",
+		"_unit_stats_service().torso_size_rank_for_slots(",
+		"_unit_stats_service().torso_baseline_slot_capacity(",
+		"_unit_stats_service().torso_plugin_capacity_for_part(",
+		"_unit_stats_service().torso_software_capacity_for_part(",
 		"_unit_stats_service().economy_median_mass_for_rank(",
 		"_unit_stats_service().thruster_drive_demand_for_part(",
 		"_unit_stats_service().thruster_move_efficiency_for_part(",
@@ -959,6 +997,12 @@ func _init() -> void:
 		return
 	if main_source.contains("_component_index_by_exact_name(role_key, saved_slot, saved_name)"):
 		_fail("main.gd should delegate saved payload catalog-name matching.")
+		return
+	if main_source.contains("return 8 if group_kind == \"plugin\" else 7"):
+		_fail("main.gd should delegate torso baseline capacity formula.")
+		return
+	if main_source.contains("return clampi(cap + 1, 1, 12)"):
+		_fail("main.gd should delegate torso capacity clamping formula.")
 		return
 	if failed:
 		return

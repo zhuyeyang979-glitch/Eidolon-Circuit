@@ -843,6 +843,57 @@ func part_size_tier_rank(part: Dictionary) -> float:
 	return float(size_tier_rank(part_size_tier_label(part)))
 
 
+func component_is_torso(part: Dictionary) -> bool:
+	var material_class := String(part.get("material_class", "")).to_lower()
+	return bool(part.get("is_torso", false)) or material_class == "torso"
+
+
+func component_is_brain_torso(part: Dictionary) -> bool:
+	if not component_is_torso(part):
+		return false
+	var subpart := String(part.get("torso_subpart", "")).to_lower()
+	if subpart in ["head", "brain", "control"]:
+		return true
+	var name := String(part.get("name", "")).to_upper()
+	var shape := String(part.get("shape", "")).to_lower()
+	return name.contains("HEAD") or name.contains("BRAIN") or name.contains("CONTROL") or shape.contains("head") or shape.contains("brain")
+
+
+func torso_size_rank_for_slots(part: Dictionary) -> int:
+	return size_tier_rank(part_size_tier_label(part))
+
+
+func torso_baseline_slot_capacity(part: Dictionary, group_kind: String) -> int:
+	var rank := torso_size_rank_for_slots(part)
+	if rank <= 1:
+		return 3
+	if rank == 2:
+		return 4
+	if rank == 3:
+		return 5
+	if rank == 4:
+		return 6
+	if group_kind == "plugin":
+		return 8
+	return 7
+
+
+func torso_plugin_capacity_for_part(part: Dictionary) -> int:
+	var cap := int(part.get("torso_slots", 0))
+	if cap <= 0:
+		cap = int(part.get("engine_slots", 0)) + int(part.get("cooling_slots", 0)) + int(part.get("booster_slots", 0)) + int(part.get("spare_weapon_slots", 0))
+	cap = maxi(cap, torso_baseline_slot_capacity(part, "plugin"))
+	return clampi(cap + 1, 1, 12)
+
+
+func torso_software_capacity_for_part(part: Dictionary) -> int:
+	var cap := int(part.get("module_slots", 0))
+	cap = maxi(cap, torso_baseline_slot_capacity(part, "software"))
+	if component_is_brain_torso(part):
+		cap = maxi(cap, 8)
+	return clampi(cap + 1, 1, 12)
+
+
 func economy_median_mass_for_rank(rank_value: int) -> float:
 	return float(ECONOMY_MEDIAN_MASS_BY_RANK.get(clampi(rank_value, 1, 5), 48.0))
 
@@ -930,8 +981,10 @@ func internal_slot_accepts_payload(slot_rank: int, payload_rank: int) -> bool:
 
 
 func torso_internal_slot_size_ranks(part: Dictionary, context: Dictionary = {}) -> Array:
-	var capacity := maxi(0, int(context.get("capacity", part.get("internal_slot_capacity", 0))))
-	var torso_size_rank := volume_rank_from_value(context.get("torso_size_rank", part.get("size_tier", part.get("size_class", 3))), 3)
+	var default_capacity := torso_plugin_capacity_for_part(part)
+	var default_torso_size_rank := torso_size_rank_for_slots(part)
+	var capacity := maxi(0, int(context.get("capacity", default_capacity)))
+	var torso_size_rank := volume_rank_from_value(context.get("torso_size_rank", default_torso_size_rank), default_torso_size_rank)
 	var sizes: Array = []
 	if part.has("internal_slot_sizes") and part["internal_slot_sizes"] is Array:
 		for raw_size in Array(part["internal_slot_sizes"]):

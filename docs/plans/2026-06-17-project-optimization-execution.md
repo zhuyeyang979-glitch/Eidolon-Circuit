@@ -425,10 +425,37 @@ PROBE_MANIFEST_NO_LEGACY_FIXTURE_PROBE ok current=259 sections=8
 BATTLE_RUNTIME_FRAME_BUDGET_PROBE ok avg_ms=1.922 max_ms=4.204
 ```
 
+Follow-up verification for the torso capacity rule extraction:
+
+```text
+RED: unit_stats_service_contract_probe failed on missing UnitStatsService.component_is_torso()
+jq empty tools/probe_manifest.json: pass
+git diff --check: pass
+Godot --check-only --quit-after 1: pass
+UNIT_STATS_SERVICE_CONTRACT_PROBE ok speed=1.428 puppet_cost=75
+MAIN_FILE_EXTRACTION_CONTRACT_PROBE ok services=9
+TORSO_SLOT_CAPACITY_CONTRACT_PROBE raw=3/6 base=4/6 helper=5/7 ok
+TORSO_SLOT_CAPACITY_PLUS_ONE_PROBE ok torsos=41
+INTERNAL_SLOT_SIZE_PROBE profiles=5 explicit=[5, 2, 2, 2, 2, 2]
+AMMO_INSTALL_SIZE_PAYLOAD_PROBE tier=S total=36 ok
+SHIELD_PAYLOAD_SLOT_VOLUME_PROBE ok ranks={ "SHIELD VEIL PATCH": 2.0, "SHIELD DUEL HALO": 3.0, "SHIELD SIEGE MANTLE": 4.0, "SHIELD TITAN DOME": 5.0 } installed=S
+EDITOR_COST_ACCOUNTING_PROBE node_cost=117 engine_cost=14 team_cost=234
+UNIT_BUILD_RULE_TRAINING_GATE_PROBE ok hard=INVALID: idle mass 60% exceeds 55%; connect or remove non-functional material. blank=INVALID: blank topology needs at least one material node.
+UNIT_EDITOR_ENGINE_ALLOCATION_SERVICE_CONTRACT_PROBE ok
+SOURCE_CODE_PRIORITY_MAIN_RUNTIME_PROBE ok
+SOUL_OATH_ACTIVATION_PROBE ok
+ETHER_HEAT_ECONOMY_PROBE ok
+MODULE_PAYLOAD_REBIND_KEEPS_MODULE_PROBE ok
+SINGLE_BOOSTER_PER_TORSO_INSTALL_PROBE ok payloads=1
+PAYLOAD_REQUIRES_TORSO_INSTALL_PROBE ok payloads=3
+PROBE_MANIFEST_NO_LEGACY_FIXTURE_PROBE ok current=259 sections=8
+BATTLE_RUNTIME_FRAME_BUDGET_PROBE ok avg_ms=1.787 max_ms=3.604 frames=160 warmup=20 fixture=generated_training_starter
+```
+
 Remaining items after this batch:
 
 - Run a headed/manual visual check for `part_identity_language_probe` and `unit_editor_assembly_template_probe` when a display session is available.
 - Decide whether `assets/concepts/` is Git-tracked, Git LFS-managed, or local-reference-only.
-- Continue deeper `main.gd` extraction with deeper torso-capacity formula ownership, concrete engine/cooling/booster internal payload callbacks, `_build_editor_ui`, `_apply_editor_panel_visibility`, `_resolve_attack`, and `_refresh_editor_visual_views`.
+- Continue deeper `main.gd` extraction with concrete engine/cooling/booster internal payload callbacks, `_build_editor_ui`, `_apply_editor_panel_visibility`, `_resolve_attack`, and `_refresh_editor_visual_views`.
 - `power_allocation_panel_duration_estimate_probe` is not registered in the manifest and still prints stale assertion errors before exiting `0`; do not use it as completion evidence until its expectations are reviewed.
 - `thruster_fixed_drive_demand_probe`, `thruster_dual_budget_legality_probe`, and `thruster_philosophy_probe` are outside the current registered gate set and emit stale assertions on the unchanged `ce7e436` baseline; review or retire them before using them as completion evidence.

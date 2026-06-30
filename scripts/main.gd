@@ -13517,36 +13517,19 @@ func _payload_is_software(payload: Dictionary) -> bool:
 
 
 func _torso_size_rank_for_slots(part: Dictionary) -> int:
-	return _size_tier_rank(_part_size_tier_label(part, "muscle"))
+	return _unit_stats_service().torso_size_rank_for_slots(part)
 
 
 func _torso_baseline_slot_capacity(part: Dictionary, group_kind: String) -> int:
-	var rank := _torso_size_rank_for_slots(part)
-	if rank <= 1:
-		return 3
-	if rank == 2:
-		return 4
-	if rank == 3:
-		return 5
-	if rank == 4:
-		return 6
-	return 8 if group_kind == "plugin" else 7
+	return _unit_stats_service().torso_baseline_slot_capacity(part, group_kind)
 
 
 func _torso_plugin_capacity_for_part(part: Dictionary) -> int:
-	var cap := int(part.get("torso_slots", 0))
-	if cap <= 0:
-		cap = int(part.get("engine_slots", 0)) + int(part.get("cooling_slots", 0)) + int(part.get("booster_slots", 0)) + int(part.get("spare_weapon_slots", 0))
-	cap = maxi(cap, _torso_baseline_slot_capacity(part, "plugin"))
-	return clampi(cap + 1, 1, 12)
+	return _unit_stats_service().torso_plugin_capacity_for_part(part)
 
 
 func _torso_software_capacity_for_part(part: Dictionary) -> int:
-	var cap := int(part.get("module_slots", 0))
-	cap = maxi(cap, _torso_baseline_slot_capacity(part, "software"))
-	if _component_is_brain_torso(part):
-		cap = maxi(cap, 8)
-	return clampi(cap + 1, 1, 12)
+	return _unit_stats_service().torso_software_capacity_for_part(part)
 
 
 func _payload_part_for_payload(role_key: String, payload: Dictionary) -> Dictionary:
@@ -41490,10 +41473,7 @@ func _internal_slot_accepts_payload(slot_rank: int, payload_rank: int) -> bool:
 
 
 func _torso_internal_slot_size_ranks(part: Dictionary) -> Array:
-	return _unit_stats_service().torso_internal_slot_size_ranks(part, {
-		"capacity": _torso_plugin_capacity_for_part(part),
-		"torso_size_rank": _torso_size_rank_for_slots(part),
-	})
+	return _unit_stats_service().torso_internal_slot_size_ranks(part)
 
 
 func _best_internal_slot_for_payload(slot_sizes: Array, occupied: Dictionary, payload_rank: int, requested_slot: int = -1) -> int:
@@ -43669,19 +43649,11 @@ func _terminal_weapon_short_category(part: Dictionary, zh: bool) -> String:
 
 
 func _component_is_torso(part: Dictionary) -> bool:
-	var material_class := String(part.get("material_class", "")).to_lower()
-	return bool(part.get("is_torso", false)) or material_class == "torso"
+	return _unit_stats_service().component_is_torso(part)
 
 
 func _component_is_brain_torso(part: Dictionary) -> bool:
-	if not _component_is_torso(part):
-		return false
-	var subpart := String(part.get("torso_subpart", "")).to_lower()
-	if subpart in ["head", "brain", "control"]:
-		return true
-	var name := String(part.get("name", "")).to_upper()
-	var shape := String(part.get("shape", "")).to_lower()
-	return name.contains("HEAD") or name.contains("BRAIN") or name.contains("CONTROL") or shape.contains("head") or shape.contains("brain")
+	return _unit_stats_service().component_is_brain_torso(part)
 
 
 func _part_can_damage_as_limb(part: Dictionary, slot_kind: String) -> bool:
