@@ -186,6 +186,31 @@ func _init() -> void:
 		return
 	_assert_vector(template_spec, "position", Vector2(936.0, 146.0), "template toggle build spec")
 	_assert_vector(template_spec, "size", Vector2(270.0, 26.0), "template toggle build spec")
+	var part_library_build_specs: Dictionary = UILifecycleService.editor_part_library_build_specs(["torso", "limb", "terminal_weapon", "software"], 3, 5)
+	var group_build_specs: Array = Array(part_library_build_specs.get("group_buttons", []))
+	var slot_build_specs: Array = Array(part_library_build_specs.get("slot_buttons", []))
+	var filter_build_specs: Array = Array(part_library_build_specs.get("filter_buttons", []))
+	if group_build_specs.size() != 4 or slot_build_specs.size() != 3 or filter_build_specs.size() != 5:
+		_fail("UILifecycleService part-library build spec counts failed.")
+		return
+	var terminal_group_spec: Dictionary = Dictionary(group_build_specs[2])
+	if String(terminal_group_spec.get("key", "")) != "terminal_weapon" or String(terminal_group_spec.get("name", "")) != "PartGroupterminal_weapon":
+		_fail("UILifecycleService part-group build spec identity failed.")
+		return
+	_assert_vector(terminal_group_spec, "position", Vector2(1116.0, 146.0), "part-group build spec")
+	_assert_vector(terminal_group_spec, "size", Vector2(84.0, 24.0), "part-group build spec")
+	var third_slot_spec: Dictionary = Dictionary(slot_build_specs[2])
+	if int(third_slot_spec.get("index", -1)) != 2 or String(third_slot_spec.get("name", "")) != "Slot2":
+		_fail("UILifecycleService slot build spec identity failed.")
+		return
+	_assert_vector(third_slot_spec, "position", Vector2(936.0, 234.0), "slot build spec")
+	_assert_vector(third_slot_spec, "size", Vector2(130.0, 24.0), "slot build spec")
+	var fifth_filter_spec: Dictionary = Dictionary(filter_build_specs[4])
+	if int(fifth_filter_spec.get("index", -1)) != 4 or String(fifth_filter_spec.get("name", "")) != "PartFilter4":
+		_fail("UILifecycleService filter build spec identity failed.")
+		return
+	_assert_vector(fifth_filter_spec, "position", Vector2(936.0, 228.0), "filter build spec")
+	_assert_vector(fifth_filter_spec, "size", Vector2(64.0, 22.0), "filter build spec")
 	Dictionary(Array(build_specs.get("canvas_tools", []))[0])["key"] = "mutated"
 	var fresh_build_specs: Dictionary = UILifecycleService.editor_action_build_specs()
 	if String(Dictionary(Array(fresh_build_specs.get("canvas_tools", []))[0]).get("key", "")) != "blank_canvas":

@@ -171,6 +171,39 @@ static func editor_action_build_specs() -> Dictionary:
 	}
 
 
+static func editor_part_library_build_specs(group_order: Array, build_slot_count: int, filter_button_count: int) -> Dictionary:
+	var group_buttons := []
+	for i in range(group_order.size()):
+		var group_key := String(group_order[i])
+		group_buttons.append({
+			"key": group_key,
+			"name": "PartGroup%s" % group_key,
+			"position": Vector2(936.0 + float(i % 3) * 90.0, 146.0 + float(floori(float(i) / 3.0)) * 26.0),
+			"size": Vector2(84.0, 24.0),
+		})
+	var slot_buttons := []
+	for i in range(build_slot_count):
+		slot_buttons.append({
+			"index": i,
+			"name": "Slot%d" % i,
+			"position": Vector2(936.0 + float(i % 2) * 136.0, 206.0 + float(floori(float(i) / 2.0)) * 28.0),
+			"size": Vector2(130.0, 24.0),
+		})
+	var filter_buttons := []
+	for i in range(filter_button_count):
+		filter_buttons.append({
+			"index": i,
+			"name": "PartFilter%d" % i,
+			"position": Vector2(936.0 + float(i % 4) * 68.0, 204.0 + float(floori(float(i) / 4.0)) * 24.0),
+			"size": Vector2(64.0, 22.0),
+		})
+	return {
+		"group_buttons": group_buttons,
+		"slot_buttons": slot_buttons,
+		"filter_buttons": filter_buttons,
+	}
+
+
 static func editor_panel_role_chrome_presentation(mode: String, active_role_key: String, parts_visible: bool, panel_keys: Array, role_keys: Array, role_order: Array, role_short_labels: Dictionary, zh: bool) -> Dictionary:
 	var panel_texts := {"load": "单位库", "parts": "零件库"} if zh else {"load": "UNITS", "parts": "PARTS"}
 	var panel_buttons := {}

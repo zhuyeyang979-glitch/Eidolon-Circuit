@@ -47094,33 +47094,42 @@ func _build_editor_ui() -> void:
 		root.add_child(role_button)
 		editor_role_labels[role_key] = role_button
 		editor_role_buttons[role_key] = role_button
-	for i in range(EDITOR_PART_GROUP_ORDER.size()):
-		var group_key: String = EDITOR_PART_GROUP_ORDER[i]
+	var part_library_build_specs := UILifecycleService.editor_part_library_build_specs(EDITOR_PART_GROUP_ORDER, BUILD_SLOTS.size(), 24)
+	var part_group_build_specs: Array = Array(part_library_build_specs.get("group_buttons", []))
+	for raw_group_spec in part_group_build_specs:
+		var group_spec := Dictionary(raw_group_spec)
+		var group_key := String(group_spec.get("key", ""))
 		var group_button := Button.new()
-		group_button.name = "PartGroup%s" % group_key
-		group_button.position = Vector2(936.0 + float(i % 3) * 90.0, 146.0 + float(floori(float(i) / 3.0)) * 26.0)
-		group_button.size = Vector2(84.0, 24.0)
+		group_button.name = String(group_spec.get("name", "PartGroup%s" % group_key))
+		group_button.position = group_spec.get("position", Vector2.ZERO)
+		group_button.size = group_spec.get("size", Vector2(84.0, 24.0))
 		group_button.focus_mode = Control.FOCUS_NONE
 		group_button.pressed.connect(_select_editor_part_group.bind(group_key))
 		root.add_child(group_button)
 		editor_part_group_buttons[group_key] = group_button
-	for i in range(BUILD_SLOTS.size()):
+	var slot_button_build_specs: Array = Array(part_library_build_specs.get("slot_buttons", []))
+	for raw_slot_spec in slot_button_build_specs:
+		var slot_spec := Dictionary(raw_slot_spec)
+		var slot_index := int(slot_spec.get("index", editor_slot_buttons.size()))
 		var slot_button := Button.new()
-		slot_button.name = "Slot%d" % i
-		slot_button.position = Vector2(936.0 + float(i % 2) * 136.0, 206.0 + float(floori(float(i) / 2.0)) * 28.0)
-		slot_button.size = Vector2(130.0, 24.0)
+		slot_button.name = String(slot_spec.get("name", "Slot%d" % slot_index))
+		slot_button.position = slot_spec.get("position", Vector2.ZERO)
+		slot_button.size = slot_spec.get("size", Vector2(130.0, 24.0))
 		slot_button.focus_mode = Control.FOCUS_NONE
-		slot_button.pressed.connect(_select_editor_slot.bind(i))
+		slot_button.pressed.connect(_select_editor_slot.bind(slot_index))
 		root.add_child(slot_button)
 		editor_slot_labels.append(slot_button)
 		editor_slot_buttons.append(slot_button)
-	for i in range(24):
+	var filter_button_build_specs: Array = Array(part_library_build_specs.get("filter_buttons", []))
+	for raw_filter_spec in filter_button_build_specs:
+		var filter_spec := Dictionary(raw_filter_spec)
+		var filter_index := int(filter_spec.get("index", editor_part_filter_buttons.size()))
 		var filter_button := Button.new()
-		filter_button.name = "PartFilter%d" % i
-		filter_button.position = Vector2(936.0 + float(i % 4) * 68.0, 204.0 + float(floori(float(i) / 4.0)) * 24.0)
-		filter_button.size = Vector2(64.0, 22.0)
+		filter_button.name = String(filter_spec.get("name", "PartFilter%d" % filter_index))
+		filter_button.position = filter_spec.get("position", Vector2.ZERO)
+		filter_button.size = filter_spec.get("size", Vector2(64.0, 22.0))
 		filter_button.focus_mode = Control.FOCUS_NONE
-		filter_button.pressed.connect(_select_editor_part_filter.bind(i))
+		filter_button.pressed.connect(_select_editor_part_filter.bind(filter_index))
 		root.add_child(filter_button)
 		editor_part_filter_buttons.append(filter_button)
 	editor_ammo_size_title_label = _make_label(root, "AmmoSizeTitle", "", Vector2(936.0, 258.0), Vector2(72.0, 18.0), 10, Color(1.0, 0.88, 0.32, 1.0), HORIZONTAL_ALIGNMENT_LEFT)
