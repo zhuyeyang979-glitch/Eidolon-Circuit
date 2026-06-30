@@ -245,6 +245,47 @@ func _init() -> void:
 	if bool(Dictionary(hidden_ammo_plan.get("slider", {})).get("visible", true)) or bool(Dictionary(hidden_ammo_plan.get("slider", {})).get("editable", true)):
 		_fail("UILifecycleService hidden ammo presentation contract failed.")
 		return
+	var sort_plan: Dictionary = UILifecycleService.editor_sort_controls_presentation(
+		true,
+		true,
+		["cost", "mass", "range"],
+		"hp",
+		false,
+		["cost", "hp", "mass", "range"],
+		{"cost": "Cost", "hp": "HP", "mass": "Mass", "range": "Range"},
+		false
+	)
+	if String(sort_plan.get("sort_key", "")) != "cost":
+		_fail("UILifecycleService should normalize unavailable sort keys to the first available key.")
+		return
+	if String(sort_plan.get("sort_key_text", "")) != "SORT: Cost" or String(sort_plan.get("sort_dir_text", "")) != "DESC ↓":
+		_fail("UILifecycleService sort control text contract failed.")
+		return
+	var sort_panel_plan: Dictionary = Dictionary(sort_plan.get("panel", {}))
+	if not bool(sort_panel_plan.get("visible", false)):
+		_fail("UILifecycleService sort panel visibility contract failed.")
+		return
+	_assert_vector(sort_panel_plan, "size", Vector2(278.0, 44.0), "sort panel presentation")
+	var sort_options: Array = Array(sort_plan.get("options", []))
+	if sort_options.size() != 4:
+		_fail("UILifecycleService sort option plan count failed.")
+		return
+	var cost_option: Dictionary = Dictionary(sort_options[0])
+	var hp_option: Dictionary = Dictionary(sort_options[1])
+	var mass_option: Dictionary = Dictionary(sort_options[2])
+	var range_option: Dictionary = Dictionary(sort_options[3])
+	if not bool(cost_option.get("visible", false)) or bool(hp_option.get("visible", true)) or not bool(mass_option.get("visible", false)) or not bool(range_option.get("visible", false)):
+		_fail("UILifecycleService sort option visibility contract failed.")
+		return
+	_assert_vector(cost_option, "position", Vector2(940.0, 326.0), "sort cost option presentation")
+	_assert_vector(mass_option, "position", Vector2(1028.0, 326.0), "sort mass option presentation")
+	_assert_vector(range_option, "position", Vector2(1116.0, 326.0), "sort range option presentation")
+	_assert_color(cost_option, "modulate", Color(1.0, 0.86, 0.28, 1.0), "active sort option presentation")
+	_assert_color(mass_option, "modulate", Color(0.84, 0.9, 0.94, 1.0), "inactive sort option presentation")
+	var hidden_sort_plan: Dictionary = UILifecycleService.editor_sort_controls_presentation(false, true, ["cost"], "cost", true, ["cost"], {"cost": "花费"}, true)
+	if bool(Dictionary(hidden_sort_plan.get("panel", {})).get("visible", true)) or bool(Dictionary(Array(hidden_sort_plan.get("options", []))[0]).get("visible", true)):
+		_fail("UILifecycleService hidden sort controls contract failed.")
+		return
 
 	var task := LoadingTask.create("idle", "Idle", 1.0, Callable(), LoadingTask.PHASE_IDLE, false, true)
 	var prepared := LoadingLifecycleService.prepare_task(task, "editor", 4)

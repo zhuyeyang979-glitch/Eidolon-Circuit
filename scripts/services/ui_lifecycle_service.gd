@@ -245,6 +245,45 @@ static func editor_ammo_size_control_presentation(ammo_slider_visible: bool, amm
 	}
 
 
+static func editor_sort_controls_presentation(parts_visible: bool, sort_menu_open: bool, available_sort_keys: Array, current_sort_key: String, sort_ascending: bool, sort_key_order: Array, sort_names: Dictionary, zh: bool) -> Dictionary:
+	var normalized_sort_key := String(current_sort_key)
+	if available_sort_keys.is_empty():
+		available_sort_keys = [normalized_sort_key]
+	if not available_sort_keys.has(normalized_sort_key):
+		normalized_sort_key = String(available_sort_keys[0])
+	var panel_visible := parts_visible and sort_menu_open
+	var sort_rows := int(ceilf(float(maxi(1, available_sort_keys.size())) / 3.0))
+	var option_plans := []
+	var visible_sort_index := 0
+	for i in range(sort_key_order.size()):
+		var option_key := String(sort_key_order[i])
+		var option_visible := panel_visible and available_sort_keys.has(option_key)
+		var option_plan := {
+			"key": option_key,
+			"visible": option_visible,
+			"disabled": not option_visible,
+			"text": String(sort_names.get(option_key, option_key.to_upper())),
+			"modulate": Color(1.0, 0.86, 0.28, 1.0) if option_key == normalized_sort_key else Color(0.84, 0.9, 0.94, 1.0),
+			"move_to_front": option_visible,
+		}
+		if option_visible:
+			option_plan["position"] = Vector2(940.0 + float(visible_sort_index % 3) * 88.0, 326.0 + float(floori(float(visible_sort_index) / 3.0)) * 28.0)
+			visible_sort_index += 1
+		option_plans.append(option_plan)
+	return {
+		"sort_key": normalized_sort_key,
+		"sort_key_text": ("排序：%s" if zh else "SORT: %s") % String(sort_names.get(normalized_sort_key, normalized_sort_key.to_upper())),
+		"sort_dir_text": ("正序 ↑" if sort_ascending else "反序 ↓") if zh else ("ASC ↑" if sort_ascending else "DESC ↓"),
+		"panel": {
+			"visible": panel_visible,
+			"size": Vector2(278.0, 16.0 + float(sort_rows) * 28.0),
+			"move_to_front": panel_visible,
+		},
+		"options": option_plans,
+		"sort_dir_move_to_front": panel_visible,
+	}
+
+
 static func editor_panel_visibility_plan(panel_mode: String, load_mode: String, body_board_enabled: bool, barrier_screen_board: bool, has_custom_topology: bool, part_group_mode: String, part_filter_mode: String, roster_count: int) -> Dictionary:
 	var normalized_load_mode := String(load_mode)
 	if normalized_load_mode == "team":
