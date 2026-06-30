@@ -49652,15 +49652,19 @@ func _apply_editor_panel_visibility(role_key: String, unit_bp: Dictionary) -> vo
 	_refresh_editor_assembly_guide_ui(parts_visible, role_key)
 	for group_key in editor_part_group_buttons.keys():
 		var group_button: Button = editor_part_group_buttons[group_key]
-		var group_index := EDITOR_PART_GROUP_ORDER.find(String(group_key))
-		if group_index < 0:
-			group_index = 0
-		_set_control_position_if_changed(group_button, Vector2(936.0 + float(group_index % 3) * 90.0, 146.0 + float(floori(float(group_index) / 3.0)) * 26.0))
-		_set_control_size_if_changed(group_button, Vector2(84.0, 24.0))
-		_set_canvas_item_visible_if_changed(group_button, parts_visible)
-		_set_button_disabled_if_changed(group_button, not parts_visible)
-		_set_control_text_if_changed(group_button, _part_group_name(String(group_key)))
-		_set_canvas_item_modulate_if_changed(group_button, Color(1.0, 0.86, 0.28, 1.0) if String(group_key) == editor_part_group_mode else Color(0.84, 0.9, 0.94, 1.0))
+		var group_plan := UILifecycleService.editor_part_group_button_presentation(
+			String(group_key),
+			EDITOR_PART_GROUP_ORDER,
+			editor_part_group_mode,
+			parts_visible,
+			_part_group_name(String(group_key))
+		)
+		_set_canvas_item_visible_if_changed(group_button, bool(group_plan.get("visible", false)))
+		_set_button_disabled_if_changed(group_button, bool(group_plan.get("disabled", true)))
+		_set_control_position_if_changed(group_button, group_plan.get("position", Vector2.ZERO))
+		_set_control_size_if_changed(group_button, group_plan.get("size", Vector2(84.0, 24.0)))
+		_set_control_text_if_changed(group_button, String(group_plan.get("text", "")))
+		_set_canvas_item_modulate_if_changed(group_button, group_plan.get("modulate", Color(0.84, 0.9, 0.94, 1.0)))
 	var filter_options := _part_filter_options_for_group(editor_part_group_mode)
 	for i in range(editor_slot_buttons.size()):
 		var button: Button = editor_slot_buttons[i]
@@ -49669,20 +49673,24 @@ func _apply_editor_panel_visibility(role_key: String, unit_bp: Dictionary) -> vo
 		_set_button_disabled_if_changed(button, not slot_visible)
 	for i in range(editor_part_filter_buttons.size()):
 		var filter_button: Button = editor_part_filter_buttons[i]
-		var filter_visible := parts_visible and i < filter_options.size()
-		_set_canvas_item_visible_if_changed(filter_button, filter_visible)
-		_set_button_disabled_if_changed(filter_button, not filter_visible)
-		if filter_visible:
-			var filter_option: Dictionary = filter_options[i]
-			var filter_key := String(filter_option.get("key", "all"))
-			var filter_columns := 5 if editor_part_group_mode == "terminal_weapon" else 3
-			var filter_width := 52.0 if editor_part_group_mode == "terminal_weapon" else 84.0
-			var filter_step_x := 56.0 if editor_part_group_mode == "terminal_weapon" else 90.0
-			var filter_step_y := 24.0 if editor_part_group_mode == "terminal_weapon" else 26.0
-			_set_control_position_if_changed(filter_button, Vector2(936.0 + float(i % filter_columns) * filter_step_x, 204.0 + float(floori(float(i) / float(filter_columns))) * filter_step_y))
-			_set_control_size_if_changed(filter_button, Vector2(filter_width, 22.0))
-			_set_control_text_if_changed(filter_button, _part_filter_name(filter_option))
-			_set_canvas_item_modulate_if_changed(filter_button, Color(1.0, 0.86, 0.28, 1.0) if filter_key == editor_part_filter_mode else Color(0.84, 0.9, 0.94, 1.0))
+		var filter_text := ""
+		if i < filter_options.size() and filter_options[i] is Dictionary:
+			filter_text = _part_filter_name(Dictionary(filter_options[i]))
+		var filter_plan := UILifecycleService.editor_part_filter_button_presentation(
+			i,
+			filter_options,
+			editor_part_group_mode,
+			editor_part_filter_mode,
+			parts_visible,
+			filter_text
+		)
+		_set_canvas_item_visible_if_changed(filter_button, bool(filter_plan.get("visible", false)))
+		_set_button_disabled_if_changed(filter_button, bool(filter_plan.get("disabled", true)))
+		if bool(filter_plan.get("visible", false)):
+			_set_control_position_if_changed(filter_button, filter_plan.get("position", Vector2.ZERO))
+			_set_control_size_if_changed(filter_button, filter_plan.get("size", Vector2(84.0, 22.0)))
+			_set_control_text_if_changed(filter_button, String(filter_plan.get("text", "")))
+			_set_canvas_item_modulate_if_changed(filter_button, filter_plan.get("modulate", Color(0.84, 0.9, 0.94, 1.0)))
 	var ammo_slider_visible := bool(visibility_plan.get("ammo_slider_visible", false))
 	if editor_ammo_size_title_label != null:
 		_set_canvas_item_visible_if_changed(editor_ammo_size_title_label, ammo_slider_visible)

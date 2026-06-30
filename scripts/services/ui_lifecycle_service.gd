@@ -171,6 +171,41 @@ static func editor_action_build_specs() -> Dictionary:
 	}
 
 
+static func editor_part_group_button_presentation(group_key: String, group_order: Array, active_group: String, parts_visible: bool, text: String) -> Dictionary:
+	var key := String(group_key)
+	var group_index := group_order.find(key)
+	if group_index < 0:
+		group_index = 0
+	return {
+		"visible": parts_visible,
+		"disabled": not parts_visible,
+		"position": Vector2(936.0 + float(group_index % 3) * 90.0, 146.0 + float(floori(float(group_index) / 3.0)) * 26.0),
+		"size": Vector2(84.0, 24.0),
+		"text": String(text),
+		"modulate": Color(1.0, 0.86, 0.28, 1.0) if key == String(active_group) else Color(0.84, 0.9, 0.94, 1.0),
+	}
+
+
+static func editor_part_filter_button_presentation(button_index: int, filter_options: Array, part_group_mode: String, active_filter: String, parts_visible: bool, text: String) -> Dictionary:
+	var terminal_weapon := String(part_group_mode) == "terminal_weapon"
+	var filter_columns := 5 if terminal_weapon else 3
+	var filter_width := 52.0 if terminal_weapon else 84.0
+	var filter_step_x := 56.0 if terminal_weapon else 90.0
+	var filter_step_y := 24.0 if terminal_weapon else 26.0
+	var visible := parts_visible and button_index >= 0 and button_index < filter_options.size()
+	var filter_key := ""
+	if visible and filter_options[button_index] is Dictionary:
+		filter_key = String(Dictionary(filter_options[button_index]).get("key", "all"))
+	return {
+		"visible": visible,
+		"disabled": not visible,
+		"position": Vector2(936.0 + float(button_index % filter_columns) * filter_step_x, 204.0 + float(floori(float(button_index) / float(filter_columns))) * filter_step_y),
+		"size": Vector2(filter_width, 22.0),
+		"text": String(text),
+		"modulate": Color(1.0, 0.86, 0.28, 1.0) if filter_key == String(active_filter) else Color(0.84, 0.9, 0.94, 1.0),
+	}
+
+
 static func editor_panel_visibility_plan(panel_mode: String, load_mode: String, body_board_enabled: bool, barrier_screen_board: bool, has_custom_topology: bool, part_group_mode: String, part_filter_mode: String, roster_count: int) -> Dictionary:
 	var normalized_load_mode := String(load_mode)
 	if normalized_load_mode == "team":

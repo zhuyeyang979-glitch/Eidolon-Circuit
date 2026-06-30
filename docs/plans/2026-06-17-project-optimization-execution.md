@@ -647,6 +647,24 @@ GREEN: git diff --check
 
 The sort action controls and template drawer toggle now use the same `UILifecycleService.editor_action_build_specs()` source as the other editor action buttons. The three UI layout probes exited `0` but emitted Godot exit-time RID/ObjectDB warnings; keep watching those warnings in later headed/manual verification.
 
+Follow-up part library group/filter presentation extraction:
+
+```text
+RED: lifecycle_services_contract_probe failed on missing UILifecycleService.editor_part_group_button_presentation()
+GREEN: LIFECYCLE_SERVICES_CONTRACT_PROBE ok
+GREEN: MAIN_FILE_EXTRACTION_CONTRACT_PROBE ok services=9
+GREEN: Godot --check-only --script res://scripts/main.gd --quit-after 1
+GREEN: PART_LIBRARY_UI_PROBE groups=["torso", "limb", "terminal_weapon", "barrier_panel", "software_muscle", "software"] weapon=3 equipment=5 software=7 dashboard=40
+GREEN: WEAPON_CATALOG_SUBMENU_PROBE ok melee_options=6 gun_options=10
+GREEN: WEAPON_SUBCATEGORY_FILTER_PROBE ok
+GREEN: AMMO_SIZE_UI_PROBE entries=5 tier=M ok
+GREEN: UNIT_EDITOR_PAGINATION_LAYOUT_PROBE ok unit=1 page=0 catalog=1 load=0
+GREEN: jq empty tools/probe_manifest.json
+GREEN: git diff --check
+```
+
+`UILifecycleService.editor_part_group_button_presentation()` and `UILifecycleService.editor_part_filter_button_presentation()` now own the pure group/filter button visibility, disabled-state, layout, and selected-color plans. `_apply_editor_panel_visibility()` keeps localized labels and scene-tree mutation. The catalog UI probes exited `0` but emitted the known Godot exit-time RID/ObjectDB warnings.
+
 Remaining items after this batch:
 
 - Continue editor UI extraction with `_build_editor_ui` and the remaining action presentation/control-mutation sections of `_apply_editor_panel_visibility`, then continue `_resolve_attack` and `_refresh_editor_visual_views` extraction.

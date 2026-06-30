@@ -191,6 +191,33 @@ func _init() -> void:
 	if String(Dictionary(Array(fresh_build_specs.get("canvas_tools", []))[0]).get("key", "")) != "blank_canvas":
 		_fail("UILifecycleService should return fresh editor action build specs.")
 		return
+	var group_plan: Dictionary = UILifecycleService.editor_part_group_button_presentation("terminal_weapon", ["torso", "limb", "terminal_weapon", "software"], "terminal_weapon", true, "武器")
+	if not bool(group_plan.get("visible", false)) or bool(group_plan.get("disabled", true)) or String(group_plan.get("text", "")) != "武器":
+		_fail("UILifecycleService part group presentation visibility contract failed.")
+		return
+	_assert_vector(group_plan, "position", Vector2(1116.0, 146.0), "part group presentation")
+	_assert_vector(group_plan, "size", Vector2(84.0, 24.0), "part group presentation")
+	_assert_color(group_plan, "modulate", Color(1.0, 0.86, 0.28, 1.0), "part group presentation")
+	var hidden_group_plan: Dictionary = UILifecycleService.editor_part_group_button_presentation("unknown", ["torso"], "torso", false, "UNKNOWN")
+	if bool(hidden_group_plan.get("visible", true)) or not bool(hidden_group_plan.get("disabled", false)):
+		_fail("UILifecycleService part group hidden presentation contract failed.")
+		return
+	_assert_vector(hidden_group_plan, "position", Vector2(936.0, 146.0), "hidden part group presentation")
+	var filter_options := [{"key": "weapon_all"}, {"key": "terminal_melee"}, {"key": "ammo"}, {"key": "gun"}, {"key": "beam"}, {"key": "spray"}]
+	var filter_plan: Dictionary = UILifecycleService.editor_part_filter_button_presentation(5, filter_options, "terminal_weapon", "ammo", true, "喷射")
+	if not bool(filter_plan.get("visible", false)) or bool(filter_plan.get("disabled", true)) or String(filter_plan.get("text", "")) != "喷射":
+		_fail("UILifecycleService part filter presentation visibility contract failed.")
+		return
+	_assert_vector(filter_plan, "position", Vector2(936.0, 228.0), "part filter presentation")
+	_assert_vector(filter_plan, "size", Vector2(52.0, 22.0), "part filter presentation")
+	_assert_color(filter_plan, "modulate", Color(0.84, 0.9, 0.94, 1.0), "part filter presentation")
+	var active_filter_plan: Dictionary = UILifecycleService.editor_part_filter_button_presentation(2, filter_options, "terminal_weapon", "ammo", true, "弹药")
+	_assert_color(active_filter_plan, "modulate", Color(1.0, 0.86, 0.28, 1.0), "active part filter presentation")
+	var hidden_filter_plan: Dictionary = UILifecycleService.editor_part_filter_button_presentation(9, filter_options, "torso", "all", true, "")
+	if bool(hidden_filter_plan.get("visible", true)) or not bool(hidden_filter_plan.get("disabled", false)):
+		_fail("UILifecycleService part filter hidden presentation contract failed.")
+		return
+	_assert_vector(hidden_filter_plan, "size", Vector2(84.0, 22.0), "hidden part filter presentation")
 
 	var task := LoadingTask.create("idle", "Idle", 1.0, Callable(), LoadingTask.PHASE_IDLE, false, true)
 	var prepared := LoadingLifecycleService.prepare_task(task, "editor", 4)
