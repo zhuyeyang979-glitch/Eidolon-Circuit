@@ -17,6 +17,8 @@ const FRACTURE_COPY_KEYS := ["fracture_trigger", "fracture_exception_group", "fr
 const SUPPORT_COPY_KEYS := ["is_support_node", "support_kind", "support_radius", "support_rate", "support_amount", "support_refill_seconds", "support_ammo_type", "support_buff_type", "support_buff_mult", "support_duration", "support_affects", "support_field_shape", "is_support_platform", "platform_pair_range", "platform_width", "platform_armor_hp"]
 const MISSILE_COPY_KEYS := ["missile_lock_priority", "missile_lock_cone_degrees", "missile_lock_range", "missile_lock_target_classes", "missile_occlusion_grace"]
 const TORSO_MODULE_PAYLOAD_LOGIC_KEYS := ["command", "skill_state", "motion", "aim_mode", "module_effect", "module_state", "role_switch", "switch_cooldown", "fracture_trigger", "fracture_exception_group", "fracture_ai", "morph_modes", "morph_cooldown", "combine_range", "combine_bonus_hp", "identity_receiver_role", "identity_receiver_order"]
+const DEFAULT_AMMO_TYPES := ["bullet", "laser", "chemical", "explosive", "web"]
+const DEFAULT_AMMO_UNIT_MASS := {"bullet": 0.16, "laser": 0.11, "chemical": 0.24, "explosive": 0.42, "web": 0.09}
 
 
 func bind(main: Object, next_cache) -> void:
@@ -621,6 +623,26 @@ func copy_part_combat_stats(stats: Dictionary, part: Dictionary, context: Dictio
 	return stats
 
 
+func part_payload_context(part: Dictionary, context: Dictionary = {}) -> Dictionary:
+	var part_is_torso := bool(context.get("part_is_torso", false))
+	return {
+		"part_is_torso": part_is_torso,
+		"ammo_types": _ammo_types_for_context(context),
+		"ammo_unit_mass": _ammo_unit_mass_for_context(context),
+		"torso_module_slots": int(context.get("torso_module_slots", part.get("module_slots", 0))),
+		"torso_plugin_slots": int(context.get("torso_plugin_slots", part.get("torso_slots", 0))),
+		"legacy_mass_limit_volume_rank": _legacy_mass_limit_to_volume_rank(float(part["torso_slot_mass_limit"])) if part.has("torso_slot_mass_limit") else 0.0,
+		"torso_slot_volume_tier_rank": float(volume_tier_rank(String(part["torso_slot_volume_tier"]))) if part.has("torso_slot_volume_tier") else 0.0,
+	}
+
+
+func torso_payload_context(context: Dictionary = {}) -> Dictionary:
+	return {
+		"ammo_types": _ammo_types_for_context(context),
+		"ammo_unit_mass": _ammo_unit_mass_for_context(context),
+	}
+
+
 func copy_part_payload_stats(stats: Dictionary, part: Dictionary, context: Dictionary) -> Dictionary:
 	var part_is_torso := bool(context.get("part_is_torso", false))
 	if part.has("ammo_capacity"):
@@ -685,6 +707,32 @@ func record_torso_payload_summary_entry(summary: Dictionary, entry: Dictionary) 
 		summary["ammo_count"] = int(summary.get("ammo_count", 0)) + 1
 		summary["ammo_mass"] = float(summary.get("ammo_mass", 0.0)) + float(entry.get("mass", 0.0))
 	return summary
+
+
+func _ammo_types_for_context(context: Dictionary) -> Array:
+	var raw_types: Variant = context.get("ammo_types", DEFAULT_AMMO_TYPES)
+	if raw_types is Array:
+		return Array(raw_types).duplicate(true)
+	return DEFAULT_AMMO_TYPES.duplicate(true)
+
+
+func _ammo_unit_mass_for_context(context: Dictionary) -> Dictionary:
+	var raw_masses: Variant = context.get("ammo_unit_mass", DEFAULT_AMMO_UNIT_MASS)
+	if raw_masses is Dictionary:
+		return Dictionary(raw_masses).duplicate(true)
+	return DEFAULT_AMMO_UNIT_MASS.duplicate(true)
+
+
+func _legacy_mass_limit_to_volume_rank(mass_limit: float) -> float:
+	if mass_limit <= 14.0:
+		return 1.0
+	if mass_limit <= 36.0:
+		return 2.0
+	if mass_limit <= 72.0:
+		return 3.0
+	if mass_limit <= 128.0:
+		return 4.0
+	return 5.0
 
 
 func payload_slot_key_for_kind(payload_kind: String, fallback_slot: String = "muscle") -> String:

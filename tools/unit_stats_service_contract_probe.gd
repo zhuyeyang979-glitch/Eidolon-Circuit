@@ -123,6 +123,40 @@ func _init() -> void:
 		_fail("torso combat copy should block weapon/projectile identity: %s" % str(torso_combat_stats))
 	if not _near(float(torso_combat_stats.get("data_security", 0.0)), 0.5):
 		_fail("torso combat copy should still merge torso data security: %s" % str(torso_combat_stats))
+	if not service.has_method("part_payload_context"):
+		_fail("UnitStatsService missing part_payload_context.")
+		return
+	if not service.has_method("torso_payload_context"):
+		_fail("UnitStatsService missing torso_payload_context.")
+		return
+	var ammo_types := ["bullet", "laser", "chemical", "explosive", "web"]
+	var ammo_masses := {"bullet": 0.16, "laser": 0.11, "chemical": 0.24, "explosive": 0.42, "web": 0.09}
+	var built_payload_context: Dictionary = service.part_payload_context({
+		"module_slots": 4,
+		"torso_slots": 5,
+		"torso_slot_mass_limit": 80.0,
+		"torso_slot_volume_tier": "L",
+	}, {
+		"part_is_torso": true,
+		"torso_module_slots": 6,
+		"torso_plugin_slots": 7,
+		"ammo_types": ammo_types,
+		"ammo_unit_mass": ammo_masses,
+	})
+	ammo_types.append("invalid_after_copy")
+	ammo_masses["bullet"] = 9.0
+	if not bool(built_payload_context.get("part_is_torso", false)) or int(built_payload_context.get("torso_module_slots", 0)) != 6 or int(built_payload_context.get("torso_plugin_slots", 0)) != 7:
+		_fail("part payload context should preserve adapter torso facts: %s" % str(built_payload_context))
+	if Array(built_payload_context.get("ammo_types", [])).has("invalid_after_copy") or not _near(float(Dictionary(built_payload_context.get("ammo_unit_mass", {})).get("bullet", 0.0)), 0.16):
+		_fail("part payload context should duplicate ammo metadata: %s" % str(built_payload_context))
+	_assert_near(float(built_payload_context.get("legacy_mass_limit_volume_rank", 0.0)), 4.0, "part payload legacy mass rank")
+	_assert_near(float(built_payload_context.get("torso_slot_volume_tier_rank", 0.0)), 4.0, "part payload tier rank")
+	var non_torso_payload_context: Dictionary = service.part_payload_context({"module_slots": 2, "torso_slots": 3}, {"ammo_types": ["bullet"], "ammo_unit_mass": {"bullet": 0.2}})
+	if bool(non_torso_payload_context.get("part_is_torso", true)) or int(non_torso_payload_context.get("torso_module_slots", 0)) != 2 or int(non_torso_payload_context.get("torso_plugin_slots", 0)) != 3:
+		_fail("non-torso payload context should fall back to raw slots: %s" % str(non_torso_payload_context))
+	var built_torso_payload_context: Dictionary = service.torso_payload_context({"ammo_types": ["bullet", "web"], "ammo_unit_mass": {"bullet": 0.16, "web": 0.09}})
+	if Array(built_torso_payload_context.get("ammo_types", [])).size() != 2 or not _near(float(Dictionary(built_torso_payload_context.get("ammo_unit_mass", {})).get("web", 0.0)), 0.09):
+		_fail("torso payload context mismatch: %s" % str(built_torso_payload_context))
 	var payload_stats := {
 		"ammo_capacity": {"bullet": 1},
 		"mass": 10.0,
@@ -155,15 +189,7 @@ func _init() -> void:
 		"torso_slot_mass_limit": 12.0,
 		"torso_slot_volume_tier": "L",
 		"spare_weapon_mass_limit": 9.0,
-	}, {
-		"part_is_torso": true,
-		"torso_module_slots": 6,
-		"torso_plugin_slots": 7,
-		"legacy_mass_limit_volume_rank": 2.5,
-		"torso_slot_volume_tier_rank": 4.0,
-		"ammo_types": ["bullet", "laser", "chemical", "explosive", "web"],
-		"ammo_unit_mass": {"bullet": 0.16, "laser": 0.11, "chemical": 0.24, "explosive": 0.42, "web": 0.09},
-	})
+	}, built_payload_context)
 	var payload_ammo: Dictionary = payload_stats.get("ammo_capacity", {})
 	if int(payload_ammo.get("bullet", 0)) != 3 or int(payload_ammo.get("explosive", 0)) != 3:
 		_fail("payload copy should merge and normalize ammo capacity: %s" % str(payload_ammo))
@@ -833,6 +859,8 @@ func _init() -> void:
 		"_unit_stats_service().copy_part_logic_stats(stats, part",
 		"_unit_stats_service().copy_part_combat_stats(stats, part",
 		"_unit_stats_service().copy_part_payload_stats(stats, part",
+		"_unit_stats_service().part_payload_context(",
+		"_unit_stats_service().torso_payload_context(",
 		"_unit_stats_service().payload_slot_key_for_kind(",
 		"_unit_stats_service().volume_tier_rank(",
 		"_unit_stats_service().volume_rank_from_value(",

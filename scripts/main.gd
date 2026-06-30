@@ -26897,22 +26897,20 @@ func _unit_stats_base_constants() -> Dictionary:
 
 
 func _unit_stats_part_payload_context(part: Dictionary, part_is_torso: bool) -> Dictionary:
-	return {
+	return _unit_stats_service().part_payload_context(part, {
 		"part_is_torso": part_is_torso,
 		"ammo_types": AMMO_TYPES,
 		"ammo_unit_mass": AMMO_UNIT_MASS,
 		"torso_module_slots": _torso_software_capacity_for_part(part) if part_is_torso else int(part.get("module_slots", 0)),
 		"torso_plugin_slots": _torso_plugin_capacity_for_part(part) if part_is_torso else int(part.get("torso_slots", 0)),
-		"legacy_mass_limit_volume_rank": _legacy_mass_limit_to_volume_rank(float(part["torso_slot_mass_limit"])) if part.has("torso_slot_mass_limit") else 0.0,
-		"torso_slot_volume_tier_rank": float(_volume_tier_rank(String(part["torso_slot_volume_tier"]))) if part.has("torso_slot_volume_tier") else 0.0,
-	}
+	})
 
 
 func _unit_stats_torso_payload_context() -> Dictionary:
-	return {
+	return _unit_stats_service().torso_payload_context({
 		"ammo_types": AMMO_TYPES,
 		"ammo_unit_mass": AMMO_UNIT_MASS,
-	}
+	})
 
 
 func _unit_editor_assembly_template_service() -> UnitEditorAssemblyTemplateService:
