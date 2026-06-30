@@ -45,14 +45,20 @@ func _init() -> void:
 	var booster_index := _find(main, "booster", func(part: Dictionary) -> bool: return main._thruster_drive_allocation_min_for_part(part) > 0.0)
 	if engine_index < 0 or booster_index < 0:
 		_fail("Missing engine or booster.")
+		return
 	var unit := _build_unit(main, engine_index, booster_index)
 	var stats: Dictionary = main._compute_unit_stats(0, "hero", 0, unit)
 	var drive := float(stats.get("thruster_drive_demand", 0.0))
 	var boost := float(stats.get("thruster_boost_extra_demand", 0.0))
-	var required := float(stats.get("engine_momentum_required", 0.0))
+	var required := float(stats.get("drive_demand_total", 0.0))
 	if drive <= 0.0:
 		_fail("Expected drive allocation in stats.")
+		return
+	if stats.has("engine_momentum_required"):
+		_fail("Computed stats should not expose legacy engine_momentum_required.")
+		return
 	if absf(required - (drive + boost)) > 0.05:
-		_fail("Engine required should include drive + boost/brake for no-limb unit: required %.3f drive %.3f boost %.3f" % [required, drive, boost])
+		_fail("Canonical drive demand should include drive + boost/brake for no-limb unit: required %.3f drive %.3f boost %.3f" % [required, drive, boost])
+		return
 	print("THRUSTER_DUAL_BUDGET_LEGALITY_PROBE ok required=%.1f drive=%.1f boost=%.1f" % [required, drive, boost])
-	quit()
+	quit(0)

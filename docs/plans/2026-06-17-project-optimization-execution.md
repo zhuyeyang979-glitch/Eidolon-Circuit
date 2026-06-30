@@ -549,9 +549,22 @@ GREEN: core manifest membership check returned true
 
 The stale fixture multiplied driven mass by 20 before comparing allocation and mass sensitivity, which put every comparison on `MotionBudget`'s intentional 6-second ceiling. The probe now uses a non-saturated 2x-mass fixture for monotonicity, verifies the 6-second ceiling separately, returns immediately from every failure branch, exits explicitly with `0` only on success, and is registered in the manifest `core` set.
 
+Follow-up verification for the thruster and Boost-panel probe contracts:
+
+```text
+RED: thruster_fixed_drive_demand_probe and thruster_dual_budget_legality_probe read scrubbed legacy demand fields and exited 0 after errors
+RED: thruster_philosophy_probe compared cross-size averages and legacy recoil cancellation, then exited 1
+RED: power_allocation_panel_boost_dash_probe read a closed detail view, emitted five errors, and exited 0
+GREEN: THRUSTER_FIXED_DRIVE_DEMAND_PROBE ok demand=22.6 total=56.6
+GREEN: THRUSTER_DUAL_BUDGET_LEGALITY_PROBE ok required=169.9 drive=67.9 boost=102.0
+GREEN: THRUSTER_PHILOSOPHY_PROBE ok cruise=148.8 sustain_dur=1.00 overburn_ratio=3.08 counter_brake=2.00
+GREEN: POWER_ALLOCATION_PANEL_BOOST_DASH_PROBE ok fixed=22.6 extra=34.0 peak=56.6
+```
+
+The demand probes now verify canonical `drive_demand_total` output and the absence of scrubbed legacy keys. The philosophy probe verifies explicit family-default tradeoffs plus catalog mass identity instead of comparing unequal size mixes. The Boost dash probe uses the real engine-payload detail-open path and terminates on every failure. All four probes are registered in the manifest `core` set.
+
 Remaining items after this batch:
 
 - Run a headed/manual visual check for `part_identity_language_probe` and `unit_editor_assembly_template_probe` when a display session is available.
 - Decide whether `assets/concepts/` is Git-tracked, Git LFS-managed, or local-reference-only.
 - Continue editor UI extraction with `_build_editor_ui` and the remaining action presentation/control-mutation sections of `_apply_editor_panel_visibility`, then continue `_resolve_attack` and `_refresh_editor_visual_views` extraction.
-- `thruster_fixed_drive_demand_probe`, `thruster_dual_budget_legality_probe`, and `thruster_philosophy_probe` are outside the current registered gate set and emit stale assertions on the unchanged `ce7e436` baseline; review or retire them before using them as completion evidence.

@@ -26,6 +26,7 @@ func _init() -> void:
 	var booster_index := _find(main, "booster", func(part: Dictionary) -> bool: return main._thruster_drive_demand_for_part(part) > 0.0 and main._booster_boost_momentum_for_part(part) > 0.0)
 	if torso_index < 0 or engine_index < 0 or booster_index < 0:
 		_fail("Missing torso, engine, or boost-capable booster.")
+		return
 	var unit: Dictionary = main._make_editor_blank_blueprint("hero")
 	var nodes: Array = []
 	var edges: Array = []
@@ -42,10 +43,12 @@ func _init() -> void:
 	main.editor_panel_mode = "parts"
 	main.editor_working_role_key = "hero"
 	main.editor_working_blueprint = unit
-	main.editor_open_torso_node_index = torso
-	main._activate_engine_allocation_target_for_torso(unit, torso)
-	main._refresh_engine_momentum_allocation_view()
+	main._update_editor_ui()
+	main._open_engine_momentum_allocation_for_payload(0)
 	var view = main.engine_momentum_allocation_view
+	if view == null or not view.visible:
+		_fail("Engine allocation detail panel did not open from the engine payload.")
+		return
 	var booster_entry := {}
 	var boost_entry := {}
 	for raw_entry in view.entries:
@@ -55,21 +58,28 @@ func _init() -> void:
 			boost_entry = Dictionary(raw_entry)
 	if booster_entry.is_empty():
 		_fail("Missing booster drive entry.")
+		return
 	if boost_entry.is_empty():
 		_fail("Missing booster boost/brake entry.")
+		return
 	var fixed := float(booster_entry.get("momentum", 0.0))
 	var extra := float(boost_entry.get("momentum", 0.0))
 	var peak := float(booster_entry.get("boost_peak_momentum", 0.0))
 	if fixed <= 0.0 or extra <= 0.0 or peak <= fixed:
 		_fail("Booster entry should expose fixed demand and Boost peak demand.")
+		return
 	if absf(peak - (fixed + extra)) > 0.01:
 		_fail("Boost peak demand should be fixed demand plus Boost extra demand.")
+		return
 	if not bool(booster_entry.get("boost_dash_hint", false)):
 		_fail("Booster entry should mark the dashed Boost hint.")
+		return
 	if float(booster_entry.get("boost_peak_ratio", 0.0)) <= float(booster_entry.get("ratio", 0.0)):
 		_fail("Boost peak ratio should extend beyond fixed demand ratio.")
+		return
 	var expected_used := float(booster_entry.get("ratio", 0.0)) + float(boost_entry.get("ratio", 0.0))
 	if absf(float(view.used_ratio) - expected_used) > 0.001:
 		_fail("Panel used_ratio should include drive + boost/brake rows when no limbs exist.")
+		return
 	print("POWER_ALLOCATION_PANEL_BOOST_DASH_PROBE ok fixed=%.1f extra=%.1f peak=%.1f" % [fixed, extra, peak])
-	quit()
+	quit(0)

@@ -67,26 +67,32 @@ func _init() -> void:
 	var counter := _family_parts(main, "counter_brake")
 	var swarm := _family_parts(main, "swarm_micro")
 	var titan := _family_parts(main, "titan_vector")
+	var cruise_defaults: Dictionary = main._thruster_family_defaults("cruise_blue")
+	var sustain_defaults: Dictionary = main._thruster_family_defaults("sustain_yellow")
+	var overburn_defaults: Dictionary = main._thruster_family_defaults("overburn_red")
+	var counter_defaults: Dictionary = main._thruster_family_defaults("counter_brake")
+	var swarm_defaults: Dictionary = main._thruster_family_defaults("swarm_micro")
+	var titan_defaults: Dictionary = main._thruster_family_defaults("titan_vector")
 	for pair in [["cruise_blue", cruise], ["sustain_yellow", sustain], ["overburn_red", overburn], ["counter_brake", counter], ["swarm_micro", swarm], ["titan_vector", titan]]:
 		if Array(pair[1]).is_empty():
 			_fail("Family has no thrusters: %s" % String(pair[0]))
 	if not failed:
-		if _avg_normal(main, cruise) <= _avg_normal(main, sustain):
-			_fail("cruise_blue should have stronger ordinary push than sustain_yellow on average")
-		if _max_value(sustain, "boost_duration", 0.0) <= _max_value(cruise, "boost_duration", 0.0):
+		if float(cruise_defaults.get("move_efficiency", 0.0)) <= float(sustain_defaults.get("move_efficiency", 0.0)):
+			_fail("cruise_blue should prioritize ordinary movement efficiency over sustain_yellow")
+		if float(sustain_defaults.get("boost_duration", 0.0)) <= float(cruise_defaults.get("boost_duration", 0.0)):
 			_fail("sustain_yellow should expose longer boost duration than cruise_blue")
-		if _max_boost_ratio(main, overburn) <= _max_boost_ratio(main, cruise):
+		if float(overburn_defaults.get("boost_efficiency", 0.0)) <= float(cruise_defaults.get("boost_efficiency", 0.0)):
 			_fail("overburn_red should have a clearer burst ratio than cruise_blue")
-		if _max_value(counter, "brake_efficiency", 1.0) <= _max_value(cruise, "brake_efficiency", 1.0):
+		if float(counter_defaults.get("brake_efficiency", 0.0)) <= float(cruise_defaults.get("brake_efficiency", 0.0)):
 			_fail("counter_brake should lead brake efficiency")
-		if _max_value(counter, "recoil_cancel", 0.0) <= _max_value(cruise, "recoil_cancel", 0.0):
-			_fail("counter_brake should lead recoil cancellation")
+		if float(swarm_defaults.get("turn_efficiency", 0.0)) <= float(cruise_defaults.get("turn_efficiency", 0.0)):
+			_fail("swarm_micro should lead ordinary turn efficiency")
 		if _avg_value(swarm, "mass", 999.0) >= _avg_value(cruise, "mass", 0.0):
 			_fail("swarm_micro should be lighter than cruise_blue on average")
 		if _avg_value(titan, "mass", 0.0) <= _avg_value(cruise, "mass", 999.0):
 			_fail("titan_vector should be heavier than cruise_blue on average")
-		if _max_value(titan, "recoil_cancel", 0.0) < 1.2:
-			_fail("titan_vector should support heavy reaction control")
+		if float(titan_defaults.get("boost_angle_degrees", 360.0)) >= float(cruise_defaults.get("boost_angle_degrees", 360.0)):
+			_fail("titan_vector should trade omnidirectional boost coverage for committed movement")
 	if failed:
 		quit(1)
 		return
@@ -96,4 +102,4 @@ func _init() -> void:
 		_max_boost_ratio(main, overburn),
 		_max_value(counter, "brake_efficiency", 1.0),
 	])
-	quit()
+	quit(0)
