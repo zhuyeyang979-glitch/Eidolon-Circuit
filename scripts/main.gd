@@ -41636,51 +41636,18 @@ func _payload_slot_volume_rank(payload_kind: String, part: Dictionary, payload: 
 
 
 func _internal_slot_accepts_payload(slot_rank: int, payload_rank: int) -> bool:
-	return clampi(payload_rank, 1, 5) <= clampi(slot_rank, 1, 5)
+	return _unit_stats_service().internal_slot_accepts_payload(slot_rank, payload_rank)
 
 
 func _torso_internal_slot_size_ranks(part: Dictionary) -> Array:
-	var capacity := _torso_plugin_capacity_for_part(part)
-	var sizes: Array = []
-	if part.has("internal_slot_sizes") and part["internal_slot_sizes"] is Array:
-		for raw_size in Array(part["internal_slot_sizes"]):
-			sizes.append(_volume_rank_from_value(raw_size, _torso_size_rank_for_slots(part)))
-	else:
-		match _torso_size_rank_for_slots(part):
-			1:
-				sizes = [2, 1, 1]
-			2:
-				sizes = [3, 2, 2, 1]
-			3:
-				sizes = [4, 3, 3, 2, 2]
-			4:
-				sizes = [5, 4, 4, 3, 3, 2]
-			_:
-				sizes = [5, 5, 4, 4, 3, 3, 2, 2]
-	if sizes.is_empty():
-		sizes.append(_torso_size_rank_for_slots(part))
-	while sizes.size() > capacity:
-		sizes.pop_back()
-	while sizes.size() < capacity:
-		sizes.append(int(sizes[sizes.size() - 1]))
-	return sizes
+	return _unit_stats_service().torso_internal_slot_size_ranks(part, {
+		"capacity": _torso_plugin_capacity_for_part(part),
+		"torso_size_rank": _torso_size_rank_for_slots(part),
+	})
 
 
 func _best_internal_slot_for_payload(slot_sizes: Array, occupied: Dictionary, payload_rank: int, requested_slot: int = -1) -> int:
-	if requested_slot >= 0:
-		if requested_slot >= slot_sizes.size() or bool(occupied.get(requested_slot, false)):
-			return -1
-		return requested_slot if _internal_slot_accepts_payload(int(slot_sizes[requested_slot]), payload_rank) else -1
-	var best_slot := -1
-	var best_size := 999
-	for i in range(slot_sizes.size()):
-		if bool(occupied.get(i, false)):
-			continue
-		var slot_rank := int(slot_sizes[i])
-		if _internal_slot_accepts_payload(slot_rank, payload_rank) and slot_rank < best_size:
-			best_size = slot_rank
-			best_slot = i
-	return best_slot
+	return _unit_stats_service().best_internal_slot_for_payload(slot_sizes, occupied, payload_rank, requested_slot)
 
 
 func _legacy_mass_limit_to_volume_rank(mass_limit: float) -> float:

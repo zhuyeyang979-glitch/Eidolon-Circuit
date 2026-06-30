@@ -313,7 +313,7 @@ func _init() -> void:
 	service.apply_soul_heat_capacity_stats(minimum_soul_heat_stats, {"name": "SOUL: LOW", "soul_heat_capacity": -5.0})
 	if int(minimum_soul_heat_stats.get("soul_heat_capacity", 0)) != 1:
 		_fail("soul heat capacity should clamp to minimum one: %s" % str(minimum_soul_heat_stats))
-	for method_name in ["payload_slot_key_for_kind", "volume_tier_rank", "volume_rank_from_value"]:
+	for method_name in ["payload_slot_key_for_kind", "volume_tier_rank", "volume_rank_from_value", "internal_slot_accepts_payload", "torso_internal_slot_size_ranks", "best_internal_slot_for_payload"]:
 		if not service.has_method(method_name):
 			_fail("UnitStatsService missing %s." % method_name)
 			return
@@ -339,6 +339,22 @@ func _init() -> void:
 	_assert_near(float(service.part_slot_volume_rank({"mass": 5.0}, "booster", {"booster_boost_momentum": 361.0})), 4.0, "booster payload volume rank")
 	_assert_near(float(service.part_slot_volume_rank({"radius": 0.16, "length": 0.4, "mass": 3.0}, "muscle", {"size_tier_rank": 1.0})), 3.0, "footprint payload volume rank")
 	_assert_near(float(service.part_slot_volume_rank({"radius": 0.16, "length": 0.4, "mass": 3.0}, "limb_muscle", {"size_tier_rank": 1.0})), 2.0, "limb footprint volume rank")
+	if not bool(service.internal_slot_accepts_payload(6, 5)) or bool(service.internal_slot_accepts_payload(2, 3)) or not bool(service.internal_slot_accepts_payload(0, 1)):
+		_fail("internal slot acceptance clamp mismatch.")
+	if service.torso_internal_slot_size_ranks({"internal_slot_sizes": ["XL", "S"]}, {"capacity": 4, "torso_size_rank": 3}) != [5, 2, 2, 2]:
+		_fail("explicit internal slot sizes should normalize and pad.")
+	if service.torso_internal_slot_size_ranks({}, {"capacity": 3, "torso_size_rank": 4}) != [5, 4, 4]:
+		_fail("default internal slot sizes should trim by capacity.")
+	if service.torso_internal_slot_size_ranks({}, {"capacity": 7, "torso_size_rank": 1}) != [2, 1, 1, 1, 1, 1, 1]:
+		_fail("default internal slot sizes should pad by capacity.")
+	if int(service.best_internal_slot_for_payload([5, 3, 2], {1: true}, 2)) != 2:
+		_fail("best internal slot should choose smallest compatible open slot.")
+	if int(service.best_internal_slot_for_payload([5, 3, 2], {2: true}, 2, 2)) != -1:
+		_fail("requested occupied internal slot should fail.")
+	if int(service.best_internal_slot_for_payload([5, 3, 2], {}, 5, 0)) != 0:
+		_fail("requested compatible internal slot should be honored.")
+	if int(service.best_internal_slot_for_payload([5, 3, 2], {}, 3, 2)) != -1:
+		_fail("requested undersized internal slot should fail.")
 	if not service.has_method("apply_internal_payload_base_stats"):
 		_fail("UnitStatsService missing apply_internal_payload_base_stats.")
 		return
@@ -592,6 +608,9 @@ func _init() -> void:
 		"_unit_stats_service().volume_tier_rank(",
 		"_unit_stats_service().volume_rank_from_value(",
 		"_unit_stats_service().part_slot_volume_rank(",
+		"_unit_stats_service().internal_slot_accepts_payload(",
+		"_unit_stats_service().torso_internal_slot_size_ranks(",
+		"_unit_stats_service().best_internal_slot_for_payload(",
 		"_unit_stats_service().apply_torso_payload_direct_stats(stats,",
 		"_unit_stats_service().record_torso_payload_summary_entry(",
 		"_unit_stats_service().torso_payload_processing_plan(",

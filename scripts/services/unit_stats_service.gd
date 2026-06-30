@@ -732,6 +732,55 @@ func volume_rank_from_value(value: Variant, fallback: int = 3) -> int:
 	return clampi(fallback, 1, 5)
 
 
+func internal_slot_accepts_payload(slot_rank: int, payload_rank: int) -> bool:
+	return clampi(payload_rank, 1, 5) <= clampi(slot_rank, 1, 5)
+
+
+func torso_internal_slot_size_ranks(part: Dictionary, context: Dictionary = {}) -> Array:
+	var capacity := maxi(0, int(context.get("capacity", part.get("internal_slot_capacity", 0))))
+	var torso_size_rank := volume_rank_from_value(context.get("torso_size_rank", part.get("size_tier", part.get("size_class", 3))), 3)
+	var sizes: Array = []
+	if part.has("internal_slot_sizes") and part["internal_slot_sizes"] is Array:
+		for raw_size in Array(part["internal_slot_sizes"]):
+			sizes.append(volume_rank_from_value(raw_size, torso_size_rank))
+	else:
+		match torso_size_rank:
+			1:
+				sizes = [2, 1, 1]
+			2:
+				sizes = [3, 2, 2, 1]
+			3:
+				sizes = [4, 3, 3, 2, 2]
+			4:
+				sizes = [5, 4, 4, 3, 3, 2]
+			_:
+				sizes = [5, 5, 4, 4, 3, 3, 2, 2]
+	if sizes.is_empty():
+		sizes.append(torso_size_rank)
+	while sizes.size() > capacity:
+		sizes.pop_back()
+	while sizes.size() < capacity:
+		sizes.append(int(sizes[sizes.size() - 1]))
+	return sizes
+
+
+func best_internal_slot_for_payload(slot_sizes: Array, occupied: Dictionary, payload_rank: int, requested_slot: int = -1) -> int:
+	if requested_slot >= 0:
+		if requested_slot >= slot_sizes.size() or bool(occupied.get(requested_slot, false)):
+			return -1
+		return requested_slot if internal_slot_accepts_payload(int(slot_sizes[requested_slot]), payload_rank) else -1
+	var best_slot := -1
+	var best_size := 999
+	for i in range(slot_sizes.size()):
+		if bool(occupied.get(i, false)):
+			continue
+		var slot_rank := int(slot_sizes[i])
+		if internal_slot_accepts_payload(slot_rank, payload_rank) and slot_rank < best_size:
+			best_size = slot_rank
+			best_slot = i
+	return best_slot
+
+
 func part_slot_volume_rank(part: Dictionary, slot_key: String, context: Dictionary = {}) -> float:
 	if part.has("slot_volume_tier"):
 		return float(volume_tier_rank(String(part["slot_volume_tier"])))
