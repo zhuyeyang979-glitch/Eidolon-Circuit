@@ -49930,19 +49930,35 @@ func _apply_editor_panel_visibility(role_key: String, unit_bp: Dictionary) -> vo
 		if editor_accent_color_picker != null:
 			editor_accent_color_picker.color = _team_accent_color(_editor_player())
 		editor_color_picker_sync = false
+	var catalog_button_visibilities := []
 	for catalog_button in editor_catalog_buttons:
 		var button: Button = catalog_button
-		button.visible = button.visible and parts_visible
+		catalog_button_visibilities.append(button.visible)
+	var catalog_shop_surface_plan := UILifecycleService.editor_catalog_shop_surface_presentation(
+		parts_visible,
+		shop_visible,
+		load_visible,
+		body_board_enabled,
+		catalog_button_visibilities,
+		editor_shop_buttons.keys()
+	)
+	var catalog_button_plans: Array = Array(catalog_shop_surface_plan.get("catalog_buttons", []))
+	for i in range(editor_catalog_buttons.size()):
+		var button: Button = editor_catalog_buttons[i]
+		var catalog_button_plan := Dictionary(catalog_button_plans[i]) if i < catalog_button_plans.size() and catalog_button_plans[i] is Dictionary else {}
+		_set_canvas_item_visible_if_changed(button, bool(catalog_button_plan.get("visible", false)))
 	_update_editor_load_card_buttons(role_key)
+	var shop_button_plans: Dictionary = Dictionary(catalog_shop_surface_plan.get("shop_buttons", {}))
 	for shop_key in editor_shop_buttons.keys():
 		var shop_button: Button = editor_shop_buttons[shop_key]
-		shop_button.visible = shop_visible and body_board_enabled
-		shop_button.disabled = not shop_button.visible
+		var shop_button_plan := Dictionary(shop_button_plans.get(String(shop_key), {}))
+		_set_canvas_item_visible_if_changed(shop_button, bool(shop_button_plan.get("visible", false)))
+		_set_button_disabled_if_changed(shop_button, bool(shop_button_plan.get("disabled", true)))
 	if editor_shop_card_backdrop != null:
-		editor_shop_card_backdrop.visible = shop_visible
-	if editor_hover_popup_view != null and not (parts_visible or shop_visible):
+		_set_canvas_item_visible_if_changed(editor_shop_card_backdrop, bool(Dictionary(catalog_shop_surface_plan.get("shop_backdrop", {})).get("visible", false)))
+	if editor_hover_popup_view != null and bool(catalog_shop_surface_plan.get("clear_catalog_hover", false)):
 		editor_hover_popup_view.clear_card()
-	if editor_unit_hover_view != null and not load_visible:
+	if editor_unit_hover_view != null and bool(catalog_shop_surface_plan.get("clear_unit_hover", false)):
 		_clear_editor_unit_hover_card(true)
 	var section_chrome_plan := UILifecycleService.editor_section_chrome_presentation(
 		parts_visible,

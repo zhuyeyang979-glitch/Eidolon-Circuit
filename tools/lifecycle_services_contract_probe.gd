@@ -397,6 +397,30 @@ func _init() -> void:
 	if bool(Dictionary(hidden_labels.get("catalog", {})).get("visible", true)) or String(Dictionary(hidden_labels.get("catalog", {})).get("text", "")) != "PART CARDS" or bool(Dictionary(hidden_labels.get("template", {})).get("visible", true)):
 		_fail("UILifecycleService hidden section chrome contract failed.")
 		return
+	var catalog_shop_plan: Dictionary = UILifecycleService.editor_catalog_shop_surface_presentation(true, false, false, true, [true, false, true], ["core", "limb"])
+	var catalog_buttons: Array = Array(catalog_shop_plan.get("catalog_buttons", []))
+	if catalog_buttons.size() != 3 or not bool(Dictionary(catalog_buttons[0]).get("visible", false)) or bool(Dictionary(catalog_buttons[1]).get("visible", true)) or not bool(Dictionary(catalog_buttons[2]).get("visible", false)):
+		_fail("UILifecycleService catalog button surface contract failed.")
+		return
+	var shop_buttons: Dictionary = Dictionary(catalog_shop_plan.get("shop_buttons", {}))
+	var core_shop_button: Dictionary = Dictionary(shop_buttons.get("core", {}))
+	if bool(core_shop_button.get("visible", true)) or not bool(core_shop_button.get("disabled", false)):
+		_fail("UILifecycleService hidden shop button surface contract failed.")
+		return
+	if bool(Dictionary(catalog_shop_plan.get("shop_backdrop", {})).get("visible", true)):
+		_fail("UILifecycleService hidden shop backdrop contract failed.")
+		return
+	if bool(catalog_shop_plan.get("clear_catalog_hover", true)) or not bool(catalog_shop_plan.get("clear_unit_hover", false)):
+		_fail("UILifecycleService hover clear surface contract failed.")
+		return
+	var open_shop_plan: Dictionary = UILifecycleService.editor_catalog_shop_surface_presentation(false, true, true, true, [true, false], ["core"])
+	if bool(Dictionary(Array(open_shop_plan.get("catalog_buttons", []))[0]).get("visible", true)) or not bool(Dictionary(Dictionary(open_shop_plan.get("shop_buttons", {})).get("core", {})).get("visible", false)) or bool(Dictionary(Dictionary(open_shop_plan.get("shop_buttons", {})).get("core", {})).get("disabled", true)) or not bool(Dictionary(open_shop_plan.get("shop_backdrop", {})).get("visible", false)) or bool(open_shop_plan.get("clear_catalog_hover", true)) or bool(open_shop_plan.get("clear_unit_hover", true)):
+		_fail("UILifecycleService open shop surface contract failed.")
+		return
+	var blocked_shop_plan: Dictionary = UILifecycleService.editor_catalog_shop_surface_presentation(false, true, false, false, [true], ["core"])
+	if bool(Dictionary(Dictionary(blocked_shop_plan.get("shop_buttons", {})).get("core", {})).get("visible", true)) or not bool(Dictionary(Dictionary(blocked_shop_plan.get("shop_buttons", {})).get("core", {})).get("disabled", false)):
+		_fail("UILifecycleService body-disabled shop surface contract failed.")
+		return
 
 	var task := LoadingTask.create("idle", "Idle", 1.0, Callable(), LoadingTask.PHASE_IDLE, false, true)
 	var prepared := LoadingLifecycleService.prepare_task(task, "editor", 4)

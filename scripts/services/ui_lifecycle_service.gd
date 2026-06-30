@@ -399,6 +399,30 @@ static func editor_section_chrome_presentation(parts_visible: bool, template_vis
 	}
 
 
+static func editor_catalog_shop_surface_presentation(parts_visible: bool, shop_visible: bool, load_visible: bool, body_board_enabled: bool, catalog_button_visibilities: Array, shop_button_keys: Array) -> Dictionary:
+	var catalog_button_plans := []
+	for raw_visible in catalog_button_visibilities:
+		catalog_button_plans.append({
+			"visible": bool(raw_visible) and parts_visible,
+		})
+	var shop_buttons := {}
+	var shop_button_visible := shop_visible and body_board_enabled
+	for raw_key in shop_button_keys:
+		shop_buttons[String(raw_key)] = {
+			"visible": shop_button_visible,
+			"disabled": not shop_button_visible,
+		}
+	return {
+		"catalog_buttons": catalog_button_plans,
+		"shop_buttons": shop_buttons,
+		"shop_backdrop": {
+			"visible": shop_visible,
+		},
+		"clear_catalog_hover": not (parts_visible or shop_visible),
+		"clear_unit_hover": not load_visible,
+	}
+
+
 static func editor_panel_visibility_plan(panel_mode: String, load_mode: String, body_board_enabled: bool, barrier_screen_board: bool, has_custom_topology: bool, part_group_mode: String, part_filter_mode: String, roster_count: int) -> Dictionary:
 	var normalized_load_mode := String(load_mode)
 	if normalized_load_mode == "team":

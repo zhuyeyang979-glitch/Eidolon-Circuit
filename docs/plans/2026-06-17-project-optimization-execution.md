@@ -777,6 +777,26 @@ GREEN: git diff --check
 
 `UILifecycleService.editor_section_chrome_presentation()` now owns the pure section-label copy/visibility, hidden template-toggle copy/visibility, and default template drawer visibility plan. `_apply_editor_panel_visibility()` remains the scene-tree adapter and still calls `_layout_editor_template_drawer()` with the planned drawer visibility. The main extraction probe now rejects the old inline section-label and template-toggle formulas in `main.gd`.
 
+Follow-up editor catalog/shop surface presentation extraction:
+
+```text
+RED: lifecycle_services_contract_probe failed on missing UILifecycleService.editor_catalog_shop_surface_presentation()
+RED: main_file_extraction_contract_probe failed on missing UILifecycleService.editor_catalog_shop_surface_presentation delegation
+GREEN: LIFECYCLE_SERVICES_CONTRACT_PROBE ok
+GREEN: MAIN_FILE_EXTRACTION_CONTRACT_PROBE ok services=9
+GREEN: Godot --check-only --script res://scripts/main.gd --quit-after 1
+GREEN: UNIT_EDITOR_PAGINATION_LAYOUT_PROBE ok unit=1 page=0 catalog=1 load=0 feedback=[P: (270.0, 654.0), S: (622.0, 26.0)]
+GREEN: PART_LIBRARY_UI_PROBE groups=["torso", "limb", "terminal_weapon", "barrier_panel", "software_muscle", "software"] weapon=3 equipment=5 software=7 dashboard=40
+GREEN: EDITOR_CATALOG_REVISION_CACHE_PROBE ok skips=1
+GREEN: TEAMEDIT_UI_SIMPLIFIED_CONTROLS_PROBE ok summary_lines=2
+GREEN: UNIT_EDITOR_FULLSCREEN_LAYOUT_PROBE ok board=(908.0, 548.0) dock=(726.0, 132.0)
+GREEN: SCREEN_LAYOUT_TOKEN_COVERAGE_PROBE ok
+GREEN: jq empty tools/probe_manifest.json
+GREEN: git diff --check
+```
+
+`UILifecycleService.editor_catalog_shop_surface_presentation()` now owns the pure catalog-card retained visibility, shop button visibility/disabled state, shop backdrop visibility, and catalog/unit hover-clearing triggers. `_apply_editor_panel_visibility()` remains the scene-tree adapter: it gathers current catalog-button visibility facts, applies the returned button/backdrop plans, keeps `_update_editor_load_card_buttons()` local, and performs hover-clearing side effects only when requested by the plan. The main extraction probe now rejects the old inline catalog/shop/backdrop/hover formulas in `main.gd`.
+
 Remaining items after this batch:
 
 - Continue editor UI extraction with `_build_editor_ui` and the remaining action presentation/control-mutation sections of `_apply_editor_panel_visibility`, then continue `_resolve_attack` and `_refresh_editor_visual_views` extraction.
