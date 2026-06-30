@@ -245,6 +245,39 @@ func _init() -> void:
 	if int(entry_summary.get("software_payload_count", 0)) != 1:
 		_fail("payload entry summary software count mismatch: %s" % str(entry_summary))
 	_assert_near(float(entry_summary.get("software_payload_energy", 0.0)), 1.25, "entry summary software energy")
+	if not service.has_method("torso_payload_processing_plan"):
+		_fail("UnitStatsService missing torso_payload_processing_plan.")
+		return
+	var ammo_plan: Dictionary = service.torso_payload_processing_plan("ammo", {
+		"name": "Probe Ammo",
+		"mass": 2.0,
+		"ammo_slot_payload": true,
+		"slot_volume_tier": "S",
+	}, {"kind": "ammo", "ammo_size_tier": "L"}, "muscle", {"volume_rank": 4.0})
+	var ammo_summary: Dictionary = Dictionary(ammo_plan.get("summary_entry", {}))
+	if String(ammo_plan.get("direct_stats_kind", "")) != "ammo" or String(ammo_plan.get("internal_slot_key", "")) != "":
+		_fail("ammo payload plan route mismatch: %s" % str(ammo_plan))
+	if not bool(ammo_summary.get("ammo", false)) or int(ammo_summary.get("payload_count", 0)) != 0:
+		_fail("ammo payload summary should mark ammo without pre-counting: %s" % str(ammo_summary))
+	_assert_near(float(ammo_summary.get("mass", 0.0)), 2.0, "ammo payload plan mass")
+	_assert_near(float(ammo_summary.get("volume_rank", 0.0)), 4.0, "ammo payload plan volume")
+	var special_plan: Dictionary = service.torso_payload_processing_plan("special", {"kind": "soul", "mass": 0.0}, {"kind": "special"}, "special")
+	var special_summary: Dictionary = Dictionary(special_plan.get("summary_entry", {}))
+	if not bool(special_summary.get("software", false)) or bool(special_summary.get("payload", true)) or String(special_plan.get("internal_slot_key", "")) != "special" or not bool(special_plan.get("special_logic", false)):
+		_fail("special payload plan mismatch: %s" % str(special_plan))
+	var booster_plan: Dictionary = service.torso_payload_processing_plan("booster", {
+		"name": "Probe Booster",
+		"mass": 5.5,
+		"slot_volume_tier": "M",
+	}, {"kind": "booster"}, "booster", {"volume_rank": 3.25})
+	var booster_summary: Dictionary = Dictionary(booster_plan.get("summary_entry", {}))
+	if String(booster_plan.get("direct_stats_kind", "")) != "" or String(booster_plan.get("internal_slot_key", "")) != "booster":
+		_fail("booster payload plan route mismatch: %s" % str(booster_plan))
+	_assert_near(float(booster_summary.get("mass", 0.0)), 5.5, "booster payload plan mass")
+	_assert_near(float(booster_summary.get("volume_rank", 0.0)), 3.25, "booster payload plan precomputed volume")
+	var generic_plan: Dictionary = service.torso_payload_processing_plan("custom_plugin", {"mass": 1.25, "slot_volume_tier": "XS"}, {"kind": "custom_plugin", "slot": "joint"}, "joint")
+	if String(generic_plan.get("internal_slot_key", "")) != "joint" or String(generic_plan.get("slot_key", "")) != "joint":
+		_fail("generic payload plan should route through explicit slot: %s" % str(generic_plan))
 	if not service.has_method("apply_torso_special_payload_logic_stats"):
 		_fail("UnitStatsService missing apply_torso_special_payload_logic_stats.")
 		return
@@ -550,6 +583,7 @@ func _init() -> void:
 		"_unit_stats_service().volume_rank_from_value(",
 		"_unit_stats_service().apply_torso_payload_direct_stats(stats,",
 		"_unit_stats_service().record_torso_payload_summary_entry(",
+		"_unit_stats_service().torso_payload_processing_plan(",
 		"_unit_stats_service().apply_torso_special_payload_logic_stats(stats,",
 		"_unit_stats_service().apply_soul_heat_capacity_stats(stats,",
 		"_unit_stats_service().apply_internal_payload_base_stats(stats,",

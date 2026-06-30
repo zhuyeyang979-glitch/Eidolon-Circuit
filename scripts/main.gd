@@ -41006,31 +41006,11 @@ func _component_with_size_design(part: Dictionary, slot_key: String) -> Dictiona
 
 
 func _volume_tier_rank(tier: String) -> int:
-	match tier.to_upper():
-		"XS":
-			return 1
-		"S":
-			return 2
-		"M":
-			return 3
-		"L":
-			return 4
-		"XL":
-			return 5
-	return 3
+	return _unit_stats_service().volume_tier_rank(tier)
 
 
 func _volume_rank_from_value(value: Variant, fallback: int = 3) -> int:
-	if value is String:
-		var text := String(value).strip_edges()
-		if text == "" or text == "-":
-			return clampi(fallback, 1, 5)
-		return _volume_tier_rank(text)
-	if value is int:
-		return clampi(int(value), 1, 5)
-	if value is float:
-		return clampi(int(ceilf(float(value))), 1, 5)
-	return clampi(fallback, 1, 5)
+	return _unit_stats_service().volume_rank_from_value(value, fallback)
 
 
 func _volume_rank_label(rank_value: float) -> String:
@@ -41646,20 +41626,7 @@ func _part_is_catalog_frozen(slot_key: String, part: Dictionary) -> bool:
 
 
 func _payload_slot_key_for_kind(payload_kind: String, fallback_slot: String = "muscle") -> String:
-	match payload_kind:
-		"engine":
-			return "engine"
-		"cooling":
-			return "cooling"
-		"booster":
-			return "booster"
-		"special":
-			return "special"
-		"module":
-			return "module"
-		"ammo", "electronic_armor", "escape_pod", "spare_weapon":
-			return "muscle"
-	return fallback_slot
+	return _unit_stats_service().payload_slot_key_for_kind(payload_kind, fallback_slot)
 
 
 func _payload_slot_volume_rank(payload_kind: String, part: Dictionary, payload: Dictionary = {}, fallback_slot: String = "muscle") -> float:
@@ -42619,11 +42586,24 @@ func _apply_torso_slot_payload_stats(stats: Dictionary, role_key: String, unit_b
 		for payload in Array(unit_bp.get("slot_payloads", [])):
 			if not (payload is Dictionary):
 				continue
-			var payload_kind := String(payload.get("kind", ""))
-			if payload_kind == "special":
-				var special_part := _payload_part_for_payload(role_key, payload)
-				_unit_stats_service().record_torso_payload_summary_entry(payload_summary, {"payload": false, "software": true})
-				_merge_internal_payload_stats(stats, special_part, "special")
+			var payload_data: Dictionary = payload
+			var payload_kind := String(payload_data.get("kind", ""))
+			var fallback_slot := _unit_stats_service().payload_slot_key_for_kind(payload_kind, String(payload_data.get("slot", "muscle")))
+			var payload_part := _payload_part_for_payload(role_key, payload_data)
+			var payload_plan := _unit_stats_service().torso_payload_processing_plan(payload_kind, payload_part, payload_data, fallback_slot, {
+				"volume_rank": _payload_slot_volume_rank(payload_kind, payload_part, payload_data, fallback_slot),
+			})
+			var summary_entry: Dictionary = Dictionary(payload_plan.get("summary_entry", {}))
+			if not summary_entry.is_empty():
+				_unit_stats_service().record_torso_payload_summary_entry(payload_summary, summary_entry)
+			var internal_slot_key := String(payload_plan.get("internal_slot_key", ""))
+			if internal_slot_key != "":
+				_merge_internal_payload_stats(stats, payload_part, internal_slot_key, payload_data)
+			var direct_stats_kind := String(payload_plan.get("direct_stats_kind", ""))
+			if direct_stats_kind != "":
+				_unit_stats_service().apply_torso_payload_direct_stats(stats, payload_part, direct_stats_kind, torso_payload_context)
+			if bool(payload_plan.get("special_logic", false)):
+				var special_part := payload_part
 				var special_intent := _unit_stats_service().apply_torso_special_payload_logic_stats(stats, special_part, {"role_key": role_key})
 				if bool(special_intent.get("apply_ether", false)):
 					_merge_ether_stats(stats, special_part)
@@ -42632,71 +42612,9 @@ func _apply_torso_slot_payload_stats(stats: Dictionary, role_key: String, unit_b
 						_unit_stats_service().apply_soul_heat_capacity_stats(stats, special_part)
 					if bool(special_intent.get("apply_soul_bonus", false)):
 						_apply_soul_bonus(stats, unit_bp, special_part)
-				continue
-			elif payload_kind == "module":
-				var module_part := _payload_part_for_payload(role_key, payload)
-				_unit_stats_service().record_torso_payload_summary_entry(payload_summary, {"payload": false, "software": true})
-				_merge_internal_payload_stats(stats, module_part, "module")
+			elif bool(payload_plan.get("module_logic", false)):
+				var module_part := payload_part
 				_unit_stats_service().apply_torso_module_payload_logic_stats(stats, module_part)
-				continue
-			elif payload_kind == "ammo":
-				var ammo_part := _payload_part_for_payload(role_key, payload)
-				_unit_stats_service().record_torso_payload_summary_entry(payload_summary, {
-					"mass": float(ammo_part.get("mass", 0.0)),
-					"volume_rank": _payload_slot_volume_rank(payload_kind, ammo_part, payload, "muscle"),
-					"ammo": true,
-				})
-				_unit_stats_service().apply_torso_payload_direct_stats(stats, ammo_part, payload_kind, torso_payload_context)
-			elif payload_kind == "electronic_armor":
-				var armor_part := _payload_part_for_payload(role_key, payload)
-				_unit_stats_service().record_torso_payload_summary_entry(payload_summary, {
-					"mass": float(armor_part.get("mass", 0.0)),
-					"volume_rank": _payload_slot_volume_rank(payload_kind, armor_part, payload, "muscle"),
-				})
-				_unit_stats_service().apply_torso_payload_direct_stats(stats, armor_part, payload_kind, torso_payload_context)
-			elif payload_kind == "engine":
-				var engine_part := _payload_part_for_payload(role_key, payload)
-				_unit_stats_service().record_torso_payload_summary_entry(payload_summary, {
-					"mass": float(engine_part.get("mass", 0.0)),
-					"volume_rank": _payload_slot_volume_rank(payload_kind, engine_part, payload, "engine"),
-				})
-				_merge_internal_payload_stats(stats, engine_part, "engine")
-			elif payload_kind == "booster":
-				var booster_part := _payload_part_for_payload(role_key, payload)
-				_unit_stats_service().record_torso_payload_summary_entry(payload_summary, {
-					"mass": float(booster_part.get("mass", 0.0)),
-					"volume_rank": _payload_slot_volume_rank(payload_kind, booster_part, payload, "booster"),
-				})
-				_merge_internal_payload_stats(stats, booster_part, "booster", payload)
-			elif payload_kind == "cooling":
-				var cooling_part := _payload_part_for_payload(role_key, payload)
-				_unit_stats_service().record_torso_payload_summary_entry(payload_summary, {
-					"mass": float(cooling_part.get("mass", 0.0)),
-					"volume_rank": _payload_slot_volume_rank(payload_kind, cooling_part, payload, "cooling"),
-				})
-				_merge_internal_payload_stats(stats, cooling_part, "cooling")
-			elif payload_kind == "escape_pod":
-				var pod_payload_part := _payload_part_for_payload(role_key, payload)
-				_unit_stats_service().record_torso_payload_summary_entry(payload_summary, {
-					"mass": float(pod_payload_part.get("mass", 0.0)),
-					"volume_rank": _payload_slot_volume_rank(payload_kind, pod_payload_part, payload, "muscle"),
-				})
-				_unit_stats_service().apply_torso_payload_direct_stats(stats, pod_payload_part, payload_kind, torso_payload_context)
-			elif payload_kind == "spare_weapon":
-				var spare_payload_part := _payload_part_for_payload(role_key, payload)
-				_unit_stats_service().record_torso_payload_summary_entry(payload_summary, {
-					"mass": float(spare_payload_part.get("mass", 0.0)),
-					"volume_rank": _payload_slot_volume_rank(payload_kind, spare_payload_part, payload, "muscle"),
-				})
-				_unit_stats_service().apply_torso_payload_direct_stats(stats, spare_payload_part, payload_kind, torso_payload_context)
-			elif payload.has("slot"):
-				var payload_slot := String(payload.get("slot", ""))
-				var payload_part := _selected_component(role_key, payload_slot, int(payload.get("index", 0)))
-				_unit_stats_service().record_torso_payload_summary_entry(payload_summary, {
-					"mass": float(payload_part.get("mass", 0.0)),
-					"volume_rank": _payload_slot_volume_rank(payload_kind, payload_part, payload, payload_slot),
-				})
-				_merge_internal_payload_stats(stats, payload_part, payload_slot, payload)
 	var escape_index := int(unit_bp.get("escape_pod", -1))
 	if escape_index >= 0 and not component_priced:
 		var pod_part := _selected_component(role_key, "muscle", escape_index)
