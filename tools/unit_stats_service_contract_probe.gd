@@ -329,6 +329,16 @@ func _init() -> void:
 		_fail("volume rank value normalization mismatch.")
 	if int(service.volume_rank_from_value(12.0, 1)) != 5 or int(service.volume_rank_from_value(-4, 3)) != 1:
 		_fail("volume rank clamp mismatch.")
+	if not service.has_method("part_slot_volume_rank"):
+		_fail("UnitStatsService missing part_slot_volume_rank.")
+		return
+	_assert_near(float(service.part_slot_volume_rank({"slot_volume_tier": "XL"}, "engine")), 5.0, "explicit slot volume rank")
+	_assert_near(float(service.part_slot_volume_rank({"electronic_armor": true, "shield_hp": 220.0, "shield_coverage": 0.2, "mass": 4.0}, "muscle")), 4.0, "shield payload volume rank")
+	_assert_near(float(service.part_slot_volume_rank({"engine_momentum_output": 84.0, "mass": 4.0}, "engine")), 4.0, "engine output volume rank")
+	_assert_near(float(service.part_slot_volume_rank({"cooling": 38.0, "mass": 3.0}, "cooling")), 4.0, "cooling payload volume rank")
+	_assert_near(float(service.part_slot_volume_rank({"mass": 5.0}, "booster", {"booster_boost_momentum": 361.0})), 4.0, "booster payload volume rank")
+	_assert_near(float(service.part_slot_volume_rank({"radius": 0.16, "length": 0.4, "mass": 3.0}, "muscle", {"size_tier_rank": 1.0})), 3.0, "footprint payload volume rank")
+	_assert_near(float(service.part_slot_volume_rank({"radius": 0.16, "length": 0.4, "mass": 3.0}, "limb_muscle", {"size_tier_rank": 1.0})), 2.0, "limb footprint volume rank")
 	if not service.has_method("apply_internal_payload_base_stats"):
 		_fail("UnitStatsService missing apply_internal_payload_base_stats.")
 		return
@@ -581,6 +591,7 @@ func _init() -> void:
 		"_unit_stats_service().payload_slot_key_for_kind(",
 		"_unit_stats_service().volume_tier_rank(",
 		"_unit_stats_service().volume_rank_from_value(",
+		"_unit_stats_service().part_slot_volume_rank(",
 		"_unit_stats_service().apply_torso_payload_direct_stats(stats,",
 		"_unit_stats_service().record_torso_payload_summary_entry(",
 		"_unit_stats_service().torso_payload_processing_plan(",

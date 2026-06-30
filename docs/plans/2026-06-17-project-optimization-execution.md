@@ -110,6 +110,7 @@ Completed in the first optimization batch:
 - Moved internal payload base stat accumulation into `UnitStatsService.apply_internal_payload_base_stats()`, leaving `main.gd` to orchestrate only cooling defaults/profile, engine momentum, and booster drive helper calls.
 - Moved torso-slot module payload logic-field copying into `UnitStatsService.apply_torso_module_payload_logic_stats()`, so `main.gd` no longer owns the inline command/module/fracture/morph/combine/identity allowlist for action-module payload stats.
 - Moved payload slot-key normalization, generic volume-rank value normalization, and torso-slot payload route planning into `UnitStatsService`. `main.gd` now asks `UnitStatsService.torso_payload_processing_plan()` how to count, directly apply, or internally merge each payload entry, while still owning catalog lookup, precise volume-rank sampling, and soul/ether/helper callbacks.
+- Moved exact part slot-volume rank thresholds into `UnitStatsService.part_slot_volume_rank()`, including explicit slot tiers, shield thresholds, engine/cooling/booster thresholds, footprint tiers, and limb footprint reduction. `main.gd` now keeps only the adapter context for size-tier rank and booster boost momentum.
 - Replaced the long `AssemblyBoardView` assembly-template overlay drawing helpers with a one-line renderer delegation.
 - Added `tools/part_identity_contract_probe.gd`.
 - Added `tools/unit_editor_assembly_template_service_contract_probe.gd`.
@@ -206,9 +207,29 @@ INTERNAL_SLOT_SIZE_PROBE ok profiles=5 explicit=[5, 2, 2, 2, 2, 2]
 PROBE_MANIFEST_NO_LEGACY_FIXTURE_PROBE ok current=259 sections=8
 ```
 
+Follow-up verification for the slot-volume rank formula extraction:
+
+```text
+RED: unit_stats_service_contract_probe failed on missing UnitStatsService.part_slot_volume_rank()
+UNIT_STATS_SERVICE_CONTRACT_PROBE ok
+MAIN_FILE_EXTRACTION_CONTRACT_PROBE ok services=9
+EDITOR_COST_ACCOUNTING_PROBE node_cost=117 engine_cost=14 team_cost=234
+UNIT_BUILD_RULE_TRAINING_GATE_PROBE ok
+INTERNAL_SLOT_SIZE_PROBE ok profiles=5 explicit=[5, 2, 2, 2, 2, 2]
+THRUSTER_DUAL_MOTION_FORMULA_PROBE ok
+ENGINE_POWER_ALLOCATION_OPEN_PROBE ok detail_open=true dock_visible=true entries=4 pool=343.4
+POWER_ALLOCATION_PANEL_HEAT_LIVE_UPDATE_PROBE ok heat=20.917
+SOURCE_CODE_PROBE ok
+SOUL_OATH_ACTIVATION_PROBE ok
+ETHER_HEAT_ECONOMY_PROBE ok
+BARRIER_PANEL_PROBE ok
+PROJECTILE_PROFILE_WHITELIST_PROBE ok
+LEGACY_POWER_SYMBOL_ABSENCE_PROBE ok
+```
+
 Remaining items after this batch:
 
 - Run a headed/manual visual check for `part_identity_language_probe` and `unit_editor_assembly_template_probe` when a display session is available.
 - Decide whether `assets/concepts/` is Git-tracked, Git LFS-managed, or local-reference-only.
-- Continue deeper `main.gd` extraction with the remaining `_compute_unit_stats` payload catalog lookup, exact volume-rank sampling, soul bonus/ether/helper-specific internal payload implementations, `_build_editor_ui`, `_apply_editor_panel_visibility`, `_resolve_attack`, and `_refresh_editor_visual_views`.
+- Continue deeper `main.gd` extraction with the remaining `_compute_unit_stats` payload catalog lookup, size-tier/booster context derivation, soul bonus/ether/helper-specific internal payload implementations, `_build_editor_ui`, `_apply_editor_panel_visibility`, `_resolve_attack`, and `_refresh_editor_visual_views`.
 - `power_allocation_panel_duration_estimate_probe` is not registered in the manifest and still prints stale assertion errors before exiting `0`; do not use it as completion evidence until its expectations are reviewed.

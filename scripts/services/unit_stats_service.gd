@@ -732,6 +732,81 @@ func volume_rank_from_value(value: Variant, fallback: int = 3) -> int:
 	return clampi(fallback, 1, 5)
 
 
+func part_slot_volume_rank(part: Dictionary, slot_key: String, context: Dictionary = {}) -> float:
+	if part.has("slot_volume_tier"):
+		return float(volume_tier_rank(String(part["slot_volume_tier"])))
+	var material_class := String(part.get("material_class", "")).to_lower()
+	if bool(part.get("electronic_armor", false)) or bool(part.get("shield_payload", false)) or material_class == "shield_payload":
+		var shield_hp := float(part.get("shield_hp", part.get("electronic_armor_hp", 0.0)))
+		var coverage := float(part.get("shield_coverage", part.get("electronic_armor_coverage", 0.0)))
+		var mass := float(part.get("mass", 0.0))
+		if shield_hp >= 340.0 or coverage >= 2.4 or mass >= 28.0:
+			return 5.0
+		if shield_hp >= 210.0 or coverage >= 1.55 or mass >= 14.0:
+			return 4.0
+		if shield_hp >= 110.0 or coverage >= 0.9 or mass >= 6.0:
+			return 3.0
+		if shield_hp >= 45.0 or coverage >= 0.45 or mass >= 2.0:
+			return 2.0
+		return 1.0
+	var size_rank := _part_size_tier_rank(part, context)
+	if part.has("size_tier") or part.has("size_class") or part.has("ammo_size_tier"):
+		return size_rank
+	if bool(part.get("ammo_slot_payload", false)) or material_class == "ammo_payload":
+		return 1.0
+	if slot_key == "engine":
+		var power := float(part.get("engine_momentum_output", 0.0))
+		var mass := float(part.get("mass", 0.0))
+		if power >= 140.0 or mass >= 70.0:
+			return 5.0
+		if power >= 82.0 or mass >= 32.0:
+			return 4.0
+		if power >= 46.0 or mass >= 10.0:
+			return 3.0
+		if power >= 20.0 or mass >= 3.0:
+			return 2.0
+		return 1.0
+	if slot_key == "cooling":
+		var cooling := float(part.get("cooling_rate", part.get("cooling", 0.0)))
+		var mass := float(part.get("mass", 0.0))
+		if cooling >= 64.0 or mass >= 28.0:
+			return 5.0
+		if cooling >= 36.0 or mass >= 12.0:
+			return 4.0
+		if cooling >= 22.0 or mass >= 5.0:
+			return 3.0
+		if cooling >= 10.0 or mass >= 2.0:
+			return 2.0
+		return 1.0
+	if slot_key == "booster":
+		var boost_momentum := float(context.get("booster_boost_momentum", part.get("boost_momentum", 0.0)))
+		var mass := float(part.get("mass", 0.0))
+		if boost_momentum >= 720.0 or mass >= 80.0:
+			return 5.0
+		if boost_momentum >= 360.0 or mass >= 34.0:
+			return 4.0
+		if boost_momentum >= 170.0 or mass >= 12.0:
+			return 3.0
+		if boost_momentum >= 70.0 or mass >= 3.0:
+			return 2.0
+		return 1.0
+	var radius := float(part.get("radius", 0.0))
+	var length := float(part.get("length", 0.0))
+	var mass := float(part.get("mass", 0.0))
+	var footprint := radius * 2.0 + length * 0.9 + mass * 0.018
+	if slot_key == "limb_muscle":
+		footprint *= 0.42
+	if footprint >= 2.0:
+		return maxf(5.0, size_rank)
+	if footprint >= 1.15:
+		return maxf(4.0, size_rank)
+	if footprint >= 0.62:
+		return maxf(3.0, size_rank)
+	if footprint >= 0.24:
+		return maxf(2.0, size_rank)
+	return maxf(1.0, size_rank)
+
+
 func torso_payload_processing_plan(payload_kind: String, part: Dictionary, payload: Dictionary = {}, fallback_slot: String = "muscle", context: Dictionary = {}) -> Dictionary:
 	var kind := payload_kind.strip_edges()
 	if kind == "":
@@ -938,15 +1013,28 @@ func _torso_payload_volume_rank(payload_kind: String, part: Dictionary, payload:
 		return maxf(0.0, float(context.get("volume_rank", 0.0)))
 	if payload_kind == "ammo":
 		return float(volume_rank_from_value(payload.get("ammo_size_tier", part.get("ammo_size_tier", part.get("slot_volume_tier", "XS"))), 1))
-	if part.has("slot_volume_tier"):
-		return float(volume_rank_from_value(part.get("slot_volume_tier", "XS"), 1))
-	if part.has("size_tier"):
-		return float(volume_rank_from_value(part.get("size_tier", "XS"), 1))
-	if part.has("size_class"):
-		return float(volume_rank_from_value(part.get("size_class", "M"), 3))
-	if part.has("ammo_size_tier"):
-		return float(volume_rank_from_value(part.get("ammo_size_tier", "XS"), 1))
-	return 1.0 if fallback_slot != "" else 0.0
+	return part_slot_volume_rank(part, payload_slot_key_for_kind(payload_kind, fallback_slot), context) if fallback_slot != "" else 0.0
+
+
+func _part_size_tier_rank(part: Dictionary, context: Dictionary) -> float:
+	if context.has("size_tier_rank"):
+		return float(context.get("size_tier_rank", 3.0))
+	var raw_value: Variant = part.get("size_tier", part.get("size_class", part.get("ammo_size_tier", "M")))
+	if raw_value is int or raw_value is float:
+		return float(volume_rank_from_value(raw_value, 3))
+	var text := String(raw_value).strip_edges().to_lower()
+	match text:
+		"xs", "tiny", "micro":
+			return 1.0
+		"s", "small", "light":
+			return 2.0
+		"m", "medium", "standard":
+			return 3.0
+		"l", "large", "heavy":
+			return 4.0
+		"xl", "huge", "colossal":
+			return 5.0
+	return 3.0
 
 
 func _merge_electronic_armor_stats(stats: Dictionary, part: Dictionary, scale: float = 1.0) -> void:

@@ -41696,78 +41696,10 @@ func _legacy_mass_limit_to_volume_rank(mass_limit: float) -> float:
 
 
 func _part_slot_volume_rank(part: Dictionary, slot_key: String) -> float:
-	if part.has("slot_volume_tier"):
-		return float(_volume_tier_rank(String(part["slot_volume_tier"])))
-	var material_class := String(part.get("material_class", "")).to_lower()
-	if bool(part.get("electronic_armor", false)) or bool(part.get("shield_payload", false)) or material_class == "shield_payload":
-		var shield_hp := float(part.get("shield_hp", part.get("electronic_armor_hp", 0.0)))
-		var coverage := float(part.get("shield_coverage", part.get("electronic_armor_coverage", 0.0)))
-		var mass := float(part.get("mass", 0.0))
-		if shield_hp >= 340.0 or coverage >= 2.4 or mass >= 28.0:
-			return 5.0
-		if shield_hp >= 210.0 or coverage >= 1.55 or mass >= 14.0:
-			return 4.0
-		if shield_hp >= 110.0 or coverage >= 0.9 or mass >= 6.0:
-			return 3.0
-		if shield_hp >= 45.0 or coverage >= 0.45 or mass >= 2.0:
-			return 2.0
-		return 1.0
-	if part.has("size_tier") or part.has("size_class") or part.has("ammo_size_tier"):
-		return float(_size_tier_rank(_part_size_tier_label(part, slot_key)))
-	if bool(part.get("ammo_slot_payload", false)) or material_class == "ammo_payload":
-		return 1.0
-	if slot_key == "engine":
-		var power := float(part.get("engine_momentum_output", 0.0))
-		var mass := float(part.get("mass", 0.0))
-		if power >= 140.0 or mass >= 70.0:
-			return 5.0
-		if power >= 82.0 or mass >= 32.0:
-			return 4.0
-		if power >= 46.0 or mass >= 10.0:
-			return 3.0
-		if power >= 20.0 or mass >= 3.0:
-			return 2.0
-		return 1.0
-	if slot_key == "cooling":
-		var cooling := float(part.get("cooling_rate", part.get("cooling", 0.0)))
-		var mass := float(part.get("mass", 0.0))
-		if cooling >= 64.0 or mass >= 28.0:
-			return 5.0
-		if cooling >= 36.0 or mass >= 12.0:
-			return 4.0
-		if cooling >= 22.0 or mass >= 5.0:
-			return 3.0
-		if cooling >= 10.0 or mass >= 2.0:
-			return 2.0
-		return 1.0
-	if slot_key == "booster":
-		var boost_momentum := _thruster_boost_total_momentum_for_part(part)
-		var mass := float(part.get("mass", 0.0))
-		if boost_momentum >= 720.0 or mass >= 80.0:
-			return 5.0
-		if boost_momentum >= 360.0 or mass >= 34.0:
-			return 4.0
-		if boost_momentum >= 170.0 or mass >= 12.0:
-			return 3.0
-		if boost_momentum >= 70.0 or mass >= 3.0:
-			return 2.0
-		return 1.0
-	var radius := float(part.get("radius", 0.0))
-	var length := float(part.get("length", 0.0))
-	var mass := float(part.get("mass", 0.0))
-	var footprint := radius * 2.0 + length * 0.9 + mass * 0.018
-	if slot_key == "limb_muscle":
-		footprint *= 0.42
-	var tier_rank := float(_size_tier_rank(_part_size_tier_label(part, slot_key)))
-	if footprint >= 2.0:
-		return maxf(5.0, tier_rank)
-	if footprint >= 1.15:
-		return maxf(4.0, tier_rank)
-	if footprint >= 0.62:
-		return maxf(3.0, tier_rank)
-	if footprint >= 0.24:
-		return maxf(2.0, tier_rank)
-	return maxf(1.0, tier_rank)
+	return _unit_stats_service().part_slot_volume_rank(part, slot_key, {
+		"size_tier_rank": float(_size_tier_rank(_part_size_tier_label(part, slot_key))),
+		"booster_boost_momentum": _thruster_boost_total_momentum_for_part(part) if slot_key == "booster" else 0.0,
+	})
 
 
 func _movement_profile_priority(profile: String) -> int:
