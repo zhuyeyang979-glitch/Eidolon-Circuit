@@ -522,7 +522,7 @@ func _init() -> void:
 		_fail("failed oath note/flag mismatch: %s" % str(failed_oath_stats))
 	_assert_near(float(failed_oath_stats.get("speed", 0.0)), 1.0, "failed oath speed unchanged")
 	_assert_near(float(failed_oath_stats.get("pierce_range_bonus", 0.0)), 0.02, "failed oath pierce unchanged")
-	for method_name in ["normalize_size_tier_label", "size_tier_rank", "size_tier_from_footprint", "part_size_tier_label", "part_size_tier_rank", "component_is_torso", "component_is_brain_torso", "torso_size_rank_for_slots", "torso_baseline_slot_capacity", "torso_plugin_capacity_for_part", "torso_software_capacity_for_part", "economy_median_mass_for_rank", "thruster_drive_demand_for_part", "thruster_move_efficiency_for_part", "thruster_boost_efficiency_for_part", "booster_normal_momentum_for_part", "booster_boost_momentum_for_part", "thruster_boost_total_momentum_for_part", "payload_slot_key_for_kind", "payload_catalog_selection", "volume_tier_rank", "volume_rank_from_value", "payload_slot_volume_rank", "internal_slot_accepts_payload", "torso_internal_slot_size_ranks", "best_internal_slot_for_payload"]:
+	for method_name in ["normalize_size_tier_label", "size_tier_rank", "size_tier_from_footprint", "part_size_tier_label", "part_size_tier_rank", "component_is_torso", "component_is_brain_torso", "torso_size_rank_for_slots", "torso_baseline_slot_capacity", "torso_plugin_capacity_for_part", "torso_software_capacity_for_part", "economy_median_mass_for_rank", "thruster_drive_demand_for_part", "thruster_move_efficiency_for_part", "thruster_boost_efficiency_for_part", "booster_normal_momentum_for_part", "booster_boost_momentum_for_part", "thruster_boost_total_momentum_for_part", "payload_slot_key_for_kind", "payload_catalog_selection", "volume_tier_rank", "volume_rank_from_value", "payload_slot_volume_rank", "internal_slot_accepts_payload", "torso_internal_slot_size_ranks", "best_internal_slot_for_payload", "cooling_tags_for_part", "movement_profile_priority", "apply_internal_engine_payload_stats", "apply_internal_cooling_payload_stats", "apply_internal_thruster_drive_stats"]:
 		if not service.has_method(method_name):
 			_fail("UnitStatsService missing %s." % method_name)
 			return
@@ -699,6 +699,143 @@ func _init() -> void:
 	_assert_near(float(booster_merge_stats.get("mass", 0.0)), 4.0, "internal merge booster mass")
 	if not bool(booster_merge_intent.get("apply_thruster_drive_stats", false)) or bool(booster_merge_intent.get("apply_engine_stats", false)):
 		_fail("internal merge booster intent mismatch: %s" % str(booster_merge_intent))
+	var engine_detail_stats := {
+		"engine_momentum_output": 10.0,
+		"engine_idle_heat": 1.0,
+		"engine_count": 0,
+		"engine_volume_rank": 0.0,
+		"engine_momentum_budget": 0.0,
+		"engine_joint_momentum_budget": 0.0,
+		"engine_thruster_momentum_budget": 0.0,
+	}
+	service.apply_internal_engine_payload_stats(engine_detail_stats, {
+		"engine_family": "booster_core",
+		"engine_weapon_tags": ["boost", "route", ""],
+		"engine_team_role": "mobility_route",
+		"engine_heat_profile": "boost_cycle",
+		"engine_recoil_stability": 1.8,
+		"engine_boost_control": 0.3,
+		"engine_command_drive": 1.2,
+		"engine_supply_load": 1.1,
+	}, {"engine_output": 120.0, "engine_idle_heat": 6.0, "engine_volume_rank": 3.0, "scale": 1.0})
+	_assert_near(float(engine_detail_stats.get("engine_momentum_output", 0.0)), 130.0, "engine callback output")
+	_assert_near(float(engine_detail_stats.get("engine_idle_heat", 0.0)), 7.0, "engine callback idle heat")
+	if int(engine_detail_stats.get("engine_count", 0)) != 1:
+		_fail("engine callback count mismatch: %s" % str(engine_detail_stats))
+	_assert_near(float(engine_detail_stats.get("engine_volume_rank", 0.0)), 3.0, "engine callback volume")
+	_assert_near(float(engine_detail_stats.get("engine_momentum_budget", 0.0)), 120.0, "engine callback budget")
+	_assert_near(float(engine_detail_stats.get("engine_joint_momentum_budget", 0.0)), 120.0, "engine callback joint budget")
+	_assert_near(float(engine_detail_stats.get("engine_thruster_momentum_budget", 0.0)), 120.0, "engine callback thruster budget")
+	if String(engine_detail_stats.get("engine_family_primary", "")) != "booster_core" or float(engine_detail_stats.get("engine_family_primary_power", 0.0)) != 120.0:
+		_fail("engine callback primary family mismatch: %s" % str(engine_detail_stats))
+	if Array(engine_detail_stats.get("engine_weapon_tags", [])).has("") or not Array(engine_detail_stats.get("engine_weapon_tags", [])).has("boost") or not Array(engine_detail_stats.get("engine_weapon_tags", [])).has("route"):
+		_fail("engine callback tags mismatch: %s" % str(engine_detail_stats))
+	if not Array(engine_detail_stats.get("engine_team_roles", [])).has("mobility_route") or not Array(engine_detail_stats.get("engine_heat_profiles", [])).has("boost_cycle"):
+		_fail("engine callback role/profile mismatch: %s" % str(engine_detail_stats))
+	_assert_near(float(engine_detail_stats.get("engine_recoil_stability_sum", 0.0)), 210.0, "engine recoil weighted sum")
+	_assert_near(float(engine_detail_stats.get("engine_boost_control_sum", 0.0)), 54.0, "engine boost weighted sum")
+	_assert_near(float(engine_detail_stats.get("engine_command_drive_sum", 0.0)), 144.0, "engine command weighted sum")
+	_assert_near(float(engine_detail_stats.get("engine_supply_load_sum", 0.0)), 132.0, "engine supply weighted sum")
+	_assert_near(float(engine_detail_stats.get("engine_supply_load_weight", 0.0)), 120.0, "engine weighted denominator")
+	var cooling_detail_stats := {
+		"cooling": 1.0,
+		"heat_dissipation": 2.0,
+		"manual_cooling": 48.0,
+		"weapon_heat_tags": ["existing"],
+		"repeat_heat_relief": 0.1,
+		"projectile_heat_relief": 0.0,
+		"boost_heat_relief": 0.0,
+		"laser_heat_relief": 0.0,
+		"chemical_heat_relief": 0.0,
+		"missile_heat_relief": 0.0,
+	}
+	var cooling_tags: Array = service.cooling_tags_for_part({"cooling_profile": "duelist", "weapon_heat_tags": ["blade", "existing"]})
+	if cooling_tags != ["blade", "existing", "duelist"]:
+		_fail("cooling tags should merge heat tags and profile: %s" % str(cooling_tags))
+	if int(service.movement_profile_priority("omni")) != 4 or int(service.movement_profile_priority("brake_anchor")) != 3 or int(service.movement_profile_priority("vector")) != 2 or int(service.movement_profile_priority("car")) != 1:
+		_fail("movement profile priority mismatch.")
+	service.apply_internal_cooling_payload_stats(cooling_detail_stats, {
+		"cooling_profile": "duelist",
+		"weapon_heat_tags": ["blade", "existing"],
+		"manual_cooling_bonus": 5.0,
+		"repeat_heat_relief": 0.8,
+		"projectile_heat_relief": 0.33,
+		"overheat_clear_ratio": 0.7,
+		"overheat_shutdown_mult": 0.2,
+		"cooling_aura_bonus": 4.0,
+	}, {"cooling_rate": 15.0, "cooling_dissipation": 18.0})
+	if not Array(cooling_detail_stats.get("cooling_profiles", [])).has("duelist"):
+		_fail("cooling callback profile mismatch: %s" % str(cooling_detail_stats))
+	for tag in ["existing", "blade", "duelist"]:
+		if not Array(cooling_detail_stats.get("weapon_heat_tags", [])).has(tag):
+			_fail("cooling callback tag missing %s: %s" % [tag, str(cooling_detail_stats)])
+	_assert_near(float(cooling_detail_stats.get("manual_cooling", 0.0)), 53.0, "cooling callback manual")
+	_assert_near(float(cooling_detail_stats.get("repeat_heat_relief", 0.0)), 0.72, "cooling callback repeat clamp")
+	_assert_near(float(cooling_detail_stats.get("projectile_heat_relief", 0.0)), 0.33, "cooling callback projectile")
+	_assert_near(float(cooling_detail_stats.get("overheat_clear_ratio", 0.0)), 0.62, "cooling callback clear ratio")
+	_assert_near(float(cooling_detail_stats.get("overheat_shutdown_mult", 0.0)), 0.35, "cooling callback shutdown")
+	_assert_near(float(cooling_detail_stats.get("cooling_aura_bonus", 0.0)), 4.0, "cooling callback aura")
+	_assert_near(float(cooling_detail_stats.get("cooling", 0.0)), 16.0, "cooling callback rate")
+	_assert_near(float(cooling_detail_stats.get("heat_dissipation", 0.0)), 20.0, "cooling callback dissipation")
+	var thruster_detail_stats := {
+		"booster_idle_heat": 1.0,
+		"move_momentum": 2.0,
+		"boost_momentum": 3.0,
+		"thruster_boost_extra_demand": 4.0,
+		"thruster_boost_brake_allocated_momentum": 5.0,
+		"thruster_boost_peak_demand": 6.0,
+		"thruster_drive_demand": 7.0,
+		"thruster_allocated_momentum": 8.0,
+		"thruster_efficiency_weight": 0.0,
+		"move_efficiency_sum": 0.0,
+		"boost_efficiency_sum": 0.0,
+		"turn_efficiency_sum": 0.0,
+		"brake_efficiency": 1.0,
+		"boost_angle_degrees": 0.0,
+		"boost_heat": 0.0,
+		"thruster_duration": 0.0,
+		"boost_duration": 0.0,
+		"boost_cooldown": 0.0,
+		"movement_profile": "",
+		"thruster_family": "",
+	}
+	service.apply_internal_thruster_drive_stats(thruster_detail_stats, {
+		"move_efficiency": 1.5,
+		"boost_efficiency": 2.5,
+		"turn_efficiency": 1.2,
+		"brake_efficiency": 1.6,
+		"boost_heat": 2.0,
+		"thruster_duration": 0.2,
+		"boost_duration": 0.3,
+		"boost_cooldown": 0.4,
+		"movement_profile": "vector",
+		"boost_angle_degrees": 180.0,
+		"thruster_family": "red",
+		"flame_color": "red",
+		"boost_momentum": 20.0,
+		"recoil_cancel": 0.5,
+	}, {"drive_alloc": 10.0, "boost_extra": 4.0, "booster_idle_heat": 0.7})
+	_assert_near(float(thruster_detail_stats.get("booster_idle_heat", 0.0)), 1.7, "thruster callback idle heat")
+	_assert_near(float(thruster_detail_stats.get("move_momentum", 0.0)), 17.0, "thruster callback move")
+	_assert_near(float(thruster_detail_stats.get("boost_momentum", 0.0)), 7.0, "thruster callback boost")
+	_assert_near(float(thruster_detail_stats.get("thruster_boost_extra_demand", 0.0)), 8.0, "thruster callback boost extra")
+	_assert_near(float(thruster_detail_stats.get("thruster_boost_brake_allocated_momentum", 0.0)), 9.0, "thruster callback brake alloc")
+	_assert_near(float(thruster_detail_stats.get("thruster_boost_peak_demand", 0.0)), 20.0, "thruster callback peak")
+	_assert_near(float(thruster_detail_stats.get("thruster_drive_demand", 0.0)), 17.0, "thruster callback demand")
+	_assert_near(float(thruster_detail_stats.get("thruster_allocated_momentum", 0.0)), 18.0, "thruster callback allocated")
+	_assert_near(float(thruster_detail_stats.get("thruster_efficiency_weight", 0.0)), 10.0, "thruster callback weight")
+	_assert_near(float(thruster_detail_stats.get("move_efficiency_sum", 0.0)), 15.0, "thruster callback move sum")
+	_assert_near(float(thruster_detail_stats.get("boost_efficiency_sum", 0.0)), 25.0, "thruster callback boost sum")
+	_assert_near(float(thruster_detail_stats.get("turn_efficiency_sum", 0.0)), 12.0, "thruster callback turn sum")
+	_assert_near(float(thruster_detail_stats.get("brake_efficiency", 0.0)), 1.6, "thruster callback brake")
+	_assert_near(float(thruster_detail_stats.get("boost_angle_degrees", 0.0)), 180.0, "thruster callback angle")
+	_assert_near(float(thruster_detail_stats.get("boost_heat", 0.0)), 2.0, "thruster callback heat")
+	_assert_near(float(thruster_detail_stats.get("thruster_duration", 0.0)), 0.2, "thruster callback duration")
+	_assert_near(float(thruster_detail_stats.get("boost_duration", 0.0)), 0.3, "thruster callback boost duration")
+	_assert_near(float(thruster_detail_stats.get("boost_cooldown", 0.0)), 0.4, "thruster callback cooldown")
+	if String(thruster_detail_stats.get("movement_profile", "")) != "vector" or String(thruster_detail_stats.get("thruster_family", "")) != "red" or String(thruster_detail_stats.get("flame_color", "")) != "red":
+		_fail("thruster callback profile/family mismatch: %s" % str(thruster_detail_stats))
+	_assert_near(float(thruster_detail_stats.get("recoil_cancel", 0.0)), 0.5, "thruster callback recoil")
 	if not service.has_method("apply_internal_payload_base_stats"):
 		_fail("UnitStatsService missing apply_internal_payload_base_stats.")
 		return
@@ -976,6 +1113,8 @@ func _init() -> void:
 		"_unit_stats_service().internal_slot_accepts_payload(",
 		"_unit_stats_service().torso_internal_slot_size_ranks(",
 		"_unit_stats_service().best_internal_slot_for_payload(",
+		"_unit_stats_service().cooling_tags_for_part(",
+		"_unit_stats_service().movement_profile_priority(",
 		"_unit_stats_service().apply_torso_payload_direct_stats(stats,",
 		"_unit_stats_service().record_torso_payload_summary_entry(",
 		"_unit_stats_service().torso_payload_processing_plan(",
@@ -984,6 +1123,9 @@ func _init() -> void:
 		"_unit_stats_service().apply_soul_heat_capacity_stats(stats,",
 		"_unit_stats_service().apply_soul_bonus_stats(stats,",
 		"_unit_stats_service().apply_internal_payload_merge_plan(stats,",
+		"_unit_stats_service().apply_internal_engine_payload_stats(",
+		"_unit_stats_service().apply_internal_cooling_payload_stats(",
+		"_unit_stats_service().apply_internal_thruster_drive_stats(",
 		"_unit_stats_service().apply_torso_payload_summary(stats,",
 	]:
 		if not main_source.contains(token):
@@ -1003,6 +1145,15 @@ func _init() -> void:
 		return
 	if main_source.contains("return clampi(cap + 1, 1, 12)"):
 		_fail("main.gd should delegate torso capacity clamping formula.")
+		return
+	if main_source.contains("stats[\"engine_momentum_output\"] = float(stats.get(\"engine_momentum_output\", 0.0)) + engine_output"):
+		_fail("main.gd should delegate internal engine payload stat merging.")
+		return
+	if main_source.contains("stats[\"manual_cooling\"] = float(stats.get(\"manual_cooling\", 48.0)) + float(part.get(\"manual_cooling_bonus\", 0.0))"):
+		_fail("main.gd should delegate internal cooling payload stat merging.")
+		return
+	if main_source.contains("stats[\"thruster_boost_peak_demand\"] = float(stats.get(\"thruster_boost_peak_demand\", 0.0)) + boost_peak"):
+		_fail("main.gd should delegate internal thruster payload stat merging.")
 		return
 	if failed:
 		return

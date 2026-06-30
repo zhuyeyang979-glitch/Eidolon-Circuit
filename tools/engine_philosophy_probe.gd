@@ -105,7 +105,7 @@ func _init() -> void:
 	}
 	for raw in melee:
 		main._merge_engine_stats(stats, raw)
-	main._apply_engine_momentum_budget(stats, "hero", true)
+	main._apply_engine_momentum_budget_with_runtime_modifiers(stats, "hero", true)
 	if float(stats.get("engine_command_drive", 1.0)) <= 1.0:
 		_fail("melee engines should raise weighted engine_command_drive")
 	if failed:

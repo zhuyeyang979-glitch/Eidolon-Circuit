@@ -45,19 +45,19 @@ func _init() -> void:
 	main._ready()
 	var ranged := _base_stats()
 	main._merge_engine_stats(ranged, _part(main, "LONGSIGHT FIRE CONTROL CORE"))
-	main._apply_engine_momentum_budget(ranged, "hero", true)
+	main._apply_engine_momentum_budget_with_runtime_modifiers(ranged, "hero", true)
 	if float(ranged.get("engine_recoil_stability", 1.0)) < 1.1:
 		_fail("Ranged engine should merge fire-control stability.")
 	if not Array(ranged.get("engine_weapon_tags", [])).has("sniper"):
 		_fail("Ranged engine should merge weapon tags.")
 	var booster := _base_stats()
 	main._merge_engine_stats(booster, _part(main, "REDLINE BOOSTER REACTOR"))
-	main._apply_engine_momentum_budget(booster, "hero", true)
+	main._apply_engine_momentum_budget_with_runtime_modifiers(booster, "hero", true)
 	if float(booster.get("engine_boost_control", 1.0)) <= float(ranged.get("engine_boost_control", 1.0)):
 		_fail("Booster engine should merge stronger boost control.")
 	var siege := _base_stats()
 	main._merge_engine_stats(siege, _part(main, "SIEGE GRID REACTOR"))
-	main._apply_engine_momentum_budget(siege, "hero", true)
+	main._apply_engine_momentum_budget_with_runtime_modifiers(siege, "hero", true)
 	if float(siege.get("support_power_capacity", 0.0)) <= float(ranged.get("support_power_capacity", 0.0)):
 		_fail("Siege engine should create a stronger support power capacity.")
 	if failed:

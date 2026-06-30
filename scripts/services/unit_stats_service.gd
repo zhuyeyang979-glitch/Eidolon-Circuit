@@ -944,6 +944,18 @@ func thruster_boost_total_momentum_for_part(part: Dictionary) -> float:
 	return maxf(0.0, (demand + boost_extra) * thruster_boost_efficiency_for_part(part))
 
 
+func cooling_tags_for_part(part: Dictionary) -> Array:
+	var tags: Array = []
+	for tag in Array(part.get("weapon_heat_tags", [])):
+		var tag_string := String(tag)
+		if tag_string != "" and not tags.has(tag_string):
+			tags.append(tag_string)
+	var profile := String(part.get("cooling_profile", ""))
+	if profile != "" and not tags.has(profile):
+		tags.append(profile)
+	return tags
+
+
 func volume_tier_rank(tier: String) -> int:
 	match tier.to_upper():
 		"XS":
@@ -1343,6 +1355,132 @@ func apply_internal_payload_merge_plan(stats: Dictionary, part: Dictionary, slot
 		"apply_cooling_rate_stats": slot_key == "cooling",
 		"apply_thruster_drive_stats": slot_key == "booster",
 	}
+
+
+func apply_internal_engine_payload_stats(stats: Dictionary, part: Dictionary, context: Dictionary = {}) -> Dictionary:
+	var scale := float(context.get("scale", 1.0))
+	var engine_output := maxf(0.0, float(context.get("engine_output", part.get("engine_momentum_output", part.get("engine_momentum_budget", 0.0)))))
+	var engine_idle_heat := maxf(0.0, float(context.get("engine_idle_heat", 0.0)))
+	var engine_volume_rank := maxf(0.0, float(context.get("engine_volume_rank", part_slot_volume_rank(part, "engine"))) * scale)
+	stats["engine_momentum_output"] = float(stats.get("engine_momentum_output", 0.0)) + engine_output
+	stats["engine_idle_heat"] = float(stats.get("engine_idle_heat", 0.0)) + engine_idle_heat
+	stats["engine_count"] = int(stats.get("engine_count", 0)) + int(ceilf(scale))
+	stats["engine_volume_rank"] = float(stats.get("engine_volume_rank", 0.0)) + engine_volume_rank
+	stats["engine_momentum_budget"] = float(stats.get("engine_momentum_budget", 0.0)) + engine_output
+	stats["engine_joint_momentum_budget"] = float(stats.get("engine_joint_momentum_budget", 0.0)) + engine_output
+	stats["engine_thruster_momentum_budget"] = float(stats.get("engine_thruster_momentum_budget", 0.0)) + engine_output
+	var family_weight := maxf(1.0, engine_output)
+	var current_primary_power := float(stats.get("engine_family_primary_power", -1.0))
+	if engine_output >= current_primary_power:
+		stats["engine_family_primary_power"] = engine_output
+		stats["engine_family_primary"] = String(part.get("engine_family", "balanced"))
+	var engine_tags: Array = Array(stats.get("engine_weapon_tags", []))
+	for tag in Array(part.get("engine_weapon_tags", [])):
+		var tag_string := String(tag)
+		if tag_string != "" and not engine_tags.has(tag_string):
+			engine_tags.append(tag_string)
+	stats["engine_weapon_tags"] = engine_tags
+	var team_role := String(part.get("engine_team_role", ""))
+	if team_role != "":
+		var roles: Array = Array(stats.get("engine_team_roles", []))
+		if not roles.has(team_role):
+			roles.append(team_role)
+		stats["engine_team_roles"] = roles
+	var heat_profile := String(part.get("engine_heat_profile", ""))
+	if heat_profile != "":
+		var profiles: Array = Array(stats.get("engine_heat_profiles", []))
+		if not profiles.has(heat_profile):
+			profiles.append(heat_profile)
+		stats["engine_heat_profiles"] = profiles
+	for key in ["engine_recoil_stability", "engine_boost_control", "engine_command_drive", "engine_supply_load"]:
+		var value := clampf(float(part.get(key, 1.0)), 0.45, 1.75)
+		stats["%s_sum" % key] = float(stats.get("%s_sum" % key, 0.0)) + value * family_weight
+		stats["%s_weight" % key] = float(stats.get("%s_weight" % key, 0.0)) + family_weight
+	return stats
+
+
+func apply_internal_cooling_payload_stats(stats: Dictionary, part: Dictionary, context: Dictionary = {}) -> Dictionary:
+	var profile := String(part.get("cooling_profile", ""))
+	if profile != "":
+		var profiles: Array = Array(stats.get("cooling_profiles", []))
+		if not profiles.has(profile):
+			profiles.append(profile)
+		stats["cooling_profiles"] = profiles
+	var tags: Array = Array(stats.get("weapon_heat_tags", []))
+	for tag in cooling_tags_for_part(part):
+		if not tags.has(tag):
+			tags.append(tag)
+	stats["weapon_heat_tags"] = tags
+	stats["manual_cooling"] = float(stats.get("manual_cooling", 48.0)) + float(part.get("manual_cooling_bonus", 0.0))
+	for key in ["repeat_heat_relief", "projectile_heat_relief", "boost_heat_relief", "laser_heat_relief", "chemical_heat_relief", "missile_heat_relief"]:
+		stats[key] = clampf(maxf(float(stats.get(key, 0.0)), float(part.get(key, 0.0))), 0.0, 0.72)
+	if part.has("overheat_clear_ratio"):
+		stats["overheat_clear_ratio"] = clampf(maxf(float(stats.get("overheat_clear_ratio", 0.42)), float(part["overheat_clear_ratio"])), 0.3, 0.62)
+	if part.has("overheat_shutdown_mult"):
+		stats["overheat_shutdown_mult"] = clampf(minf(float(stats.get("overheat_shutdown_mult", 1.0)), float(part["overheat_shutdown_mult"])), 0.35, 1.0)
+	if part.has("cooling_aura_bonus"):
+		stats["cooling_aura_bonus"] = maxf(float(stats.get("cooling_aura_bonus", 0.0)), float(part["cooling_aura_bonus"]))
+	if context.has("cooling_rate"):
+		stats["cooling"] = float(stats.get("cooling", 0.0)) + maxf(0.0, float(context.get("cooling_rate", 0.0)))
+	if context.has("cooling_dissipation"):
+		stats["heat_dissipation"] = float(stats.get("heat_dissipation", 0.0)) + maxf(0.0, float(context.get("cooling_dissipation", 0.0)))
+	return stats
+
+
+func movement_profile_priority(profile: String) -> int:
+	match profile.to_lower():
+		"omni":
+			return 4
+		"brake_anchor":
+			return 3
+		"vector":
+			return 2
+		"car":
+			return 1
+		_:
+			return 0
+
+
+func apply_internal_thruster_drive_stats(stats: Dictionary, part: Dictionary, context: Dictionary = {}) -> Dictionary:
+	var drive_alloc := maxf(0.0, float(context.get("drive_alloc", thruster_drive_demand_for_part(part))))
+	var boost_extra := maxf(0.0, float(context.get("boost_extra", booster_boost_momentum_for_part(part))))
+	var booster_idle_heat := maxf(0.0, float(context.get("booster_idle_heat", drive_alloc * maxf(0.0, float(part.get("thruster_idle_heat_coeff", 0.0))))))
+	var move_eff := thruster_move_efficiency_for_part(part)
+	var boost_eff := thruster_boost_efficiency_for_part(part)
+	var turn_eff := clampf(float(part.get("turn_efficiency", 1.0)), 0.2, 3.0)
+	var brake_eff := clampf(float(part.get("brake_efficiency", 1.0)), 0.2, 3.0)
+	var boost_peak := drive_alloc + boost_extra
+	stats["booster_idle_heat"] = float(stats.get("booster_idle_heat", 0.0)) + booster_idle_heat
+	stats["move_momentum"] = float(stats.get("move_momentum", 0.0)) + drive_alloc * move_eff
+	stats["boost_momentum"] = float(stats.get("boost_momentum", 0.0)) + boost_extra
+	stats["thruster_boost_extra_demand"] = float(stats.get("thruster_boost_extra_demand", 0.0)) + boost_extra
+	stats["thruster_boost_brake_allocated_momentum"] = float(stats.get("thruster_boost_brake_allocated_momentum", 0.0)) + boost_extra
+	stats["thruster_boost_peak_demand"] = float(stats.get("thruster_boost_peak_demand", 0.0)) + boost_peak
+	stats["thruster_drive_demand"] = float(stats.get("thruster_drive_demand", 0.0)) + drive_alloc
+	stats["thruster_allocated_momentum"] = float(stats.get("thruster_allocated_momentum", 0.0)) + drive_alloc
+	var efficiency_weight := maxf(0.001, drive_alloc)
+	stats["thruster_efficiency_weight"] = float(stats.get("thruster_efficiency_weight", 0.0)) + efficiency_weight
+	stats["move_efficiency_sum"] = float(stats.get("move_efficiency_sum", 0.0)) + move_eff * efficiency_weight
+	stats["boost_efficiency_sum"] = float(stats.get("boost_efficiency_sum", 0.0)) + boost_eff * efficiency_weight
+	stats["turn_efficiency_sum"] = float(stats.get("turn_efficiency_sum", 0.0)) + turn_eff * efficiency_weight
+	stats["brake_efficiency"] = maxf(float(stats.get("brake_efficiency", 1.0)), brake_eff)
+	stats["boost_angle_degrees"] = maxf(float(stats.get("boost_angle_degrees", 0.0)), float(part.get("boost_angle_degrees", 360.0)))
+	stats["boost_heat"] = float(stats.get("boost_heat", 0.0)) + maxf(0.0, float(part.get("boost_heat", 0.0)))
+	stats["thruster_duration"] = maxf(float(stats.get("thruster_duration", 0.0)), maxf(0.16, float(part.get("thruster_duration", 0.0))))
+	stats["boost_duration"] = maxf(float(stats.get("boost_duration", 0.0)), maxf(0.16, float(part.get("boost_duration", 0.0))))
+	stats["boost_cooldown"] = maxf(float(stats.get("boost_cooldown", 0.0)), maxf(0.0, float(part.get("boost_cooldown", 0.5))))
+	var profile := String(part.get("movement_profile", "omni"))
+	if movement_profile_priority(profile) >= movement_profile_priority(String(stats.get("movement_profile", ""))):
+		stats["movement_profile"] = profile
+	var current_boost := float(stats.get("boost_momentum", 0.0))
+	var part_boost := booster_boost_momentum_for_part(part)
+	if String(stats.get("thruster_family", "")) == "" or part_boost >= current_boost * 0.5:
+		stats["thruster_family"] = String(part.get("thruster_family", stats.get("thruster_family", "")))
+	if part.has("flame_color"):
+		stats["flame_color"] = String(part["flame_color"])
+	if part.has("recoil_cancel"):
+		stats["recoil_cancel"] = maxf(float(stats.get("recoil_cancel", 0.0)), float(part["recoil_cancel"]))
+	return stats
 
 
 func apply_torso_module_payload_logic_stats(stats: Dictionary, module_part: Dictionary) -> Dictionary:

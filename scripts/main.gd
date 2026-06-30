@@ -40255,15 +40255,7 @@ func _cooling_heat_capacity_for_part(part: Dictionary, scale: float = 1.0) -> fl
 
 
 func _cooling_tags_for_part(part: Dictionary) -> Array:
-	var tags: Array = []
-	for tag in Array(part.get("weapon_heat_tags", [])):
-		var tag_string := String(tag)
-		if tag_string != "" and not tags.has(tag_string):
-			tags.append(tag_string)
-	var profile := String(part.get("cooling_profile", ""))
-	if profile != "" and not tags.has(profile):
-		tags.append(profile)
-	return tags
+	return _unit_stats_service().cooling_tags_for_part(part)
 
 
 func _cooling_family_for_part(part: Dictionary) -> String:
@@ -40346,26 +40338,7 @@ func _cooling_dissipation_for_part(part: Dictionary) -> float:
 
 
 func _merge_cooling_profile_stats(stats: Dictionary, part: Dictionary) -> void:
-	var profile := String(part.get("cooling_profile", ""))
-	if profile != "":
-		var profiles: Array = Array(stats.get("cooling_profiles", []))
-		if not profiles.has(profile):
-			profiles.append(profile)
-		stats["cooling_profiles"] = profiles
-	var tags: Array = Array(stats.get("weapon_heat_tags", []))
-	for tag in _cooling_tags_for_part(part):
-		if not tags.has(tag):
-			tags.append(tag)
-	stats["weapon_heat_tags"] = tags
-	stats["manual_cooling"] = float(stats.get("manual_cooling", 48.0)) + float(part.get("manual_cooling_bonus", 0.0))
-	for key in ["repeat_heat_relief", "projectile_heat_relief", "boost_heat_relief", "laser_heat_relief", "chemical_heat_relief", "missile_heat_relief"]:
-		stats[key] = clampf(maxf(float(stats.get(key, 0.0)), float(part.get(key, 0.0))), 0.0, 0.72)
-	if part.has("overheat_clear_ratio"):
-		stats["overheat_clear_ratio"] = clampf(maxf(float(stats.get("overheat_clear_ratio", 0.42)), float(part["overheat_clear_ratio"])), 0.3, 0.62)
-	if part.has("overheat_shutdown_mult"):
-		stats["overheat_shutdown_mult"] = clampf(minf(float(stats.get("overheat_shutdown_mult", 1.0)), float(part["overheat_shutdown_mult"])), 0.35, 1.0)
-	if part.has("cooling_aura_bonus"):
-		stats["cooling_aura_bonus"] = maxf(float(stats.get("cooling_aura_bonus", 0.0)), float(part["cooling_aura_bonus"]))
+	_unit_stats_service().apply_internal_cooling_payload_stats(stats, part)
 
 
 func _blank_canvas_stats(stats: Dictionary, player_id: int, role_key: String, resolved_index: int) -> Dictionary:
@@ -41497,97 +41470,29 @@ func _part_slot_volume_rank(part: Dictionary, slot_key: String) -> float:
 
 
 func _movement_profile_priority(profile: String) -> int:
-	match profile.to_lower():
-		"omni":
-			return 4
-		"brake_anchor":
-			return 3
-		"vector":
-			return 2
-		"car":
-			return 1
-		_:
-			return 0
+	return _unit_stats_service().movement_profile_priority(profile)
 
 
 func _merge_thruster_drive_stats(stats: Dictionary, part: Dictionary, payload: Dictionary = {}) -> void:
 	var normalized := _thruster_with_drive_defaults(part)
 	var drive_alloc := _thruster_drive_allocated_for_payload(payload, normalized) if not payload.is_empty() else _thruster_drive_allocation_min_for_part(normalized)
-	var move_eff := _thruster_move_efficiency_for_part(normalized)
-	var boost_eff := _thruster_boost_efficiency_for_part(normalized)
-	var turn_eff := clampf(float(normalized.get("turn_efficiency", 1.0)), 0.2, 3.0)
-	var brake_eff := clampf(float(normalized.get("brake_efficiency", 1.0)), 0.2, 3.0)
 	var boost_extra := _thruster_boost_brake_allocated_for_payload(payload, normalized) if not payload.is_empty() else _thruster_boost_brake_allocation_min_for_part(normalized)
-	var boost_peak := drive_alloc + boost_extra
-	stats["booster_idle_heat"] = float(stats.get("booster_idle_heat", 0.0)) + _booster_idle_heat_for_allocation(normalized, drive_alloc)
-	stats["move_momentum"] = float(stats.get("move_momentum", 0.0)) + drive_alloc * move_eff
-	stats["boost_momentum"] = float(stats.get("boost_momentum", 0.0)) + boost_extra
-	stats["thruster_boost_extra_demand"] = float(stats.get("thruster_boost_extra_demand", 0.0)) + boost_extra
-	stats["thruster_boost_brake_allocated_momentum"] = float(stats.get("thruster_boost_brake_allocated_momentum", 0.0)) + boost_extra
-	stats["thruster_boost_peak_demand"] = float(stats.get("thruster_boost_peak_demand", 0.0)) + boost_peak
-	stats["thruster_drive_demand"] = float(stats.get("thruster_drive_demand", 0.0)) + drive_alloc
-	stats["thruster_allocated_momentum"] = float(stats.get("thruster_allocated_momentum", 0.0)) + drive_alloc
-	var efficiency_weight := maxf(0.001, drive_alloc)
-	stats["thruster_efficiency_weight"] = float(stats.get("thruster_efficiency_weight", 0.0)) + efficiency_weight
-	stats["move_efficiency_sum"] = float(stats.get("move_efficiency_sum", 0.0)) + move_eff * efficiency_weight
-	stats["boost_efficiency_sum"] = float(stats.get("boost_efficiency_sum", 0.0)) + boost_eff * efficiency_weight
-	stats["turn_efficiency_sum"] = float(stats.get("turn_efficiency_sum", 0.0)) + turn_eff * efficiency_weight
-	stats["brake_efficiency"] = maxf(float(stats.get("brake_efficiency", 1.0)), brake_eff)
-	stats["boost_angle_degrees"] = maxf(float(stats.get("boost_angle_degrees", 0.0)), float(normalized.get("boost_angle_degrees", 360.0)))
-	stats["boost_heat"] = float(stats.get("boost_heat", 0.0)) + maxf(0.0, float(normalized.get("boost_heat", 0.0)))
-	stats["thruster_duration"] = maxf(float(stats.get("thruster_duration", 0.0)), maxf(0.16, float(normalized.get("thruster_duration", 0.0))))
-	stats["boost_duration"] = maxf(float(stats.get("boost_duration", 0.0)), maxf(0.16, float(normalized.get("boost_duration", 0.0))))
-	stats["boost_cooldown"] = maxf(float(stats.get("boost_cooldown", 0.0)), maxf(0.0, float(normalized.get("boost_cooldown", 0.5))))
-	var profile := String(normalized.get("movement_profile", "omni"))
-	if _movement_profile_priority(profile) >= _movement_profile_priority(String(stats.get("movement_profile", ""))):
-		stats["movement_profile"] = profile
-	var current_boost := float(stats.get("boost_momentum", 0.0))
-	var part_boost := _booster_boost_momentum_for_part(normalized)
-	if String(stats.get("thruster_family", "")) == "" or part_boost >= current_boost * 0.5:
-		stats["thruster_family"] = String(normalized.get("thruster_family", stats.get("thruster_family", "")))
-	if normalized.has("flame_color"):
-		stats["flame_color"] = String(normalized["flame_color"])
-	if normalized.has("recoil_cancel"):
-		stats["recoil_cancel"] = maxf(float(stats.get("recoil_cancel", 0.0)), float(normalized["recoil_cancel"]))
+	_unit_stats_service().apply_internal_thruster_drive_stats(stats, normalized, {
+		"drive_alloc": drive_alloc,
+		"boost_extra": boost_extra,
+		"booster_idle_heat": _booster_idle_heat_for_allocation(normalized, drive_alloc),
+	})
 
 
 func _merge_engine_stats(stats: Dictionary, part: Dictionary, scale: float = 1.0) -> void:
 	part = _engine_with_philosophy_defaults(part)
 	var engine_output := _engine_momentum_output_for_part(part, scale)
-	stats["engine_momentum_output"] = float(stats.get("engine_momentum_output", 0.0)) + engine_output
-	stats["engine_idle_heat"] = float(stats.get("engine_idle_heat", 0.0)) + _engine_idle_heat_for_part(part, engine_output, 1.0)
-	stats["engine_count"] = int(stats.get("engine_count", 0)) + int(ceilf(scale))
-	stats["engine_volume_rank"] = float(stats.get("engine_volume_rank", 0.0)) + _part_slot_volume_rank(part, "engine") * scale
-	stats["engine_momentum_budget"] = float(stats.get("engine_momentum_budget", 0.0)) + engine_output
-	stats["engine_joint_momentum_budget"] = float(stats.get("engine_joint_momentum_budget", 0.0)) + engine_output
-	stats["engine_thruster_momentum_budget"] = float(stats.get("engine_thruster_momentum_budget", 0.0)) + engine_output
-	var family_weight := maxf(1.0, engine_output)
-	var current_primary_power := float(stats.get("engine_family_primary_power", -1.0))
-	if engine_output >= current_primary_power:
-		stats["engine_family_primary_power"] = engine_output
-		stats["engine_family_primary"] = String(part.get("engine_family", "balanced"))
-	var engine_tags: Array = Array(stats.get("engine_weapon_tags", []))
-	for tag in Array(part.get("engine_weapon_tags", [])):
-		var tag_string := String(tag)
-		if tag_string != "" and not engine_tags.has(tag_string):
-			engine_tags.append(tag_string)
-	stats["engine_weapon_tags"] = engine_tags
-	var team_role := String(part.get("engine_team_role", ""))
-	if team_role != "":
-		var roles: Array = Array(stats.get("engine_team_roles", []))
-		if not roles.has(team_role):
-			roles.append(team_role)
-		stats["engine_team_roles"] = roles
-	var heat_profile := String(part.get("engine_heat_profile", ""))
-	if heat_profile != "":
-		var profiles: Array = Array(stats.get("engine_heat_profiles", []))
-		if not profiles.has(heat_profile):
-			profiles.append(heat_profile)
-		stats["engine_heat_profiles"] = profiles
-	for key in ["engine_recoil_stability", "engine_boost_control", "engine_command_drive", "engine_supply_load"]:
-		var value := clampf(float(part.get(key, 1.0)), 0.45, 1.75)
-		stats["%s_sum" % key] = float(stats.get("%s_sum" % key, 0.0)) + value * family_weight
-		stats["%s_weight" % key] = float(stats.get("%s_weight" % key, 0.0)) + family_weight
+	_unit_stats_service().apply_internal_engine_payload_stats(stats, part, {
+		"engine_output": engine_output,
+		"engine_idle_heat": _engine_idle_heat_for_part(part, engine_output, 1.0),
+		"engine_volume_rank": _part_slot_volume_rank(part, "engine"),
+		"scale": scale,
+	})
 
 
 func _merge_attitude_control_stats(stats: Dictionary, part: Dictionary, scale: float = 1.0) -> void:
@@ -41703,11 +41608,10 @@ func _merge_internal_payload_stats(stats: Dictionary, part: Dictionary, slot_key
 	if bool(merge_intent.get("apply_engine_stats", false)):
 		_merge_engine_stats(stats, part)
 	elif bool(merge_intent.get("apply_cooling_profile_stats", false)):
-		_merge_cooling_profile_stats(stats, part)
-		var cooling_value := _cooling_rate_for_part(part)
-		var dissipation_value := _cooling_dissipation_for_part(part)
-		stats["cooling"] = float(stats.get("cooling", 0.0)) + cooling_value
-		stats["heat_dissipation"] = float(stats.get("heat_dissipation", 0.0)) + dissipation_value
+		_unit_stats_service().apply_internal_cooling_payload_stats(stats, part, {
+			"cooling_rate": _cooling_rate_for_part(part),
+			"cooling_dissipation": _cooling_dissipation_for_part(part),
+		})
 	elif bool(merge_intent.get("apply_thruster_drive_stats", false)):
 		_merge_thruster_drive_stats(stats, part, payload)
 
