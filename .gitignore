@@ -16,3 +16,33 @@ tools/*.gd.uid
 *.gdshader.uid
 *.glsl.import
 .superpowers/
+
+# Local-only art scratch space. Curated concept/runtime baselines under
+# assets/concepts and assets/generated stay tracked when they are referenced by
+# source, probes, or manifests; raw iterations and heavyweight work files stay
+# out of normal commits.
+assets/concepts/_local/
+assets/concepts/_incoming/
+assets/concepts/_scratch/
+assets/generated/_scratch/
+assets/generated/_local/
+assets/concepts/**/*.psd
+assets/concepts/**/*.psb
+assets/concepts/**/*.kra
+assets/concepts/**/*.clip
+assets/concepts/**/*.blend
+assets/concepts/**/*.zip
+assets/concepts/**/*.7z
+assets/concepts/**/*.mp4
+assets/concepts/**/*.mov
+assets/concepts/**/*.webm
+assets/generated/**/*.psd
+assets/generated/**/*.psb
+assets/generated/**/*.kra
+assets/generated/**/*.clip
+assets/generated/**/*.blend
+assets/generated/**/*.zip
+assets/generated/**/*.7z
+assets/generated/**/*.mp4
+assets/generated/**/*.mov
+assets/generated/**/*.webm

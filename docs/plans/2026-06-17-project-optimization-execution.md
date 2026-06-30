@@ -18,14 +18,14 @@
 - Track/verify: `scripts/part_identity.gd`
 - Track/verify: `tools/part_identity_contract_probe.gd`
 - Track/verify: `tools/unit_editor_assembly_template_service_contract_probe.gd`
-- Decide later: `assets/concepts/`
-- Decide later: `assets/generated/*.png.import`
+- Policy decided: `assets/concepts/` keeps curated tracked baselines; local drafts go under ignored scratch folders.
+- Policy decided: tracked `assets/generated/*.png.import` files stay in Git with their runtime atlases.
 
 **Steps:**
 1. Add headless contract coverage for `PartIdentity` so the new helper is not only covered by headed screenshot probes.
 2. Add headless contract coverage for assembly template model generation.
 3. Register contract probes in `tools/probe_manifest.json`.
-4. Leave large concept art assets unstaged until a resource policy is chosen.
+4. Leave local-only concept art drafts unstaged unless they satisfy `docs/resource_policy.md`.
 
 **Verification:**
 ```bash
@@ -76,7 +76,7 @@ arch -arm64 /Volumes/vol1/Godot/4.6.2-stable/Godot.app/Contents/MacOS/Godot --he
 
 **Steps:**
 1. Update ObjectDB leak wording from "known non-blocking warning" to "not reproduced in latest targeted headless probes; continue watching".
-2. Decide whether `assets/concepts/` belongs in Git, Git LFS, or local-only reference storage.
+2. Keep curated `assets/concepts/` baselines in Git, keep local drafts in ignored scratch folders, and revisit Git LFS only when the size triggers in `docs/resource_policy.md` are met.
 3. Keep generated screenshot probes listed as headed/manual validation, not as the only automated proof.
 
 ## Completion Gate
@@ -87,7 +87,7 @@ The first optimization batch is complete when:
 - `PartIdentity` and assembly template logic both have headless contract probes.
 - Probe manifest JSON is valid and includes the new contract probes.
 - Godot check-only and targeted probes pass.
-- Large concept assets remain explicitly unstaged unless a resource policy is chosen.
+- Large local-only concept drafts remain explicitly unstaged unless they satisfy `docs/resource_policy.md`.
 
 ## 2026-06-17 Execution Log
 
@@ -573,7 +573,16 @@ ASSEMBLY_TEMPLATE_SCREENSHOT res://assets/concepts/parts/image2_individual/unit_
 
 Both manual-visual probes were run twice on macOS Godot `4.6.2.stable.official.71f334935` with the Metal Forward+ renderer. Manual inspection confirmed the part-identity language screenshot remains readable for catalog cards, hover detail, and partial/unknown battle previews; the assembly-template overlay shows all six slots and four pending warnings without text overflow or blocking the board. The generated screenshots were restored to the tracked baseline afterward because the assembly-template capture includes dynamic frame timing and is not a stable pixel baseline.
 
+Follow-up resource policy decision:
+
+```text
+assets/concepts tracked files=133 size=79M
+assets/generated tracked files=20 size=18M
+untracked assets/concepts/assets/generated changes=0
+```
+
+`docs/resource_policy.md` now keeps existing curated concept baselines and runtime generated atlases in Git, keeps tracked `assets/generated/*.png.import` files with their source PNGs, and reserves ignored `_local`, `_incoming`, and `_scratch` folders for future local-only art iterations. Git LFS is deferred until a concrete size trigger is reached instead of partially migrating this branch.
+
 Remaining items after this batch:
 
-- Decide whether `assets/concepts/` is Git-tracked, Git LFS-managed, or local-reference-only.
 - Continue editor UI extraction with `_build_editor_ui` and the remaining action presentation/control-mutation sections of `_apply_editor_panel_visibility`, then continue `_resolve_attack` and `_refresh_editor_visual_views` extraction.
