@@ -3,6 +3,7 @@ class_name BattleInputService
 
 const INPUT_FRAME_SCHEMA_VERSION := 2
 const BATTLE_START_PAYLOAD_SCHEMA_VERSION := 1
+const RECONNECT_PAYLOAD_SCHEMA_VERSION := 1
 
 
 func battle_action_names(prefixes: Array, attack_group_count: int) -> Array:
@@ -271,6 +272,148 @@ func first_replay_desync(expected_checkpoints: Array, actual_checkpoints: Array)
 	}
 
 
+func rollback_replay_plan(start_payload: Dictionary, serialized_frames: Array, corrections: Array, current_step: int, max_rollback_steps: int = 240) -> Dictionary:
+	var canonical_start := _canonical_battle_start_payload(start_payload)
+	if String(canonical_start.get("mode", "")) == "":
+		return _replay_recovery_rejection("invalid_start_payload")
+	if current_step < 0 or current_step > serialized_frames.size():
+		return _replay_recovery_rejection("invalid_current_step")
+	if corrections.is_empty():
+		return _replay_recovery_rejection("no_corrections")
+	var action_names: Array = Array(canonical_start.get("action_names", []))
+	var canonical_frames: Array = []
+	for frame_index in range(current_step):
+		var serialized_frame := _canonical_serialized_input_frame(serialized_frames[frame_index], action_names)
+		if serialized_frame == "":
+			return _replay_recovery_rejection("invalid_history_frame", {"step": frame_index})
+		canonical_frames.append(serialized_frame)
+	var correction_by_step := {}
+	var rollback_step := current_step
+	var rollback_window := maxi(0, max_rollback_steps)
+	for raw_correction in corrections:
+		if not (raw_correction is Dictionary):
+			return _replay_recovery_rejection("invalid_correction")
+		var correction: Dictionary = Dictionary(raw_correction)
+		var correction_step := int(correction.get("step", -1))
+		if correction_step < 0 or correction_step >= current_step:
+			return _replay_recovery_rejection("correction_out_of_range", {"step": correction_step})
+		if current_step - correction_step > rollback_window:
+			return _replay_recovery_rejection("correction_outside_window", {
+				"step": correction_step,
+				"current_step": current_step,
+				"max_rollback_steps": rollback_window,
+			})
+		if correction_by_step.has(correction_step):
+			return _replay_recovery_rejection("duplicate_correction_step", {"step": correction_step})
+		var frame_value = correction.get("serialized_frame", correction.get("input_frame", null))
+		var serialized_correction := _canonical_serialized_input_frame(frame_value, action_names)
+		if serialized_correction == "":
+			return _replay_recovery_rejection("invalid_correction_frame", {"step": correction_step})
+		correction_by_step[correction_step] = serialized_correction
+		rollback_step = mini(rollback_step, correction_step)
+	var corrected_steps: Array = correction_by_step.keys()
+	corrected_steps.sort()
+	for raw_step in corrected_steps:
+		var step := int(raw_step)
+		canonical_frames[step] = String(correction_by_step[step])
+	return {
+		"accepted": true,
+		"reason": "rollback_replay",
+		"rollback_step": rollback_step,
+		"replay_from_step": 0,
+		"current_step": current_step,
+		"resimulate_steps": current_step,
+		"max_rollback_steps": rollback_window,
+		"corrected_steps": corrected_steps,
+		"battle_start_payload": canonical_start,
+		"serialized_frames": canonical_frames,
+	}
+
+
+func battle_reconnect_payload(start_payload: Dictionary, star_soul_draft_payload: Dictionary, serialized_frames: Array, confirmed_checkpoint: Dictionary) -> Dictionary:
+	var core := _battle_reconnect_payload_core({
+		"schema_version": RECONNECT_PAYLOAD_SCHEMA_VERSION,
+		"battle_start_payload": start_payload,
+		"star_soul_draft_payload": star_soul_draft_payload,
+		"current_step": serialized_frames.size(),
+		"serialized_frames": serialized_frames,
+		"confirmed_checkpoint": confirmed_checkpoint,
+	})
+	core["history_digest"] = _battle_reconnect_history_digest(core)
+	return core
+
+
+func serialize_battle_reconnect_payload(payload: Dictionary) -> String:
+	return JSON.stringify(_canonical_battle_reconnect_payload(payload))
+
+
+func deserialize_battle_reconnect_payload(serialized_payload: String) -> Dictionary:
+	var json := JSON.new()
+	if json.parse(serialized_payload) != OK:
+		return {}
+	var parsed = json.get_data()
+	if not (parsed is Dictionary):
+		return {}
+	return _canonical_battle_reconnect_payload(Dictionary(parsed))
+
+
+func reconnect_replay_plan(payload: Dictionary) -> Dictionary:
+	var canonical := _canonical_battle_reconnect_payload(payload)
+	if int(canonical.get("schema_version", 0)) != RECONNECT_PAYLOAD_SCHEMA_VERSION:
+		return _replay_recovery_rejection("unsupported_reconnect_schema")
+	var start_payload: Dictionary = Dictionary(canonical.get("battle_start_payload", {}))
+	if String(start_payload.get("mode", "")) == "":
+		return _replay_recovery_rejection("invalid_start_payload")
+	var draft_payload: Dictionary = Dictionary(canonical.get("star_soul_draft_payload", {}))
+	if not bool(draft_payload.get("valid", false)):
+		return _replay_recovery_rejection("invalid_star_soul_draft")
+	var current_step := int(canonical.get("current_step", -1))
+	var serialized_frames: Array = Array(canonical.get("serialized_frames", []))
+	if current_step < 0 or serialized_frames.size() != current_step:
+		return _replay_recovery_rejection("history_length_mismatch", {
+			"current_step": current_step,
+			"frame_count": serialized_frames.size(),
+		})
+	for frame_index in range(serialized_frames.size()):
+		if String(serialized_frames[frame_index]) == "":
+			return _replay_recovery_rejection("invalid_history_frame", {"step": frame_index})
+	var checkpoint: Dictionary = Dictionary(canonical.get("confirmed_checkpoint", {}))
+	if int(checkpoint.get("step", -1)) != current_step:
+		return _replay_recovery_rejection("checkpoint_step_mismatch", {
+			"current_step": current_step,
+			"checkpoint_step": int(checkpoint.get("step", -1)),
+		})
+	var simulation_hz := maxi(1, int(start_payload.get("simulation_hz", 120)))
+	var expected_checkpoint_time := snappedf(float(current_step) / float(simulation_hz), 0.000001)
+	var actual_checkpoint_time := float(checkpoint.get("simulation_time", -1.0))
+	if actual_checkpoint_time != expected_checkpoint_time:
+		return _replay_recovery_rejection("checkpoint_time_mismatch", {
+			"expected_time": expected_checkpoint_time,
+			"actual_time": actual_checkpoint_time,
+		})
+	var checkpoint_digest := String(checkpoint.get("digest", ""))
+	if checkpoint_digest.length() != 64 or not checkpoint_digest.is_valid_hex_number():
+		return _replay_recovery_rejection("invalid_checkpoint_digest")
+	var expected_digest := _battle_reconnect_history_digest(_battle_reconnect_payload_core(canonical))
+	var actual_digest := String(canonical.get("history_digest", ""))
+	if actual_digest != expected_digest:
+		return _replay_recovery_rejection("history_digest_mismatch", {
+			"expected_digest": expected_digest,
+			"actual_digest": actual_digest,
+		})
+	return {
+		"accepted": true,
+		"reason": "reconnect_replay",
+		"current_step": current_step,
+		"replay_from_step": 0,
+		"battle_start_payload": start_payload,
+		"star_soul_draft_payload": draft_payload,
+		"serialized_frames": serialized_frames,
+		"confirmed_checkpoint": checkpoint,
+		"history_digest": actual_digest,
+	}
+
+
 func action_just_pressed(action_name: String, frame_state: Dictionary, fallback_fn: Callable) -> bool:
 	if not bool(frame_state.get("frame_active", false)):
 		return bool(fallback_fn.call(action_name)) if fallback_fn.is_valid() else false
@@ -418,6 +561,115 @@ func _canonical_battle_start_payload(payload: Dictionary) -> Dictionary:
 		"control_route": _canonical_control_route(payload.get("control_route", battle_control_routes(mode, ai_seat, runtime_menu_visible))),
 		"remote_input_slots": _canonical_remote_input_slots(payload.get("remote_input_slots", [])),
 	}
+
+
+func _canonical_battle_reconnect_payload(payload: Dictionary) -> Dictionary:
+	var canonical := _battle_reconnect_payload_core(payload)
+	canonical["history_digest"] = String(payload.get("history_digest", "")).to_lower()
+	return canonical
+
+
+func _battle_reconnect_payload_core(payload: Dictionary) -> Dictionary:
+	var start_payload := _canonical_battle_start_payload(Dictionary(payload.get("battle_start_payload", {})) if payload.get("battle_start_payload", {}) is Dictionary else {})
+	var action_names: Array = Array(start_payload.get("action_names", []))
+	var serialized_frames: Array = []
+	for raw_frame in Array(payload.get("serialized_frames", [])):
+		serialized_frames.append(_canonical_serialized_input_frame(raw_frame, action_names))
+	return {
+		"schema_version": int(payload.get("schema_version", 0)),
+		"battle_start_payload": start_payload,
+		"star_soul_draft_payload": _canonical_star_soul_draft_payload(payload.get("star_soul_draft_payload", {})),
+		"current_step": int(payload.get("current_step", serialized_frames.size())),
+		"serialized_frames": serialized_frames,
+		"confirmed_checkpoint": _canonical_replay_checkpoint(payload.get("confirmed_checkpoint", {})),
+	}
+
+
+func _battle_reconnect_history_digest(core_payload: Dictionary) -> String:
+	return JSON.stringify(_battle_reconnect_payload_core(core_payload)).sha256_text()
+
+
+func _canonical_star_soul_draft_payload(draft_value) -> Dictionary:
+	var draft := Dictionary(draft_value) if draft_value is Dictionary else {}
+	var errors: Array = []
+	for raw_error in Array(draft.get("errors", [])):
+		errors.append(String(raw_error))
+	errors.sort()
+	var queue: Array = []
+	for raw_entry in Array(draft.get("queue", [])):
+		if not (raw_entry is Dictionary):
+			continue
+		var entry: Dictionary = Dictionary(raw_entry)
+		queue.append({
+			"sequence_index": int(entry.get("sequence_index", queue.size())),
+			"owner": int(entry.get("owner", 0)),
+			"opponent": int(entry.get("opponent", 0)),
+			"star_soul_id": String(entry.get("star_soul_id", "")),
+			"announce_seconds": snappedf(maxf(0.0, float(entry.get("announce_seconds", 0.0))), 0.000001),
+		})
+	return {
+		"valid": bool(draft.get("valid", false)),
+		"errors": errors,
+		"queue": queue,
+	}
+
+
+func _canonical_replay_checkpoint(checkpoint_value) -> Dictionary:
+	var checkpoint := Dictionary(checkpoint_value) if checkpoint_value is Dictionary else {}
+	return {
+		"step": int(checkpoint.get("step", -1)),
+		"simulation_time": snappedf(float(checkpoint.get("simulation_time", -1.0)), 0.000001),
+		"digest": String(checkpoint.get("digest", "")).to_lower(),
+	}
+
+
+func _canonical_serialized_input_frame(frame_value, action_names: Array) -> String:
+	var runtime_frame: Dictionary = {}
+	if frame_value is String:
+		var json := JSON.new()
+		if json.parse(String(frame_value)) != OK:
+			return ""
+		var parsed = json.get_data()
+		if not (parsed is Dictionary):
+			return ""
+		var canonical_frame: Dictionary = Dictionary(parsed)
+		if not _serialized_canonical_input_frame_valid(canonical_frame):
+			return ""
+		runtime_frame = input_frame_from_canonical(canonical_frame)
+	elif frame_value is Dictionary:
+		var frame: Dictionary = Dictionary(frame_value)
+		var looks_canonical := frame.has("schema_version") or frame.get("pressed", null) is Array or frame.get("released", null) is Array or frame.get("strengths", null) is Array
+		if looks_canonical:
+			if not _serialized_canonical_input_frame_valid(frame):
+				return ""
+			runtime_frame = input_frame_from_canonical(frame)
+		else:
+			for key in ["pressed", "released", "strengths"]:
+				if frame.has(key) and not (frame.get(key) is Dictionary):
+					return ""
+			runtime_frame = frame
+	else:
+		return ""
+	return serialize_input_frame(runtime_frame, action_names)
+
+
+func _serialized_canonical_input_frame_valid(frame: Dictionary) -> bool:
+	return (
+		int(frame.get("schema_version", 0)) == INPUT_FRAME_SCHEMA_VERSION
+		and frame.get("pressed", null) is Array
+		and frame.get("released", null) is Array
+		and frame.get("strengths", null) is Array
+	)
+
+
+func _replay_recovery_rejection(reason: String, details: Dictionary = {}) -> Dictionary:
+	var result := {
+		"accepted": false,
+		"reason": reason,
+	}
+	for key in details.keys():
+		result[key] = details[key]
+	return result
 
 
 func _canonical_control_route(route_value) -> Dictionary:

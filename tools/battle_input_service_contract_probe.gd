@@ -38,6 +38,11 @@ func _init() -> void:
 		"replay_checkpoint",
 		"replay_checkpoint_digest",
 		"first_replay_desync",
+		"rollback_replay_plan",
+		"battle_reconnect_payload",
+		"serialize_battle_reconnect_payload",
+		"deserialize_battle_reconnect_payload",
+		"reconnect_replay_plan",
 		"action_just_pressed",
 		"action_just_released",
 		"action_pressed",
@@ -160,6 +165,35 @@ func _init() -> void:
 		return
 	if not is_equal_approx(service.action_strength("p1_right", held_consumed, Callable(self, "_zero_strength_for_probe")), 0.75):
 		_fail("action_strength should preserve analog input after edge consumption.")
+		return
+	var recovery_start: Dictionary = service.battle_start_payload("pvp", 1, 7, ["p1_right"])
+	var valid_recovery_frame := service.serialize_input_frame({"strengths": {"p1_right": 0.5}}, ["p1_right"])
+	var malformed_rollback: Dictionary = service.rollback_replay_plan(recovery_start, ["{}"], [
+		{"step": 0, "serialized_frame": valid_recovery_frame},
+	], 1, 1)
+	if bool(malformed_rollback.get("accepted", true)) or String(malformed_rollback.get("reason", "")) != "invalid_history_frame":
+		_fail("Rollback recovery should reject structurally invalid serialized history frames: %s" % str(malformed_rollback))
+		return
+	var reconnect_payload: Dictionary = service.battle_reconnect_payload(
+		recovery_start,
+		{"valid": true, "errors": [], "queue": []},
+		[valid_recovery_frame],
+		{"step": 1, "simulation_time": 1.0 / 120.0, "digest": "a".repeat(64)}
+	)
+	reconnect_payload["serialized_frames"] = ["{}"]
+	var malformed_reconnect: Dictionary = service.reconnect_replay_plan(reconnect_payload)
+	if bool(malformed_reconnect.get("accepted", true)) or String(malformed_reconnect.get("reason", "")) != "invalid_history_frame":
+		_fail("Reconnect recovery should reject structurally invalid serialized history frames: %s" % str(malformed_reconnect))
+		return
+	var wrong_time_payload: Dictionary = service.battle_reconnect_payload(
+		recovery_start,
+		{"valid": true, "errors": [], "queue": []},
+		[valid_recovery_frame],
+		{"step": 1, "simulation_time": 1.0, "digest": "a".repeat(64)}
+	)
+	var wrong_time_plan: Dictionary = service.reconnect_replay_plan(wrong_time_payload)
+	if bool(wrong_time_plan.get("accepted", true)) or String(wrong_time_plan.get("reason", "")) != "checkpoint_time_mismatch":
+		_fail("Reconnect recovery should reject checkpoint time that does not match fixed simulation step: %s" % str(wrong_time_plan))
 		return
 	_assert_route(service.battle_control_routes("ai", 1, false), {"action": "players", "routes": [{"player_id": 1, "prefix": "p1"}]})
 	_assert_route(service.battle_control_routes("ai", 2, false), {"action": "players", "routes": [{"player_id": 2, "prefix": "p1"}]})
