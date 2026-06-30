@@ -48,5 +48,7 @@ func _init() -> void:
 		_fail("main.gd should delegate editor action presentation branching.")
 	if source.contains("var panel_specs := [") or source.contains("var board_primary_actions := [") or source.contains("var canvas_tools := [") or source.contains("var zoom_button_specs := ["):
 		_fail("main.gd should delegate editor action build specs.")
+	if source.contains("sort_prev_button.text = \"<\"") or source.contains("template_menu_button.text = \"导入模板\""):
+		_fail("main.gd should delegate sort/template action build specs.")
 	print("MAIN_FILE_EXTRACTION_CONTRACT_PROBE ok services=%d" % required_files.size())
 	quit()

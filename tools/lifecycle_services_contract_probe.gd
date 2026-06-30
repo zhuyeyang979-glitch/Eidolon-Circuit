@@ -152,7 +152,9 @@ func _init() -> void:
 	var canvas_specs: Array = Array(build_specs.get("canvas_tools", []))
 	var zoom_specs: Array = Array(build_specs.get("board_zoom_actions", []))
 	var page_specs: Array = Array(build_specs.get("catalog_page_actions", []))
-	if panel_specs.size() != 2 or guide_specs.size() != 3 or unit_specs.size() != 20 or board_primary_specs.size() != 3 or canvas_specs.size() != 18 or zoom_specs.size() != 3 or page_specs.size() != 2:
+	var sort_specs: Array = Array(build_specs.get("sort_actions", []))
+	var template_spec: Dictionary = Dictionary(build_specs.get("template_toggle", {}))
+	if panel_specs.size() != 2 or guide_specs.size() != 3 or unit_specs.size() != 20 or board_primary_specs.size() != 3 or canvas_specs.size() != 18 or zoom_specs.size() != 3 or page_specs.size() != 2 or sort_specs.size() != 3:
 		_fail("UILifecycleService editor action build spec counts changed unexpectedly.")
 		return
 	var load_panel_spec := _spec_with_key(panel_specs, "load")
@@ -173,6 +175,17 @@ func _init() -> void:
 	_assert_vector(reset_zoom_spec, "size", Vector2(70.0, 24.0), "zoom build spec")
 	var next_page_spec := _spec_with_key(page_specs, "next_catalog")
 	_assert_vector(next_page_spec, "position", Vector2(1182.0, 654.0), "catalog page build spec")
+	var sort_key_spec := _spec_with_key(sort_specs, "sort_key")
+	if String(sort_key_spec.get("text", "")) != "排序":
+		_fail("UILifecycleService sort build spec contract failed.")
+		return
+	_assert_vector(sort_key_spec, "position", Vector2(936.0, 294.0), "sort build spec")
+	_assert_vector(sort_key_spec, "size", Vector2(160.0, 22.0), "sort build spec")
+	if String(template_spec.get("key", "")) != "toggle_templates" or String(template_spec.get("text", "")) != "导入模板":
+		_fail("UILifecycleService template toggle build spec contract failed.")
+		return
+	_assert_vector(template_spec, "position", Vector2(936.0, 146.0), "template toggle build spec")
+	_assert_vector(template_spec, "size", Vector2(270.0, 26.0), "template toggle build spec")
 	Dictionary(Array(build_specs.get("canvas_tools", []))[0])["key"] = "mutated"
 	var fresh_build_specs: Dictionary = UILifecycleService.editor_action_build_specs()
 	if String(Dictionary(Array(fresh_build_specs.get("canvas_tools", []))[0]).get("key", "")) != "blank_canvas":

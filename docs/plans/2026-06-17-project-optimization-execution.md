@@ -630,6 +630,23 @@ GREEN: git diff --check
 
 `UILifecycleService.editor_action_build_specs()` now owns the pure button creation specs for panel, assembly-guide, unit action, board-primary, canvas tool, board zoom, and catalog page controls. `_build_editor_ui()` remains the scene-tree builder and signal wiring surface.
 
+Follow-up sort/template action build spec extraction:
+
+```text
+RED: lifecycle_services_contract_probe failed because sort/template build specs were not covered yet
+GREEN: LIFECYCLE_SERVICES_CONTRACT_PROBE ok
+GREEN: MAIN_FILE_EXTRACTION_CONTRACT_PROBE ok services=9
+GREEN: Godot --check-only --script res://scripts/main.gd --quit-after 1
+GREEN: TEAMEDIT_UI_SIMPLIFIED_CONTROLS_PROBE ok summary_lines=2
+GREEN: UNIT_EDITOR_PAGINATION_LAYOUT_PROBE ok unit=1 page=0 catalog=1 load=0
+GREEN: EDITOR_BOARD_ZOOM_PROBE node=0 zoom=1.00 label=100% hover=0
+GREEN: SCREEN_LAYOUT_TOKEN_COVERAGE_PROBE ok
+GREEN: jq empty tools/probe_manifest.json
+GREEN: git diff --check
+```
+
+The sort action controls and template drawer toggle now use the same `UILifecycleService.editor_action_build_specs()` source as the other editor action buttons. The three UI layout probes exited `0` but emitted Godot exit-time RID/ObjectDB warnings; keep watching those warnings in later headed/manual verification.
+
 Remaining items after this batch:
 
 - Continue editor UI extraction with `_build_editor_ui` and the remaining action presentation/control-mutation sections of `_apply_editor_panel_visibility`, then continue `_resolve_attack` and `_refresh_editor_visual_views` extraction.

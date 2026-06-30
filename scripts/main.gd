@@ -47021,8 +47021,15 @@ func _build_format_select_ui() -> void:
 			button.pressed.connect(_hide_match_format_select)
 		else:
 			button.pressed.connect(_choose_editor_match_format.bind(key))
-		root.add_child(button)
-		format_select_buttons.append(button)
+			root.add_child(button)
+			format_select_buttons.append(button)
+
+
+func _editor_build_spec_for_key(specs: Array, key: String) -> Dictionary:
+	for raw_spec in specs:
+		if raw_spec is Dictionary and String(Dictionary(raw_spec).get("key", "")) == key:
+			return Dictionary(raw_spec)
+	return {}
 
 
 func _build_editor_ui() -> void:
@@ -47517,14 +47524,15 @@ func _build_editor_ui() -> void:
 		root.add_child(zoom_button)
 		editor_action_buttons[String(zoom_button_spec.get("key", ""))] = zoom_button
 	editor_board_zoom_label = _make_label(root, "BoardZoomValue", "100%", Vector2(72.0, 656.0), Vector2(54.0, 18.0), 11, Color(1.0, 0.86, 0.28, 1.0), HORIZONTAL_ALIGNMENT_CENTER)
+	var template_toggle_spec := Dictionary(editor_action_build_specs.get("template_toggle", {}))
 	var template_menu_button := Button.new()
-	template_menu_button.text = "导入模板"
-	template_menu_button.position = Vector2(936.0, 146.0)
-	template_menu_button.size = Vector2(270.0, 26.0)
+	template_menu_button.text = String(template_toggle_spec.get("text", ""))
+	template_menu_button.position = template_toggle_spec.get("position", Vector2(936.0, 146.0))
+	template_menu_button.size = template_toggle_spec.get("size", Vector2(270.0, 26.0))
 	template_menu_button.focus_mode = Control.FOCUS_NONE
-	template_menu_button.pressed.connect(_editor_action.bind("toggle_templates"))
+	template_menu_button.pressed.connect(_editor_action.bind(String(template_toggle_spec.get("key", "toggle_templates"))))
 	root.add_child(template_menu_button)
-	editor_action_buttons["toggle_templates"] = template_menu_button
+	editor_action_buttons[String(template_toggle_spec.get("key", "toggle_templates"))] = template_menu_button
 	editor_template_panel = _add_ui_rect(root, "TemplateSubmenuPanel", Vector2(932.0, 180.0), Vector2(278.0, 336.0), Color(0.006, 0.014, 0.021, 0.92))
 	editor_section_labels["template"] = _make_label(root, "TemplateTitle", "预组单位库", Vector2(936.0, 374.0), Vector2(270.0, 20.0), 13, Color(0.9, 0.96, 1.0, 1.0), HORIZONTAL_ALIGNMENT_LEFT)
 	for i in range(ARCHETYPE_ORDER.size()):
@@ -47576,26 +47584,30 @@ func _build_editor_ui() -> void:
 		shop_button.mouse_exited.connect(_clear_editor_hover_card)
 		root.add_child(shop_button)
 		editor_shop_buttons[slot_key] = shop_button
+	var sort_action_specs: Array = Array(editor_action_build_specs.get("sort_actions", []))
+	var sort_prev_spec := _editor_build_spec_for_key(sort_action_specs, "sort_prev")
 	var sort_prev_button := Button.new()
-	sort_prev_button.text = "<"
-	sort_prev_button.position = Vector2(936.0, 294.0)
-	sort_prev_button.size = Vector2(24.0, 22.0)
+	sort_prev_button.text = String(sort_prev_spec.get("text", "<"))
+	sort_prev_button.position = sort_prev_spec.get("position", Vector2(936.0, 294.0))
+	sort_prev_button.size = sort_prev_spec.get("size", Vector2(24.0, 22.0))
 	sort_prev_button.focus_mode = Control.FOCUS_NONE
 	sort_prev_button.pressed.connect(_cycle_editor_catalog_sort.bind(-1))
 	root.add_child(sort_prev_button)
 	editor_action_buttons["sort_prev"] = sort_prev_button
+	var sort_key_spec := _editor_build_spec_for_key(sort_action_specs, "sort_key")
 	var sort_key_button := Button.new()
-	sort_key_button.text = "排序"
-	sort_key_button.position = Vector2(936.0, 294.0)
-	sort_key_button.size = Vector2(160.0, 22.0)
+	sort_key_button.text = String(sort_key_spec.get("text", "排序"))
+	sort_key_button.position = sort_key_spec.get("position", Vector2(936.0, 294.0))
+	sort_key_button.size = sort_key_spec.get("size", Vector2(160.0, 22.0))
 	sort_key_button.focus_mode = Control.FOCUS_NONE
 	sort_key_button.pressed.connect(_toggle_editor_sort_menu)
 	root.add_child(sort_key_button)
 	editor_action_buttons["sort_key"] = sort_key_button
+	var sort_dir_spec := _editor_build_spec_for_key(sort_action_specs, "sort_dir")
 	var sort_dir_button := Button.new()
-	sort_dir_button.text = "升序"
-	sort_dir_button.position = Vector2(1100.0, 294.0)
-	sort_dir_button.size = Vector2(106.0, 22.0)
+	sort_dir_button.text = String(sort_dir_spec.get("text", "升序"))
+	sort_dir_button.position = sort_dir_spec.get("position", Vector2(1100.0, 294.0))
+	sort_dir_button.size = sort_dir_spec.get("size", Vector2(106.0, 22.0))
 	sort_dir_button.focus_mode = Control.FOCUS_NONE
 	sort_dir_button.pressed.connect(_toggle_editor_catalog_sort_direction)
 	root.add_child(sort_dir_button)

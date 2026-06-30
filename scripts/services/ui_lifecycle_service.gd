@@ -153,6 +153,11 @@ static func editor_action_build_specs() -> Dictionary:
 		_button_spec("prev_catalog", "<", Vector2(936.0, 654.0), Vector2(24.0, 22.0)),
 		_button_spec("next_catalog", ">", Vector2(1182.0, 654.0), Vector2(24.0, 22.0)),
 	]
+	var sort_actions := [
+		_button_spec("sort_prev", "<", Vector2(936.0, 294.0), Vector2(24.0, 22.0)),
+		_button_spec("sort_key", "排序", Vector2(936.0, 294.0), Vector2(160.0, 22.0)),
+		_button_spec("sort_dir", "升序", Vector2(1100.0, 294.0), Vector2(106.0, 22.0)),
+	]
 	return {
 		"panel_buttons": panel_buttons,
 		"assembly_guide_actions": assembly_guide_actions,
@@ -161,6 +166,8 @@ static func editor_action_build_specs() -> Dictionary:
 		"canvas_tools": canvas_tools,
 		"board_zoom_actions": board_zoom_actions,
 		"catalog_page_actions": catalog_page_actions,
+		"sort_actions": sort_actions,
+		"template_toggle": _button_spec("toggle_templates", "导入模板", Vector2(936.0, 146.0), Vector2(270.0, 26.0)),
 	}
 
 
