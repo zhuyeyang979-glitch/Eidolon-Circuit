@@ -1,6 +1,6 @@
 # Eidolon Circuit Local Development Status
 
-Last updated: 2026-06-29
+Last updated: 2026-06-30
 
 This file is the local execution board for the active Linear project `Eidolon Circuit Codebase Slimdown 2026-05-27`. The checked-in backlog remains `docs/development_backlog.md`; this file records local baseline and the next safe implementation order between Linear updates.
 
@@ -32,11 +32,11 @@ This file is the local execution board for the active Linear project `Eidolon Ci
 
 | File | Lines | Bytes | Local Risk |
 | --- | ---: | ---: | --- |
-| `scripts/main.gd` | 51650 | 3101256 | Still the primary extraction target. |
-| `scripts/fighter.gd` | 4617 | 224371 | Keep as Node shell; move pure heat/movement/action rules out gradually. |
-| `scripts/assembly_board_renderer.gd` | 1911 | 107736 | Shared board/runtime art source; avoid duplicate combat visuals. |
-| `scripts/part_art.gd` | 746 | 32890 | Good candidate for small visual taxonomy helpers. |
-| `scripts/motion_budget.gd` | 40 | 2327 | Small and stable; preserve as canonical motion formula surface. |
+| `scripts/main.gd` | 56421 | 3045888 | Still the primary extraction target. |
+| `scripts/fighter.gd` | 5571 | 244708 | Keep as Node shell; move pure heat/movement/action rules out gradually. |
+| `scripts/assembly_board_renderer.gd` | 2080 | 107736 | Shared board/runtime art source; avoid duplicate combat visuals. |
+| `scripts/part_art.gd` | 849 | 34559 | Good candidate for small visual taxonomy helpers. |
+| `scripts/motion_budget.gd` | 42 | 2327 | Small and stable; preserve as canonical motion formula surface. |
 
 ## Verification Baseline
 
@@ -70,6 +70,15 @@ This file is the local execution board for the active Linear project `Eidolon Ci
 - Latest focused cleanup moved action-module payload logic-field copying from `_apply_torso_slot_payload_stats()` into `UnitStatsService.apply_torso_module_payload_logic_stats()`, moved special payload ether/soul/code classification into `UnitStatsService.apply_torso_special_payload_logic_stats()`, moved soul heat-capacity stat/note application into `UnitStatsService.apply_soul_heat_capacity_stats()`, and moved internal payload base stat accumulation into `UnitStatsService.apply_internal_payload_base_stats()`.
 - Minimal boundary verification passed for the latest cleanup: `jq empty tools/probe_manifest.json`, `git diff --check`, `unit_stats_service_contract_probe`, and `main_file_extraction_contract_probe`.
 - Optimization priority from this recheck: finish the `_compute_unit_stats` payload model extraction first, then split editor UI construction/visibility into focused view/state builders, then continue runtime `_resolve_attack` event-route extraction, and finally trim editor visual refresh orchestration.
+
+## 2026-06-30 Editor Panel Visibility Plan Extraction
+
+- Added `UILifecycleService.editor_panel_visibility_plan()` as the pure decision boundary for legacy load-mode normalization, editor panel visibility, custom-board and ammo-slider gates, unit pagination, and editor action-key groups.
+- `scripts/main.gd` now consumes that plan while retaining localized text and concrete control mutation, so no scene-tree ownership moved into the service.
+- Extended `lifecycle_services_contract_probe` and `main_file_extraction_contract_probe` to guard the service contract and delegation token.
+- Targeted verification passed: `jq empty tools/probe_manifest.json`, `git diff --check`, Godot `--check-only --quit-after 1`, `lifecycle_services_contract_probe`, `main_file_extraction_contract_probe`, `ammo_size_ui_probe`, `unit_editor_pagination_layout_probe`, `unit_editor_fullscreen_layout_probe`, and `screen_layout_token_coverage_probe`.
+- `editor_canvas_probe` still emits a coordinate roundtrip-drift error despite exiting `0`. Its board/topology mapping path is outside this extraction and is not counted as passing evidence; review it separately.
+- Next safe editor UI chunk: move another coherent control-mutation section out of `_apply_editor_panel_visibility`, or split a focused builder from `_build_editor_ui`, while keeping scene-tree ownership explicit.
 
 ## 2026-06-12 yhzlxp Optimization Baseline
 

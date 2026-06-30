@@ -49647,17 +49647,27 @@ func _editor_connection_state_color() -> Color:
 func _apply_editor_panel_visibility(role_key: String, unit_bp: Dictionary) -> void:
 	var body_board_enabled := _role_uses_body_board(role_key)
 	var barrier_screen_board := role_key == "barrier" and _barrier_uses_screen_board(unit_bp)
-	var custom_board_enabled := body_board_enabled and unit_bp.has("custom_topology") and not barrier_screen_board
-	if editor_load_mode == "team":
-		editor_load_mode = "unit"
-	var mode := String(editor_panel_mode)
-	var load_visible := mode == "load"
-	var unit_visible := load_visible
-	var parts_visible := mode == "parts"
-	var shop_visible := false
-	var template_visible := load_visible
-	var color_visible := false
-	var stats_visible := false
+	var current_roster: Array = Array(blueprints.get(_editor_player(), {}).get(role_key, []))
+	var visibility_plan := UILifecycleService.editor_panel_visibility_plan(
+		String(editor_panel_mode),
+		String(editor_load_mode),
+		body_board_enabled,
+		barrier_screen_board,
+		unit_bp.has("custom_topology"),
+		String(editor_part_group_mode),
+		String(editor_part_filter_mode),
+		current_roster.size()
+	)
+	editor_load_mode = String(visibility_plan.get("load_mode", editor_load_mode))
+	var mode := String(visibility_plan.get("mode", editor_panel_mode))
+	var load_visible := bool(visibility_plan.get("load_visible", false))
+	var unit_visible := bool(visibility_plan.get("unit_visible", false))
+	var parts_visible := bool(visibility_plan.get("parts_visible", false))
+	var shop_visible := bool(visibility_plan.get("shop_visible", false))
+	var template_visible := bool(visibility_plan.get("template_visible", false))
+	var color_visible := bool(visibility_plan.get("color_visible", false))
+	var stats_visible := bool(visibility_plan.get("stats_visible", false))
+	var custom_board_enabled := bool(visibility_plan.get("custom_board_enabled", false))
 	var panel_texts_zh := {"load": "单位库", "parts": "零件库"}
 	var panel_texts_en := {"load": "UNITS", "parts": "PARTS"}
 	for panel_key in editor_panel_buttons.keys():
@@ -49707,7 +49717,7 @@ func _apply_editor_panel_visibility(role_key: String, unit_bp: Dictionary) -> vo
 			_set_control_size_if_changed(filter_button, Vector2(filter_width, 22.0))
 			_set_control_text_if_changed(filter_button, _part_filter_name(filter_option))
 			_set_canvas_item_modulate_if_changed(filter_button, Color(1.0, 0.86, 0.28, 1.0) if filter_key == editor_part_filter_mode else Color(0.84, 0.9, 0.94, 1.0))
-	var ammo_slider_visible := parts_visible and editor_part_filter_mode == "ammo"
+	var ammo_slider_visible := bool(visibility_plan.get("ammo_slider_visible", false))
 	if editor_ammo_size_title_label != null:
 		_set_canvas_item_visible_if_changed(editor_ammo_size_title_label, ammo_slider_visible)
 		_set_control_position_if_changed(editor_ammo_size_title_label, Vector2(936.0, 258.0))
@@ -49733,18 +49743,15 @@ func _apply_editor_panel_visibility(role_key: String, unit_bp: Dictionary) -> vo
 		_set_control_size_if_changed(tick_label, Vector2(34.0, 14.0))
 		_set_control_text_if_changed(tick_label, _volume_rank_label(float(rank)))
 		_set_canvas_item_modulate_if_changed(tick_label, Color(1.0, 0.86, 0.28, 1.0) if rank == editor_ammo_size_rank else Color(0.76, 0.9, 1.0, 0.72))
-	var unit_action_keys := ["load_unit"]
-	if editor_load_mode == "unit":
-		unit_action_keys.append_array(["duplicate", "delete"])
-	var assembly_guide_action_keys := ["assembly_guide_prev", "assembly_guide_apply", "assembly_guide_next"]
-	var board_primary_action_keys := ["save_canvas", "training_import", "open_saved_units"]
-	var unit_page_action_keys := ["prev_unit", "next_unit"]
-	var canvas_action_keys := ["blank_canvas", "board_tool_layout", "board_tool_pose", "add_node", "link_node", "auto_connect", "evaluate_connection", "restore_suggested_connection", "copy_selection", "cut_selection", "paste_selection", "delete_selected_part", "undo_canvas", "clear_canvas", "toggle_barrier_grid", "board_zoom_out", "board_zoom_in", "board_zoom_reset"]
-	var orientation_action_keys := ["set_handedness_left", "set_handedness_right", "flip_handedness"]
+	var unit_action_keys: Array = Array(visibility_plan.get("unit_action_keys", []))
+	var assembly_guide_action_keys: Array = Array(visibility_plan.get("assembly_guide_action_keys", []))
+	var board_primary_action_keys: Array = Array(visibility_plan.get("board_primary_action_keys", []))
+	var unit_page_action_keys: Array = Array(visibility_plan.get("unit_page_action_keys", []))
+	var canvas_action_keys: Array = Array(visibility_plan.get("canvas_action_keys", []))
+	var orientation_action_keys: Array = Array(visibility_plan.get("orientation_action_keys", []))
 	var orientation_choice_active := custom_board_enabled and _orientation_choice_is_active(unit_bp)
 	var selected_handedness_active := custom_board_enabled and _selected_node_supports_visual_handedness(unit_bp)
-	var current_roster: Array = Array(blueprints.get(_editor_player(), {}).get(role_key, []))
-	var unit_page_actions_enabled := current_roster.size() > 1
+	var unit_page_actions_enabled := bool(visibility_plan.get("unit_page_actions_enabled", false))
 	var visible_unit_action_index := 0
 	for action_key in editor_action_buttons.keys():
 		var action_button: Button = editor_action_buttons[action_key]

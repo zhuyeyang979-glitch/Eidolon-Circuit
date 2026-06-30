@@ -23,6 +23,29 @@ func _init() -> void:
 		_fail("UILifecycleService node/control counting contract failed.")
 		return
 	root_node.queue_free()
+	var visibility_plan := UILifecycleService.editor_panel_visibility_plan("parts", "team", true, false, true, "terminal_weapon", "ammo", 2)
+	if String(visibility_plan.get("load_mode", "")) != "unit":
+		_fail("UILifecycleService should normalize legacy team load mode.")
+		return
+	if not bool(visibility_plan.get("parts_visible", false)) or bool(visibility_plan.get("load_visible", false)):
+		_fail("UILifecycleService panel visibility mode contract failed.")
+		return
+	if not bool(visibility_plan.get("custom_board_enabled", false)) or not bool(visibility_plan.get("ammo_slider_visible", false)):
+		_fail("UILifecycleService editor board/slider visibility contract failed.")
+		return
+	if not bool(visibility_plan.get("unit_page_actions_enabled", false)):
+		_fail("UILifecycleService should enable unit paging for multi-unit rosters.")
+		return
+	if not Array(visibility_plan.get("canvas_action_keys", [])).has("restore_suggested_connection"):
+		_fail("UILifecycleService should preserve canvas action key ordering payload.")
+		return
+	var barrier_visibility_plan := UILifecycleService.editor_panel_visibility_plan("load", "unit", true, true, true, "all", "all", 1)
+	if bool(barrier_visibility_plan.get("custom_board_enabled", true)):
+		_fail("UILifecycleService should disable custom topology board on screen barriers.")
+		return
+	if not bool(barrier_visibility_plan.get("template_visible", false)) or bool(barrier_visibility_plan.get("unit_page_actions_enabled", true)):
+		_fail("UILifecycleService load panel visibility contract failed.")
+		return
 
 	var task := LoadingTask.create("idle", "Idle", 1.0, Callable(), LoadingTask.PHASE_IDLE, false, true)
 	var prepared := LoadingLifecycleService.prepare_task(task, "editor", 4)
