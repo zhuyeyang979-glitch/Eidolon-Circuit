@@ -607,6 +607,29 @@ GREEN: Godot --check-only --script res://scripts/main.gd --quit-after 1
 
 `UILifecycleService.editor_action_presentation()` now owns the pure button presentation plan for board-primary, unit-page, canvas/clipboard, orientation, and unit actions. `scripts/main.gd` still owns the actual `Control` mutation, but `_apply_editor_panel_visibility()` no longer carries the long action-kind presentation branch.
 
+Follow-up editor action build spec extraction:
+
+```text
+RED: lifecycle_services_contract_probe failed on missing UILifecycleService.editor_action_build_specs()
+GREEN: LIFECYCLE_SERVICES_CONTRACT_PROBE ok
+GREEN: MAIN_FILE_EXTRACTION_CONTRACT_PROBE ok services=9
+GREEN: Godot --check-only --script res://scripts/main.gd --quit-after 1
+GREEN: EDITOR_BOARD_ZOOM_PROBE node=0 zoom=1.00 label=100% hover=0
+GREEN: UNIT_EDITOR_CLIPBOARD_PROBE ok
+GREEN: UNIT_EDITOR_AUTO_CONNECTION_UI_PROBE ok torso=0 limb=1 weapon=2
+GREEN: BARRIER_CATALOG_SCREEN_PLACE_PROBE ok pending=muscle/212 cell=22 drag=212 grid=false zoom=1.40
+GREEN: UNIT_EDITOR_PAGINATION_LAYOUT_PROBE ok unit=1 page=0 catalog=1 load=0
+GREEN: UNIT_EDITOR_FULLSCREEN_LAYOUT_PROBE ok board=(908.0, 548.0) dock=(726.0, 132.0)
+GREEN: SCYTHE_INSTALL_ORIENTATION_UI_PROBE ok node=0
+GREEN: AMMO_SIZE_UI_PROBE entries=5 tier=M ok
+GREEN: TEAMEDIT_UI_SIMPLIFIED_CONTROLS_PROBE ok summary_lines=2
+GREEN: SCREEN_LAYOUT_TOKEN_COVERAGE_PROBE ok
+GREEN: jq empty tools/probe_manifest.json
+GREEN: git diff --check
+```
+
+`UILifecycleService.editor_action_build_specs()` now owns the pure button creation specs for panel, assembly-guide, unit action, board-primary, canvas tool, board zoom, and catalog page controls. `_build_editor_ui()` remains the scene-tree builder and signal wiring surface.
+
 Remaining items after this batch:
 
 - Continue editor UI extraction with `_build_editor_ui` and the remaining action presentation/control-mutation sections of `_apply_editor_panel_visibility`, then continue `_resolve_attack` and `_refresh_editor_visual_views` extraction.

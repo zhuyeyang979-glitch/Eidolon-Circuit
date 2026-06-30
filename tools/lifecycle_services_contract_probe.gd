@@ -22,6 +22,13 @@ func _assert_color(plan: Dictionary, key: String, expected: Color, label: String
 		_fail("%s expected %s=%s, got %s." % [label, key, expected, value])
 
 
+func _spec_with_key(specs: Array, key: String) -> Dictionary:
+	for raw_spec in specs:
+		if raw_spec is Dictionary and String(Dictionary(raw_spec).get("key", "")) == key:
+			return Dictionary(raw_spec)
+	return {}
+
+
 func _init() -> void:
 	var cache := {"a": 1, "b": 2, "c": 3}
 	var removed := UILifecycleService.trim_dictionary_cache(cache, 1)
@@ -136,6 +143,40 @@ func _init() -> void:
 	)
 	if bool(guide_plan.get("managed", true)):
 		_fail("UILifecycleService should leave assembly-guide action presentation unmanaged.")
+		return
+	var build_specs: Dictionary = UILifecycleService.editor_action_build_specs()
+	var panel_specs: Array = Array(build_specs.get("panel_buttons", []))
+	var guide_specs: Array = Array(build_specs.get("assembly_guide_actions", []))
+	var unit_specs: Array = Array(build_specs.get("unit_actions", []))
+	var board_primary_specs: Array = Array(build_specs.get("board_primary_actions", []))
+	var canvas_specs: Array = Array(build_specs.get("canvas_tools", []))
+	var zoom_specs: Array = Array(build_specs.get("board_zoom_actions", []))
+	var page_specs: Array = Array(build_specs.get("catalog_page_actions", []))
+	if panel_specs.size() != 2 or guide_specs.size() != 3 or unit_specs.size() != 20 or board_primary_specs.size() != 3 or canvas_specs.size() != 18 or zoom_specs.size() != 3 or page_specs.size() != 2:
+		_fail("UILifecycleService editor action build spec counts changed unexpectedly.")
+		return
+	var load_panel_spec := _spec_with_key(panel_specs, "load")
+	if String(load_panel_spec.get("text", "")) != "单位库":
+		_fail("UILifecycleService panel build spec contract failed.")
+		return
+	_assert_vector(load_panel_spec, "position", Vector2(936.0, 86.0), "panel build spec")
+	_assert_vector(load_panel_spec, "size", Vector2(132.0, 30.0), "panel build spec")
+	var copy_spec := _spec_with_key(canvas_specs, "copy_selection")
+	if String(copy_spec.get("text", "")) != "复制":
+		_fail("UILifecycleService canvas build spec contract failed.")
+		return
+	_assert_vector(copy_spec, "position", Vector2(628.0, 688.0), "canvas build spec")
+	var reset_zoom_spec := _spec_with_key(zoom_specs, "board_zoom_reset")
+	if String(reset_zoom_spec.get("text", "")) != "重置":
+		_fail("UILifecycleService zoom build spec contract failed.")
+		return
+	_assert_vector(reset_zoom_spec, "size", Vector2(70.0, 24.0), "zoom build spec")
+	var next_page_spec := _spec_with_key(page_specs, "next_catalog")
+	_assert_vector(next_page_spec, "position", Vector2(1182.0, 654.0), "catalog page build spec")
+	Dictionary(Array(build_specs.get("canvas_tools", []))[0])["key"] = "mutated"
+	var fresh_build_specs: Dictionary = UILifecycleService.editor_action_build_specs()
+	if String(Dictionary(Array(fresh_build_specs.get("canvas_tools", []))[0]).get("key", "")) != "blank_canvas":
+		_fail("UILifecycleService should return fresh editor action build specs.")
 		return
 
 	var task := LoadingTask.create("idle", "Idle", 1.0, Callable(), LoadingTask.PHASE_IDLE, false, true)

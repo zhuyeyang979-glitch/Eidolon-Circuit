@@ -62,6 +62,108 @@ static func layer_snapshot(layers: Dictionary) -> Dictionary:
 	}
 
 
+static func _button_spec(key: String, text: String, position: Vector2, size: Vector2) -> Dictionary:
+	return {
+		"key": key,
+		"text": text,
+		"position": position,
+		"size": size,
+	}
+
+
+static func editor_action_build_specs() -> Dictionary:
+	var panel_buttons := [
+		_button_spec("load", "单位库", Vector2(936.0, 86.0), Vector2(132.0, 30.0)),
+		_button_spec("parts", "零件库", Vector2(1072.0, 86.0), Vector2(132.0, 30.0)),
+	]
+	var assembly_guide_actions := [
+		_button_spec("assembly_guide_prev", "<", Vector2(1100.0, 118.0), Vector2(24.0, 22.0)),
+		_button_spec("assembly_guide_apply", "前往", Vector2(1128.0, 118.0), Vector2(48.0, 22.0)),
+		_button_spec("assembly_guide_next", ">", Vector2(1180.0, 118.0), Vector2(26.0, 22.0)),
+	]
+	var unit_action_keys := [
+		["edit_side", "编辑P1"],
+		["load_unit", "单位库"],
+		["load_team", "队伍编成"],
+		["add_to_team", "加入队伍"],
+		["import_team", "导入队伍"],
+		["export_team", "导出队伍"],
+		["clear_team", "清空队伍"],
+		["toggle_match_format", "规则10/6"],
+		["prev_unit", "< 单位"],
+		["next_unit", "单位 >"],
+		["duplicate", "复制"],
+		["delete", "删除"],
+		["initial", "首发"],
+		["sortie_toggle", "出战"],
+		["sortie_up", "前移"],
+		["sortie_down", "后移"],
+		["bind_prev", "绑定<"],
+		["bind_next", "绑定>"],
+		["bind_clear", "解绑"],
+		["copy_ai", "复制电脑"],
+	]
+	var unit_actions := []
+	for i in range(unit_action_keys.size()):
+		unit_actions.append(_button_spec(
+			String(unit_action_keys[i][0]),
+			String(unit_action_keys[i][1]),
+			Vector2(936.0 + float(i % 3) * 90.0, 294.0 + float(floori(float(i) / 3.0)) * 30.0),
+			Vector2(84.0, 26.0)
+		))
+	var board_primary_actions := [
+		_button_spec("save_canvas", "保存为单位", Vector2(352.0, 652.0), Vector2(146.0, 28.0)),
+		_button_spec("training_import", "训练测试", Vector2(508.0, 652.0), Vector2(146.0, 28.0)),
+		_button_spec("open_saved_units", "已保存单位", Vector2(664.0, 652.0), Vector2(146.0, 28.0)),
+	]
+	var canvas_tool_keys := [
+		["blank_canvas", "空白画布"],
+		["board_tool_layout", "布局"],
+		["board_tool_pose", "姿态"],
+		["add_node", "+ 节点"],
+		["link_node", "连接上个"],
+		["auto_connect", "自动连接"],
+		["evaluate_connection", "评估连接"],
+		["restore_suggested_connection", "恢复建议"],
+		["copy_selection", "复制"],
+		["cut_selection", "剪切"],
+		["paste_selection", "粘贴"],
+		["delete_selected_part", "删选中"],
+		["undo_canvas", "退一步"],
+		["clear_canvas", "全部删除"],
+		["toggle_barrier_grid", "辅助线"],
+		["set_handedness_left", "左挂刃"],
+		["set_handedness_right", "右挂刃"],
+		["flip_handedness", "翻侧刃"],
+	]
+	var canvas_tools := []
+	for i in range(canvas_tool_keys.size()):
+		canvas_tools.append(_button_spec(
+			String(canvas_tool_keys[i][0]),
+			String(canvas_tool_keys[i][1]),
+			Vector2(20.0 + float(i) * 76.0, 688.0),
+			Vector2(72.0, 24.0)
+		))
+	var board_zoom_actions := [
+		_button_spec("board_zoom_out", "-", Vector2(24.0, 652.0), Vector2(42.0, 24.0)),
+		_button_spec("board_zoom_in", "+", Vector2(132.0, 652.0), Vector2(42.0, 24.0)),
+		_button_spec("board_zoom_reset", "重置", Vector2(182.0, 652.0), Vector2(70.0, 24.0)),
+	]
+	var catalog_page_actions := [
+		_button_spec("prev_catalog", "<", Vector2(936.0, 654.0), Vector2(24.0, 22.0)),
+		_button_spec("next_catalog", ">", Vector2(1182.0, 654.0), Vector2(24.0, 22.0)),
+	]
+	return {
+		"panel_buttons": panel_buttons,
+		"assembly_guide_actions": assembly_guide_actions,
+		"unit_actions": unit_actions,
+		"board_primary_actions": board_primary_actions,
+		"canvas_tools": canvas_tools,
+		"board_zoom_actions": board_zoom_actions,
+		"catalog_page_actions": catalog_page_actions,
+	}
+
+
 static func editor_panel_visibility_plan(panel_mode: String, load_mode: String, body_board_enabled: bool, barrier_screen_board: bool, has_custom_topology: bool, part_group_mode: String, part_filter_mode: String, roster_count: int) -> Dictionary:
 	var normalized_load_mode := String(load_mode)
 	if normalized_load_mode == "team":

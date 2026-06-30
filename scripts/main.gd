@@ -47050,36 +47050,32 @@ func _build_editor_ui() -> void:
 	root.add_child(editor_back_button)
 	_add_token_ui_rect(root, "EditorCanvasPanel", "editor_canvas_panel", Color(0.01, 0.018, 0.026, 0.46))
 	_add_token_ui_rect(root, "EditorDrawerPanel", "editor_drawer_panel", Color(0.012, 0.022, 0.03, 0.72))
-	var panel_specs := [
-		["load", "单位库"],
-		["parts", "零件库"],
-	]
+	var editor_action_build_specs := UILifecycleService.editor_action_build_specs()
+	var panel_specs: Array = Array(editor_action_build_specs.get("panel_buttons", []))
 	for i in range(panel_specs.size()):
+		var panel_spec := Dictionary(panel_specs[i])
 		var panel_button := Button.new()
-		panel_button.text = String(panel_specs[i][1])
-		panel_button.position = Vector2(936.0 + float(i) * 136.0, 86.0)
-		panel_button.size = Vector2(132.0, 30.0)
+		panel_button.text = String(panel_spec.get("text", ""))
+		panel_button.position = panel_spec.get("position", Vector2.ZERO)
+		panel_button.size = panel_spec.get("size", Vector2(132.0, 30.0))
 		panel_button.focus_mode = Control.FOCUS_NONE
-		panel_button.pressed.connect(_editor_action.bind("panel_%s" % String(panel_specs[i][0])))
+		panel_button.pressed.connect(_editor_action.bind("panel_%s" % String(panel_spec.get("key", ""))))
 		root.add_child(panel_button)
-		editor_panel_buttons[String(panel_specs[i][0])] = panel_button
+		editor_panel_buttons[String(panel_spec.get("key", ""))] = panel_button
 	editor_assembly_guide_label = _make_label(root, "AssemblyGuideLabel", "", Vector2(936.0, 118.0), Vector2(160.0, 22.0), 11, Color(1.0, 0.88, 0.30, 1.0), HORIZONTAL_ALIGNMENT_LEFT)
 	editor_assembly_guide_label.autowrap_mode = TextServer.AUTOWRAP_OFF
-	var guide_actions := [
-		["assembly_guide_prev", "<", Vector2(1100.0, 118.0), Vector2(24.0, 22.0)],
-		["assembly_guide_apply", "前往", Vector2(1128.0, 118.0), Vector2(48.0, 22.0)],
-		["assembly_guide_next", ">", Vector2(1180.0, 118.0), Vector2(26.0, 22.0)],
-	]
+	var guide_actions: Array = Array(editor_action_build_specs.get("assembly_guide_actions", []))
 	for spec in guide_actions:
+		var guide_spec := Dictionary(spec)
 		var guide_button := Button.new()
-		guide_button.name = String(spec[0]).capitalize()
-		guide_button.text = String(spec[1])
-		guide_button.position = spec[2]
-		guide_button.size = spec[3]
+		guide_button.name = String(guide_spec.get("key", "")).capitalize()
+		guide_button.text = String(guide_spec.get("text", ""))
+		guide_button.position = guide_spec.get("position", Vector2.ZERO)
+		guide_button.size = guide_spec.get("size", Vector2(24.0, 22.0))
 		guide_button.focus_mode = Control.FOCUS_NONE
-		guide_button.pressed.connect(_editor_action.bind(String(spec[0])))
+		guide_button.pressed.connect(_editor_action.bind(String(guide_spec.get("key", ""))))
 		root.add_child(guide_button)
-		editor_action_buttons[String(spec[0])] = guide_button
+		editor_action_buttons[String(guide_spec.get("key", ""))] = guide_button
 	for i in range(ROLE_ORDER.size()):
 		var role_key: String = ROLE_ORDER[i]
 		var role_button := Button.new()
@@ -47136,37 +47132,17 @@ func _build_editor_ui() -> void:
 	for i in range(5):
 		var tick_label := _make_label(root, "AmmoSizeTick%d" % i, "", Vector2(1002.0 + float(i) * 44.0, 278.0), Vector2(34.0, 14.0), 8, Color(0.76, 0.9, 1.0, 0.82), HORIZONTAL_ALIGNMENT_CENTER)
 		editor_ammo_size_tick_labels.append(tick_label)
-	var actions := [
-		["edit_side", "编辑P1"],
-		["load_unit", "单位库"],
-		["load_team", "队伍编成"],
-		["add_to_team", "加入队伍"],
-		["import_team", "导入队伍"],
-		["export_team", "导出队伍"],
-		["clear_team", "清空队伍"],
-		["toggle_match_format", "规则10/6"],
-		["prev_unit", "< 单位"],
-		["next_unit", "单位 >"],
-		["duplicate", "复制"],
-		["delete", "删除"],
-		["initial", "首发"],
-		["sortie_toggle", "出战"],
-		["sortie_up", "前移"],
-		["sortie_down", "后移"],
-		["bind_prev", "绑定<"],
-		["bind_next", "绑定>"],
-		["bind_clear", "解绑"],
-		["copy_ai", "复制电脑"],
-	]
+	var actions: Array = Array(editor_action_build_specs.get("unit_actions", []))
 	for i in range(actions.size()):
+		var action_spec := Dictionary(actions[i])
 		var action_button := Button.new()
-		action_button.text = String(actions[i][1])
-		action_button.position = Vector2(936.0 + float(i % 3) * 90.0, 294.0 + float(floori(float(i) / 3.0)) * 30.0)
-		action_button.size = Vector2(84.0, 26.0)
+		action_button.text = String(action_spec.get("text", ""))
+		action_button.position = action_spec.get("position", Vector2.ZERO)
+		action_button.size = action_spec.get("size", Vector2(84.0, 26.0))
 		action_button.focus_mode = Control.FOCUS_NONE
-		action_button.pressed.connect(_editor_action.bind(String(actions[i][0])))
+		action_button.pressed.connect(_editor_action.bind(String(action_spec.get("key", ""))))
 		root.add_child(action_button)
-		editor_action_buttons[String(actions[i][0])] = action_button
+		editor_action_buttons[String(action_spec.get("key", ""))] = action_button
 	for i in range(10):
 		var load_card_button := Button.new()
 		load_card_button.name = "LoadCard%d" % i
@@ -47456,52 +47432,31 @@ func _build_editor_ui() -> void:
 	editor_engine_allocation_summary_label = _make_label(root, "DashboardPowerAllocationSummary", "", Vector2(140.0, 109.0), Vector2(82.0, 22.0), 9, Color(0.78, 0.92, 1.0, 0.94), HORIZONTAL_ALIGNMENT_LEFT)
 	editor_engine_allocation_summary_label.autowrap_mode = TextServer.AUTOWRAP_OFF
 	editor_engine_allocation_summary_label.visible = false
-	var board_primary_actions := [
-		["save_canvas", "保存为单位"],
-		["training_import", "训练测试"],
-		["open_saved_units", "已保存单位"],
-	]
+	var board_primary_actions: Array = Array(editor_action_build_specs.get("board_primary_actions", []))
 	for i in range(board_primary_actions.size()):
+		var board_primary_spec := Dictionary(board_primary_actions[i])
 		var quick_button := Button.new()
-		quick_button.name = "BoardPrimary%s" % String(board_primary_actions[i][0])
-		quick_button.text = String(board_primary_actions[i][1])
-		quick_button.position = Vector2(352.0 + float(i) * 156.0, 652.0)
-		quick_button.size = Vector2(146.0, 28.0)
+		quick_button.name = "BoardPrimary%s" % String(board_primary_spec.get("key", ""))
+		quick_button.text = String(board_primary_spec.get("text", ""))
+		quick_button.position = board_primary_spec.get("position", Vector2.ZERO)
+		quick_button.size = board_primary_spec.get("size", Vector2(146.0, 28.0))
 		quick_button.focus_mode = Control.FOCUS_NONE
-		quick_button.pressed.connect(_editor_action.bind(String(board_primary_actions[i][0])))
+		quick_button.pressed.connect(_editor_action.bind(String(board_primary_spec.get("key", ""))))
 		root.add_child(quick_button)
-		editor_action_buttons[String(board_primary_actions[i][0])] = quick_button
+		editor_action_buttons[String(board_primary_spec.get("key", ""))] = quick_button
 	editor_section_labels["canvas_tools"] = _make_label(root, "CanvasToolsTitle", "", Vector2.ZERO, Vector2.ZERO, 1, Color.TRANSPARENT, HORIZONTAL_ALIGNMENT_LEFT)
 	editor_section_labels["canvas_tools"].visible = false
-	var canvas_tools := [
-		["blank_canvas", "空白画布"],
-		["board_tool_layout", "布局"],
-		["board_tool_pose", "姿态"],
-		["add_node", "+ 节点"],
-		["link_node", "连接上个"],
-		["auto_connect", "自动连接"],
-		["evaluate_connection", "评估连接"],
-		["restore_suggested_connection", "恢复建议"],
-		["copy_selection", "复制"],
-		["cut_selection", "剪切"],
-		["paste_selection", "粘贴"],
-		["delete_selected_part", "删选中"],
-		["undo_canvas", "退一步"],
-		["clear_canvas", "全部删除"],
-		["toggle_barrier_grid", "辅助线"],
-		["set_handedness_left", "左挂刃"],
-		["set_handedness_right", "右挂刃"],
-		["flip_handedness", "翻侧刃"],
-	]
+	var canvas_tools: Array = Array(editor_action_build_specs.get("canvas_tools", []))
 	for i in range(canvas_tools.size()):
+		var canvas_tool_spec := Dictionary(canvas_tools[i])
 		var canvas_button := Button.new()
-		canvas_button.text = String(canvas_tools[i][1])
-		canvas_button.position = Vector2(20.0 + float(i) * 76.0, 688.0)
-		canvas_button.size = Vector2(72.0, 24.0)
+		canvas_button.text = String(canvas_tool_spec.get("text", ""))
+		canvas_button.position = canvas_tool_spec.get("position", Vector2.ZERO)
+		canvas_button.size = canvas_tool_spec.get("size", Vector2(72.0, 24.0))
 		canvas_button.focus_mode = Control.FOCUS_NONE
-		canvas_button.pressed.connect(_editor_action.bind(String(canvas_tools[i][0])))
+		canvas_button.pressed.connect(_editor_action.bind(String(canvas_tool_spec.get("key", ""))))
 		root.add_child(canvas_button)
-		editor_action_buttons[String(canvas_tools[i][0])] = canvas_button
+		editor_action_buttons[String(canvas_tool_spec.get("key", ""))] = canvas_button
 	var body_positions := {
 		"left_claw": Vector2(128.0, 178.0),
 		"right_claw": Vector2(704.0, 178.0),
@@ -47550,20 +47505,17 @@ func _build_editor_ui() -> void:
 		editor_action_buttons["bind_side_%s" % side_key] = side_button
 	var board_zoom_title := _make_label(root, "BoardZoomTitle", "", Vector2.ZERO, Vector2.ZERO, 1, Color.TRANSPARENT, HORIZONTAL_ALIGNMENT_LEFT)
 	board_zoom_title.visible = false
-	var zoom_button_specs := [
-		["board_zoom_out", "-", Vector2(24.0, 652.0), Vector2(42.0, 24.0)],
-		["board_zoom_in", "+", Vector2(132.0, 652.0), Vector2(42.0, 24.0)],
-		["board_zoom_reset", "重置", Vector2(182.0, 652.0), Vector2(70.0, 24.0)],
-	]
+	var zoom_button_specs: Array = Array(editor_action_build_specs.get("board_zoom_actions", []))
 	for i in range(zoom_button_specs.size()):
+		var zoom_button_spec := Dictionary(zoom_button_specs[i])
 		var zoom_button := Button.new()
-		zoom_button.text = String(zoom_button_specs[i][1])
-		zoom_button.position = zoom_button_specs[i][2]
-		zoom_button.size = zoom_button_specs[i][3]
+		zoom_button.text = String(zoom_button_spec.get("text", ""))
+		zoom_button.position = zoom_button_spec.get("position", Vector2.ZERO)
+		zoom_button.size = zoom_button_spec.get("size", Vector2(42.0, 24.0))
 		zoom_button.focus_mode = Control.FOCUS_NONE
-		zoom_button.pressed.connect(_editor_action.bind(String(zoom_button_specs[i][0])))
+		zoom_button.pressed.connect(_editor_action.bind(String(zoom_button_spec.get("key", ""))))
 		root.add_child(zoom_button)
-		editor_action_buttons[String(zoom_button_specs[i][0])] = zoom_button
+		editor_action_buttons[String(zoom_button_spec.get("key", ""))] = zoom_button
 	editor_board_zoom_label = _make_label(root, "BoardZoomValue", "100%", Vector2(72.0, 656.0), Vector2(54.0, 18.0), 11, Color(1.0, 0.86, 0.28, 1.0), HORIZONTAL_ALIGNMENT_CENTER)
 	var template_menu_button := Button.new()
 	template_menu_button.text = "导入模板"
@@ -47693,15 +47645,17 @@ func _build_editor_ui() -> void:
 	editor_accent_color_picker.focus_mode = Control.FOCUS_NONE
 	editor_accent_color_picker.color_changed.connect(_set_editor_custom_accent_color)
 	root.add_child(editor_accent_color_picker)
-	for page_action in [["prev_catalog", "<"], ["next_catalog", ">"]]:
+	var catalog_page_actions: Array = Array(editor_action_build_specs.get("catalog_page_actions", []))
+	for page_action in catalog_page_actions:
+		var page_action_spec := Dictionary(page_action)
 		var page_button := Button.new()
-		page_button.text = String(page_action[1])
-		page_button.position = Vector2(936.0 if String(page_action[0]) == "prev_catalog" else 1182.0, 654.0)
-		page_button.size = Vector2(24.0, 22.0)
+		page_button.text = String(page_action_spec.get("text", ""))
+		page_button.position = page_action_spec.get("position", Vector2.ZERO)
+		page_button.size = page_action_spec.get("size", Vector2(24.0, 22.0))
 		page_button.focus_mode = Control.FOCUS_NONE
-		page_button.pressed.connect(_editor_action.bind(String(page_action[0])))
+		page_button.pressed.connect(_editor_action.bind(String(page_action_spec.get("key", ""))))
 		root.add_child(page_button)
-		editor_action_buttons[String(page_action[0])] = page_button
+		editor_action_buttons[String(page_action_spec.get("key", ""))] = page_button
 	for i in range(8):
 		var catalog_button := PartCatalogCardButton.new()
 		catalog_button.position = Vector2(936.0 + float(i % 2) * 136.0, 354.0 + float(floori(float(i) / 2.0)) * 74.0)
