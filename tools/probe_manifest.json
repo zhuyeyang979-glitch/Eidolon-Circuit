@@ -73,6 +73,7 @@
     "unit_editor_catalog_controller_contract_probe",
     "unit_editor_board_controller_contract_probe",
     "unit_editor_clipboard_probe",
+    "editor_canvas_probe",
     "part_identity_contract_probe",
     "unit_editor_assembly_template_service_contract_probe",
     "assembly_template_overlay_renderer_contract_probe",

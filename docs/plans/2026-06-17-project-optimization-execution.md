@@ -501,7 +501,7 @@ UNIT_EDITOR_FULLSCREEN_LAYOUT_PROBE ok board=(908.0, 548.0) dock=(726.0, 132.0)
 SCREEN_LAYOUT_TOKEN_COVERAGE_PROBE ok
 ```
 
-`UILifecycleService.editor_panel_visibility_plan()` now owns the pure editor mode normalization, visibility flags, custom-board and ammo-slider gates, unit-page state, and editor action-key groups. `main.gd` remains responsible for localized labels and concrete control mutation. `editor_canvas_probe` is not completion evidence for this extraction because it still reports a coordinate roundtrip drift while exiting `0`; its coordinate-mapping path is outside this visibility-plan data flow and needs separate review.
+`UILifecycleService.editor_panel_visibility_plan()` now owns the pure editor mode normalization, visibility flags, custom-board and ammo-slider gates, unit-page state, and editor action-key groups. `main.gd` remains responsible for localized labels and concrete control mutation. The separately identified `editor_canvas_probe` reliability issue is resolved in the follow-up below.
 
 Follow-up verification for the editor action-state extraction:
 
@@ -527,11 +527,21 @@ BARRIER_CATALOG_SCREEN_PLACE_PROBE ok pending=muscle/212 cell=22 drag=212 grid=f
 
 `UILifecycleService.editor_action_state()` now owns action classification plus visibility and disabled-state decisions for board-primary, unit-page, canvas, clipboard, orientation, sort, catalog-page, and unit actions. `main.gd` samples clipboard state once per panel refresh and retains control positioning, localization, tooltips, colors, and scene-tree mutation.
 
+Follow-up verification for the editor canvas probe contract:
+
+```text
+RED: editor_canvas_probe reported a 94.34px roundtrip drift but still exited 0
+RED: core manifest membership check returned false
+GREEN: EDITOR_CANVAS_PROBE roundtrip=0.00 nodes=2 edges=1 fixed=0.000
+GREEN: core manifest membership check returned true
+```
+
+The stale probe mixed a board-local input with `_topology_position_to_board()`, which returns a global point. Its diagnostic offset was exactly the board global origin `(8,94)`, while the hard-coded input was also 16px outside the valid topology square and was correctly clamped. The probe now derives a valid board-local point from a topology reference, verifies the local-input/local-rendering roundtrip, returns immediately from every failure branch, exits explicitly with `0` only on success, and is registered in the manifest `core` set.
+
 Remaining items after this batch:
 
 - Run a headed/manual visual check for `part_identity_language_probe` and `unit_editor_assembly_template_probe` when a display session is available.
 - Decide whether `assets/concepts/` is Git-tracked, Git LFS-managed, or local-reference-only.
 - Continue editor UI extraction with `_build_editor_ui` and the remaining action presentation/control-mutation sections of `_apply_editor_panel_visibility`, then continue `_resolve_attack` and `_refresh_editor_visual_views` extraction.
-- Review the `editor_canvas_probe` coordinate roundtrip drift before using that probe as completion evidence.
 - `power_allocation_panel_duration_estimate_probe` is not registered in the manifest and still prints stale assertion errors before exiting `0`; do not use it as completion evidence until its expectations are reviewed.
 - `thruster_fixed_drive_demand_probe`, `thruster_dual_budget_legality_probe`, and `thruster_philosophy_probe` are outside the current registered gate set and emit stale assertions on the unchanged `ce7e436` baseline; review or retire them before using them as completion evidence.
