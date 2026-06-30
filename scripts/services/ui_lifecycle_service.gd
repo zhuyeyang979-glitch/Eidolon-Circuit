@@ -310,6 +310,32 @@ static func editor_info_panel_presentation(unit_visible: bool, stats_visible: bo
 	}
 
 
+static func editor_shop_feedback_presentation(shop_visible: bool, pending_kind: String, pending_detail: String, zh: bool) -> Dictionary:
+	var hint_text := "流程：1 选构件类型  2 拖卡片进画布  3 磁吸贴合；引擎/散热/行动模块点击安装。" if zh else "Flow: 1 choose a part type  2 drag a card onto canvas  3 snap it. Engine/cooling/action modules install on click."
+	var pending_text := ""
+	var pending_modulate := Color(0.72, 0.88, 1.0, 0.78)
+	match String(pending_kind):
+		"payload":
+			pending_text = String(pending_detail)
+			pending_modulate = Color(1.0, 0.78, 0.30, 1.0)
+		"canvas":
+			pending_text = ("待放置：%s" if zh else "PENDING PLACEMENT: %s") % String(pending_detail)
+			pending_modulate = Color(1.0, 0.86, 0.24, 1.0)
+		_:
+			pending_text = "当前没有待放置构件；拖拽或点选肌肉构件后这里会亮起。" if zh else "No pending physical part; drag or choose a muscle component and this line lights up."
+	return {
+		"hint": {
+			"visible": shop_visible,
+			"text": hint_text,
+		},
+		"pending": {
+			"visible": shop_visible,
+			"text": pending_text,
+			"modulate": pending_modulate,
+		},
+	}
+
+
 static func editor_panel_visibility_plan(panel_mode: String, load_mode: String, body_board_enabled: bool, barrier_screen_board: bool, has_custom_topology: bool, part_group_mode: String, part_filter_mode: String, roster_count: int) -> Dictionary:
 	var normalized_load_mode := String(load_mode)
 	if normalized_load_mode == "team":

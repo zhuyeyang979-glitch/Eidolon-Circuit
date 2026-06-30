@@ -318,6 +318,29 @@ func _init() -> void:
 	if String(Dictionary(load_info_plan.get("unit", {})).get("text", "")) != "UNITS" or not bool(Dictionary(load_info_plan.get("catalog_page", {})).get("visible", false)) or bool(Dictionary(load_info_plan.get("catalog_title", {})).get("visible", true)):
 		_fail("UILifecycleService load info presentation contract failed.")
 		return
+	var payload_shop_plan: Dictionary = UILifecycleService.editor_shop_feedback_presentation(true, "payload", "Install payload in core slot.", false)
+	var payload_hint: Dictionary = Dictionary(payload_shop_plan.get("hint", {}))
+	var payload_pending: Dictionary = Dictionary(payload_shop_plan.get("pending", {}))
+	if not bool(payload_hint.get("visible", false)) or String(payload_hint.get("text", "")).find("Flow:") != 0:
+		_fail("UILifecycleService shop hint presentation contract failed.")
+		return
+	if String(payload_pending.get("text", "")) != "Install payload in core slot.":
+		_fail("UILifecycleService payload pending presentation text failed.")
+		return
+	_assert_color(payload_pending, "modulate", Color(1.0, 0.78, 0.30, 1.0), "payload pending presentation")
+	var canvas_shop_plan: Dictionary = UILifecycleService.editor_shop_feedback_presentation(true, "canvas", "爪刃", true)
+	var canvas_pending: Dictionary = Dictionary(canvas_shop_plan.get("pending", {}))
+	if String(canvas_pending.get("text", "")) != "待放置：爪刃":
+		_fail("UILifecycleService canvas pending presentation text failed.")
+		return
+	_assert_color(canvas_pending, "modulate", Color(1.0, 0.86, 0.24, 1.0), "canvas pending presentation")
+	var empty_shop_plan: Dictionary = UILifecycleService.editor_shop_feedback_presentation(false, "none", "", false)
+	if bool(Dictionary(empty_shop_plan.get("hint", {})).get("visible", true)) or bool(Dictionary(empty_shop_plan.get("pending", {})).get("visible", true)):
+		_fail("UILifecycleService hidden shop feedback visibility failed.")
+		return
+	if String(Dictionary(empty_shop_plan.get("pending", {})).get("text", "")).find("No pending physical part") != 0:
+		_fail("UILifecycleService empty shop pending text failed.")
+		return
 
 	var task := LoadingTask.create("idle", "Idle", 1.0, Callable(), LoadingTask.PHASE_IDLE, false, true)
 	var prepared := LoadingLifecycleService.prepare_task(task, "editor", 4)

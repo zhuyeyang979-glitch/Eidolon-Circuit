@@ -721,6 +721,24 @@ GREEN: git diff --check
 
 `UILifecycleService.editor_info_panel_presentation()` now owns the pure right-side info panel visibility/layout plan for unit, summary, stats/detail, component art, battle preview, structure reference preservation, catalog page label, and catalog title. `_apply_editor_panel_visibility()` remains the scene-tree adapter and still owns save-feedback layout. The main extraction probe also now returns immediately on missing delegated tokens so failure output cannot fall through to an `ok` line.
 
+Follow-up editor shop feedback presentation extraction:
+
+```text
+RED: lifecycle_services_contract_probe failed on missing UILifecycleService.editor_shop_feedback_presentation()
+RED: main_file_extraction_contract_probe failed on missing UILifecycleService.editor_shop_feedback_presentation delegation
+GREEN: LIFECYCLE_SERVICES_CONTRACT_PROBE ok
+GREEN: MAIN_FILE_EXTRACTION_CONTRACT_PROBE ok services=9
+GREEN: Godot --check-only --script res://scripts/main.gd --quit-after 1
+GREEN: PART_LIBRARY_UI_PROBE groups=["torso", "limb", "terminal_weapon", "barrier_panel", "software_muscle", "software"] weapon=3 equipment=5 software=7 dashboard=40
+GREEN: UNIT_EDITOR_PAGINATION_LAYOUT_PROBE ok unit=1 page=0 catalog=1 load=0
+GREEN: TEAMEDIT_UI_SIMPLIFIED_CONTROLS_PROBE ok summary_lines=2
+GREEN: SCREEN_LAYOUT_TOKEN_COVERAGE_PROBE ok
+GREEN: jq empty tools/probe_manifest.json
+GREEN: git diff --check
+```
+
+`UILifecycleService.editor_shop_feedback_presentation()` now owns the pure shop hint and pending-feedback copy/color plan for payload pending, canvas pending, and empty states. `_apply_editor_panel_visibility()` remains the scene-tree adapter and supplies only `pending_kind` plus the already localized payload/canvas detail. The main extraction probe now rejects the old inline shop hint/pending text and pending-color formulas in `main.gd`.
+
 Remaining items after this batch:
 
 - Continue editor UI extraction with `_build_editor_ui` and the remaining action presentation/control-mutation sections of `_apply_editor_panel_visibility`, then continue `_resolve_attack` and `_refresh_editor_visual_views` extraction.

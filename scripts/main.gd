@@ -49870,20 +49870,24 @@ func _apply_editor_panel_visibility(role_key: String, unit_bp: Dictionary) -> vo
 	if editor_section_labels.has("catalog") and editor_section_labels["catalog"] is Label:
 		var catalog_title := editor_section_labels["catalog"] as Label
 		_set_canvas_item_visible_if_changed(catalog_title, bool(Dictionary(info_plan.get("catalog_title", {})).get("visible", false)))
+	var shop_pending_kind := "none"
+	var shop_pending_detail := ""
+	if _has_pending_payload_part():
+		shop_pending_kind = "payload"
+		shop_pending_detail = _pending_payload_install_hint(role_key)
+	elif _has_pending_canvas_part():
+		shop_pending_kind = "canvas"
+		shop_pending_detail = _pending_canvas_part_name(role_key)
+	var shop_feedback_plan := UILifecycleService.editor_shop_feedback_presentation(shop_visible, shop_pending_kind, shop_pending_detail, _ui_is_zh())
 	if editor_shop_hint_label != null:
-		_set_canvas_item_visible_if_changed(editor_shop_hint_label, shop_visible)
-		_set_control_text_if_changed(editor_shop_hint_label, "流程：1 选构件类型  2 拖卡片进画布  3 磁吸贴合；引擎/散热/行动模块点击安装。" if _ui_is_zh() else "Flow: 1 choose a part type  2 drag a card onto canvas  3 snap it. Engine/cooling/action modules install on click.")
+		var shop_hint_plan := Dictionary(shop_feedback_plan.get("hint", {}))
+		_set_canvas_item_visible_if_changed(editor_shop_hint_label, bool(shop_hint_plan.get("visible", false)))
+		_set_control_text_if_changed(editor_shop_hint_label, String(shop_hint_plan.get("text", "")))
 	if editor_shop_pending_label != null:
-		_set_canvas_item_visible_if_changed(editor_shop_pending_label, shop_visible)
-		if _has_pending_payload_part():
-			_set_control_text_if_changed(editor_shop_pending_label, _pending_payload_install_hint(role_key))
-			_set_canvas_item_modulate_if_changed(editor_shop_pending_label, Color(1.0, 0.78, 0.30, 1.0))
-		elif _has_pending_canvas_part():
-			_set_control_text_if_changed(editor_shop_pending_label, "待放置：%s" % _pending_canvas_part_name(role_key) if _ui_is_zh() else "PENDING PLACEMENT: %s" % _pending_canvas_part_name(role_key))
-			_set_canvas_item_modulate_if_changed(editor_shop_pending_label, Color(1.0, 0.86, 0.24, 1.0))
-		else:
-			_set_control_text_if_changed(editor_shop_pending_label, "当前没有待放置构件；拖拽或点选肌肉构件后这里会亮起。" if _ui_is_zh() else "No pending physical part; drag or choose a muscle component and this line lights up.")
-			_set_canvas_item_modulate_if_changed(editor_shop_pending_label, Color(0.72, 0.88, 1.0, 0.78))
+		var shop_pending_plan := Dictionary(shop_feedback_plan.get("pending", {}))
+		_set_canvas_item_visible_if_changed(editor_shop_pending_label, bool(shop_pending_plan.get("visible", false)))
+		_set_control_text_if_changed(editor_shop_pending_label, String(shop_pending_plan.get("text", "")))
+		_set_canvas_item_modulate_if_changed(editor_shop_pending_label, shop_pending_plan.get("modulate", Color(0.72, 0.88, 1.0, 0.78)))
 	if editor_color_panel != null:
 		_set_canvas_item_visible_if_changed(editor_color_panel, color_visible)
 	if editor_color_label != null:
