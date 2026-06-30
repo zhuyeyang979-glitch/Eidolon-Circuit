@@ -2205,3 +2205,10 @@ Next safe chunk: continue only with narrow pure-rule extraction where `main.gd` 
 - `main.gd` still owns the adapter-only parts of `_apply_torso_slot_payload_stats()`: catalog part lookup, exact payload volume sampling, internal payload merge callbacks, ether callbacks, and hero soul-bonus callbacks.
 - `tools/unit_stats_service_contract_probe.gd` first failed on the missing `UnitStatsService.apply_torso_payload_plan()`, then passed after the service executor and `main.gd` delegation were added. The same probe now verifies shield direct-plan execution and hero soul plan execution.
 - Focused verification passed on macOS Godot `4.6.2.stable.official.71f334935`: `unit_stats_service_contract_probe`, `main_file_extraction_contract_probe`, `editor_cost_accounting_probe`, `unit_build_rule_training_gate_probe`, `internal_slot_size_probe`, `source_code_probe`, `soul_oath_activation_probe`, and `ether_heat_economy_probe`.
+
+2026-06-30 UnitStatsService internal payload merge-plan pass:
+
+- `UnitStatsService.apply_internal_payload_merge_plan()` now owns internal payload base stat accumulation plus the pure slot-key-to-callback intent for engine, cooling, and booster payloads.
+- `main.gd` keeps the concrete helper callbacks in `_merge_internal_payload_stats()`: cooling v3 defaults, cooling heat-capacity sampling, engine stat merge, cooling profile/rate merge, and thruster drive merge.
+- `tools/unit_stats_service_contract_probe.gd` first failed on the missing `UnitStatsService.apply_internal_payload_merge_plan()`, then passed after the service method and `main.gd` delegation were added. The same probe verifies engine, cooling, and booster merge intents and base stat changes.
+- Focused verification passed on macOS Godot `4.6.2.stable.official.71f334935`: `unit_stats_service_contract_probe`, `main_file_extraction_contract_probe`, `editor_cost_accounting_probe`, `unit_build_rule_training_gate_probe`, `internal_slot_size_probe`, `thruster_dual_motion_formula_probe`, `engine_momentum_allocation_open_probe`, and `power_allocation_panel_heat_live_update_probe`.

@@ -986,6 +986,22 @@ func apply_internal_payload_base_stats(stats: Dictionary, part: Dictionary, slot
 	return stats
 
 
+func apply_internal_payload_merge_plan(stats: Dictionary, part: Dictionary, slot_key: String, context: Dictionary = {}) -> Dictionary:
+	var base_context: Dictionary = {}
+	if context.has("payload_power_load"):
+		base_context["payload_power_load"] = float(context.get("payload_power_load", 0.0))
+	if slot_key == "cooling":
+		base_context["cooling_heat_capacity"] = float(context.get("cooling_heat_capacity", 0.0))
+	apply_internal_payload_base_stats(stats, part, slot_key, base_context)
+	return {
+		"slot_key": slot_key,
+		"apply_engine_stats": slot_key == "engine",
+		"apply_cooling_profile_stats": slot_key == "cooling",
+		"apply_cooling_rate_stats": slot_key == "cooling",
+		"apply_thruster_drive_stats": slot_key == "booster",
+	}
+
+
 func apply_torso_module_payload_logic_stats(stats: Dictionary, module_part: Dictionary) -> Dictionary:
 	for logic_key in TORSO_MODULE_PAYLOAD_LOGIC_KEYS:
 		if module_part.has(logic_key):

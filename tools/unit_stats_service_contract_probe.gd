@@ -396,6 +396,52 @@ func _init() -> void:
 		_fail("requested compatible internal slot should be honored.")
 	if int(service.best_internal_slot_for_payload([5, 3, 2], {}, 3, 2)) != -1:
 		_fail("requested undersized internal slot should fail.")
+	if not service.has_method("apply_internal_payload_merge_plan"):
+		_fail("UnitStatsService missing apply_internal_payload_merge_plan.")
+		return
+	var engine_merge_stats := {
+		"cost": 1,
+		"mass": 1.0,
+		"energy": 0.0,
+		"power_load": 0.0,
+		"heat_capacity": 0.0,
+		"hardware_heat_capacity": 0.0,
+		"speed_mult": 1.0,
+	}
+	var engine_merge_intent: Dictionary = service.apply_internal_payload_merge_plan(engine_merge_stats, {"cost": 5, "mass": 2.0, "heat_capacity": 7.0, "speed_mult": 0.9}, "engine", {"payload_power_load": 1.5})
+	if int(engine_merge_stats.get("cost", 0)) != 6:
+		_fail("internal merge plan should apply engine base cost: %s" % str(engine_merge_stats))
+	_assert_near(float(engine_merge_stats.get("mass", 0.0)), 3.0, "internal merge engine mass")
+	_assert_near(float(engine_merge_stats.get("energy", 0.0)), 1.5, "internal merge engine energy")
+	_assert_near(float(engine_merge_stats.get("power_load", 0.0)), 1.5, "internal merge engine power")
+	_assert_near(float(engine_merge_stats.get("heat_capacity", 0.0)), 7.0, "internal merge engine heat")
+	_assert_near(float(engine_merge_stats.get("hardware_heat_capacity", 0.0)), 7.0, "internal merge engine hardware heat")
+	if not bool(engine_merge_intent.get("apply_engine_stats", false)) or bool(engine_merge_intent.get("apply_cooling_profile_stats", false)) or bool(engine_merge_intent.get("apply_thruster_drive_stats", false)):
+		_fail("internal merge engine intent mismatch: %s" % str(engine_merge_intent))
+	var cooling_merge_stats := {
+		"cost": 0,
+		"mass": 0.0,
+		"heat_capacity": 4.0,
+		"hardware_heat_capacity": 3.0,
+		"cooling_heat_capacity": 2.0,
+		"speed_mult": 1.0,
+	}
+	var cooling_merge_intent: Dictionary = service.apply_internal_payload_merge_plan(cooling_merge_stats, {"cost": 2, "mass": 1.25, "heat_capacity": 99.0, "speed_mult": 1.1}, "cooling", {"cooling_heat_capacity": 13.5})
+	if int(cooling_merge_stats.get("cost", 0)) != 2:
+		_fail("internal merge plan should apply cooling base cost: %s" % str(cooling_merge_stats))
+	_assert_near(float(cooling_merge_stats.get("mass", 0.0)), 1.25, "internal merge cooling mass")
+	_assert_near(float(cooling_merge_stats.get("heat_capacity", 0.0)), 4.0, "internal merge cooling keeps hardware heat")
+	_assert_near(float(cooling_merge_stats.get("hardware_heat_capacity", 0.0)), 3.0, "internal merge cooling keeps hardware heat capacity")
+	_assert_near(float(cooling_merge_stats.get("cooling_heat_capacity", 0.0)), 15.5, "internal merge cooling heat capacity")
+	if not bool(cooling_merge_intent.get("apply_cooling_profile_stats", false)) or not bool(cooling_merge_intent.get("apply_cooling_rate_stats", false)) or bool(cooling_merge_intent.get("apply_engine_stats", false)):
+		_fail("internal merge cooling intent mismatch: %s" % str(cooling_merge_intent))
+	var booster_merge_stats := {"cost": 0, "mass": 0.0, "speed_mult": 1.0}
+	var booster_merge_intent: Dictionary = service.apply_internal_payload_merge_plan(booster_merge_stats, {"cost": 3, "mass": 4.0, "speed_mult": 1.05}, "booster")
+	if int(booster_merge_stats.get("cost", 0)) != 3:
+		_fail("internal merge plan should apply booster base cost: %s" % str(booster_merge_stats))
+	_assert_near(float(booster_merge_stats.get("mass", 0.0)), 4.0, "internal merge booster mass")
+	if not bool(booster_merge_intent.get("apply_thruster_drive_stats", false)) or bool(booster_merge_intent.get("apply_engine_stats", false)):
+		_fail("internal merge booster intent mismatch: %s" % str(booster_merge_intent))
 	if not service.has_method("apply_internal_payload_base_stats"):
 		_fail("UnitStatsService missing apply_internal_payload_base_stats.")
 		return
@@ -657,7 +703,7 @@ func _init() -> void:
 		"_unit_stats_service().torso_payload_processing_plan(",
 		"_unit_stats_service().apply_torso_payload_plan(",
 		"_unit_stats_service().apply_soul_heat_capacity_stats(stats,",
-		"_unit_stats_service().apply_internal_payload_base_stats(stats,",
+		"_unit_stats_service().apply_internal_payload_merge_plan(stats,",
 		"_unit_stats_service().apply_torso_payload_summary(stats,",
 	]:
 		if not main_source.contains(token):
