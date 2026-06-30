@@ -278,6 +278,47 @@ func _init() -> void:
 	var generic_plan: Dictionary = service.torso_payload_processing_plan("custom_plugin", {"mass": 1.25, "slot_volume_tier": "XS"}, {"kind": "custom_plugin", "slot": "joint"}, "joint")
 	if String(generic_plan.get("internal_slot_key", "")) != "joint" or String(generic_plan.get("slot_key", "")) != "joint":
 		_fail("generic payload plan should route through explicit slot: %s" % str(generic_plan))
+	if not service.has_method("apply_torso_payload_plan"):
+		_fail("UnitStatsService missing apply_torso_payload_plan.")
+		return
+	var shield_execution_stats := {
+		"cost": 0,
+		"mass": 0.0,
+		"electronic_armor_max": 0.0,
+		"electronic_armor_regen": 0.0,
+		"electronic_armor_coverage": 0.0,
+	}
+	var shield_execution_summary := {}
+	var shield_execution_part := {
+		"cost": 9,
+		"mass": 2.5,
+		"electronic_armor": true,
+		"shield_hp": 120.0,
+		"shield_regen": 4.0,
+		"shield_coverage": 0.7,
+	}
+	var shield_execution_plan: Dictionary = service.torso_payload_processing_plan("electronic_armor", shield_execution_part, {"kind": "electronic_armor"}, "muscle", {"volume_rank": 3.0})
+	var shield_execution_intent: Dictionary = service.apply_torso_payload_plan(shield_execution_stats, shield_execution_summary, shield_execution_plan, shield_execution_part, {"role_key": "hero", "torso_payload_context": {}})
+	if int(shield_execution_summary.get("payload_count", 0)) != 1 or int(shield_execution_summary.get("ammo_count", 0)) != 0:
+		_fail("payload plan executor should record shield summary: %s" % str(shield_execution_summary))
+	_assert_near(float(shield_execution_summary.get("payload_mass", 0.0)), 2.5, "payload plan executor shield mass")
+	_assert_near(float(shield_execution_summary.get("payload_volume_rank", 0.0)), 3.0, "payload plan executor shield volume")
+	if int(shield_execution_stats.get("cost", 0)) != 9:
+		_fail("payload plan executor should apply direct cost: %s" % str(shield_execution_stats))
+	_assert_near(float(shield_execution_stats.get("mass", 0.0)), 2.5, "payload plan executor direct mass")
+	_assert_near(float(shield_execution_stats.get("electronic_armor_max", 0.0)), 120.0, "payload plan executor shield hp")
+	if String(shield_execution_intent.get("internal_slot_key", "")) != "" or bool(shield_execution_intent.get("apply_ether", false)) or bool(shield_execution_intent.get("apply_soul_bonus", false)):
+		_fail("payload plan executor direct intent mismatch: %s" % str(shield_execution_intent))
+	var soul_execution_stats := {"has_soul": false, "group_count": 1}
+	var soul_execution_summary := {}
+	var soul_execution_part := {"kind": "soul", "name": "SOUL PLAN", "soul_heat_capacity": 91.0, "mass": 0.25}
+	var soul_execution_intent: Dictionary = service.apply_torso_payload_plan(soul_execution_stats, soul_execution_summary, special_plan, soul_execution_part, {"role_key": "hero"})
+	if int(soul_execution_summary.get("software_payload_count", 0)) != 1 or int(soul_execution_summary.get("payload_count", 0)) != 0:
+		_fail("payload plan executor should record soul as software: %s" % str(soul_execution_summary))
+	if not bool(soul_execution_stats.get("has_soul", false)) or int(soul_execution_stats.get("soul_heat_capacity", 0)) != 91:
+		_fail("payload plan executor should apply soul heat stats: %s" % str(soul_execution_stats))
+	if String(soul_execution_intent.get("internal_slot_key", "")) != "special" or not bool(soul_execution_intent.get("apply_soul_bonus", false)) or bool(soul_execution_intent.get("apply_ether", false)):
+		_fail("payload plan executor soul intent mismatch: %s" % str(soul_execution_intent))
 	if not service.has_method("apply_torso_special_payload_logic_stats"):
 		_fail("UnitStatsService missing apply_torso_special_payload_logic_stats.")
 		return
@@ -614,10 +655,9 @@ func _init() -> void:
 		"_unit_stats_service().apply_torso_payload_direct_stats(stats,",
 		"_unit_stats_service().record_torso_payload_summary_entry(",
 		"_unit_stats_service().torso_payload_processing_plan(",
-		"_unit_stats_service().apply_torso_special_payload_logic_stats(stats,",
+		"_unit_stats_service().apply_torso_payload_plan(",
 		"_unit_stats_service().apply_soul_heat_capacity_stats(stats,",
 		"_unit_stats_service().apply_internal_payload_base_stats(stats,",
-		"_unit_stats_service().apply_torso_module_payload_logic_stats(stats,",
 		"_unit_stats_service().apply_torso_payload_summary(stats,",
 	]:
 		if not main_source.contains(token):

@@ -909,6 +909,30 @@ func torso_payload_processing_plan(payload_kind: String, part: Dictionary, paylo
 	}
 
 
+func apply_torso_payload_plan(stats: Dictionary, summary: Dictionary, payload_plan: Dictionary, part: Dictionary, context: Dictionary = {}) -> Dictionary:
+	var summary_entry: Dictionary = Dictionary(payload_plan.get("summary_entry", {}))
+	if not summary_entry.is_empty():
+		record_torso_payload_summary_entry(summary, summary_entry)
+	var direct_stats_kind := String(payload_plan.get("direct_stats_kind", ""))
+	if direct_stats_kind != "":
+		apply_torso_payload_direct_stats(stats, part, direct_stats_kind, Dictionary(context.get("torso_payload_context", context.get("payload_context", {}))))
+	var special_intent: Dictionary = {}
+	if bool(payload_plan.get("special_logic", false)):
+		special_intent = apply_torso_special_payload_logic_stats(stats, part, {"role_key": String(context.get("role_key", ""))})
+		if bool(special_intent.get("apply_soul_heat_capacity", false)):
+			apply_soul_heat_capacity_stats(stats, part)
+	elif bool(payload_plan.get("module_logic", false)):
+		apply_torso_module_payload_logic_stats(stats, part)
+	return {
+		"payload_kind": String(payload_plan.get("payload_kind", "")),
+		"internal_slot_key": String(payload_plan.get("internal_slot_key", "")),
+		"direct_stats_kind": direct_stats_kind,
+		"apply_ether": bool(special_intent.get("apply_ether", false)),
+		"apply_soul_bonus": bool(special_intent.get("apply_soul_bonus", false)),
+		"applied_soul_heat_capacity": bool(special_intent.get("apply_soul_heat_capacity", false)),
+	}
+
+
 func apply_torso_special_payload_logic_stats(stats: Dictionary, special_part: Dictionary, context: Dictionary) -> Dictionary:
 	var special_kind := String(special_part.get("kind", ""))
 	var intent := {

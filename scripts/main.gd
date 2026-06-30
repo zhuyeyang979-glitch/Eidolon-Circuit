@@ -42492,28 +42492,17 @@ func _apply_torso_slot_payload_stats(stats: Dictionary, role_key: String, unit_b
 			var payload_plan := _unit_stats_service().torso_payload_processing_plan(payload_kind, payload_part, payload_data, fallback_slot, {
 				"volume_rank": _payload_slot_volume_rank(payload_kind, payload_part, payload_data, fallback_slot),
 			})
-			var summary_entry: Dictionary = Dictionary(payload_plan.get("summary_entry", {}))
-			if not summary_entry.is_empty():
-				_unit_stats_service().record_torso_payload_summary_entry(payload_summary, summary_entry)
-			var internal_slot_key := String(payload_plan.get("internal_slot_key", ""))
+			var payload_intent := _unit_stats_service().apply_torso_payload_plan(stats, payload_summary, payload_plan, payload_part, {
+				"role_key": role_key,
+				"torso_payload_context": torso_payload_context,
+			})
+			var internal_slot_key := String(payload_intent.get("internal_slot_key", ""))
 			if internal_slot_key != "":
 				_merge_internal_payload_stats(stats, payload_part, internal_slot_key, payload_data)
-			var direct_stats_kind := String(payload_plan.get("direct_stats_kind", ""))
-			if direct_stats_kind != "":
-				_unit_stats_service().apply_torso_payload_direct_stats(stats, payload_part, direct_stats_kind, torso_payload_context)
-			if bool(payload_plan.get("special_logic", false)):
-				var special_part := payload_part
-				var special_intent := _unit_stats_service().apply_torso_special_payload_logic_stats(stats, special_part, {"role_key": role_key})
-				if bool(special_intent.get("apply_ether", false)):
-					_merge_ether_stats(stats, special_part)
-				elif bool(special_intent.get("apply_soul_heat_capacity", false)) or bool(special_intent.get("apply_soul_bonus", false)):
-					if bool(special_intent.get("apply_soul_heat_capacity", false)):
-						_unit_stats_service().apply_soul_heat_capacity_stats(stats, special_part)
-					if bool(special_intent.get("apply_soul_bonus", false)):
-						_apply_soul_bonus(stats, unit_bp, special_part)
-			elif bool(payload_plan.get("module_logic", false)):
-				var module_part := payload_part
-				_unit_stats_service().apply_torso_module_payload_logic_stats(stats, module_part)
+			if bool(payload_intent.get("apply_ether", false)):
+				_merge_ether_stats(stats, payload_part)
+			elif bool(payload_intent.get("apply_soul_bonus", false)):
+				_apply_soul_bonus(stats, unit_bp, payload_part)
 	var escape_index := int(unit_bp.get("escape_pod", -1))
 	if escape_index >= 0 and not component_priced:
 		var pod_part := _selected_component(role_key, "muscle", escape_index)
