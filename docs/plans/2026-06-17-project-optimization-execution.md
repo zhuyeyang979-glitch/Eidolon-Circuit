@@ -344,9 +344,36 @@ PROBE_MANIFEST_NO_LEGACY_FIXTURE_PROBE ok current=259 sections=8
 BATTLE_RUNTIME_FRAME_BUDGET_PROBE ok avg_ms=1.767 max_ms=4.582
 ```
 
+Follow-up verification for the part size-tier rule extraction:
+
+```text
+RED: unit_stats_service_contract_probe failed on missing UnitStatsService.normalize_size_tier_label()
+UNIT_STATS_SERVICE_CONTRACT_PROBE ok
+MAIN_FILE_EXTRACTION_CONTRACT_PROBE ok services=9
+Godot --check-only --quit-after 1: pass
+UNIT_EDITOR_TOPOLOGY_SOCKET_SIZE_GATE_PROBE ok
+CATALOG_CARD_SIZE_BADGE_PROBE ok badges=muscle:M,limb_muscle:S,booster:XS,engine:XS,cooling:XS,module:S
+PART_IDENTITY_CONTRACT_PROBE ok
+INTERNAL_SLOT_SIZE_PROBE profiles=5 explicit=[5, 2, 2, 2, 2, 2]
+AMMO_INSTALL_SIZE_PAYLOAD_PROBE tier=S total=36 ok
+SHIELD_PAYLOAD_SLOT_VOLUME_PROBE ok ranks={ "SHIELD VEIL PATCH": 2.0, "SHIELD DUEL HALO": 3.0, "SHIELD SIEGE MANTLE": 4.0, "SHIELD TITAN DOME": 5.0 } installed=S
+TORSO_SLOT_CAPACITY_CONTRACT_PROBE raw=3/6 base=4/6 helper=5/7 ok
+EDITOR_COST_ACCOUNTING_PROBE node_cost=117 engine_cost=14 team_cost=234
+UNIT_BUILD_RULE_TRAINING_GATE_PROBE ok
+TORSO_SIZE_MASS_PROBE torsos=44 masses={ "XS": 6.0, "S": 12.0, "M": 24.0, "L": 48.0, "XL": 96.0 }
+PART_SIZE_VISUAL_PROBE xs=0.65 m=1.00 xl=1.82 badge=XL
+UNIT_EDITOR_SOCKET_SIZE_REJECTION_PROBE ok
+TERMINAL_WEAPON_SIZE_PROBE melee=0.260 ranged=0.476 extent=0.161
+ENGINE_POWER_ALLOCATION_OPEN_PROBE ok detail_open=true dock_visible=true entries=4 pool=343.4
+POWER_ALLOCATION_PANEL_HEAT_LIVE_UPDATE_PROBE ok heat=20.917
+ETHER_HEAT_ECONOMY_PROBE ok
+PROBE_MANIFEST_NO_LEGACY_FIXTURE_PROBE ok current=259 sections=8
+BATTLE_RUNTIME_FRAME_BUDGET_PROBE ok avg_ms=1.762 max_ms=5.247
+```
+
 Remaining items after this batch:
 
 - Run a headed/manual visual check for `part_identity_language_probe` and `unit_editor_assembly_template_probe` when a display session is available.
 - Decide whether `assets/concepts/` is Git-tracked, Git LFS-managed, or local-reference-only.
-- Continue deeper `main.gd` extraction with the remaining `_compute_unit_stats` payload catalog lookup, remaining direct part-slot adapter context derivation for size-tier/booster facts, deeper torso-capacity formula ownership, concrete engine/cooling/booster internal payload callbacks, `_build_editor_ui`, `_apply_editor_panel_visibility`, `_resolve_attack`, and `_refresh_editor_visual_views`.
+- Continue deeper `main.gd` extraction with the remaining `_compute_unit_stats` payload catalog lookup, remaining direct part-slot adapter context derivation for booster momentum facts, deeper torso-capacity formula ownership, concrete engine/cooling/booster internal payload callbacks, `_build_editor_ui`, `_apply_editor_panel_visibility`, `_resolve_attack`, and `_refresh_editor_visual_views`.
 - `power_allocation_panel_duration_estimate_probe` is not registered in the manifest and still prints stale assertion errors before exiting `0`; do not use it as completion evidence until its expectations are reviewed.

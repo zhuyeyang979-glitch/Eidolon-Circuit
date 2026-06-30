@@ -25894,57 +25894,19 @@ func _topology_connected(node_count: int, edges: Array) -> bool:
 
 
 func _normalize_size_tier_label(raw_tier: String) -> String:
-	var value := raw_tier.strip_edges().to_upper()
-	if value in ["XS", "S", "M", "L", "XL"]:
-		return value
-	match value.to_lower():
-		"starter", "nano", "micro", "tiny":
-			return "XS"
-		"small":
-			return "S"
-		"standard", "medium":
-			return "M"
-		"long", "heavy", "siege", "titan":
-			return "L"
-		"colossus", "kaiju", "monster", "leviathan":
-			return "XL"
-	return "M"
+	return _unit_stats_service().normalize_size_tier_label(raw_tier)
 
 
 func _size_tier_rank(label: String) -> int:
-	match _normalize_size_tier_label(label):
-		"XS":
-			return 1
-		"S":
-			return 2
-		"M":
-			return 3
-		"L":
-			return 4
-		"XL":
-			return 5
-	return 3
+	return _unit_stats_service().size_tier_rank(label)
 
 
 func _size_tier_from_footprint(length: float, radius: float, mass: float = 0.0) -> String:
-	var footprint := maxf(length, radius * 2.7) + mass * 0.002
-	if footprint <= 0.18:
-		return "XS"
-	if footprint <= 0.48:
-		return "S"
-	if footprint <= 1.15:
-		return "M"
-	if footprint <= 2.35:
-		return "L"
-	return "XL"
+	return _unit_stats_service().size_tier_from_footprint(length, radius, mass)
 
 
 func _part_size_tier_label(part: Dictionary, _slot_key: String = "") -> String:
-	if part.has("size_tier"):
-		return _normalize_size_tier_label(String(part["size_tier"]))
-	if part.has("size_class"):
-		return _normalize_size_tier_label(String(part["size_class"]))
-	return _size_tier_from_footprint(float(part.get("length", 0.0)), float(part.get("radius", 0.0)), float(part.get("mass", 0.0)))
+	return _unit_stats_service().part_size_tier_label(part)
 
 
 func _component_size_rank(part: Dictionary) -> int:
@@ -41599,7 +41561,6 @@ func _payload_slot_key_for_kind(payload_kind: String, fallback_slot: String = "m
 func _payload_slot_volume_rank(payload_kind: String, part: Dictionary, payload: Dictionary = {}, fallback_slot: String = "muscle") -> float:
 	var slot_key := _payload_slot_key_for_kind(payload_kind, fallback_slot)
 	return _unit_stats_service().payload_slot_volume_rank(payload_kind, part, payload, fallback_slot, {
-		"size_tier_rank": float(_size_tier_rank(_part_size_tier_label(part, slot_key))),
 		"booster_boost_momentum": _thruster_boost_total_momentum_for_part(part) if slot_key == "booster" else 0.0,
 	})
 
@@ -41633,7 +41594,6 @@ func _legacy_mass_limit_to_volume_rank(mass_limit: float) -> float:
 
 func _part_slot_volume_rank(part: Dictionary, slot_key: String) -> float:
 	return _unit_stats_service().part_slot_volume_rank(part, slot_key, {
-		"size_tier_rank": float(_size_tier_rank(_part_size_tier_label(part, slot_key))),
 		"booster_boost_momentum": _thruster_boost_total_momentum_for_part(part) if slot_key == "booster" else 0.0,
 	})
 

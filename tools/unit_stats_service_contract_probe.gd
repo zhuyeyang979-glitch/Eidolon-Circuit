@@ -522,10 +522,26 @@ func _init() -> void:
 		_fail("failed oath note/flag mismatch: %s" % str(failed_oath_stats))
 	_assert_near(float(failed_oath_stats.get("speed", 0.0)), 1.0, "failed oath speed unchanged")
 	_assert_near(float(failed_oath_stats.get("pierce_range_bonus", 0.0)), 0.02, "failed oath pierce unchanged")
-	for method_name in ["payload_slot_key_for_kind", "volume_tier_rank", "volume_rank_from_value", "payload_slot_volume_rank", "internal_slot_accepts_payload", "torso_internal_slot_size_ranks", "best_internal_slot_for_payload"]:
+	for method_name in ["normalize_size_tier_label", "size_tier_rank", "size_tier_from_footprint", "part_size_tier_label", "part_size_tier_rank", "payload_slot_key_for_kind", "volume_tier_rank", "volume_rank_from_value", "payload_slot_volume_rank", "internal_slot_accepts_payload", "torso_internal_slot_size_ranks", "best_internal_slot_for_payload"]:
 		if not service.has_method(method_name):
 			_fail("UnitStatsService missing %s." % method_name)
 			return
+	if String(service.normalize_size_tier_label("starter")) != "XS" or String(service.normalize_size_tier_label("small")) != "S":
+		_fail("small size-tier aliases should normalize.")
+	if String(service.normalize_size_tier_label("standard")) != "M" or String(service.normalize_size_tier_label("siege")) != "L":
+		_fail("medium/large size-tier aliases should normalize.")
+	if String(service.normalize_size_tier_label("leviathan")) != "XL" or String(service.normalize_size_tier_label("unknown")) != "M":
+		_fail("colossal/unknown size-tier aliases should normalize.")
+	if int(service.size_tier_rank("nano")) != 1 or int(service.size_tier_rank("heavy")) != 4 or int(service.size_tier_rank("monster")) != 5:
+		_fail("normalized size-tier rank mismatch.")
+	if String(service.size_tier_from_footprint(0.18, 0.0, 0.0)) != "XS" or String(service.size_tier_from_footprint(0.181, 0.0, 0.0)) != "S":
+		_fail("XS footprint boundary mismatch.")
+	if String(service.size_tier_from_footprint(1.15, 0.0, 0.0)) != "M" or String(service.size_tier_from_footprint(2.351, 0.0, 0.0)) != "XL":
+		_fail("large footprint boundaries mismatch.")
+	if String(service.part_size_tier_label({"size_class": "kaiju"})) != "XL" or int(service.part_size_tier_rank({"size_tier": "S"})) != 2:
+		_fail("explicit part size-tier identity mismatch.")
+	if String(service.part_size_tier_label({"length": 0.4, "radius": 0.16, "mass": 3.0})) != "S":
+		_fail("part footprint size-tier inference mismatch.")
 	if String(service.payload_slot_key_for_kind("engine", "muscle")) != "engine" or String(service.payload_slot_key_for_kind("electronic_armor", "limb_muscle")) != "muscle":
 		_fail("payload slot-key mapping mismatch.")
 	if String(service.payload_slot_key_for_kind("unknown_payload", "custom_slot")) != "custom_slot":
@@ -551,8 +567,8 @@ func _init() -> void:
 	_assert_near(float(service.part_slot_volume_rank({"engine_momentum_output": 84.0, "mass": 4.0}, "engine")), 4.0, "engine output volume rank")
 	_assert_near(float(service.part_slot_volume_rank({"cooling": 38.0, "mass": 3.0}, "cooling")), 4.0, "cooling payload volume rank")
 	_assert_near(float(service.part_slot_volume_rank({"mass": 5.0}, "booster", {"booster_boost_momentum": 361.0})), 4.0, "booster payload volume rank")
-	_assert_near(float(service.part_slot_volume_rank({"radius": 0.16, "length": 0.4, "mass": 3.0}, "muscle", {"size_tier_rank": 1.0})), 3.0, "footprint payload volume rank")
-	_assert_near(float(service.part_slot_volume_rank({"radius": 0.16, "length": 0.4, "mass": 3.0}, "limb_muscle", {"size_tier_rank": 1.0})), 2.0, "limb footprint volume rank")
+	_assert_near(float(service.part_slot_volume_rank({"radius": 0.16, "length": 0.4, "mass": 3.0}, "muscle")), 3.0, "footprint payload volume rank")
+	_assert_near(float(service.part_slot_volume_rank({"radius": 0.16, "length": 0.4, "mass": 3.0}, "limb_muscle")), 2.0, "limb footprint volume rank")
 	if not bool(service.internal_slot_accepts_payload(6, 5)) or bool(service.internal_slot_accepts_payload(2, 3)) or not bool(service.internal_slot_accepts_payload(0, 1)):
 		_fail("internal slot acceptance clamp mismatch.")
 	if service.torso_internal_slot_size_ranks({"internal_slot_sizes": ["XL", "S"]}, {"capacity": 4, "torso_size_rank": 3}) != [5, 2, 2, 2]:
@@ -866,6 +882,10 @@ func _init() -> void:
 		"_unit_stats_service().copy_part_payload_stats(stats, part",
 		"_unit_stats_service().part_payload_context(",
 		"_unit_stats_service().torso_payload_context(",
+		"_unit_stats_service().normalize_size_tier_label(",
+		"_unit_stats_service().size_tier_rank(",
+		"_unit_stats_service().size_tier_from_footprint(",
+		"_unit_stats_service().part_size_tier_label(",
 		"_unit_stats_service().payload_slot_key_for_kind(",
 		"_unit_stats_service().volume_tier_rank(",
 		"_unit_stats_service().volume_rank_from_value(",
@@ -887,6 +907,9 @@ func _init() -> void:
 		if not main_source.contains(token):
 			_fail("main.gd missing UnitStatsService delegation token: %s" % token)
 			return
+	if main_source.contains("\"size_tier_rank\": float(_size_tier_rank(_part_size_tier_label(part, slot_key)))"):
+		_fail("main.gd should not derive part size-tier rank inside slot-volume adapters.")
+		return
 	if failed:
 		return
 	print("UNIT_STATS_SERVICE_CONTRACT_PROBE ok speed=%.3f puppet_cost=%d" % [float(motion_stats.get("speed", 0.0)), int(puppet_stats.get("cost", 0))])

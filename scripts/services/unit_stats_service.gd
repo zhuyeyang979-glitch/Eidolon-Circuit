@@ -752,6 +752,64 @@ func payload_slot_key_for_kind(payload_kind: String, fallback_slot: String = "mu
 	return fallback_slot
 
 
+func normalize_size_tier_label(raw_tier: String) -> String:
+	var value := raw_tier.strip_edges().to_upper()
+	if value in ["XS", "S", "M", "L", "XL"]:
+		return value
+	match value.to_lower():
+		"starter", "nano", "micro", "tiny":
+			return "XS"
+		"small":
+			return "S"
+		"standard", "medium":
+			return "M"
+		"long", "heavy", "siege", "titan":
+			return "L"
+		"colossus", "kaiju", "monster", "leviathan":
+			return "XL"
+	return "M"
+
+
+func size_tier_rank(label: String) -> int:
+	match normalize_size_tier_label(label):
+		"XS":
+			return 1
+		"S":
+			return 2
+		"M":
+			return 3
+		"L":
+			return 4
+		"XL":
+			return 5
+	return 3
+
+
+func size_tier_from_footprint(length: float, radius: float, mass: float = 0.0) -> String:
+	var footprint := maxf(length, radius * 2.7) + mass * 0.002
+	if footprint <= 0.18:
+		return "XS"
+	if footprint <= 0.48:
+		return "S"
+	if footprint <= 1.15:
+		return "M"
+	if footprint <= 2.35:
+		return "L"
+	return "XL"
+
+
+func part_size_tier_label(part: Dictionary) -> String:
+	if part.has("size_tier"):
+		return normalize_size_tier_label(String(part["size_tier"]))
+	if part.has("size_class"):
+		return normalize_size_tier_label(String(part["size_class"]))
+	return size_tier_from_footprint(float(part.get("length", 0.0)), float(part.get("radius", 0.0)), float(part.get("mass", 0.0)))
+
+
+func part_size_tier_rank(part: Dictionary) -> float:
+	return float(size_tier_rank(part_size_tier_label(part)))
+
+
 func volume_tier_rank(tier: String) -> int:
 	match tier.to_upper():
 		"XS":
@@ -850,7 +908,9 @@ func part_slot_volume_rank(part: Dictionary, slot_key: String, context: Dictiona
 		if shield_hp >= 45.0 or coverage >= 0.45 or mass >= 2.0:
 			return 2.0
 		return 1.0
-	var size_rank := _part_size_tier_rank(part, context)
+	var size_rank := part_size_tier_rank(part)
+	if context.has("size_tier_rank"):
+		size_rank = float(context.get("size_tier_rank", size_rank))
 	if part.has("size_tier") or part.has("size_class") or part.has("ammo_size_tier"):
 		return size_rank
 	if bool(part.get("ammo_slot_payload", false)) or material_class == "ammo_payload":
@@ -1250,27 +1310,6 @@ func _torso_payload_volume_rank(payload_kind: String, part: Dictionary, payload:
 	if payload_kind == "ammo":
 		return float(volume_rank_from_value(payload.get("ammo_size_tier", part.get("ammo_size_tier", part.get("slot_volume_tier", "XS"))), 1))
 	return part_slot_volume_rank(part, payload_slot_key_for_kind(payload_kind, fallback_slot), context) if fallback_slot != "" else 0.0
-
-
-func _part_size_tier_rank(part: Dictionary, context: Dictionary) -> float:
-	if context.has("size_tier_rank"):
-		return float(context.get("size_tier_rank", 3.0))
-	var raw_value: Variant = part.get("size_tier", part.get("size_class", part.get("ammo_size_tier", "M")))
-	if raw_value is int or raw_value is float:
-		return float(volume_rank_from_value(raw_value, 3))
-	var text := String(raw_value).strip_edges().to_lower()
-	match text:
-		"xs", "tiny", "micro":
-			return 1.0
-		"s", "small", "light":
-			return 2.0
-		"m", "medium", "standard":
-			return 3.0
-		"l", "large", "heavy":
-			return 4.0
-		"xl", "huge", "colossal":
-			return 5.0
-	return 3.0
 
 
 func _merge_electronic_armor_stats(stats: Dictionary, part: Dictionary, scale: float = 1.0) -> void:
