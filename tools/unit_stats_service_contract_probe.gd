@@ -404,6 +404,98 @@ func _init() -> void:
 	service.apply_soul_heat_capacity_stats(minimum_soul_heat_stats, {"name": "SOUL: LOW", "soul_heat_capacity": -5.0})
 	if int(minimum_soul_heat_stats.get("soul_heat_capacity", 0)) != 1:
 		_fail("soul heat capacity should clamp to minimum one: %s" % str(minimum_soul_heat_stats))
+	if not service.has_method("apply_soul_bonus_stats"):
+		_fail("UnitStatsService missing apply_soul_bonus_stats.")
+		return
+	var soul_bonus_stats := {
+		"health": 100,
+		"normal_damage": 10,
+		"armor_damage": 11,
+		"active_damage": 12,
+		"speed": 1.0,
+		"acceleration": 2.0,
+		"cooling": 10.0,
+		"heat_dissipation": 6.0,
+		"boost_cooling_mult": 1.05,
+		"pierce_range_bonus": 0.01,
+		"tear_range_bonus": 0.02,
+		"cooling_heat_capacity": 5.0,
+		"soul_heat_note": "SOUL TEST",
+	}
+	var soul_bonus_part := {
+		"name": "TITAN TEST",
+		"cost": 164,
+		"soul_bonus": {
+			"boost_cooling_mult": 1.2,
+			"pierce_range_bonus": 0.07,
+			"tear_range_bonus": 0.11,
+			"heat_capacity_bonus": 18.0,
+			"speed_bonus": 0.09,
+		},
+	}
+	service.apply_soul_bonus_stats(soul_bonus_stats, soul_bonus_part, {"requirements_met": true})
+	if int(soul_bonus_stats.get("health", 0)) != 169 or int(soul_bonus_stats.get("normal_damage", 0)) != 15 or int(soul_bonus_stats.get("armor_damage", 0)) != 18 or int(soul_bonus_stats.get("active_damage", 0)) != 22:
+		_fail("active soul base bonus mismatch: %s" % str(soul_bonus_stats))
+	_assert_near(float(soul_bonus_stats.get("speed", 0.0)), 1.2212, "active soul speed")
+	_assert_near(float(soul_bonus_stats.get("acceleration", 0.0)), 2.4592, "active soul acceleration")
+	_assert_near(float(soul_bonus_stats.get("cooling", 0.0)), 24.76, "active soul cooling")
+	_assert_near(float(soul_bonus_stats.get("heat_dissipation", 0.0)), 20.76, "active soul heat dissipation")
+	_assert_near(float(soul_bonus_stats.get("boost_cooling_mult", 0.0)), 1.2, "active soul boost cooling")
+	_assert_near(float(soul_bonus_stats.get("pierce_range_bonus", 0.0)), 0.08, "active soul pierce range")
+	_assert_near(float(soul_bonus_stats.get("tear_range_bonus", 0.0)), 0.13, "active soul tear range")
+	_assert_near(float(soul_bonus_stats.get("cooling_heat_capacity", 0.0)), 23.0, "active soul heat bonus")
+	if String(soul_bonus_stats.get("soul_note", "")) != "TITAN TEST ONLINE" or not bool(soul_bonus_stats.get("soul_bonus_active", false)):
+		_fail("active soul note/flag mismatch: %s" % str(soul_bonus_stats))
+	if String(soul_bonus_stats.get("soul_heat_note", "")) != "SOUL TEST + cooling-slot bonus 18":
+		_fail("active soul heat note mismatch: %s" % str(soul_bonus_stats))
+	var inactive_soul_stats := {
+		"health": 100,
+		"normal_damage": 10,
+		"armor_damage": 11,
+		"active_damage": 12,
+		"speed": 1.0,
+		"acceleration": 2.0,
+		"cooling": 10.0,
+		"heat_dissipation": 6.0,
+		"boost_cooling_mult": 1.05,
+		"pierce_range_bonus": 0.01,
+		"cooling_heat_capacity": 5.0,
+	}
+	service.apply_soul_bonus_stats(inactive_soul_stats, soul_bonus_part, {"requirements_met": false})
+	if String(inactive_soul_stats.get("soul_note", "")) != "TITAN TEST BASE ONLY: body mismatch" or bool(inactive_soul_stats.get("soul_bonus_active", true)):
+		_fail("inactive soul note/flag mismatch: %s" % str(inactive_soul_stats))
+	_assert_near(float(inactive_soul_stats.get("boost_cooling_mult", 0.0)), 1.05, "inactive soul boost unchanged")
+	_assert_near(float(inactive_soul_stats.get("pierce_range_bonus", 0.0)), 0.01, "inactive soul pierce unchanged")
+	_assert_near(float(inactive_soul_stats.get("cooling_heat_capacity", 0.0)), 5.0, "inactive soul heat bonus unchanged")
+	var oath_part := {
+		"name": "OATH TEST",
+		"soul_archetype": "duelist_oath",
+		"soul_echo_window": 1.15,
+		"soul_echo_recovery_mult": 0.72,
+		"soul_echo_heat_relief": 0.18,
+		"soul_bonus": {"pierce_range_bonus": 0.1, "speed_bonus": 0.04},
+	}
+	var oath_stats := {"speed": 1.0, "pierce_range_bonus": 0.02, "recovery_response": 0.85, "melee_stability_core": 0.85}
+	service.apply_soul_bonus_stats(oath_stats, oath_part, {"duelist_oath_fail_reason": ""})
+	if String(oath_stats.get("soul_archetype", "")) != "duelist_oath" or not bool(oath_stats.get("soul_oath_active", false)) or String(oath_stats.get("soul_oath_reason", "")) != "active":
+		_fail("active oath identity mismatch: %s" % str(oath_stats))
+	if String(oath_stats.get("soul_note", "")) != "OATH TEST OATH ONLINE" or not bool(oath_stats.get("soul_bonus_active", false)):
+		_fail("active oath note/flag mismatch: %s" % str(oath_stats))
+	_assert_near(float(oath_stats.get("soul_echo_window", 0.0)), 1.15, "active oath echo window")
+	_assert_near(float(oath_stats.get("soul_echo_recovery_mult", 0.0)), 0.72, "active oath recovery mult")
+	_assert_near(float(oath_stats.get("soul_echo_heat_relief", 0.0)), 0.18, "active oath heat relief")
+	_assert_near(float(oath_stats.get("pierce_range_bonus", 0.0)), 0.12, "active oath pierce bonus")
+	_assert_near(float(oath_stats.get("speed", 0.0)), 1.04, "active oath speed")
+	_assert_near(float(oath_stats.get("recovery_response", 0.0)), 0.93, "active oath recovery response")
+	_assert_near(float(oath_stats.get("melee_stability_core", 0.0)), 0.89, "active oath stability")
+	var failed_oath_stats := {"speed": 1.0, "pierce_range_bonus": 0.02, "recovery_response": 0.85, "melee_stability_core": 0.85}
+	service.apply_soul_bonus_stats(failed_oath_stats, oath_part, {"duelist_oath_fail_reason": "missing_bound_modules"})
+	if bool(failed_oath_stats.get("soul_oath_active", true)) or String(failed_oath_stats.get("soul_oath_reason", "")) != "missing_bound_modules":
+		_fail("failed oath state mismatch: %s" % str(failed_oath_stats))
+	if String(failed_oath_stats.get("soul_note", "")) != "OATH TEST HEAT SLOT ONLY: missing_bound_modules" or bool(failed_oath_stats.get("soul_bonus_active", true)):
+		_fail("failed oath note/flag mismatch: %s" % str(failed_oath_stats))
+	_assert_near(float(failed_oath_stats.get("speed", 0.0)), 1.0, "failed oath speed unchanged")
+	_assert_near(float(failed_oath_stats.get("pierce_range_bonus", 0.0)), 0.02, "failed oath pierce unchanged")
 	for method_name in ["payload_slot_key_for_kind", "volume_tier_rank", "volume_rank_from_value", "internal_slot_accepts_payload", "torso_internal_slot_size_ranks", "best_internal_slot_for_payload"]:
 		if not service.has_method(method_name):
 			_fail("UnitStatsService missing %s." % method_name)
@@ -754,6 +846,7 @@ func _init() -> void:
 		"_unit_stats_service().apply_torso_payload_plan(",
 		"_unit_stats_service().apply_ether_payload_stats(stats,",
 		"_unit_stats_service().apply_soul_heat_capacity_stats(stats,",
+		"_unit_stats_service().apply_soul_bonus_stats(stats,",
 		"_unit_stats_service().apply_internal_payload_merge_plan(stats,",
 		"_unit_stats_service().apply_torso_payload_summary(stats,",
 	]:

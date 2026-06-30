@@ -44468,59 +44468,12 @@ func _merge_scaled_part_logic(stats: Dictionary, part: Dictionary, scale: float)
 
 
 func _apply_soul_bonus(stats: Dictionary, unit_bp: Dictionary, soul_part: Dictionary) -> void:
+	var context := {}
 	if String(soul_part.get("soul_archetype", "")) == "duelist_oath":
-		_apply_duelist_oath_soul(stats, unit_bp, soul_part)
-		return
-	var requirements: Dictionary = soul_part.get("soul_requirements", {})
-	var ok := _soul_requirements_met(stats, unit_bp, requirements)
-	var soul_scale := clampf(float(soul_part.get("cost", 100)) / 100.0, 0.55, 1.85)
-	stats["health"] = int(stats.get("health", 0)) + int(roundf(42.0 * soul_scale))
-	stats["normal_damage"] = int(stats.get("normal_damage", 0)) + int(roundf(3.0 * soul_scale))
-	stats["armor_damage"] = int(stats.get("armor_damage", 0)) + int(roundf(4.0 * soul_scale))
-	stats["active_damage"] = int(stats.get("active_damage", 0)) + int(roundf(6.0 * soul_scale))
-	stats["speed"] = float(stats.get("speed", 0.0)) + 0.08 * soul_scale
-	stats["acceleration"] = float(stats.get("acceleration", 1.0)) + 0.28 * soul_scale
-	stats["cooling"] = float(stats.get("cooling", 0.0)) + 9.0 * soul_scale
-	stats["heat_dissipation"] = float(stats.get("heat_dissipation", 0.0)) + 9.0 * soul_scale
-	stats["soul_note"] = "%s ONLINE" % String(soul_part.get("name", "SOUL")) if ok else "%s BASE ONLY: body mismatch" % String(soul_part.get("name", "SOUL"))
-	stats["soul_bonus_active"] = ok
-	if not ok:
-		return
-	var bonus: Dictionary = soul_part.get("soul_bonus", {})
-	if bonus.has("boost_cooling_mult"):
-		stats["boost_cooling_mult"] = maxf(float(stats.get("boost_cooling_mult", 1.0)), float(bonus["boost_cooling_mult"]))
-	if bonus.has("pierce_range_bonus"):
-		stats["pierce_range_bonus"] = float(stats.get("pierce_range_bonus", 0.0)) + float(bonus["pierce_range_bonus"])
-	if bonus.has("tear_range_bonus"):
-		stats["tear_range_bonus"] = float(stats.get("tear_range_bonus", 0.0)) + float(bonus["tear_range_bonus"])
-	if bonus.has("heat_capacity_bonus"):
-		var bonus_heat := float(bonus["heat_capacity_bonus"])
-		stats["cooling_heat_capacity"] = float(stats.get("cooling_heat_capacity", 0.0)) + bonus_heat
-		stats["soul_heat_note"] = "%s + cooling-slot bonus %.0f" % [String(stats.get("soul_heat_note", "")), bonus_heat]
-	if bonus.has("speed_bonus"):
-		stats["speed"] = float(stats["speed"]) + float(bonus["speed_bonus"])
-
-
-func _apply_duelist_oath_soul(stats: Dictionary, unit_bp: Dictionary, soul_part: Dictionary) -> void:
-	var reason := _duelist_oath_fail_reason(stats, unit_bp, soul_part)
-	var active := reason == ""
-	stats["soul_archetype"] = "duelist_oath"
-	stats["soul_oath_active"] = active
-	stats["soul_oath_reason"] = "active" if active else reason
-	stats["soul_echo_window"] = maxf(0.05, float(soul_part.get("soul_echo_window", 1.15)))
-	stats["soul_echo_recovery_mult"] = clampf(float(soul_part.get("soul_echo_recovery_mult", 0.72)), 0.25, 1.0)
-	stats["soul_echo_heat_relief"] = clampf(float(soul_part.get("soul_echo_heat_relief", 0.18)), 0.0, 0.75)
-	stats["soul_bonus_active"] = active
-	stats["soul_note"] = "%s OATH ONLINE" % String(soul_part.get("name", "SOUL")) if active else "%s HEAT SLOT ONLY: %s" % [String(soul_part.get("name", "SOUL")), reason]
-	if not active:
-		return
-	var bonus: Dictionary = soul_part.get("soul_bonus", {})
-	if bonus.has("pierce_range_bonus"):
-		stats["pierce_range_bonus"] = float(stats.get("pierce_range_bonus", 0.0)) + float(bonus["pierce_range_bonus"])
-	if bonus.has("speed_bonus"):
-		stats["speed"] = float(stats.get("speed", 0.0)) + float(bonus["speed_bonus"])
-	stats["recovery_response"] = float(stats.get("recovery_response", 0.85)) + 0.08
-	stats["melee_stability_core"] = float(stats.get("melee_stability_core", 0.85)) + 0.04
+		context["duelist_oath_fail_reason"] = _duelist_oath_fail_reason(stats, unit_bp, soul_part)
+	else:
+		context["requirements_met"] = _soul_requirements_met(stats, unit_bp, Dictionary(soul_part.get("soul_requirements", {})))
+	_unit_stats_service().apply_soul_bonus_stats(stats, soul_part, context)
 
 
 func _duelist_oath_fail_reason(stats: Dictionary, unit_bp: Dictionary, soul_part: Dictionary) -> String:
