@@ -32,7 +32,7 @@ This file is the local execution board for the active Linear project `Eidolon Ci
 
 | File | Lines | Bytes | Local Risk |
 | --- | ---: | ---: | --- |
-| `scripts/main.gd` | 56421 | 3045888 | Still the primary extraction target. |
+| `scripts/main.gd` | 56392 | 3043115 | Still the primary extraction target. |
 | `scripts/fighter.gd` | 5571 | 244708 | Keep as Node shell; move pure heat/movement/action rules out gradually. |
 | `scripts/assembly_board_renderer.gd` | 2080 | 107736 | Shared board/runtime art source; avoid duplicate combat visuals. |
 | `scripts/part_art.gd` | 849 | 34559 | Good candidate for small visual taxonomy helpers. |
@@ -78,7 +78,10 @@ This file is the local execution board for the active Linear project `Eidolon Ci
 - Extended `lifecycle_services_contract_probe` and `main_file_extraction_contract_probe` to guard the service contract and delegation token.
 - Targeted verification passed: `jq empty tools/probe_manifest.json`, `git diff --check`, Godot `--check-only --quit-after 1`, `lifecycle_services_contract_probe`, `main_file_extraction_contract_probe`, `ammo_size_ui_probe`, `unit_editor_pagination_layout_probe`, `unit_editor_fullscreen_layout_probe`, and `screen_layout_token_coverage_probe`.
 - `editor_canvas_probe` still emits a coordinate roundtrip-drift error despite exiting `0`. Its board/topology mapping path is outside this extraction and is not counted as passing evidence; review it separately.
-- Next safe editor UI chunk: move another coherent control-mutation section out of `_apply_editor_panel_visibility`, or split a focused builder from `_build_editor_ui`, while keeping scene-tree ownership explicit.
+- Follow-up extraction added `UILifecycleService.editor_action_state()` for board-primary, unit-page, canvas, clipboard, orientation, sort, catalog-page, and unit action classification plus visibility/disabled-state decisions.
+- `scripts/main.gd` now samples clipboard state once per panel refresh and delegates each action's state decision while retaining position, localized text, tooltip, color, and scene-tree mutation ownership. The file is now 56,392 lines.
+- Follow-up RED/GREEN and adjacent UI verification passed: `lifecycle_services_contract_probe`, `main_file_extraction_contract_probe`, `unit_editor_pagination_layout_probe`, `unit_editor_auto_connection_ui_probe`, `unit_editor_clipboard_probe`, `barrier_editor_screen_probe`, `scythe_install_orientation_ui_probe`, `teamedit_ui_simplified_controls_probe`, `ammo_size_ui_probe`, `unit_editor_fullscreen_layout_probe`, `screen_layout_token_coverage_probe`, `unit_editor_no_team_role_controls_probe`, and `barrier_catalog_screen_place_probe`.
+- Next safe editor UI chunk: move another coherent action-presentation/control-mutation section out of `_apply_editor_panel_visibility`, or split a focused builder from `_build_editor_ui`, while keeping scene-tree ownership explicit.
 
 ## 2026-06-12 yhzlxp Optimization Baseline
 

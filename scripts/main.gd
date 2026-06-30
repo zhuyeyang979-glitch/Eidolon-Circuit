@@ -49743,38 +49743,49 @@ func _apply_editor_panel_visibility(role_key: String, unit_bp: Dictionary) -> vo
 		_set_control_size_if_changed(tick_label, Vector2(34.0, 14.0))
 		_set_control_text_if_changed(tick_label, _volume_rank_label(float(rank)))
 		_set_canvas_item_modulate_if_changed(tick_label, Color(1.0, 0.86, 0.28, 1.0) if rank == editor_ammo_size_rank else Color(0.76, 0.9, 1.0, 0.72))
-	var unit_action_keys: Array = Array(visibility_plan.get("unit_action_keys", []))
-	var assembly_guide_action_keys: Array = Array(visibility_plan.get("assembly_guide_action_keys", []))
-	var board_primary_action_keys: Array = Array(visibility_plan.get("board_primary_action_keys", []))
-	var unit_page_action_keys: Array = Array(visibility_plan.get("unit_page_action_keys", []))
-	var canvas_action_keys: Array = Array(visibility_plan.get("canvas_action_keys", []))
-	var orientation_action_keys: Array = Array(visibility_plan.get("orientation_action_keys", []))
 	var orientation_choice_active := custom_board_enabled and _orientation_choice_is_active(unit_bp)
 	var selected_handedness_active := custom_board_enabled and _selected_node_supports_visual_handedness(unit_bp)
 	var unit_page_actions_enabled := bool(visibility_plan.get("unit_page_actions_enabled", false))
+	var clipboard_busy := _unit_editor_clipboard_busy()
+	var has_selection := not editor_selected_topology_nodes.is_empty()
+	var has_topology_clipboard := not editor_topology_clipboard.is_empty() and String(editor_topology_clipboard.get("kind", "")) == "topology_nodes"
 	var visible_unit_action_index := 0
-	for action_key in editor_action_buttons.keys():
-		var action_button: Button = editor_action_buttons[action_key]
-		if assembly_guide_action_keys.has(String(action_key)):
+	for action_key_variant in editor_action_buttons.keys():
+		var action_key := String(action_key_variant)
+		var action_button: Button = editor_action_buttons[action_key_variant]
+		var action_state := UILifecycleService.editor_action_state(
+			action_key,
+			visibility_plan,
+			barrier_screen_board,
+			orientation_choice_active,
+			selected_handedness_active,
+			editor_sort_menu_open,
+			clipboard_busy,
+			has_selection,
+			has_topology_clipboard
+		)
+		if not bool(action_state.get("managed", true)):
 			continue
-		if board_primary_action_keys.has(String(action_key)):
-			_set_canvas_item_visible_if_changed(action_button, true)
-			_set_button_disabled_if_changed(action_button, false)
-			_set_control_position_if_changed(action_button, Vector2(352.0 + float(board_primary_action_keys.find(String(action_key))) * 156.0, 596.0))
+		var action_visible := bool(action_state.get("visible", false))
+		var action_disabled := bool(action_state.get("disabled", true))
+		var action_kind := String(action_state.get("kind", "unit"))
+		_set_canvas_item_visible_if_changed(action_button, action_visible)
+		if bool(action_state.get("manage_disabled", true)):
+			_set_button_disabled_if_changed(action_button, action_disabled)
+		if action_kind == "board_primary":
+			_set_control_position_if_changed(action_button, Vector2(352.0 + float(action_state.get("index", 0)) * 156.0, 596.0))
 			_set_control_size_if_changed(action_button, Vector2(146.0, 28.0))
-			if String(action_key) == "save_canvas":
+			if action_key == "save_canvas":
 				_set_control_text_if_changed(action_button, "保存为单位" if _ui_is_zh() else "SAVE UNIT")
 				_set_canvas_item_modulate_if_changed(action_button, Color(1.0, 0.86, 0.28, 1.0))
-			elif String(action_key) == "training_import":
+			elif action_key == "training_import":
 				_set_control_text_if_changed(action_button, "训练测试" if _ui_is_zh() else "TEST")
 				_set_canvas_item_modulate_if_changed(action_button, Color(0.86, 0.68, 1.0, 1.0))
 			else:
 				_set_control_text_if_changed(action_button, "已保存单位" if _ui_is_zh() else "SAVED")
 				_set_canvas_item_modulate_if_changed(action_button, Color(0.74, 0.92, 1.0, 1.0))
-		elif unit_page_action_keys.has(String(action_key)):
-			_set_canvas_item_visible_if_changed(action_button, true)
-			_set_button_disabled_if_changed(action_button, not unit_page_actions_enabled)
-			if String(action_key) == "prev_unit":
+		elif action_kind == "unit_page":
+			if action_key == "prev_unit":
 				_set_control_position_if_changed(action_button, Vector2(270.0, 596.0))
 				_set_control_text_if_changed(action_button, "< 单位" if _ui_is_zh() else "< UNIT")
 			else:
@@ -49782,26 +49793,13 @@ func _apply_editor_panel_visibility(role_key: String, unit_bp: Dictionary) -> vo
 				_set_control_text_if_changed(action_button, "单位 >" if _ui_is_zh() else "UNIT >")
 			_set_control_size_if_changed(action_button, Vector2(74.0, 28.0))
 			_set_canvas_item_modulate_if_changed(action_button, Color(0.78, 0.94, 1.0, 1.0) if unit_page_actions_enabled else Color(0.54, 0.62, 0.68, 0.7))
-		elif canvas_action_keys.has(String(action_key)):
-			var canvas_key := String(action_key)
-			var show_canvas_action := true
-			if canvas_key in ["board_tool_layout", "board_tool_pose", "add_node", "link_node", "auto_connect", "evaluate_connection", "restore_suggested_connection", "copy_selection", "cut_selection", "paste_selection"]:
-				show_canvas_action = not barrier_screen_board
-			elif canvas_key == "toggle_barrier_grid":
-				show_canvas_action = barrier_screen_board
-			_set_canvas_item_visible_if_changed(action_button, show_canvas_action)
-			_set_button_disabled_if_changed(action_button, not show_canvas_action)
-			var canvas_index := canvas_action_keys.find(canvas_key)
-			if canvas_key in ["board_zoom_out", "board_zoom_in", "board_zoom_reset"]:
-				canvas_index = -1
+		elif action_kind == "canvas":
+			var canvas_key := action_key
+			var canvas_index := int(action_state.get("index", -1))
 			if canvas_index >= 0:
 				_set_control_position_if_changed(action_button, Vector2(20.0 + float(canvas_index) * 76.0, 688.0))
 				_set_control_size_if_changed(action_button, Vector2(72.0, 24.0))
 			if canvas_key in ["copy_selection", "cut_selection", "paste_selection"]:
-				var has_selection := not editor_selected_topology_nodes.is_empty()
-				var has_clipboard := not editor_topology_clipboard.is_empty() and String(editor_topology_clipboard.get("kind", "")) == "topology_nodes"
-				var disabled := _unit_editor_clipboard_busy() or (canvas_key in ["copy_selection", "cut_selection"] and not has_selection) or (canvas_key == "paste_selection" and not has_clipboard)
-				_set_button_disabled_if_changed(action_button, disabled)
 				if canvas_key == "copy_selection":
 					_set_control_text_if_changed(action_button, "复制" if _ui_is_zh() else "COPY")
 				elif canvas_key == "cut_selection":
@@ -49809,7 +49807,7 @@ func _apply_editor_panel_visibility(role_key: String, unit_bp: Dictionary) -> vo
 				else:
 					_set_control_text_if_changed(action_button, "粘贴" if _ui_is_zh() else "PASTE")
 				_set_control_tooltip_if_changed(action_button, ("框选后可在单位页之间复制/剪切/粘贴" if _ui_is_zh() else "Box-select nodes, then copy/cut/paste across unit pages."))
-				_set_canvas_item_modulate_if_changed(action_button, Color(0.42, 1.0, 0.82, 1.0) if not disabled else Color(0.62, 0.7, 0.76, 0.72))
+				_set_canvas_item_modulate_if_changed(action_button, Color(0.42, 1.0, 0.82, 1.0) if not action_disabled else Color(0.62, 0.7, 0.76, 0.72))
 			if canvas_key == "board_tool_layout":
 				_set_control_text_if_changed(action_button, "布局" if _ui_is_zh() else "LAYOUT")
 				_set_canvas_item_modulate_if_changed(action_button, Color(1.0, 0.86, 0.28, 1.0) if editor_board_tool == "layout" else Color(0.78, 0.9, 1.0, 0.82))
@@ -49831,15 +49829,8 @@ func _apply_editor_panel_visibility(role_key: String, unit_bp: Dictionary) -> vo
 			elif canvas_key == "toggle_barrier_grid":
 				_set_control_text_if_changed(action_button, "辅助线" if _ui_is_zh() else "GRID")
 				_set_canvas_item_modulate_if_changed(action_button, Color(1.0, 0.86, 0.28, 1.0) if editor_barrier_grid_guides_enabled else Color(0.78, 0.9, 1.0, 0.72))
-		elif orientation_action_keys.has(String(action_key)):
-			var action_name := String(action_key)
-			var show_orientation_action := false
-			if action_name in ["set_handedness_left", "set_handedness_right"]:
-				show_orientation_action = orientation_choice_active
-			elif action_name == "flip_handedness":
-				show_orientation_action = selected_handedness_active and not orientation_choice_active
-			_set_canvas_item_visible_if_changed(action_button, show_orientation_action)
-			_set_button_disabled_if_changed(action_button, not show_orientation_action)
+		elif action_kind == "orientation":
+			var action_name := action_key
 			var x_pos := 776.0
 			if action_name == "set_handedness_right":
 				x_pos = 846.0
@@ -49853,54 +49844,34 @@ func _apply_editor_panel_visibility(role_key: String, unit_bp: Dictionary) -> vo
 				_set_control_text_if_changed(action_button, "右挂刃" if _ui_is_zh() else "RIGHT")
 			else:
 				_set_control_text_if_changed(action_button, "翻侧刃" if _ui_is_zh() else "FLIP SIDE")
-			_set_canvas_item_modulate_if_changed(action_button, Color(0.42, 1.0, 0.82, 1.0) if show_orientation_action else Color(0.78, 0.9, 1.0, 0.72))
-		elif String(action_key) == "toggle_templates":
-			_set_canvas_item_visible_if_changed(action_button, false)
-		elif String(action_key) == "sort_prev":
-			_set_canvas_item_visible_if_changed(action_button, false)
-			_set_button_disabled_if_changed(action_button, true)
-		elif String(action_key) == "sort_dir":
-			var show_sort_dir := parts_visible and editor_sort_menu_open
-			_set_canvas_item_visible_if_changed(action_button, show_sort_dir)
-			_set_button_disabled_if_changed(action_button, not show_sort_dir)
-		elif String(action_key) in ["prev_catalog", "next_catalog"]:
-			var show_page_action := parts_visible or load_visible
-			_set_canvas_item_visible_if_changed(action_button, show_page_action)
-			_set_button_disabled_if_changed(action_button, not show_page_action)
-		elif String(action_key) == "sort_key":
-			_set_canvas_item_visible_if_changed(action_button, parts_visible)
-			_set_button_disabled_if_changed(action_button, not parts_visible)
-		else:
-			var show_unit_action := unit_visible and unit_action_keys.has(String(action_key))
-			_set_canvas_item_visible_if_changed(action_button, show_unit_action)
-			_set_button_disabled_if_changed(action_button, not show_unit_action)
-			if show_unit_action:
-				_set_control_position_if_changed(action_button, Vector2(936.0 + float(visible_unit_action_index % 2) * 136.0, 126.0 + float(floori(float(visible_unit_action_index) / 2.0)) * 30.0))
-				_set_control_size_if_changed(action_button, Vector2(130.0, 26.0))
-				if String(action_key) == "load_team":
-					_set_control_text_if_changed(action_button, "队伍编成" if _ui_is_zh() else "TEAM")
-					_set_canvas_item_modulate_if_changed(action_button, Color(1.0, 0.86, 0.28, 1.0) if editor_load_mode == "team" else Color(0.84, 0.9, 0.94, 1.0))
-				elif String(action_key) == "load_unit":
-					_set_control_text_if_changed(action_button, "单位库" if _ui_is_zh() else "UNITS")
-					_set_canvas_item_modulate_if_changed(action_button, Color(1.0, 0.86, 0.28, 1.0) if editor_load_mode == "unit" else Color(0.84, 0.9, 0.94, 1.0))
-				elif String(action_key) == "save_canvas":
-					_set_control_text_if_changed(action_button, "保存单位" if _ui_is_zh() else "SAVE UNIT")
-					_set_canvas_item_modulate_if_changed(action_button, Color(1.0, 0.86, 0.28, 1.0))
-				elif String(action_key) == "open_saved_units":
-					_set_control_text_if_changed(action_button, "已存单位" if _ui_is_zh() else "SAVED")
-					_set_canvas_item_modulate_if_changed(action_button, Color(0.74, 0.92, 1.0, 1.0))
-				elif String(action_key) == "add_to_team":
-					_set_control_text_if_changed(action_button, "加入队伍" if _ui_is_zh() else "ADD TEAM")
-					_set_canvas_item_modulate_if_changed(action_button, Color(0.38, 0.96, 1.0, 1.0))
-				elif String(action_key) == "training_import":
-					_set_control_text_if_changed(action_button, "训练导入" if _ui_is_zh() else "TRAIN")
-					_set_canvas_item_modulate_if_changed(action_button, Color(0.86, 0.68, 1.0, 1.0))
-				elif String(action_key) == "toggle_match_format":
-					_set_control_text_if_changed(action_button, _match_format_short())
-					_set_canvas_item_modulate_if_changed(action_button, Color(0.32, 0.96, 1.0, 1.0))
-				else:
-					_set_canvas_item_modulate_if_changed(action_button, Color(0.84, 0.9, 0.94, 1.0))
-				visible_unit_action_index += 1
+			_set_canvas_item_modulate_if_changed(action_button, Color(0.42, 1.0, 0.82, 1.0) if action_visible else Color(0.78, 0.9, 1.0, 0.72))
+		elif action_kind == "unit" and action_visible:
+			_set_control_position_if_changed(action_button, Vector2(936.0 + float(visible_unit_action_index % 2) * 136.0, 126.0 + float(floori(float(visible_unit_action_index) / 2.0)) * 30.0))
+			_set_control_size_if_changed(action_button, Vector2(130.0, 26.0))
+			if action_key == "load_team":
+				_set_control_text_if_changed(action_button, "队伍编成" if _ui_is_zh() else "TEAM")
+				_set_canvas_item_modulate_if_changed(action_button, Color(1.0, 0.86, 0.28, 1.0) if editor_load_mode == "team" else Color(0.84, 0.9, 0.94, 1.0))
+			elif action_key == "load_unit":
+				_set_control_text_if_changed(action_button, "单位库" if _ui_is_zh() else "UNITS")
+				_set_canvas_item_modulate_if_changed(action_button, Color(1.0, 0.86, 0.28, 1.0) if editor_load_mode == "unit" else Color(0.84, 0.9, 0.94, 1.0))
+			elif action_key == "save_canvas":
+				_set_control_text_if_changed(action_button, "保存单位" if _ui_is_zh() else "SAVE UNIT")
+				_set_canvas_item_modulate_if_changed(action_button, Color(1.0, 0.86, 0.28, 1.0))
+			elif action_key == "open_saved_units":
+				_set_control_text_if_changed(action_button, "已存单位" if _ui_is_zh() else "SAVED")
+				_set_canvas_item_modulate_if_changed(action_button, Color(0.74, 0.92, 1.0, 1.0))
+			elif action_key == "add_to_team":
+				_set_control_text_if_changed(action_button, "加入队伍" if _ui_is_zh() else "ADD TEAM")
+				_set_canvas_item_modulate_if_changed(action_button, Color(0.38, 0.96, 1.0, 1.0))
+			elif action_key == "training_import":
+				_set_control_text_if_changed(action_button, "训练导入" if _ui_is_zh() else "TRAIN")
+				_set_canvas_item_modulate_if_changed(action_button, Color(0.86, 0.68, 1.0, 1.0))
+			elif action_key == "toggle_match_format":
+				_set_control_text_if_changed(action_button, _match_format_short())
+				_set_canvas_item_modulate_if_changed(action_button, Color(0.32, 0.96, 1.0, 1.0))
+			else:
+				_set_canvas_item_modulate_if_changed(action_button, Color(0.84, 0.9, 0.94, 1.0))
+			visible_unit_action_index += 1
 	if editor_action_buttons.has("sort_key"):
 		var sort_key_button: Button = editor_action_buttons["sort_key"]
 		var sort_names := EDITOR_SORT_KEY_NAMES_ZH if _ui_is_zh() else EDITOR_SORT_KEY_NAMES_EN

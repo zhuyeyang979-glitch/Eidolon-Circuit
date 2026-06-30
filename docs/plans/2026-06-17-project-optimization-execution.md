@@ -503,11 +503,35 @@ SCREEN_LAYOUT_TOKEN_COVERAGE_PROBE ok
 
 `UILifecycleService.editor_panel_visibility_plan()` now owns the pure editor mode normalization, visibility flags, custom-board and ammo-slider gates, unit-page state, and editor action-key groups. `main.gd` remains responsible for localized labels and concrete control mutation. `editor_canvas_probe` is not completion evidence for this extraction because it still reports a coordinate roundtrip drift while exiting `0`; its coordinate-mapping path is outside this visibility-plan data flow and needs separate review.
 
+Follow-up verification for the editor action-state extraction:
+
+```text
+RED: lifecycle_services_contract_probe failed on missing UILifecycleService.editor_action_state()
+jq empty tools/probe_manifest.json: pass
+git diff --check: pass
+Godot --check-only --quit-after 1: pass
+LIFECYCLE_SERVICES_CONTRACT_PROBE ok
+MAIN_FILE_EXTRACTION_CONTRACT_PROBE ok services=9
+UNIT_EDITOR_PAGINATION_LAYOUT_PROBE ok unit=1 page=0 catalog=1 load=0 feedback=[P: (270.0, 654.0), S: (622.0, 26.0)]
+UNIT_EDITOR_AUTO_CONNECTION_UI_PROBE ok torso=0 limb=1 weapon=2
+UNIT_EDITOR_CLIPBOARD_PROBE ok
+BARRIER_EDITOR_SCREEN_PROBE rect=636.9x460.0 tl=0 center=25 br=49
+SCYTHE_INSTALL_ORIENTATION_UI_PROBE ok node=0
+TEAMEDIT_UI_SIMPLIFIED_CONTROLS_PROBE ok summary_lines=2
+AMMO_SIZE_UI_PROBE entries=5 tier=M ok
+UNIT_EDITOR_FULLSCREEN_LAYOUT_PROBE ok board=(908.0, 548.0) dock=(726.0, 132.0)
+SCREEN_LAYOUT_TOKEN_COVERAGE_PROBE ok
+UNIT_EDITOR_NO_TEAM_ROLE_CONTROLS_PROBE ok
+BARRIER_CATALOG_SCREEN_PLACE_PROBE ok pending=muscle/212 cell=22 drag=212 grid=false zoom=1.40
+```
+
+`UILifecycleService.editor_action_state()` now owns action classification plus visibility and disabled-state decisions for board-primary, unit-page, canvas, clipboard, orientation, sort, catalog-page, and unit actions. `main.gd` samples clipboard state once per panel refresh and retains control positioning, localization, tooltips, colors, and scene-tree mutation.
+
 Remaining items after this batch:
 
 - Run a headed/manual visual check for `part_identity_language_probe` and `unit_editor_assembly_template_probe` when a display session is available.
 - Decide whether `assets/concepts/` is Git-tracked, Git LFS-managed, or local-reference-only.
-- Continue editor UI extraction with `_build_editor_ui` and the remaining control-mutation sections of `_apply_editor_panel_visibility`, then continue `_resolve_attack` and `_refresh_editor_visual_views` extraction.
+- Continue editor UI extraction with `_build_editor_ui` and the remaining action presentation/control-mutation sections of `_apply_editor_panel_visibility`, then continue `_resolve_attack` and `_refresh_editor_visual_views` extraction.
 - Review the `editor_canvas_probe` coordinate roundtrip drift before using that probe as completion evidence.
 - `power_allocation_panel_duration_estimate_probe` is not registered in the manifest and still prints stale assertion errors before exiting `0`; do not use it as completion evidence until its expectations are reviewed.
 - `thruster_fixed_drive_demand_probe`, `thruster_dual_budget_legality_probe`, and `thruster_philosophy_probe` are outside the current registered gate set and emit stale assertions on the unchanged `ce7e436` baseline; review or retire them before using them as completion evidence.
