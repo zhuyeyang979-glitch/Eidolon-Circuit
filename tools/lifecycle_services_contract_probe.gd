@@ -371,6 +371,32 @@ func _init() -> void:
 	if bool(Dictionary(hidden_color_plan.get("panel", {})).get("visible", true)) or not bool(Dictionary(Array(hidden_color_plan.get("buttons", []))[0]).get("disabled", false)) or bool(Dictionary(hidden_color_plan.get("primary_picker", {})).get("visible", true)):
 		_fail("UILifecycleService hidden color controls contract failed.")
 		return
+	var section_chrome_plan: Dictionary = UILifecycleService.editor_section_chrome_presentation(true, true, true, true)
+	var section_labels: Dictionary = Dictionary(section_chrome_plan.get("labels", {}))
+	var catalog_label: Dictionary = Dictionary(section_labels.get("catalog", {}))
+	var shop_label: Dictionary = Dictionary(section_labels.get("shop", {}))
+	var template_label: Dictionary = Dictionary(section_labels.get("template", {}))
+	if not bool(catalog_label.get("visible", false)) or String(catalog_label.get("text", "")) != "零件卡片":
+		_fail("UILifecycleService catalog section chrome contract failed.")
+		return
+	if bool(shop_label.get("visible", true)) or String(shop_label.get("text", "")) != "零件库：悬停显示完整卡片":
+		_fail("UILifecycleService shop section chrome contract failed.")
+		return
+	if not bool(template_label.get("visible", false)):
+		_fail("UILifecycleService template section visibility contract failed.")
+		return
+	var template_toggle: Dictionary = Dictionary(section_chrome_plan.get("template_toggle", {}))
+	if bool(template_toggle.get("visible", true)) or String(template_toggle.get("text", "")) != "模板抽屉":
+		_fail("UILifecycleService template toggle chrome contract failed.")
+		return
+	if bool(section_chrome_plan.get("template_drawer_visible", true)):
+		_fail("UILifecycleService template drawer default visibility contract failed.")
+		return
+	var hidden_section_chrome_plan: Dictionary = UILifecycleService.editor_section_chrome_presentation(false, true, false, false)
+	var hidden_labels: Dictionary = Dictionary(hidden_section_chrome_plan.get("labels", {}))
+	if bool(Dictionary(hidden_labels.get("catalog", {})).get("visible", true)) or String(Dictionary(hidden_labels.get("catalog", {})).get("text", "")) != "PART CARDS" or bool(Dictionary(hidden_labels.get("template", {})).get("visible", true)):
+		_fail("UILifecycleService hidden section chrome contract failed.")
+		return
 
 	var task := LoadingTask.create("idle", "Idle", 1.0, Callable(), LoadingTask.PHASE_IDLE, false, true)
 	var prepared := LoadingLifecycleService.prepare_task(task, "editor", 4)

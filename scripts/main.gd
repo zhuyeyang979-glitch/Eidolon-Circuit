@@ -49944,24 +49944,27 @@ func _apply_editor_panel_visibility(role_key: String, unit_bp: Dictionary) -> vo
 		editor_hover_popup_view.clear_card()
 	if editor_unit_hover_view != null and not load_visible:
 		_clear_editor_unit_hover_card(true)
+	var section_chrome_plan := UILifecycleService.editor_section_chrome_presentation(
+		parts_visible,
+		template_visible,
+		editor_template_menu_open,
+		_ui_is_zh()
+	)
+	var section_label_plans: Dictionary = Dictionary(section_chrome_plan.get("labels", {}))
+	var default_section_label_plan: Dictionary = Dictionary(section_label_plans.get("_default", {"visible": true}))
 	for label_key in editor_section_labels.keys():
 		var label: Label = editor_section_labels[label_key]
-		match String(label_key):
-			"catalog":
-				label.visible = parts_visible
-				label.text = "零件卡片" if _ui_is_zh() else "PART CARDS"
-			"shop":
-				label.visible = false
-				label.text = "零件库：悬停显示完整卡片" if _ui_is_zh() else "PARTS: HOVER FOR FULL CARD"
-			"template":
-				label.visible = template_visible and editor_template_menu_open
-			_:
-				label.visible = true
-	var template_drawer_visible := false
+		var section_label_plan: Dictionary = Dictionary(section_label_plans.get(String(label_key), default_section_label_plan))
+		if section_label_plan.has("visible"):
+			_set_canvas_item_visible_if_changed(label, bool(section_label_plan.get("visible", false)))
+		if section_label_plan.has("text"):
+			_set_control_text_if_changed(label, String(section_label_plan.get("text", "")))
+	var template_drawer_visible := bool(section_chrome_plan.get("template_drawer_visible", false))
 	if editor_action_buttons.has("toggle_templates"):
 		var template_toggle: Button = editor_action_buttons["toggle_templates"]
-		template_toggle.text = "模板抽屉" if _ui_is_zh() else "TEMPLATE DRAWER"
-		template_toggle.visible = false
+		var template_toggle_plan: Dictionary = Dictionary(section_chrome_plan.get("template_toggle", {}))
+		_set_control_text_if_changed(template_toggle, String(template_toggle_plan.get("text", "")))
+		_set_canvas_item_visible_if_changed(template_toggle, bool(template_toggle_plan.get("visible", false)))
 	_layout_editor_template_drawer(role_key, template_drawer_visible)
 
 

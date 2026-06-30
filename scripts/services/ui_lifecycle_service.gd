@@ -373,6 +373,32 @@ static func editor_color_controls_presentation(color_visible: bool, player_id: i
 	}
 
 
+static func editor_section_chrome_presentation(parts_visible: bool, template_visible: bool, template_menu_open: bool, zh: bool) -> Dictionary:
+	return {
+		"labels": {
+			"catalog": {
+				"visible": parts_visible,
+				"text": "零件卡片" if zh else "PART CARDS",
+			},
+			"shop": {
+				"visible": false,
+				"text": "零件库：悬停显示完整卡片" if zh else "PARTS: HOVER FOR FULL CARD",
+			},
+			"template": {
+				"visible": template_visible and template_menu_open,
+			},
+			"_default": {
+				"visible": true,
+			},
+		},
+		"template_toggle": {
+			"visible": false,
+			"text": "模板抽屉" if zh else "TEMPLATE DRAWER",
+		},
+		"template_drawer_visible": false,
+	}
+
+
 static func editor_panel_visibility_plan(panel_mode: String, load_mode: String, body_board_enabled: bool, barrier_screen_board: bool, has_custom_topology: bool, part_group_mode: String, part_filter_mode: String, roster_count: int) -> Dictionary:
 	var normalized_load_mode := String(load_mode)
 	if normalized_load_mode == "team":
