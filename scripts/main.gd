@@ -49692,31 +49692,45 @@ func _apply_editor_panel_visibility(role_key: String, unit_bp: Dictionary) -> vo
 			_set_control_text_if_changed(filter_button, String(filter_plan.get("text", "")))
 			_set_canvas_item_modulate_if_changed(filter_button, filter_plan.get("modulate", Color(0.84, 0.9, 0.94, 1.0)))
 	var ammo_slider_visible := bool(visibility_plan.get("ammo_slider_visible", false))
+	var ammo_tick_labels := []
+	for rank in range(1, 6):
+		ammo_tick_labels.append(_volume_rank_label(float(rank)))
+	var ammo_size_plan := UILifecycleService.editor_ammo_size_control_presentation(
+		ammo_slider_visible,
+		editor_ammo_size_rank,
+		_ui_is_zh(),
+		_ammo_size_slider_text(editor_ammo_size_rank),
+		ammo_tick_labels
+	)
 	if editor_ammo_size_title_label != null:
-		_set_canvas_item_visible_if_changed(editor_ammo_size_title_label, ammo_slider_visible)
-		_set_control_position_if_changed(editor_ammo_size_title_label, Vector2(936.0, 258.0))
-		_set_control_size_if_changed(editor_ammo_size_title_label, Vector2(72.0, 18.0))
-		_set_control_text_if_changed(editor_ammo_size_title_label, "弹药尺寸" if _ui_is_zh() else "AMMO SIZE")
+		var ammo_title_plan := Dictionary(ammo_size_plan.get("title", {}))
+		_set_canvas_item_visible_if_changed(editor_ammo_size_title_label, bool(ammo_title_plan.get("visible", false)))
+		_set_control_position_if_changed(editor_ammo_size_title_label, ammo_title_plan.get("position", Vector2(936.0, 258.0)))
+		_set_control_size_if_changed(editor_ammo_size_title_label, ammo_title_plan.get("size", Vector2(72.0, 18.0)))
+		_set_control_text_if_changed(editor_ammo_size_title_label, String(ammo_title_plan.get("text", "")))
 	if editor_ammo_size_slider != null:
-		_set_canvas_item_visible_if_changed(editor_ammo_size_slider, ammo_slider_visible)
-		editor_ammo_size_slider.editable = ammo_slider_visible
-		_set_control_position_if_changed(editor_ammo_size_slider, Vector2(1010.0, 257.0))
-		_set_control_size_if_changed(editor_ammo_size_slider, Vector2(176.0, 22.0))
-		_set_range_value_if_changed(editor_ammo_size_slider, float(editor_ammo_size_rank))
-		_set_control_tooltip_if_changed(editor_ammo_size_slider, "安装弹药时选择弹仓尺寸；弹数、价格、质量和槽位体积同步增加。" if _ui_is_zh() else "Choose ammo bay size at install time; ammo count, cost, mass, and slot volume scale together.")
+		var ammo_slider_plan := Dictionary(ammo_size_plan.get("slider", {}))
+		_set_canvas_item_visible_if_changed(editor_ammo_size_slider, bool(ammo_slider_plan.get("visible", false)))
+		editor_ammo_size_slider.editable = bool(ammo_slider_plan.get("editable", false))
+		_set_control_position_if_changed(editor_ammo_size_slider, ammo_slider_plan.get("position", Vector2(1010.0, 257.0)))
+		_set_control_size_if_changed(editor_ammo_size_slider, ammo_slider_plan.get("size", Vector2(176.0, 22.0)))
+		_set_range_value_if_changed(editor_ammo_size_slider, float(ammo_slider_plan.get("value", editor_ammo_size_rank)))
+		_set_control_tooltip_if_changed(editor_ammo_size_slider, String(ammo_slider_plan.get("tooltip", "")))
 	if editor_ammo_size_value_label != null:
-		_set_canvas_item_visible_if_changed(editor_ammo_size_value_label, ammo_slider_visible)
-		_set_control_position_if_changed(editor_ammo_size_value_label, Vector2(1190.0, 258.0))
-		_set_control_size_if_changed(editor_ammo_size_value_label, Vector2(54.0, 18.0))
-		_set_control_text_if_changed(editor_ammo_size_value_label, _ammo_size_slider_text(editor_ammo_size_rank))
+		var ammo_value_plan := Dictionary(ammo_size_plan.get("value", {}))
+		_set_canvas_item_visible_if_changed(editor_ammo_size_value_label, bool(ammo_value_plan.get("visible", false)))
+		_set_control_position_if_changed(editor_ammo_size_value_label, ammo_value_plan.get("position", Vector2(1190.0, 258.0)))
+		_set_control_size_if_changed(editor_ammo_size_value_label, ammo_value_plan.get("size", Vector2(54.0, 18.0)))
+		_set_control_text_if_changed(editor_ammo_size_value_label, String(ammo_value_plan.get("text", "")))
+	var ammo_tick_plans: Array = Array(ammo_size_plan.get("ticks", []))
 	for i in range(editor_ammo_size_tick_labels.size()):
 		var tick_label: Label = editor_ammo_size_tick_labels[i]
-		var rank := i + 1
-		_set_canvas_item_visible_if_changed(tick_label, ammo_slider_visible)
-		_set_control_position_if_changed(tick_label, Vector2(1002.0 + float(i) * 44.0, 278.0))
-		_set_control_size_if_changed(tick_label, Vector2(34.0, 14.0))
-		_set_control_text_if_changed(tick_label, _volume_rank_label(float(rank)))
-		_set_canvas_item_modulate_if_changed(tick_label, Color(1.0, 0.86, 0.28, 1.0) if rank == editor_ammo_size_rank else Color(0.76, 0.9, 1.0, 0.72))
+		var tick_plan := Dictionary(ammo_tick_plans[i]) if i < ammo_tick_plans.size() and ammo_tick_plans[i] is Dictionary else {}
+		_set_canvas_item_visible_if_changed(tick_label, bool(tick_plan.get("visible", false)))
+		_set_control_position_if_changed(tick_label, tick_plan.get("position", Vector2(1002.0 + float(i) * 44.0, 278.0)))
+		_set_control_size_if_changed(tick_label, tick_plan.get("size", Vector2(34.0, 14.0)))
+		_set_control_text_if_changed(tick_label, String(tick_plan.get("text", "")))
+		_set_canvas_item_modulate_if_changed(tick_label, tick_plan.get("modulate", Color(0.76, 0.9, 1.0, 0.72)))
 	var orientation_choice_active := custom_board_enabled and _orientation_choice_is_active(unit_bp)
 	var selected_handedness_active := custom_board_enabled and _selected_node_supports_visual_handedness(unit_bp)
 	var unit_page_actions_enabled := bool(visibility_plan.get("unit_page_actions_enabled", false))

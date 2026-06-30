@@ -206,6 +206,45 @@ static func editor_part_filter_button_presentation(button_index: int, filter_opt
 	}
 
 
+static func editor_ammo_size_control_presentation(ammo_slider_visible: bool, ammo_size_rank: int, zh: bool, value_text: String, tick_labels: Array) -> Dictionary:
+	var title_plan := {
+		"visible": ammo_slider_visible,
+		"position": Vector2(936.0, 258.0),
+		"size": Vector2(72.0, 18.0),
+		"text": "弹药尺寸" if zh else "AMMO SIZE",
+	}
+	var slider_plan := {
+		"visible": ammo_slider_visible,
+		"editable": ammo_slider_visible,
+		"position": Vector2(1010.0, 257.0),
+		"size": Vector2(176.0, 22.0),
+		"value": float(ammo_size_rank),
+		"tooltip": "安装弹药时选择弹仓尺寸；弹数、价格、质量和槽位体积同步增加。" if zh else "Choose ammo bay size at install time; ammo count, cost, mass, and slot volume scale together.",
+	}
+	var value_plan := {
+		"visible": ammo_slider_visible,
+		"position": Vector2(1190.0, 258.0),
+		"size": Vector2(54.0, 18.0),
+		"text": String(value_text),
+	}
+	var tick_plans := []
+	for i in range(tick_labels.size()):
+		var rank := i + 1
+		tick_plans.append({
+			"visible": ammo_slider_visible,
+			"position": Vector2(1002.0 + float(i) * 44.0, 278.0),
+			"size": Vector2(34.0, 14.0),
+			"text": String(tick_labels[i]),
+			"modulate": Color(1.0, 0.86, 0.28, 1.0) if rank == ammo_size_rank else Color(0.76, 0.9, 1.0, 0.72),
+		})
+	return {
+		"title": title_plan,
+		"slider": slider_plan,
+		"value": value_plan,
+		"ticks": tick_plans,
+	}
+
+
 static func editor_panel_visibility_plan(panel_mode: String, load_mode: String, body_board_enabled: bool, barrier_screen_board: bool, has_custom_topology: bool, part_group_mode: String, part_filter_mode: String, roster_count: int) -> Dictionary:
 	var normalized_load_mode := String(load_mode)
 	if normalized_load_mode == "team":

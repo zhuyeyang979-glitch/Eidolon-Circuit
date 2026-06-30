@@ -665,6 +665,23 @@ GREEN: git diff --check
 
 `UILifecycleService.editor_part_group_button_presentation()` and `UILifecycleService.editor_part_filter_button_presentation()` now own the pure group/filter button visibility, disabled-state, layout, and selected-color plans. `_apply_editor_panel_visibility()` keeps localized labels and scene-tree mutation. The catalog UI probes exited `0` but emitted the known Godot exit-time RID/ObjectDB warnings.
 
+Follow-up ammo-size control presentation extraction:
+
+```text
+RED: lifecycle_services_contract_probe failed on missing UILifecycleService.editor_ammo_size_control_presentation()
+GREEN: LIFECYCLE_SERVICES_CONTRACT_PROBE ok
+GREEN: MAIN_FILE_EXTRACTION_CONTRACT_PROBE ok services=9
+GREEN: Godot --check-only --script res://scripts/main.gd --quit-after 1
+GREEN: AMMO_SIZE_UI_PROBE entries=5 tier=M ok
+GREEN: AMMO_SIZE_SLIDER_PROBE base=18 ranks=XS..XL ui=ok
+GREEN: WEAPON_SUBCATEGORY_FILTER_PROBE ok
+GREEN: PART_LIBRARY_UI_PROBE groups=["torso", "limb", "terminal_weapon", "barrier_panel", "software_muscle", "software"] weapon=3 equipment=5 software=7 dashboard=40
+GREEN: jq empty tools/probe_manifest.json
+GREEN: git diff --check
+```
+
+`UILifecycleService.editor_ammo_size_control_presentation()` now owns the pure ammo-size title, slider, value label, and tick label presentation plan. `_apply_editor_panel_visibility()` still supplies localized value/tick text and mutates the actual controls. The UI probes exited `0` but emitted the known Godot exit-time RID/ObjectDB warnings.
+
 Remaining items after this batch:
 
 - Continue editor UI extraction with `_build_editor_ui` and the remaining action presentation/control-mutation sections of `_apply_editor_panel_visibility`, then continue `_resolve_attack` and `_refresh_editor_visual_views` extraction.

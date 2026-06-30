@@ -218,6 +218,33 @@ func _init() -> void:
 		_fail("UILifecycleService part filter hidden presentation contract failed.")
 		return
 	_assert_vector(hidden_filter_plan, "size", Vector2(84.0, 22.0), "hidden part filter presentation")
+	var ammo_plan: Dictionary = UILifecycleService.editor_ammo_size_control_presentation(true, 3, true, "M x4", ["XS", "S", "M", "L", "XL"])
+	var ammo_title: Dictionary = Dictionary(ammo_plan.get("title", {}))
+	var ammo_slider: Dictionary = Dictionary(ammo_plan.get("slider", {}))
+	var ammo_value: Dictionary = Dictionary(ammo_plan.get("value", {}))
+	var ammo_ticks: Array = Array(ammo_plan.get("ticks", []))
+	if not bool(ammo_title.get("visible", false)) or String(ammo_title.get("text", "")) != "弹药尺寸":
+		_fail("UILifecycleService ammo title presentation contract failed.")
+		return
+	_assert_vector(ammo_title, "position", Vector2(936.0, 258.0), "ammo title presentation")
+	if not bool(ammo_slider.get("editable", false)) or int(roundf(float(ammo_slider.get("value", 0.0)))) != 3:
+		_fail("UILifecycleService ammo slider presentation contract failed.")
+		return
+	_assert_vector(ammo_slider, "position", Vector2(1010.0, 257.0), "ammo slider presentation")
+	_assert_vector(ammo_value, "position", Vector2(1190.0, 258.0), "ammo value presentation")
+	if ammo_ticks.size() != 5:
+		_fail("UILifecycleService ammo tick presentation count failed.")
+		return
+	var selected_tick: Dictionary = Dictionary(ammo_ticks[2])
+	if String(selected_tick.get("text", "")) != "M":
+		_fail("UILifecycleService ammo tick text contract failed.")
+		return
+	_assert_vector(selected_tick, "position", Vector2(1090.0, 278.0), "ammo tick presentation")
+	_assert_color(selected_tick, "modulate", Color(1.0, 0.86, 0.28, 1.0), "ammo selected tick presentation")
+	var hidden_ammo_plan: Dictionary = UILifecycleService.editor_ammo_size_control_presentation(false, 1, false, "XS x1", ["XS"])
+	if bool(Dictionary(hidden_ammo_plan.get("slider", {})).get("visible", true)) or bool(Dictionary(hidden_ammo_plan.get("slider", {})).get("editable", true)):
+		_fail("UILifecycleService hidden ammo presentation contract failed.")
+		return
 
 	var task := LoadingTask.create("idle", "Idle", 1.0, Callable(), LoadingTask.PHASE_IDLE, false, true)
 	var prepared := LoadingLifecycleService.prepare_task(task, "editor", 4)
