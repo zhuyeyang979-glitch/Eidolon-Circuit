@@ -284,6 +284,32 @@ static func editor_sort_controls_presentation(parts_visible: bool, sort_menu_ope
 	}
 
 
+static func editor_info_panel_presentation(unit_visible: bool, stats_visible: bool, parts_visible: bool, sort_menu_open: bool, load_visible: bool, structure_reference_view_visible: bool, structure_reference_label_visible: bool, zh: bool) -> Dictionary:
+	var catalog_visible := (parts_visible and not sort_menu_open) or load_visible
+	var catalog_title_visible := parts_visible and not sort_menu_open
+	return {
+		"unit": {
+			"visible": unit_visible,
+			"position": Vector2(936.0, 186.0),
+			"size": Vector2(270.0, 52.0),
+			"text": "单位库" if zh else "UNITS",
+		},
+		"summary": {
+			"visible": unit_visible,
+			"position": Vector2(936.0, 586.0),
+			"size": Vector2(270.0, 88.0),
+		},
+		"stats": {"visible": stats_visible},
+		"detail": {"visible": stats_visible},
+		"component_art": {"visible": stats_visible},
+		"battle_preview": {"visible": stats_visible},
+		"structure_reference_view": {"visible": structure_reference_view_visible and stats_visible},
+		"structure_reference_label": {"visible": structure_reference_label_visible and stats_visible},
+		"catalog_page": {"visible": catalog_visible},
+		"catalog_title": {"visible": catalog_title_visible},
+	}
+
+
 static func editor_panel_visibility_plan(panel_mode: String, load_mode: String, body_board_enabled: bool, barrier_screen_board: bool, has_custom_topology: bool, part_group_mode: String, part_filter_mode: String, roster_count: int) -> Dictionary:
 	var normalized_load_mode := String(load_mode)
 	if normalized_load_mode == "team":

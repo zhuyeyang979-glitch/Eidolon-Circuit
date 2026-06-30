@@ -286,6 +286,38 @@ func _init() -> void:
 	if bool(Dictionary(hidden_sort_plan.get("panel", {})).get("visible", true)) or bool(Dictionary(Array(hidden_sort_plan.get("options", []))[0]).get("visible", true)):
 		_fail("UILifecycleService hidden sort controls contract failed.")
 		return
+	var info_plan: Dictionary = UILifecycleService.editor_info_panel_presentation(true, false, true, false, false, true, true, true)
+	var info_unit: Dictionary = Dictionary(info_plan.get("unit", {}))
+	var info_summary: Dictionary = Dictionary(info_plan.get("summary", {}))
+	var info_stats: Dictionary = Dictionary(info_plan.get("stats", {}))
+	var info_component: Dictionary = Dictionary(info_plan.get("component_art", {}))
+	var info_structure_view: Dictionary = Dictionary(info_plan.get("structure_reference_view", {}))
+	var info_catalog_page: Dictionary = Dictionary(info_plan.get("catalog_page", {}))
+	var info_catalog_title: Dictionary = Dictionary(info_plan.get("catalog_title", {}))
+	if not bool(info_unit.get("visible", false)) or String(info_unit.get("text", "")) != "单位库":
+		_fail("UILifecycleService info unit presentation contract failed.")
+		return
+	_assert_vector(info_unit, "position", Vector2(936.0, 186.0), "info unit presentation")
+	_assert_vector(info_unit, "size", Vector2(270.0, 52.0), "info unit presentation")
+	if not bool(info_summary.get("visible", false)) or bool(info_stats.get("visible", true)) or bool(info_component.get("visible", true)) or bool(info_structure_view.get("visible", true)):
+		_fail("UILifecycleService info visibility split contract failed.")
+		return
+	_assert_vector(info_summary, "position", Vector2(936.0, 586.0), "info summary presentation")
+	_assert_vector(info_summary, "size", Vector2(270.0, 88.0), "info summary presentation")
+	if not bool(info_catalog_page.get("visible", false)) or not bool(info_catalog_title.get("visible", false)):
+		_fail("UILifecycleService catalog info visibility contract failed.")
+		return
+	var stats_info_plan: Dictionary = UILifecycleService.editor_info_panel_presentation(false, true, false, true, false, true, false, false)
+	if not bool(Dictionary(stats_info_plan.get("stats", {})).get("visible", false)) or not bool(Dictionary(stats_info_plan.get("detail", {})).get("visible", false)) or not bool(Dictionary(stats_info_plan.get("battle_preview", {})).get("visible", false)):
+		_fail("UILifecycleService stats info presentation contract failed.")
+		return
+	if not bool(Dictionary(stats_info_plan.get("structure_reference_view", {})).get("visible", false)) or bool(Dictionary(stats_info_plan.get("structure_reference_label", {})).get("visible", true)):
+		_fail("UILifecycleService structure reference preservation contract failed.")
+		return
+	var load_info_plan: Dictionary = UILifecycleService.editor_info_panel_presentation(true, false, false, true, true, false, false, false)
+	if String(Dictionary(load_info_plan.get("unit", {})).get("text", "")) != "UNITS" or not bool(Dictionary(load_info_plan.get("catalog_page", {})).get("visible", false)) or bool(Dictionary(load_info_plan.get("catalog_title", {})).get("visible", true)):
+		_fail("UILifecycleService load info presentation contract failed.")
+		return
 
 	var task := LoadingTask.create("idle", "Idle", 1.0, Callable(), LoadingTask.PHASE_IDLE, false, true)
 	var prepared := LoadingLifecycleService.prepare_task(task, "editor", 4)

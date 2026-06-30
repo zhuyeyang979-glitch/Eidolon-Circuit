@@ -49829,35 +49829,47 @@ func _apply_editor_panel_visibility(role_key: String, unit_bp: Dictionary) -> vo
 	if bool(sort_plan.get("sort_dir_move_to_front", false)) and editor_action_buttons.has("sort_dir"):
 		var sort_dir_front: Button = editor_action_buttons["sort_dir"]
 		sort_dir_front.move_to_front()
+	var info_plan := UILifecycleService.editor_info_panel_presentation(
+		unit_visible,
+		stats_visible,
+		parts_visible,
+		editor_sort_menu_open,
+		load_visible,
+		editor_structure_reference_view.visible if editor_structure_reference_view != null else false,
+		editor_structure_reference_label.visible if editor_structure_reference_label != null else false,
+		_ui_is_zh()
+	)
 	if editor_unit_label != null:
-		_set_canvas_item_visible_if_changed(editor_unit_label, unit_visible)
-		if unit_visible:
-			_set_control_position_if_changed(editor_unit_label, Vector2(936.0, 186.0))
-			_set_control_size_if_changed(editor_unit_label, Vector2(270.0, 52.0))
-			_set_control_text_if_changed(editor_unit_label, "单位库" if _ui_is_zh() else "UNITS")
+		var info_unit_plan := Dictionary(info_plan.get("unit", {}))
+		_set_canvas_item_visible_if_changed(editor_unit_label, bool(info_unit_plan.get("visible", false)))
+		if editor_unit_label.visible:
+			_set_control_position_if_changed(editor_unit_label, info_unit_plan.get("position", Vector2.ZERO))
+			_set_control_size_if_changed(editor_unit_label, info_unit_plan.get("size", Vector2.ZERO))
+			_set_control_text_if_changed(editor_unit_label, String(info_unit_plan.get("text", "")))
 	if editor_summary_label != null:
-		_set_canvas_item_visible_if_changed(editor_summary_label, unit_visible)
-		if unit_visible:
-			_set_control_position_if_changed(editor_summary_label, Vector2(936.0, 586.0))
-			_set_control_size_if_changed(editor_summary_label, Vector2(270.0, 88.0))
+		var info_summary_plan := Dictionary(info_plan.get("summary", {}))
+		_set_canvas_item_visible_if_changed(editor_summary_label, bool(info_summary_plan.get("visible", false)))
+		if editor_summary_label.visible:
+			_set_control_position_if_changed(editor_summary_label, info_summary_plan.get("position", Vector2.ZERO))
+			_set_control_size_if_changed(editor_summary_label, info_summary_plan.get("size", Vector2.ZERO))
 	if editor_stats_label != null:
-		_set_canvas_item_visible_if_changed(editor_stats_label, stats_visible)
+		_set_canvas_item_visible_if_changed(editor_stats_label, bool(Dictionary(info_plan.get("stats", {})).get("visible", false)))
 	if editor_detail_label != null:
-		_set_canvas_item_visible_if_changed(editor_detail_label, stats_visible)
+		_set_canvas_item_visible_if_changed(editor_detail_label, bool(Dictionary(info_plan.get("detail", {})).get("visible", false)))
 	if component_art_view != null:
-		_set_canvas_item_visible_if_changed(component_art_view, stats_visible)
+		_set_canvas_item_visible_if_changed(component_art_view, bool(Dictionary(info_plan.get("component_art", {})).get("visible", false)))
 	if editor_battle_preview_view != null:
-		_set_canvas_item_visible_if_changed(editor_battle_preview_view, stats_visible)
+		_set_canvas_item_visible_if_changed(editor_battle_preview_view, bool(Dictionary(info_plan.get("battle_preview", {})).get("visible", false)))
 	if editor_structure_reference_view != null:
-		editor_structure_reference_view.visible = editor_structure_reference_view.visible and stats_visible
+		_set_canvas_item_visible_if_changed(editor_structure_reference_view, bool(Dictionary(info_plan.get("structure_reference_view", {})).get("visible", false)))
 	if editor_structure_reference_label != null:
-		editor_structure_reference_label.visible = editor_structure_reference_label.visible and stats_visible
+		_set_canvas_item_visible_if_changed(editor_structure_reference_label, bool(Dictionary(info_plan.get("structure_reference_label", {})).get("visible", false)))
 	if editor_catalog_page_label != null:
-		_set_canvas_item_visible_if_changed(editor_catalog_page_label, (parts_visible and not editor_sort_menu_open) or load_visible)
+		_set_canvas_item_visible_if_changed(editor_catalog_page_label, bool(Dictionary(info_plan.get("catalog_page", {})).get("visible", false)))
 	_layout_editor_save_unit_feedback()
 	if editor_section_labels.has("catalog") and editor_section_labels["catalog"] is Label:
 		var catalog_title := editor_section_labels["catalog"] as Label
-		_set_canvas_item_visible_if_changed(catalog_title, parts_visible and not editor_sort_menu_open)
+		_set_canvas_item_visible_if_changed(catalog_title, bool(Dictionary(info_plan.get("catalog_title", {})).get("visible", false)))
 	if editor_shop_hint_label != null:
 		_set_canvas_item_visible_if_changed(editor_shop_hint_label, shop_visible)
 		_set_control_text_if_changed(editor_shop_hint_label, "流程：1 选构件类型  2 拖卡片进画布  3 磁吸贴合；引擎/散热/行动模块点击安装。" if _ui_is_zh() else "Flow: 1 choose a part type  2 drag a card onto canvas  3 snap it. Engine/cooling/action modules install on click.")
