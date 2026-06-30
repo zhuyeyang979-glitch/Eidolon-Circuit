@@ -172,3 +172,120 @@ static func editor_action_state(action_key: String, visibility_plan: Dictionary,
 	state["visible"] = bool(visibility_plan.get("unit_visible", false)) and unit_action_keys.has(key)
 	state["disabled"] = not bool(state["visible"])
 	return state
+
+
+static func editor_action_presentation(action_key: String, action_state: Dictionary, visible_unit_action_index: int, context: Dictionary) -> Dictionary:
+	var key := String(action_key)
+	var kind := String(action_state.get("kind", "unit"))
+	var visible := bool(action_state.get("visible", false))
+	var disabled := bool(action_state.get("disabled", true))
+	var zh := bool(context.get("zh", false))
+	var plan := {
+		"kind": kind,
+		"managed": bool(action_state.get("managed", true)),
+		"visible": visible,
+		"disabled": disabled,
+		"manage_disabled": bool(action_state.get("manage_disabled", true)),
+		"advance_unit_action_index": false,
+	}
+	if not bool(plan.get("managed", true)):
+		return plan
+	if kind == "board_primary":
+		plan["position"] = Vector2(352.0 + float(action_state.get("index", 0)) * 156.0, 596.0)
+		plan["size"] = Vector2(146.0, 28.0)
+		if key == "save_canvas":
+			plan["text"] = "保存为单位" if zh else "SAVE UNIT"
+			plan["modulate"] = Color(1.0, 0.86, 0.28, 1.0)
+		elif key == "training_import":
+			plan["text"] = "训练测试" if zh else "TEST"
+			plan["modulate"] = Color(0.86, 0.68, 1.0, 1.0)
+		else:
+			plan["text"] = "已保存单位" if zh else "SAVED"
+			plan["modulate"] = Color(0.74, 0.92, 1.0, 1.0)
+	elif kind == "unit_page":
+		if key == "prev_unit":
+			plan["position"] = Vector2(270.0, 596.0)
+			plan["text"] = "< 单位" if zh else "< UNIT"
+		else:
+			plan["position"] = Vector2(818.0, 596.0)
+			plan["text"] = "单位 >" if zh else "UNIT >"
+		plan["size"] = Vector2(74.0, 28.0)
+		var unit_page_enabled := bool(context.get("unit_page_actions_enabled", not disabled))
+		plan["modulate"] = Color(0.78, 0.94, 1.0, 1.0) if unit_page_enabled else Color(0.54, 0.62, 0.68, 0.7)
+	elif kind == "canvas":
+		var canvas_index := int(action_state.get("index", -1))
+		if canvas_index >= 0:
+			plan["position"] = Vector2(20.0 + float(canvas_index) * 76.0, 688.0)
+			plan["size"] = Vector2(72.0, 24.0)
+		if key in ["copy_selection", "cut_selection", "paste_selection"]:
+			if key == "copy_selection":
+				plan["text"] = "复制" if zh else "COPY"
+			elif key == "cut_selection":
+				plan["text"] = "剪切" if zh else "CUT"
+			else:
+				plan["text"] = "粘贴" if zh else "PASTE"
+			plan["tooltip"] = "框选后可在单位页之间复制/剪切/粘贴" if zh else "Box-select nodes, then copy/cut/paste across unit pages."
+			plan["modulate"] = Color(0.42, 1.0, 0.82, 1.0) if not disabled else Color(0.62, 0.7, 0.76, 0.72)
+		if key == "board_tool_layout":
+			plan["text"] = "布局" if zh else "LAYOUT"
+			plan["modulate"] = Color(1.0, 0.86, 0.28, 1.0) if String(context.get("board_tool", "")) == "layout" else Color(0.78, 0.9, 1.0, 0.82)
+		elif key == "board_tool_pose":
+			plan["text"] = "姿态" if zh else "POSE"
+			plan["modulate"] = Color(1.0, 0.86, 0.28, 1.0) if String(context.get("board_tool", "")) == "pose" else Color(0.78, 0.9, 1.0, 0.82)
+		elif key == "auto_connect":
+			plan["text"] = "自动连接" if zh else "AUTO"
+			plan["tooltip"] = "按当前部件位置生成最合理的安全连接。" if zh else "Create safe suggested links for the current parts."
+			plan["modulate"] = Color(0.42, 1.0, 0.82, 1.0)
+		elif key == "evaluate_connection":
+			plan["text"] = "评估连接" if zh else "EVAL"
+			plan["tooltip"] = "检查连接是否可以进入入场姿态。" if zh else "Check whether connection is ready for entry pose."
+			plan["modulate"] = context.get("connection_state_color", Color(0.82, 0.9, 1.0, 0.82))
+		elif key == "restore_suggested_connection":
+			plan["text"] = "恢复建议" if zh else "RESTORE"
+			plan["tooltip"] = "重新应用系统建议的安全连接。" if zh else "Reapply the system's safe suggested links."
+			plan["modulate"] = Color(0.78, 0.9, 1.0, 0.82)
+		elif key == "toggle_barrier_grid":
+			plan["text"] = "辅助线" if zh else "GRID"
+			plan["modulate"] = Color(1.0, 0.86, 0.28, 1.0) if bool(context.get("barrier_grid_enabled", false)) else Color(0.78, 0.9, 1.0, 0.72)
+	elif kind == "orientation":
+		var x_pos := 776.0
+		if key == "set_handedness_right":
+			x_pos = 846.0
+		plan["position"] = Vector2(x_pos, 688.0)
+		plan["size"] = Vector2(66.0, 24.0)
+		if key == "set_handedness_left":
+			plan["text"] = "左挂刃" if zh else "LEFT"
+		elif key == "set_handedness_right":
+			plan["text"] = "右挂刃" if zh else "RIGHT"
+		else:
+			plan["text"] = "翻侧刃" if zh else "FLIP SIDE"
+		plan["modulate"] = Color(0.42, 1.0, 0.82, 1.0) if visible else Color(0.78, 0.9, 1.0, 0.72)
+	elif kind == "unit" and visible:
+		plan["position"] = Vector2(936.0 + float(visible_unit_action_index % 2) * 136.0, 126.0 + float(floori(float(visible_unit_action_index) / 2.0)) * 30.0)
+		plan["size"] = Vector2(130.0, 26.0)
+		var load_mode := String(context.get("load_mode", "unit"))
+		if key == "load_team":
+			plan["text"] = "队伍编成" if zh else "TEAM"
+			plan["modulate"] = Color(1.0, 0.86, 0.28, 1.0) if load_mode == "team" else Color(0.84, 0.9, 0.94, 1.0)
+		elif key == "load_unit":
+			plan["text"] = "单位库" if zh else "UNITS"
+			plan["modulate"] = Color(1.0, 0.86, 0.28, 1.0) if load_mode == "unit" else Color(0.84, 0.9, 0.94, 1.0)
+		elif key == "save_canvas":
+			plan["text"] = "保存单位" if zh else "SAVE UNIT"
+			plan["modulate"] = Color(1.0, 0.86, 0.28, 1.0)
+		elif key == "open_saved_units":
+			plan["text"] = "已存单位" if zh else "SAVED"
+			plan["modulate"] = Color(0.74, 0.92, 1.0, 1.0)
+		elif key == "add_to_team":
+			plan["text"] = "加入队伍" if zh else "ADD TEAM"
+			plan["modulate"] = Color(0.38, 0.96, 1.0, 1.0)
+		elif key == "training_import":
+			plan["text"] = "训练导入" if zh else "TRAIN"
+			plan["modulate"] = Color(0.86, 0.68, 1.0, 1.0)
+		elif key == "toggle_match_format":
+			plan["text"] = String(context.get("match_format_text", ""))
+			plan["modulate"] = Color(0.32, 0.96, 1.0, 1.0)
+		else:
+			plan["modulate"] = Color(0.84, 0.9, 0.94, 1.0)
+		plan["advance_unit_action_index"] = true
+	return plan

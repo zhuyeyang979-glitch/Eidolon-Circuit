@@ -583,6 +583,30 @@ untracked assets/concepts/assets/generated changes=0
 
 `docs/resource_policy.md` now keeps existing curated concept baselines and runtime generated atlases in Git, keeps tracked `assets/generated/*.png.import` files with their source PNGs, and reserves ignored `_local`, `_incoming`, and `_scratch` folders for future local-only art iterations. Git LFS is deferred until a concrete size trigger is reached instead of partially migrating this branch.
 
+Follow-up editor action presentation extraction:
+
+```text
+RED: lifecycle_services_contract_probe failed on missing UILifecycleService.editor_action_presentation()
+GREEN: LIFECYCLE_SERVICES_CONTRACT_PROBE ok
+GREEN: MAIN_FILE_EXTRACTION_CONTRACT_PROBE ok services=9
+GREEN: UNIT_EDITOR_CLIPBOARD_PROBE ok
+GREEN: UNIT_EDITOR_AUTO_CONNECTION_UI_PROBE ok torso=0 limb=1 weapon=2
+GREEN: BARRIER_CATALOG_SCREEN_PLACE_PROBE ok pending=muscle/212 cell=22 drag=212 grid=false zoom=1.40
+GREEN: EDITOR_BOARD_ZOOM_PROBE node=0 zoom=1.00 label=100% hover=0
+GREEN: UNIT_EDITOR_PAGINATION_LAYOUT_PROBE ok unit=1 page=0 catalog=1 load=0
+GREEN: UNIT_EDITOR_FULLSCREEN_LAYOUT_PROBE ok board=(908.0, 548.0) dock=(726.0, 132.0)
+GREEN: SCYTHE_INSTALL_ORIENTATION_UI_PROBE ok node=0
+GREEN: AMMO_SIZE_UI_PROBE entries=5 tier=M ok
+GREEN: UNIT_EDITOR_NO_TEAM_ROLE_CONTROLS_PROBE ok
+GREEN: TEAMEDIT_UI_SIMPLIFIED_CONTROLS_PROBE ok summary_lines=2
+GREEN: SCREEN_LAYOUT_TOKEN_COVERAGE_PROBE ok
+GREEN: jq empty tools/probe_manifest.json
+GREEN: git diff --check
+GREEN: Godot --check-only --script res://scripts/main.gd --quit-after 1
+```
+
+`UILifecycleService.editor_action_presentation()` now owns the pure button presentation plan for board-primary, unit-page, canvas/clipboard, orientation, and unit actions. `scripts/main.gd` still owns the actual `Control` mutation, but `_apply_editor_panel_visibility()` no longer carries the long action-kind presentation branch.
+
 Remaining items after this batch:
 
 - Continue editor UI extraction with `_build_editor_ui` and the remaining action presentation/control-mutation sections of `_apply_editor_panel_visibility`, then continue `_resolve_attack` and `_refresh_editor_visual_views` extraction.

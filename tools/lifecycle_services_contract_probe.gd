@@ -10,6 +10,18 @@ func _fail(message: String) -> void:
 	quit(1)
 
 
+func _assert_vector(plan: Dictionary, key: String, expected: Vector2, label: String) -> void:
+	var value: Vector2 = plan.get(key, Vector2(-999.0, -999.0))
+	if not value.is_equal_approx(expected):
+		_fail("%s expected %s=%s, got %s." % [label, key, expected, value])
+
+
+func _assert_color(plan: Dictionary, key: String, expected: Color, label: String) -> void:
+	var value: Color = plan.get(key, Color(-1.0, -1.0, -1.0, -1.0))
+	if not is_equal_approx(value.r, expected.r) or not is_equal_approx(value.g, expected.g) or not is_equal_approx(value.b, expected.b) or not is_equal_approx(value.a, expected.a):
+		_fail("%s expected %s=%s, got %s." % [label, key, expected, value])
+
+
 func _init() -> void:
 	var cache := {"a": 1, "b": 2, "c": 3}
 	var removed := UILifecycleService.trim_dictionary_cache(cache, 1)
@@ -69,6 +81,61 @@ func _init() -> void:
 	var load_page_action := UILifecycleService.editor_action_state("prev_catalog", barrier_visibility_plan, true, false, false, false, false, false, false)
 	if not bool(open_sort_action.get("visible", false)) or not bool(load_page_action.get("visible", false)):
 		_fail("UILifecycleService sort/catalog action state contract failed.")
+		return
+	var board_primary_plan: Dictionary = UILifecycleService.editor_action_presentation(
+		"save_canvas",
+		UILifecycleService.editor_action_state("save_canvas", visibility_plan, false, false, false, false, false, false, false),
+		0,
+		{"zh": false, "load_mode": "unit", "board_tool": "layout", "connection_state_color": Color(0.2, 0.4, 0.6, 1.0), "barrier_grid_enabled": false, "unit_page_actions_enabled": true}
+	)
+	if String(board_primary_plan.get("text", "")) != "SAVE UNIT" or not bool(board_primary_plan.get("visible", false)) or bool(board_primary_plan.get("disabled", true)):
+		_fail("UILifecycleService board-primary action presentation contract failed.")
+		return
+	_assert_vector(board_primary_plan, "position", Vector2(352.0, 596.0), "board-primary presentation")
+	_assert_vector(board_primary_plan, "size", Vector2(146.0, 28.0), "board-primary presentation")
+	_assert_color(board_primary_plan, "modulate", Color(1.0, 0.86, 0.28, 1.0), "board-primary presentation")
+	var clipboard_plan: Dictionary = UILifecycleService.editor_action_presentation(
+		"copy_selection",
+		enabled_copy_action,
+		0,
+		{"zh": true, "load_mode": "unit", "board_tool": "layout", "connection_state_color": Color(0.2, 0.4, 0.6, 1.0), "barrier_grid_enabled": false, "unit_page_actions_enabled": true}
+	)
+	if String(clipboard_plan.get("text", "")) != "复制" or String(clipboard_plan.get("tooltip", "")).find("复制/剪切/粘贴") < 0:
+		_fail("UILifecycleService clipboard action presentation contract failed.")
+		return
+	_assert_vector(clipboard_plan, "position", Vector2(628.0, 688.0), "clipboard presentation")
+	_assert_vector(clipboard_plan, "size", Vector2(72.0, 24.0), "clipboard presentation")
+	_assert_color(clipboard_plan, "modulate", Color(0.42, 1.0, 0.82, 1.0), "clipboard presentation")
+	var orientation_plan: Dictionary = UILifecycleService.editor_action_presentation(
+		"set_handedness_right",
+		UILifecycleService.editor_action_state("set_handedness_right", visibility_plan, false, true, false, false, false, false, false),
+		0,
+		{"zh": false, "load_mode": "unit", "board_tool": "layout", "connection_state_color": Color(0.2, 0.4, 0.6, 1.0), "barrier_grid_enabled": false, "unit_page_actions_enabled": true}
+	)
+	if String(orientation_plan.get("text", "")) != "RIGHT":
+		_fail("UILifecycleService orientation action presentation contract failed.")
+		return
+	_assert_vector(orientation_plan, "position", Vector2(846.0, 688.0), "orientation presentation")
+	_assert_vector(orientation_plan, "size", Vector2(66.0, 24.0), "orientation presentation")
+	var unit_plan: Dictionary = UILifecycleService.editor_action_presentation(
+		"load_unit",
+		UILifecycleService.editor_action_state("load_unit", barrier_visibility_plan, false, false, false, false, false, false, false),
+		1,
+		{"zh": false, "load_mode": "unit", "board_tool": "layout", "connection_state_color": Color(0.2, 0.4, 0.6, 1.0), "barrier_grid_enabled": false, "unit_page_actions_enabled": true}
+	)
+	if String(unit_plan.get("text", "")) != "UNITS" or not bool(unit_plan.get("advance_unit_action_index", false)):
+		_fail("UILifecycleService unit action presentation contract failed.")
+		return
+	_assert_vector(unit_plan, "position", Vector2(1072.0, 126.0), "unit action presentation")
+	_assert_vector(unit_plan, "size", Vector2(130.0, 26.0), "unit action presentation")
+	var guide_plan: Dictionary = UILifecycleService.editor_action_presentation(
+		"assembly_guide_prev",
+		UILifecycleService.editor_action_state("assembly_guide_prev", visibility_plan, false, false, false, false, false, false, false),
+		0,
+		{"zh": false}
+	)
+	if bool(guide_plan.get("managed", true)):
+		_fail("UILifecycleService should leave assembly-guide action presentation unmanaged.")
 		return
 
 	var task := LoadingTask.create("idle", "Idle", 1.0, Callable(), LoadingTask.PHASE_IDLE, false, true)
