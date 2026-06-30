@@ -41597,9 +41597,11 @@ func _payload_slot_key_for_kind(payload_kind: String, fallback_slot: String = "m
 
 
 func _payload_slot_volume_rank(payload_kind: String, part: Dictionary, payload: Dictionary = {}, fallback_slot: String = "muscle") -> float:
-	if payload_kind == "ammo":
-		return float(_volume_rank_from_value(payload.get("ammo_size_tier", part.get("ammo_size_tier", "XS")), 1))
-	return maxf(1.0, _part_slot_volume_rank(part, _payload_slot_key_for_kind(payload_kind, fallback_slot)))
+	var slot_key := _payload_slot_key_for_kind(payload_kind, fallback_slot)
+	return _unit_stats_service().payload_slot_volume_rank(payload_kind, part, payload, fallback_slot, {
+		"size_tier_rank": float(_size_tier_rank(_part_size_tier_label(part, slot_key))),
+		"booster_boost_momentum": _thruster_boost_total_momentum_for_part(part) if slot_key == "booster" else 0.0,
+	})
 
 
 func _internal_slot_accepts_payload(slot_rank: int, payload_rank: int) -> bool:

@@ -102,15 +102,16 @@ Completed in the first optimization batch:
 - Moved `_compute_unit_stats` part logic field copy lists and torso/ether/puppet-only gating into `UnitStatsService.copy_part_logic_stats()`, so the giant allowlist/blocklist no longer lives inline in `main.gd`.
 - Moved `_compute_unit_stats` combat/projectile/lock/data-security field copy rules into `UnitStatsService.copy_part_combat_stats()`.
 - Moved the top-level `_compute_unit_stats` part payload field copy rules for ammo capacity, electronic armor, material class, connection counts, and capacity limits into `UnitStatsService.copy_part_payload_stats()`, keeping torso-slot payload branch aggregation in `main.gd` for now.
-- Moved torso-slot payload direct stat merges for ammo, electronic armor, escape pods, and spare weapons into `UnitStatsService.apply_torso_payload_direct_stats()`, keeping slot counts, payload volume ranks, internal-slot status, and note formatting in `main.gd` for now.
-- Moved final torso-slot payload summary application into `UnitStatsService.apply_torso_payload_summary()`, including payload/ammo mass finalization, slot/software cap notes, barrier internal note formatting, and ammo note formatting; `main.gd` still owns payload traversal, catalog lookups, volume-rank sampling, and internal-slot status lookup.
+- Moved torso-slot payload direct stat merges for ammo, electronic armor, escape pods, and spare weapons into `UnitStatsService.apply_torso_payload_direct_stats()`, keeping slot counts, internal-slot status, and note formatting in `main.gd` for now.
+- Moved final torso-slot payload summary application into `UnitStatsService.apply_torso_payload_summary()`, including payload/ammo mass finalization, slot/software cap notes, barrier internal note formatting, and ammo note formatting; `main.gd` still owns payload traversal, catalog lookups, and internal-slot status lookup.
 - Moved torso-slot payload summary entry accumulation into `UnitStatsService.record_torso_payload_summary_entry()`, so `main.gd` now records sampled payload/software/ammo facts through a single service API instead of repeating counter/mass/volume increments in each branch.
 - Moved torso-slot special payload classification for ether/soul/code into `UnitStatsService.apply_torso_special_payload_logic_stats()`, so `main.gd` now consumes a pure intent for ether callbacks, hero soul callbacks, and code AI/group stats instead of owning that kind switch inline.
 - Moved soul heat-capacity stat and note application into `UnitStatsService.apply_soul_heat_capacity_stats()`, leaving `main.gd` to orchestrate only when hero soul callbacks should run.
 - Moved internal payload base stat accumulation into `UnitStatsService.apply_internal_payload_base_stats()`, leaving `main.gd` to orchestrate only cooling defaults/profile, engine momentum, and booster drive helper calls.
 - Moved torso-slot module payload logic-field copying into `UnitStatsService.apply_torso_module_payload_logic_stats()`, so `main.gd` no longer owns the inline command/module/fracture/morph/combine/identity allowlist for action-module payload stats.
-- Moved payload slot-key normalization, generic volume-rank value normalization, and torso-slot payload route planning into `UnitStatsService`. `main.gd` now asks `UnitStatsService.torso_payload_processing_plan()` how to count, directly apply, or internally merge each payload entry, while still owning catalog lookup, precise volume-rank sampling, and soul/ether/helper callbacks.
+- Moved payload slot-key normalization, generic volume-rank value normalization, and torso-slot payload route planning into `UnitStatsService`. `main.gd` now asks `UnitStatsService.torso_payload_processing_plan()` how to count, directly apply, or internally merge each payload entry, while still owning catalog lookup and soul/ether/helper callbacks.
 - Moved exact part slot-volume rank thresholds into `UnitStatsService.part_slot_volume_rank()`, including explicit slot tiers, shield thresholds, engine/cooling/booster thresholds, footprint tiers, and limb footprint reduction. `main.gd` now keeps only the adapter context for size-tier rank and booster boost momentum.
+- Moved payload slot-volume rank selection into `UnitStatsService.payload_slot_volume_rank()`, including ammo tier selection, precomputed-rank overrides, and fallback slot rank lookup. `main.gd` now keeps only the adapter context for exact size-tier and booster boost-momentum facts.
 - Replaced the long `AssemblyBoardView` assembly-template overlay drawing helpers with a one-line renderer delegation.
 - Added `tools/part_identity_contract_probe.gd`.
 - Added `tools/unit_editor_assembly_template_service_contract_probe.gd`.
@@ -323,9 +324,29 @@ PROBE_MANIFEST_NO_LEGACY_FIXTURE_PROBE ok current=259 sections=8
 BATTLE_RUNTIME_FRAME_BUDGET_PROBE ok avg_ms=1.886 max_ms=4.063
 ```
 
+Follow-up verification for the payload slot-volume rank extraction:
+
+```text
+RED: unit_stats_service_contract_probe failed on missing UnitStatsService.payload_slot_volume_rank()
+UNIT_STATS_SERVICE_CONTRACT_PROBE ok
+MAIN_FILE_EXTRACTION_CONTRACT_PROBE ok services=9
+Godot --check-only --quit-after 1: pass
+INTERNAL_SLOT_SIZE_PROBE ok profiles=5 explicit=[5, 2, 2, 2, 2, 2]
+AMMO_INSTALL_SIZE_PAYLOAD_PROBE tier=S total=36 ok
+SHIELD_PAYLOAD_SLOT_VOLUME_PROBE ok ranks={ "SHIELD VEIL PATCH": 2.0, "SHIELD DUEL HALO": 3.0, "SHIELD SIEGE MANTLE": 4.0, "SHIELD TITAN DOME": 5.0 } installed=S
+TORSO_SLOT_CAPACITY_CONTRACT_PROBE raw=3/6 base=4/6 helper=5/7 ok
+EDITOR_COST_ACCOUNTING_PROBE node_cost=117 engine_cost=14 team_cost=234
+UNIT_BUILD_RULE_TRAINING_GATE_PROBE ok
+ENGINE_POWER_ALLOCATION_OPEN_PROBE ok detail_open=true dock_visible=true entries=4 pool=343.4
+POWER_ALLOCATION_PANEL_HEAT_LIVE_UPDATE_PROBE ok heat=20.917
+ETHER_HEAT_ECONOMY_PROBE ok
+PROBE_MANIFEST_NO_LEGACY_FIXTURE_PROBE ok current=259 sections=8
+BATTLE_RUNTIME_FRAME_BUDGET_PROBE ok avg_ms=1.767 max_ms=4.582
+```
+
 Remaining items after this batch:
 
 - Run a headed/manual visual check for `part_identity_language_probe` and `unit_editor_assembly_template_probe` when a display session is available.
 - Decide whether `assets/concepts/` is Git-tracked, Git LFS-managed, or local-reference-only.
-- Continue deeper `main.gd` extraction with the remaining `_compute_unit_stats` payload catalog lookup, adapter context derivation for size-tier/booster facts and deeper torso-capacity formula ownership, concrete engine/cooling/booster internal payload callbacks, `_build_editor_ui`, `_apply_editor_panel_visibility`, `_resolve_attack`, and `_refresh_editor_visual_views`.
+- Continue deeper `main.gd` extraction with the remaining `_compute_unit_stats` payload catalog lookup, remaining direct part-slot adapter context derivation for size-tier/booster facts, deeper torso-capacity formula ownership, concrete engine/cooling/booster internal payload callbacks, `_build_editor_ui`, `_apply_editor_panel_visibility`, `_resolve_attack`, and `_refresh_editor_visual_views`.
 - `power_allocation_panel_duration_estimate_probe` is not registered in the manifest and still prints stale assertion errors before exiting `0`; do not use it as completion evidence until its expectations are reviewed.

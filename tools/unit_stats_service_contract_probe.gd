@@ -522,7 +522,7 @@ func _init() -> void:
 		_fail("failed oath note/flag mismatch: %s" % str(failed_oath_stats))
 	_assert_near(float(failed_oath_stats.get("speed", 0.0)), 1.0, "failed oath speed unchanged")
 	_assert_near(float(failed_oath_stats.get("pierce_range_bonus", 0.0)), 0.02, "failed oath pierce unchanged")
-	for method_name in ["payload_slot_key_for_kind", "volume_tier_rank", "volume_rank_from_value", "internal_slot_accepts_payload", "torso_internal_slot_size_ranks", "best_internal_slot_for_payload"]:
+	for method_name in ["payload_slot_key_for_kind", "volume_tier_rank", "volume_rank_from_value", "payload_slot_volume_rank", "internal_slot_accepts_payload", "torso_internal_slot_size_ranks", "best_internal_slot_for_payload"]:
 		if not service.has_method(method_name):
 			_fail("UnitStatsService missing %s." % method_name)
 			return
@@ -538,6 +538,11 @@ func _init() -> void:
 		_fail("volume rank value normalization mismatch.")
 	if int(service.volume_rank_from_value(12.0, 1)) != 5 or int(service.volume_rank_from_value(-4, 3)) != 1:
 		_fail("volume rank clamp mismatch.")
+	_assert_near(float(service.payload_slot_volume_rank("ammo", {"ammo_size_tier": "S"}, {"kind": "ammo", "ammo_size_tier": "L"}, "muscle")), 4.0, "ammo payload volume should prefer payload tier")
+	_assert_near(float(service.payload_slot_volume_rank("ammo", {"ammo_size_tier": "S"}, {"kind": "ammo"}, "muscle")), 2.0, "ammo payload volume should fall back to part tier")
+	_assert_near(float(service.payload_slot_volume_rank("booster", {"mass": 5.0}, {"kind": "booster"}, "booster", {"booster_boost_momentum": 361.0})), 4.0, "booster payload volume should use adapter context")
+	_assert_near(float(service.payload_slot_volume_rank("custom_plugin", {"slot_volume_tier": "XS"}, {"kind": "custom_plugin", "slot": "joint"}, "joint")), 1.0, "custom payload volume should use fallback slot rank")
+	_assert_near(float(service.payload_slot_volume_rank("engine", {"engine_momentum_output": 84.0}, {"kind": "engine"}, "engine", {"volume_rank": 3.25})), 3.25, "payload volume should honor precomputed context rank")
 	if not service.has_method("part_slot_volume_rank"):
 		_fail("UnitStatsService missing part_slot_volume_rank.")
 		return
@@ -864,6 +869,7 @@ func _init() -> void:
 		"_unit_stats_service().payload_slot_key_for_kind(",
 		"_unit_stats_service().volume_tier_rank(",
 		"_unit_stats_service().volume_rank_from_value(",
+		"_unit_stats_service().payload_slot_volume_rank(",
 		"_unit_stats_service().part_slot_volume_rank(",
 		"_unit_stats_service().internal_slot_accepts_payload(",
 		"_unit_stats_service().torso_internal_slot_size_ranks(",

@@ -780,6 +780,10 @@ func volume_rank_from_value(value: Variant, fallback: int = 3) -> int:
 	return clampi(fallback, 1, 5)
 
 
+func payload_slot_volume_rank(payload_kind: String, part: Dictionary, payload: Dictionary = {}, fallback_slot: String = "muscle", context: Dictionary = {}) -> float:
+	return _torso_payload_volume_rank(payload_kind, part, payload, fallback_slot, context)
+
+
 func internal_slot_accepts_payload(slot_rank: int, payload_rank: int) -> bool:
 	return clampi(payload_rank, 1, 5) <= clampi(slot_rank, 1, 5)
 
