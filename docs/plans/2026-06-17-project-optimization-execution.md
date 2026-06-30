@@ -563,8 +563,17 @@ GREEN: POWER_ALLOCATION_PANEL_BOOST_DASH_PROBE ok fixed=22.6 extra=34.0 peak=56.
 
 The demand probes now verify canonical `drive_demand_total` output and the absence of scrubbed legacy keys. The philosophy probe verifies explicit family-default tradeoffs plus catalog mass identity instead of comparing unequal size mixes. The Boost dash probe uses the real engine-payload detail-open path and terminates on every failure. All four probes are registered in the manifest `core` set.
 
+Follow-up headed visual verification:
+
+```text
+PART_IDENTITY_LANGUAGE_SCREENSHOT res://assets/concepts/parts/image2_individual/part_identity_language_v1.png
+ASSEMBLY_TEMPLATE_MODEL status=warn slots=6 warnings=4
+ASSEMBLY_TEMPLATE_SCREENSHOT res://assets/concepts/parts/image2_individual/unit_editor_assembly_template_overlay_v1.png
+```
+
+Both manual-visual probes were run twice on macOS Godot `4.6.2.stable.official.71f334935` with the Metal Forward+ renderer. Manual inspection confirmed the part-identity language screenshot remains readable for catalog cards, hover detail, and partial/unknown battle previews; the assembly-template overlay shows all six slots and four pending warnings without text overflow or blocking the board. The generated screenshots were restored to the tracked baseline afterward because the assembly-template capture includes dynamic frame timing and is not a stable pixel baseline.
+
 Remaining items after this batch:
 
-- Run a headed/manual visual check for `part_identity_language_probe` and `unit_editor_assembly_template_probe` when a display session is available.
 - Decide whether `assets/concepts/` is Git-tracked, Git LFS-managed, or local-reference-only.
 - Continue editor UI extraction with `_build_editor_ui` and the remaining action presentation/control-mutation sections of `_apply_editor_panel_visibility`, then continue `_resolve_attack` and `_refresh_editor_visual_views` extraction.
