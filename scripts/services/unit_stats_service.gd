@@ -755,6 +755,36 @@ func payload_slot_key_for_kind(payload_kind: String, fallback_slot: String = "mu
 	return fallback_slot
 
 
+func payload_catalog_selection(payload: Dictionary, catalog: Array = []) -> Dictionary:
+	var payload_kind := String(payload.get("kind", ""))
+	var fallback_slot := String(payload.get("slot", "muscle"))
+	var slot_key := payload_slot_key_for_kind(payload_kind, fallback_slot)
+	var index_key := "index"
+	if payload_kind in ["special", "module", "engine", "booster", "cooling"]:
+		index_key = payload_kind
+	elif payload_kind in ["ammo", "electronic_armor", "escape_pod", "spare_weapon"]:
+		index_key = "muscle"
+	var selected_index := int(payload.get(index_key, 0))
+	var saved_name := String(payload.get("part_name", payload.get("component_name", ""))).strip_edges()
+	var saved_name_matched := false
+	if saved_name != "":
+		for i in range(catalog.size()):
+			if catalog[i] is Dictionary and String(Dictionary(catalog[i]).get("name", "")) == saved_name:
+				selected_index = i
+				saved_name_matched = true
+				break
+	return {
+		"payload_kind": payload_kind,
+		"slot_key": slot_key,
+		"index_key": index_key,
+		"index": selected_index,
+		"saved_name": saved_name,
+		"saved_name_matched": saved_name_matched,
+		"apply_ammo_variant": payload_kind == "ammo",
+		"ammo_size_tier": payload.get("ammo_size_tier", "XS"),
+	}
+
+
 func normalize_size_tier_label(raw_tier: String) -> String:
 	var value := raw_tier.strip_edges().to_upper()
 	if value in ["XS", "S", "M", "L", "XL"]:

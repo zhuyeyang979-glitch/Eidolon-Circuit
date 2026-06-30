@@ -13551,66 +13551,13 @@ func _torso_software_capacity_for_part(part: Dictionary) -> int:
 
 func _payload_part_for_payload(role_key: String, payload: Dictionary) -> Dictionary:
 	var payload_kind := String(payload.get("kind", ""))
-	var saved_name := String(payload.get("part_name", payload.get("component_name", ""))).strip_edges()
-	var saved_slot := ""
-	match payload_kind:
-		"special":
-			saved_slot = "special"
-			if saved_name != "":
-				var special_index := _component_index_by_exact_name(role_key, saved_slot, saved_name)
-				if special_index >= 0:
-					return _selected_component(role_key, saved_slot, special_index)
-			return _selected_component(role_key, "special", int(payload.get("special", 0)))
-		"module":
-			saved_slot = "module"
-			if saved_name != "":
-				var module_index := _component_index_by_exact_name(role_key, saved_slot, saved_name)
-				if module_index >= 0:
-					return _selected_component(role_key, saved_slot, module_index)
-			return _selected_component(role_key, "module", int(payload.get("module", 0)))
-		"engine":
-			saved_slot = "engine"
-			if saved_name != "":
-				var engine_index := _component_index_by_exact_name(role_key, saved_slot, saved_name)
-				if engine_index >= 0:
-					return _selected_component(role_key, saved_slot, engine_index)
-			return _selected_component(role_key, "engine", int(payload.get("engine", 0)))
-		"booster":
-			saved_slot = "booster"
-			if saved_name != "":
-				var booster_index := _component_index_by_exact_name(role_key, saved_slot, saved_name)
-				if booster_index >= 0:
-					return _selected_component(role_key, saved_slot, booster_index)
-			return _selected_component(role_key, "booster", int(payload.get("booster", 0)))
-		"cooling":
-			saved_slot = "cooling"
-			if saved_name != "":
-				var cooling_index := _component_index_by_exact_name(role_key, saved_slot, saved_name)
-				if cooling_index >= 0:
-					return _selected_component(role_key, saved_slot, cooling_index)
-			return _selected_component(role_key, "cooling", int(payload.get("cooling", 0)))
-		"ammo":
-			saved_slot = "muscle"
-			var ammo_part := _selected_component(role_key, "muscle", int(payload.get("muscle", 0)))
-			if saved_name != "":
-				var ammo_index := _component_index_by_exact_name(role_key, saved_slot, saved_name)
-				if ammo_index >= 0:
-					ammo_part = _selected_component(role_key, saved_slot, ammo_index)
-			return _ammo_payload_variant(ammo_part, payload.get("ammo_size_tier", "XS"))
-		"electronic_armor", "escape_pod", "spare_weapon":
-			saved_slot = "muscle"
-			if saved_name != "":
-				var muscle_index := _component_index_by_exact_name(role_key, saved_slot, saved_name)
-				if muscle_index >= 0:
-					return _selected_component(role_key, saved_slot, muscle_index)
-			return _selected_component(role_key, "muscle", int(payload.get("muscle", 0)))
-		_:
-			saved_slot = String(payload.get("slot", "muscle"))
-			if saved_name != "":
-				var generic_index := _component_index_by_exact_name(role_key, saved_slot, saved_name)
-				if generic_index >= 0:
-					return _selected_component(role_key, saved_slot, generic_index)
-			return _selected_component(role_key, saved_slot, int(payload.get("index", 0)))
+	var fallback_slot := String(payload.get("slot", "muscle"))
+	var slot_key := _unit_stats_service().payload_slot_key_for_kind(payload_kind, fallback_slot)
+	var selection := _unit_stats_service().payload_catalog_selection(payload, _catalog_for(role_key, slot_key))
+	var part := _selected_component(role_key, slot_key, int(selection.get("index", 0)))
+	if bool(selection.get("apply_ammo_variant", false)):
+		return _ammo_payload_variant(part, selection.get("ammo_size_tier", "XS"))
+	return part
 
 
 func _payload_icon_style(payload_kind: String, part: Dictionary) -> Dictionary:

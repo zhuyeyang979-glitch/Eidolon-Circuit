@@ -522,7 +522,7 @@ func _init() -> void:
 		_fail("failed oath note/flag mismatch: %s" % str(failed_oath_stats))
 	_assert_near(float(failed_oath_stats.get("speed", 0.0)), 1.0, "failed oath speed unchanged")
 	_assert_near(float(failed_oath_stats.get("pierce_range_bonus", 0.0)), 0.02, "failed oath pierce unchanged")
-	for method_name in ["normalize_size_tier_label", "size_tier_rank", "size_tier_from_footprint", "part_size_tier_label", "part_size_tier_rank", "economy_median_mass_for_rank", "thruster_drive_demand_for_part", "thruster_move_efficiency_for_part", "thruster_boost_efficiency_for_part", "booster_normal_momentum_for_part", "booster_boost_momentum_for_part", "thruster_boost_total_momentum_for_part", "payload_slot_key_for_kind", "volume_tier_rank", "volume_rank_from_value", "payload_slot_volume_rank", "internal_slot_accepts_payload", "torso_internal_slot_size_ranks", "best_internal_slot_for_payload"]:
+	for method_name in ["normalize_size_tier_label", "size_tier_rank", "size_tier_from_footprint", "part_size_tier_label", "part_size_tier_rank", "economy_median_mass_for_rank", "thruster_drive_demand_for_part", "thruster_move_efficiency_for_part", "thruster_boost_efficiency_for_part", "booster_normal_momentum_for_part", "booster_boost_momentum_for_part", "thruster_boost_total_momentum_for_part", "payload_slot_key_for_kind", "payload_catalog_selection", "volume_tier_rank", "volume_rank_from_value", "payload_slot_volume_rank", "internal_slot_accepts_payload", "torso_internal_slot_size_ranks", "best_internal_slot_for_payload"]:
 		if not service.has_method(method_name):
 			_fail("UnitStatsService missing %s." % method_name)
 			return
@@ -560,6 +560,27 @@ func _init() -> void:
 		_fail("payload slot-key mapping mismatch.")
 	if String(service.payload_slot_key_for_kind("unknown_payload", "custom_slot")) != "custom_slot":
 		_fail("payload slot-key fallback mismatch.")
+	var payload_catalog := [{"name": "ALPHA PART"}, {"name": "BETA PART"}]
+	var saved_special: Dictionary = service.payload_catalog_selection({"kind": "special", "part_name": "BETA PART", "special": 7}, payload_catalog)
+	if String(saved_special.get("slot_key", "")) != "special" or String(saved_special.get("index_key", "")) != "special" or int(saved_special.get("index", -1)) != 1 or not bool(saved_special.get("saved_name_matched", false)):
+		_fail("saved special payload catalog selection mismatch: %s" % str(saved_special))
+	var saved_module: Dictionary = service.payload_catalog_selection({"kind": "module", "component_name": "ALPHA PART", "module": 6}, payload_catalog)
+	if String(saved_module.get("slot_key", "")) != "module" or int(saved_module.get("index", -1)) != 0 or not bool(saved_module.get("saved_name_matched", false)):
+		_fail("saved module payload catalog selection mismatch: %s" % str(saved_module))
+	var missing_engine: Dictionary = service.payload_catalog_selection({"kind": "engine", "part_name": "MISSING", "engine": 7}, payload_catalog)
+	if String(missing_engine.get("slot_key", "")) != "engine" or int(missing_engine.get("index", -1)) != 7 or bool(missing_engine.get("saved_name_matched", true)):
+		_fail("missing saved payload name should preserve legacy index: %s" % str(missing_engine))
+	var ammo_selection: Dictionary = service.payload_catalog_selection({"kind": "ammo", "part_name": "BETA PART", "muscle": 4, "ammo_size_tier": "L"}, payload_catalog)
+	if String(ammo_selection.get("slot_key", "")) != "muscle" or String(ammo_selection.get("index_key", "")) != "muscle" or int(ammo_selection.get("index", -1)) != 1:
+		_fail("ammo payload catalog selection mismatch: %s" % str(ammo_selection))
+	if not bool(ammo_selection.get("apply_ammo_variant", false)) or String(ammo_selection.get("ammo_size_tier", "")) != "L":
+		_fail("ammo payload variant intent mismatch: %s" % str(ammo_selection))
+	var armor_selection: Dictionary = service.payload_catalog_selection({"kind": "electronic_armor", "muscle": 2}, payload_catalog)
+	if String(armor_selection.get("slot_key", "")) != "muscle" or int(armor_selection.get("index", -1)) != 2:
+		_fail("muscle payload catalog selection mismatch: %s" % str(armor_selection))
+	var custom_selection: Dictionary = service.payload_catalog_selection({"kind": "custom_payload", "slot": "custom_slot", "index": 3}, payload_catalog)
+	if String(custom_selection.get("slot_key", "")) != "custom_slot" or String(custom_selection.get("index_key", "")) != "index" or int(custom_selection.get("index", -1)) != 3:
+		_fail("custom payload catalog selection mismatch: %s" % str(custom_selection))
 	if int(service.volume_tier_rank("XS")) != 1 or int(service.volume_tier_rank("XL")) != 5 or int(service.volume_tier_rank("???")) != 3:
 		_fail("volume tier rank mismatch.")
 	if int(service.volume_rank_from_value("", 4)) != 4 or int(service.volume_rank_from_value("-", 2)) != 2:
@@ -909,6 +930,7 @@ func _init() -> void:
 		"_unit_stats_service().booster_boost_momentum_for_part(",
 		"_unit_stats_service().thruster_boost_total_momentum_for_part(",
 		"_unit_stats_service().payload_slot_key_for_kind(",
+		"_unit_stats_service().payload_catalog_selection(",
 		"_unit_stats_service().volume_tier_rank(",
 		"_unit_stats_service().volume_rank_from_value(",
 		"_unit_stats_service().payload_slot_volume_rank(",
@@ -934,6 +956,9 @@ func _init() -> void:
 		return
 	if main_source.contains("\"booster_boost_momentum\":"):
 		_fail("main.gd should not derive booster momentum inside slot-volume adapters.")
+		return
+	if main_source.contains("_component_index_by_exact_name(role_key, saved_slot, saved_name)"):
+		_fail("main.gd should delegate saved payload catalog-name matching.")
 		return
 	if failed:
 		return
