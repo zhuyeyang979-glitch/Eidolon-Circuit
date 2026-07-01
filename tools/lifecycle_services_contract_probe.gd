@@ -198,6 +198,36 @@ func _init() -> void:
 	if bool(Dictionary(hidden_assembly_plan.get("guide_label", {})).get("visible", true)) or bool(Dictionary(hidden_assembly_plan.get("tutorial_panel", {})).get("visible", true)) or bool(Dictionary(hidden_actions.get("assembly_guide_next", {})).get("visible", true)) or not bool(Dictionary(hidden_actions.get("assembly_guide_next", {})).get("disabled", false)):
 		_fail("UILifecycleService hidden assembly-guide presentation contract failed.")
 		return
+	if not assembly_lifecycle_service.has_method("editor_board_zoom_presentation"):
+		_fail("UILifecycleService should expose editor board-zoom presentation planning.")
+		return
+	var min_zoom_plan: Dictionary = assembly_lifecycle_service.call("editor_board_zoom_presentation", 0.35, 0.35, 2.0, true)
+	var min_zoom_label: Dictionary = Dictionary(min_zoom_plan.get("label", {}))
+	var min_zoom_actions: Dictionary = Dictionary(min_zoom_plan.get("actions", {}))
+	var min_zoom_out: Dictionary = Dictionary(min_zoom_actions.get("board_zoom_out", {}))
+	var min_zoom_in: Dictionary = Dictionary(min_zoom_actions.get("board_zoom_in", {}))
+	var min_zoom_reset: Dictionary = Dictionary(min_zoom_actions.get("board_zoom_reset", {}))
+	if String(min_zoom_label.get("text", "")) != "35%" or String(min_zoom_out.get("text", "")) != "-" or not bool(min_zoom_out.get("disabled", false)):
+		_fail("UILifecycleService min board-zoom presentation contract failed.")
+		return
+	if String(min_zoom_in.get("text", "")) != "+" or bool(min_zoom_in.get("disabled", true)):
+		_fail("UILifecycleService board-zoom in action should be enabled above min.")
+		return
+	if String(min_zoom_reset.get("text", "")) != "重置":
+		_fail("UILifecycleService board-zoom reset zh text failed.")
+		return
+	var max_zoom_plan: Dictionary = assembly_lifecycle_service.call("editor_board_zoom_presentation", 2.0, 0.35, 2.0, false)
+	var max_zoom_actions: Dictionary = Dictionary(max_zoom_plan.get("actions", {}))
+	var max_zoom_in: Dictionary = Dictionary(max_zoom_actions.get("board_zoom_in", {}))
+	var max_zoom_reset: Dictionary = Dictionary(max_zoom_actions.get("board_zoom_reset", {}))
+	if String(Dictionary(max_zoom_plan.get("label", {})).get("text", "")) != "200%" or not bool(max_zoom_in.get("disabled", false)) or String(max_zoom_reset.get("text", "")) != "RESET":
+		_fail("UILifecycleService max board-zoom presentation contract failed.")
+		return
+	var mid_zoom_plan: Dictionary = assembly_lifecycle_service.call("editor_board_zoom_presentation", 1.25, 0.35, 2.0, false)
+	var mid_zoom_actions: Dictionary = Dictionary(mid_zoom_plan.get("actions", {}))
+	if String(Dictionary(mid_zoom_plan.get("label", {})).get("text", "")) != "125%" or bool(Dictionary(mid_zoom_actions.get("board_zoom_out", {})).get("disabled", true)) or bool(Dictionary(mid_zoom_actions.get("board_zoom_in", {})).get("disabled", true)):
+		_fail("UILifecycleService middle board-zoom presentation contract failed.")
+		return
 	var build_specs: Dictionary = UILifecycleService.editor_action_build_specs()
 	var panel_specs: Array = Array(build_specs.get("panel_buttons", []))
 	var guide_specs: Array = Array(build_specs.get("assembly_guide_actions", []))

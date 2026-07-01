@@ -1199,6 +1199,27 @@ static func editor_assembly_guide_presentation(show_guide: bool, model: Dictiona
 	}
 
 
+static func editor_board_zoom_presentation(board_zoom: float, min_zoom: float, max_zoom: float, zh: bool) -> Dictionary:
+	return {
+		"label": {
+			"text": "%d%%" % int(roundf(board_zoom * 100.0)),
+		},
+		"actions": {
+			"board_zoom_out": {
+				"text": "-",
+				"disabled": board_zoom <= min_zoom + 0.001,
+			},
+			"board_zoom_in": {
+				"text": "+",
+				"disabled": board_zoom >= max_zoom - 0.001,
+			},
+			"board_zoom_reset": {
+				"text": "重置" if zh else "RESET",
+			},
+		},
+	}
+
+
 static func editor_action_presentation(action_key: String, action_state: Dictionary, visible_unit_action_index: int, context: Dictionary) -> Dictionary:
 	var key := String(action_key)
 	var kind := String(action_state.get("kind", "unit"))

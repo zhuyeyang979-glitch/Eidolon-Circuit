@@ -18502,19 +18502,19 @@ func _reset_editor_board_zoom() -> void:
 
 
 func _refresh_editor_board_zoom_ui() -> void:
+	var zoom_plan := UILifecycleService.editor_board_zoom_presentation(
+		editor_board_zoom,
+		EDITOR_BOARD_ZOOM_MIN,
+		EDITOR_BOARD_ZOOM_MAX,
+		_ui_is_zh()
+	)
 	if editor_board_zoom_label != null:
-		editor_board_zoom_label.text = "%d%%" % int(roundf(editor_board_zoom * 100.0))
-	if editor_action_buttons.has("board_zoom_out"):
-		var zoom_out: Button = editor_action_buttons["board_zoom_out"]
-		zoom_out.text = "-"
-		zoom_out.disabled = editor_board_zoom <= EDITOR_BOARD_ZOOM_MIN + 0.001
-	if editor_action_buttons.has("board_zoom_in"):
-		var zoom_in: Button = editor_action_buttons["board_zoom_in"]
-		zoom_in.text = "+"
-		zoom_in.disabled = editor_board_zoom >= EDITOR_BOARD_ZOOM_MAX - 0.001
-	if editor_action_buttons.has("board_zoom_reset"):
-		var zoom_reset: Button = editor_action_buttons["board_zoom_reset"]
-		zoom_reset.text = "重置" if _ui_is_zh() else "RESET"
+		_apply_editor_control_plan(editor_board_zoom_label, Dictionary(zoom_plan.get("label", {})))
+	var zoom_action_plans: Dictionary = Dictionary(zoom_plan.get("actions", {}))
+	for action_key in ["board_zoom_out", "board_zoom_in", "board_zoom_reset"]:
+		if editor_action_buttons.has(action_key):
+			var zoom_button: Button = editor_action_buttons[action_key]
+			_apply_editor_control_plan(zoom_button, Dictionary(zoom_action_plans.get(action_key, {})))
 
 
 func _set_editor_board_tool(tool_key: String) -> void:

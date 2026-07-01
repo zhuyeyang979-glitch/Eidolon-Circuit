@@ -1573,6 +1573,26 @@ GREEN: git diff --check
 
 `UILifecycleService.editor_assembly_guide_presentation()` now owns the pure label/tutorial/action-button plans for the editor assembly guide, including the connection-evaluation gate for the next button. `_refresh_editor_assembly_guide_ui()` still obtains the current guide model from `UnitEditorAssemblyGuideService`, then applies the returned plans through `_apply_editor_control_plan()` instead of carrying local position/text/tooltip/modulate mutations.
 
+Follow-up editor board-zoom presentation extraction:
+
+```text
+RED: main_file_extraction_contract_probe failed on missing UILifecycleService.editor_board_zoom_presentation delegation
+RED: lifecycle_services_contract_probe failed on missing editor_board_zoom_presentation service API
+GREEN: MAIN_FILE_EXTRACTION_CONTRACT_PROBE ok services=9
+GREEN: LIFECYCLE_SERVICES_CONTRACT_PROBE ok
+GREEN: Godot --check-only --script res://scripts/main.gd --quit-after 1
+GREEN: Godot --check-only --script res://scripts/services/ui_lifecycle_service.gd --quit-after 1
+GREEN: EDITOR_BOARD_ZOOM_PROBE node=0 zoom=1.00 label=100% hover=0
+GREEN: BOARD_ZOOM_SOCKET_FOLLOW_PROBE ok marker=0:torso_port:0 delta=34.987px
+GREEN: BOARD_ZOOM_NO_POWER_ALLOCATION_POPUP_PROBE ok zoom=1.254
+GREEN: UNIT_EDITOR_FULLSCREEN_LAYOUT_PROBE ok board=(908.0, 548.0) dock=(726.0, 132.0)
+GREEN: EDITOR_CONTROL_PLAN_ADAPTER_PROBE failed=false writes=11 noops=7
+GREEN: jq empty tools/probe_manifest.json
+GREEN: git diff --check
+```
+
+`UILifecycleService.editor_board_zoom_presentation()` now owns the pure zoom label and zoom action button text/disabled plans. `_refresh_editor_board_zoom_ui()` consumes that plan through `_apply_editor_control_plan()` instead of directly mutating the zoom label and buttons.
+
 Remaining items after this batch:
 
 - Continue editor UI extraction with `_build_editor_ui` and the remaining action presentation/control-mutation sections of `_apply_editor_panel_visibility`, then continue `_resolve_attack` and `_refresh_editor_visual_views` extraction.
