@@ -37150,6 +37150,37 @@ func _prepare_attack_activation(attacker, event: Dictionary) -> bool:
 	return true
 
 
+func _prepare_attack_projectile_impact(attacker, event: Dictionary) -> Dictionary:
+	if _is_true_bullet_event(event):
+		_queue_true_bullet_lock(attacker, event)
+		return {"stop": true, "first_projectile_impact": {}}
+	if _is_chemical_projectile_event(event):
+		_prepare_chemical_projectile_event(event)
+		if not bool(event.get("chemical_projectile_ready", false)):
+			_queue_chemical_projectile(attacker, event)
+			return {"stop": true, "first_projectile_impact": {}}
+		if _chemical_firework_event(event) and not bool(event.get("chemical_firework_expanded", false)):
+			_resolve_chemical_firework(attacker, event)
+			return {"stop": true, "first_projectile_impact": {}}
+	if _is_missile_projectile_event(event):
+		_queue_missile_projectile(attacker, event)
+		return {"stop": true, "first_projectile_impact": {}}
+	var first_projectile_impact: Dictionary = {}
+	if bool(event.get("projectile", false)):
+		_apply_weapon_recoil_from_momentum(attacker, event)
+		_apply_projectile_reflection(attacker, event)
+		if _projectile_consumes_on_first_hit(event):
+			first_projectile_impact = _first_projectile_impact(attacker, event)
+			if not first_projectile_impact.is_empty():
+				event["projectile_impact_position"] = first_projectile_impact.get("position", Vector2(attacker.ring_pos, attacker.lane))
+				var impact_target = first_projectile_impact.get("target", null)
+				if impact_target != null and is_instance_valid(impact_target):
+					event["projectile_impact_target_id"] = int(impact_target.get_instance_id())
+	if bool(event.get("projectile", false)) and not bool(event.get("projectile_trace_spawned", false)):
+		_spawn_projectile_trace(attacker, event)
+	return {"stop": false, "first_projectile_impact": first_projectile_impact}
+
+
 func _resolve_attack(attacker, event: Dictionary) -> void:
 	var entry_intent := _battle_hit_resolution_service().attack_entry_intent({
 		"attacker_live": _is_live_unit(attacker),
@@ -37202,33 +37233,10 @@ func _resolve_attack(attacker, event: Dictionary) -> void:
 	event = _battle_hit_resolution_service().apply_event_patch(event, event_patch)
 	if _execute_projectile_preflight_intent(attacker, event, preflight):
 		return
-	if _is_true_bullet_event(event):
-		_queue_true_bullet_lock(attacker, event)
+	var projectile_impact_preparation := _prepare_attack_projectile_impact(attacker, event)
+	if bool(projectile_impact_preparation.get("stop", false)):
 		return
-	if _is_chemical_projectile_event(event):
-		_prepare_chemical_projectile_event(event)
-		if not bool(event.get("chemical_projectile_ready", false)):
-			_queue_chemical_projectile(attacker, event)
-			return
-		if _chemical_firework_event(event) and not bool(event.get("chemical_firework_expanded", false)):
-			_resolve_chemical_firework(attacker, event)
-			return
-	if _is_missile_projectile_event(event):
-		_queue_missile_projectile(attacker, event)
-		return
-	var first_projectile_impact := {}
-	if bool(event.get("projectile", false)):
-		_apply_weapon_recoil_from_momentum(attacker, event)
-		_apply_projectile_reflection(attacker, event)
-		if _projectile_consumes_on_first_hit(event):
-			first_projectile_impact = _first_projectile_impact(attacker, event)
-			if not first_projectile_impact.is_empty():
-				event["projectile_impact_position"] = first_projectile_impact.get("position", Vector2(attacker.ring_pos, attacker.lane))
-				var impact_target = first_projectile_impact.get("target", null)
-				if impact_target != null and is_instance_valid(impact_target):
-					event["projectile_impact_target_id"] = int(impact_target.get_instance_id())
-	if bool(event.get("projectile", false)) and not bool(event.get("projectile_trace_spawned", false)):
-		_spawn_projectile_trace(attacker, event)
+	var first_projectile_impact: Dictionary = Dictionary(projectile_impact_preparation.get("first_projectile_impact", {}))
 
 	var killed_units: Array = []
 	for target in _enemy_units(int(attacker.owner_id)):

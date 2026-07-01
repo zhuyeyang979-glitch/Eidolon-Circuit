@@ -2043,6 +2043,29 @@ GREEN: BATTLE_ATTACK_HEAVY_REPLAY_DESYNC_PROBE ok
 
 `_prepare_attack_activation()` now owns compatibility projectile-field clearing, direct-runtime early completion, projectile aim pose, signal metadata, ammo consumption, shot validation sampling, attack-executed marking, and unlocked blind-direction perturbation. `_resolve_attack()` consumes one continue/stop gate after missile-lock preparation and before pure projectile preflight planning. The extraction contract rejects direct ammo/signal/blind activation in `_resolve_attack()` and requires the helper's original side-effect ordering and return paths.
 
+Follow-up attack projectile-impact preparation extraction:
+
+```text
+RED: battle_hit_resolution_service_contract_probe failed because _resolve_attack still routed compatibility projectiles and prepared first-impact metadata inline
+GREEN: BATTLE_HIT_RESOLUTION_SERVICE_CONTRACT_PROBE ok
+GREEN: Godot --check-only --script res://scripts/main.gd --quit-after 1
+GREEN: BATTLE_PROJECTILE_LIFECYCLE_SERVICE_CONTRACT_PROBE ok
+GREEN: PROJECTILE_RUNTIME_SERVICE_CONTRACT_PROBE ok
+GREEN: gpu_projectile_first_obstruction_probe ok first=1.100 second=2.100
+GREEN: MAP_OCCLUSION_PROJECTILE_INTEGRATION_PROBE ok
+GREEN: PROJECTILE_TRACE_AIM_LINE_SAME_ORIGIN_PROBE ok origin=(764.0616, 317.7231)
+GREEN: PROJECTILE_TRACE_NO_REWRAP_LANE_FLIP_PROBE ok
+GREEN: CHEMICAL_SPRAYER_FIRST_CONTACT_PROBE ok blocker=140->129 rear=140->140
+GREEN: MISSILE_LOCK_RUNTIME_FIRE_PROBE ok
+GREEN: LASER_BEAM_RUNTIME_FIRE_PROBE ok ammo=7->6 target_hp=100.0
+GREEN: HARDWARE_FAULT_TRUE_BULLET_QUEUE_DEPENDENCY_PROBE ok
+GREEN: LOCAL_BATTLE_REPLAY_CONSISTENCY_PROBE ok
+GREEN: BATTLE_ATTACK_HEAVY_REPLAY_DESYNC_PROBE checkpoints=6 desync_step=360
+GREEN: BATTLE_ATTACK_HEAVY_REPLAY_DESYNC_PROBE ok
+```
+
+`_prepare_attack_projectile_impact()` now owns the compatibility true-bullet, chemical-projectile, chemical-firework, and missile routing gates, followed by projectile recoil/reflection, first-obstruction impact metadata, and trace spawning for attacks that continue synchronously. `_resolve_attack()` consumes only the returned stop flag and first-impact dictionary before entering target resolution. The extraction contract rejects renewed inline projectile-impact preparation while requiring the original compatibility-route and first-contact ordering.
+
 Remaining items after this batch:
 
 - Continue editor UI extraction with `_build_editor_ui` and the remaining action presentation/control-mutation sections of `_apply_editor_panel_visibility`, then continue `_resolve_attack` and `_refresh_editor_visual_views` extraction.

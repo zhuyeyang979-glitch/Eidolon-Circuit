@@ -108,6 +108,10 @@ func _init() -> void:
 		"attacker.set_meta(\"projectile_signal\"",
 		"_consume_ammo_for_event(attacker, event)",
 		"var attacker_blind := _unit_blind_strength(attacker)",
+		"_apply_weapon_recoil_from_momentum(attacker, event)",
+		"first_projectile_impact = _first_projectile_impact(attacker, event)",
+		"event[\"projectile_impact_position\"] =",
+		"_spawn_projectile_trace(attacker, event)",
 		"for raw_intent in post_hit_intents:",
 		"match String(post_intent.get(\"action\", \"\"))",
 	]:
@@ -207,6 +211,35 @@ func _init() -> void:
 	]:
 		if attack_activation_body.find(token) < 0:
 			_fail("_prepare_attack_activation missing token: %s" % token)
+			return
+	if resolve_body.count("_prepare_attack_projectile_impact(attacker, event)") != 1:
+		_fail("_resolve_attack should prepare projectile impact through one helper.")
+		return
+	var projectile_impact_body := _function_body(main_source, "func _prepare_attack_projectile_impact")
+	if projectile_impact_body.is_empty():
+		_fail("Unable to locate _prepare_attack_projectile_impact body.")
+		return
+	for token in [
+		"_is_true_bullet_event",
+		"_queue_true_bullet_lock",
+		"_is_chemical_projectile_event",
+		"_prepare_chemical_projectile_event",
+		"_queue_chemical_projectile",
+		"_resolve_chemical_firework",
+		"_is_missile_projectile_event",
+		"_queue_missile_projectile",
+		"_apply_weapon_recoil_from_momentum",
+		"_apply_projectile_reflection",
+		"_projectile_consumes_on_first_hit",
+		"_first_projectile_impact",
+		"projectile_impact_position",
+		"projectile_impact_target_id",
+		"_spawn_projectile_trace",
+		"\"stop\"",
+		"\"first_projectile_impact\"",
+	]:
+		if projectile_impact_body.find(token) < 0:
+			_fail("_prepare_attack_projectile_impact missing token: %s" % token)
 			return
 	var post_hit_body := _function_body(main_source, "func _execute_post_hit_intents")
 	if post_hit_body.is_empty():
