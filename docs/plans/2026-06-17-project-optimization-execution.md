@@ -1284,6 +1284,26 @@ GREEN: git diff --check
 
 `UILifecycleService.editor_save_unit_dialog_build_specs()` now owns pure identity/layout/action specs for the save-unit dialog panel, title, name edit, role label, role buttons, and save/cancel action buttons. `_build_editor_ui()` consumes those specs while keeping placeholder localization, role-name localization, concrete control construction, signal wiring, and save-unit references local. `_build_editor_ui()` is now 705 lines, and the extraction probe rejects old inline save-unit panel/title/role/action layout formulas.
 
+Follow-up editor orientation popup build specs extraction:
+
+```text
+RED: main_file_extraction_contract_probe failed on missing UILifecycleService.editor_orientation_popup_build_specs delegation
+RED: lifecycle_services_contract_probe failed on missing editor_orientation_popup_build_specs service API
+GREEN: MAIN_FILE_EXTRACTION_CONTRACT_PROBE ok services=9
+GREEN: LIFECYCLE_SERVICES_CONTRACT_PROBE ok
+GREEN: Godot --check-only --script res://scripts/main.gd --quit-after 1
+GREEN: Godot --check-only --script res://scripts/services/ui_lifecycle_service.gd --quit-after 1
+GREEN: SCYTHE_INSTALL_ORIENTATION_UI_PROBE ok node=0
+GREEN: SCYTHE_MAGNETIC_LINK_ORIENTATION_POPUP_PROBE ok
+GREEN: SCYTHE_MANUAL_LINK_ORIENTATION_POPUP_PROBE ok
+GREEN: SCYTHE_CATALOG_DROP_LINK_ORIENTATION_POPUP_PROBE ok
+GREEN: MODULE_BINDING_KEY_BUTTONS_TOP_LAYER_PROBE ok
+GREEN: jq empty tools/probe_manifest.json
+GREEN: git diff --check
+```
+
+`UILifecycleService.editor_orientation_popup_build_specs()` now owns pure identity/layout/z-index specs for the side-mount orientation popup panel, label, and left/right/cancel buttons. `_build_editor_ui()` consumes those specs while keeping concrete control construction, localized runtime text refresh, signal wiring, and orientation-popup references local. `_build_editor_ui()` is now 704 lines, and the extraction probe rejects old inline side-mount popup panel/label/button layout formulas.
+
 Remaining items after this batch:
 
 - Continue editor UI extraction with `_build_editor_ui` and the remaining action presentation/control-mutation sections of `_apply_editor_panel_visibility`, then continue `_resolve_attack` and `_refresh_editor_visual_views` extraction.

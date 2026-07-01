@@ -555,6 +555,40 @@ func _init() -> void:
 		return
 	_assert_vector(third_save_unit_role_button_build_spec, "position", Vector2(314.0, 114.0), "save-unit role button build spec")
 	_assert_vector(save_as_action_button_build_spec, "position", Vector2(168.0, 170.0), "save-unit action button build spec")
+	if not ui_lifecycle_source.contains("static func editor_orientation_popup_build_specs("):
+		_fail("UILifecycleService should expose editor orientation popup build specs.")
+		return
+	var orientation_popup_build_specs: Dictionary = ui_lifecycle_service.call("editor_orientation_popup_build_specs")
+	var orientation_panel_build_spec: Dictionary = Dictionary(orientation_popup_build_specs.get("panel", {}))
+	var orientation_label_build_spec: Dictionary = Dictionary(orientation_popup_build_specs.get("label", {}))
+	var orientation_button_build_specs: Array = Array(orientation_popup_build_specs.get("buttons", []))
+	if String(orientation_panel_build_spec.get("name", "")) != "ScytheSideMountChoicePopup" or String(orientation_label_build_spec.get("name", "")) != "ScytheSideMountChoiceLabel":
+		_fail("UILifecycleService orientation popup panel/label identity failed.")
+		return
+	if orientation_button_build_specs.size() != 3:
+		_fail("UILifecycleService orientation popup button count failed.")
+		return
+	var left_orientation_button_build_spec: Dictionary = Dictionary(orientation_button_build_specs[0])
+	var right_orientation_button_build_spec: Dictionary = Dictionary(orientation_button_build_specs[1])
+	var cancel_orientation_button_build_spec: Dictionary = Dictionary(orientation_button_build_specs[2])
+	if String(left_orientation_button_build_spec.get("key", "")) != "left" or String(left_orientation_button_build_spec.get("name", "")) != "ScytheSideMountLeftButton":
+		_fail("UILifecycleService orientation popup left button identity failed.")
+		return
+	if String(right_orientation_button_build_spec.get("key", "")) != "right" or String(right_orientation_button_build_spec.get("name", "")) != "ScytheSideMountRightButton":
+		_fail("UILifecycleService orientation popup right button identity failed.")
+		return
+	if String(cancel_orientation_button_build_spec.get("key", "")) != "cancel" or String(cancel_orientation_button_build_spec.get("name", "")) != "ScytheSideMountLaterButton":
+		_fail("UILifecycleService orientation popup cancel button identity failed.")
+		return
+	if int(orientation_panel_build_spec.get("z_index", -1)) != 272:
+		_fail("UILifecycleService orientation popup z-index failed.")
+		return
+	_assert_vector(orientation_panel_build_spec, "size", Vector2(256.0, 86.0), "orientation popup panel build spec")
+	_assert_vector(orientation_label_build_spec, "position", Vector2(10.0, 6.0), "orientation popup label build spec")
+	_assert_vector(orientation_label_build_spec, "size", Vector2(236.0, 28.0), "orientation popup label build spec")
+	_assert_vector(left_orientation_button_build_spec, "position", Vector2(10.0, 42.0), "orientation popup button build spec")
+	_assert_vector(right_orientation_button_build_spec, "position", Vector2(102.0, 42.0), "orientation popup button build spec")
+	_assert_vector(cancel_orientation_button_build_spec, "size", Vector2(52.0, 28.0), "orientation popup button build spec")
 	Dictionary(Array(build_specs.get("canvas_tools", []))[0])["key"] = "mutated"
 	var fresh_build_specs: Dictionary = UILifecycleService.editor_action_build_specs()
 	if String(Dictionary(Array(fresh_build_specs.get("canvas_tools", []))[0]).get("key", "")) != "blank_canvas":

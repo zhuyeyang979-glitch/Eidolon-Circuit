@@ -596,6 +596,19 @@ static func editor_save_unit_dialog_build_specs(role_order: Array) -> Dictionary
 	}
 
 
+static func editor_orientation_popup_build_specs() -> Dictionary:
+	var buttons := [
+		{"key": "left", "name": "ScytheSideMountLeftButton", "text": "左侧挂刃", "position": Vector2(10.0, 42.0), "size": Vector2(86.0, 28.0)},
+		{"key": "right", "name": "ScytheSideMountRightButton", "text": "右侧挂刃", "position": Vector2(102.0, 42.0), "size": Vector2(86.0, 28.0)},
+		{"key": "cancel", "name": "ScytheSideMountLaterButton", "text": "稍后", "position": Vector2(194.0, 42.0), "size": Vector2(52.0, 28.0)},
+	]
+	return {
+		"panel": {"name": "ScytheSideMountChoicePopup", "size": Vector2(256.0, 86.0), "z_index": 272},
+		"label": {"name": "ScytheSideMountChoiceLabel", "text": "", "position": Vector2(10.0, 6.0), "size": Vector2(236.0, 28.0)},
+		"buttons": buttons,
+	}
+
+
 static func editor_panel_role_chrome_presentation(mode: String, active_role_key: String, parts_visible: bool, panel_keys: Array, role_keys: Array, role_order: Array, role_short_labels: Dictionary, zh: bool) -> Dictionary:
 	var panel_texts := {"load": "单位库", "parts": "零件库"} if zh else {"load": "UNITS", "parts": "PARTS"}
 	var panel_buttons := {}

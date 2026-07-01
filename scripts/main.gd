@@ -47475,40 +47475,39 @@ func _build_editor_ui() -> void:
 	editor_section_labels["board"] = _make_label(root, "BoardTitle", "", Vector2.ZERO, Vector2.ZERO, 1, Color.TRANSPARENT, HORIZONTAL_ALIGNMENT_LEFT)
 	editor_section_labels["board"].visible = false
 	editor_board_hint_label = _make_label(root, "BoardHint", "", Vector2(296.0, 72.0), Vector2(620.0, 18.0), 10, Color(1.0, 0.9, 0.45, 1.0), HORIZONTAL_ALIGNMENT_RIGHT)
+	var orientation_popup_build_specs := UILifecycleService.editor_orientation_popup_build_specs()
+	var orientation_popup_panel_build_spec := Dictionary(orientation_popup_build_specs.get("panel", {}))
 	editor_orientation_popup_panel = ColorRect.new()
-	editor_orientation_popup_panel.name = "ScytheSideMountChoicePopup"
+	editor_orientation_popup_panel.name = String(orientation_popup_panel_build_spec.get("name", "ScytheSideMountChoicePopup"))
 	editor_orientation_popup_panel.color = Color(0.015, 0.025, 0.038, 0.9)
-	editor_orientation_popup_panel.size = Vector2(256.0, 86.0)
+	editor_orientation_popup_panel.size = orientation_popup_panel_build_spec.get("size", Vector2.ZERO)
 	editor_orientation_popup_panel.visible = false
 	editor_orientation_popup_panel.mouse_filter = Control.MOUSE_FILTER_STOP
-	editor_orientation_popup_panel.z_index = 272
+	editor_orientation_popup_panel.z_index = int(orientation_popup_panel_build_spec.get("z_index", 272))
 	root.add_child(editor_orientation_popup_panel)
-	editor_orientation_popup_label = _make_label(editor_orientation_popup_panel, "ScytheSideMountChoiceLabel", "", Vector2(10.0, 6.0), Vector2(236.0, 28.0), 10, Color(0.82, 1.0, 0.92, 1.0), HORIZONTAL_ALIGNMENT_CENTER)
+	var orientation_popup_label_build_spec := Dictionary(orientation_popup_build_specs.get("label", {}))
+	editor_orientation_popup_label = _make_label(editor_orientation_popup_panel, String(orientation_popup_label_build_spec.get("name", "ScytheSideMountChoiceLabel")), String(orientation_popup_label_build_spec.get("text", "")), orientation_popup_label_build_spec.get("position", Vector2.ZERO), orientation_popup_label_build_spec.get("size", Vector2.ZERO), 10, Color(0.82, 1.0, 0.92, 1.0), HORIZONTAL_ALIGNMENT_CENTER)
 	editor_orientation_popup_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	editor_orientation_popup_left_button = Button.new()
-	editor_orientation_popup_left_button.name = "ScytheSideMountLeftButton"
-	editor_orientation_popup_left_button.text = "左侧挂刃"
-	editor_orientation_popup_left_button.position = Vector2(10.0, 42.0)
-	editor_orientation_popup_left_button.size = Vector2(86.0, 28.0)
-	editor_orientation_popup_left_button.focus_mode = Control.FOCUS_NONE
-	editor_orientation_popup_left_button.pressed.connect(_set_pending_visual_handedness.bind("left"))
-	editor_orientation_popup_panel.add_child(editor_orientation_popup_left_button)
-	editor_orientation_popup_right_button = Button.new()
-	editor_orientation_popup_right_button.name = "ScytheSideMountRightButton"
-	editor_orientation_popup_right_button.text = "右侧挂刃"
-	editor_orientation_popup_right_button.position = Vector2(102.0, 42.0)
-	editor_orientation_popup_right_button.size = Vector2(86.0, 28.0)
-	editor_orientation_popup_right_button.focus_mode = Control.FOCUS_NONE
-	editor_orientation_popup_right_button.pressed.connect(_set_pending_visual_handedness.bind("right"))
-	editor_orientation_popup_panel.add_child(editor_orientation_popup_right_button)
-	editor_orientation_popup_cancel_button = Button.new()
-	editor_orientation_popup_cancel_button.name = "ScytheSideMountLaterButton"
-	editor_orientation_popup_cancel_button.text = "稍后"
-	editor_orientation_popup_cancel_button.position = Vector2(194.0, 42.0)
-	editor_orientation_popup_cancel_button.size = Vector2(52.0, 28.0)
-	editor_orientation_popup_cancel_button.focus_mode = Control.FOCUS_NONE
-	editor_orientation_popup_cancel_button.pressed.connect(_cancel_visual_handedness_choice)
-	editor_orientation_popup_panel.add_child(editor_orientation_popup_cancel_button)
+	var orientation_popup_button_build_specs: Array = Array(orientation_popup_build_specs.get("buttons", []))
+	for raw_orientation_popup_button_build_spec in orientation_popup_button_build_specs:
+		var orientation_popup_button_build_spec := Dictionary(raw_orientation_popup_button_build_spec)
+		var orientation_button_key := String(orientation_popup_button_build_spec.get("key", ""))
+		var orientation_button := Button.new()
+		orientation_button.name = String(orientation_popup_button_build_spec.get("name", ""))
+		orientation_button.text = String(orientation_popup_button_build_spec.get("text", ""))
+		orientation_button.position = orientation_popup_button_build_spec.get("position", Vector2.ZERO)
+		orientation_button.size = orientation_popup_button_build_spec.get("size", Vector2.ZERO)
+		orientation_button.focus_mode = Control.FOCUS_NONE
+		if orientation_button_key == "left":
+			orientation_button.pressed.connect(_set_pending_visual_handedness.bind("left"))
+			editor_orientation_popup_left_button = orientation_button
+		elif orientation_button_key == "right":
+			orientation_button.pressed.connect(_set_pending_visual_handedness.bind("right"))
+			editor_orientation_popup_right_button = orientation_button
+		elif orientation_button_key == "cancel":
+			orientation_button.pressed.connect(_cancel_visual_handedness_choice)
+			editor_orientation_popup_cancel_button = orientation_button
+		editor_orientation_popup_panel.add_child(orientation_button)
 	editor_engine_allocation_button = Button.new()
 	editor_engine_allocation_button.name = "DashboardPowerAllocationButton"
 	editor_engine_allocation_button.text = "动力预算"
