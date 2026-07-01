@@ -629,6 +629,17 @@ static func editor_canvas_zoom_chrome_build_specs() -> Dictionary:
 	}
 
 
+static func editor_auxiliary_chrome_build_specs() -> Dictionary:
+	return {
+		"assembly_guide": {"name": "AssemblyGuideLabel", "text": "", "position": Vector2(936.0, 118.0), "size": Vector2(160.0, 22.0)},
+		"legality_status": {"name": "LegalityStatus", "text": "", "position": Vector2(18.0, 616.0), "size": Vector2(244.0, 32.0)},
+		"assembly_tutorial_panel": {"name": "AssemblyTutorialPanel", "position": Vector2(194.0, 102.0), "size": Vector2(706.0, 66.0), "z_index": 340},
+		"assembly_tutorial_label": {"name": "AssemblyTutorialLabel", "text": "", "position": Vector2(320.0, 108.0), "size": Vector2(568.0, 60.0), "z_index": 341},
+		"perf_overlay": {"name": "TeamEditPerfOverlay", "text": "", "position": Vector2(42.0, 86.0), "size": Vector2(330.0, 180.0), "z_index": 330},
+		"save_feedback": {"name": "SaveUnitFeedback", "text": "", "position": Vector2(270.0, 654.0), "size": Vector2(622.0, 26.0), "z_index": 300},
+	}
+
+
 static func editor_panel_role_chrome_presentation(mode: String, active_role_key: String, parts_visible: bool, panel_keys: Array, role_keys: Array, role_order: Array, role_short_labels: Dictionary, zh: bool) -> Dictionary:
 	var panel_texts := {"load": "单位库", "parts": "零件库"} if zh else {"load": "UNITS", "parts": "PARTS"}
 	var panel_buttons := {}

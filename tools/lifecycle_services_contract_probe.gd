@@ -643,6 +643,41 @@ func _init() -> void:
 	_assert_vector(board_zoom_title_build_spec, "position", Vector2.ZERO, "board zoom title build spec")
 	_assert_vector(board_zoom_value_build_spec, "position", Vector2(72.0, 656.0), "board zoom value build spec")
 	_assert_vector(board_zoom_value_build_spec, "size", Vector2(54.0, 18.0), "board zoom value build spec")
+	if not ui_lifecycle_source.contains("static func editor_auxiliary_chrome_build_specs("):
+		_fail("UILifecycleService should expose editor auxiliary chrome build specs.")
+		return
+	var auxiliary_chrome_build_specs: Dictionary = ui_lifecycle_service.call("editor_auxiliary_chrome_build_specs")
+	var assembly_guide_build_spec: Dictionary = Dictionary(auxiliary_chrome_build_specs.get("assembly_guide", {}))
+	var legality_status_build_spec: Dictionary = Dictionary(auxiliary_chrome_build_specs.get("legality_status", {}))
+	var tutorial_panel_build_spec: Dictionary = Dictionary(auxiliary_chrome_build_specs.get("assembly_tutorial_panel", {}))
+	var tutorial_label_build_spec: Dictionary = Dictionary(auxiliary_chrome_build_specs.get("assembly_tutorial_label", {}))
+	var perf_overlay_build_spec: Dictionary = Dictionary(auxiliary_chrome_build_specs.get("perf_overlay", {}))
+	var save_feedback_build_spec: Dictionary = Dictionary(auxiliary_chrome_build_specs.get("save_feedback", {}))
+	if String(assembly_guide_build_spec.get("name", "")) != "AssemblyGuideLabel" or String(legality_status_build_spec.get("name", "")) != "LegalityStatus":
+		_fail("UILifecycleService auxiliary guide/status identity failed.")
+		return
+	if String(tutorial_panel_build_spec.get("name", "")) != "AssemblyTutorialPanel" or String(tutorial_label_build_spec.get("name", "")) != "AssemblyTutorialLabel":
+		_fail("UILifecycleService auxiliary tutorial identity failed.")
+		return
+	if String(perf_overlay_build_spec.get("name", "")) != "TeamEditPerfOverlay" or String(save_feedback_build_spec.get("name", "")) != "SaveUnitFeedback":
+		_fail("UILifecycleService auxiliary overlay/feedback identity failed.")
+		return
+	if int(tutorial_panel_build_spec.get("z_index", -1)) != 340 or int(tutorial_label_build_spec.get("z_index", -1)) != 341:
+		_fail("UILifecycleService auxiliary tutorial z-index failed.")
+		return
+	if int(perf_overlay_build_spec.get("z_index", -1)) != 330 or int(save_feedback_build_spec.get("z_index", -1)) != 300:
+		_fail("UILifecycleService auxiliary overlay/feedback z-index failed.")
+		return
+	_assert_vector(assembly_guide_build_spec, "position", Vector2(936.0, 118.0), "assembly guide build spec")
+	_assert_vector(assembly_guide_build_spec, "size", Vector2(160.0, 22.0), "assembly guide build spec")
+	_assert_vector(legality_status_build_spec, "position", Vector2(18.0, 616.0), "legality status build spec")
+	_assert_vector(legality_status_build_spec, "size", Vector2(244.0, 32.0), "legality status build spec")
+	_assert_vector(tutorial_panel_build_spec, "position", Vector2(194.0, 102.0), "assembly tutorial panel build spec")
+	_assert_vector(tutorial_panel_build_spec, "size", Vector2(706.0, 66.0), "assembly tutorial panel build spec")
+	_assert_vector(tutorial_label_build_spec, "position", Vector2(320.0, 108.0), "assembly tutorial label build spec")
+	_assert_vector(tutorial_label_build_spec, "size", Vector2(568.0, 60.0), "assembly tutorial label build spec")
+	_assert_vector(perf_overlay_build_spec, "position", Vector2(42.0, 86.0), "perf overlay build spec")
+	_assert_vector(save_feedback_build_spec, "size", Vector2(622.0, 26.0), "save feedback build spec")
 	Dictionary(Array(build_specs.get("canvas_tools", []))[0])["key"] = "mutated"
 	var fresh_build_specs: Dictionary = UILifecycleService.editor_action_build_specs()
 	if String(Dictionary(Array(fresh_build_specs.get("canvas_tools", []))[0]).get("key", "")) != "blank_canvas":

@@ -47105,6 +47105,7 @@ func _build_editor_ui() -> void:
 	_add_token_ui_rect(root, "EditorCanvasPanel", "editor_canvas_panel", Color(0.01, 0.018, 0.026, 0.46))
 	_add_token_ui_rect(root, "EditorDrawerPanel", "editor_drawer_panel", Color(0.012, 0.022, 0.03, 0.72))
 	var editor_action_build_specs := UILifecycleService.editor_action_build_specs()
+	var auxiliary_chrome_build_specs := UILifecycleService.editor_auxiliary_chrome_build_specs()
 	var panel_specs: Array = Array(editor_action_build_specs.get("panel_buttons", []))
 	for i in range(panel_specs.size()):
 		var panel_spec := Dictionary(panel_specs[i])
@@ -47116,7 +47117,8 @@ func _build_editor_ui() -> void:
 		panel_button.pressed.connect(_editor_action.bind("panel_%s" % String(panel_spec.get("key", ""))))
 		root.add_child(panel_button)
 		editor_panel_buttons[String(panel_spec.get("key", ""))] = panel_button
-	editor_assembly_guide_label = _make_label(root, "AssemblyGuideLabel", "", Vector2(936.0, 118.0), Vector2(160.0, 22.0), 11, Color(1.0, 0.88, 0.30, 1.0), HORIZONTAL_ALIGNMENT_LEFT)
+	var assembly_guide_build_spec := Dictionary(auxiliary_chrome_build_specs.get("assembly_guide", {}))
+	editor_assembly_guide_label = _make_label(root, String(assembly_guide_build_spec.get("name", "AssemblyGuideLabel")), String(assembly_guide_build_spec.get("text", "")), assembly_guide_build_spec.get("position", Vector2.ZERO), assembly_guide_build_spec.get("size", Vector2.ZERO), 11, Color(1.0, 0.88, 0.30, 1.0), HORIZONTAL_ALIGNMENT_LEFT)
 	editor_assembly_guide_label.autowrap_mode = TextServer.AUTOWRAP_OFF
 	var guide_actions: Array = Array(editor_action_build_specs.get("assembly_guide_actions", []))
 	for spec in guide_actions:
@@ -47244,7 +47246,8 @@ func _build_editor_ui() -> void:
 	var info_detail_build_spec := Dictionary(info_surface_build_specs.get("detail", {}))
 	editor_detail_label = _make_label(root, String(info_detail_build_spec.get("name", "Detail")), "", info_detail_build_spec.get("position", Vector2.ZERO), info_detail_build_spec.get("size", Vector2(270.0, 72.0)), 10, Color(0.88, 0.92, 0.96, 1.0), HORIZONTAL_ALIGNMENT_LEFT)
 	editor_detail_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	editor_legality_status_label = _make_label(root, "LegalityStatus", "", Vector2(18.0, 616.0), Vector2(244.0, 32.0), 10, Color(0.42, 1.0, 0.62, 1.0), HORIZONTAL_ALIGNMENT_LEFT)
+	var legality_status_build_spec := Dictionary(auxiliary_chrome_build_specs.get("legality_status", {}))
+	editor_legality_status_label = _make_label(root, String(legality_status_build_spec.get("name", "LegalityStatus")), String(legality_status_build_spec.get("text", "")), legality_status_build_spec.get("position", Vector2.ZERO), legality_status_build_spec.get("size", Vector2.ZERO), 10, Color(0.42, 1.0, 0.62, 1.0), HORIZONTAL_ALIGNMENT_LEFT)
 	editor_legality_status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	var info_battle_preview_build_spec := Dictionary(info_surface_build_specs.get("battle_preview", {}))
 	editor_battle_preview_view = BattlePartPreviewView.new()
@@ -47281,12 +47284,14 @@ func _build_editor_ui() -> void:
 	assembly_board_view.gui_input.connect(_handle_editor_board_input)
 	assembly_board_view.part_dropped.connect(_drop_catalog_part_on_board)
 	root.add_child(assembly_board_view)
-	editor_assembly_tutorial_panel = _add_ui_rect(root, "AssemblyTutorialPanel", Vector2(194.0, 102.0), Vector2(706.0, 66.0), Color(0.006, 0.014, 0.021, 0.78))
-	editor_assembly_tutorial_panel.z_index = 340
-	editor_assembly_tutorial_label = _make_label(root, "AssemblyTutorialLabel", "", Vector2(320.0, 108.0), Vector2(568.0, 60.0), 10, Color(0.86, 0.94, 1.0, 1.0), HORIZONTAL_ALIGNMENT_LEFT)
+	var assembly_tutorial_panel_build_spec := Dictionary(auxiliary_chrome_build_specs.get("assembly_tutorial_panel", {}))
+	editor_assembly_tutorial_panel = _add_ui_rect(root, String(assembly_tutorial_panel_build_spec.get("name", "AssemblyTutorialPanel")), assembly_tutorial_panel_build_spec.get("position", Vector2.ZERO), assembly_tutorial_panel_build_spec.get("size", Vector2.ZERO), Color(0.006, 0.014, 0.021, 0.78))
+	editor_assembly_tutorial_panel.z_index = int(assembly_tutorial_panel_build_spec.get("z_index", 340))
+	var assembly_tutorial_label_build_spec := Dictionary(auxiliary_chrome_build_specs.get("assembly_tutorial_label", {}))
+	editor_assembly_tutorial_label = _make_label(root, String(assembly_tutorial_label_build_spec.get("name", "AssemblyTutorialLabel")), String(assembly_tutorial_label_build_spec.get("text", "")), assembly_tutorial_label_build_spec.get("position", Vector2.ZERO), assembly_tutorial_label_build_spec.get("size", Vector2.ZERO), 10, Color(0.86, 0.94, 1.0, 1.0), HORIZONTAL_ALIGNMENT_LEFT)
 	editor_assembly_tutorial_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	editor_assembly_tutorial_label.vertical_alignment = VERTICAL_ALIGNMENT_TOP
-	editor_assembly_tutorial_label.z_index = 341
+	editor_assembly_tutorial_label.z_index = int(assembly_tutorial_label_build_spec.get("z_index", 341))
 	editor_stats_rail_view = EditorStatsRailView.new()
 	editor_stats_rail_view.name = "EditorStatsRail"
 	editor_stats_rail_view.position = Vector2(18.0, 104.0)
@@ -47353,12 +47358,14 @@ func _build_editor_ui() -> void:
 	editor_drag_ghost_view.z_index = 250
 	editor_drag_ghost_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(editor_drag_ghost_view)
-	editor_perf_overlay_label = _make_label(root, "TeamEditPerfOverlay", "", Vector2(42.0, 86.0), Vector2(330.0, 180.0), 10, Color(0.62, 1.0, 0.84, 0.92), HORIZONTAL_ALIGNMENT_LEFT)
-	editor_perf_overlay_label.z_index = 330
+	var perf_overlay_build_spec := Dictionary(auxiliary_chrome_build_specs.get("perf_overlay", {}))
+	editor_perf_overlay_label = _make_label(root, String(perf_overlay_build_spec.get("name", "TeamEditPerfOverlay")), String(perf_overlay_build_spec.get("text", "")), perf_overlay_build_spec.get("position", Vector2.ZERO), perf_overlay_build_spec.get("size", Vector2.ZERO), 10, Color(0.62, 1.0, 0.84, 0.92), HORIZONTAL_ALIGNMENT_LEFT)
+	editor_perf_overlay_label.z_index = int(perf_overlay_build_spec.get("z_index", 330))
 	editor_perf_overlay_label.visible = false
 	editor_perf_overlay_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	editor_save_unit_feedback_label = _make_label(root, "SaveUnitFeedback", "", Vector2(270.0, 654.0), Vector2(622.0, 26.0), 11, Color(0.45, 1.0, 0.62, 1.0), HORIZONTAL_ALIGNMENT_CENTER)
-	editor_save_unit_feedback_label.z_index = 300
+	var save_feedback_build_spec := Dictionary(auxiliary_chrome_build_specs.get("save_feedback", {}))
+	editor_save_unit_feedback_label = _make_label(root, String(save_feedback_build_spec.get("name", "SaveUnitFeedback")), String(save_feedback_build_spec.get("text", "")), save_feedback_build_spec.get("position", Vector2.ZERO), save_feedback_build_spec.get("size", Vector2.ZERO), 11, Color(0.45, 1.0, 0.62, 1.0), HORIZONTAL_ALIGNMENT_CENTER)
+	editor_save_unit_feedback_label.z_index = int(save_feedback_build_spec.get("z_index", 300))
 	editor_save_unit_feedback_label.visible = false
 	_layout_editor_save_unit_feedback()
 	var save_unit_dialog_build_specs := UILifecycleService.editor_save_unit_dialog_build_specs(ROLE_ORDER)
