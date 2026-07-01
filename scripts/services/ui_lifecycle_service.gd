@@ -1733,3 +1733,26 @@ static func editor_action_presentation(action_key: String, action_state: Diction
 			plan["modulate"] = Color(0.84, 0.9, 0.94, 1.0)
 		plan["advance_unit_action_index"] = true
 	return plan
+
+
+static func editor_action_presentations(action_keys: Array, visibility_plan: Dictionary, state_context: Dictionary, presentation_context: Dictionary) -> Dictionary:
+	var plans := {}
+	var visible_unit_action_index := 0
+	for action_key_variant in action_keys:
+		var action_key := String(action_key_variant)
+		var action_state := editor_action_state(
+			action_key,
+			visibility_plan,
+			bool(state_context.get("barrier_screen_board", false)),
+			bool(state_context.get("orientation_choice_active", false)),
+			bool(state_context.get("selected_handedness_active", false)),
+			bool(state_context.get("sort_menu_open", false)),
+			bool(state_context.get("clipboard_busy", false)),
+			bool(state_context.get("has_selection", false)),
+			bool(state_context.get("has_topology_clipboard", false))
+		)
+		var action_plan := editor_action_presentation(action_key, action_state, visible_unit_action_index, presentation_context)
+		plans[action_key] = action_plan
+		if bool(action_plan.get("advance_unit_action_index", false)):
+			visible_unit_action_index += 1
+	return plans

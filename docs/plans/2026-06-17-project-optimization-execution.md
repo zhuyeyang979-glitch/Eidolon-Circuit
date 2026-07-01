@@ -1944,6 +1944,26 @@ GREEN: git diff --check
 
 `UILifecycleService.editor_save_unit_name_panel_presentation()` now owns the pure visible/hidden, position, size, z-index, and front-order plan for the save-unit name dialog panel. `_show_save_unit_name_dialog()`, `_hide_save_unit_name_dialog()`, and save-unit panel construction in `_build_editor_ui()` now apply that plan while keeping localized title/input/button text, focus selection, role-button state, and save/confirm behavior in `main.gd`.
 
+Follow-up editor action presentation batch extraction:
+
+```text
+RED: lifecycle_services_contract_probe failed on missing editor_action_presentations service API
+RED: main_file_extraction_contract_probe failed on missing batch action-presentation delegation
+GREEN: LIFECYCLE_SERVICES_CONTRACT_PROBE ok
+GREEN: MAIN_FILE_EXTRACTION_CONTRACT_PROBE ok services=9
+GREEN: Godot --check-only --script res://scripts/main.gd --quit-after 1
+GREEN: Godot --check-only --script res://scripts/services/ui_lifecycle_service.gd --quit-after 1
+GREEN: EDITOR_CONTROL_PLAN_ADAPTER_PROBE failed=false writes=16 noops=12
+GREEN: PART_LIBRARY_UI_PROBE groups=["torso", "limb", "terminal_weapon", "barrier_panel", "software_muscle", "software"] weapon=3 equipment=5 software=7 dashboard=40
+GREEN: UNIT_EDITOR_PAGINATION_LAYOUT_PROBE ok unit=1 page=0 catalog=1 load=0 feedback=[P: (270.0, 654.0), S: (622.0, 26.0)]
+GREEN: UNIT_EDITOR_FULLSCREEN_LAYOUT_PROBE ok board=(908.0, 548.0) dock=(726.0, 132.0)
+GREEN: UNIT_EDITOR_TEMPLATE_DRAWER_RUNTIME_PROBE ok selected=octopus barrier=BarrierTemplatepin_wall
+GREEN: UNIT_EDITOR_CLIPBOARD_PROBE ok
+GREEN: UNIT_EDITOR_NO_TEAM_ROLE_CONTROLS_PROBE ok
+```
+
+`UILifecycleService.editor_action_presentations()` now owns the full action-key iteration, per-action state derivation, presentation-plan construction, and visible unit-action index advancement. `_apply_editor_panel_visibility()` supplies pure state and localization context, then only looks up and applies each returned plan. The batch contract preserves unmanaged assembly-guide actions, normalized unit-management visibility, barrier-hidden canvas actions, and deterministic two-column unit-action ordering.
+
 Remaining items after this batch:
 
 - Continue editor UI extraction with `_build_editor_ui` and the remaining action presentation/control-mutation sections of `_apply_editor_panel_visibility`, then continue `_resolve_attack` and `_refresh_editor_visual_views` extraction.

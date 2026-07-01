@@ -144,6 +144,32 @@ func _init() -> void:
 	if bool(guide_plan.get("managed", true)):
 		_fail("UILifecycleService should leave assembly-guide action presentation unmanaged.")
 		return
+	var action_plans: Dictionary = UILifecycleService.editor_action_presentations(
+		["assembly_guide_prev", "load_unit", "duplicate", "copy_selection"],
+		barrier_visibility_plan,
+		{
+			"barrier_screen_board": true,
+			"orientation_choice_active": false,
+			"selected_handedness_active": false,
+			"sort_menu_open": false,
+			"clipboard_busy": false,
+			"has_selection": true,
+			"has_topology_clipboard": false,
+		},
+		{"zh": false, "load_mode": "unit", "unit_page_actions_enabled": false}
+	)
+	var batch_guide_plan: Dictionary = Dictionary(action_plans.get("assembly_guide_prev", {}))
+	var batch_unit_plan: Dictionary = Dictionary(action_plans.get("load_unit", {}))
+	var batch_duplicate_plan: Dictionary = Dictionary(action_plans.get("duplicate", {}))
+	var batch_copy_plan: Dictionary = Dictionary(action_plans.get("copy_selection", {}))
+	if bool(batch_guide_plan.get("managed", true)) or not bool(batch_unit_plan.get("visible", false)) or not bool(batch_duplicate_plan.get("visible", false)):
+		_fail("UILifecycleService action presentation batch should preserve unmanaged and visible action plans.")
+		return
+	_assert_vector(batch_unit_plan, "position", Vector2(936.0, 126.0), "batch first unit action presentation")
+	_assert_vector(batch_duplicate_plan, "position", Vector2(1072.0, 126.0), "batch second unit action presentation")
+	if bool(batch_copy_plan.get("visible", true)):
+		_fail("UILifecycleService action presentation batch should derive hidden canvas visibility from the barrier state.")
+		return
 	var assembly_lifecycle_service := UILifecycleService.new()
 	if not assembly_lifecycle_service.has_method("editor_assembly_guide_presentation"):
 		_fail("UILifecycleService should expose editor assembly-guide presentation planning.")

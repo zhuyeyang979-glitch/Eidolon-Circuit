@@ -49879,7 +49879,6 @@ func _apply_editor_panel_visibility(role_key: String, unit_bp: Dictionary) -> vo
 	var clipboard_busy := _unit_editor_clipboard_busy()
 	var has_selection := not editor_selected_topology_nodes.is_empty()
 	var has_topology_clipboard := not editor_topology_clipboard.is_empty() and String(editor_topology_clipboard.get("kind", "")) == "topology_nodes"
-	var visible_unit_action_index := 0
 	var action_presentation_context := {
 		"zh": _ui_is_zh(),
 		"load_mode": editor_load_mode,
@@ -49889,26 +49888,27 @@ func _apply_editor_panel_visibility(role_key: String, unit_bp: Dictionary) -> vo
 		"unit_page_actions_enabled": unit_page_actions_enabled,
 		"match_format_text": _match_format_short(),
 	}
+	var action_plans := UILifecycleService.editor_action_presentations(
+		editor_action_buttons.keys(),
+		visibility_plan,
+		{
+			"barrier_screen_board": barrier_screen_board,
+			"orientation_choice_active": orientation_choice_active,
+			"selected_handedness_active": selected_handedness_active,
+			"sort_menu_open": editor_sort_menu_open,
+			"clipboard_busy": clipboard_busy,
+			"has_selection": has_selection,
+			"has_topology_clipboard": has_topology_clipboard,
+		},
+		action_presentation_context
+	)
 	for action_key_variant in editor_action_buttons.keys():
 		var action_key := String(action_key_variant)
 		var action_button: Button = editor_action_buttons[action_key_variant]
-		var action_state := UILifecycleService.editor_action_state(
-			action_key,
-			visibility_plan,
-			barrier_screen_board,
-			orientation_choice_active,
-			selected_handedness_active,
-			editor_sort_menu_open,
-			clipboard_busy,
-			has_selection,
-			has_topology_clipboard
-		)
-		var action_presentation := UILifecycleService.editor_action_presentation(action_key, action_state, visible_unit_action_index, action_presentation_context)
+		var action_presentation := Dictionary(action_plans.get(action_key, {}))
 		if not bool(action_presentation.get("managed", true)):
 			continue
 		_apply_editor_control_plan(action_button, action_presentation, bool(action_presentation.get("manage_disabled", true)))
-		if bool(action_presentation.get("advance_unit_action_index", false)):
-			visible_unit_action_index += 1
 	var available_sort_keys := _current_editor_catalog_sort_keys()
 	var sort_names := EDITOR_SORT_KEY_NAMES_ZH if _ui_is_zh() else EDITOR_SORT_KEY_NAMES_EN
 	var sort_plan := UILifecycleService.editor_sort_controls_presentation(
