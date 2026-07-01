@@ -37,6 +37,10 @@ func _init() -> void:
 	if edge_state_block.is_empty():
 		_fail("Missing _editor_topology_edge_state_snapshot helper.")
 		return
+	var custom_cache_block := _function_block(source, "func _cache_editor_custom_board_snapshot(")
+	if custom_cache_block.is_empty():
+		_fail("Missing _cache_editor_custom_board_snapshot helper.")
+		return
 	if block.contains("topology.duplicate(true)"):
 		_fail("TeamEdit visual refresh still deep-copies full topology.")
 		return
@@ -49,6 +53,9 @@ func _init() -> void:
 	if not block.contains("_editor_topology_edge_state_snapshot(role_key, unit_bp, nodes, source_nodes_for_edges, source_edges_for_conflicts)"):
 		_fail("TeamEdit visual refresh should delegate topology edge-state snapshot building.")
 		return
+	if not block.contains("_cache_editor_custom_board_snapshot(snapshot, custom_board_cache_key, snapshot_build_start)"):
+		_fail("TeamEdit visual refresh should delegate custom board cache writes.")
+		return
 	for stale_fragment in [
 		"var source_nodes_raw",
 		"var source_edges_raw",
@@ -57,6 +64,12 @@ func _init() -> void:
 		"var endpoint_conflicts",
 		"var edge_states := {}",
 		"for edge in Array(topology.get(\"edges\", []))",
+		"editor_board_base_snapshot_cache =",
+		"editor_board_base_snapshot_cache_key =",
+		"editor_board_snapshot_cache =",
+		"editor_board_snapshot_cache_key =",
+		"editor_board_base_snapshot_rebuild_count +=",
+		"editor_board_snapshot_rebuild_count +=",
 		"terrain_preview_tiles_by_index",
 		"snapshot[\"barrier_columns\"]",
 		"snapshot[\"tile_%d\" % i]",
@@ -86,6 +99,20 @@ func _init() -> void:
 	]:
 		if not edge_state_block.contains(token):
 			_fail("Topology edge-state snapshot helper missing token: %s" % token)
+			return
+	for token in [
+		"editor_board_base_snapshot_cache",
+		"editor_board_base_snapshot_cache_key",
+		"editor_board_snapshot_cache",
+		"editor_board_snapshot_cache_key",
+		"editor_board_snapshot_build_usec",
+		"editor_board_base_snapshot_rebuild_count",
+		"editor_board_snapshot_rebuild_count",
+		"Time.get_ticks_usec()",
+		"duplicate(false)",
+	]:
+		if not custom_cache_block.contains(token):
+			_fail("Custom board cache helper missing token: %s" % token)
 			return
 	for token in [
 		"_barrier_terrain_editor_preview",

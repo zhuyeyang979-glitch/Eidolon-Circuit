@@ -53101,14 +53101,7 @@ func _refresh_editor_visual_views(precomputed_stats: Dictionary = {}, update_sid
 		snapshot["material_highlights"] = _topology_material_highlights_for_board(role_key, unit_bp, source_nodes_for_edges, source_edges_for_conflicts)
 		snapshot["nodes"] = nodes
 		snapshot["edge_states"] = edge_states
-		snapshot["revision_key"] = custom_board_cache_key
-		editor_board_base_snapshot_cache = snapshot.duplicate(false)
-		editor_board_base_snapshot_cache_key = custom_board_cache_key
-		editor_board_snapshot_cache = editor_board_base_snapshot_cache
-		editor_board_snapshot_cache_key = custom_board_cache_key
-		editor_board_snapshot_build_usec = Time.get_ticks_usec() - snapshot_build_start
-		editor_board_base_snapshot_rebuild_count += 1
-		editor_board_snapshot_rebuild_count += 1
+		snapshot = _cache_editor_custom_board_snapshot(snapshot, custom_board_cache_key, snapshot_build_start)
 		board_mode = "custom"
 	elif barrier_screen_board:
 		board_mode = "barrier"
@@ -53185,6 +53178,18 @@ func _editor_topology_edge_state_snapshot(role_key: String, unit_bp: Dictionary,
 		"nodes": nodes,
 		"edge_states": edge_states,
 	}
+
+
+func _cache_editor_custom_board_snapshot(snapshot: Dictionary, custom_board_cache_key: String, snapshot_build_start: int) -> Dictionary:
+	snapshot["revision_key"] = custom_board_cache_key
+	editor_board_base_snapshot_cache = snapshot.duplicate(false)
+	editor_board_base_snapshot_cache_key = custom_board_cache_key
+	editor_board_snapshot_cache = editor_board_base_snapshot_cache
+	editor_board_snapshot_cache_key = custom_board_cache_key
+	editor_board_snapshot_build_usec = Time.get_ticks_usec() - snapshot_build_start
+	editor_board_base_snapshot_rebuild_count += 1
+	editor_board_snapshot_rebuild_count += 1
+	return snapshot
 
 
 func _editor_barrier_screen_board_snapshot(role_key: String, unit_bp: Dictionary) -> Dictionary:
