@@ -448,6 +448,24 @@ func _init() -> void:
 	_assert_vector(fourth_sort_option_build_spec, "size", Vector2(82.0, 24.0), "sort option build spec")
 	_assert_vector(catalog_title_build_spec, "position", Vector2(936.0, 330.0), "catalog title build spec")
 	_assert_vector(catalog_page_build_spec, "position", Vector2(1110.0, 330.0), "catalog page build spec")
+	if not ui_lifecycle_source.contains("static func editor_body_part_button_build_specs("):
+		_fail("UILifecycleService should expose editor body part button build specs.")
+		return
+	var body_part_build_specs: Array = ui_lifecycle_service.call("editor_body_part_button_build_specs", ["left_claw", "right_claw", "front_left_leg"])
+	if body_part_build_specs.size() != 3:
+		_fail("UILifecycleService body part button build spec count failed.")
+		return
+	var first_body_part_build_spec: Dictionary = Dictionary(body_part_build_specs[0])
+	var third_body_part_build_spec: Dictionary = Dictionary(body_part_build_specs[2])
+	if String(first_body_part_build_spec.get("key", "")) != "left_claw" or String(first_body_part_build_spec.get("name", "")) != "EditorBodyPartleft_claw":
+		_fail("UILifecycleService body part button identity failed.")
+		return
+	if String(third_body_part_build_spec.get("key", "")) != "front_left_leg" or String(third_body_part_build_spec.get("name", "")) != "EditorBodyPartfront_left_leg":
+		_fail("UILifecycleService body part button tail identity failed.")
+		return
+	_assert_vector(first_body_part_build_spec, "position", Vector2(128.0, 178.0), "body part button build spec")
+	_assert_vector(first_body_part_build_spec, "size", Vector2(132.0, 44.0), "body part button build spec")
+	_assert_vector(third_body_part_build_spec, "position", Vector2(172.0, 328.0), "body part button build spec")
 	Dictionary(Array(build_specs.get("canvas_tools", []))[0])["key"] = "mutated"
 	var fresh_build_specs: Dictionary = UILifecycleService.editor_action_build_specs()
 	if String(Dictionary(Array(fresh_build_specs.get("canvas_tools", []))[0]).get("key", "")) != "blank_canvas":

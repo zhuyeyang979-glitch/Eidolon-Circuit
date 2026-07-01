@@ -47550,19 +47550,15 @@ func _build_editor_ui() -> void:
 		canvas_button.pressed.connect(_editor_action.bind(String(canvas_tool_spec.get("key", ""))))
 		root.add_child(canvas_button)
 		editor_action_buttons[String(canvas_tool_spec.get("key", ""))] = canvas_button
-	var body_positions := {
-		"left_claw": Vector2(128.0, 178.0),
-		"right_claw": Vector2(704.0, 178.0),
-		"front_left_leg": Vector2(172.0, 328.0),
-		"front_right_leg": Vector2(660.0, 328.0),
-		"rear_left_leg": Vector2(276.0, 468.0),
-		"rear_right_leg": Vector2(556.0, 468.0),
-	}
-	for part_key in BODY_PART_ORDER:
+	var body_part_button_build_specs := UILifecycleService.editor_body_part_button_build_specs(BODY_PART_ORDER)
+	for raw_body_part_button_build_spec in body_part_button_build_specs:
+		var body_part_button_build_spec := Dictionary(raw_body_part_button_build_spec)
+		var part_key: String = String(body_part_button_build_spec.get("key", ""))
 		var button := Button.new()
+		button.name = String(body_part_button_build_spec.get("name", "EditorBodyPart%s" % part_key))
 		button.text = _body_part_ui_name(part_key)
-		button.position = body_positions[part_key]
-		button.size = Vector2(132.0, 44.0)
+		button.position = body_part_button_build_spec.get("position", Vector2.ZERO)
+		button.size = body_part_button_build_spec.get("size", Vector2.ZERO)
 		button.focus_mode = Control.FOCUS_NONE
 		button.pressed.connect(_select_editor_body_part.bind(part_key))
 		root.add_child(button)

@@ -504,6 +504,27 @@ static func editor_sort_menu_build_specs(sort_key_order: Array) -> Dictionary:
 	}
 
 
+static func editor_body_part_button_build_specs(body_part_order: Array) -> Array:
+	var body_positions := {
+		"left_claw": Vector2(128.0, 178.0),
+		"right_claw": Vector2(704.0, 178.0),
+		"front_left_leg": Vector2(172.0, 328.0),
+		"front_right_leg": Vector2(660.0, 328.0),
+		"rear_left_leg": Vector2(276.0, 468.0),
+		"rear_right_leg": Vector2(556.0, 468.0),
+	}
+	var buttons := []
+	for raw_part_key in body_part_order:
+		var part_key := String(raw_part_key)
+		buttons.append({
+			"key": part_key,
+			"name": "EditorBodyPart%s" % part_key,
+			"position": body_positions.get(part_key, Vector2.ZERO),
+			"size": Vector2(132.0, 44.0),
+		})
+	return buttons
+
+
 static func editor_panel_role_chrome_presentation(mode: String, active_role_key: String, parts_visible: bool, panel_keys: Array, role_keys: Array, role_order: Array, role_short_labels: Dictionary, zh: bool) -> Dictionary:
 	var panel_texts := {"load": "单位库", "parts": "零件库"} if zh else {"load": "UNITS", "parts": "PARTS"}
 	var panel_buttons := {}
