@@ -1430,6 +1430,27 @@ GREEN: git diff --check
 
 `UILifecycleService.editor_action_build_specs()` now owns pure board-primary button identity specs for `save_canvas`, `training_import`, and `open_saved_units`. `_build_editor_ui()` consumes those names while keeping concrete button creation, text, geometry, focus mode, signal wiring, and action-button registration local. `_build_editor_ui()` is now 744 lines, and the extraction probe rejects the old inline `BoardPrimary%s` node-name formula.
 
+Follow-up editor part-filter control-plan adapter extraction:
+
+```text
+RED: main_file_extraction_contract_probe failed on direct filter-button _set_*_if_changed mutations
+GREEN: MAIN_FILE_EXTRACTION_CONTRACT_PROBE ok services=9
+GREEN: LIFECYCLE_SERVICES_CONTRACT_PROBE ok
+GREEN: Godot --check-only --script res://scripts/main.gd --quit-after 1
+GREEN: Godot --check-only --script res://scripts/services/ui_lifecycle_service.gd --quit-after 1
+GREEN: PART_LIBRARY_UI_PROBE groups=["torso", "limb", "terminal_weapon", "barrier_panel", "software_muscle", "software"] weapon=3 equipment=5 software=7 dashboard=40
+GREEN: WEAPON_SUBCATEGORY_FILTER_PROBE ok
+GREEN: WEAPON_CATALOG_SUBMENU_PROBE ok melee_options=6 gun_options=10
+GREEN: EDITOR_CATALOG_REVISION_CACHE_PROBE ok skips=1
+GREEN: UNIT_EDITOR_PAGINATION_LAYOUT_PROBE ok
+GREEN: UNIT_EDITOR_FULLSCREEN_LAYOUT_PROBE ok
+GREEN: EDITOR_SCROLL_REGIONS_PROBE ok
+GREEN: jq empty tools/probe_manifest.json
+GREEN: git diff --check
+```
+
+`_apply_editor_panel_visibility()` now consumes `UILifecycleService.editor_part_filter_button_presentation()` through `_apply_editor_control_plan()` instead of directly mutating filter button visibility, disabled state, geometry, text, and modulate values. `_apply_editor_panel_visibility()` is now 330 lines, and the extraction probe rejects the stale direct filter-button mutation calls.
+
 Remaining items after this batch:
 
 - Continue editor UI extraction with `_build_editor_ui` and the remaining action presentation/control-mutation sections of `_apply_editor_panel_visibility`, then continue `_resolve_attack` and `_refresh_editor_visual_views` extraction.

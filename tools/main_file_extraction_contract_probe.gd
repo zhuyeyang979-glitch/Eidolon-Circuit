@@ -102,7 +102,7 @@ func _init() -> void:
 	if source.find("func _apply_editor_control_plan(") < 0:
 		_fail("main.gd should provide a shared editor Control plan adapter.")
 		return
-	for direct_control_mutation in ["_set_canvas_item_visible_if_changed(role_button, bool(role_button_plan", "_set_control_position_if_changed(group_button, group_plan", "_set_canvas_item_visible_if_changed(action_button, action_visible)", "_set_canvas_item_visible_if_changed(editor_stats_label, bool(info_stats_plan", "_set_control_text_if_changed(color_button, String(color_button_plan"]:
+	for direct_control_mutation in ["_set_canvas_item_visible_if_changed(role_button, bool(role_button_plan", "_set_control_position_if_changed(group_button, group_plan", "_set_canvas_item_visible_if_changed(filter_button, bool(filter_plan", "_set_control_position_if_changed(filter_button, filter_plan", "_set_canvas_item_visible_if_changed(action_button, action_visible)", "_set_canvas_item_visible_if_changed(editor_stats_label, bool(info_stats_plan", "_set_control_text_if_changed(color_button, String(color_button_plan"]:
 		if source.contains(direct_control_mutation):
 			_fail("main.gd should apply extracted editor plans through _apply_editor_control_plan instead of %s." % direct_control_mutation)
 			return

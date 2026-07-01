@@ -49828,13 +49828,7 @@ func _apply_editor_panel_visibility(role_key: String, unit_bp: Dictionary) -> vo
 			parts_visible,
 			filter_text
 		)
-		_set_canvas_item_visible_if_changed(filter_button, bool(filter_plan.get("visible", false)))
-		_set_button_disabled_if_changed(filter_button, bool(filter_plan.get("disabled", true)))
-		if bool(filter_plan.get("visible", false)):
-			_set_control_position_if_changed(filter_button, filter_plan.get("position", Vector2.ZERO))
-			_set_control_size_if_changed(filter_button, filter_plan.get("size", Vector2(84.0, 22.0)))
-			_set_control_text_if_changed(filter_button, String(filter_plan.get("text", "")))
-			_set_canvas_item_modulate_if_changed(filter_button, filter_plan.get("modulate", Color(0.84, 0.9, 0.94, 1.0)))
+		_apply_editor_control_plan(filter_button, filter_plan)
 	var ammo_slider_visible := bool(visibility_plan.get("ammo_slider_visible", false))
 	var ammo_tick_labels := []
 	for rank in range(1, 6):
