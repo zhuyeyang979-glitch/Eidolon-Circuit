@@ -37349,58 +37349,79 @@ func _resolve_attack(attacker, event: Dictionary) -> void:
 			"chemical_dot_total": chemical_dot_total,
 			"back_hit": _is_back_hit(attacker, target, event),
 		})
-		var killed := false
-		var continue_target := false
-		for raw_intent in post_hit_intents:
-			if not (raw_intent is Dictionary):
-				continue
-			var post_intent: Dictionary = raw_intent
-			match String(post_intent.get("action", "")):
-				"module_hit_effect":
-					_apply_module_hit_effect(attacker, target, event)
-				"module_variant_hit_effect":
-					_apply_module_variant_hit_effect(attacker, target, event)
-				"takeover_status":
-					_apply_takeover_status(attacker, target, event)
-				"explosion":
-					for blasted in _apply_explosion_damage(attacker, target, event):
-						if not killed_units.has(blasted):
-							killed_units.append(blasted)
-				"suicide":
-					_detonate_suicide_puppet(attacker, target)
-					return
-				"part_damage":
-					_register_part_damage(target, event, damage, counter_tier)
-				"hitstop":
-					_apply_hitstop(damage_type, counter_tier, int(post_intent.get("damage", damage)))
-				"take_hit":
-					var unit_damage := _unit_damage_after_part_absorption(event, damage)
-					var health_before := int(target.health)
-					killed = target.take_hit(unit_damage, String(event.get("state", "normal")), int(attacker.owner_id), damage_type, material_class)
-					_training_validation_sample_record_hit(int(attacker.owner_id), float(maxi(0, health_before - int(target.health))), event)
-				"chemical_dot":
-					if not killed:
-						_apply_chemical_dot_status(attacker, target, event, chemical_dot_total)
-				"back_hit_heat":
-					if not killed:
-						_apply_back_hit_heat(attacker, target, event, damage)
-				"projectile_stagger":
-					if not killed:
-						_apply_projectile_momentum_stagger(attacker, target, event)
-				"active_melee_stagger":
-					if not killed:
-						_apply_active_melee_momentum_stagger(attacker, target, event)
-				"hit_displacement":
-					_apply_hit_displacement(attacker, target, event, damage, nullified)
-				"continue_target":
-					continue_target = true
-		if continue_target:
+		var post_hit_result := _execute_post_hit_intents(attacker, target, event, post_hit_intents, damage, damage_type, counter_tier, material_class, nullified, chemical_dot_total)
+		for killed_by_effect in Array(post_hit_result.get("killed_units", [])):
+			if not killed_units.has(killed_by_effect):
+				killed_units.append(killed_by_effect)
+		if bool(post_hit_result.get("return_from_resolve", false)):
+			return
+		if bool(post_hit_result.get("continue_target", false)):
 			continue
-		if killed:
+		if bool(post_hit_result.get("killed", false)):
 			killed_units.append(target)
 
 	for killed_unit in killed_units:
 		_handle_unit_killed(killed_unit, int(attacker.owner_id))
+
+
+func _execute_post_hit_intents(attacker, target, event: Dictionary, post_hit_intents: Array, damage: int, damage_type: String, counter_tier: int, material_class: String, nullified: bool, chemical_dot_total: int) -> Dictionary:
+	var killed_units: Array = []
+	var killed := false
+	var continue_target := false
+	for raw_intent in post_hit_intents:
+		if not (raw_intent is Dictionary):
+			continue
+		var post_intent: Dictionary = raw_intent
+		match String(post_intent.get("action", "")):
+			"module_hit_effect":
+				_apply_module_hit_effect(attacker, target, event)
+			"module_variant_hit_effect":
+				_apply_module_variant_hit_effect(attacker, target, event)
+			"takeover_status":
+				_apply_takeover_status(attacker, target, event)
+			"explosion":
+				for blasted in _apply_explosion_damage(attacker, target, event):
+					if not killed_units.has(blasted):
+						killed_units.append(blasted)
+			"suicide":
+				_detonate_suicide_puppet(attacker, target)
+				return {
+					"killed": killed,
+					"continue_target": continue_target,
+					"killed_units": killed_units,
+					"return_from_resolve": true,
+				}
+			"part_damage":
+				_register_part_damage(target, event, damage, counter_tier)
+			"hitstop":
+				_apply_hitstop(damage_type, counter_tier, int(post_intent.get("damage", damage)))
+			"take_hit":
+				var unit_damage := _unit_damage_after_part_absorption(event, damage)
+				var health_before := int(target.health)
+				killed = target.take_hit(unit_damage, String(event.get("state", "normal")), int(attacker.owner_id), damage_type, material_class)
+				_training_validation_sample_record_hit(int(attacker.owner_id), float(maxi(0, health_before - int(target.health))), event)
+			"chemical_dot":
+				if not killed:
+					_apply_chemical_dot_status(attacker, target, event, chemical_dot_total)
+			"back_hit_heat":
+				if not killed:
+					_apply_back_hit_heat(attacker, target, event, damage)
+			"projectile_stagger":
+				if not killed:
+					_apply_projectile_momentum_stagger(attacker, target, event)
+			"active_melee_stagger":
+				if not killed:
+					_apply_active_melee_momentum_stagger(attacker, target, event)
+			"hit_displacement":
+				_apply_hit_displacement(attacker, target, event, damage, nullified)
+			"continue_target":
+				continue_target = true
+	return {
+		"killed": killed,
+		"continue_target": continue_target,
+		"killed_units": killed_units,
+		"return_from_resolve": false,
+	}
 
 
 func _attack_part_hit(attacker, target, event: Dictionary) -> Dictionary:

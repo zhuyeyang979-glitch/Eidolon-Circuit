@@ -83,6 +83,7 @@ func _init() -> void:
 		"\"kind\": \"melee_momentum_stagger_pair\"",
 		"_battle_hit_resolution_service().melee_pair_impact_position_intent({",
 		"_battle_hit_resolution_service().post_hit_intents",
+		"func _execute_post_hit_intents(",
 		"_battle_hit_resolution_service().status_tick_intent",
 	]:
 		if main_source.find(token) < 0:
@@ -100,9 +101,36 @@ func _init() -> void:
 		"for key in hit_patch.keys()",
 		"event[\"raw_momentum\"] =",
 		"event[\"contact_gate_model\"] =",
+		"for raw_intent in post_hit_intents:",
+		"match String(post_intent.get(\"action\", \"\"))",
 	]:
 		if resolve_body.contains(stale_fragment):
 			_fail("_resolve_attack should delegate event patch application and momentum-gate metadata: %s" % stale_fragment)
+			return
+	var post_hit_body := _function_body(main_source, "func _execute_post_hit_intents")
+	if post_hit_body.is_empty():
+		_fail("Unable to locate _execute_post_hit_intents body.")
+		return
+	for token in [
+		"_apply_module_hit_effect",
+		"_apply_module_variant_hit_effect",
+		"_apply_takeover_status",
+		"_apply_explosion_damage",
+		"_detonate_suicide_puppet",
+		"_register_part_damage",
+		"_unit_damage_after_part_absorption",
+		"_training_validation_sample_record_hit",
+		"_apply_chemical_dot_status",
+		"_apply_back_hit_heat",
+		"_apply_projectile_momentum_stagger",
+		"_apply_active_melee_momentum_stagger",
+		"_apply_hit_displacement",
+		"return_from_resolve",
+		"continue_target",
+		"killed_units",
+	]:
+		if post_hit_body.find(token) < 0:
+			_fail("_execute_post_hit_intents missing side-effect dispatch token: %s" % token)
 			return
 	var melee_pair_body := _function_body(main_source, "func _apply_melee_momentum_stagger_pair")
 	if melee_pair_body.is_empty():

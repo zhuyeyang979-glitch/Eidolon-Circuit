@@ -945,6 +945,25 @@ GREEN: BATTLE_ATTACK_HEAVY_REPLAY_DESYNC_PROBE ok
 
 `BattleHitResolutionService.apply_event_patch()` now owns event-patch copying, replacement, and `erase_*` control handling for projectile preflight and target-hit contexts without mutating the source dictionaries. `BattleHitResolutionService.momentum_damage_gate_event_patch()` owns the pure event telemetry patch for raw/capped momentum, coefficients, break values, and gate result metadata. `_resolve_attack()` applies those patches through the service and keeps world-state mutation, hit iteration, shield interception, damage side effects, combo scaling, and nullification gating local. The extraction contract now requires the new delegation tokens and rejects the stale inline patch loops and direct momentum metadata assignments.
 
+Follow-up post-hit side-effect dispatch extraction:
+
+```text
+RED: battle_hit_resolution_service_contract_probe failed on missing func _execute_post_hit_intents(
+GREEN: BATTLE_HIT_RESOLUTION_SERVICE_CONTRACT_PROBE ok
+GREEN: Godot --check-only --script res://scripts/main.gd --quit-after 1
+GREEN: MAIN_FILE_EXTRACTION_CONTRACT_PROBE ok services=9
+GREEN: MOMENTUM_DAMAGE_GATE_RUNTIME_PROBE ok damage=11 momentum=60.0 break=0.50
+GREEN: MELEE_DAMAGE_TYPE_RULE_PROBE ok
+GREEN: PROJECTILE_PROFILE_WHITELIST_PROBE ok
+GREEN: MISSILE_LOCK_INVALID_NO_AMMO_PROBE ok
+GREEN: TERRAIN_OCCLUSION_RUNTIME_PROBE ok feature=terrain-wall-alpha kind=solid
+GREEN: LOCAL_BATTLE_REPLAY_CONSISTENCY_PROBE ok
+GREEN: BATTLE_ATTACK_HEAVY_REPLAY_DESYNC_PROBE checkpoints=6 desync_step=360
+GREEN: BATTLE_ATTACK_HEAVY_REPLAY_DESYNC_PROBE ok
+```
+
+`_execute_post_hit_intents()` now owns the imperative dispatch for post-hit module effects, variant effects, takeover status, explosions, suicide returns, part damage, hitstop, health damage, validation hit sampling, chemical DOT, back-hit heat, projectile/active-melee stagger, and displacement. `_resolve_attack()` delegates the `post_hit_intents` array, merges effect-killed units, preserves the suicide early return, and keeps the target-loop `continue` and final kill-list handling explicit. The extraction contract rejects the old inline post-hit intent loop inside `_resolve_attack()` and requires the helper to retain the side-effect dispatch tokens.
+
 Remaining items after this batch:
 
 - Continue editor UI extraction with `_build_editor_ui` and the remaining action presentation/control-mutation sections of `_apply_editor_panel_visibility`, then continue `_resolve_attack` and `_refresh_editor_visual_views` extraction.
