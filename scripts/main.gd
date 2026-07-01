@@ -37070,6 +37070,24 @@ func _resolve_runtime_melee_attack(attacker, event: Dictionary) -> void:
 		_handle_unit_killed(killed_unit, int(attacker.owner_id))
 
 
+func _execute_attack_entry_intent(attacker, event: Dictionary, entry_intent: Dictionary) -> bool:
+	match String(entry_intent.get("action", "")):
+		"return":
+			return true
+		"mark_executed_return":
+			_mark_unit_attack_executed(attacker)
+			return true
+		"fail_missing_gun_source":
+			_play_module_fail_sfx()
+			_show_battle_message("投射物必须由枪械末端肌肉发射" if _ui_is_zh() else "Projectile requires a gun terminal muscle", 0.62)
+			return true
+		"clear_projectile_mark_return":
+			_clear_projectile_fields_for_runtime_melee(event)
+			_mark_unit_attack_executed(attacker)
+			return true
+	return false
+
+
 func _resolve_attack(attacker, event: Dictionary) -> void:
 	var entry_intent := _battle_hit_resolution_service().attack_entry_intent({
 		"attacker_live": _is_live_unit(attacker),
@@ -37079,20 +37097,8 @@ func _resolve_attack(attacker, event: Dictionary) -> void:
 		"explicit_gun_activation": _event_is_explicit_gun_activation(event),
 		"has_gun_source": _projectile_event_has_gun_source(event),
 	})
-	match String(entry_intent.get("action", "")):
-		"return":
-			return
-		"mark_executed_return":
-			_mark_unit_attack_executed(attacker)
-			return
-		"fail_missing_gun_source":
-			_play_module_fail_sfx()
-			_show_battle_message("投射物必须由枪械末端肌肉发射" if _ui_is_zh() else "Projectile requires a gun terminal muscle", 0.62)
-			return
-		"clear_projectile_mark_return":
-			_clear_projectile_fields_for_runtime_melee(event)
-			_mark_unit_attack_executed(attacker)
-			return
+	if _execute_attack_entry_intent(attacker, event, entry_intent):
+		return
 	if not _is_live_unit(attacker) or event.is_empty():
 		return
 	event = _normalize_runtime_attack_event(attacker, event)
@@ -37105,18 +37111,8 @@ func _resolve_attack(attacker, event: Dictionary) -> void:
 		"explicit_gun_activation": _event_is_explicit_gun_activation(event),
 		"has_gun_source": _projectile_event_has_gun_source(event),
 	})
-	match String(entry_intent.get("action", "")):
-		"mark_executed_return":
-			_mark_unit_attack_executed(attacker)
-			return
-		"fail_missing_gun_source":
-			_play_module_fail_sfx()
-			_show_battle_message("投射物必须由枪械末端肌肉发射" if _ui_is_zh() else "Projectile requires a gun terminal muscle", 0.62)
-			return
-		"clear_projectile_mark_return":
-			_clear_projectile_fields_for_runtime_melee(event)
-			_mark_unit_attack_executed(attacker)
-			return
+	if _execute_attack_entry_intent(attacker, event, entry_intent):
+		return
 	if not bool(event.get("projectile", false)) and _unit_uses_direct_runtime_topology(attacker):
 		_mark_unit_attack_executed(attacker)
 		return

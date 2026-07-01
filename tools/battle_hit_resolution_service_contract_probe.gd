@@ -89,7 +89,7 @@ func _init() -> void:
 		if main_source.find(token) < 0:
 			_fail("main.gd should delegate battle hit resolution token: %s" % token)
 			return
-	var resolve_body := _function_body(main_source, "func _resolve_attack")
+	var resolve_body := _function_body(main_source, "func _resolve_attack(")
 	if resolve_body.is_empty():
 		_fail("Unable to locate _resolve_attack body.")
 		return
@@ -101,11 +101,34 @@ func _init() -> void:
 		"for key in hit_patch.keys()",
 		"event[\"raw_momentum\"] =",
 		"event[\"contact_gate_model\"] =",
+		"match String(entry_intent.get(\"action\", \"\"))",
 		"for raw_intent in post_hit_intents:",
 		"match String(post_intent.get(\"action\", \"\"))",
 	]:
 		if resolve_body.contains(stale_fragment):
 			_fail("_resolve_attack should delegate event patch application and momentum-gate metadata: %s" % stale_fragment)
+			return
+	if resolve_body.count("_execute_attack_entry_intent(attacker, event, entry_intent)") != 2:
+		_fail("_resolve_attack should dispatch both pre-normalize and post-normalize entry intents through one helper.")
+		return
+	var entry_dispatch_body := _function_body(main_source, "func _execute_attack_entry_intent")
+	if entry_dispatch_body.is_empty():
+		_fail("Unable to locate _execute_attack_entry_intent body.")
+		return
+	for token in [
+		"\"return\"",
+		"\"mark_executed_return\"",
+		"\"fail_missing_gun_source\"",
+		"\"clear_projectile_mark_return\"",
+		"_mark_unit_attack_executed",
+		"_play_module_fail_sfx",
+		"_show_battle_message",
+		"_clear_projectile_fields_for_runtime_melee",
+		"return true",
+		"return false",
+	]:
+		if entry_dispatch_body.find(token) < 0:
+			_fail("_execute_attack_entry_intent missing dispatch token: %s" % token)
 			return
 	var post_hit_body := _function_body(main_source, "func _execute_post_hit_intents")
 	if post_hit_body.is_empty():

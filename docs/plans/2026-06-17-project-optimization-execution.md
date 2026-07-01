@@ -1964,6 +1964,25 @@ GREEN: UNIT_EDITOR_NO_TEAM_ROLE_CONTROLS_PROBE ok
 
 `UILifecycleService.editor_action_presentations()` now owns the full action-key iteration, per-action state derivation, presentation-plan construction, and visible unit-action index advancement. `_apply_editor_panel_visibility()` supplies pure state and localization context, then only looks up and applies each returned plan. The batch contract preserves unmanaged assembly-guide actions, normalized unit-management visibility, barrier-hidden canvas actions, and deterministic two-column unit-action ordering.
 
+Follow-up attack-entry side-effect dispatch extraction:
+
+```text
+RED: battle_hit_resolution_service_contract_probe failed because _resolve_attack still dispatched both entry intents inline
+GREEN: BATTLE_HIT_RESOLUTION_SERVICE_CONTRACT_PROBE ok
+GREEN: Godot --check-only --script res://scripts/main.gd --quit-after 1
+GREEN: BATTLE_ACTION_EVENT_SERVICE_CONTRACT_PROBE ok
+GREEN: BATTLE_PROJECTILE_LIFECYCLE_SERVICE_CONTRACT_PROBE ok
+GREEN: PROJECTILE_RUNTIME_SERVICE_CONTRACT_PROBE ok
+GREEN: GUN_ACTIVATION_SERVICE_CONTRACT_PROBE ok
+GREEN: BATTLE_START_PAYLOAD_PROBE ok
+GREEN: LOCAL_BATTLE_REPLAY_CONSISTENCY_PROBE ok
+GREEN: BATTLE_FULL_MATCH_REPLAY_PROBE ok
+GREEN: BATTLE_ATTACK_HEAVY_REPLAY_DESYNC_PROBE checkpoints=6 desync_step=360
+GREEN: BATTLE_ATTACK_HEAVY_REPLAY_DESYNC_PROBE ok
+```
+
+`_execute_attack_entry_intent()` now owns the imperative dispatch for invalid-entry return, runtime-topology execution marking, missing-gun-source feedback, and runtime-melee projectile-field clearing. `_resolve_attack()` delegates both the pre-normalization and post-normalization intents through that helper while preserving the original gate order. The extraction probe now resolves the exact `func _resolve_attack(` signature instead of accidentally matching `_resolve_attack_command_window()`, requires both helper calls, and rejects renewed inline entry dispatch.
+
 Remaining items after this batch:
 
 - Continue editor UI extraction with `_build_editor_ui` and the remaining action presentation/control-mutation sections of `_apply_editor_panel_visibility`, then continue `_resolve_attack` and `_refresh_editor_visual_views` extraction.
