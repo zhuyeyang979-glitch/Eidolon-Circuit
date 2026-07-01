@@ -678,6 +678,19 @@ func _init() -> void:
 	_assert_color(selected_shop_slot_plan, "modulate", Color(0.42, 0.98, 1.0, 1.0), "selected body shop-slot button presentation")
 	var default_shop_slot_plan: Dictionary = ui_lifecycle_service.call("editor_body_shop_slot_button_presentation", true, "核心 零件库：仅机甲", "CORE BODY", false, false)
 	_assert_color(default_shop_slot_plan, "modulate", Color(0.9, 0.94, 0.98, 1.0), "default body shop-slot button presentation")
+	if not ui_lifecycle_source.contains("static func editor_edit_side_button_presentation("):
+		_fail("UILifecycleService should expose editor edit-side button presentation planning.")
+		return
+	var edit_side_p1_zh_plan: Dictionary = ui_lifecycle_service.call("editor_edit_side_button_presentation", 1, true)
+	if String(edit_side_p1_zh_plan.get("text", "")) != "编辑 P1":
+		_fail("UILifecycleService P1 Chinese edit-side button text failed.")
+		return
+	_assert_color(edit_side_p1_zh_plan, "modulate", Color(0.35, 0.95, 1.0, 1.0), "P1 edit-side button presentation")
+	var edit_side_p2_en_plan: Dictionary = ui_lifecycle_service.call("editor_edit_side_button_presentation", 2, false)
+	if String(edit_side_p2_en_plan.get("text", "")) != "EDIT P2":
+		_fail("UILifecycleService P2 English edit-side button text failed.")
+		return
+	_assert_color(edit_side_p2_en_plan, "modulate", Color(1.0, 0.34, 0.48, 1.0), "P2 edit-side button presentation")
 	if not ui_lifecycle_source.contains("static func editor_module_binding_button_build_specs("):
 		_fail("UILifecycleService should expose editor module binding button build specs.")
 		return

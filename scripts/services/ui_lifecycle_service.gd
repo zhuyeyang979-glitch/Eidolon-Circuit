@@ -606,6 +606,13 @@ static func editor_body_shop_slot_button_presentation(body_board_enabled: bool, 
 	}
 
 
+static func editor_edit_side_button_presentation(player_id: int, zh: bool) -> Dictionary:
+	return {
+		"text": "编辑 P%d" % player_id if zh else "EDIT P%d" % player_id,
+		"modulate": Color(0.35, 0.95, 1.0, 1.0) if player_id == 1 else Color(1.0, 0.34, 0.48, 1.0),
+	}
+
+
 static func editor_module_binding_button_build_specs(attack_group_count: int, key_z_index: int, side_z_index: int) -> Dictionary:
 	var key_buttons := []
 	for key_index in range(1, maxi(0, attack_group_count) + 1):

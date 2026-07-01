@@ -49429,8 +49429,7 @@ func _update_editor_ui(force_now: bool = false) -> void:
 	_refresh_editor_module_binding_buttons()
 	if editor_action_buttons.has("edit_side"):
 		var side_button: Button = editor_action_buttons["edit_side"]
-		_set_control_text_if_changed(side_button, "编辑 P%d" % player_id if _ui_is_zh() else "EDIT P%d" % player_id)
-		_set_canvas_item_modulate_if_changed(side_button, Color(0.35, 0.95, 1.0, 1.0) if player_id == 1 else Color(1.0, 0.34, 0.48, 1.0))
+		_apply_editor_control_plan(side_button, UILifecycleService.editor_edit_side_button_presentation(player_id, _ui_is_zh()))
 	editor_update_ui_last_usec = Time.get_ticks_usec() - update_start_usec
 	if hot_path_profiler != null:
 		hot_path_profiler.record_value("teamedit.update_ui_usec", editor_update_ui_last_usec)
