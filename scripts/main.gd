@@ -50149,9 +50149,14 @@ func _update_editor_board_ui(role_key: String, unit_bp: Dictionary, precomputed_
 			selected_bp = nodes_for_shop[editor_topology_node_index]
 	for slot_key in BODY_GROUP_SLOTS:
 		var button: Button = editor_shop_buttons[slot_key]
-		_set_button_disabled_if_changed(button, not body_board_enabled)
 		if not body_board_enabled:
-			_set_control_text_if_changed(button, "%s 零件库：仅机甲" % _slot_name(slot_key) if _ui_is_zh() else "%s PARTS: mech only" % _slot_name(slot_key))
+			_apply_editor_control_plan(button, UILifecycleService.editor_body_shop_slot_button_presentation(
+				false,
+				"%s 零件库：仅机甲" % _slot_name(slot_key) if _ui_is_zh() else "%s PARTS: mech only" % _slot_name(slot_key),
+				"",
+				false,
+				false
+			))
 			continue
 		var catalog: Array = _catalog_for(role_key, slot_key)
 		var index := int(selected_bp.get(slot_key, 0))
@@ -50171,13 +50176,14 @@ func _update_editor_board_ui(role_key: String, unit_bp: Dictionary, precomputed_
 			selected_marker = String(selected_node_feedback.get("shop_marker", ""))
 			if selected_marker == "":
 				selected_marker = "当前节点 " if _ui_is_zh() else "NODE "
-		_set_control_text_if_changed(button, _shop_slot_button_text(slot_key, part, volume_note, pending_marker, selected_marker))
-		if _has_pending_canvas_part() and editor_pending_place_slot == slot_key:
-			_set_canvas_item_modulate_if_changed(button, Color(1.0, 0.86, 0.28, 1.0))
-		elif custom_board_enabled and _topology_node_is_component(selected_bp) and _topology_node_slot(selected_bp) == slot_key:
-			_set_canvas_item_modulate_if_changed(button, Color(0.42, 0.98, 1.0, 1.0))
-		else:
-			_set_canvas_item_modulate_if_changed(button, Color(0.9, 0.94, 0.98, 1.0))
+		var shop_slot_plan := UILifecycleService.editor_body_shop_slot_button_presentation(
+			true,
+			"",
+			_shop_slot_button_text(slot_key, part, volume_note, pending_marker, selected_marker),
+			_has_pending_canvas_part() and editor_pending_place_slot == slot_key,
+			custom_board_enabled and _topology_node_is_component(selected_bp) and _topology_node_slot(selected_bp) == slot_key
+		)
+		_apply_editor_control_plan(button, shop_slot_plan)
 	var template_drawer_visible := editor_panel_mode == "load" and editor_template_menu_open
 	_layout_editor_template_drawer(role_key, template_drawer_visible, unit_bp)
 	var catalog_domain_key := ""

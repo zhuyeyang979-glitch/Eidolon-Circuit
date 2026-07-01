@@ -588,6 +588,24 @@ static func editor_body_board_button_presentation(body_board_enabled: bool, cust
 	}
 
 
+static func editor_body_shop_slot_button_presentation(body_board_enabled: bool, inactive_text: String, active_text: String, pending: bool, selected: bool) -> Dictionary:
+	if not body_board_enabled:
+		return {
+			"disabled": true,
+			"text": inactive_text,
+		}
+	var modulate := Color(0.9, 0.94, 0.98, 1.0)
+	if pending:
+		modulate = Color(1.0, 0.86, 0.28, 1.0)
+	elif selected:
+		modulate = Color(0.42, 0.98, 1.0, 1.0)
+	return {
+		"disabled": false,
+		"text": active_text,
+		"modulate": modulate,
+	}
+
+
 static func editor_module_binding_button_build_specs(attack_group_count: int, key_z_index: int, side_z_index: int) -> Dictionary:
 	var key_buttons := []
 	for key_index in range(1, maxi(0, attack_group_count) + 1):

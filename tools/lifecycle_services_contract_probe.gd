@@ -662,6 +662,22 @@ func _init() -> void:
 	if bool(inactive_body_button_plan.get("visible", true)) or not bool(inactive_body_button_plan.get("disabled", false)) or String(inactive_body_button_plan.get("text", "")) != "LEFT CLAW":
 		_fail("UILifecycleService inactive body-board button presentation failed.")
 		return
+	if not ui_lifecycle_source.contains("static func editor_body_shop_slot_button_presentation("):
+		_fail("UILifecycleService should expose editor body shop-slot button presentation planning.")
+		return
+	var inactive_shop_slot_plan: Dictionary = ui_lifecycle_service.call("editor_body_shop_slot_button_presentation", false, "核心 零件库：仅机甲", "CORE BODY", false, false)
+	if not bool(inactive_shop_slot_plan.get("disabled", false)) or String(inactive_shop_slot_plan.get("text", "")) != "核心 零件库：仅机甲" or inactive_shop_slot_plan.has("modulate"):
+		_fail("UILifecycleService inactive body shop-slot button presentation failed.")
+		return
+	var pending_shop_slot_plan: Dictionary = ui_lifecycle_service.call("editor_body_shop_slot_button_presentation", true, "核心 零件库：仅机甲", "PENDING CORE", true, false)
+	if bool(pending_shop_slot_plan.get("disabled", true)) or String(pending_shop_slot_plan.get("text", "")) != "PENDING CORE":
+		_fail("UILifecycleService pending body shop-slot button text/disabled failed.")
+		return
+	_assert_color(pending_shop_slot_plan, "modulate", Color(1.0, 0.86, 0.28, 1.0), "pending body shop-slot button presentation")
+	var selected_shop_slot_plan: Dictionary = ui_lifecycle_service.call("editor_body_shop_slot_button_presentation", true, "核心 零件库：仅机甲", "NODE CORE", false, true)
+	_assert_color(selected_shop_slot_plan, "modulate", Color(0.42, 0.98, 1.0, 1.0), "selected body shop-slot button presentation")
+	var default_shop_slot_plan: Dictionary = ui_lifecycle_service.call("editor_body_shop_slot_button_presentation", true, "核心 零件库：仅机甲", "CORE BODY", false, false)
+	_assert_color(default_shop_slot_plan, "modulate", Color(0.9, 0.94, 0.98, 1.0), "default body shop-slot button presentation")
 	if not ui_lifecycle_source.contains("static func editor_module_binding_button_build_specs("):
 		_fail("UILifecycleService should expose editor module binding button build specs.")
 		return
