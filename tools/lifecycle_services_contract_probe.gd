@@ -1114,6 +1114,19 @@ func _init() -> void:
 	if not bool(engine_allocation_build_spec.get("mirror_board_rect", false)):
 		_fail("UILifecycleService engine allocation should preserve board-rect mirroring intent.")
 		return
+	if not ui_lifecycle_source.contains("static func editor_stats_rail_view_presentation("):
+		_fail("UILifecycleService should expose editor stats rail view presentation planning.")
+		return
+	var stats_rail_visible_plan: Dictionary = ui_lifecycle_service.call("editor_stats_rail_view_presentation", true)
+	_assert_vector(stats_rail_visible_plan, "position", Vector2(18.0, 104.0), "stats rail presentation")
+	_assert_vector(stats_rail_visible_plan, "size", Vector2(164.0, 508.0), "stats rail presentation")
+	if not bool(stats_rail_visible_plan.get("visible", false)) or int(stats_rail_visible_plan.get("mouse_filter", -1)) != Control.MOUSE_FILTER_STOP:
+		_fail("UILifecycleService visible stats rail presentation failed.")
+		return
+	var stats_rail_hidden_plan: Dictionary = ui_lifecycle_service.call("editor_stats_rail_view_presentation", false)
+	if bool(stats_rail_hidden_plan.get("visible", true)) or int(stats_rail_hidden_plan.get("mouse_filter", -1)) != Control.MOUSE_FILTER_STOP:
+		_fail("UILifecycleService hidden stats rail presentation failed.")
+		return
 	if not ui_lifecycle_source.contains("static func editor_drag_ghost_view_presentation("):
 		_fail("UILifecycleService should expose editor drag ghost view presentation planning.")
 		return

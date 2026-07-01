@@ -5070,6 +5070,12 @@ func _apply_editor_unit_hover_view_presentation(visible: bool) -> void:
 	_apply_editor_control_plan(editor_unit_hover_view, UILifecycleService.editor_unit_hover_view_presentation(visible))
 
 
+func _apply_editor_stats_rail_view_presentation(visible: bool) -> void:
+	if editor_stats_rail_view == null:
+		return
+	_apply_editor_control_plan(editor_stats_rail_view, UILifecycleService.editor_stats_rail_view_presentation(visible))
+
+
 func _apply_editor_drag_ghost_view_presentation(visible: bool, position: Variant = Vector2.INF, move_to_front: bool = false) -> void:
 	if editor_drag_ghost_view == null:
 		return
@@ -47362,9 +47368,7 @@ func _build_editor_ui() -> void:
 	var stats_rail_view_build_spec := Dictionary(overlay_view_build_specs.get("stats_rail", {}))
 	editor_stats_rail_view = EditorStatsRailView.new()
 	editor_stats_rail_view.name = String(stats_rail_view_build_spec.get("name", "EditorStatsRail"))
-	editor_stats_rail_view.position = stats_rail_view_build_spec.get("position", Vector2.ZERO)
-	editor_stats_rail_view.size = stats_rail_view_build_spec.get("size", Vector2.ZERO)
-	editor_stats_rail_view.mouse_filter = Control.MOUSE_FILTER_STOP
+	_apply_editor_stats_rail_view_presentation(true)
 	root.add_child(editor_stats_rail_view)
 	var hover_popup_view_build_spec := Dictionary(overlay_view_build_specs.get("hover_popup", {}))
 	editor_hover_popup_view = EditorPartHoverPopupView.new()
@@ -52564,7 +52568,7 @@ func _refresh_editor_stats_rail(current_stats: Dictionary, preview_stats: Dictio
 	var header := "构筑仪表" if _ui_is_zh() else "BUILD METER"
 	if hover_title != "":
 		header = "预览：%s" % _short_part_name(hover_title) if _ui_is_zh() else "PREVIEW: %s" % _short_part_name(hover_title)
-	editor_stats_rail_view.visible = true
+	_apply_editor_stats_rail_view_presentation(true)
 	editor_stats_rail_view.set_stats(entries, header, _editor_rule_status_note(flags), has_preview, ui_language)
 	_refresh_engine_allocation_dashboard_summary()
 

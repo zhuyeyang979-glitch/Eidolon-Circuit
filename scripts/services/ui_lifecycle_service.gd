@@ -938,6 +938,16 @@ static func editor_overlay_view_build_specs() -> Dictionary:
 	}
 
 
+static func editor_stats_rail_view_presentation(visible: bool) -> Dictionary:
+	var build_spec := Dictionary(editor_overlay_view_build_specs().get("stats_rail", {}))
+	return {
+		"visible": visible,
+		"position": build_spec.get("position", Vector2(18.0, 104.0)),
+		"size": build_spec.get("size", Vector2(164.0, 508.0)),
+		"mouse_filter": Control.MOUSE_FILTER_STOP,
+	}
+
+
 static func editor_drag_ghost_view_presentation(visible: bool, position: Variant = Vector2.INF, move_to_front: bool = false) -> Dictionary:
 	var build_spec := Dictionary(editor_overlay_view_build_specs().get("drag_ghost", {}))
 	var plan := {
