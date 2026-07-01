@@ -47619,25 +47619,34 @@ func _build_editor_ui() -> void:
 	template_menu_button.pressed.connect(_editor_action.bind(String(template_toggle_spec.get("key", "toggle_templates"))))
 	root.add_child(template_menu_button)
 	editor_action_buttons[String(template_toggle_spec.get("key", "toggle_templates"))] = template_menu_button
-	editor_template_panel = _add_ui_rect(root, "TemplateSubmenuPanel", Vector2(932.0, 180.0), Vector2(278.0, 336.0), Color(0.006, 0.014, 0.021, 0.92))
-	editor_section_labels["template"] = _make_label(root, "TemplateTitle", "预组单位库", Vector2(936.0, 374.0), Vector2(270.0, 20.0), 13, Color(0.9, 0.96, 1.0, 1.0), HORIZONTAL_ALIGNMENT_LEFT)
-	for i in range(ARCHETYPE_ORDER.size()):
-		var archetype_key: String = ARCHETYPE_ORDER[i]
+	var template_drawer_build_specs := UILifecycleService.editor_template_drawer_build_specs(ARCHETYPE_ORDER, BARRIER_TEMPLATE_ORDER)
+	var template_panel_build_spec := Dictionary(template_drawer_build_specs.get("panel", {}))
+	editor_template_panel = _add_ui_rect(root, String(template_panel_build_spec.get("name", "TemplateSubmenuPanel")), template_panel_build_spec.get("position", Vector2.ZERO), template_panel_build_spec.get("size", Vector2.ZERO), Color(0.006, 0.014, 0.021, 0.92))
+	var template_title_build_spec := Dictionary(template_drawer_build_specs.get("title", {}))
+	editor_section_labels["template"] = _make_label(root, String(template_title_build_spec.get("name", "TemplateTitle")), String(template_title_build_spec.get("text", "预组单位库")), template_title_build_spec.get("position", Vector2.ZERO), template_title_build_spec.get("size", Vector2.ZERO), 13, Color(0.9, 0.96, 1.0, 1.0), HORIZONTAL_ALIGNMENT_LEFT)
+	var archetype_button_build_specs: Array = Array(template_drawer_build_specs.get("archetype_buttons", []))
+	for raw_archetype_button_build_spec in archetype_button_build_specs:
+		var archetype_button_build_spec := Dictionary(raw_archetype_button_build_spec)
+		var archetype_key: String = String(archetype_button_build_spec.get("key", ""))
 		var frame_button := Button.new()
+		frame_button.name = String(archetype_button_build_spec.get("name", "TemplateArchetype%s" % archetype_key))
 		frame_button.text = _archetype_name(archetype_key).to_upper()
-		frame_button.position = Vector2(940.0 + float(i % 2) * 134.0, 188.0 + float(floori(float(i) / 2.0)) * 28.0)
-		frame_button.size = Vector2(126.0, 24.0)
+		frame_button.position = archetype_button_build_spec.get("position", Vector2.ZERO)
+		frame_button.size = archetype_button_build_spec.get("size", Vector2.ZERO)
 		frame_button.focus_mode = Control.FOCUS_NONE
 		frame_button.pressed.connect(_apply_archetype.bind(archetype_key))
 		root.add_child(frame_button)
 		editor_archetype_buttons[archetype_key] = frame_button
 		editor_template_buttons.append(frame_button)
-	for i in range(BARRIER_TEMPLATE_ORDER.size()):
-		var barrier_key: String = BARRIER_TEMPLATE_ORDER[i]
+	var barrier_template_button_build_specs: Array = Array(template_drawer_build_specs.get("barrier_template_buttons", []))
+	for raw_barrier_template_button_build_spec in barrier_template_button_build_specs:
+		var barrier_template_button_build_spec := Dictionary(raw_barrier_template_button_build_spec)
+		var barrier_key: String = String(barrier_template_button_build_spec.get("key", ""))
 		var barrier_template_button := Button.new()
+		barrier_template_button.name = String(barrier_template_button_build_spec.get("name", "BarrierTemplate%s" % barrier_key))
 		barrier_template_button.text = String(BARRIER_TEMPLATE_DEFAULTS[barrier_key].get("name", "BARRIER")).to_upper()
-		barrier_template_button.position = Vector2(940.0 + float(i % 2) * 134.0, 188.0 + float(floori(float(i) / 2.0)) * 28.0)
-		barrier_template_button.size = Vector2(126.0, 24.0)
+		barrier_template_button.position = barrier_template_button_build_spec.get("position", Vector2.ZERO)
+		barrier_template_button.size = barrier_template_button_build_spec.get("size", Vector2.ZERO)
 		barrier_template_button.focus_mode = Control.FOCUS_NONE
 		barrier_template_button.pressed.connect(_apply_barrier_template.bind(barrier_key))
 		root.add_child(barrier_template_button)

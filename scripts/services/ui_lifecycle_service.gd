@@ -392,6 +392,44 @@ static func editor_catalog_card_build_specs(card_count: int) -> Array:
 	return cards
 
 
+static func editor_template_drawer_build_specs(archetype_order: Array, barrier_template_order: Array) -> Dictionary:
+	var archetype_buttons := []
+	for i in range(archetype_order.size()):
+		var archetype_key := String(archetype_order[i])
+		archetype_buttons.append({
+			"index": i,
+			"key": archetype_key,
+			"name": "TemplateArchetype%s" % archetype_key,
+			"position": Vector2(940.0 + float(i % 2) * 134.0, 188.0 + float(floori(float(i) / 2.0)) * 28.0),
+			"size": Vector2(126.0, 24.0),
+		})
+	var barrier_template_buttons := []
+	for i in range(barrier_template_order.size()):
+		var barrier_key := String(barrier_template_order[i])
+		barrier_template_buttons.append({
+			"index": i,
+			"key": barrier_key,
+			"name": "BarrierTemplate%s" % barrier_key,
+			"position": Vector2(940.0 + float(i % 2) * 134.0, 188.0 + float(floori(float(i) / 2.0)) * 28.0),
+			"size": Vector2(126.0, 24.0),
+		})
+	return {
+		"panel": {
+			"name": "TemplateSubmenuPanel",
+			"position": Vector2(932.0, 180.0),
+			"size": Vector2(278.0, 336.0),
+		},
+		"title": {
+			"name": "TemplateTitle",
+			"text": "预组单位库",
+			"position": Vector2(936.0, 374.0),
+			"size": Vector2(270.0, 20.0),
+		},
+		"archetype_buttons": archetype_buttons,
+		"barrier_template_buttons": barrier_template_buttons,
+	}
+
+
 static func editor_panel_role_chrome_presentation(mode: String, active_role_key: String, parts_visible: bool, panel_keys: Array, role_keys: Array, role_order: Array, role_short_labels: Dictionary, zh: bool) -> Dictionary:
 	var panel_texts := {"load": "单位库", "parts": "零件库"} if zh else {"load": "UNITS", "parts": "PARTS"}
 	var panel_buttons := {}

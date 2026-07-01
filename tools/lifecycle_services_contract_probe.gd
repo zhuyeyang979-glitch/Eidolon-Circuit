@@ -363,6 +363,35 @@ func _init() -> void:
 	_assert_vector(first_catalog_card_build_spec, "position", Vector2(936.0, 354.0), "catalog card build spec")
 	_assert_vector(first_catalog_card_build_spec, "size", Vector2(130.0, 72.0), "catalog card build spec")
 	_assert_vector(eighth_catalog_card_build_spec, "position", Vector2(1072.0, 576.0), "catalog card build spec")
+	if not ui_lifecycle_source.contains("static func editor_template_drawer_build_specs("):
+		_fail("UILifecycleService should expose editor template drawer build specs.")
+		return
+	var template_drawer_build_specs: Dictionary = ui_lifecycle_service.call("editor_template_drawer_build_specs", ["scout", "guard", "assault"], ["wall", "lens"])
+	var template_panel_build_spec: Dictionary = Dictionary(template_drawer_build_specs.get("panel", {}))
+	var template_title_build_spec: Dictionary = Dictionary(template_drawer_build_specs.get("title", {}))
+	var archetype_button_build_specs: Array = Array(template_drawer_build_specs.get("archetype_buttons", []))
+	var barrier_template_button_build_specs: Array = Array(template_drawer_build_specs.get("barrier_template_buttons", []))
+	if String(template_panel_build_spec.get("name", "")) != "TemplateSubmenuPanel" or String(template_title_build_spec.get("name", "")) != "TemplateTitle":
+		_fail("UILifecycleService template drawer panel/title identity failed.")
+		return
+	if archetype_button_build_specs.size() != 3 or barrier_template_button_build_specs.size() != 2:
+		_fail("UILifecycleService template drawer button counts failed.")
+		return
+	_assert_vector(template_panel_build_spec, "position", Vector2(932.0, 180.0), "template drawer panel build spec")
+	_assert_vector(template_panel_build_spec, "size", Vector2(278.0, 336.0), "template drawer panel build spec")
+	_assert_vector(template_title_build_spec, "position", Vector2(936.0, 374.0), "template drawer title build spec")
+	_assert_vector(template_title_build_spec, "size", Vector2(270.0, 20.0), "template drawer title build spec")
+	var third_archetype_button_build_spec: Dictionary = Dictionary(archetype_button_build_specs[2])
+	var second_barrier_button_build_spec: Dictionary = Dictionary(barrier_template_button_build_specs[1])
+	if String(third_archetype_button_build_spec.get("key", "")) != "assault" or String(third_archetype_button_build_spec.get("name", "")) != "TemplateArchetypeassault":
+		_fail("UILifecycleService archetype template button identity failed.")
+		return
+	if String(second_barrier_button_build_spec.get("key", "")) != "lens" or String(second_barrier_button_build_spec.get("name", "")) != "BarrierTemplatelens":
+		_fail("UILifecycleService barrier template button identity failed.")
+		return
+	_assert_vector(third_archetype_button_build_spec, "position", Vector2(940.0, 216.0), "archetype template button build spec")
+	_assert_vector(third_archetype_button_build_spec, "size", Vector2(126.0, 24.0), "archetype template button build spec")
+	_assert_vector(second_barrier_button_build_spec, "position", Vector2(1074.0, 188.0), "barrier template button build spec")
 	Dictionary(Array(build_specs.get("canvas_tools", []))[0])["key"] = "mutated"
 	var fresh_build_specs: Dictionary = UILifecycleService.editor_action_build_specs()
 	if String(Dictionary(Array(fresh_build_specs.get("canvas_tools", []))[0]).get("key", "")) != "blank_canvas":
