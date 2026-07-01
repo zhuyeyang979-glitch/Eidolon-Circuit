@@ -130,6 +130,14 @@ func _init() -> void:
 		".momentum_damage_gate_event_patch(event, gate_intent, {",
 		"_apply_combo_hit_scaling(attacker, target, event, damage)",
 		".damage_stack_intent({",
+		"_spawn_projectile_hit_vfx_on_target({",
+		"_spawn_hit_effect(target, counter_tier, damage_type",
+		"_apply_projectile_momentum_stagger(attacker, target, event)",
+		"_apply_active_melee_momentum_stagger(attacker, target, event)",
+		"_apply_hit_displacement(attacker, target, event, 0, nullified)",
+		".post_hit_intents({",
+		"_execute_post_hit_intents(attacker, target, event, post_hit_intents",
+		"post_hit_result.get(\"killed_units\"",
 		"for raw_intent in post_hit_intents:",
 		"match String(post_intent.get(\"action\", \"\"))",
 	]:
@@ -321,6 +329,32 @@ func _init() -> void:
 	]:
 		if damage_stack_body.find(token) < 0:
 			_fail("_prepare_attack_damage_stack missing token: %s" % token)
+			return
+	if resolve_body.count("_resolve_attack_target_outcome(attacker, target, event, damage_type, material_class, damage_stack)") != 1:
+		_fail("_resolve_attack should resolve each target outcome through one helper.")
+		return
+	var target_outcome_body := _function_body(main_source, "func _resolve_attack_target_outcome")
+	if target_outcome_body.is_empty():
+		_fail("Unable to locate _resolve_attack_target_outcome body.")
+		return
+	for token in [
+		"_spawn_projectile_hit_vfx_on_target",
+		"_spawn_hit_effect",
+		"\"outcome\": \"blocked\"",
+		"_apply_projectile_momentum_stagger",
+		"_apply_active_melee_momentum_stagger",
+		"_apply_hit_displacement",
+		"_apply_hitstop",
+		"\"outcome\": \"hit\"",
+		"post_hit_intents",
+		"_execute_post_hit_intents",
+		"\"killed\"",
+		"\"continue_target\"",
+		"\"killed_units\"",
+		"\"return_from_resolve\"",
+	]:
+		if target_outcome_body.find(token) < 0:
+			_fail("_resolve_attack_target_outcome missing token: %s" % token)
 			return
 	var post_hit_body := _function_body(main_source, "func _execute_post_hit_intents")
 	if post_hit_body.is_empty():

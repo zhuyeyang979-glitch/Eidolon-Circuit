@@ -2122,6 +2122,31 @@ GREEN: BATTLE_ATTACK_HEAVY_REPLAY_DESYNC_PROBE ok
 
 The stale threshold probe now verifies the current two-stage path-stiffness and optional hardware cap instead of an obsolete equivalent expression. The part-coefficient probe now follows the runtime service's authoritative limb/melee values (`1.8` / `3.2`) and latches any assertion failure so a trailing success quit cannot produce a false-green result.
 
+Follow-up attack target-outcome dispatch extraction:
+
+```text
+RED: battle_hit_resolution_service_contract_probe failed because _resolve_attack still spawned hit VFX and dispatched blocked/post-hit outcomes inline
+GREEN: BATTLE_HIT_RESOLUTION_SERVICE_CONTRACT_PROBE ok
+GREEN: Godot --check-only --script res://scripts/main.gd --quit-after 1
+GREEN: SNIPER_HIT_VFX_ON_TARGET_PROBE ok effects=2
+GREEN: BATTLE_VFX_BUDGET_SERVICE_CONTRACT_PROBE ok
+GREEN: BATTLE_VFX_BUDGET_PROBE ok accepted=40 dropped=160
+GREEN: ATTACK_RULE_EXPLANATION_PROBE failed=false
+GREEN: MOMENTUM_DAMAGE_GATE_RUNTIME_PROBE ok damage=11 momentum=60.0 break=0.50
+GREEN: PART_DAMAGE_COEFF_PROBE ok
+GREEN: CHEMICAL_DOT_PROBE ok dps=6.00 hp=160->153
+GREEN: CHEMICAL_HEAT_PROBE queued=true impact=true dot=true boost_motion=true straight_cooling=true hp=120->105->64 heat=44.00
+GREEN: PROJECTILE_RUNTIME_SERVICE_CONTRACT_PROBE ok
+GREEN: BATTLE_PROJECTILE_LIFECYCLE_SERVICE_CONTRACT_PROBE ok
+GREEN: RUNTIME_CONTACT_DAMAGE_PROBE hp_delta=332 target_v=9.600
+GREEN: LOCAL_BATTLE_REPLAY_CONSISTENCY_PROBE ok
+GREEN: BATTLE_FULL_MATCH_REPLAY_PROBE ok
+GREEN: BATTLE_ATTACK_HEAVY_REPLAY_DESYNC_PROBE checkpoints=6 desync_step=360
+GREEN: BATTLE_ATTACK_HEAVY_REPLAY_DESYNC_PROBE ok
+```
+
+`_resolve_attack_target_outcome()` now owns damage-stack field consumption, projectile/melee hit VFX, contact-gate blocked feedback and stagger/displacement/hitstop, successful-hit rule recording, post-hit intent planning, and post-hit side-effect execution. `_resolve_attack()` now retains only attack-level gates plus per-target contact, damage-stack, outcome-control, and killed-unit aggregation. The extraction contract rejects renewed inline outcome dispatch and requires all four killed/continue/return result fields.
+
 Remaining items after this batch:
 
 - Continue editor UI extraction with `_build_editor_ui` and the remaining action presentation/control-mutation sections of `_apply_editor_panel_visibility`, then continue `_resolve_attack` and `_refresh_editor_visual_views` extraction.

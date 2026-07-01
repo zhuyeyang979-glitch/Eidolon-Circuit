@@ -37357,6 +37357,75 @@ func _prepare_attack_damage_stack(attacker, target, event: Dictionary, damage_ty
 	}
 
 
+func _resolve_attack_target_outcome(attacker, target, event: Dictionary, damage_type: String, material_class: String, damage_stack: Dictionary) -> Dictionary:
+	var counter_tier := int(damage_stack.get("counter_tier", 0))
+	var nullified := bool(damage_stack.get("nullified", false))
+	var non_damage := bool(damage_stack.get("non_damage", false))
+	var raw_damage := float(damage_stack.get("raw_damage", 0.0))
+	var damage := int(damage_stack.get("damage", 0))
+	var chemical_dot_total := int(damage_stack.get("chemical_dot_total", 0))
+	var effect_style := String(damage_stack.get("effect_style", ""))
+	var contact_gate_blocked := bool(damage_stack.get("contact_gate_blocked", false))
+	var hit_vfx_position := Vector2(event.get("hit_position_combat", Vector2(target.ring_pos, target.lane)))
+	if bool(event.get("projectile", false)):
+		_spawn_projectile_hit_vfx_on_target({
+			"target": target,
+			"counter_tier": counter_tier,
+			"damage_type": damage_type,
+			"nullified": nullified or contact_gate_blocked,
+			"projectile_style": effect_style,
+			"contact_point": hit_vfx_position,
+		})
+	else:
+		_spawn_hit_effect(target, counter_tier, damage_type, nullified or contact_gate_blocked, effect_style, hit_vfx_position)
+	if contact_gate_blocked:
+		_record_attack_rule_result(attacker, event, {
+			"outcome": "blocked",
+			"blocked": true,
+			"raw_damage": raw_damage,
+			"final_damage": 0,
+			"target": target,
+			"target_part_kind": String(event.get("target_part_kind", "core")),
+			"target_part_name": String(event.get("target_part_name", "CORE")),
+			"damage_type": damage_type,
+			"counter_tier": counter_tier,
+		})
+		if bool(event.get("projectile", false)):
+			_apply_projectile_momentum_stagger(attacker, target, event)
+		else:
+			_apply_active_melee_momentum_stagger(attacker, target, event)
+		_apply_hit_displacement(attacker, target, event, 0, nullified)
+		_apply_hitstop(damage_type, counter_tier, 0)
+		return {
+			"killed": false,
+			"continue_target": true,
+			"killed_units": [],
+			"return_from_resolve": false,
+		}
+	_record_attack_rule_result(attacker, event, {
+		"outcome": "hit",
+		"raw_damage": raw_damage,
+		"final_damage": damage,
+		"target": target,
+		"target_part_kind": String(event.get("target_part_kind", "core")),
+		"target_part_name": String(event.get("target_part_name", "CORE")),
+		"damage_type": damage_type,
+		"counter_tier": counter_tier,
+	})
+	var post_hit_intents := _battle_hit_resolution_service().post_hit_intents({
+		"projectile": bool(event.get("projectile", false)),
+		"blocked": contact_gate_blocked,
+		"non_damage": non_damage,
+		"nullified": nullified,
+		"explosion_radius": float(event.get("explosion_radius", 0.0)),
+		"suicide_on_hit": bool(attacker.stats.get("suicide_on_hit", false)),
+		"damage": damage,
+		"chemical_dot_total": chemical_dot_total,
+		"back_hit": _is_back_hit(attacker, target, event),
+	})
+	return _execute_post_hit_intents(attacker, target, event, post_hit_intents, damage, damage_type, counter_tier, material_class, nullified, chemical_dot_total)
+
+
 func _resolve_attack(attacker, event: Dictionary) -> void:
 	var entry_intent := _battle_hit_resolution_service().attack_entry_intent({
 		"attacker_live": _is_live_unit(attacker),
@@ -37426,75 +37495,15 @@ func _resolve_attack(attacker, event: Dictionary) -> void:
 		event = Dictionary(damage_stack.get("event", event))
 		if bool(damage_stack.get("skip", false)):
 			continue
-		var counter_tier := int(damage_stack.get("counter_tier", 0))
-		var nullified := bool(damage_stack.get("nullified", false))
-		var non_damage := bool(damage_stack.get("non_damage", false))
-		var raw_damage := float(damage_stack.get("raw_damage", 0.0))
-		var damage := int(damage_stack.get("damage", 0))
-		var chemical_dot_total := int(damage_stack.get("chemical_dot_total", 0))
-		var effect_style := String(damage_stack.get("effect_style", ""))
-		var contact_gate_blocked := bool(damage_stack.get("contact_gate_blocked", false))
-		var hit_vfx_position := Vector2(event.get("hit_position_combat", Vector2(target.ring_pos, target.lane)))
-		if bool(event.get("projectile", false)):
-			_spawn_projectile_hit_vfx_on_target({
-				"target": target,
-				"counter_tier": counter_tier,
-				"damage_type": damage_type,
-				"nullified": nullified or contact_gate_blocked,
-				"projectile_style": effect_style,
-				"contact_point": hit_vfx_position,
-			})
-		else:
-			_spawn_hit_effect(target, counter_tier, damage_type, nullified or contact_gate_blocked, effect_style, hit_vfx_position)
-		if contact_gate_blocked:
-			_record_attack_rule_result(attacker, event, {
-				"outcome": "blocked",
-				"blocked": true,
-				"raw_damage": raw_damage,
-				"final_damage": 0,
-				"target": target,
-				"target_part_kind": String(event.get("target_part_kind", "core")),
-				"target_part_name": String(event.get("target_part_name", "CORE")),
-				"damage_type": damage_type,
-				"counter_tier": counter_tier,
-			})
-			if bool(event.get("projectile", false)):
-				_apply_projectile_momentum_stagger(attacker, target, event)
-			else:
-				_apply_active_melee_momentum_stagger(attacker, target, event)
-			_apply_hit_displacement(attacker, target, event, 0, nullified)
-			_apply_hitstop(damage_type, counter_tier, 0)
-			continue
-		_record_attack_rule_result(attacker, event, {
-			"outcome": "hit",
-			"raw_damage": raw_damage,
-			"final_damage": damage,
-			"target": target,
-			"target_part_kind": String(event.get("target_part_kind", "core")),
-			"target_part_name": String(event.get("target_part_name", "CORE")),
-			"damage_type": damage_type,
-			"counter_tier": counter_tier,
-		})
-		var post_hit_intents := _battle_hit_resolution_service().post_hit_intents({
-			"projectile": bool(event.get("projectile", false)),
-			"blocked": contact_gate_blocked,
-			"non_damage": non_damage,
-			"nullified": nullified,
-			"explosion_radius": float(event.get("explosion_radius", 0.0)),
-			"suicide_on_hit": bool(attacker.stats.get("suicide_on_hit", false)),
-			"damage": damage,
-			"chemical_dot_total": chemical_dot_total,
-			"back_hit": _is_back_hit(attacker, target, event),
-		})
-		var post_hit_result := _execute_post_hit_intents(attacker, target, event, post_hit_intents, damage, damage_type, counter_tier, material_class, nullified, chemical_dot_total)
-		for killed_by_effect in Array(post_hit_result.get("killed_units", [])):
+		var target_outcome := _resolve_attack_target_outcome(attacker, target, event, damage_type, material_class, damage_stack)
+		for killed_by_effect in Array(target_outcome.get("killed_units", [])):
 			if not killed_units.has(killed_by_effect):
 				killed_units.append(killed_by_effect)
-		if bool(post_hit_result.get("return_from_resolve", false)):
+		if bool(target_outcome.get("return_from_resolve", false)):
 			return
-		if bool(post_hit_result.get("continue_target", false)):
+		if bool(target_outcome.get("continue_target", false)):
 			continue
-		if bool(post_hit_result.get("killed", false)):
+		if bool(target_outcome.get("killed", false)):
 			killed_units.append(target)
 
 	for killed_unit in killed_units:
