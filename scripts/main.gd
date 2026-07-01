@@ -52989,107 +52989,7 @@ func _refresh_editor_visual_views(precomputed_stats: Dictionary = {}, update_sid
 		var nodes: Array = snapshot.get("nodes", [])
 		var edges_for_snapshot: Array = snapshot.get("edges", [])
 		var source_nodes_for_edges: Array = topology.get("nodes", [])
-		for i in range(nodes.size()):
-			editor_board_node_enrich_count += 1
-			var node: Dictionary = nodes[i]
-			if _topology_node_is_component(node):
-				var slot_key := _topology_node_slot(node)
-				var part := _topology_node_part(role_key, node, unit_bp)
-				var effective_part := _part_with_effective_terminal_geometry(part, slot_key)
-				var module_indices_component := _module_indices_for_topology_node(node, unit_bp)
-				node["damage_type"] = String(part.get("projectile_damage_type", part.get("damage_type", "blunt")))
-				node["component_length"] = float(effective_part.get("length", 0.0))
-				node["joint_length"] = float(effective_part.get("length", 0.0)) if slot_key == "joint" else 0.0
-				node["muscle_length"] = float(effective_part.get("length", 0.0)) if slot_key == "limb_muscle" else 0.0
-				node["terminal_length"] = float(effective_part.get("length", 0.0)) if slot_key == "muscle" else 0.0
-				node["component_radius"] = maxf(0.012, float(effective_part.get("radius", 0.04)))
-				node["component_mass"] = maxf(0.0, float(part.get("mass", 0.0)))
-				node["component_name"] = String(part.get("name", node.get("label", "")))
-				node["terminal_weapon"] = bool(part.get("terminal_weapon", false))
-				node["connection_ends"] = int(part.get("connection_ends", 2))
-				node["size_class"] = String(part.get("size_class", part.get("slot_volume_tier", "")))
-				node["material_class"] = String(part.get("material_class", slot_key))
-				node["shape"] = String(part.get("shape", slot_key))
-				node["source_shape"] = String(part.get("shape", ""))
-				node["weapon_family"] = String(part.get("weapon_family", ""))
-				_apply_visual_handedness_defaults_to_node(node, part, slot_key)
-				node["blunt_shield"] = bool(part.get("blunt_shield", false))
-				node["blunt_gauntlet"] = bool(part.get("blunt_gauntlet", false))
-				node["blunt_hammer"] = bool(part.get("blunt_hammer", false))
-				node["projectile"] = bool(part.get("projectile", false))
-				node["is_torso"] = bool(part.get("is_torso", false))
-				node["module_slots"] = _torso_software_capacity_for_part(part) if _component_is_torso(part) else int(part.get("module_slots", 0))
-				node["torso_slots"] = _torso_plugin_capacity_for_part(part) if _component_is_torso(part) else int(part.get("torso_slots", 0))
-				node["joint_ports"] = _torso_external_joint_ports(part) if _component_is_torso(part) else int(part.get("joint_ports", part.get("connection_ends", 0)))
-				if _component_is_torso(part):
-					node["torso_port_directions"] = _torso_port_directions(part)
-					node["occupied_ports"] = _torso_occupied_port_indices(role_key, unit_bp, nodes, edges_for_snapshot, i)
-					node["torso_detail_open"] = i == editor_open_torso_node_index
-					node["torso_hovered"] = false
-				node["edge_extent_units"] = _topology_node_edge_extent_units(role_key, node, unit_bp)
-				node["projectile_damage_type"] = String(part.get("projectile_damage_type", part.get("damage_type", "")))
-				node["projectile_behavior"] = String(part.get("projectile_behavior", part.get("projectile_style", "")))
-				node["range"] = float(part.get("projectile_range", part.get("range", 0.0)))
-				node["flame_color"] = String(part.get("flame_color", ""))
-				node["thruster_family"] = String(part.get("thruster_family", ""))
-				node["thruster_allocated_momentum"] = _thruster_allocated_momentum_for_part(part)
-				node["move_momentum"] = _booster_normal_momentum_for_part(part)
-				node["boost_momentum"] = float(part.get("boost_momentum", 0.0))
-				node["engine_family"] = String(part.get("engine_family", ""))
-				node["slot_volume_tier"] = String(part.get("slot_volume_tier", ""))
-				node["engine_momentum_output"] = _engine_momentum_output_for_part(part) if slot_key == "engine" else 0.0
-				node["material_visual"] = String(part.get("material_visual", part.get("torso_material", "")))
-				node["archetype"] = String(part.get("archetype", ""))
-				node["module_count"] = module_indices_component.size()
-				node["label"] = String(node.get("label", _topology_component_label(slot_key, part, i)))
-				if slot_key == "joint":
-					node["downstream_rotation_radius_units"] = _topology_joint_max_rotation_radius_units(role_key, unit_bp, source_nodes_for_edges, edges_for_snapshot, i)
-				nodes[i] = node
-				continue
-			var joint_part := _selected_component(role_key, "joint", int(node.get("joint", unit_bp.get("joint", 0))))
-			var limb_part := _selected_component(role_key, "limb_muscle", int(node.get("limb_muscle", unit_bp.get("limb_muscle", 0))))
-			var muscle_part := _selected_component(role_key, "muscle", int(node.get("muscle", unit_bp.get("muscle", 0))))
-			var effective_muscle_part := _part_with_effective_terminal_geometry(muscle_part, "muscle")
-			var module_indices := _module_indices_for_topology_node(node, unit_bp)
-			node["damage_type"] = String(muscle_part.get("projectile_damage_type", muscle_part.get("damage_type", "blunt")))
-			node["joint_length"] = float(joint_part.get("length", 0.0))
-			node["muscle_length"] = float(limb_part.get("length", 0.0))
-			node["terminal_length"] = float(effective_muscle_part.get("length", 0.0))
-			node["component_radius"] = maxf(maxf(float(joint_part.get("radius", 0.02)), float(limb_part.get("radius", 0.04))), float(effective_muscle_part.get("radius", 0.04)))
-			node["component_mass"] = maxf(maxf(float(joint_part.get("mass", 0.0)), float(limb_part.get("mass", 0.0))), float(muscle_part.get("mass", 0.0)))
-			node["component_name"] = String(muscle_part.get("name", node.get("label", "")))
-			node["terminal_weapon"] = bool(muscle_part.get("terminal_weapon", false))
-			node["connection_ends"] = int(muscle_part.get("connection_ends", 2))
-			node["size_class"] = String(muscle_part.get("size_class", muscle_part.get("slot_volume_tier", "")))
-			node["material_class"] = String(muscle_part.get("material_class", "part"))
-			node["shape"] = String(muscle_part.get("shape", "part"))
-			node["source_shape"] = String(muscle_part.get("shape", ""))
-			node["weapon_family"] = String(muscle_part.get("weapon_family", ""))
-			_apply_visual_handedness_defaults_to_node(node, muscle_part, _topology_node_slot(node))
-			node["blunt_shield"] = bool(muscle_part.get("blunt_shield", false))
-			node["blunt_gauntlet"] = bool(muscle_part.get("blunt_gauntlet", false))
-			node["blunt_hammer"] = bool(muscle_part.get("blunt_hammer", false))
-			node["projectile"] = bool(muscle_part.get("projectile", false))
-			node["is_torso"] = bool(muscle_part.get("is_torso", false))
-			node["module_slots"] = _torso_software_capacity_for_part(muscle_part) if _component_is_torso(muscle_part) else int(muscle_part.get("module_slots", 0))
-			node["torso_slots"] = _torso_plugin_capacity_for_part(muscle_part) if _component_is_torso(muscle_part) else int(muscle_part.get("torso_slots", 0))
-			if _component_is_torso(muscle_part):
-				node["torso_port_directions"] = _torso_port_directions(muscle_part)
-				node["occupied_ports"] = _torso_occupied_port_indices(role_key, unit_bp, nodes, edges_for_snapshot, i)
-				node["torso_detail_open"] = i == editor_open_torso_node_index
-				node["torso_hovered"] = false
-			node["joint_ports"] = _torso_external_joint_ports(muscle_part) if _component_is_torso(muscle_part) else int(muscle_part.get("joint_ports", muscle_part.get("connection_ends", 0)))
-			node["edge_extent_units"] = _topology_node_edge_extent_units(role_key, node, unit_bp)
-			node["projectile_damage_type"] = String(muscle_part.get("projectile_damage_type", muscle_part.get("damage_type", "")))
-			node["projectile_behavior"] = String(muscle_part.get("projectile_behavior", muscle_part.get("projectile_style", "")))
-			node["range"] = float(muscle_part.get("projectile_range", muscle_part.get("range", 0.0)))
-			node["material_visual"] = String(muscle_part.get("material_visual", muscle_part.get("torso_material", "")))
-			node["archetype"] = String(muscle_part.get("archetype", ""))
-			node["module_count"] = module_indices.size()
-			node["label"] = String(node.get("label", "NODE %d" % (i + 1)))
-			if _topology_node_slot(node) == "joint":
-				node["downstream_rotation_radius_units"] = _topology_joint_max_rotation_radius_units(role_key, unit_bp, source_nodes_for_edges, edges_for_snapshot, i)
-			nodes[i] = node
+		nodes = _editor_enriched_topology_nodes_snapshot(role_key, unit_bp, nodes, source_nodes_for_edges, edges_for_snapshot)
 		var source_edges_for_conflicts: Array = topology.get("edges", [])
 		var display_nodes_for_edges := _board_nodes_with_art_visual_positions(role_key, unit_bp, nodes, source_edges_for_conflicts)
 		source_nodes_for_edges = display_nodes_for_edges
@@ -53128,6 +53028,111 @@ func _editor_shallow_topology_snapshot(topology: Dictionary) -> Dictionary:
 		"edges": shallow_edges,
 		"distance_scale": TOPOLOGY_BOARD_PHYSICAL_UNITS,
 	}
+
+
+func _editor_enriched_topology_nodes_snapshot(role_key: String, unit_bp: Dictionary, nodes: Array, source_nodes_for_edges: Array, edges_for_snapshot: Array) -> Array:
+	for i in range(nodes.size()):
+		editor_board_node_enrich_count += 1
+		var node: Dictionary = nodes[i]
+		if _topology_node_is_component(node):
+			var slot_key := _topology_node_slot(node)
+			var part := _topology_node_part(role_key, node, unit_bp)
+			var effective_part := _part_with_effective_terminal_geometry(part, slot_key)
+			var module_indices_component := _module_indices_for_topology_node(node, unit_bp)
+			node["damage_type"] = String(part.get("projectile_damage_type", part.get("damage_type", "blunt")))
+			node["component_length"] = float(effective_part.get("length", 0.0))
+			node["joint_length"] = float(effective_part.get("length", 0.0)) if slot_key == "joint" else 0.0
+			node["muscle_length"] = float(effective_part.get("length", 0.0)) if slot_key == "limb_muscle" else 0.0
+			node["terminal_length"] = float(effective_part.get("length", 0.0)) if slot_key == "muscle" else 0.0
+			node["component_radius"] = maxf(0.012, float(effective_part.get("radius", 0.04)))
+			node["component_mass"] = maxf(0.0, float(part.get("mass", 0.0)))
+			node["component_name"] = String(part.get("name", node.get("label", "")))
+			node["terminal_weapon"] = bool(part.get("terminal_weapon", false))
+			node["connection_ends"] = int(part.get("connection_ends", 2))
+			node["size_class"] = String(part.get("size_class", part.get("slot_volume_tier", "")))
+			node["material_class"] = String(part.get("material_class", slot_key))
+			node["shape"] = String(part.get("shape", slot_key))
+			node["source_shape"] = String(part.get("shape", ""))
+			node["weapon_family"] = String(part.get("weapon_family", ""))
+			_apply_visual_handedness_defaults_to_node(node, part, slot_key)
+			node["blunt_shield"] = bool(part.get("blunt_shield", false))
+			node["blunt_gauntlet"] = bool(part.get("blunt_gauntlet", false))
+			node["blunt_hammer"] = bool(part.get("blunt_hammer", false))
+			node["projectile"] = bool(part.get("projectile", false))
+			node["is_torso"] = bool(part.get("is_torso", false))
+			node["module_slots"] = _torso_software_capacity_for_part(part) if _component_is_torso(part) else int(part.get("module_slots", 0))
+			node["torso_slots"] = _torso_plugin_capacity_for_part(part) if _component_is_torso(part) else int(part.get("torso_slots", 0))
+			node["joint_ports"] = _torso_external_joint_ports(part) if _component_is_torso(part) else int(part.get("joint_ports", part.get("connection_ends", 0)))
+			if _component_is_torso(part):
+				node["torso_port_directions"] = _torso_port_directions(part)
+				node["occupied_ports"] = _torso_occupied_port_indices(role_key, unit_bp, nodes, edges_for_snapshot, i)
+				node["torso_detail_open"] = i == editor_open_torso_node_index
+				node["torso_hovered"] = false
+			node["edge_extent_units"] = _topology_node_edge_extent_units(role_key, node, unit_bp)
+			node["projectile_damage_type"] = String(part.get("projectile_damage_type", part.get("damage_type", "")))
+			node["projectile_behavior"] = String(part.get("projectile_behavior", part.get("projectile_style", "")))
+			node["range"] = float(part.get("projectile_range", part.get("range", 0.0)))
+			node["flame_color"] = String(part.get("flame_color", ""))
+			node["thruster_family"] = String(part.get("thruster_family", ""))
+			node["thruster_allocated_momentum"] = _thruster_allocated_momentum_for_part(part)
+			node["move_momentum"] = _booster_normal_momentum_for_part(part)
+			node["boost_momentum"] = float(part.get("boost_momentum", 0.0))
+			node["engine_family"] = String(part.get("engine_family", ""))
+			node["slot_volume_tier"] = String(part.get("slot_volume_tier", ""))
+			node["engine_momentum_output"] = _engine_momentum_output_for_part(part) if slot_key == "engine" else 0.0
+			node["material_visual"] = String(part.get("material_visual", part.get("torso_material", "")))
+			node["archetype"] = String(part.get("archetype", ""))
+			node["module_count"] = module_indices_component.size()
+			node["label"] = String(node.get("label", _topology_component_label(slot_key, part, i)))
+			if slot_key == "joint":
+				node["downstream_rotation_radius_units"] = _topology_joint_max_rotation_radius_units(role_key, unit_bp, source_nodes_for_edges, edges_for_snapshot, i)
+			nodes[i] = node
+			continue
+		var joint_part := _selected_component(role_key, "joint", int(node.get("joint", unit_bp.get("joint", 0))))
+		var limb_part := _selected_component(role_key, "limb_muscle", int(node.get("limb_muscle", unit_bp.get("limb_muscle", 0))))
+		var muscle_part := _selected_component(role_key, "muscle", int(node.get("muscle", unit_bp.get("muscle", 0))))
+		var effective_muscle_part := _part_with_effective_terminal_geometry(muscle_part, "muscle")
+		var module_indices := _module_indices_for_topology_node(node, unit_bp)
+		node["damage_type"] = String(muscle_part.get("projectile_damage_type", muscle_part.get("damage_type", "blunt")))
+		node["joint_length"] = float(joint_part.get("length", 0.0))
+		node["muscle_length"] = float(limb_part.get("length", 0.0))
+		node["terminal_length"] = float(effective_muscle_part.get("length", 0.0))
+		node["component_radius"] = maxf(maxf(float(joint_part.get("radius", 0.02)), float(limb_part.get("radius", 0.04))), float(effective_muscle_part.get("radius", 0.04)))
+		node["component_mass"] = maxf(maxf(float(joint_part.get("mass", 0.0)), float(limb_part.get("mass", 0.0))), float(muscle_part.get("mass", 0.0)))
+		node["component_name"] = String(muscle_part.get("name", node.get("label", "")))
+		node["terminal_weapon"] = bool(muscle_part.get("terminal_weapon", false))
+		node["connection_ends"] = int(muscle_part.get("connection_ends", 2))
+		node["size_class"] = String(muscle_part.get("size_class", muscle_part.get("slot_volume_tier", "")))
+		node["material_class"] = String(muscle_part.get("material_class", "part"))
+		node["shape"] = String(muscle_part.get("shape", "part"))
+		node["source_shape"] = String(muscle_part.get("shape", ""))
+		node["weapon_family"] = String(muscle_part.get("weapon_family", ""))
+		_apply_visual_handedness_defaults_to_node(node, muscle_part, _topology_node_slot(node))
+		node["blunt_shield"] = bool(muscle_part.get("blunt_shield", false))
+		node["blunt_gauntlet"] = bool(muscle_part.get("blunt_gauntlet", false))
+		node["blunt_hammer"] = bool(muscle_part.get("blunt_hammer", false))
+		node["projectile"] = bool(muscle_part.get("projectile", false))
+		node["is_torso"] = bool(muscle_part.get("is_torso", false))
+		node["module_slots"] = _torso_software_capacity_for_part(muscle_part) if _component_is_torso(muscle_part) else int(muscle_part.get("module_slots", 0))
+		node["torso_slots"] = _torso_plugin_capacity_for_part(muscle_part) if _component_is_torso(muscle_part) else int(muscle_part.get("torso_slots", 0))
+		if _component_is_torso(muscle_part):
+			node["torso_port_directions"] = _torso_port_directions(muscle_part)
+			node["occupied_ports"] = _torso_occupied_port_indices(role_key, unit_bp, nodes, edges_for_snapshot, i)
+			node["torso_detail_open"] = i == editor_open_torso_node_index
+			node["torso_hovered"] = false
+		node["joint_ports"] = _torso_external_joint_ports(muscle_part) if _component_is_torso(muscle_part) else int(muscle_part.get("joint_ports", muscle_part.get("connection_ends", 0)))
+		node["edge_extent_units"] = _topology_node_edge_extent_units(role_key, node, unit_bp)
+		node["projectile_damage_type"] = String(muscle_part.get("projectile_damage_type", muscle_part.get("damage_type", "")))
+		node["projectile_behavior"] = String(muscle_part.get("projectile_behavior", muscle_part.get("projectile_style", "")))
+		node["range"] = float(muscle_part.get("projectile_range", muscle_part.get("range", 0.0)))
+		node["material_visual"] = String(muscle_part.get("material_visual", muscle_part.get("torso_material", "")))
+		node["archetype"] = String(muscle_part.get("archetype", ""))
+		node["module_count"] = module_indices.size()
+		node["label"] = String(node.get("label", "NODE %d" % (i + 1)))
+		if _topology_node_slot(node) == "joint":
+			node["downstream_rotation_radius_units"] = _topology_joint_max_rotation_radius_units(role_key, unit_bp, source_nodes_for_edges, edges_for_snapshot, i)
+		nodes[i] = node
+	return nodes
 
 
 func _editor_topology_edge_state_snapshot(role_key: String, unit_bp: Dictionary, nodes: Array, source_nodes_for_edges: Array, source_edges_for_conflicts: Array) -> Dictionary:

@@ -33,6 +33,10 @@ func _init() -> void:
 	if shallow_block.is_empty():
 		_fail("Missing _editor_shallow_topology_snapshot helper.")
 		return
+	var enriched_nodes_block := _function_block(source, "func _editor_enriched_topology_nodes_snapshot(")
+	if enriched_nodes_block.is_empty():
+		_fail("Missing _editor_enriched_topology_nodes_snapshot helper.")
+		return
 	var edge_state_block := _function_block(source, "func _editor_topology_edge_state_snapshot(")
 	if edge_state_block.is_empty():
 		_fail("Missing _editor_topology_edge_state_snapshot helper.")
@@ -50,6 +54,9 @@ func _init() -> void:
 		return
 	if not block.contains("_editor_shallow_topology_snapshot(topology)"):
 		_fail("TeamEdit visual refresh should delegate shallow topology snapshot building.")
+		return
+	if not block.contains("_editor_enriched_topology_nodes_snapshot(role_key, unit_bp, nodes, source_nodes_for_edges, edges_for_snapshot)"):
+		_fail("TeamEdit visual refresh should delegate topology node enrichment.")
 		return
 	if not block.contains("_editor_barrier_screen_board_snapshot(role_key, unit_bp)"):
 		_fail("TeamEdit visual refresh should delegate barrier screen board snapshot building.")
@@ -80,6 +87,11 @@ func _init() -> void:
 		"var board_revision_key",
 		"assembly_board_view.set_board(",
 		"hot_path_profiler.record_value(\"teamedit.visual_refresh_usec\"",
+		"editor_board_node_enrich_count +=",
+		"if _topology_node_is_component(node):",
+		"node[\"component_length\"]",
+		"node[\"joint_length\"]",
+		"node[\"downstream_rotation_radius_units\"]",
 		"terrain_preview_tiles_by_index",
 		"snapshot[\"barrier_columns\"]",
 		"snapshot[\"tile_%d\" % i]",
@@ -96,6 +108,21 @@ func _init() -> void:
 	]:
 		if not shallow_block.contains(token):
 			_fail("Shallow topology snapshot helper missing token: %s" % token)
+			return
+	for token in [
+		"_topology_node_is_component",
+		"_topology_node_part",
+		"_part_with_effective_terminal_geometry",
+		"_module_indices_for_topology_node",
+		"_component_is_torso",
+		"_torso_occupied_port_indices",
+		"_topology_joint_max_rotation_radius_units",
+		"_apply_visual_handedness_defaults_to_node",
+		"editor_board_node_enrich_count",
+		"nodes[i] = node",
+	]:
+		if not enriched_nodes_block.contains(token):
+			_fail("Enriched topology nodes helper missing token: %s" % token)
 			return
 	for token in [
 		"_topology_endpoint_conflicts",

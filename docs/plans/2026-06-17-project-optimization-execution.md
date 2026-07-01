@@ -1054,6 +1054,28 @@ GREEN: VIEW_EXTRACTION_CONTRACT_PROBE ok views=27
 
 `_submit_editor_visual_snapshot()` now owns the final board revision lookup, `assembly_board_view.set_board()` call, orientation popup refresh, optional torso/engine side-panel refresh, and hot-path profiler record/close. `_refresh_editor_visual_views()` delegates final submission after custom dynamic fields are applied, and the visual-refresh probe rejects the old direct board submission/profiler fragments from the orchestration function.
 
+Follow-up editor visual refresh topology node enrichment extraction:
+
+```text
+RED: editor_visual_refresh_no_deep_snapshot_probe failed on missing _editor_enriched_topology_nodes_snapshot helper
+GREEN: EDITOR_VISUAL_REFRESH_NO_DEEP_SNAPSHOT_PROBE ok
+GREEN: Godot --check-only --script res://scripts/main.gd --quit-after 1
+GREEN: EDITOR_BOARD_SNAPSHOT_INCREMENTAL_PROBE ok rebuilds=1 dynamic=4
+GREEN: EDITOR_BOARD_MODEL_INCREMENTAL_PROBE ok shallow=1 skip=1
+GREEN: BOARD_ZOOM_SOCKET_FOLLOW_PROBE ok marker=0:torso_port:0 delta=34.987px
+GREEN: EDITOR_RENDER_CACHE_PROBE ok apply=1 noop=0 skip=2 submit=2
+GREEN: ASSEMBLY_BOARD_SET_BOARD_NOOP_PROBE ok apply=1 noop=0 skip=2
+GREEN: VIEW_EXTRACTION_CONTRACT_PROBE ok views=27
+GREEN: MODULE_BINDING_GROUP_HALO_VISUAL_PROBE ok groups=2
+GREEN: SCYTHE_MOUNT_SIDE_BOARD_RUNTIME_PROBE ok node=2
+GREEN: THREE_ROOT_LIMB_ATTACH_PROBE ok nodes=4 edges=3 ports=3
+GREEN: jq empty tools/probe_manifest.json
+GREEN: git diff --check
+KNOWN BASELINE: editor_material_highlight_probe still reports different-material hover as legal_socket on current code and on clean cca7eda with copied Godot import cache
+```
+
+`_editor_enriched_topology_nodes_snapshot()` now owns the custom topology node enrichment pass, including component and legacy node length/radius/mass/material/handedness/projectile/momentum/module/torso-port/downstream-radius metadata. `_refresh_editor_visual_views()` delegates that pass and keeps only the surrounding custom-board orchestration. `_refresh_editor_visual_views()` is now 70 lines, and the visual-refresh probe rejects old inline node-enrichment fragments from the orchestration function.
+
 Remaining items after this batch:
 
 - Continue editor UI extraction with `_build_editor_ui` and the remaining action presentation/control-mutation sections of `_apply_editor_panel_visibility`, then continue `_resolve_attack` and `_refresh_editor_visual_views` extraction.
