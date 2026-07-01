@@ -466,6 +466,36 @@ func _init() -> void:
 	_assert_vector(first_body_part_build_spec, "position", Vector2(128.0, 178.0), "body part button build spec")
 	_assert_vector(first_body_part_build_spec, "size", Vector2(132.0, 44.0), "body part button build spec")
 	_assert_vector(third_body_part_build_spec, "position", Vector2(172.0, 328.0), "body part button build spec")
+	if not ui_lifecycle_source.contains("static func editor_module_binding_button_build_specs("):
+		_fail("UILifecycleService should expose editor module binding button build specs.")
+		return
+	var module_binding_build_specs: Dictionary = ui_lifecycle_service.call("editor_module_binding_button_build_specs", 3, 240, 380)
+	var module_key_button_build_specs: Array = Array(module_binding_build_specs.get("key_buttons", []))
+	var module_side_button_build_specs: Array = Array(module_binding_build_specs.get("side_buttons", []))
+	var module_button_build_specs: Array = Array(module_binding_build_specs.get("buttons", []))
+	if module_key_button_build_specs.size() != 3 or module_side_button_build_specs.size() != 2:
+		_fail("UILifecycleService module binding button build spec counts failed.")
+		return
+	if module_button_build_specs.size() != 5:
+		_fail("UILifecycleService module binding merged button build spec count failed.")
+		return
+	var first_module_key_button_build_spec: Dictionary = Dictionary(module_key_button_build_specs[0])
+	var third_module_key_button_build_spec: Dictionary = Dictionary(module_key_button_build_specs[2])
+	var right_module_side_button_build_spec: Dictionary = Dictionary(module_side_button_build_specs[1])
+	if String(first_module_key_button_build_spec.get("key", "")) != "bind_key_1" or String(first_module_key_button_build_spec.get("name", "")) != "ModuleBindKey1":
+		_fail("UILifecycleService module binding key identity failed.")
+		return
+	if String(right_module_side_button_build_spec.get("key", "")) != "bind_side_right" or String(right_module_side_button_build_spec.get("side", "")) != "right" or String(right_module_side_button_build_spec.get("name", "")) != "ModuleBindSideRight":
+		_fail("UILifecycleService module binding side identity failed.")
+		return
+	_assert_vector(first_module_key_button_build_spec, "position", Vector2(286.0, 618.0), "module binding key build spec")
+	_assert_vector(third_module_key_button_build_spec, "position", Vector2(398.0, 618.0), "module binding key build spec")
+	_assert_vector(first_module_key_button_build_spec, "size", Vector2(50.0, 24.0), "module binding key build spec")
+	_assert_vector(right_module_side_button_build_spec, "position", Vector2(936.0, 618.0), "module binding side build spec")
+	_assert_vector(right_module_side_button_build_spec, "size", Vector2(132.0, 28.0), "module binding side build spec")
+	if int(first_module_key_button_build_spec.get("z_index", -1)) != 240 or int(right_module_side_button_build_spec.get("z_index", -1)) != 380:
+		_fail("UILifecycleService module binding z-index build spec failed.")
+		return
 	Dictionary(Array(build_specs.get("canvas_tools", []))[0])["key"] = "mutated"
 	var fresh_build_specs: Dictionary = UILifecycleService.editor_action_build_specs()
 	if String(Dictionary(Array(fresh_build_specs.get("canvas_tools", []))[0]).get("key", "")) != "blank_canvas":

@@ -525,6 +525,35 @@ static func editor_body_part_button_build_specs(body_part_order: Array) -> Array
 	return buttons
 
 
+static func editor_module_binding_button_build_specs(attack_group_count: int, key_z_index: int, side_z_index: int) -> Dictionary:
+	var key_buttons := []
+	for key_index in range(1, maxi(0, attack_group_count) + 1):
+		key_buttons.append({
+			"index": key_index,
+			"key": "bind_key_%d" % key_index,
+			"name": "ModuleBindKey%d" % key_index,
+			"text": "键%d" % key_index,
+			"position": Vector2(286.0 + float(key_index - 1) * 56.0, 618.0),
+			"size": Vector2(50.0, 24.0),
+			"z_index": key_z_index,
+		})
+	var side_buttons := []
+	for side_key in ["left", "right"]:
+		side_buttons.append({
+			"key": "bind_side_%s" % side_key,
+			"side": side_key,
+			"name": "ModuleBindSide%s" % side_key.capitalize(),
+			"position": Vector2(936.0, 618.0),
+			"size": Vector2(132.0, 28.0),
+			"z_index": side_z_index,
+		})
+	return {
+		"key_buttons": key_buttons,
+		"side_buttons": side_buttons,
+		"buttons": key_buttons + side_buttons,
+	}
+
+
 static func editor_panel_role_chrome_presentation(mode: String, active_role_key: String, parts_visible: bool, panel_keys: Array, role_keys: Array, role_order: Array, role_short_labels: Dictionary, zh: bool) -> Dictionary:
 	var panel_texts := {"load": "单位库", "parts": "零件库"} if zh else {"load": "UNITS", "parts": "PARTS"}
 	var panel_buttons := {}

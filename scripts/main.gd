@@ -47566,32 +47566,24 @@ func _build_editor_ui() -> void:
 	editor_section_labels["canvas_note"] = _make_label(root, "CanvasTopologyText", "", Vector2.ZERO, Vector2.ZERO, 1, Color.TRANSPARENT, HORIZONTAL_ALIGNMENT_CENTER)
 	editor_section_labels["canvas_note"].autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	editor_section_labels["canvas_note"].visible = false
-	for key_index in range(1, ATTACK_GROUP_COUNT + 1):
-		var bind_button := Button.new()
-		bind_button.name = "ModuleBindKey%d" % key_index
-		bind_button.text = "键%d" % key_index
-		bind_button.position = Vector2(286.0 + float(key_index - 1) * 56.0, 618.0)
-		bind_button.size = Vector2(50.0, 24.0)
-		bind_button.focus_mode = Control.FOCUS_NONE
-		bind_button.mouse_filter = Control.MOUSE_FILTER_STOP
-		bind_button.z_index = MODULE_BINDING_TRYOUT_Z_INDEX
-		bind_button.visible = false
-		bind_button.pressed.connect(_editor_action.bind("bind_key_%d" % key_index))
-		root.add_child(bind_button)
-		editor_action_buttons["bind_key_%d" % key_index] = bind_button
-	for side_key in ["left", "right"]:
-		var side_button := Button.new()
-		side_button.name = "ModuleBindSide%s" % side_key.capitalize()
-		side_button.text = _side_mount_action_side_label(side_key)
-		side_button.position = Vector2(936.0, 618.0)
-		side_button.size = Vector2(132.0, 28.0)
-		side_button.focus_mode = Control.FOCUS_NONE
-		side_button.mouse_filter = Control.MOUSE_FILTER_STOP
-		side_button.z_index = MODULE_BINDING_OVERLAY_Z_INDEX
-		side_button.visible = false
-		side_button.pressed.connect(_editor_action.bind("bind_side_%s" % side_key))
-		root.add_child(side_button)
-		editor_action_buttons["bind_side_%s" % side_key] = side_button
+	var module_binding_button_build_specs := UILifecycleService.editor_module_binding_button_build_specs(ATTACK_GROUP_COUNT, MODULE_BINDING_TRYOUT_Z_INDEX, MODULE_BINDING_OVERLAY_Z_INDEX)
+	var module_binding_button_specs: Array = Array(module_binding_button_build_specs.get("buttons", []))
+	for raw_module_binding_button_spec in module_binding_button_specs:
+		var module_binding_button_spec := Dictionary(raw_module_binding_button_spec)
+		var side_key := String(module_binding_button_spec.get("side", ""))
+		var button_key := String(module_binding_button_spec.get("key", ""))
+		var binding_button := Button.new()
+		binding_button.name = String(module_binding_button_spec.get("name", button_key))
+		binding_button.text = _side_mount_action_side_label(side_key) if side_key != "" else String(module_binding_button_spec.get("text", ""))
+		binding_button.position = module_binding_button_spec.get("position", Vector2.ZERO)
+		binding_button.size = module_binding_button_spec.get("size", Vector2.ZERO)
+		binding_button.focus_mode = Control.FOCUS_NONE
+		binding_button.mouse_filter = Control.MOUSE_FILTER_STOP
+		binding_button.z_index = int(module_binding_button_spec.get("z_index", MODULE_BINDING_TRYOUT_Z_INDEX))
+		binding_button.visible = false
+		binding_button.pressed.connect(_editor_action.bind(button_key))
+		root.add_child(binding_button)
+		editor_action_buttons[button_key] = binding_button
 	var board_zoom_title := _make_label(root, "BoardZoomTitle", "", Vector2.ZERO, Vector2.ZERO, 1, Color.TRANSPARENT, HORIZONTAL_ALIGNMENT_LEFT)
 	board_zoom_title.visible = false
 	var zoom_button_specs: Array = Array(editor_action_build_specs.get("board_zoom_actions", []))
