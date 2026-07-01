@@ -49923,7 +49923,7 @@ func _apply_editor_panel_visibility(role_key: String, unit_bp: Dictionary) -> vo
 		_apply_editor_control_plan(sort_option_button, sort_option_plan)
 	if bool(sort_plan.get("sort_dir_move_to_front", false)) and editor_action_buttons.has("sort_dir"):
 		var sort_dir_front: Button = editor_action_buttons["sort_dir"]
-		sort_dir_front.move_to_front()
+		_apply_editor_control_plan(sort_dir_front, {"move_to_front": true})
 	var info_plan := UILifecycleService.editor_info_panel_presentation(
 		unit_visible,
 		stats_visible,

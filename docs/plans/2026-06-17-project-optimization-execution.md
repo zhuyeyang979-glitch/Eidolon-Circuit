@@ -1491,6 +1491,24 @@ GREEN: git diff --check
 
 `_apply_editor_panel_visibility()` now applies `UILifecycleService.editor_info_panel_presentation()` plans through `_apply_editor_control_plan()` for the unit label, summary label, catalog page label, and catalog title visibility. `_apply_editor_panel_visibility()` is now 309 lines, and the extraction probe rejects the stale direct info-panel mutation calls while keeping save-feedback relayout and the existing stats/detail/art/reference consumers local.
 
+Follow-up editor sort-dir front-order adapter extraction:
+
+```text
+RED: main_file_extraction_contract_probe failed on direct sort_dir_front.move_to_front()
+GREEN: MAIN_FILE_EXTRACTION_CONTRACT_PROBE ok services=9
+GREEN: LIFECYCLE_SERVICES_CONTRACT_PROBE ok
+GREEN: Godot --check-only --script res://scripts/main.gd --quit-after 1
+GREEN: Godot --check-only --script res://scripts/services/ui_lifecycle_service.gd --quit-after 1
+GREEN: WEAPON_CATALOG_SUBMENU_PROBE ok melee_options=6 gun_options=10
+GREEN: WEAPON_SUBCATEGORY_FILTER_PROBE ok
+GREEN: PART_LIBRARY_UI_PROBE groups=["torso", "limb", "terminal_weapon", "barrier_panel", "software_muscle", "software"] weapon=3 equipment=5 software=7 dashboard=40
+GREEN: EDITOR_CATALOG_REVISION_CACHE_PROBE ok skips=1
+GREEN: jq empty tools/probe_manifest.json
+GREEN: git diff --check
+```
+
+`_apply_editor_panel_visibility()` now applies the `sort_dir_move_to_front` decision from `UILifecycleService.editor_sort_controls_presentation()` through `_apply_editor_control_plan()` instead of directly calling `sort_dir_front.move_to_front()`. `_apply_editor_panel_visibility()` remains 309 lines, and the extraction probe rejects the stale direct front-order mutation.
+
 Remaining items after this batch:
 
 - Continue editor UI extraction with `_build_editor_ui` and the remaining action presentation/control-mutation sections of `_apply_editor_panel_visibility`, then continue `_resolve_attack` and `_refresh_editor_visual_views` extraction.
