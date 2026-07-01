@@ -9903,6 +9903,20 @@ func _apply_editor_control_plan(control: Control, plan: Dictionary, apply_disabl
 		_set_control_tooltip_if_changed(control, String(plan.get("tooltip", "")))
 	if plan.has("modulate"):
 		_set_canvas_item_modulate_if_changed(control, plan.get("modulate", Color.WHITE))
+	if plan.has("mouse_filter"):
+		var mouse_filter_value := int(plan.get("mouse_filter", control.mouse_filter))
+		if control.mouse_filter != mouse_filter_value:
+			control.mouse_filter = mouse_filter_value
+			editor_property_write_count += 1
+		else:
+			editor_property_noop_count += 1
+	if plan.has("z_index"):
+		var z_index_value := int(plan.get("z_index", control.z_index))
+		if control.z_index != z_index_value:
+			control.z_index = z_index_value
+			editor_property_write_count += 1
+		else:
+			editor_property_noop_count += 1
 	if plan.has("editable") and control is Slider:
 		_set_slider_editable_if_changed(control as Slider, bool(plan.get("editable", false)))
 	if plan.has("value") and control is Range:
@@ -49532,28 +49546,21 @@ func _refresh_editor_module_binding_buttons() -> void:
 			continue
 		var button: Button = editor_action_buttons[button_key]
 		var bound_ready := bound_keys.has(key_index)
-		var should_show := bound_ready and not pending and editor_layer != null and editor_layer.visible
-		_set_control_position_if_changed(button, Vector2(286.0 + float(key_index - 1) * 56.0, 618.0))
-		_set_control_size_if_changed(button, Vector2(50.0, 24.0))
-		button.mouse_filter = Control.MOUSE_FILTER_STOP
-		button.z_index = MODULE_BINDING_TRYOUT_Z_INDEX
-		_set_canvas_item_visible_if_changed(button, should_show)
-		_set_button_disabled_if_changed(button, not should_show)
-		var label_prefix := "试" if bound_ready and not pending and _ui_is_zh() else ("TRY" if bound_ready and not pending else "")
-		var button_text := "%s%d %s" % [label_prefix, key_index, _attack_key_label(key_index)] if label_prefix != "" else "%d %s" % [key_index, _attack_key_label(key_index)]
-		_set_control_text_if_changed(button, button_text)
-		var tip := ("试用攻击键 %d（无伤害、不耗弹、不发热）" if _ui_is_zh() else "Try attack key %d (no damage, ammo, or heat)") % key_index if bound_ready and not pending else (("绑定到攻击键 %d（键盘 %s）" if _ui_is_zh() else "Bind to attack key %d (keyboard %s)") % [key_index, _attack_key_label(key_index)])
-		_set_control_tooltip_if_changed(button, tip)
-		_set_canvas_item_modulate_if_changed(button, Color(0.42, 1.0, 0.76, 0.96) if bound_ready and not pending else Color(0.58, 0.82, 1.0, 0.92))
-		if button.visible:
-			button.move_to_front()
+		_apply_editor_control_plan(button, UILifecycleService.editor_module_binding_tryout_button_presentation(
+			key_index,
+			bound_ready,
+			pending,
+			editor_layer != null and editor_layer.visible,
+			_attack_key_label(key_index),
+			_ui_is_zh(),
+			MODULE_BINDING_TRYOUT_Z_INDEX
+		))
 	for side_key in ["left", "right"]:
 		var side_button_key := "bind_side_%s" % side_key
 		if not editor_action_buttons.has(side_button_key):
 			continue
 		var side_button: Button = editor_action_buttons[side_button_key]
-		_set_canvas_item_visible_if_changed(side_button, false)
-		_set_button_disabled_if_changed(side_button, true)
+		_apply_editor_control_plan(side_button, UILifecycleService.editor_module_binding_side_idle_presentation())
 
 
 func _editor_template_category_label(role_key: String) -> String:

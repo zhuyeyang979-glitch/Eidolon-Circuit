@@ -721,6 +721,34 @@ func _init() -> void:
 	if int(first_module_key_button_build_spec.get("z_index", -1)) != 240 or int(right_module_side_button_build_spec.get("z_index", -1)) != 380:
 		_fail("UILifecycleService module binding z-index build spec failed.")
 		return
+	if not ui_lifecycle_source.contains("static func editor_module_binding_tryout_button_presentation("):
+		_fail("UILifecycleService should expose editor module binding tryout button presentation planning.")
+		return
+	var module_tryout_plan: Dictionary = ui_lifecycle_service.call("editor_module_binding_tryout_button_presentation", 2, true, false, true, "K", true, 240)
+	_assert_vector(module_tryout_plan, "position", Vector2(342.0, 618.0), "module binding tryout button presentation")
+	_assert_vector(module_tryout_plan, "size", Vector2(50.0, 24.0), "module binding tryout button presentation")
+	if not bool(module_tryout_plan.get("visible", false)) or bool(module_tryout_plan.get("disabled", true)) or String(module_tryout_plan.get("text", "")) != "试2 K":
+		_fail("UILifecycleService module binding active tryout text/state failed.")
+		return
+	if String(module_tryout_plan.get("tooltip", "")) != "试用攻击键 2（无伤害、不耗弹、不发热）" or int(module_tryout_plan.get("mouse_filter", -1)) != Control.MOUSE_FILTER_STOP or int(module_tryout_plan.get("z_index", -1)) != 240 or not bool(module_tryout_plan.get("move_to_front", false)):
+		_fail("UILifecycleService module binding active tryout metadata failed.")
+		return
+	_assert_color(module_tryout_plan, "modulate", Color(0.42, 1.0, 0.76, 0.96), "active module binding tryout button presentation")
+	var module_hidden_plan: Dictionary = ui_lifecycle_service.call("editor_module_binding_tryout_button_presentation", 1, false, false, true, "J", false, 240)
+	if bool(module_hidden_plan.get("visible", true)) or not bool(module_hidden_plan.get("disabled", false)) or String(module_hidden_plan.get("text", "")) != "1 J":
+		_fail("UILifecycleService module binding inactive tryout text/state failed.")
+		return
+	if String(module_hidden_plan.get("tooltip", "")) != "Bind to attack key 1 (keyboard J)" or bool(module_hidden_plan.get("move_to_front", true)):
+		_fail("UILifecycleService module binding inactive tryout metadata failed.")
+		return
+	_assert_color(module_hidden_plan, "modulate", Color(0.58, 0.82, 1.0, 0.92), "inactive module binding tryout button presentation")
+	if not ui_lifecycle_source.contains("static func editor_module_binding_side_idle_presentation("):
+		_fail("UILifecycleService should expose editor module binding side idle presentation planning.")
+		return
+	var module_side_idle_plan: Dictionary = ui_lifecycle_service.call("editor_module_binding_side_idle_presentation")
+	if bool(module_side_idle_plan.get("visible", true)) or not bool(module_side_idle_plan.get("disabled", false)):
+		_fail("UILifecycleService module binding side idle presentation failed.")
+		return
 	if not ui_lifecycle_source.contains("static func editor_sort_action_button_build_specs("):
 		_fail("UILifecycleService should expose editor sort action button build specs.")
 		return

@@ -642,6 +642,33 @@ static func editor_module_binding_button_build_specs(attack_group_count: int, ke
 	}
 
 
+static func editor_module_binding_tryout_button_presentation(key_index: int, bound_ready: bool, pending: bool, editor_visible: bool, attack_key_label: String, zh: bool, z_index: int) -> Dictionary:
+	var active := bound_ready and not pending
+	var label_prefix := "试" if active and zh else ("TRY" if active else "")
+	var text := "%s%d %s" % [label_prefix, key_index, attack_key_label] if label_prefix != "" else "%d %s" % [key_index, attack_key_label]
+	var tooltip := ("试用攻击键 %d（无伤害、不耗弹、不发热）" if zh else "Try attack key %d (no damage, ammo, or heat)") % key_index if active else (("绑定到攻击键 %d（键盘 %s）" if zh else "Bind to attack key %d (keyboard %s)") % [key_index, attack_key_label])
+	var visible := active and editor_visible
+	return {
+		"position": Vector2(286.0 + float(key_index - 1) * 56.0, 618.0),
+		"size": Vector2(50.0, 24.0),
+		"mouse_filter": Control.MOUSE_FILTER_STOP,
+		"z_index": z_index,
+		"visible": visible,
+		"disabled": not visible,
+		"text": text,
+		"tooltip": tooltip,
+		"modulate": Color(0.42, 1.0, 0.76, 0.96) if active else Color(0.58, 0.82, 1.0, 0.92),
+		"move_to_front": visible,
+	}
+
+
+static func editor_module_binding_side_idle_presentation() -> Dictionary:
+	return {
+		"visible": false,
+		"disabled": true,
+	}
+
+
 static func editor_sort_action_button_build_specs() -> Array:
 	var buttons := []
 	for raw_spec in Array(editor_action_build_specs().get("sort_actions", [])):
