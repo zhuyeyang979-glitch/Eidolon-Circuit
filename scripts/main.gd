@@ -49936,17 +49936,10 @@ func _apply_editor_panel_visibility(role_key: String, unit_bp: Dictionary) -> vo
 	)
 	if editor_unit_label != null:
 		var info_unit_plan := Dictionary(info_plan.get("unit", {}))
-		_set_canvas_item_visible_if_changed(editor_unit_label, bool(info_unit_plan.get("visible", false)))
-		if editor_unit_label.visible:
-			_set_control_position_if_changed(editor_unit_label, info_unit_plan.get("position", Vector2.ZERO))
-			_set_control_size_if_changed(editor_unit_label, info_unit_plan.get("size", Vector2.ZERO))
-			_set_control_text_if_changed(editor_unit_label, String(info_unit_plan.get("text", "")))
+		_apply_editor_control_plan(editor_unit_label, info_unit_plan)
 	if editor_summary_label != null:
 		var info_summary_plan := Dictionary(info_plan.get("summary", {}))
-		_set_canvas_item_visible_if_changed(editor_summary_label, bool(info_summary_plan.get("visible", false)))
-		if editor_summary_label.visible:
-			_set_control_position_if_changed(editor_summary_label, info_summary_plan.get("position", Vector2.ZERO))
-			_set_control_size_if_changed(editor_summary_label, info_summary_plan.get("size", Vector2.ZERO))
+		_apply_editor_control_plan(editor_summary_label, info_summary_plan)
 	if editor_stats_label != null:
 		var info_stats_plan := Dictionary(info_plan.get("stats", {}))
 		_apply_editor_control_plan(editor_stats_label, info_stats_plan)
@@ -49966,11 +49959,11 @@ func _apply_editor_panel_visibility(role_key: String, unit_bp: Dictionary) -> vo
 		var info_structure_label_plan := Dictionary(info_plan.get("structure_reference_label", {}))
 		_apply_editor_control_plan(editor_structure_reference_label, info_structure_label_plan)
 	if editor_catalog_page_label != null:
-		_set_canvas_item_visible_if_changed(editor_catalog_page_label, bool(Dictionary(info_plan.get("catalog_page", {})).get("visible", false)))
+		_apply_editor_control_plan(editor_catalog_page_label, Dictionary(info_plan.get("catalog_page", {})))
 	_layout_editor_save_unit_feedback()
 	if editor_section_labels.has("catalog") and editor_section_labels["catalog"] is Label:
 		var catalog_title := editor_section_labels["catalog"] as Label
-		_set_canvas_item_visible_if_changed(catalog_title, bool(Dictionary(info_plan.get("catalog_title", {})).get("visible", false)))
+		_apply_editor_control_plan(catalog_title, Dictionary(info_plan.get("catalog_title", {})))
 	var shop_pending_kind := "none"
 	var shop_pending_detail := ""
 	if _has_pending_payload_part():

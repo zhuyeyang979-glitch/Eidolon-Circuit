@@ -1471,6 +1471,26 @@ GREEN: git diff --check
 
 `_apply_editor_panel_visibility()` now applies `UILifecycleService.editor_sort_controls_presentation()` plans through `_apply_editor_control_plan()` for sort key text, sort direction text, the sort submenu panel, and sort option buttons. `_apply_editor_panel_visibility()` is now 316 lines, and the extraction probe rejects the stale direct sort-control mutation calls while keeping catalog-sort state persistence and sort-dir front-order refresh local.
 
+Follow-up editor info-panel adapter extraction:
+
+```text
+RED: main_file_extraction_contract_probe failed on direct info-panel _set_*_if_changed mutations
+GREEN: MAIN_FILE_EXTRACTION_CONTRACT_PROBE ok services=9
+GREEN: LIFECYCLE_SERVICES_CONTRACT_PROBE ok
+GREEN: Godot --check-only --script res://scripts/main.gd --quit-after 1
+GREEN: Godot --check-only --script res://scripts/services/ui_lifecycle_service.gd --quit-after 1
+GREEN: PART_LIBRARY_UI_PROBE groups=["torso", "limb", "terminal_weapon", "barrier_panel", "software_muscle", "software"] weapon=3 equipment=5 software=7 dashboard=40
+GREEN: UNIT_EDITOR_PAGINATION_LAYOUT_PROBE ok
+GREEN: UNIT_EDITOR_FULLSCREEN_LAYOUT_PROBE ok
+GREEN: EDITOR_SCROLL_REGIONS_PROBE ok
+GREEN: EDITOR_CATALOG_REVISION_CACHE_PROBE ok skips=1
+GREEN: UNIT_EDITOR_TORSO_DETAIL_BUTTON_PROBE ok torso=0 second=1
+GREEN: jq empty tools/probe_manifest.json
+GREEN: git diff --check
+```
+
+`_apply_editor_panel_visibility()` now applies `UILifecycleService.editor_info_panel_presentation()` plans through `_apply_editor_control_plan()` for the unit label, summary label, catalog page label, and catalog title visibility. `_apply_editor_panel_visibility()` is now 309 lines, and the extraction probe rejects the stale direct info-panel mutation calls while keeping save-feedback relayout and the existing stats/detail/art/reference consumers local.
+
 Remaining items after this batch:
 
 - Continue editor UI extraction with `_build_editor_ui` and the remaining action presentation/control-mutation sections of `_apply_editor_panel_visibility`, then continue `_resolve_attack` and `_refresh_editor_visual_views` extraction.
