@@ -260,6 +260,54 @@ static func editor_role_load_build_specs(role_order: Array, load_card_count: int
 	}
 
 
+static func editor_info_surface_build_specs() -> Dictionary:
+	return {
+		"unit": {
+			"name": "UnitLabel",
+			"position": Vector2(936.0, 198.0),
+			"size": Vector2(270.0, 48.0),
+			"visible_position": Vector2(936.0, 186.0),
+			"visible_size": Vector2(270.0, 52.0),
+		},
+		"summary": {
+			"name": "Summary",
+			"position": Vector2(936.0, 454.0),
+			"size": Vector2(270.0, 112.0),
+			"visible_position": Vector2(936.0, 586.0),
+			"visible_size": Vector2(270.0, 88.0),
+		},
+		"stats": {
+			"name": "Stats",
+			"position": Vector2(936.0, 484.0),
+			"size": Vector2(270.0, 56.0),
+		},
+		"detail": {
+			"name": "Detail",
+			"position": Vector2(936.0, 548.0),
+			"size": Vector2(270.0, 72.0),
+		},
+		"battle_preview": {
+			"name": "BattleArtPreview",
+			"position": Vector2(936.0, 278.0),
+			"size": Vector2(270.0, 118.0),
+		},
+		"component_art": {
+			"position": Vector2(936.0, 406.0),
+			"size": Vector2(270.0, 68.0),
+		},
+		"structure_reference_view": {
+			"name": "StructureReferencePreview",
+			"position": Vector2(936.0, 146.0),
+			"size": Vector2(270.0, 112.0),
+		},
+		"structure_reference_label": {
+			"name": "StructureReferenceLabel",
+			"position": Vector2(936.0, 260.0),
+			"size": Vector2(270.0, 18.0),
+		},
+	}
+
+
 static func editor_panel_role_chrome_presentation(mode: String, active_role_key: String, parts_visible: bool, panel_keys: Array, role_keys: Array, role_order: Array, role_short_labels: Dictionary, zh: bool) -> Dictionary:
 	var panel_texts := {"load": "单位库", "parts": "零件库"} if zh else {"load": "UNITS", "parts": "PARTS"}
 	var panel_buttons := {}
@@ -417,24 +465,57 @@ static func editor_sort_controls_presentation(parts_visible: bool, sort_menu_ope
 static func editor_info_panel_presentation(unit_visible: bool, stats_visible: bool, parts_visible: bool, sort_menu_open: bool, load_visible: bool, structure_reference_view_visible: bool, structure_reference_label_visible: bool, zh: bool) -> Dictionary:
 	var catalog_visible := (parts_visible and not sort_menu_open) or load_visible
 	var catalog_title_visible := parts_visible and not sort_menu_open
+	var build_specs := editor_info_surface_build_specs()
+	var unit_build_spec := Dictionary(build_specs.get("unit", {}))
+	var summary_build_spec := Dictionary(build_specs.get("summary", {}))
+	var stats_build_spec := Dictionary(build_specs.get("stats", {}))
+	var detail_build_spec := Dictionary(build_specs.get("detail", {}))
+	var component_art_build_spec := Dictionary(build_specs.get("component_art", {}))
+	var battle_preview_build_spec := Dictionary(build_specs.get("battle_preview", {}))
+	var structure_view_build_spec := Dictionary(build_specs.get("structure_reference_view", {}))
+	var structure_label_build_spec := Dictionary(build_specs.get("structure_reference_label", {}))
 	return {
 		"unit": {
 			"visible": unit_visible,
-			"position": Vector2(936.0, 186.0),
-			"size": Vector2(270.0, 52.0),
+			"position": unit_build_spec.get("visible_position", Vector2.ZERO),
+			"size": unit_build_spec.get("visible_size", Vector2.ZERO),
 			"text": "单位库" if zh else "UNITS",
 		},
 		"summary": {
 			"visible": unit_visible,
-			"position": Vector2(936.0, 586.0),
-			"size": Vector2(270.0, 88.0),
+			"position": summary_build_spec.get("visible_position", Vector2.ZERO),
+			"size": summary_build_spec.get("visible_size", Vector2.ZERO),
 		},
-		"stats": {"visible": stats_visible},
-		"detail": {"visible": stats_visible},
-		"component_art": {"visible": stats_visible},
-		"battle_preview": {"visible": stats_visible},
-		"structure_reference_view": {"visible": structure_reference_view_visible and stats_visible},
-		"structure_reference_label": {"visible": structure_reference_label_visible and stats_visible},
+		"stats": {
+			"visible": stats_visible,
+			"position": stats_build_spec.get("position", Vector2.ZERO),
+			"size": stats_build_spec.get("size", Vector2.ZERO),
+		},
+		"detail": {
+			"visible": stats_visible,
+			"position": detail_build_spec.get("position", Vector2.ZERO),
+			"size": detail_build_spec.get("size", Vector2.ZERO),
+		},
+		"component_art": {
+			"visible": stats_visible,
+			"position": component_art_build_spec.get("position", Vector2.ZERO),
+			"size": component_art_build_spec.get("size", Vector2.ZERO),
+		},
+		"battle_preview": {
+			"visible": stats_visible,
+			"position": battle_preview_build_spec.get("position", Vector2.ZERO),
+			"size": battle_preview_build_spec.get("size", Vector2.ZERO),
+		},
+		"structure_reference_view": {
+			"visible": structure_reference_view_visible and stats_visible,
+			"position": structure_view_build_spec.get("position", Vector2.ZERO),
+			"size": structure_view_build_spec.get("size", Vector2.ZERO),
+		},
+		"structure_reference_label": {
+			"visible": structure_reference_label_visible and stats_visible,
+			"position": structure_label_build_spec.get("position", Vector2.ZERO),
+			"size": structure_label_build_spec.get("size", Vector2.ZERO),
+		},
 		"catalog_page": {"visible": catalog_visible},
 		"catalog_title": {"visible": catalog_title_visible},
 	}

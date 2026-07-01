@@ -256,6 +256,38 @@ func _init() -> void:
 		return
 	_assert_vector(third_load_card_build_spec, "position", Vector2(936.0, 288.0), "load card build spec")
 	_assert_vector(third_load_card_build_spec, "size", Vector2(270.0, 30.0), "load card build spec")
+	var info_surface_build_specs: Dictionary = UILifecycleService.editor_info_surface_build_specs()
+	var info_unit_build_spec: Dictionary = Dictionary(info_surface_build_specs.get("unit", {}))
+	var info_summary_build_spec: Dictionary = Dictionary(info_surface_build_specs.get("summary", {}))
+	var info_stats_build_spec: Dictionary = Dictionary(info_surface_build_specs.get("stats", {}))
+	var info_detail_build_spec: Dictionary = Dictionary(info_surface_build_specs.get("detail", {}))
+	var info_battle_build_spec: Dictionary = Dictionary(info_surface_build_specs.get("battle_preview", {}))
+	var info_component_build_spec: Dictionary = Dictionary(info_surface_build_specs.get("component_art", {}))
+	var info_structure_view_build_spec: Dictionary = Dictionary(info_surface_build_specs.get("structure_reference_view", {}))
+	var info_structure_label_build_spec: Dictionary = Dictionary(info_surface_build_specs.get("structure_reference_label", {}))
+	if String(info_unit_build_spec.get("name", "")) != "UnitLabel" or String(info_summary_build_spec.get("name", "")) != "Summary" or String(info_stats_build_spec.get("name", "")) != "Stats" or String(info_detail_build_spec.get("name", "")) != "Detail":
+		_fail("UILifecycleService info label build spec identity failed.")
+		return
+	_assert_vector(info_unit_build_spec, "position", Vector2(936.0, 198.0), "info unit build spec")
+	_assert_vector(info_unit_build_spec, "size", Vector2(270.0, 48.0), "info unit build spec")
+	_assert_vector(info_unit_build_spec, "visible_position", Vector2(936.0, 186.0), "info unit build spec")
+	_assert_vector(info_unit_build_spec, "visible_size", Vector2(270.0, 52.0), "info unit build spec")
+	_assert_vector(info_summary_build_spec, "position", Vector2(936.0, 454.0), "info summary build spec")
+	_assert_vector(info_summary_build_spec, "visible_position", Vector2(936.0, 586.0), "info summary build spec")
+	_assert_vector(info_summary_build_spec, "visible_size", Vector2(270.0, 88.0), "info summary build spec")
+	_assert_vector(info_stats_build_spec, "position", Vector2(936.0, 484.0), "info stats build spec")
+	_assert_vector(info_detail_build_spec, "position", Vector2(936.0, 548.0), "info detail build spec")
+	if String(info_battle_build_spec.get("name", "")) != "BattleArtPreview" or String(info_structure_view_build_spec.get("name", "")) != "StructureReferencePreview" or String(info_structure_label_build_spec.get("name", "")) != "StructureReferenceLabel":
+		_fail("UILifecycleService info preview build spec identity failed.")
+		return
+	_assert_vector(info_battle_build_spec, "position", Vector2(936.0, 278.0), "info battle preview build spec")
+	_assert_vector(info_battle_build_spec, "size", Vector2(270.0, 118.0), "info battle preview build spec")
+	_assert_vector(info_component_build_spec, "position", Vector2(936.0, 406.0), "info component art build spec")
+	_assert_vector(info_component_build_spec, "size", Vector2(270.0, 68.0), "info component art build spec")
+	_assert_vector(info_structure_view_build_spec, "position", Vector2(936.0, 146.0), "info structure preview build spec")
+	_assert_vector(info_structure_view_build_spec, "size", Vector2(270.0, 112.0), "info structure preview build spec")
+	_assert_vector(info_structure_label_build_spec, "position", Vector2(936.0, 260.0), "info structure label build spec")
+	_assert_vector(info_structure_label_build_spec, "size", Vector2(270.0, 18.0), "info structure label build spec")
 	Dictionary(Array(build_specs.get("canvas_tools", []))[0])["key"] = "mutated"
 	var fresh_build_specs: Dictionary = UILifecycleService.editor_action_build_specs()
 	if String(Dictionary(Array(fresh_build_specs.get("canvas_tools", []))[0]).get("key", "")) != "blank_canvas":
@@ -415,9 +447,15 @@ func _init() -> void:
 	if not bool(Dictionary(stats_info_plan.get("stats", {})).get("visible", false)) or not bool(Dictionary(stats_info_plan.get("detail", {})).get("visible", false)) or not bool(Dictionary(stats_info_plan.get("battle_preview", {})).get("visible", false)):
 		_fail("UILifecycleService stats info presentation contract failed.")
 		return
+	_assert_vector(Dictionary(stats_info_plan.get("stats", {})), "position", Vector2(936.0, 484.0), "info stats presentation")
+	_assert_vector(Dictionary(stats_info_plan.get("detail", {})), "size", Vector2(270.0, 72.0), "info detail presentation")
+	_assert_vector(Dictionary(stats_info_plan.get("battle_preview", {})), "position", Vector2(936.0, 278.0), "info battle preview presentation")
+	_assert_vector(Dictionary(stats_info_plan.get("component_art", {})), "size", Vector2(270.0, 68.0), "info component art presentation")
 	if not bool(Dictionary(stats_info_plan.get("structure_reference_view", {})).get("visible", false)) or bool(Dictionary(stats_info_plan.get("structure_reference_label", {})).get("visible", true)):
 		_fail("UILifecycleService structure reference preservation contract failed.")
 		return
+	_assert_vector(Dictionary(stats_info_plan.get("structure_reference_view", {})), "position", Vector2(936.0, 146.0), "info structure view presentation")
+	_assert_vector(Dictionary(stats_info_plan.get("structure_reference_label", {})), "size", Vector2(270.0, 18.0), "info structure label presentation")
 	var load_info_plan: Dictionary = UILifecycleService.editor_info_panel_presentation(true, false, false, true, true, false, false, false)
 	if String(Dictionary(load_info_plan.get("unit", {})).get("text", "")) != "UNITS" or not bool(Dictionary(load_info_plan.get("catalog_page", {})).get("visible", false)) or bool(Dictionary(load_info_plan.get("catalog_title", {})).get("visible", true)):
 		_fail("UILifecycleService load info presentation contract failed.")

@@ -47184,39 +47184,48 @@ func _build_editor_ui() -> void:
 		load_card_button.gui_input.connect(_handle_editor_load_card_input.bind(load_card_index))
 		root.add_child(load_card_button)
 		editor_load_card_buttons.append(load_card_button)
-	editor_unit_label = _make_label(root, "UnitLabel", "", Vector2(936.0, 198.0), Vector2(270.0, 48.0), 13, Color(0.84, 0.93, 1.0, 1.0), HORIZONTAL_ALIGNMENT_LEFT)
+	var info_surface_build_specs := UILifecycleService.editor_info_surface_build_specs()
+	var info_unit_build_spec := Dictionary(info_surface_build_specs.get("unit", {}))
+	editor_unit_label = _make_label(root, String(info_unit_build_spec.get("name", "UnitLabel")), "", info_unit_build_spec.get("position", Vector2.ZERO), info_unit_build_spec.get("size", Vector2(270.0, 48.0)), 13, Color(0.84, 0.93, 1.0, 1.0), HORIZONTAL_ALIGNMENT_LEFT)
 	editor_unit_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	editor_summary_label = _make_label(root, "Summary", "", Vector2(936.0, 454.0), Vector2(270.0, 112.0), 12, Color(1.0, 0.9, 0.48, 1.0), HORIZONTAL_ALIGNMENT_LEFT)
+	var info_summary_build_spec := Dictionary(info_surface_build_specs.get("summary", {}))
+	editor_summary_label = _make_label(root, String(info_summary_build_spec.get("name", "Summary")), "", info_summary_build_spec.get("position", Vector2.ZERO), info_summary_build_spec.get("size", Vector2(270.0, 112.0)), 12, Color(1.0, 0.9, 0.48, 1.0), HORIZONTAL_ALIGNMENT_LEFT)
 	editor_summary_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	editor_stats_label = _make_label(root, "Stats", "", Vector2(936.0, 484.0), Vector2(270.0, 56.0), 10, Color(0.82, 0.92, 1.0, 1.0), HORIZONTAL_ALIGNMENT_LEFT)
+	var info_stats_build_spec := Dictionary(info_surface_build_specs.get("stats", {}))
+	editor_stats_label = _make_label(root, String(info_stats_build_spec.get("name", "Stats")), "", info_stats_build_spec.get("position", Vector2.ZERO), info_stats_build_spec.get("size", Vector2(270.0, 56.0)), 10, Color(0.82, 0.92, 1.0, 1.0), HORIZONTAL_ALIGNMENT_LEFT)
 	editor_stats_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	editor_detail_label = _make_label(root, "Detail", "", Vector2(936.0, 548.0), Vector2(270.0, 72.0), 10, Color(0.88, 0.92, 0.96, 1.0), HORIZONTAL_ALIGNMENT_LEFT)
+	var info_detail_build_spec := Dictionary(info_surface_build_specs.get("detail", {}))
+	editor_detail_label = _make_label(root, String(info_detail_build_spec.get("name", "Detail")), "", info_detail_build_spec.get("position", Vector2.ZERO), info_detail_build_spec.get("size", Vector2(270.0, 72.0)), 10, Color(0.88, 0.92, 0.96, 1.0), HORIZONTAL_ALIGNMENT_LEFT)
 	editor_detail_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	editor_legality_status_label = _make_label(root, "LegalityStatus", "", Vector2(18.0, 616.0), Vector2(244.0, 32.0), 10, Color(0.42, 1.0, 0.62, 1.0), HORIZONTAL_ALIGNMENT_LEFT)
 	editor_legality_status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	var info_battle_preview_build_spec := Dictionary(info_surface_build_specs.get("battle_preview", {}))
 	editor_battle_preview_view = BattlePartPreviewView.new()
-	editor_battle_preview_view.name = "BattleArtPreview"
-	editor_battle_preview_view.position = Vector2(936.0, 278.0)
-	editor_battle_preview_view.size = Vector2(270.0, 118.0)
+	editor_battle_preview_view.name = String(info_battle_preview_build_spec.get("name", "BattleArtPreview"))
+	editor_battle_preview_view.position = info_battle_preview_build_spec.get("position", Vector2.ZERO)
+	editor_battle_preview_view.size = info_battle_preview_build_spec.get("size", Vector2(270.0, 118.0))
 	editor_battle_preview_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	editor_battle_preview_view.visible = false
 	root.add_child(editor_battle_preview_view)
+	var info_component_art_build_spec := Dictionary(info_surface_build_specs.get("component_art", {}))
 	component_art_view = ComponentArtView.new()
-	component_art_view.position = Vector2(936.0, 406.0)
-	component_art_view.size = Vector2(270.0, 68.0)
+	component_art_view.position = info_component_art_build_spec.get("position", Vector2.ZERO)
+	component_art_view.size = info_component_art_build_spec.get("size", Vector2(270.0, 68.0))
 	component_art_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(component_art_view)
+	var info_structure_view_build_spec := Dictionary(info_surface_build_specs.get("structure_reference_view", {}))
 	editor_structure_reference_view = TextureRect.new()
-	editor_structure_reference_view.name = "StructureReferencePreview"
-	editor_structure_reference_view.position = Vector2(936.0, 146.0)
-	editor_structure_reference_view.size = Vector2(270.0, 112.0)
+	editor_structure_reference_view.name = String(info_structure_view_build_spec.get("name", "StructureReferencePreview"))
+	editor_structure_reference_view.position = info_structure_view_build_spec.get("position", Vector2.ZERO)
+	editor_structure_reference_view.size = info_structure_view_build_spec.get("size", Vector2(270.0, 112.0))
 	editor_structure_reference_view.texture = null
 	editor_structure_reference_view.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
 	editor_structure_reference_view.modulate = Color(1.0, 1.0, 1.0, 0.84)
 	editor_structure_reference_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	editor_structure_reference_view.visible = false
 	root.add_child(editor_structure_reference_view)
-	editor_structure_reference_label = _make_label(root, "StructureReferenceLabel", "结构示意", Vector2(936.0, 260.0), Vector2(270.0, 18.0), 10, Color(0.72, 0.94, 1.0, 1.0), HORIZONTAL_ALIGNMENT_LEFT)
+	var info_structure_label_build_spec := Dictionary(info_surface_build_specs.get("structure_reference_label", {}))
+	editor_structure_reference_label = _make_label(root, String(info_structure_label_build_spec.get("name", "StructureReferenceLabel")), "结构示意", info_structure_label_build_spec.get("position", Vector2.ZERO), info_structure_label_build_spec.get("size", Vector2(270.0, 18.0)), 10, Color(0.72, 0.94, 1.0, 1.0), HORIZONTAL_ALIGNMENT_LEFT)
 	editor_structure_reference_label.visible = false
 	assembly_board_view = AssemblyBoardView.new()
 	_apply_token_rect(assembly_board_view, "editor_board")
@@ -49889,17 +49898,35 @@ func _apply_editor_panel_visibility(role_key: String, unit_bp: Dictionary) -> vo
 			_set_control_position_if_changed(editor_summary_label, info_summary_plan.get("position", Vector2.ZERO))
 			_set_control_size_if_changed(editor_summary_label, info_summary_plan.get("size", Vector2.ZERO))
 	if editor_stats_label != null:
-		_set_canvas_item_visible_if_changed(editor_stats_label, bool(Dictionary(info_plan.get("stats", {})).get("visible", false)))
+		var info_stats_plan := Dictionary(info_plan.get("stats", {}))
+		_set_canvas_item_visible_if_changed(editor_stats_label, bool(info_stats_plan.get("visible", false)))
+		_set_control_position_if_changed(editor_stats_label, info_stats_plan.get("position", Vector2.ZERO))
+		_set_control_size_if_changed(editor_stats_label, info_stats_plan.get("size", Vector2.ZERO))
 	if editor_detail_label != null:
-		_set_canvas_item_visible_if_changed(editor_detail_label, bool(Dictionary(info_plan.get("detail", {})).get("visible", false)))
+		var info_detail_plan := Dictionary(info_plan.get("detail", {}))
+		_set_canvas_item_visible_if_changed(editor_detail_label, bool(info_detail_plan.get("visible", false)))
+		_set_control_position_if_changed(editor_detail_label, info_detail_plan.get("position", Vector2.ZERO))
+		_set_control_size_if_changed(editor_detail_label, info_detail_plan.get("size", Vector2.ZERO))
 	if component_art_view != null:
-		_set_canvas_item_visible_if_changed(component_art_view, bool(Dictionary(info_plan.get("component_art", {})).get("visible", false)))
+		var info_component_art_plan := Dictionary(info_plan.get("component_art", {}))
+		_set_canvas_item_visible_if_changed(component_art_view, bool(info_component_art_plan.get("visible", false)))
+		_set_control_position_if_changed(component_art_view, info_component_art_plan.get("position", Vector2.ZERO))
+		_set_control_size_if_changed(component_art_view, info_component_art_plan.get("size", Vector2.ZERO))
 	if editor_battle_preview_view != null:
-		_set_canvas_item_visible_if_changed(editor_battle_preview_view, bool(Dictionary(info_plan.get("battle_preview", {})).get("visible", false)))
+		var info_battle_preview_plan := Dictionary(info_plan.get("battle_preview", {}))
+		_set_canvas_item_visible_if_changed(editor_battle_preview_view, bool(info_battle_preview_plan.get("visible", false)))
+		_set_control_position_if_changed(editor_battle_preview_view, info_battle_preview_plan.get("position", Vector2.ZERO))
+		_set_control_size_if_changed(editor_battle_preview_view, info_battle_preview_plan.get("size", Vector2.ZERO))
 	if editor_structure_reference_view != null:
-		_set_canvas_item_visible_if_changed(editor_structure_reference_view, bool(Dictionary(info_plan.get("structure_reference_view", {})).get("visible", false)))
+		var info_structure_view_plan := Dictionary(info_plan.get("structure_reference_view", {}))
+		_set_canvas_item_visible_if_changed(editor_structure_reference_view, bool(info_structure_view_plan.get("visible", false)))
+		_set_control_position_if_changed(editor_structure_reference_view, info_structure_view_plan.get("position", Vector2.ZERO))
+		_set_control_size_if_changed(editor_structure_reference_view, info_structure_view_plan.get("size", Vector2.ZERO))
 	if editor_structure_reference_label != null:
-		_set_canvas_item_visible_if_changed(editor_structure_reference_label, bool(Dictionary(info_plan.get("structure_reference_label", {})).get("visible", false)))
+		var info_structure_label_plan := Dictionary(info_plan.get("structure_reference_label", {}))
+		_set_canvas_item_visible_if_changed(editor_structure_reference_label, bool(info_structure_label_plan.get("visible", false)))
+		_set_control_position_if_changed(editor_structure_reference_label, info_structure_label_plan.get("position", Vector2.ZERO))
+		_set_control_size_if_changed(editor_structure_reference_label, info_structure_label_plan.get("size", Vector2.ZERO))
 	if editor_catalog_page_label != null:
 		_set_canvas_item_visible_if_changed(editor_catalog_page_label, bool(Dictionary(info_plan.get("catalog_page", {})).get("visible", false)))
 	_layout_editor_save_unit_feedback()

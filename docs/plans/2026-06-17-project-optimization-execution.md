@@ -878,6 +878,25 @@ KNOWN BASELINE FAILURE: PREBUILT_HERO_PRESETS_PROBE failed all three presets wit
 
 `UILifecycleService.editor_role_load_build_specs()` now owns pure identity, position, and size data for editor role buttons and saved-unit load cards. `_build_editor_ui()` remains the scene-tree adapter and retains all concrete node construction, signal wiring, and reference ownership. `editor_panel_role_chrome_presentation()` reuses the role build specs for horizontal placement and width while continuing to own mode-dependent vertical placement and height. The main extraction probe rejects the old inline role/load creation formulas in `main.gd`.
 
+Follow-up editor info-surface build specs extraction:
+
+```text
+RED: lifecycle_services_contract_probe failed on missing UILifecycleService.editor_info_surface_build_specs()
+RED: main_file_extraction_contract_probe failed on missing UILifecycleService.editor_info_surface_build_specs delegation
+GREEN: LIFECYCLE_SERVICES_CONTRACT_PROBE ok
+GREEN: MAIN_FILE_EXTRACTION_CONTRACT_PROBE ok services=9
+GREEN: Godot --check-only --script res://scripts/main.gd --quit-after 1
+GREEN: TEAMEDIT_UI_SIMPLIFIED_CONTROLS_PROBE ok summary_lines=2
+GREEN: PART_LIBRARY_UI_PROBE groups=["torso", "limb", "terminal_weapon", "barrier_panel", "software_muscle", "software"] weapon=3 equipment=5 software=7 dashboard=40
+GREEN: UNIT_EDITOR_PAGINATION_LAYOUT_PROBE ok unit=1 page=0 catalog=1 load=0 feedback=[P: (270.0, 654.0), S: (622.0, 26.0)]
+GREEN: UNIT_EDITOR_FULLSCREEN_LAYOUT_PROBE ok board=(908.0, 548.0) dock=(726.0, 132.0)
+GREEN: TEAMEDIT_DASHBOARD_SLIDER_FULL_REFRESH_PROBE ok full=1 ui=0
+GREEN: SCREEN_LAYOUT_TOKEN_COVERAGE_PROBE ok
+GREEN: VIEW_EXTRACTION_CONTRACT_PROBE ok views=27
+```
+
+`UILifecycleService.editor_info_surface_build_specs()` now owns pure identity, initial position/size, and visible-state position/size data for the editor unit, summary, stats, detail, battle-preview, component-art, and structure-reference surfaces. `_build_editor_ui()` remains responsible for concrete node construction, styling, texture behavior, mouse behavior, and stored references. `editor_info_panel_presentation()` reuses the build specs, and `_apply_editor_panel_visibility()` explicitly applies the returned fixed layouts along with visibility. The separate initial and visible layouts for unit/summary labels preserve existing behavior while removing duplicated formulas.
+
 Remaining items after this batch:
 
 - Continue editor UI extraction with `_build_editor_ui` and the remaining action presentation/control-mutation sections of `_apply_editor_panel_visibility`, then continue `_resolve_attack` and `_refresh_editor_visual_views` extraction.
