@@ -105,6 +105,9 @@ func _init() -> void:
 		"match String(preflight.get(\"action\", \"continue\"))",
 		"_acquire_missile_lock_target(attacker, event)",
 		"event[\"locked_target\"] = missile_target",
+		"attacker.set_meta(\"projectile_signal\"",
+		"_consume_ammo_for_event(attacker, event)",
+		"var attacker_blind := _unit_blind_strength(attacker)",
 		"for raw_intent in post_hit_intents:",
 		"match String(post_intent.get(\"action\", \"\"))",
 	]:
@@ -178,6 +181,32 @@ func _init() -> void:
 	]:
 		if missile_lock_body.find(token) < 0:
 			_fail("_prepare_attack_missile_lock missing token: %s" % token)
+			return
+	if resolve_body.count("_prepare_attack_activation(attacker, event)") != 1:
+		_fail("_resolve_attack should prepare attack activation through one helper.")
+		return
+	var attack_activation_body := _function_body(main_source, "func _prepare_attack_activation")
+	if attack_activation_body.is_empty():
+		_fail("Unable to locate _prepare_attack_activation body.")
+		return
+	for token in [
+		"_event_is_explicit_gun_activation",
+		"_clear_projectile_fields_for_runtime_melee",
+		"_unit_uses_direct_runtime_topology",
+		"_mark_unit_attack_executed",
+		"set_aim_pose",
+		"_projectile_source_node_for_event",
+		"projectile_signal",
+		"_consume_ammo_for_event",
+		"ammo_consumed",
+		"_training_validation_sample_record_shot",
+		"_unit_blind_strength",
+		"randf_range",
+		"return true",
+		"return false",
+	]:
+		if attack_activation_body.find(token) < 0:
+			_fail("_prepare_attack_activation missing token: %s" % token)
 			return
 	var post_hit_body := _function_body(main_source, "func _execute_post_hit_intents")
 	if post_hit_body.is_empty():

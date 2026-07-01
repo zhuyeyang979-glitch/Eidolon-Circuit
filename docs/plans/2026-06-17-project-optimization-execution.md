@@ -2022,6 +2022,27 @@ GREEN: BATTLE_ATTACK_HEAVY_REPLAY_DESYNC_PROBE ok
 
 `_prepare_attack_missile_lock()` now owns existing-lock reuse, occlusion-triggered target reacquisition, no-lock feedback, and `locked_target` / `aim_locked` event mutation. `_resolve_attack()` consumes the helper as one continue/stop gate before projectile activation setup. The extraction contract rejects direct missile target acquisition and lock-field writes in `_resolve_attack()` while requiring the helper's non-missile, no-target, and successful-lock paths.
 
+Follow-up attack activation preparation extraction:
+
+```text
+RED: battle_hit_resolution_service_contract_probe failed because _resolve_attack still applied projectile signal, ammo, and blind-direction activation inline
+GREEN: BATTLE_HIT_RESOLUTION_SERVICE_CONTRACT_PROBE ok
+GREEN: Godot --check-only --script res://scripts/main.gd --quit-after 1
+GREEN: GUN_ACTIVATION_SERVICE_CONTRACT_PROBE ok
+GREEN: LASER_AMMO_HEAT_PROBE ok ammo=7->6 heat=0.0->1.0
+GREEN: MISSILE_AMMO_HEAT_PROBE ok ammo=2 heat=34.0
+GREEN: CHEMICAL_HEAT_PROBE queued=true impact=true dot=true boost_motion=true straight_cooling=true hp=120->105->64 heat=44.00
+GREEN: RUNTIME_MELEE_NEVER_PROJECTILE_GATE_PROBE message=''
+GREEN: MELEE_PROJECTILE_GATE_PROBE ok
+GREEN: GUN_ACTIVATION_MOVE_WHILE_FIRE_ALL_PROFILES_PROBE ok count=7
+GREEN: TRAINING_VALIDATION_RUNTIME_SAMPLE_PROBE ok
+GREEN: LOCAL_BATTLE_REPLAY_CONSISTENCY_PROBE ok
+GREEN: BATTLE_ATTACK_HEAVY_REPLAY_DESYNC_PROBE checkpoints=6 desync_step=360
+GREEN: BATTLE_ATTACK_HEAVY_REPLAY_DESYNC_PROBE ok
+```
+
+`_prepare_attack_activation()` now owns compatibility projectile-field clearing, direct-runtime early completion, projectile aim pose, signal metadata, ammo consumption, shot validation sampling, attack-executed marking, and unlocked blind-direction perturbation. `_resolve_attack()` consumes one continue/stop gate after missile-lock preparation and before pure projectile preflight planning. The extraction contract rejects direct ammo/signal/blind activation in `_resolve_attack()` and requires the helper's original side-effect ordering and return paths.
+
 Remaining items after this batch:
 
 - Continue editor UI extraction with `_build_editor_ui` and the remaining action presentation/control-mutation sections of `_apply_editor_panel_visibility`, then continue `_resolve_attack` and `_refresh_editor_visual_views` extraction.

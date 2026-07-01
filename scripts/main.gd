@@ -37124,6 +37124,32 @@ func _prepare_attack_missile_lock(attacker, event: Dictionary) -> bool:
 	return true
 
 
+func _prepare_attack_activation(attacker, event: Dictionary) -> bool:
+	if bool(event.get("projectile", false)) and not _event_is_explicit_gun_activation(event):
+		_clear_projectile_fields_for_runtime_melee(event)
+		if _unit_uses_direct_runtime_topology(attacker):
+			_mark_unit_attack_executed(attacker)
+			return false
+	if bool(event.get("projectile", false)) and attacker.has_method("set_aim_pose"):
+		var shot_direction := _unit_forward_vector(attacker)
+		if event.has("direction") and event["direction"] is Vector2:
+			shot_direction = event["direction"]
+		if shot_direction.length() > 0.01:
+			attacker.set_aim_pose(_projectile_source_node_for_event(event), shot_direction.normalized(), 0.24)
+	if bool(event.get("projectile", false)):
+		attacker.set_meta("projectile_signal", 0.28)
+		if not bool(event.get("ammo_consumed", false)) and not _consume_ammo_for_event(attacker, event):
+			return false
+		event["ammo_consumed"] = true
+		_training_validation_sample_record_shot(int(attacker.owner_id), event)
+	_mark_unit_attack_executed(attacker)
+	var attacker_blind := _unit_blind_strength(attacker)
+	if event.has("direction") and attacker_blind > 0.01 and not bool(event.get("aim_locked", false)):
+		var original_direction: Vector2 = event["direction"]
+		event["direction"] = original_direction.rotated(randf_range(-0.72, 0.72) * attacker_blind).normalized()
+	return true
+
+
 func _resolve_attack(attacker, event: Dictionary) -> void:
 	var entry_intent := _battle_hit_resolution_service().attack_entry_intent({
 		"attacker_live": _is_live_unit(attacker),
@@ -37155,30 +37181,8 @@ func _resolve_attack(attacker, event: Dictionary) -> void:
 
 	if not _prepare_attack_missile_lock(attacker, event):
 		return
-	if bool(event.get("projectile", false)) and not _event_is_explicit_gun_activation(event):
-		_clear_projectile_fields_for_runtime_melee(event)
-		if _unit_uses_direct_runtime_topology(attacker):
-			_mark_unit_attack_executed(attacker)
-			return
-
-	if bool(event.get("projectile", false)) and attacker.has_method("set_aim_pose"):
-		var shot_direction := _unit_forward_vector(attacker)
-		if event.has("direction") and event["direction"] is Vector2:
-			shot_direction = event["direction"]
-		if shot_direction.length() > 0.01:
-			attacker.set_aim_pose(_projectile_source_node_for_event(event), shot_direction.normalized(), 0.24)
-
-	if bool(event.get("projectile", false)):
-		attacker.set_meta("projectile_signal", 0.28)
-		if not bool(event.get("ammo_consumed", false)) and not _consume_ammo_for_event(attacker, event):
-			return
-		event["ammo_consumed"] = true
-		_training_validation_sample_record_shot(int(attacker.owner_id), event)
-	_mark_unit_attack_executed(attacker)
-	var attacker_blind := _unit_blind_strength(attacker)
-	if event.has("direction") and attacker_blind > 0.01 and not bool(event.get("aim_locked", false)):
-		var original_direction: Vector2 = event["direction"]
-		event["direction"] = original_direction.rotated(randf_range(-0.72, 0.72) * attacker_blind).normalized()
+	if not _prepare_attack_activation(attacker, event):
+		return
 	var preflight := _battle_hit_resolution_service().projectile_preflight_intent({
 		"event": event,
 		"behavior": _projectile_behavior_for_data(event),
