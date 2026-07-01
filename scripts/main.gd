@@ -47762,14 +47762,18 @@ func _build_editor_ui() -> void:
 		page_button.pressed.connect(_editor_action.bind(String(page_action_spec.get("key", ""))))
 		root.add_child(page_button)
 		editor_action_buttons[String(page_action_spec.get("key", ""))] = page_button
-	for i in range(8):
+	var catalog_card_build_specs := UILifecycleService.editor_catalog_card_build_specs(8)
+	for raw_catalog_card_build_spec in catalog_card_build_specs:
+		var catalog_card_build_spec := Dictionary(raw_catalog_card_build_spec)
+		var catalog_card_index := int(catalog_card_build_spec.get("index", editor_catalog_buttons.size()))
 		var catalog_button := PartCatalogCardButton.new()
-		catalog_button.position = Vector2(936.0 + float(i % 2) * 136.0, 354.0 + float(floori(float(i) / 2.0)) * 74.0)
-		catalog_button.size = Vector2(130.0, 72.0)
+		catalog_button.name = String(catalog_card_build_spec.get("name", "CatalogCard%d" % catalog_card_index))
+		catalog_button.position = catalog_card_build_spec.get("position", Vector2.ZERO)
+		catalog_button.size = catalog_card_build_spec.get("size", Vector2.ZERO)
 		catalog_button.focus_mode = Control.FOCUS_NONE
 		catalog_button.set_art_sheets(null, null, null, null, null, null, null, null, null, null)
-		catalog_button.pressed.connect(_select_catalog_component.bind(i))
-		catalog_button.mouse_entered.connect(_hover_catalog_component.bind(i))
+		catalog_button.pressed.connect(_select_catalog_component.bind(catalog_card_index))
+		catalog_button.mouse_entered.connect(_hover_catalog_component.bind(catalog_card_index))
 		catalog_button.mouse_exited.connect(_clear_editor_hover_card)
 		catalog_button.page_scroll.connect(_scroll_editor_catalog_page_from_card)
 		root.add_child(catalog_button)

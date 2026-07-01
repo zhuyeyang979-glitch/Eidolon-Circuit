@@ -380,6 +380,18 @@ static func editor_color_controls_build_specs(button_count: int) -> Dictionary:
 	}
 
 
+static func editor_catalog_card_build_specs(card_count: int) -> Array:
+	var cards := []
+	for i in range(maxi(0, card_count)):
+		cards.append({
+			"index": i,
+			"name": "CatalogCard%d" % i,
+			"position": Vector2(936.0 + float(i % 2) * 136.0, 354.0 + float(floori(float(i) / 2.0)) * 74.0),
+			"size": Vector2(130.0, 72.0),
+		})
+	return cards
+
+
 static func editor_panel_role_chrome_presentation(mode: String, active_role_key: String, parts_visible: bool, panel_keys: Array, role_keys: Array, role_order: Array, role_short_labels: Dictionary, zh: bool) -> Dictionary:
 	var panel_texts := {"load": "单位库", "parts": "零件库"} if zh else {"load": "UNITS", "parts": "PARTS"}
 	var panel_buttons := {}

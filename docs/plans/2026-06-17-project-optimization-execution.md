@@ -1116,6 +1116,27 @@ GREEN: git diff --check
 
 `UILifecycleService.editor_color_controls_build_specs()` now owns pure identity/layout/size specs for the color palette panel, title label, swatch buttons, and primary/accent pickers. `_build_editor_ui()` consumes those specs while keeping concrete node construction, preset text lookup, picker signal wiring, and stored references local. `_build_editor_ui()` is now 697 lines, and the extraction probe rejects old inline color control formulas.
 
+Follow-up editor catalog-card build specs extraction:
+
+```text
+RED: main_file_extraction_contract_probe failed on missing UILifecycleService.editor_catalog_card_build_specs delegation
+RED: lifecycle_services_contract_probe failed on missing editor_catalog_card_build_specs service API
+GREEN: MAIN_FILE_EXTRACTION_CONTRACT_PROBE ok services=9
+GREEN: LIFECYCLE_SERVICES_CONTRACT_PROBE ok
+GREEN: Godot --check-only --script res://scripts/main.gd --quit-after 1
+GREEN: Godot --check-only --script res://scripts/services/ui_lifecycle_service.gd --quit-after 1
+GREEN: PART_LIBRARY_UI_PROBE groups=["torso", "limb", "terminal_weapon", "barrier_panel", "software_muscle", "software"] weapon=3 equipment=5 software=7 dashboard=40
+GREEN: UNIT_EDITOR_PAGINATION_LAYOUT_PROBE ok unit=1 page=0 catalog=1 load=0 feedback=[P: (270.0, 654.0), S: (622.0, 26.0)]
+GREEN: UNIT_EDITOR_FULLSCREEN_LAYOUT_PROBE ok board=(908.0, 548.0) dock=(726.0, 132.0)
+GREEN: TEAMEDIT_UI_SIMPLIFIED_CONTROLS_PROBE ok summary_lines=2
+GREEN: EDITOR_CATALOG_REVISION_CACHE_PROBE ok skips=1
+GREEN: SCREEN_LAYOUT_TOKEN_COVERAGE_PROBE ok
+GREEN: jq empty tools/probe_manifest.json
+GREEN: git diff --check
+```
+
+`UILifecycleService.editor_catalog_card_build_specs()` now owns pure identity/layout/size specs for the eight catalog-card buttons. `_build_editor_ui()` consumes those specs while keeping concrete `PartCatalogCardButton` construction, art-sheet initialization, signal wiring, and stored references local. `_build_editor_ui()` is now 700 lines, and the extraction probe rejects old inline catalog-card layout formulas.
+
 Remaining items after this batch:
 
 - Continue editor UI extraction with `_build_editor_ui` and the remaining action presentation/control-mutation sections of `_apply_editor_panel_visibility`, then continue `_resolve_attack` and `_refresh_editor_visual_views` extraction.

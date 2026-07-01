@@ -343,6 +343,26 @@ func _init() -> void:
 	_assert_vector(third_color_button_build_spec, "size", Vector2(118.0, 46.0), "color button build spec")
 	_assert_vector(color_primary_picker_build_spec, "position", Vector2(944.0, 370.0), "primary color picker build spec")
 	_assert_vector(color_accent_picker_build_spec, "position", Vector2(1072.0, 370.0), "accent color picker build spec")
+	var ui_lifecycle_source := FileAccess.get_file_as_string(ProjectSettings.globalize_path("res://scripts/services/ui_lifecycle_service.gd"))
+	if not ui_lifecycle_source.contains("static func editor_catalog_card_build_specs("):
+		_fail("UILifecycleService should expose editor catalog card build specs.")
+		return
+	var ui_lifecycle_service := UILifecycleService.new()
+	var catalog_card_build_specs: Array = ui_lifecycle_service.call("editor_catalog_card_build_specs", 8)
+	if catalog_card_build_specs.size() != 8:
+		_fail("UILifecycleService catalog card build spec count failed.")
+		return
+	var first_catalog_card_build_spec: Dictionary = Dictionary(catalog_card_build_specs[0])
+	var eighth_catalog_card_build_spec: Dictionary = Dictionary(catalog_card_build_specs[7])
+	if int(first_catalog_card_build_spec.get("index", -1)) != 0 or String(first_catalog_card_build_spec.get("name", "")) != "CatalogCard0":
+		_fail("UILifecycleService catalog card build spec identity failed.")
+		return
+	if int(eighth_catalog_card_build_spec.get("index", -1)) != 7 or String(eighth_catalog_card_build_spec.get("name", "")) != "CatalogCard7":
+		_fail("UILifecycleService catalog card build spec tail identity failed.")
+		return
+	_assert_vector(first_catalog_card_build_spec, "position", Vector2(936.0, 354.0), "catalog card build spec")
+	_assert_vector(first_catalog_card_build_spec, "size", Vector2(130.0, 72.0), "catalog card build spec")
+	_assert_vector(eighth_catalog_card_build_spec, "position", Vector2(1072.0, 576.0), "catalog card build spec")
 	Dictionary(Array(build_specs.get("canvas_tools", []))[0])["key"] = "mutated"
 	var fresh_build_specs: Dictionary = UILifecycleService.editor_action_build_specs()
 	if String(Dictionary(Array(fresh_build_specs.get("canvas_tools", []))[0]).get("key", "")) != "blank_canvas":
