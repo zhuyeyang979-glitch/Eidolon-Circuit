@@ -938,6 +938,21 @@ static func editor_overlay_view_build_specs() -> Dictionary:
 	}
 
 
+static func editor_drag_ghost_view_presentation(visible: bool, position: Variant = Vector2.INF, move_to_front: bool = false) -> Dictionary:
+	var build_spec := Dictionary(editor_overlay_view_build_specs().get("drag_ghost", {}))
+	var plan := {
+		"visible": visible,
+		"mouse_filter": Control.MOUSE_FILTER_IGNORE,
+		"modulate": Color(1.0, 1.0, 1.0, 0.55),
+		"z_index": int(build_spec.get("z_index", 250)),
+	}
+	if position is Vector2 and position != Vector2.INF:
+		plan["position"] = position
+	if visible and move_to_front:
+		plan["move_to_front"] = true
+	return plan
+
+
 static func editor_part_hover_popup_presentation(visible: bool, pinned: bool = false, enlarged: bool = false, position: Variant = Vector2.INF) -> Dictionary:
 	var build_spec := Dictionary(editor_overlay_view_build_specs().get("hover_popup", {}))
 	var popup_size: Vector2 = Vector2(506.0, 560.0) if pinned or enlarged else build_spec.get("size", Vector2(466.0, 500.0))

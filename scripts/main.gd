@@ -5070,6 +5070,12 @@ func _apply_editor_unit_hover_view_presentation(visible: bool) -> void:
 	_apply_editor_control_plan(editor_unit_hover_view, UILifecycleService.editor_unit_hover_view_presentation(visible))
 
 
+func _apply_editor_drag_ghost_view_presentation(visible: bool, position: Variant = Vector2.INF, move_to_front: bool = false) -> void:
+	if editor_drag_ghost_view == null:
+		return
+	_apply_editor_control_plan(editor_drag_ghost_view, UILifecycleService.editor_drag_ghost_view_presentation(visible, position, move_to_front))
+
+
 func _apply_editor_part_hover_popup_presentation(visible: bool, pinned: bool = false, enlarged: bool = false, position: Variant = Vector2.INF) -> Dictionary:
 	var popup_plan := UILifecycleService.editor_part_hover_popup_presentation(visible, pinned, enlarged, position)
 	if editor_hover_popup_view != null:
@@ -12605,23 +12611,21 @@ func _show_editor_drag_ghost(slot_key: String, part_index: int, mouse_position: 
 		return
 	var part := _catalog_drag_display_part(slot_key, part_index)
 	editor_drag_ghost_view.set_card(slot_key, part, false, ui_language, part_index, _catalog_card_title(slot_key, part, part_index, false), "", "")
-	editor_drag_ghost_view.visible = true
-	editor_drag_ghost_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	editor_drag_ghost_view.modulate = Color(1.0, 1.0, 1.0, 0.55)
-	editor_drag_ghost_view.z_index = 250
+	_apply_editor_drag_ghost_view_presentation(true)
 	_update_editor_drag_ghost_position(mouse_position)
 
 
 func _update_editor_drag_ghost_position(mouse_position: Vector2) -> void:
 	if editor_drag_ghost_view == null or not editor_drag_ghost_view.visible:
 		return
-	editor_drag_ghost_view.position = mouse_position - editor_drag_ghost_view.size * 0.5
+	var drag_ghost_position := mouse_position - editor_drag_ghost_view.size * 0.5
+	_apply_editor_drag_ghost_view_presentation(true, drag_ghost_position)
 	editor_drag_ghost_view.queue_redraw()
 
 
 func _hide_editor_drag_ghost() -> void:
 	if editor_drag_ghost_view != null:
-		editor_drag_ghost_view.visible = false
+		_apply_editor_drag_ghost_view_presentation(false)
 
 
 func _clear_editor_catalog_manual_drag() -> void:
@@ -47427,9 +47431,7 @@ func _build_editor_ui() -> void:
 	var drag_ghost_view_build_spec := Dictionary(overlay_view_build_specs.get("drag_ghost", {}))
 	editor_drag_ghost_view = PartDragGhostView.new()
 	editor_drag_ghost_view.name = String(drag_ghost_view_build_spec.get("name", "EditorPartDragGhost"))
-	editor_drag_ghost_view.visible = false
-	editor_drag_ghost_view.z_index = int(drag_ghost_view_build_spec.get("z_index", 250))
-	editor_drag_ghost_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_apply_editor_drag_ghost_view_presentation(false)
 	root.add_child(editor_drag_ghost_view)
 	var perf_overlay_build_spec := Dictionary(auxiliary_chrome_build_specs.get("perf_overlay", {}))
 	editor_perf_overlay_label = _make_label(root, String(perf_overlay_build_spec.get("name", "TeamEditPerfOverlay")), String(perf_overlay_build_spec.get("text", "")), perf_overlay_build_spec.get("position", Vector2.ZERO), perf_overlay_build_spec.get("size", Vector2.ZERO), 10, Color(0.62, 1.0, 0.84, 0.92), HORIZONTAL_ALIGNMENT_LEFT)
@@ -51509,7 +51511,7 @@ func _show_editor_part_hover(slot_key: String, part_index: int, part: Dictionary
 		_apply_editor_part_hover_popup_presentation(true, pinned, slot_key == "module", hover_position)
 		editor_hover_popup_view.set_part(slot_key, part, title, subtitle, lines, ui_language, stat_entries, pinned, hover_token)
 	if editor_drag_ghost_view != null and editor_drag_ghost_view.visible:
-		editor_drag_ghost_view.move_to_front()
+		_apply_editor_drag_ghost_view_presentation(true, Vector2.INF, true)
 	_refresh_editor_stats_rail(current_stats, {}, {}, {}, title)
 
 

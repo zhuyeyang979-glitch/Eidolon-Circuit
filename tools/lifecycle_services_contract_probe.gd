@@ -1114,6 +1114,25 @@ func _init() -> void:
 	if not bool(engine_allocation_build_spec.get("mirror_board_rect", false)):
 		_fail("UILifecycleService engine allocation should preserve board-rect mirroring intent.")
 		return
+	if not ui_lifecycle_source.contains("static func editor_drag_ghost_view_presentation("):
+		_fail("UILifecycleService should expose editor drag ghost view presentation planning.")
+		return
+	var drag_ghost_visible_plan: Dictionary = ui_lifecycle_service.call("editor_drag_ghost_view_presentation", true, Vector2(120.0, 88.0), true)
+	_assert_vector(drag_ghost_visible_plan, "position", Vector2(120.0, 88.0), "drag ghost presentation")
+	if not bool(drag_ghost_visible_plan.get("visible", false)) or not bool(drag_ghost_visible_plan.get("move_to_front", false)):
+		_fail("UILifecycleService visible drag ghost presentation visibility/front-order failed.")
+		return
+	if int(drag_ghost_visible_plan.get("z_index", -1)) != 250 or int(drag_ghost_visible_plan.get("mouse_filter", -1)) != Control.MOUSE_FILTER_IGNORE:
+		_fail("UILifecycleService visible drag ghost presentation z-index/mouse-filter failed.")
+		return
+	_assert_color(drag_ghost_visible_plan, "modulate", Color(1.0, 1.0, 1.0, 0.55), "drag ghost presentation")
+	var drag_ghost_hidden_plan: Dictionary = ui_lifecycle_service.call("editor_drag_ghost_view_presentation", false, Vector2.INF, false)
+	if bool(drag_ghost_hidden_plan.get("visible", true)) or bool(drag_ghost_hidden_plan.get("move_to_front", false)):
+		_fail("UILifecycleService hidden drag ghost presentation failed.")
+		return
+	if int(drag_ghost_hidden_plan.get("z_index", -1)) != 250 or int(drag_ghost_hidden_plan.get("mouse_filter", -1)) != Control.MOUSE_FILTER_IGNORE:
+		_fail("UILifecycleService hidden drag ghost presentation z-index/mouse-filter failed.")
+		return
 	_assert_vector(stats_rail_build_spec, "position", Vector2(18.0, 104.0), "stats rail build spec")
 	_assert_vector(stats_rail_build_spec, "size", Vector2(164.0, 508.0), "stats rail build spec")
 	_assert_vector(hover_popup_build_spec, "position", Vector2(410.0, 124.0), "hover popup build spec")
