@@ -908,8 +908,10 @@ static func editor_shop_feedback_presentation(shop_visible: bool, pending_kind: 
 	}
 
 
-static func editor_color_controls_presentation(color_visible: bool, player_id: int, team_color_name: String, selected_color_index: int, color_presets: Array, button_count: int, zh: bool) -> Dictionary:
+static func editor_color_controls_presentation(color_visible: bool, player_id: int, team_color_name: String, selected_color_index: int, color_presets: Array, button_count: int, zh: bool, current_primary_color: Color = Color(-1.0, -1.0, -1.0, -1.0), current_accent_color: Color = Color(-1.0, -1.0, -1.0, -1.0)) -> Dictionary:
 	var button_plans := []
+	var picker_primary := Color.WHITE
+	var picker_accent := Color(1.0, 0.88, 0.24, 1.0)
 	for i in range(button_count):
 		var button_plan := {
 			"visible": color_visible,
@@ -924,6 +926,19 @@ static func editor_color_controls_presentation(color_visible: bool, player_id: i
 			var accent: Color = preset.get("accent", Color.WHITE)
 			button_plan["modulate"] = primary.lerp(accent, 0.34 if selected else 0.12)
 		button_plans.append(button_plan)
+	if selected_color_index >= 0 and selected_color_index < color_presets.size() and color_presets[selected_color_index] is Dictionary:
+		var selected_preset: Dictionary = color_presets[selected_color_index]
+		var preset_primary: Variant = selected_preset.get("primary", picker_primary)
+		var preset_accent: Variant = selected_preset.get("accent", picker_accent)
+		if preset_primary is Color:
+			picker_primary = preset_primary
+		if preset_accent is Color:
+			picker_accent = preset_accent
+	var unset_color := Color(-1.0, -1.0, -1.0, -1.0)
+	if not current_primary_color.is_equal_approx(unset_color):
+		picker_primary = current_primary_color
+	if not current_accent_color.is_equal_approx(unset_color):
+		picker_accent = current_accent_color
 	return {
 		"panel": {"visible": color_visible},
 		"label": {
@@ -942,6 +957,10 @@ static func editor_color_controls_presentation(color_visible: bool, player_id: i
 			"text": "辅色" if zh else "ACCENT",
 		},
 		"sync_pickers": color_visible,
+		"picker_colors": {
+			"primary": picker_primary,
+			"accent": picker_accent,
+		},
 	}
 
 

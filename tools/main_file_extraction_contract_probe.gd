@@ -120,6 +120,8 @@ func _init() -> void:
 		_fail("main.gd should delegate editor shop feedback presentation planning.")
 	if source.contains("\"P%d 队伍颜色：%s\" % [_editor_player(), _team_color_name(_editor_player())]") or source.contains("var selected := i == _team_color_index(_editor_player())") or source.contains("editor_primary_color_picker.text = \"主色\" if _ui_is_zh() else \"PRIMARY\""):
 		_fail("main.gd should delegate editor color control presentation planning.")
+	if source.contains("editor_primary_color_picker.color = _team_primary_color(_editor_player())") or source.contains("editor_accent_color_picker.color = _team_accent_color(_editor_player())"):
+		_fail("main.gd should consume picker color sync values from UILifecycleService editor color plans.")
 	if source.contains("label.text = \"零件卡片\" if _ui_is_zh() else \"PART CARDS\"") or source.contains("label.text = \"零件库：悬停显示完整卡片\" if _ui_is_zh() else \"PARTS: HOVER FOR FULL CARD\"") or source.contains("template_toggle.text = \"模板抽屉\" if _ui_is_zh() else \"TEMPLATE DRAWER\""):
 		_fail("main.gd should delegate editor section chrome presentation planning.")
 	if source.contains("button.visible = button.visible and parts_visible") or source.contains("shop_button.visible = shop_visible and body_board_enabled") or source.contains("editor_shop_card_backdrop.visible = shop_visible") or source.contains("not (parts_visible or shop_visible)"):

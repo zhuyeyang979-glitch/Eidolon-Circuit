@@ -1529,6 +1529,29 @@ GREEN: git diff --check
 
 `UILifecycleService.editor_slot_button_presentation()` now owns the pure hidden/disabled plan for legacy editor slot buttons. `_apply_editor_panel_visibility()` applies that plan through `_apply_editor_control_plan()` instead of carrying local `slot_visible` state and direct visible/disabled mutations; the function is now 307 lines.
 
+Follow-up editor color-picker sync plan extraction:
+
+```text
+RED: main_file_extraction_contract_probe emitted the expected stale direct picker color assignment error
+RED: lifecycle_services_contract_probe emitted the expected missing picker_colors error
+GREEN: MAIN_FILE_EXTRACTION_CONTRACT_PROBE ok services=9
+GREEN: LIFECYCLE_SERVICES_CONTRACT_PROBE ok
+GREEN: Godot --check-only --script res://scripts/main.gd --quit-after 1
+GREEN: Godot --check-only --script res://scripts/services/ui_lifecycle_service.gd --quit-after 1
+GREEN: TEAMEDIT_UI_SIMPLIFIED_CONTROLS_PROBE ok summary_lines=2
+GREEN: UNIT_EDITOR_FULLSCREEN_LAYOUT_PROBE ok board=(908.0, 548.0) dock=(726.0, 132.0)
+GREEN: PART_LIBRARY_UI_PROBE groups=["torso", "limb", "terminal_weapon", "barrier_panel", "software_muscle", "software"] weapon=3 equipment=5 software=7 dashboard=40
+GREEN: UNIT_EDITOR_PAGINATION_LAYOUT_PROBE ok unit=1 page=0 catalog=1 load=0 feedback=[P: (270.0, 654.0), S: (622.0, 26.0)]
+GREEN: EDITOR_CONTROL_PLAN_ADAPTER_PROBE failed=false writes=11 noops=7
+GREEN: SCREEN_LAYOUT_TOKEN_COVERAGE_PROBE ok
+GREEN: BATTLE_ACTOR_COMMAND_SERVICE_CONTRACT_PROBE ok
+GREEN: jq empty tools/probe_manifest.json
+GREEN: git diff --check
+NOT COUNTED: teamedit_property_write_budget_probe remains red at repeat_write=56 in the existing parts-panel scenario
+```
+
+`UILifecycleService.editor_color_controls_presentation()` now returns `picker_colors` alongside the visible/text/button plan. `_apply_editor_panel_visibility()` passes the current team colors into the service and consumes the returned picker sync values under the existing `editor_color_picker_sync` guard instead of directly assigning `_team_primary_color()` / `_team_accent_color()` to the picker controls.
+
 Remaining items after this batch:
 
 - Continue editor UI extraction with `_build_editor_ui` and the remaining action presentation/control-mutation sections of `_apply_editor_panel_visibility`, then continue `_resolve_attack` and `_refresh_editor_visual_views` extraction.

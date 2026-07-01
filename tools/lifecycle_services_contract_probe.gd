@@ -968,6 +968,9 @@ func _init() -> void:
 	if String(primary_picker.get("text", "")) != "主色" or String(accent_picker.get("text", "")) != "辅色":
 		_fail("UILifecycleService color picker text contract failed.")
 		return
+	var picker_colors: Dictionary = Dictionary(color_plan.get("picker_colors", {}))
+	_assert_color(picker_colors, "primary", Color(0.0, 1.0, 0.0, 1.0), "color picker sync colors")
+	_assert_color(picker_colors, "accent", Color(0.0, 0.0, 0.0, 1.0), "color picker sync colors")
 	var hidden_color_plan: Dictionary = UILifecycleService.editor_color_controls_presentation(false, 1, "Azure", 0, color_presets, 1, false)
 	if bool(Dictionary(hidden_color_plan.get("panel", {})).get("visible", true)) or not bool(Dictionary(Array(hidden_color_plan.get("buttons", []))[0]).get("disabled", false)) or bool(Dictionary(hidden_color_plan.get("primary_picker", {})).get("visible", true)):
 		_fail("UILifecycleService hidden color controls contract failed.")

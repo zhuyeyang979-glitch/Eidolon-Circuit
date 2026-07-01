@@ -9826,6 +9826,16 @@ func _set_canvas_item_modulate_if_changed(item: CanvasItem, value: Color) -> voi
 	editor_property_write_count += 1
 
 
+func _set_color_picker_button_color_if_changed(picker: ColorPickerButton, value: Color) -> void:
+	if picker == null:
+		return
+	if picker.color.is_equal_approx(value):
+		editor_property_noop_count += 1
+		return
+	picker.color = value
+	editor_property_write_count += 1
+
+
 func _set_control_position_if_changed(control: Control, value: Vector2) -> void:
 	if control == null:
 		return
@@ -49984,7 +49994,9 @@ func _apply_editor_panel_visibility(role_key: String, unit_bp: Dictionary) -> vo
 		_team_color_index(_editor_player()),
 		TEAM_COLOR_PRESETS,
 		editor_color_buttons.size(),
-		_ui_is_zh()
+		_ui_is_zh(),
+		_team_primary_color(_editor_player()),
+		_team_accent_color(_editor_player())
 	)
 	if editor_color_panel != null:
 		_apply_editor_control_plan(editor_color_panel, Dictionary(color_controls_plan.get("panel", {})))
@@ -50003,11 +50015,14 @@ func _apply_editor_panel_visibility(role_key: String, unit_bp: Dictionary) -> vo
 		var accent_picker_plan := Dictionary(color_controls_plan.get("accent_picker", {}))
 		_apply_editor_control_plan(editor_accent_color_picker, accent_picker_plan)
 	if bool(color_controls_plan.get("sync_pickers", false)):
+		var picker_colors := Dictionary(color_controls_plan.get("picker_colors", {}))
 		editor_color_picker_sync = true
-		if editor_primary_color_picker != null:
-			editor_primary_color_picker.color = _team_primary_color(_editor_player())
-		if editor_accent_color_picker != null:
-			editor_accent_color_picker.color = _team_accent_color(_editor_player())
+		var primary_picker_color: Variant = picker_colors.get("primary", null)
+		if editor_primary_color_picker != null and primary_picker_color is Color:
+			_set_color_picker_button_color_if_changed(editor_primary_color_picker, primary_picker_color)
+		var accent_picker_color: Variant = picker_colors.get("accent", null)
+		if editor_accent_color_picker != null and accent_picker_color is Color:
+			_set_color_picker_button_color_if_changed(editor_accent_color_picker, accent_picker_color)
 		editor_color_picker_sync = false
 	var catalog_button_visibilities := []
 	for catalog_button in editor_catalog_buttons:
