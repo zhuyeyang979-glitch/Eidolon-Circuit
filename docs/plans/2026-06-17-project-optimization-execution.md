@@ -2090,6 +2090,38 @@ GREEN: BATTLE_ATTACK_HEAVY_REPLAY_DESYNC_PROBE ok
 
 `_prepare_attack_target_contact()` now owns live-target and first-impact filtering, true-bullet lock/obstruction filtering, direct-runtime or CPU part-hit selection, one-time map-occlusion recording, target-hit event patching, one-way shield interception, and projectile shield reflection. `_resolve_attack()` applies the returned event, skips rejected contacts, and carries only the resolved damage/material classifications into the existing damage stack. The extraction contract rejects renewed inline target-contact routing and requires every preserved contact gate.
 
+Follow-up attack damage-stack preparation extraction:
+
+```text
+RED: battle_hit_resolution_service_contract_probe failed because _resolve_attack still prepared counter, raw damage, momentum gate, combo, and damage-stack inputs inline
+RED: no_old_threshold_gate_probe required the obsolete one-line stiffness-cap implementation
+RED: part_damage_coeff_probe reported stale limb/melee coefficients but reset its failure exit code with a final quit()
+GREEN: BATTLE_HIT_RESOLUTION_SERVICE_CONTRACT_PROBE ok
+GREEN: Godot --check-only --script res://scripts/main.gd --quit-after 1
+GREEN: MOMENTUM_DAMAGE_GATE_RUNTIME_PROBE ok damage=11 momentum=60.0 break=0.50
+GREEN: PROJECTILE_DAMAGE_FORMULA_PROBE ok raw=80.0 allocated=300.0 sniper=10.0
+GREEN: MODULE_DAMAGE_FROM_RUNTIME_CONTEXT_PROBE ok
+GREEN: PART_DAMAGE_COEFF_PROBE ok
+GREEN: RUNTIME_CONTACT_SERVICE_CONTRACT_PROBE ok
+GREEN: MELEE_DAMAGE_TYPE_RULE_PROBE ok
+GREEN: RUNTIME_CONTACT_DAMAGE_PROBE hp_delta=332 target_v=9.600
+GREEN: RUNTIME_NO_PRECONTACT_DAMAGE_PROBE gap=2.0844 hp=150
+GREEN: CONTACT_NORMAL_MOMENTUM_PROBE tangent=0 normal=138
+GREEN: CHEMICAL_DOT_PROBE ok dps=6.00 hp=160->153
+GREEN: CHEMICAL_HEAT_PROBE queued=true impact=true dot=true boost_motion=true straight_cooling=true hp=120->105->64 heat=44.00
+GREEN: CHEMICAL_SPRAYER_FIRST_CONTACT_PROBE ok blocker=140->129 rear=140->140
+GREEN: GUN_DAMAGE_MULTIPLIER_FROM_ALLOCATION_PROBE ok current=6.00 max=15.00
+GREEN: NO_OLD_THRESHOLD_GATE_PROBE ok
+GREEN: BARRIER_TERRAIN_DESTRUCTION_INVALIDATION_PROBE ok remaining=1 placements=1 deployments=1
+GREEN: LOCAL_BATTLE_REPLAY_CONSISTENCY_PROBE ok
+GREEN: BATTLE_ATTACK_HEAVY_REPLAY_DESYNC_PROBE checkpoints=6 desync_step=360
+GREEN: BATTLE_ATTACK_HEAVY_REPLAY_DESYNC_PROBE ok
+```
+
+`_prepare_attack_damage_stack()` now owns counter lookup, outgoing multipliers, melee/projectile raw damage, low-momentum rejection, momentum-driven barrier detachment, material adjustment, momentum-gate event patching, combo scaling, and final damage-stack intent resolution. `_resolve_attack()` reapplies the returned event and carries only the resolved VFX/post-hit fields. The extraction contract rejects renewed inline damage-stack preparation and requires every early-exit path and output field.
+
+The stale threshold probe now verifies the current two-stage path-stiffness and optional hardware cap instead of an obsolete equivalent expression. The part-coefficient probe now follows the runtime service's authoritative limb/melee values (`1.8` / `3.2`) and latches any assertion failure so a trailing success quit cannot produce a false-green result.
+
 Remaining items after this batch:
 
 - Continue editor UI extraction with `_build_editor_ui` and the remaining action presentation/control-mutation sections of `_apply_editor_panel_visibility`, then continue `_resolve_attack` and `_refresh_editor_visual_views` extraction.

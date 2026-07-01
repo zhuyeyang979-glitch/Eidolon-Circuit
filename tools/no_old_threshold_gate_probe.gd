@@ -34,7 +34,10 @@ func _init() -> void:
 			return
 		var service_damage_block := service_text.substr(service_damage_pos)
 		for required in [
-			"var usable_momentum := minf(contact_momentum, attacker_path_stiffness)",
+			"var path_capped_momentum := minf(contact_momentum, attacker_path_stiffness)",
+			"var usable_momentum := path_capped_momentum",
+			"usable_momentum = clampf(float(context.get(\"hardware_capped_momentum\", path_capped_momentum)), 0.0, path_capped_momentum)",
+			"\"path_capped_momentum\": path_capped_momentum",
 			"\"usable_contact_momentum\": usable_momentum",
 			"\"attacker_path_stiffness\": attacker_path_stiffness",
 		]:

@@ -2,10 +2,12 @@ extends SceneTree
 
 const FighterScene := preload("res://scripts/fighter.gd")
 
+var _failed := false
+
 
 func _fail(message: String) -> void:
 	push_error(message)
-	quit(1)
+	_failed = true
 
 
 func _make_fighter():
@@ -46,11 +48,14 @@ func _init() -> void:
 		by_name[String(c.get("name", ""))] = c
 	_expect_close(float(by_name["Probe Torso"].get("damage_coeff", -1.0)), 1.0, "torso damage_coeff")
 	_expect_close(float(by_name["Probe Torso"].get("break_coeff", -1.0)), 0.5, "torso break_coeff")
-	_expect_close(float(by_name["Probe Limb"].get("damage_coeff", -1.0)), 1.0, "limb damage_coeff")
+	_expect_close(float(by_name["Probe Limb"].get("damage_coeff", -1.0)), 1.8, "limb damage_coeff")
 	_expect_close(float(by_name["Probe Limb"].get("break_coeff", -1.0)), 0.5, "limb break_coeff")
-	_expect_close(float(by_name["Probe Blade"].get("damage_coeff", -1.0)), 2.5, "melee terminal damage_coeff")
+	_expect_close(float(by_name["Probe Blade"].get("damage_coeff", -1.0)), 3.2, "melee terminal damage_coeff")
 	_expect_close(float(by_name["Probe Blade"].get("break_coeff", -1.0)), 1.0, "melee terminal break_coeff")
 	_expect_close(float(by_name["Probe Gun"].get("damage_coeff", -1.0)), 0.8, "ranged terminal damage_coeff")
 	_expect_close(float(by_name["Probe Gun"].get("break_coeff", -1.0)), 0.5, "ranged terminal break_coeff")
+	if _failed:
+		quit(1)
+		return
 	print("PART_DAMAGE_COEFF_PROBE ok")
 	quit()

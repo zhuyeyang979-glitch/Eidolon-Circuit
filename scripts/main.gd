@@ -37246,6 +37246,117 @@ func _prepare_attack_target_contact(attacker, target, event: Dictionary, first_p
 	}
 
 
+func _prepare_attack_damage_stack(attacker, target, event: Dictionary, damage_type: String) -> Dictionary:
+	var counter_tier := _counter_tier_for_hit(target, damage_type)
+	var nullified := false
+	var multiplier: float = _rps_multiplier(String(event.get("state", "normal")), target.current_state)
+	multiplier *= _vulnerability_multiplier(target, event)
+	multiplier *= _outgoing_damage_multiplier(attacker, event)
+	var non_damage := bool(event.get("non_damage", false))
+	var raw_damage := float(event.get("damage", 0.0))
+	if not bool(event.get("projectile", false)):
+		raw_damage = _momentum_damage_for_event(attacker, event)
+		if raw_damage <= 0.001:
+			_record_attack_rule_result(attacker, event, {
+				"outcome": "low_momentum",
+				"raw_damage": raw_damage,
+				"final_damage": 0,
+				"target": target,
+				"target_part_kind": String(event.get("target_part_kind", "core")),
+				"target_part_name": String(event.get("target_part_name", "CORE")),
+				"damage_type": damage_type,
+			})
+			return {"skip": true, "event": event}
+	else:
+		raw_damage = _projectile_raw_damage_for_event(attacker, target, event)
+	var impact_direction := _event_direction_vector(attacker, target, event)
+	if _maybe_detach_barrier_tile_from_momentum(attacker, target, event, impact_direction, _event_momentum_magnitude(event, maxf(0.0, float(event.get("momentum", 0.0))))):
+		return {"skip": true, "event": event}
+	var damage: int = 0 if non_damage else max(1, int(roundf(raw_damage * multiplier)))
+	var melee_adjusted_damage := _melee_damage_adjusted(event, damage)
+	damage = melee_adjusted_damage
+	var projectile_style := String(event.get("projectile_style", ""))
+	var contact_gate_blocked := false
+	var material_adjusted_damage := damage
+	if not non_damage and not nullified:
+		material_adjusted_damage = _projectile_material_adjusted_damage(target, event, damage)
+		damage = material_adjusted_damage
+		contact_gate_blocked = bool(event.get("contact_gate_blocked", false))
+	var event_momentum_for_gate := _event_momentum_magnitude(event, maxf(0.0, float(event.get("momentum", 0.0))))
+	var break_value := _target_break_value_for_event(target, event)
+	var break_value_adjustment := _break_value_adjustment_for_event(event)
+	var knock_adjustment := _knock_adjustment_for_event(event)
+	var damage_coefficient := _damage_coefficient_for_gate(raw_damage, event_momentum_for_gate)
+	var adjustment_coefficient := multiplier
+	if raw_damage > 0.001:
+		adjustment_coefficient = maxf(0.0, float(material_adjusted_damage) / raw_damage)
+	var gate_intent := {}
+	if not nullified:
+		gate_intent = _battle_hit_resolution_service().momentum_damage_gate_intent({
+			"raw_momentum": float(event.get("raw_momentum", event_momentum_for_gate)),
+			"momentum": event_momentum_for_gate,
+			"damage_coefficient": damage_coefficient,
+			"adjustment_coefficient": adjustment_coefficient,
+			"precomputed_damage": float(material_adjusted_damage),
+			"break_value": break_value,
+			"break_value_adjustment": break_value_adjustment,
+			"knock_adjustment_coefficient": knock_adjustment,
+			"non_damage": non_damage,
+		})
+	var gate_event_patch := _battle_hit_resolution_service().momentum_damage_gate_event_patch(event, gate_intent, {
+		"raw_momentum": float(event.get("raw_momentum", event_momentum_for_gate)),
+		"momentum": event_momentum_for_gate,
+		"capped_momentum": event_momentum_for_gate,
+		"damage_coefficient": damage_coefficient,
+		"adjustment_coefficient": adjustment_coefficient,
+		"break_value": break_value,
+		"break_value_adjustment": break_value_adjustment,
+		"knock_adjustment_coefficient": knock_adjustment,
+	})
+	event = _battle_hit_resolution_service().apply_event_patch(event, gate_event_patch)
+	if not nullified:
+		contact_gate_blocked = bool(event.get("contact_gate_blocked", false))
+	var combo_damage := damage
+	if not non_damage and not nullified and not contact_gate_blocked:
+		combo_damage = _apply_combo_hit_scaling(attacker, target, event, damage)
+		damage = combo_damage
+		if combo_damage < 0:
+			return {"skip": true, "event": event}
+	var damage_result := _battle_hit_resolution_service().damage_stack_intent({
+		"raw_damage": raw_damage,
+		"multiplier": multiplier,
+		"projectile": bool(event.get("projectile", false)),
+		"non_damage": non_damage,
+		"nullified": nullified,
+		"melee_adjusted_damage": melee_adjusted_damage,
+		"material_adjusted_damage": material_adjusted_damage,
+		"contact_gate_blocked": contact_gate_blocked,
+		"combo_applies": bool(event.get("combo_active", false)),
+		"combo_damage": combo_damage,
+		"chemical_dot_applies": _chemical_dot_applies(event),
+		"chemical_dot_mult": float(event.get("chemical_dot_mult", CHEMICAL_DOT_DEFAULT_MULT)),
+		"chemical_frontload": float(event.get("chemical_frontload", CHEMICAL_DOT_DEFAULT_FRONTLOAD)),
+		"projectile_style": projectile_style,
+	})
+	if not bool(damage_result.get("continue_hit", true)):
+		return {"skip": true, "event": event}
+	damage = int(damage_result.get("damage", damage))
+	var chemical_dot_total := int(damage_result.get("chemical_dot_total", 0))
+	var effect_style := String(damage_result.get("effect_style", "threshold" if contact_gate_blocked else projectile_style))
+	return {
+		"skip": false,
+		"event": event,
+		"counter_tier": counter_tier,
+		"nullified": nullified,
+		"non_damage": non_damage,
+		"raw_damage": raw_damage,
+		"damage": damage,
+		"chemical_dot_total": chemical_dot_total,
+		"effect_style": effect_style,
+		"contact_gate_blocked": contact_gate_blocked,
+	}
+
+
 func _resolve_attack(attacker, event: Dictionary) -> void:
 	var entry_intent := _battle_hit_resolution_service().attack_entry_intent({
 		"attacker_live": _is_live_unit(attacker),
@@ -37311,102 +37422,18 @@ func _resolve_attack(attacker, event: Dictionary) -> void:
 			continue
 		var damage_type := String(target_contact.get("damage_type", event.get("damage_type", "blunt")))
 		var material_class := String(target_contact.get("material_class", event.get("material_class", "weapon")))
-		var counter_tier := _counter_tier_for_hit(target, damage_type)
-		var nullified := false
-		var multiplier: float = _rps_multiplier(String(event.get("state", "normal")), target.current_state)
-		multiplier *= _vulnerability_multiplier(target, event)
-		multiplier *= _outgoing_damage_multiplier(attacker, event)
-		var non_damage := bool(event.get("non_damage", false))
-		var raw_damage := float(event.get("damage", 0.0))
-		if not bool(event.get("projectile", false)):
-			raw_damage = _momentum_damage_for_event(attacker, event)
-			if raw_damage <= 0.001:
-				_record_attack_rule_result(attacker, event, {
-					"outcome": "low_momentum",
-					"raw_damage": raw_damage,
-					"final_damage": 0,
-					"target": target,
-					"target_part_kind": String(event.get("target_part_kind", "core")),
-					"target_part_name": String(event.get("target_part_name", "CORE")),
-					"damage_type": damage_type,
-				})
-				continue
-		else:
-			raw_damage = _projectile_raw_damage_for_event(attacker, target, event)
-		var impact_direction := _event_direction_vector(attacker, target, event)
-		if _maybe_detach_barrier_tile_from_momentum(attacker, target, event, impact_direction, _event_momentum_magnitude(event, maxf(0.0, float(event.get("momentum", 0.0))))):
+		var damage_stack := _prepare_attack_damage_stack(attacker, target, event, damage_type)
+		event = Dictionary(damage_stack.get("event", event))
+		if bool(damage_stack.get("skip", false)):
 			continue
-		var damage: int = 0 if non_damage else max(1, int(roundf(raw_damage * multiplier)))
-		var melee_adjusted_damage := _melee_damage_adjusted(event, damage)
-		damage = melee_adjusted_damage
-		var projectile_style := String(event.get("projectile_style", ""))
-		var contact_gate_blocked := false
-		var material_adjusted_damage := damage
-		if not non_damage and not nullified:
-			material_adjusted_damage = _projectile_material_adjusted_damage(target, event, damage)
-			damage = material_adjusted_damage
-			contact_gate_blocked = bool(event.get("contact_gate_blocked", false))
-		var event_momentum_for_gate := _event_momentum_magnitude(event, maxf(0.0, float(event.get("momentum", 0.0))))
-		var break_value := _target_break_value_for_event(target, event)
-		var break_value_adjustment := _break_value_adjustment_for_event(event)
-		var knock_adjustment := _knock_adjustment_for_event(event)
-		var damage_coefficient := _damage_coefficient_for_gate(raw_damage, event_momentum_for_gate)
-		var adjustment_coefficient := multiplier
-		if raw_damage > 0.001:
-			adjustment_coefficient = maxf(0.0, float(material_adjusted_damage) / raw_damage)
-		var gate_intent := {}
-		if not nullified:
-			gate_intent = _battle_hit_resolution_service().momentum_damage_gate_intent({
-				"raw_momentum": float(event.get("raw_momentum", event_momentum_for_gate)),
-				"momentum": event_momentum_for_gate,
-				"damage_coefficient": damage_coefficient,
-				"adjustment_coefficient": adjustment_coefficient,
-				"precomputed_damage": float(material_adjusted_damage),
-				"break_value": break_value,
-				"break_value_adjustment": break_value_adjustment,
-				"knock_adjustment_coefficient": knock_adjustment,
-				"non_damage": non_damage,
-			})
-		var gate_event_patch := _battle_hit_resolution_service().momentum_damage_gate_event_patch(event, gate_intent, {
-			"raw_momentum": float(event.get("raw_momentum", event_momentum_for_gate)),
-			"momentum": event_momentum_for_gate,
-			"capped_momentum": event_momentum_for_gate,
-			"damage_coefficient": damage_coefficient,
-			"adjustment_coefficient": adjustment_coefficient,
-			"break_value": break_value,
-			"break_value_adjustment": break_value_adjustment,
-			"knock_adjustment_coefficient": knock_adjustment,
-		})
-		event = _battle_hit_resolution_service().apply_event_patch(event, gate_event_patch)
-		if not nullified:
-			contact_gate_blocked = bool(event.get("contact_gate_blocked", false))
-		var combo_damage := damage
-		if not non_damage and not nullified and not contact_gate_blocked:
-			combo_damage = _apply_combo_hit_scaling(attacker, target, event, damage)
-			damage = combo_damage
-			if combo_damage < 0:
-				continue
-		var damage_result := _battle_hit_resolution_service().damage_stack_intent({
-			"raw_damage": raw_damage,
-			"multiplier": multiplier,
-			"projectile": bool(event.get("projectile", false)),
-			"non_damage": non_damage,
-			"nullified": nullified,
-			"melee_adjusted_damage": melee_adjusted_damage,
-			"material_adjusted_damage": material_adjusted_damage,
-			"contact_gate_blocked": contact_gate_blocked,
-			"combo_applies": bool(event.get("combo_active", false)),
-			"combo_damage": combo_damage,
-			"chemical_dot_applies": _chemical_dot_applies(event),
-			"chemical_dot_mult": float(event.get("chemical_dot_mult", CHEMICAL_DOT_DEFAULT_MULT)),
-			"chemical_frontload": float(event.get("chemical_frontload", CHEMICAL_DOT_DEFAULT_FRONTLOAD)),
-			"projectile_style": projectile_style,
-		})
-		if not bool(damage_result.get("continue_hit", true)):
-			continue
-		damage = int(damage_result.get("damage", damage))
-		var chemical_dot_total := int(damage_result.get("chemical_dot_total", 0))
-		var effect_style := String(damage_result.get("effect_style", "threshold" if contact_gate_blocked else projectile_style))
+		var counter_tier := int(damage_stack.get("counter_tier", 0))
+		var nullified := bool(damage_stack.get("nullified", false))
+		var non_damage := bool(damage_stack.get("non_damage", false))
+		var raw_damage := float(damage_stack.get("raw_damage", 0.0))
+		var damage := int(damage_stack.get("damage", 0))
+		var chemical_dot_total := int(damage_stack.get("chemical_dot_total", 0))
+		var effect_style := String(damage_stack.get("effect_style", ""))
+		var contact_gate_blocked := bool(damage_stack.get("contact_gate_blocked", false))
 		var hit_vfx_position := Vector2(event.get("hit_position_combat", Vector2(target.ring_pos, target.lane)))
 		if bool(event.get("projectile", false)):
 			_spawn_projectile_hit_vfx_on_target({

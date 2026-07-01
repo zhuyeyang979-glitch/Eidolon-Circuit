@@ -119,6 +119,17 @@ func _init() -> void:
 		"_one_way_shield_intercept(attacker, target, event)",
 		"_target_projectile_shield_reflects(target, event)",
 		"_reflect_projectile_from_target_shield(target, attacker, event)",
+		"_counter_tier_for_hit(target, damage_type)",
+		"_rps_multiplier(String(event.get(\"state\", \"normal\")), target.current_state)",
+		"_momentum_damage_for_event(attacker, event)",
+		"_projectile_raw_damage_for_event(attacker, target, event)",
+		"_maybe_detach_barrier_tile_from_momentum",
+		"_melee_damage_adjusted(event, damage)",
+		"_projectile_material_adjusted_damage(target, event, damage)",
+		".momentum_damage_gate_intent({",
+		".momentum_damage_gate_event_patch(event, gate_intent, {",
+		"_apply_combo_hit_scaling(attacker, target, event, damage)",
+		".damage_stack_intent({",
 		"for raw_intent in post_hit_intents:",
 		"match String(post_intent.get(\"action\", \"\"))",
 	]:
@@ -274,6 +285,42 @@ func _init() -> void:
 	]:
 		if target_contact_body.find(token) < 0:
 			_fail("_prepare_attack_target_contact missing token: %s" % token)
+			return
+	if resolve_body.count("_prepare_attack_damage_stack(attacker, target, event, damage_type)") != 1:
+		_fail("_resolve_attack should prepare each damage stack through one helper.")
+		return
+	var damage_stack_body := _function_body(main_source, "func _prepare_attack_damage_stack")
+	if damage_stack_body.is_empty():
+		_fail("Unable to locate _prepare_attack_damage_stack body.")
+		return
+	for token in [
+		"_counter_tier_for_hit",
+		"_rps_multiplier",
+		"_vulnerability_multiplier",
+		"_outgoing_damage_multiplier",
+		"_momentum_damage_for_event",
+		"\"low_momentum\"",
+		"_projectile_raw_damage_for_event",
+		"_maybe_detach_barrier_tile_from_momentum",
+		"_melee_damage_adjusted",
+		"_projectile_material_adjusted_damage",
+		"momentum_damage_gate_intent",
+		"momentum_damage_gate_event_patch",
+		"_apply_combo_hit_scaling",
+		"damage_stack_intent",
+		"\"skip\"",
+		"\"event\"",
+		"\"counter_tier\"",
+		"\"nullified\"",
+		"\"non_damage\"",
+		"\"raw_damage\"",
+		"\"damage\"",
+		"\"chemical_dot_total\"",
+		"\"effect_style\"",
+		"\"contact_gate_blocked\"",
+	]:
+		if damage_stack_body.find(token) < 0:
+			_fail("_prepare_attack_damage_stack missing token: %s" % token)
 			return
 	var post_hit_body := _function_body(main_source, "func _execute_post_hit_intents")
 	if post_hit_body.is_empty():
