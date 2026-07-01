@@ -1638,6 +1638,27 @@ GREEN: git diff --check
 
 `UILifecycleService.editor_template_drawer_presentation()` now owns the pure runtime drawer panel, title, archetype/barrier template button, selected archetype color, and hidden toggle-button plans. `_layout_editor_template_drawer()` consumes that plan through `_apply_editor_control_plan()` and receives the current blueprint from both editor refresh call sites, so `_apply_editor_panel_visibility()` no longer overwrites the selected archetype highlight or hides an opened template drawer. A new `unit_editor_template_drawer_runtime_probe` locks the opened hero/barrier drawer behavior into the probe manifest.
 
+Follow-up editor body-board button presentation extraction:
+
+```text
+RED: main_file_extraction_contract_probe failed on missing UILifecycleService.editor_body_board_button_presentation delegation
+RED: lifecycle_services_contract_probe failed on missing editor_body_board_button_presentation service API
+GREEN: MAIN_FILE_EXTRACTION_CONTRACT_PROBE ok services=9
+GREEN: LIFECYCLE_SERVICES_CONTRACT_PROBE ok
+GREEN: Godot --check-only --script res://scripts/main.gd --quit-after 1
+GREEN: Godot --check-only --script res://scripts/services/ui_lifecycle_service.gd --quit-after 1
+GREEN: UNIT_EDITOR_FULLSCREEN_LAYOUT_PROBE ok board=(908.0, 548.0) dock=(726.0, 132.0)
+GREEN: PART_LIBRARY_UI_PROBE groups=["torso", "limb", "terminal_weapon", "barrier_panel", "software_muscle", "software"] weapon=3 equipment=5 software=7 dashboard=40
+GREEN: UNIT_EDITOR_BOARD_CONTROLLER_CONTRACT_PROBE ok
+GREEN: UNIT_EDITOR_TEMPLATE_DRAWER_RUNTIME_PROBE ok selected=octopus barrier=BarrierTemplatepin_wall
+GREEN: UNIT_EDITOR_PAGINATION_LAYOUT_PROBE ok unit=1 page=0 catalog=1 load=0 feedback=[P: (270.0, 654.0), S: (622.0, 26.0)]
+GREEN: EDITOR_CONTROL_PLAN_ADAPTER_PROBE failed=false writes=11 noops=7
+GREEN: jq empty tools/probe_manifest.json
+GREEN: git diff --check
+```
+
+`UILifecycleService.editor_body_board_button_presentation()` now owns the pure visible/disabled/text plan for legacy body-board part buttons, including selected and illegal markers. `_update_editor_board_ui()` keeps local blueprint labels and illegal-part lookup, then applies each body-part plan through `_apply_editor_control_plan()` instead of mutating the buttons directly.
+
 Remaining items after this batch:
 
 - Continue editor UI extraction with `_build_editor_ui` and the remaining action presentation/control-mutation sections of `_apply_editor_panel_visibility`, then continue `_resolve_attack` and `_refresh_editor_visual_views` extraction.

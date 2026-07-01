@@ -573,6 +573,21 @@ static func editor_body_part_button_build_specs(body_part_order: Array) -> Array
 	return buttons
 
 
+static func editor_body_board_button_presentation(body_board_enabled: bool, custom_board_enabled: bool, barrier_screen_board: bool, selected: bool, illegal: bool, label: String) -> Dictionary:
+	var text := String(label)
+	if body_board_enabled:
+		text = "%s%s%s" % [
+			"> " if selected else "",
+			"! " if illegal else "",
+			text,
+		]
+	return {
+		"visible": body_board_enabled and not custom_board_enabled and not barrier_screen_board,
+		"disabled": not body_board_enabled,
+		"text": text,
+	}
+
+
 static func editor_module_binding_button_build_specs(attack_group_count: int, key_z_index: int, side_z_index: int) -> Dictionary:
 	var key_buttons := []
 	for key_index in range(1, maxi(0, attack_group_count) + 1):

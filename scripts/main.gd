@@ -50131,11 +50131,15 @@ func _update_editor_board_ui(role_key: String, unit_bp: Dictionary, precomputed_
 	var illegal_parts := _illegal_module_material_parts(unit_bp) if body_board_enabled else {}
 	for part_key in BODY_PART_ORDER:
 		var button: Button = editor_board_labels[part_key]
-		_set_button_disabled_if_changed(button, not body_board_enabled)
-		_set_canvas_item_visible_if_changed(button, body_board_enabled and not custom_board_enabled and not barrier_screen_board)
-		var marker := "> " if part_key == editor_selected_body_part and body_board_enabled else ""
-		var alarm := "! " if illegal_parts.has(part_key) else ""
-		_set_control_text_if_changed(button, "%s%s%s" % [marker, alarm, _body_part_label(part_key, unit_bp)])
+		var body_part_plan := UILifecycleService.editor_body_board_button_presentation(
+			body_board_enabled,
+			custom_board_enabled,
+			barrier_screen_board,
+			part_key == editor_selected_body_part,
+			illegal_parts.has(part_key),
+			_body_part_label(part_key, unit_bp)
+		)
+		_apply_editor_control_plan(button, body_part_plan)
 	var selected_bp: Dictionary = {}
 	if custom_board_enabled:
 		var topology_for_shop: Dictionary = unit_bp.get("custom_topology", {})

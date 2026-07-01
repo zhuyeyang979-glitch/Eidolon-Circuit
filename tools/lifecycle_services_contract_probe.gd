@@ -643,6 +643,25 @@ func _init() -> void:
 	_assert_vector(first_body_part_build_spec, "position", Vector2(128.0, 178.0), "body part button build spec")
 	_assert_vector(first_body_part_build_spec, "size", Vector2(132.0, 44.0), "body part button build spec")
 	_assert_vector(third_body_part_build_spec, "position", Vector2(172.0, 328.0), "body part button build spec")
+	if not ui_lifecycle_source.contains("static func editor_body_board_button_presentation("):
+		_fail("UILifecycleService should expose editor body-board button presentation planning.")
+		return
+	var selected_illegal_body_button_plan: Dictionary = ui_lifecycle_service.call("editor_body_board_button_presentation", true, false, false, true, true, "左爪")
+	if not bool(selected_illegal_body_button_plan.get("visible", false)) or bool(selected_illegal_body_button_plan.get("disabled", true)) or String(selected_illegal_body_button_plan.get("text", "")) != "> ! 左爪":
+		_fail("UILifecycleService selected illegal body-board button presentation failed.")
+		return
+	var custom_body_button_plan: Dictionary = ui_lifecycle_service.call("editor_body_board_button_presentation", true, true, false, true, false, "LEFT CLAW")
+	if bool(custom_body_button_plan.get("visible", true)) or bool(custom_body_button_plan.get("disabled", true)) or String(custom_body_button_plan.get("text", "")) != "> LEFT CLAW":
+		_fail("UILifecycleService custom body-board button presentation failed.")
+		return
+	var barrier_body_button_plan: Dictionary = ui_lifecycle_service.call("editor_body_board_button_presentation", true, false, true, false, false, "LEFT CLAW")
+	if bool(barrier_body_button_plan.get("visible", true)) or bool(barrier_body_button_plan.get("disabled", true)) or String(barrier_body_button_plan.get("text", "")) != "LEFT CLAW":
+		_fail("UILifecycleService barrier body-board button presentation failed.")
+		return
+	var inactive_body_button_plan: Dictionary = ui_lifecycle_service.call("editor_body_board_button_presentation", false, false, false, true, true, "LEFT CLAW")
+	if bool(inactive_body_button_plan.get("visible", true)) or not bool(inactive_body_button_plan.get("disabled", false)) or String(inactive_body_button_plan.get("text", "")) != "LEFT CLAW":
+		_fail("UILifecycleService inactive body-board button presentation failed.")
+		return
 	if not ui_lifecycle_source.contains("static func editor_module_binding_button_build_specs("):
 		_fail("UILifecycleService should expose editor module binding button build specs.")
 		return
