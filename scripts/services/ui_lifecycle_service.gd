@@ -629,6 +629,14 @@ static func editor_canvas_zoom_chrome_build_specs() -> Dictionary:
 	}
 
 
+static func editor_shell_chrome_build_specs() -> Dictionary:
+	return {
+		"title": {"name": "EditorTitle", "text": "", "position": Vector2.ZERO, "size": Vector2.ZERO},
+		"help": {"name": "EditorHelp", "text": "", "position": Vector2.ZERO, "size": Vector2.ZERO},
+		"back_button": {"name": "EditorBackButton", "text": "选项", "token": "editor_options_button"},
+	}
+
+
 static func editor_auxiliary_chrome_build_specs() -> Dictionary:
 	return {
 		"assembly_guide": {"name": "AssemblyGuideLabel", "text": "", "position": Vector2(936.0, 118.0), "size": Vector2(160.0, 22.0)},

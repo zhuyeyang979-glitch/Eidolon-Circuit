@@ -643,6 +643,26 @@ func _init() -> void:
 	_assert_vector(board_zoom_title_build_spec, "position", Vector2.ZERO, "board zoom title build spec")
 	_assert_vector(board_zoom_value_build_spec, "position", Vector2(72.0, 656.0), "board zoom value build spec")
 	_assert_vector(board_zoom_value_build_spec, "size", Vector2(54.0, 18.0), "board zoom value build spec")
+	if not ui_lifecycle_source.contains("static func editor_shell_chrome_build_specs("):
+		_fail("UILifecycleService should expose editor shell chrome build specs.")
+		return
+	var shell_chrome_build_specs: Dictionary = ui_lifecycle_service.call("editor_shell_chrome_build_specs")
+	var editor_title_build_spec: Dictionary = Dictionary(shell_chrome_build_specs.get("title", {}))
+	var editor_help_build_spec: Dictionary = Dictionary(shell_chrome_build_specs.get("help", {}))
+	var editor_back_button_build_spec: Dictionary = Dictionary(shell_chrome_build_specs.get("back_button", {}))
+	if String(editor_title_build_spec.get("name", "")) != "EditorTitle" or String(editor_help_build_spec.get("name", "")) != "EditorHelp":
+		_fail("UILifecycleService editor shell label identity failed.")
+		return
+	if String(editor_back_button_build_spec.get("name", "")) != "EditorBackButton" or String(editor_back_button_build_spec.get("text", "")) != "选项":
+		_fail("UILifecycleService editor shell back button identity failed.")
+		return
+	if String(editor_back_button_build_spec.get("token", "")) != "editor_options_button":
+		_fail("UILifecycleService editor shell token contract failed.")
+		return
+	_assert_vector(editor_title_build_spec, "position", Vector2.ZERO, "editor title build spec")
+	_assert_vector(editor_title_build_spec, "size", Vector2.ZERO, "editor title build spec")
+	_assert_vector(editor_help_build_spec, "position", Vector2.ZERO, "editor help build spec")
+	_assert_vector(editor_help_build_spec, "size", Vector2.ZERO, "editor help build spec")
 	if not ui_lifecycle_source.contains("static func editor_auxiliary_chrome_build_specs("):
 		_fail("UILifecycleService should expose editor auxiliary chrome build specs.")
 		return

@@ -47091,14 +47091,22 @@ func _build_editor_ui() -> void:
 	editor_backdrop.set_mode("editor")
 	editor_backdrop.set_background_texture(space_backdrop_texture)
 	root.add_child(editor_backdrop)
-	var editor_title_label := _make_label(root, "EditorTitle", "", Vector2.ZERO, Vector2.ZERO, 1, Color.TRANSPARENT, HORIZONTAL_ALIGNMENT_LEFT)
+	var shell_chrome_build_specs := UILifecycleService.editor_shell_chrome_build_specs()
+	var editor_title_build_spec := Dictionary(shell_chrome_build_specs.get("title", {}))
+	var editor_title_label := _make_label(root, String(editor_title_build_spec.get("name", "EditorTitle")), String(editor_title_build_spec.get("text", "")), editor_title_build_spec.get("position", Vector2.ZERO), editor_title_build_spec.get("size", Vector2.ZERO), 1, Color.TRANSPARENT, HORIZONTAL_ALIGNMENT_LEFT)
 	editor_title_label.visible = false
-	var editor_help_label := _make_label(root, "EditorHelp", "", Vector2.ZERO, Vector2.ZERO, 1, Color.TRANSPARENT, HORIZONTAL_ALIGNMENT_LEFT)
+	var editor_help_build_spec := Dictionary(shell_chrome_build_specs.get("help", {}))
+	var editor_help_label := _make_label(root, String(editor_help_build_spec.get("name", "EditorHelp")), String(editor_help_build_spec.get("text", "")), editor_help_build_spec.get("position", Vector2.ZERO), editor_help_build_spec.get("size", Vector2.ZERO), 1, Color.TRANSPARENT, HORIZONTAL_ALIGNMENT_LEFT)
 	editor_help_label.visible = false
+	var editor_back_button_build_spec := Dictionary(shell_chrome_build_specs.get("back_button", {}))
 	var editor_back_button := Button.new()
-	editor_back_button.name = "EditorBackButton"
-	editor_back_button.text = "选项"
-	_apply_token_rect(editor_back_button, "editor_options_button")
+	editor_back_button.name = String(editor_back_button_build_spec.get("name", "EditorBackButton"))
+	editor_back_button.text = String(editor_back_button_build_spec.get("text", "选项"))
+	var editor_options_button_token := String(editor_back_button_build_spec.get("token", "editor_options_button"))
+	if editor_options_button_token == "editor_options_button":
+		_apply_token_rect(editor_back_button, "editor_options_button")
+	else:
+		_apply_token_rect(editor_back_button, editor_options_button_token)
 	editor_back_button.focus_mode = Control.FOCUS_NONE
 	editor_back_button.pressed.connect(_show_page_options.bind("editor"))
 	root.add_child(editor_back_button)

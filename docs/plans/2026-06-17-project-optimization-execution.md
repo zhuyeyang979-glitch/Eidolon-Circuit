@@ -1389,6 +1389,26 @@ GREEN: git diff --check
 
 `UILifecycleService.editor_overlay_view_build_specs()` now owns pure identity/layout/z-index specs for the stats rail, part-hover popup, unit-hover preview, torso-detail panel, engine-allocation panel, and drag ghost. `_build_editor_ui()` consumes those specs while keeping concrete view construction, mouse filters, visibility defaults, signal wiring, board-rect mirroring, and runtime drag-ghost z-index refresh local. `_build_editor_ui()` is now 735 lines, and the extraction probe rejects old inline overlay view initialization formulas without blocking runtime drag-ghost z-index refresh.
 
+Follow-up editor shell chrome build specs extraction:
+
+```text
+RED: main_file_extraction_contract_probe failed on missing UILifecycleService.editor_shell_chrome_build_specs delegation
+RED: lifecycle_services_contract_probe failed on missing editor_shell_chrome_build_specs service API
+GREEN: MAIN_FILE_EXTRACTION_CONTRACT_PROBE ok services=9
+GREEN: LIFECYCLE_SERVICES_CONTRACT_PROBE ok
+GREEN: Godot --check-only --script res://scripts/main.gd --quit-after 1
+GREEN: Godot --check-only --script res://scripts/services/ui_lifecycle_service.gd --quit-after 1
+GREEN: SCREEN_LAYOUT_TOKEN_COVERAGE_PROBE ok
+GREEN: OPTIONS_MENU_UNIFICATION_PROBE ok
+GREEN: UNIT_EDITOR_NO_HEADER_HELP_PROBE ok
+GREEN: UNIT_EDITOR_RENAME_PROBE ok
+GREEN: UNIT_EDITOR_FULLSCREEN_LAYOUT_PROBE ok
+GREEN: jq empty tools/probe_manifest.json
+GREEN: git diff --check
+```
+
+`UILifecycleService.editor_shell_chrome_build_specs()` now owns pure identity/default-text/token specs for the hidden editor title/help labels and the options/back button. `_build_editor_ui()` consumes those specs while keeping label creation, hidden defaults, focus mode, token application, and options-menu signal wiring local. `_build_editor_ui()` is now 743 lines, and the extraction probe rejects old inline shell chrome formulas while preserving the literal `editor_options_button` token path for `screen_layout_token_coverage_probe`.
+
 Remaining items after this batch:
 
 - Continue editor UI extraction with `_build_editor_ui` and the remaining action presentation/control-mutation sections of `_apply_editor_panel_visibility`, then continue `_resolve_attack` and `_refresh_editor_visual_views` extraction.
