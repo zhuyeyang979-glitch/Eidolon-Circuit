@@ -112,6 +112,13 @@ func _init() -> void:
 		"first_projectile_impact = _first_projectile_impact(attacker, event)",
 		"event[\"projectile_impact_position\"] =",
 		"_spawn_projectile_trace(attacker, event)",
+		"_true_bullet_target_blocked(attacker, locked_target, event)",
+		"_true_bullet_unit_before_locked_target(attacker, target, locked_target, event)",
+		"_attack_part_hit(attacker, target, event)",
+		".target_hit_context(event, hit,",
+		"_one_way_shield_intercept(attacker, target, event)",
+		"_target_projectile_shield_reflects(target, event)",
+		"_reflect_projectile_from_target_shield(target, attacker, event)",
 		"for raw_intent in post_hit_intents:",
 		"match String(post_intent.get(\"action\", \"\"))",
 	]:
@@ -240,6 +247,33 @@ func _init() -> void:
 	]:
 		if projectile_impact_body.find(token) < 0:
 			_fail("_prepare_attack_projectile_impact missing token: %s" % token)
+			return
+	if resolve_body.count("_prepare_attack_target_contact(attacker, target, event, first_projectile_impact)") != 1:
+		_fail("_resolve_attack should prepare each target contact through one helper.")
+		return
+	var target_contact_body := _function_body(main_source, "func _prepare_attack_target_contact")
+	if target_contact_body.is_empty():
+		_fail("Unable to locate _prepare_attack_target_contact body.")
+		return
+	for token in [
+		"_is_live_unit(target)",
+		"first_projectile_impact.get(\"target\", null)",
+		"_is_true_bullet_fired_event",
+		"_true_bullet_target_blocked",
+		"_true_bullet_unit_before_locked_target",
+		"_attack_part_hit",
+		"attack_rule_occlusion_recorded",
+		"target_hit_context",
+		"_one_way_shield_intercept",
+		"_target_projectile_shield_reflects",
+		"_reflect_projectile_from_target_shield",
+		"\"skip\"",
+		"\"event\"",
+		"\"damage_type\"",
+		"\"material_class\"",
+	]:
+		if target_contact_body.find(token) < 0:
+			_fail("_prepare_attack_target_contact missing token: %s" % token)
 			return
 	var post_hit_body := _function_body(main_source, "func _execute_post_hit_intents")
 	if post_hit_body.is_empty():

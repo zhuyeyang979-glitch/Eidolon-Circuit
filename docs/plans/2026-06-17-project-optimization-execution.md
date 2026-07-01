@@ -2066,6 +2066,30 @@ GREEN: BATTLE_ATTACK_HEAVY_REPLAY_DESYNC_PROBE ok
 
 `_prepare_attack_projectile_impact()` now owns the compatibility true-bullet, chemical-projectile, chemical-firework, and missile routing gates, followed by projectile recoil/reflection, first-obstruction impact metadata, and trace spawning for attacks that continue synchronously. `_resolve_attack()` consumes only the returned stop flag and first-impact dictionary before entering target resolution. The extraction contract rejects renewed inline projectile-impact preparation while requiring the original compatibility-route and first-contact ordering.
 
+Follow-up attack target-contact preparation extraction:
+
+```text
+RED: battle_hit_resolution_service_contract_probe failed because _resolve_attack still filtered true-bullet targets and resolved target contact inline
+GREEN: BATTLE_HIT_RESOLUTION_SERVICE_CONTRACT_PROBE ok
+GREEN: Godot --check-only --script res://scripts/main.gd --quit-after 1
+GREEN: BATTLE_IMPACT_QUERY_SERVICE_CONTRACT_PROBE ok
+GREEN: BATTLE_TARGET_ACQUISITION_SERVICE_CONTRACT_PROBE ok
+GREEN: BATTLE_PROJECTILE_LIFECYCLE_SERVICE_CONTRACT_PROBE ok
+GREEN: MAP_OCCLUSION_PROJECTILE_INTEGRATION_PROBE ok
+GREEN: TERRAIN_OCCLUSION_RUNTIME_PROBE ok feature=terrain-wall-alpha kind=solid
+GREEN: MAP_OCCLUSION_KIND_PROBE ok
+GREEN: SHIELD_PROBE absorb_ok hp=100 shield=20.0 bar_width=165.0
+GREEN: ATTACK_RULE_EXPLANATION_PROBE failed=false
+GREEN: HARDWARE_FAULT_TRUE_BULLET_QUEUE_DEPENDENCY_PROBE ok
+GREEN: MOBIUS_LOCAL_EUCLIDEAN_COMBAT_PATCH_PROBE ok shifted=(24.18, 1.0) distance=0.305
+GREEN: gpu_projectile_first_obstruction_probe ok first=1.100 second=2.100
+GREEN: LOCAL_BATTLE_REPLAY_CONSISTENCY_PROBE ok
+GREEN: BATTLE_ATTACK_HEAVY_REPLAY_DESYNC_PROBE checkpoints=6 desync_step=360
+GREEN: BATTLE_ATTACK_HEAVY_REPLAY_DESYNC_PROBE ok
+```
+
+`_prepare_attack_target_contact()` now owns live-target and first-impact filtering, true-bullet lock/obstruction filtering, direct-runtime or CPU part-hit selection, one-time map-occlusion recording, target-hit event patching, one-way shield interception, and projectile shield reflection. `_resolve_attack()` applies the returned event, skips rejected contacts, and carries only the resolved damage/material classifications into the existing damage stack. The extraction contract rejects renewed inline target-contact routing and requires every preserved contact gate.
+
 Remaining items after this batch:
 
 - Continue editor UI extraction with `_build_editor_ui` and the remaining action presentation/control-mutation sections of `_apply_editor_panel_visibility`, then continue `_resolve_attack` and `_refresh_editor_visual_views` extraction.

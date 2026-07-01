@@ -37181,6 +37181,71 @@ func _prepare_attack_projectile_impact(attacker, event: Dictionary) -> Dictionar
 	return {"stop": false, "first_projectile_impact": first_projectile_impact}
 
 
+func _prepare_attack_target_contact(attacker, target, event: Dictionary, first_projectile_impact: Dictionary) -> Dictionary:
+	if not _is_live_unit(target):
+		return {"skip": true, "event": event}
+	if not first_projectile_impact.is_empty() and target != first_projectile_impact.get("target", null):
+		return {"skip": true, "event": event}
+	if _is_true_bullet_fired_event(event) and not (_unit_uses_direct_runtime_topology(attacker) and not first_projectile_impact.is_empty()):
+		var locked_target = event.get("locked_target", null)
+		if _is_live_unit(locked_target):
+			if target == locked_target and _true_bullet_target_blocked(attacker, locked_target, event):
+				return {"skip": true, "event": event}
+			if target != locked_target and not _true_bullet_unit_before_locked_target(attacker, target, locked_target, event):
+				return {"skip": true, "event": event}
+	var hit: Dictionary = Dictionary(first_projectile_impact.get("hit", {})) if (_unit_uses_direct_runtime_topology(attacker) and bool(event.get("projectile", false)) and not first_projectile_impact.is_empty()) else _attack_part_hit(attacker, target, event)
+	if hit.is_empty():
+		if bool(event.get("projectile", false)) and not bool(event.get("attack_rule_occlusion_recorded", false)) and String(event.get("map_occlusion_kind", MAP_OCCLUSION_NONE)) != MAP_OCCLUSION_NONE:
+			_record_attack_rule_result(attacker, event, {
+				"outcome": "blocked",
+				"blocked": true,
+				"occluded": true,
+				"map_occlusion_kind": String(event.get("map_occlusion_kind", MAP_OCCLUSION_NONE)),
+				"final_damage": 0,
+			})
+			event["attack_rule_occlusion_recorded"] = true
+		return {"skip": true, "event": event}
+	var hit_context := _battle_hit_resolution_service().target_hit_context(event, hit, {
+		"position": Vector2(target.ring_pos, target.lane),
+		"state": String(target.current_state),
+	})
+	var hit_patch: Dictionary = Dictionary(hit_context.get("event_patch", {}))
+	event = _battle_hit_resolution_service().apply_event_patch(event, hit_patch)
+
+	var damage_type := String(hit_context.get("damage_type", event.get("damage_type", "blunt")))
+	if bool(event.get("projectile", false)) and _one_way_shield_intercept(attacker, target, event):
+		_record_attack_rule_result(attacker, event, {
+			"outcome": "blocked",
+			"blocked": true,
+			"occluded": true,
+			"target": target,
+			"target_part_kind": String(event.get("target_part_kind", "barrier_tile")),
+			"target_part_name": String(event.get("target_part_name", "SHIELD")),
+			"damage_type": damage_type,
+			"final_damage": 0,
+		})
+		return {"skip": true, "event": event}
+	if bool(event.get("projectile", false)) and _target_projectile_shield_reflects(target, event):
+		_reflect_projectile_from_target_shield(target, attacker, event)
+		_record_attack_rule_result(attacker, event, {
+			"outcome": "reflected",
+			"reflected": true,
+			"target": target,
+			"target_part_kind": String(event.get("target_part_kind", "core")),
+			"target_part_name": String(event.get("target_part_name", "SHIELD")),
+			"damage_type": damage_type,
+			"final_damage": 0,
+		})
+		return {"skip": true, "event": event}
+	var material_class := String(hit_context.get("material_class", event.get("material_class", "weapon")))
+	return {
+		"skip": false,
+		"event": event,
+		"damage_type": damage_type,
+		"material_class": material_class,
+	}
+
+
 func _resolve_attack(attacker, event: Dictionary) -> void:
 	var entry_intent := _battle_hit_resolution_service().attack_entry_intent({
 		"attacker_live": _is_live_unit(attacker),
@@ -37240,62 +37305,12 @@ func _resolve_attack(attacker, event: Dictionary) -> void:
 
 	var killed_units: Array = []
 	for target in _enemy_units(int(attacker.owner_id)):
-		if not _is_live_unit(target):
+		var target_contact := _prepare_attack_target_contact(attacker, target, event, first_projectile_impact)
+		event = Dictionary(target_contact.get("event", event))
+		if bool(target_contact.get("skip", false)):
 			continue
-		if not first_projectile_impact.is_empty() and target != first_projectile_impact.get("target", null):
-			continue
-		if _is_true_bullet_fired_event(event) and not (_unit_uses_direct_runtime_topology(attacker) and not first_projectile_impact.is_empty()):
-			var locked_target = event.get("locked_target", null)
-			if _is_live_unit(locked_target):
-				if target == locked_target and _true_bullet_target_blocked(attacker, locked_target, event):
-					continue
-				if target != locked_target and not _true_bullet_unit_before_locked_target(attacker, target, locked_target, event):
-					continue
-		var hit: Dictionary = Dictionary(first_projectile_impact.get("hit", {})) if (_unit_uses_direct_runtime_topology(attacker) and bool(event.get("projectile", false)) and not first_projectile_impact.is_empty()) else _attack_part_hit(attacker, target, event)
-		if hit.is_empty():
-			if bool(event.get("projectile", false)) and not bool(event.get("attack_rule_occlusion_recorded", false)) and String(event.get("map_occlusion_kind", MAP_OCCLUSION_NONE)) != MAP_OCCLUSION_NONE:
-				_record_attack_rule_result(attacker, event, {
-					"outcome": "blocked",
-					"blocked": true,
-					"occluded": true,
-					"map_occlusion_kind": String(event.get("map_occlusion_kind", MAP_OCCLUSION_NONE)),
-					"final_damage": 0,
-				})
-				event["attack_rule_occlusion_recorded"] = true
-			continue
-		var hit_context := _battle_hit_resolution_service().target_hit_context(event, hit, {
-			"position": Vector2(target.ring_pos, target.lane),
-			"state": String(target.current_state),
-		})
-		var hit_patch: Dictionary = Dictionary(hit_context.get("event_patch", {}))
-		event = _battle_hit_resolution_service().apply_event_patch(event, hit_patch)
-
-		var damage_type := String(hit_context.get("damage_type", event.get("damage_type", "blunt")))
-		if bool(event.get("projectile", false)) and _one_way_shield_intercept(attacker, target, event):
-			_record_attack_rule_result(attacker, event, {
-				"outcome": "blocked",
-				"blocked": true,
-				"occluded": true,
-				"target": target,
-				"target_part_kind": String(event.get("target_part_kind", "barrier_tile")),
-				"target_part_name": String(event.get("target_part_name", "SHIELD")),
-				"damage_type": damage_type,
-				"final_damage": 0,
-			})
-			continue
-		if bool(event.get("projectile", false)) and _target_projectile_shield_reflects(target, event):
-			_reflect_projectile_from_target_shield(target, attacker, event)
-			_record_attack_rule_result(attacker, event, {
-				"outcome": "reflected",
-				"reflected": true,
-				"target": target,
-				"target_part_kind": String(event.get("target_part_kind", "core")),
-				"target_part_name": String(event.get("target_part_name", "SHIELD")),
-				"damage_type": damage_type,
-				"final_damage": 0,
-			})
-			continue
-		var material_class := String(hit_context.get("material_class", event.get("material_class", "weapon")))
+		var damage_type := String(target_contact.get("damage_type", event.get("damage_type", "blunt")))
+		var material_class := String(target_contact.get("material_class", event.get("material_class", "weapon")))
 		var counter_tier := _counter_tier_for_hit(target, damage_type)
 		var nullified := false
 		var multiplier: float = _rps_multiplier(String(event.get("state", "normal")), target.current_state)
