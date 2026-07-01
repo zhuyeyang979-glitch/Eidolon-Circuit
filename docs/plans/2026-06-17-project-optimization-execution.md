@@ -1616,6 +1616,28 @@ GREEN: git diff --check
 
 `UILifecycleService.editor_orientation_popup_presentation()` now owns the pure hidden/invalid/visible side-mount orientation popup plan, including popup clamp bounds, localized label/button text, enabled button state, panel size, and move-to-front intent. `_refresh_editor_orientation_popup()` keeps active-choice detection, node lookup, and socket anchor calculation local, then applies the returned panel/label/button plans through `_apply_editor_control_plan()`.
 
+Follow-up editor template-drawer presentation extraction:
+
+```text
+RED: main_file_extraction_contract_probe failed on missing UILifecycleService.editor_template_drawer_presentation delegation
+RED: lifecycle_services_contract_probe failed on missing editor_template_drawer_presentation service API
+RED: lifecycle_services_contract_probe failed on template drawer open visibility being overwritten by section chrome
+GREEN: MAIN_FILE_EXTRACTION_CONTRACT_PROBE ok services=9
+GREEN: LIFECYCLE_SERVICES_CONTRACT_PROBE ok
+GREEN: Godot --check-only --script res://scripts/main.gd --quit-after 1
+GREEN: Godot --check-only --script res://scripts/services/ui_lifecycle_service.gd --quit-after 1
+GREEN: UNIT_EDITOR_TEMPLATE_DRAWER_RUNTIME_PROBE ok selected=octopus barrier=BarrierTemplatepin_wall
+GREEN: UNIT_EDITOR_FULLSCREEN_LAYOUT_PROBE ok board=(908.0, 548.0) dock=(726.0, 132.0)
+GREEN: PART_LIBRARY_UI_PROBE groups=["torso", "limb", "terminal_weapon", "barrier_panel", "software_muscle", "software"] weapon=3 equipment=5 software=7 dashboard=40
+GREEN: UNIT_EDITOR_PAGINATION_LAYOUT_PROBE ok unit=1 page=0 catalog=1 load=0 feedback=[P: (270.0, 654.0), S: (622.0, 26.0)]
+GREEN: EDITOR_CONTROL_PLAN_ADAPTER_PROBE failed=false writes=11 noops=7
+GREEN: UNIT_EDITOR_ASSEMBLY_TEMPLATE_SERVICE_CONTRACT_PROBE ok
+GREEN: jq empty tools/probe_manifest.json
+GREEN: git diff --check
+```
+
+`UILifecycleService.editor_template_drawer_presentation()` now owns the pure runtime drawer panel, title, archetype/barrier template button, selected archetype color, and hidden toggle-button plans. `_layout_editor_template_drawer()` consumes that plan through `_apply_editor_control_plan()` and receives the current blueprint from both editor refresh call sites, so `_apply_editor_panel_visibility()` no longer overwrites the selected archetype highlight or hides an opened template drawer. A new `unit_editor_template_drawer_runtime_probe` locks the opened hero/barrier drawer behavior into the probe manifest.
+
 Remaining items after this batch:
 
 - Continue editor UI extraction with `_build_editor_ui` and the remaining action presentation/control-mutation sections of `_apply_editor_panel_visibility`, then continue `_resolve_attack` and `_refresh_editor_visual_views` extraction.

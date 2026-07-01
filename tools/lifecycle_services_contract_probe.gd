@@ -522,6 +522,53 @@ func _init() -> void:
 	_assert_vector(third_archetype_button_build_spec, "position", Vector2(940.0, 216.0), "archetype template button build spec")
 	_assert_vector(third_archetype_button_build_spec, "size", Vector2(126.0, 24.0), "archetype template button build spec")
 	_assert_vector(second_barrier_button_build_spec, "position", Vector2(1074.0, 188.0), "barrier template button build spec")
+	if not ui_lifecycle_source.contains("static func editor_template_drawer_presentation("):
+		_fail("UILifecycleService should expose editor template drawer presentation planning.")
+		return
+	var template_drawer_plan: Dictionary = ui_lifecycle_service.call("editor_template_drawer_presentation", true, "duelist", true, "assault", ["scout", "guard", "assault"], ["wall", "lens"], "预组单位库", true, true)
+	var template_drawer_panel: Dictionary = Dictionary(template_drawer_plan.get("panel", {}))
+	var template_drawer_label: Dictionary = Dictionary(template_drawer_plan.get("label", {}))
+	var template_drawer_buttons: Array = Array(template_drawer_plan.get("buttons", []))
+	var template_drawer_toggle: Dictionary = Dictionary(template_drawer_plan.get("toggle", {}))
+	if not bool(template_drawer_panel.get("visible", false)) or not bool(template_drawer_label.get("visible", false)):
+		_fail("UILifecycleService template drawer visible presentation contract failed.")
+		return
+	_assert_vector(template_drawer_panel, "position", Vector2(932.0, 398.0), "template drawer presentation panel")
+	_assert_vector(template_drawer_panel, "size", Vector2(278.0, 92.0), "template drawer presentation panel")
+	_assert_vector(template_drawer_label, "position", Vector2(936.0, 374.0), "template drawer presentation label")
+	_assert_vector(template_drawer_label, "size", Vector2(270.0, 20.0), "template drawer presentation label")
+	if String(template_drawer_label.get("text", "")) != "预组单位库" or template_drawer_buttons.size() != 5:
+		_fail("UILifecycleService template drawer label/count presentation contract failed.")
+		return
+	var template_first_button: Dictionary = Dictionary(template_drawer_buttons[0])
+	var template_selected_button: Dictionary = Dictionary(template_drawer_buttons[2])
+	var template_hidden_barrier_button: Dictionary = Dictionary(template_drawer_buttons[3])
+	if not bool(template_first_button.get("visible", false)) or bool(template_first_button.get("disabled", true)) or not bool(template_selected_button.get("visible", false)) or bool(template_selected_button.get("disabled", true)):
+		_fail("UILifecycleService archetype template button visibility contract failed.")
+		return
+	_assert_vector(template_first_button, "position", Vector2(940.0, 406.0), "template drawer first button presentation")
+	_assert_vector(template_selected_button, "position", Vector2(940.0, 434.0), "template drawer selected button presentation")
+	_assert_color(template_selected_button, "modulate", Color(0.32, 0.95, 1.0, 1.0), "selected template drawer button presentation")
+	if bool(template_hidden_barrier_button.get("visible", true)) or not bool(template_hidden_barrier_button.get("disabled", false)):
+		_fail("UILifecycleService template drawer hidden barrier button contract failed.")
+		return
+	if bool(template_drawer_toggle.get("visible", true)) or String(template_drawer_toggle.get("text", "")) != "关闭模板":
+		_fail("UILifecycleService template drawer toggle zh contract failed.")
+		return
+	_assert_color(template_drawer_toggle, "modulate", Color(1.0, 0.88, 0.28, 1.0), "template drawer toggle presentation")
+	var barrier_drawer_plan: Dictionary = ui_lifecycle_service.call("editor_template_drawer_presentation", true, "barrier", false, "", ["scout", "guard", "assault"], ["wall", "lens"], "Barrier presets", false, false)
+	var barrier_drawer_buttons: Array = Array(barrier_drawer_plan.get("buttons", []))
+	if not bool(Dictionary(barrier_drawer_plan.get("panel", {})).get("visible", false)) or bool(Dictionary(barrier_drawer_buttons[0]).get("visible", true)) or not bool(Dictionary(barrier_drawer_buttons[3]).get("visible", false)):
+		_fail("UILifecycleService barrier template drawer visibility contract failed.")
+		return
+	_assert_vector(Dictionary(barrier_drawer_buttons[3]), "position", Vector2(940.0, 406.0), "barrier template drawer button presentation")
+	if String(Dictionary(barrier_drawer_plan.get("toggle", {})).get("text", "")) != "IMPORT TEMPLATE":
+		_fail("UILifecycleService template drawer toggle en contract failed.")
+		return
+	var hidden_drawer_plan: Dictionary = ui_lifecycle_service.call("editor_template_drawer_presentation", false, "duelist", true, "assault", ["scout", "guard", "assault"], ["wall", "lens"], "预组单位库", false, true)
+	if bool(Dictionary(hidden_drawer_plan.get("panel", {})).get("visible", true)) or bool(Dictionary(hidden_drawer_plan.get("label", {})).get("visible", true)) or bool(Dictionary(Array(hidden_drawer_plan.get("buttons", []))[0]).get("visible", true)):
+		_fail("UILifecycleService hidden template drawer presentation contract failed.")
+		return
 	if not ui_lifecycle_source.contains("static func editor_shop_surface_build_specs("):
 		_fail("UILifecycleService should expose editor shop surface build specs.")
 		return
@@ -1114,8 +1161,8 @@ func _init() -> void:
 	if bool(template_toggle.get("visible", true)) or String(template_toggle.get("text", "")) != "模板抽屉":
 		_fail("UILifecycleService template toggle chrome contract failed.")
 		return
-	if bool(section_chrome_plan.get("template_drawer_visible", true)):
-		_fail("UILifecycleService template drawer default visibility contract failed.")
+	if not bool(section_chrome_plan.get("template_drawer_visible", false)):
+		_fail("UILifecycleService template drawer open visibility contract failed.")
 		return
 	var hidden_section_chrome_plan: Dictionary = UILifecycleService.editor_section_chrome_presentation(false, true, false, false)
 	var hidden_labels: Dictionary = Dictionary(hidden_section_chrome_plan.get("labels", {}))

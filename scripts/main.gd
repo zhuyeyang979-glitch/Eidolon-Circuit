@@ -49577,31 +49577,32 @@ func _editor_template_category_label(role_key: String) -> String:
 	return "LOAD SAVED UNIT"
 
 
-func _layout_editor_template_drawer(role_key: String, drawer_visible: bool) -> void:
+func _layout_editor_template_drawer(role_key: String, drawer_visible: bool, unit_bp: Dictionary = {}) -> void:
 	var body_board_enabled := _role_uses_body_board(role_key)
-	var count := BARRIER_TEMPLATE_ORDER.size() if role_key == "barrier" else ARCHETYPE_ORDER.size()
-	var rows := ceili(float(maxi(1, count)) / 2.0)
+	var drawer_plan := UILifecycleService.editor_template_drawer_presentation(
+		drawer_visible,
+		role_key,
+		body_board_enabled,
+		String(unit_bp.get("archetype", "")),
+		ARCHETYPE_ORDER,
+		BARRIER_TEMPLATE_ORDER,
+		_editor_template_category_label(role_key),
+		editor_template_menu_open,
+		_ui_is_zh()
+	)
 	if editor_template_panel != null:
-		_set_control_position_if_changed(editor_template_panel, Vector2(932.0, 398.0))
-		_set_control_size_if_changed(editor_template_panel, Vector2(278.0, maxf(92.0, 18.0 + float(rows) * 28.0)))
-		_set_canvas_item_visible_if_changed(editor_template_panel, drawer_visible)
+		_apply_editor_control_plan(editor_template_panel, Dictionary(drawer_plan.get("panel", {})))
 	if editor_section_labels.has("template"):
 		var template_label: Label = editor_section_labels["template"]
-		_set_control_position_if_changed(template_label, Vector2(936.0, 374.0))
-		_set_control_size_if_changed(template_label, Vector2(270.0, 20.0))
-		_set_control_text_if_changed(template_label, _editor_template_category_label(role_key))
-		_set_canvas_item_visible_if_changed(template_label, drawer_visible)
-	var visible_index := 0
+		_apply_editor_control_plan(template_label, Dictionary(drawer_plan.get("label", {})))
+	var button_plans: Array = Array(drawer_plan.get("buttons", []))
 	for i in range(editor_template_buttons.size()):
 		var template_button: Button = editor_template_buttons[i]
-		var is_barrier_template := i >= ARCHETYPE_ORDER.size()
-		var show_button := drawer_visible and ((is_barrier_template and role_key == "barrier") or ((not is_barrier_template) and body_board_enabled and role_key != "barrier"))
-		_set_canvas_item_visible_if_changed(template_button, show_button)
-		_set_button_disabled_if_changed(template_button, not show_button)
-		if show_button:
-			_set_control_position_if_changed(template_button, Vector2(940.0 + float(visible_index % 2) * 134.0, 406.0 + float(floori(float(visible_index) / 2.0)) * 28.0))
-			_set_control_size_if_changed(template_button, Vector2(126.0, 24.0))
-			visible_index += 1
+		var button_plan := Dictionary(button_plans[i]) if i < button_plans.size() and button_plans[i] is Dictionary else {"visible": false, "disabled": true}
+		_apply_editor_control_plan(template_button, button_plan)
+	if editor_action_buttons.has("toggle_templates"):
+		var template_toggle_button: Button = editor_action_buttons["toggle_templates"]
+		_apply_editor_control_plan(template_toggle_button, Dictionary(drawer_plan.get("toggle", {})))
 
 
 func _editor_load_entry_stats(player_id: int, fallback_role: String, entry: Dictionary) -> Dictionary:
@@ -50030,7 +50031,7 @@ func _apply_editor_panel_visibility(role_key: String, unit_bp: Dictionary) -> vo
 		var template_toggle: Button = editor_action_buttons["toggle_templates"]
 		var template_toggle_plan: Dictionary = Dictionary(section_chrome_plan.get("template_toggle", {}))
 		_apply_editor_control_plan(template_toggle, template_toggle_plan)
-	_layout_editor_template_drawer(role_key, template_drawer_visible)
+	_layout_editor_template_drawer(role_key, template_drawer_visible, unit_bp)
 
 
 func _update_editor_board_ui(role_key: String, unit_bp: Dictionary, precomputed_stats: Dictionary = {}) -> void:
@@ -50173,18 +50174,8 @@ func _update_editor_board_ui(role_key: String, unit_bp: Dictionary, precomputed_
 			_set_canvas_item_modulate_if_changed(button, Color(0.42, 0.98, 1.0, 1.0))
 		else:
 			_set_canvas_item_modulate_if_changed(button, Color(0.9, 0.94, 0.98, 1.0))
-	for archetype_key in editor_archetype_buttons.keys():
-		var frame_button: Button = editor_archetype_buttons[archetype_key]
-		frame_button.visible = editor_panel_mode == "load" and editor_template_menu_open and body_board_enabled and role_key != "barrier"
-		frame_button.disabled = not body_board_enabled
-		frame_button.modulate = Color(0.32, 0.95, 1.0, 1.0) if body_board_enabled and archetype_key == String(unit_bp.get("archetype", "")) else Color(0.86, 0.9, 0.94, 1.0)
 	var template_drawer_visible := editor_panel_mode == "load" and editor_template_menu_open
-	if editor_action_buttons.has("toggle_templates"):
-		var template_toggle_button: Button = editor_action_buttons["toggle_templates"]
-		template_toggle_button.text = ("关闭模板" if _ui_is_zh() else "CLOSE TEMPLATES") if editor_template_menu_open else ("导入模板" if _ui_is_zh() else "IMPORT TEMPLATE")
-		template_toggle_button.modulate = Color(1.0, 0.88, 0.28, 1.0) if editor_template_menu_open else Color(0.86, 0.9, 0.94, 1.0)
-		template_toggle_button.visible = false
-	_layout_editor_template_drawer(role_key, template_drawer_visible)
+	_layout_editor_template_drawer(role_key, template_drawer_visible, unit_bp)
 	var catalog_domain_key := ""
 	if editor_panel_mode == "parts":
 		var catalog_slot_key: String = BUILD_SLOTS[editor_slot_index]

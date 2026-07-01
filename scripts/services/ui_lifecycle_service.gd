@@ -433,6 +433,51 @@ static func editor_template_drawer_build_specs(archetype_order: Array, barrier_t
 	}
 
 
+static func editor_template_drawer_presentation(drawer_visible: bool, role_key: String, body_board_enabled: bool, selected_archetype: String, archetype_order: Array, barrier_template_order: Array, category_label: String, template_menu_open: bool, zh: bool) -> Dictionary:
+	var archetype_count := archetype_order.size()
+	var barrier_count := barrier_template_order.size()
+	var visible_button_count := barrier_count if role_key == "barrier" else archetype_count
+	var rows := ceili(float(maxi(1, visible_button_count)) / 2.0)
+	var buttons := []
+	var visible_index := 0
+	for i in range(archetype_count + barrier_count):
+		var is_barrier_template := i >= archetype_count
+		var button_key := String(barrier_template_order[i - archetype_count]) if is_barrier_template else String(archetype_order[i])
+		var show_button := drawer_visible and ((is_barrier_template and role_key == "barrier") or ((not is_barrier_template) and body_board_enabled and role_key != "barrier"))
+		var button_plan := {
+			"index": i,
+			"key": button_key,
+			"visible": show_button,
+			"disabled": not show_button,
+		}
+		if show_button:
+			button_plan["position"] = Vector2(940.0 + float(visible_index % 2) * 134.0, 406.0 + float(floori(float(visible_index) / 2.0)) * 28.0)
+			button_plan["size"] = Vector2(126.0, 24.0)
+			visible_index += 1
+		if not is_barrier_template:
+			button_plan["modulate"] = Color(0.32, 0.95, 1.0, 1.0) if body_board_enabled and button_key == selected_archetype else Color(0.86, 0.9, 0.94, 1.0)
+		buttons.append(button_plan)
+	return {
+		"panel": {
+			"visible": drawer_visible,
+			"position": Vector2(932.0, 398.0),
+			"size": Vector2(278.0, maxf(92.0, 18.0 + float(rows) * 28.0)),
+		},
+		"label": {
+			"visible": drawer_visible,
+			"position": Vector2(936.0, 374.0),
+			"size": Vector2(270.0, 20.0),
+			"text": category_label,
+		},
+		"buttons": buttons,
+		"toggle": {
+			"visible": false,
+			"text": ("关闭模板" if zh else "CLOSE TEMPLATES") if template_menu_open else ("导入模板" if zh else "IMPORT TEMPLATE"),
+			"modulate": Color(1.0, 0.88, 0.28, 1.0) if template_menu_open else Color(0.86, 0.9, 0.94, 1.0),
+		},
+	}
+
+
 static func editor_shop_surface_build_specs(slot_order: Array) -> Dictionary:
 	var buttons := []
 	for i in range(slot_order.size()):
@@ -986,7 +1031,7 @@ static func editor_section_chrome_presentation(parts_visible: bool, template_vis
 			"visible": false,
 			"text": "模板抽屉" if zh else "TEMPLATE DRAWER",
 		},
-		"template_drawer_visible": false,
+		"template_drawer_visible": template_visible and template_menu_open,
 	}
 
 
