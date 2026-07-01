@@ -4271,8 +4271,7 @@ func _show_save_unit_name_dialog() -> void:
 	editor_save_unit_name_edit.placeholder_text = "输入单位名称" if _ui_is_zh() else "Enter unit name"
 	editor_save_unit_name_edit.text = _default_save_unit_name()
 	_refresh_save_unit_name_dialog_text()
-	editor_save_unit_name_panel.visible = true
-	editor_save_unit_name_panel.move_to_front()
+	_apply_editor_save_unit_name_panel_presentation(true)
 	if editor_save_unit_name_edit.is_inside_tree():
 		editor_save_unit_name_edit.call_deferred("grab_focus")
 		editor_save_unit_name_edit.call_deferred("select_all")
@@ -4309,7 +4308,7 @@ func _refresh_save_unit_name_dialog_text() -> void:
 
 func _hide_save_unit_name_dialog() -> void:
 	if editor_save_unit_name_panel != null:
-		editor_save_unit_name_panel.visible = false
+		_apply_editor_save_unit_name_panel_presentation(false)
 
 
 func _confirm_save_unit_name_dialog(action_or_text: String = "stay", maybe_action: String = "") -> void:
@@ -5080,6 +5079,12 @@ func _apply_editor_perf_overlay_presentation(visible: bool, text: String = "") -
 	if editor_perf_overlay_label == null:
 		return
 	_apply_editor_control_plan(editor_perf_overlay_label, UILifecycleService.editor_perf_overlay_presentation(visible, text))
+
+
+func _apply_editor_save_unit_name_panel_presentation(visible: bool) -> void:
+	if editor_save_unit_name_panel == null:
+		return
+	_apply_editor_control_plan(editor_save_unit_name_panel, UILifecycleService.editor_save_unit_name_panel_presentation(visible))
 
 
 func _apply_editor_drag_ghost_view_presentation(visible: bool, position: Variant = Vector2.INF, move_to_front: bool = false) -> void:
@@ -47454,11 +47459,8 @@ func _build_editor_ui() -> void:
 	var save_unit_panel_build_spec := Dictionary(save_unit_dialog_build_specs.get("panel", {}))
 	editor_save_unit_name_panel = ColorRect.new()
 	editor_save_unit_name_panel.name = String(save_unit_panel_build_spec.get("name", "SaveUnitNamePanel"))
-	editor_save_unit_name_panel.position = save_unit_panel_build_spec.get("position", Vector2.ZERO)
-	editor_save_unit_name_panel.size = save_unit_panel_build_spec.get("size", Vector2.ZERO)
 	editor_save_unit_name_panel.color = Color(0.01, 0.018, 0.026, 0.96)
-	editor_save_unit_name_panel.z_index = int(save_unit_panel_build_spec.get("z_index", 295))
-	editor_save_unit_name_panel.visible = false
+	_apply_editor_save_unit_name_panel_presentation(false)
 	root.add_child(editor_save_unit_name_panel)
 	var save_unit_title_build_spec := Dictionary(save_unit_dialog_build_specs.get("title", {}))
 	editor_save_unit_name_label = _make_label(editor_save_unit_name_panel, String(save_unit_title_build_spec.get("name", "SaveUnitNameLabel")), String(save_unit_title_build_spec.get("text", "保存为单位")), save_unit_title_build_spec.get("position", Vector2.ZERO), save_unit_title_build_spec.get("size", Vector2.ZERO), 15, Color(1.0, 0.88, 0.28, 1.0), HORIZONTAL_ALIGNMENT_LEFT)

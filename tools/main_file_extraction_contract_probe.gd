@@ -62,6 +62,9 @@ func _init() -> void:
 	if source.find("UILifecycleService.editor_perf_overlay_presentation") < 0:
 		_fail("main.gd should delegate editor perf overlay presentation planning.")
 		return
+	if source.find("UILifecycleService.editor_save_unit_name_panel_presentation") < 0:
+		_fail("main.gd should delegate editor save-unit name panel presentation planning.")
+		return
 	if source.contains("\"size_tier_rank\": float(_size_tier_rank(_part_size_tier_label(part, slot_key)))"):
 		_fail("main.gd should not derive part size-tier rank inside slot-volume adapters.")
 	if source.contains("\"booster_boost_momentum\":"):
@@ -185,6 +188,9 @@ func _init() -> void:
 		return
 	if source.contains("editor_perf_overlay_label.z_index = int(perf_overlay_build_spec.get") or source.contains("editor_perf_overlay_label.visible =") or source.contains("editor_perf_overlay_label.text =") or source.contains("editor_perf_overlay_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART"):
 		_fail("main.gd should delegate editor perf overlay presentation planning.")
+		return
+	if source.contains("editor_save_unit_name_panel.position = save_unit_panel_build_spec.get") or source.contains("editor_save_unit_name_panel.size = save_unit_panel_build_spec.get") or source.contains("editor_save_unit_name_panel.z_index = int(save_unit_panel_build_spec.get") or source.contains("editor_save_unit_name_panel.visible = true") or source.contains("editor_save_unit_name_panel.visible = false") or source.contains("editor_save_unit_name_panel.move_to_front()"):
+		_fail("main.gd should delegate editor save-unit name panel presentation planning.")
 		return
 	for direct_control_mutation in ["_set_canvas_item_visible_if_changed(role_button, bool(role_button_plan", "_set_control_position_if_changed(group_button, group_plan", "_set_canvas_item_visible_if_changed(button, slot_visible)", "_set_button_disabled_if_changed(button, not slot_visible)", "_set_canvas_item_visible_if_changed(filter_button, bool(filter_plan", "_set_control_position_if_changed(filter_button, filter_plan", "_set_control_text_if_changed(sort_key_button, String(sort_plan.get(\"sort_key_text\", \"\")))", "_set_control_text_if_changed(sort_dir_button, String(sort_plan.get(\"sort_dir_text\", \"\")))", "_set_canvas_item_visible_if_changed(editor_sort_panel, bool(sort_panel_plan", "_set_canvas_item_visible_if_changed(sort_option_button, show_sort_option)", "_set_control_position_if_changed(sort_option_button, sort_option_plan", "sort_dir_front.move_to_front()", "_set_canvas_item_visible_if_changed(editor_unit_label, bool(info_unit_plan", "_set_control_position_if_changed(editor_unit_label, info_unit_plan", "_set_canvas_item_visible_if_changed(editor_summary_label, bool(info_summary_plan", "_set_canvas_item_visible_if_changed(editor_catalog_page_label, bool(Dictionary(info_plan.get(\"catalog_page\", {})).get(\"visible\", false)))", "_set_canvas_item_visible_if_changed(catalog_title, bool(Dictionary(info_plan.get(\"catalog_title\", {})).get(\"visible\", false)))", "_set_canvas_item_visible_if_changed(action_button, action_visible)", "_set_canvas_item_visible_if_changed(editor_stats_label, bool(info_stats_plan", "_set_control_text_if_changed(color_button, String(color_button_plan"]:
 		if source.contains(direct_control_mutation):

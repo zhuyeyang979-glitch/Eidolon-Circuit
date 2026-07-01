@@ -864,6 +864,17 @@ static func editor_save_unit_dialog_build_specs(role_order: Array) -> Dictionary
 	}
 
 
+static func editor_save_unit_name_panel_presentation(visible: bool) -> Dictionary:
+	var build_spec := Dictionary(editor_save_unit_dialog_build_specs([]).get("panel", {}))
+	return {
+		"visible": visible,
+		"position": build_spec.get("position", Vector2(390.0, 188.0)),
+		"size": build_spec.get("size", Vector2(474.0, 236.0)),
+		"z_index": int(build_spec.get("z_index", 295)),
+		"move_to_front": visible,
+	}
+
+
 static func editor_orientation_popup_build_specs() -> Dictionary:
 	var buttons := [
 		{"key": "left", "name": "ScytheSideMountLeftButton", "text": "左侧挂刃", "position": Vector2(10.0, 42.0), "size": Vector2(86.0, 28.0)},

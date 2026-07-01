@@ -934,6 +934,19 @@ func _init() -> void:
 		return
 	_assert_vector(third_save_unit_role_button_build_spec, "position", Vector2(314.0, 114.0), "save-unit role button build spec")
 	_assert_vector(save_as_action_button_build_spec, "position", Vector2(168.0, 170.0), "save-unit action button build spec")
+	if not ui_lifecycle_source.contains("static func editor_save_unit_name_panel_presentation("):
+		_fail("UILifecycleService should expose editor save-unit name panel presentation planning.")
+		return
+	var visible_save_name_panel_plan: Dictionary = ui_lifecycle_service.call("editor_save_unit_name_panel_presentation", true)
+	_assert_vector(visible_save_name_panel_plan, "position", Vector2(390.0, 188.0), "save-unit name panel presentation")
+	_assert_vector(visible_save_name_panel_plan, "size", Vector2(474.0, 236.0), "save-unit name panel presentation")
+	if not bool(visible_save_name_panel_plan.get("visible", false)) or not bool(visible_save_name_panel_plan.get("move_to_front", false)) or int(visible_save_name_panel_plan.get("z_index", -1)) != 295:
+		_fail("UILifecycleService visible save-unit name panel presentation failed.")
+		return
+	var hidden_save_name_panel_plan: Dictionary = ui_lifecycle_service.call("editor_save_unit_name_panel_presentation", false)
+	if bool(hidden_save_name_panel_plan.get("visible", true)) or bool(hidden_save_name_panel_plan.get("move_to_front", false)) or int(hidden_save_name_panel_plan.get("z_index", -1)) != 295:
+		_fail("UILifecycleService hidden save-unit name panel presentation failed.")
+		return
 	if not ui_lifecycle_source.contains("static func editor_orientation_popup_build_specs("):
 		_fail("UILifecycleService should expose editor orientation popup build specs.")
 		return
