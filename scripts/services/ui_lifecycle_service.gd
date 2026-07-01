@@ -430,6 +430,45 @@ static func editor_template_drawer_build_specs(archetype_order: Array, barrier_t
 	}
 
 
+static func editor_shop_surface_build_specs(slot_order: Array) -> Dictionary:
+	var buttons := []
+	for i in range(slot_order.size()):
+		var slot_key := String(slot_order[i])
+		buttons.append({
+			"index": i,
+			"key": slot_key,
+			"name": "ShopButton%s" % slot_key,
+			"position": Vector2(936.0, 252.0 + float(i) * 84.0),
+			"size": Vector2(270.0, 76.0),
+		})
+	return {
+		"title": {
+			"name": "ShopTitle",
+			"text": "零件面板",
+			"position": Vector2(936.0, 146.0),
+			"size": Vector2(270.0, 20.0),
+		},
+		"hint": {
+			"name": "ShopHint",
+			"text": "流程：选择类型 -> 拖卡片进画布 -> 磁吸贴合",
+			"position": Vector2(936.0, 170.0),
+			"size": Vector2(270.0, 42.0),
+		},
+		"pending": {
+			"name": "ShopPending",
+			"text": "",
+			"position": Vector2(936.0, 214.0),
+			"size": Vector2(270.0, 34.0),
+		},
+		"backdrop": {
+			"name": "ShopCardArtBackdrop",
+			"position": Vector2(936.0, 252.0),
+			"size": Vector2(270.0, 338.0),
+		},
+		"buttons": buttons,
+	}
+
+
 static func editor_panel_role_chrome_presentation(mode: String, active_role_key: String, parts_visible: bool, panel_keys: Array, role_keys: Array, role_order: Array, role_short_labels: Dictionary, zh: bool) -> Dictionary:
 	var panel_texts := {"load": "单位库", "parts": "零件库"} if zh else {"load": "UNITS", "parts": "PARTS"}
 	var panel_buttons := {}

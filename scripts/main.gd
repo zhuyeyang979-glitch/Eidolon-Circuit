@@ -47651,28 +47651,35 @@ func _build_editor_ui() -> void:
 		barrier_template_button.pressed.connect(_apply_barrier_template.bind(barrier_key))
 		root.add_child(barrier_template_button)
 		editor_template_buttons.append(barrier_template_button)
-	editor_section_labels["shop"] = _make_label(root, "ShopTitle", "零件面板", Vector2(936.0, 146.0), Vector2(270.0, 20.0), 13, Color(0.9, 0.96, 1.0, 1.0), HORIZONTAL_ALIGNMENT_LEFT)
-	editor_shop_hint_label = _make_label(root, "ShopHint", "流程：选择类型 -> 拖卡片进画布 -> 磁吸贴合", Vector2(936.0, 170.0), Vector2(270.0, 42.0), 11, Color(0.76, 0.9, 1.0, 0.92), HORIZONTAL_ALIGNMENT_LEFT)
+	var shop_surface_build_specs := UILifecycleService.editor_shop_surface_build_specs(BODY_GROUP_SLOTS)
+	var shop_title_build_spec := Dictionary(shop_surface_build_specs.get("title", {}))
+	editor_section_labels["shop"] = _make_label(root, String(shop_title_build_spec.get("name", "ShopTitle")), String(shop_title_build_spec.get("text", "零件面板")), shop_title_build_spec.get("position", Vector2.ZERO), shop_title_build_spec.get("size", Vector2.ZERO), 13, Color(0.9, 0.96, 1.0, 1.0), HORIZONTAL_ALIGNMENT_LEFT)
+	var shop_hint_build_spec := Dictionary(shop_surface_build_specs.get("hint", {}))
+	editor_shop_hint_label = _make_label(root, String(shop_hint_build_spec.get("name", "ShopHint")), String(shop_hint_build_spec.get("text", "流程：选择类型 -> 拖卡片进画布 -> 磁吸贴合")), shop_hint_build_spec.get("position", Vector2.ZERO), shop_hint_build_spec.get("size", Vector2.ZERO), 11, Color(0.76, 0.9, 1.0, 0.92), HORIZONTAL_ALIGNMENT_LEFT)
 	editor_shop_hint_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	editor_shop_pending_label = _make_label(root, "ShopPending", "", Vector2(936.0, 214.0), Vector2(270.0, 34.0), 12, Color(1.0, 0.88, 0.28, 1.0), HORIZONTAL_ALIGNMENT_LEFT)
+	var shop_pending_build_spec := Dictionary(shop_surface_build_specs.get("pending", {}))
+	editor_shop_pending_label = _make_label(root, String(shop_pending_build_spec.get("name", "ShopPending")), String(shop_pending_build_spec.get("text", "")), shop_pending_build_spec.get("position", Vector2.ZERO), shop_pending_build_spec.get("size", Vector2.ZERO), 12, Color(1.0, 0.88, 0.28, 1.0), HORIZONTAL_ALIGNMENT_LEFT)
 	editor_shop_pending_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	var shop_card_texture := _load_generated_shop_cards()
 	if shop_card_texture != null:
+		var shop_backdrop_build_spec := Dictionary(shop_surface_build_specs.get("backdrop", {}))
 		editor_shop_card_backdrop = TextureRect.new()
-		editor_shop_card_backdrop.name = "ShopCardArtBackdrop"
-		editor_shop_card_backdrop.position = Vector2(936.0, 252.0)
-		editor_shop_card_backdrop.size = Vector2(270.0, 338.0)
+		editor_shop_card_backdrop.name = String(shop_backdrop_build_spec.get("name", "ShopCardArtBackdrop"))
+		editor_shop_card_backdrop.position = shop_backdrop_build_spec.get("position", Vector2.ZERO)
+		editor_shop_card_backdrop.size = shop_backdrop_build_spec.get("size", Vector2.ZERO)
 		editor_shop_card_backdrop.texture = shop_card_texture
 		editor_shop_card_backdrop.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
 		editor_shop_card_backdrop.modulate = Color(1.0, 1.0, 1.0, 0.28)
 		editor_shop_card_backdrop.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		root.add_child(editor_shop_card_backdrop)
-	var shop_slots := BODY_GROUP_SLOTS
-	for i in range(shop_slots.size()):
-		var slot_key: String = shop_slots[i]
+	var shop_button_build_specs: Array = Array(shop_surface_build_specs.get("buttons", []))
+	for raw_shop_button_build_spec in shop_button_build_specs:
+		var shop_button_build_spec := Dictionary(raw_shop_button_build_spec)
+		var slot_key: String = String(shop_button_build_spec.get("key", ""))
 		var shop_button := Button.new()
-		shop_button.position = Vector2(936.0, 252.0 + float(i) * 84.0)
-		shop_button.size = Vector2(270.0, 76.0)
+		shop_button.name = String(shop_button_build_spec.get("name", "ShopButton%s" % slot_key))
+		shop_button.position = shop_button_build_spec.get("position", Vector2.ZERO)
+		shop_button.size = shop_button_build_spec.get("size", Vector2.ZERO)
 		shop_button.focus_mode = Control.FOCUS_NONE
 		shop_button.pressed.connect(_cycle_body_part_component.bind(slot_key, 1))
 		shop_button.mouse_entered.connect(_hover_shop_component.bind(slot_key))

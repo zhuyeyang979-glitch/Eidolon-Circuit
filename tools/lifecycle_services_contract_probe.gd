@@ -392,6 +392,35 @@ func _init() -> void:
 	_assert_vector(third_archetype_button_build_spec, "position", Vector2(940.0, 216.0), "archetype template button build spec")
 	_assert_vector(third_archetype_button_build_spec, "size", Vector2(126.0, 24.0), "archetype template button build spec")
 	_assert_vector(second_barrier_button_build_spec, "position", Vector2(1074.0, 188.0), "barrier template button build spec")
+	if not ui_lifecycle_source.contains("static func editor_shop_surface_build_specs("):
+		_fail("UILifecycleService should expose editor shop surface build specs.")
+		return
+	var shop_surface_build_specs: Dictionary = ui_lifecycle_service.call("editor_shop_surface_build_specs", ["left_claw", "right_claw", "rear"])
+	var shop_title_build_spec: Dictionary = Dictionary(shop_surface_build_specs.get("title", {}))
+	var shop_hint_build_spec: Dictionary = Dictionary(shop_surface_build_specs.get("hint", {}))
+	var shop_pending_build_spec: Dictionary = Dictionary(shop_surface_build_specs.get("pending", {}))
+	var shop_backdrop_build_spec: Dictionary = Dictionary(shop_surface_build_specs.get("backdrop", {}))
+	var shop_button_build_specs: Array = Array(shop_surface_build_specs.get("buttons", []))
+	if String(shop_title_build_spec.get("name", "")) != "ShopTitle" or String(shop_hint_build_spec.get("name", "")) != "ShopHint" or String(shop_pending_build_spec.get("name", "")) != "ShopPending":
+		_fail("UILifecycleService shop label build spec identity failed.")
+		return
+	if String(shop_backdrop_build_spec.get("name", "")) != "ShopCardArtBackdrop":
+		_fail("UILifecycleService shop backdrop build spec identity failed.")
+		return
+	if shop_button_build_specs.size() != 3:
+		_fail("UILifecycleService shop button build spec count failed.")
+		return
+	_assert_vector(shop_title_build_spec, "position", Vector2(936.0, 146.0), "shop title build spec")
+	_assert_vector(shop_hint_build_spec, "position", Vector2(936.0, 170.0), "shop hint build spec")
+	_assert_vector(shop_pending_build_spec, "position", Vector2(936.0, 214.0), "shop pending build spec")
+	_assert_vector(shop_backdrop_build_spec, "position", Vector2(936.0, 252.0), "shop backdrop build spec")
+	_assert_vector(shop_backdrop_build_spec, "size", Vector2(270.0, 338.0), "shop backdrop build spec")
+	var third_shop_button_build_spec: Dictionary = Dictionary(shop_button_build_specs[2])
+	if int(third_shop_button_build_spec.get("index", -1)) != 2 or String(third_shop_button_build_spec.get("key", "")) != "rear" or String(third_shop_button_build_spec.get("name", "")) != "ShopButtonrear":
+		_fail("UILifecycleService shop button build spec identity failed.")
+		return
+	_assert_vector(third_shop_button_build_spec, "position", Vector2(936.0, 420.0), "shop button build spec")
+	_assert_vector(third_shop_button_build_spec, "size", Vector2(270.0, 76.0), "shop button build spec")
 	Dictionary(Array(build_specs.get("canvas_tools", []))[0])["key"] = "mutated"
 	var fresh_build_specs: Dictionary = UILifecycleService.editor_action_build_specs()
 	if String(Dictionary(Array(fresh_build_specs.get("canvas_tools", []))[0]).get("key", "")) != "blank_canvas":
