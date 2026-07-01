@@ -9932,6 +9932,29 @@ func _apply_editor_control_plan(control: Control, plan: Dictionary, apply_disabl
 		_set_slider_editable_if_changed(control as Slider, bool(plan.get("editable", false)))
 	if plan.has("value") and control is Range:
 		_set_range_value_if_changed(control as Range, float(plan.get("value", 0.0)))
+	if control is Label:
+		var label := control as Label
+		if plan.has("autowrap_mode"):
+			var autowrap_mode_value := int(plan.get("autowrap_mode", label.autowrap_mode))
+			if label.autowrap_mode != autowrap_mode_value:
+				label.autowrap_mode = autowrap_mode_value
+				editor_property_write_count += 1
+			else:
+				editor_property_noop_count += 1
+		if plan.has("clip_text"):
+			var clip_text_value := bool(plan.get("clip_text", label.clip_text))
+			if label.clip_text != clip_text_value:
+				label.clip_text = clip_text_value
+				editor_property_write_count += 1
+			else:
+				editor_property_noop_count += 1
+		if plan.has("text_overrun_behavior"):
+			var text_overrun_value := int(plan.get("text_overrun_behavior", label.text_overrun_behavior))
+			if label.text_overrun_behavior != text_overrun_value:
+				label.text_overrun_behavior = text_overrun_value
+				editor_property_write_count += 1
+			else:
+				editor_property_noop_count += 1
 	if bool(plan.get("move_to_front", false)):
 		control.move_to_front()
 
@@ -9939,11 +9962,7 @@ func _apply_editor_control_plan(control: Control, plan: Dictionary, apply_disabl
 func _layout_editor_save_unit_feedback() -> void:
 	if editor_save_unit_feedback_label == null:
 		return
-	_set_control_position_if_changed(editor_save_unit_feedback_label, Vector2(270.0, 654.0))
-	_set_control_size_if_changed(editor_save_unit_feedback_label, Vector2(622.0, 26.0))
-	editor_save_unit_feedback_label.autowrap_mode = TextServer.AUTOWRAP_OFF
-	editor_save_unit_feedback_label.clip_text = true
-	editor_save_unit_feedback_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	_apply_editor_control_plan(editor_save_unit_feedback_label, UILifecycleService.editor_save_unit_feedback_presentation())
 
 
 func _apply_ui_state(control_map: Dictionary, state: Dictionary) -> void:

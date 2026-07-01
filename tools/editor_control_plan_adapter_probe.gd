@@ -60,9 +60,26 @@ func _init() -> void:
 	_require(not slider.editable and is_equal_approx(slider.value, 4.0), "Control plan should apply slider editable/value state.")
 	var label := Label.new()
 	label.text = "KEEP"
+	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	label.clip_text = false
+	label.text_overrun_behavior = TextServer.OVERRUN_TRIM_WORD_ELLIPSIS
 	parent.add_child(label)
-	main._apply_editor_control_plan(label, {"text": "UPDATED", "unknown": 99})
+	main._apply_editor_control_plan(label, {
+		"text": "UPDATED",
+		"autowrap_mode": TextServer.AUTOWRAP_OFF,
+		"clip_text": true,
+		"text_overrun_behavior": TextServer.OVERRUN_TRIM_ELLIPSIS,
+		"unknown": 99,
+	})
 	_require(label.text == "UPDATED" and label.visible, "Control plan should ignore absent and unknown properties.")
+	_require(label.autowrap_mode == TextServer.AUTOWRAP_OFF and label.clip_text and label.text_overrun_behavior == TextServer.OVERRUN_TRIM_ELLIPSIS, "Control plan should apply Label text layout properties.")
+	var writes_after_label_apply := int(main.editor_property_write_count)
+	main._apply_editor_control_plan(label, {
+		"autowrap_mode": TextServer.AUTOWRAP_OFF,
+		"clip_text": true,
+		"text_overrun_behavior": TextServer.OVERRUN_TRIM_ELLIPSIS,
+	})
+	_require(int(main.editor_property_write_count) == writes_after_label_apply, "Repeated Label text layout plans should not rewrite unchanged properties.")
 	button.disabled = false
 	main._apply_editor_control_plan(button, {"disabled": true, "text": "PRESERVED"}, false)
 	_require(not button.disabled and button.text == "PRESERVED", "Control plan should optionally preserve externally managed disabled state.")

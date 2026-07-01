@@ -916,6 +916,17 @@ static func editor_auxiliary_chrome_build_specs() -> Dictionary:
 	}
 
 
+static func editor_save_unit_feedback_presentation() -> Dictionary:
+	var build_spec := Dictionary(editor_auxiliary_chrome_build_specs().get("save_feedback", {}))
+	return {
+		"position": build_spec.get("position", Vector2(270.0, 654.0)),
+		"size": build_spec.get("size", Vector2(622.0, 26.0)),
+		"autowrap_mode": TextServer.AUTOWRAP_OFF,
+		"clip_text": true,
+		"text_overrun_behavior": TextServer.OVERRUN_TRIM_ELLIPSIS,
+	}
+
+
 static func editor_overlay_view_build_specs() -> Dictionary:
 	return {
 		"stats_rail": {"name": "EditorStatsRail", "position": Vector2(18.0, 104.0), "size": Vector2(164.0, 508.0)},

@@ -1077,6 +1077,15 @@ func _init() -> void:
 	_assert_vector(tutorial_label_build_spec, "size", Vector2(568.0, 60.0), "assembly tutorial label build spec")
 	_assert_vector(perf_overlay_build_spec, "position", Vector2(42.0, 86.0), "perf overlay build spec")
 	_assert_vector(save_feedback_build_spec, "size", Vector2(622.0, 26.0), "save feedback build spec")
+	if not ui_lifecycle_source.contains("static func editor_save_unit_feedback_presentation("):
+		_fail("UILifecycleService should expose editor save-unit feedback presentation planning.")
+		return
+	var save_feedback_plan: Dictionary = ui_lifecycle_service.call("editor_save_unit_feedback_presentation")
+	_assert_vector(save_feedback_plan, "position", Vector2(270.0, 654.0), "save feedback presentation")
+	_assert_vector(save_feedback_plan, "size", Vector2(622.0, 26.0), "save feedback presentation")
+	if int(save_feedback_plan.get("autowrap_mode", -1)) != TextServer.AUTOWRAP_OFF or not bool(save_feedback_plan.get("clip_text", false)) or int(save_feedback_plan.get("text_overrun_behavior", -1)) != TextServer.OVERRUN_TRIM_ELLIPSIS:
+		_fail("UILifecycleService save-unit feedback text layout presentation failed.")
+		return
 	if not ui_lifecycle_source.contains("static func editor_overlay_view_build_specs("):
 		_fail("UILifecycleService should expose editor overlay view build specs.")
 		return

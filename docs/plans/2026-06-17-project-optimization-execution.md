@@ -1789,6 +1789,27 @@ GREEN: UNIT_EDITOR_TEMPLATE_DRAWER_RUNTIME_PROBE ok selected=octopus barrier=Bar
 
 `UILifecycleService.editor_load_card_buttons_presentation()` now owns the pure prev/next, page-label, card visibility, disabled, layout, text passthrough, and tint plan for editor load-card buttons. `_update_editor_load_card_buttons()` keeps load-entry lookup, page clamping, stats calculation, role/cost/name copy, and final localized card text construction, then applies returned plans through `_apply_editor_control_plan()`. The extraction preserves the load panel's existing page label placement, empty/team top-row placement, preset/library/selected tinting, and hidden-card clearing.
 
+Follow-up editor save-unit feedback presentation extraction:
+
+```text
+RED: editor_control_plan_adapter_probe failed because _apply_editor_control_plan() did not apply Label text layout properties
+RED: lifecycle_services_contract_probe failed on missing editor_save_unit_feedback_presentation service API
+RED: main_file_extraction_contract_probe failed on missing save-unit feedback presentation delegation
+GREEN: EDITOR_CONTROL_PLAN_ADAPTER_PROBE failed=false writes=16 noops=12
+GREEN: LIFECYCLE_SERVICES_CONTRACT_PROBE ok
+GREEN: MAIN_FILE_EXTRACTION_CONTRACT_PROBE ok services=9
+GREEN: Godot --check-only --script res://scripts/main.gd --quit-after 1
+GREEN: Godot --check-only --script res://scripts/services/ui_lifecycle_service.gd --quit-after 1
+GREEN: UNIT_EDITOR_PAGINATION_LAYOUT_PROBE ok unit=1 page=0 catalog=1 load=0 feedback=[P: (270.0, 654.0), S: (622.0, 26.0)]
+GREEN: TEAMEDIT_UI_SIMPLIFIED_CONTROLS_PROBE ok summary_lines=2
+GREEN: UNIT_EDITOR_FULLSCREEN_LAYOUT_PROBE ok board=(908.0, 548.0) dock=(726.0, 132.0)
+GREEN: PART_LIBRARY_UI_PROBE groups=["torso", "limb", "terminal_weapon", "barrier_panel", "software_muscle", "software"] weapon=3 equipment=5 software=7 dashboard=40
+GREEN: UNIT_EDITOR_TEMPLATE_DRAWER_RUNTIME_PROBE ok selected=octopus barrier=BarrierTemplatepin_wall
+GREEN: UNIT_EDITOR_NO_TEAM_ROLE_CONTROLS_PROBE ok
+```
+
+`_apply_editor_control_plan()` now applies Label text-layout keys (`autowrap_mode`, `clip_text`, and `text_overrun_behavior`) with guarded write/no-op accounting. `UILifecycleService.editor_save_unit_feedback_presentation()` owns the pure position, size, wrapping, clipping, and overrun plan for the editor save-unit feedback label. `_layout_editor_save_unit_feedback()` now applies that service plan instead of directly mutating the label.
+
 Remaining items after this batch:
 
 - Continue editor UI extraction with `_build_editor_ui` and the remaining action presentation/control-mutation sections of `_apply_editor_panel_visibility`, then continue `_resolve_attack` and `_refresh_editor_visual_views` extraction.
