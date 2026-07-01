@@ -712,6 +712,13 @@ static func editor_part_group_button_presentation(group_key: String, group_order
 	}
 
 
+static func editor_slot_button_presentation() -> Dictionary:
+	return {
+		"visible": false,
+		"disabled": true,
+	}
+
+
 static func editor_part_filter_button_presentation(button_index: int, filter_options: Array, part_group_mode: String, active_filter: String, parts_visible: bool, text: String) -> Dictionary:
 	var terminal_weapon := String(part_group_mode) == "terminal_weapon"
 	var filter_columns := 5 if terminal_weapon else 3

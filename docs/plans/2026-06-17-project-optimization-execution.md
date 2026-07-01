@@ -1509,6 +1509,26 @@ GREEN: git diff --check
 
 `_apply_editor_panel_visibility()` now applies the `sort_dir_move_to_front` decision from `UILifecycleService.editor_sort_controls_presentation()` through `_apply_editor_control_plan()` instead of directly calling `sort_dir_front.move_to_front()`. `_apply_editor_panel_visibility()` remains 309 lines, and the extraction probe rejects the stale direct front-order mutation.
 
+Follow-up editor slot-button hidden presentation extraction:
+
+```text
+RED: main_file_extraction_contract_probe failed on missing UILifecycleService.editor_slot_button_presentation delegation
+RED: lifecycle_services_contract_probe failed on missing editor_slot_button_presentation service API
+GREEN: MAIN_FILE_EXTRACTION_CONTRACT_PROBE ok services=9
+GREEN: LIFECYCLE_SERVICES_CONTRACT_PROBE ok
+GREEN: Godot --check-only --script res://scripts/main.gd --quit-after 1
+GREEN: Godot --check-only --script res://scripts/services/ui_lifecycle_service.gd --quit-after 1
+GREEN: PART_LIBRARY_UI_PROBE groups=["torso", "limb", "terminal_weapon", "barrier_panel", "software_muscle", "software"] weapon=3 equipment=5 software=7 dashboard=40
+GREEN: UNIT_EDITOR_PAGINATION_LAYOUT_PROBE ok
+GREEN: UNIT_EDITOR_FULLSCREEN_LAYOUT_PROBE ok
+GREEN: EDITOR_SCROLL_REGIONS_PROBE ok
+GREEN: EDITOR_CATALOG_REVISION_CACHE_PROBE ok skips=1
+GREEN: jq empty tools/probe_manifest.json
+GREEN: git diff --check
+```
+
+`UILifecycleService.editor_slot_button_presentation()` now owns the pure hidden/disabled plan for legacy editor slot buttons. `_apply_editor_panel_visibility()` applies that plan through `_apply_editor_control_plan()` instead of carrying local `slot_visible` state and direct visible/disabled mutations; the function is now 307 lines.
+
 Remaining items after this batch:
 
 - Continue editor UI extraction with `_build_editor_ui` and the remaining action presentation/control-mutation sections of `_apply_editor_panel_visibility`, then continue `_resolve_attack` and `_refresh_editor_visual_views` extraction.

@@ -794,6 +794,10 @@ func _init() -> void:
 		_fail("UILifecycleService part group hidden presentation contract failed.")
 		return
 	_assert_vector(hidden_group_plan, "position", Vector2(936.0, 146.0), "hidden part group presentation")
+	var slot_button_plan: Dictionary = UILifecycleService.editor_slot_button_presentation()
+	if bool(slot_button_plan.get("visible", true)) or not bool(slot_button_plan.get("disabled", false)):
+		_fail("UILifecycleService slot button presentation should keep legacy slot buttons hidden.")
+		return
 	var filter_options := [{"key": "weapon_all"}, {"key": "terminal_melee"}, {"key": "ammo"}, {"key": "gun"}, {"key": "beam"}, {"key": "spray"}]
 	var filter_plan: Dictionary = UILifecycleService.editor_part_filter_button_presentation(5, filter_options, "terminal_weapon", "ammo", true, "喷射")
 	if not bool(filter_plan.get("visible", false)) or bool(filter_plan.get("disabled", true)) or String(filter_plan.get("text", "")) != "喷射":

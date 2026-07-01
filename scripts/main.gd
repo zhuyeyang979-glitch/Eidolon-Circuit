@@ -49812,9 +49812,7 @@ func _apply_editor_panel_visibility(role_key: String, unit_bp: Dictionary) -> vo
 	var filter_options := _part_filter_options_for_group(editor_part_group_mode)
 	for i in range(editor_slot_buttons.size()):
 		var button: Button = editor_slot_buttons[i]
-		var slot_visible := false
-		_set_canvas_item_visible_if_changed(button, slot_visible)
-		_set_button_disabled_if_changed(button, not slot_visible)
+		_apply_editor_control_plan(button, UILifecycleService.editor_slot_button_presentation())
 	for i in range(editor_part_filter_buttons.size()):
 		var filter_button: Button = editor_part_filter_buttons[i]
 		var filter_text := ""
