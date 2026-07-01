@@ -964,6 +964,25 @@ GREEN: BATTLE_ATTACK_HEAVY_REPLAY_DESYNC_PROBE ok
 
 `_execute_post_hit_intents()` now owns the imperative dispatch for post-hit module effects, variant effects, takeover status, explosions, suicide returns, part damage, hitstop, health damage, validation hit sampling, chemical DOT, back-hit heat, projectile/active-melee stagger, and displacement. `_resolve_attack()` delegates the `post_hit_intents` array, merges effect-killed units, preserves the suicide early return, and keeps the target-loop `continue` and final kill-list handling explicit. The extraction contract rejects the old inline post-hit intent loop inside `_resolve_attack()` and requires the helper to retain the side-effect dispatch tokens.
 
+Follow-up editor visual refresh barrier snapshot extraction:
+
+```text
+RED: editor_visual_refresh_no_deep_snapshot_probe failed on missing _editor_barrier_screen_board_snapshot helper
+GREEN: EDITOR_VISUAL_REFRESH_NO_DEEP_SNAPSHOT_PROBE ok
+GREEN: Godot --check-only --script res://scripts/main.gd --quit-after 1
+GREEN: BARRIER_TERRAIN_EDITOR_PREVIEW_PROBE ok
+GREEN: BARRIER_CATALOG_SCREEN_PLACE_PROBE ok pending=muscle/212 cell=22 drag=212 grid=false zoom=1.40
+GREEN: EDITOR_RENDER_CACHE_PROBE ok apply=1 noop=0 skip=2 submit=2
+GREEN: EDITOR_BOARD_SNAPSHOT_LAZY_PROBE ok hits=0 skips=2 rebuild=0
+GREEN: EDITOR_BOARD_SNAPSHOT_INCREMENTAL_PROBE ok rebuilds=1 dynamic=4
+GREEN: EDITOR_BOARD_MODEL_INCREMENTAL_PROBE ok shallow=1 skip=1
+GREEN: BOARD_ZOOM_SOCKET_FOLLOW_PROBE ok marker=0:torso_port:0
+GREEN: ASSEMBLY_BOARD_SET_BOARD_NOOP_PROBE ok apply=1 noop=0 skip=2
+GREEN: VIEW_EXTRACTION_CONTRACT_PROBE ok views=27
+```
+
+`_editor_barrier_screen_board_snapshot()` now owns the barrier screen-board snapshot construction for terrain preview, board dimensions, zoom/offset/grid-guide state, revision key, and per-tile visual payloads. `_refresh_editor_visual_views()` delegates only that branch, while cache hit/rebuild routing, custom-board dynamic-field application, `assembly_board_view.set_board()`, and side-panel refreshes remain in the orchestration function. The visual-refresh probe now resolves the exact `_refresh_editor_visual_views(` signature, requires the helper, and rejects the stale inline barrier snapshot fragments.
+
 Remaining items after this batch:
 
 - Continue editor UI extraction with `_build_editor_ui` and the remaining action presentation/control-mutation sections of `_apply_editor_panel_visibility`, then continue `_resolve_attack` and `_refresh_editor_visual_views` extraction.

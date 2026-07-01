@@ -53156,39 +53156,7 @@ func _refresh_editor_visual_views(precomputed_stats: Dictionary = {}, update_sid
 		board_mode = "custom"
 	elif barrier_screen_board:
 		board_mode = "barrier"
-		var terrain_preview: Dictionary = _barrier_terrain_editor_preview(unit_bp)
-		var terrain_preview_tiles_by_index := {}
-		for raw_preview_tile in Array(terrain_preview.get("tiles", [])):
-			if raw_preview_tile is Dictionary:
-				var preview_tile: Dictionary = raw_preview_tile
-				terrain_preview_tiles_by_index[int(preview_tile.get("tile_index", -1))] = preview_tile
-		snapshot["terrain_preview"] = terrain_preview
-		snapshot["barrier_columns"] = BARRIER_MAP_COLUMNS
-		snapshot["barrier_rows"] = BARRIER_MAP_ROWS
-		snapshot["barrier_width"] = BARRIER_BLUEPRINT_WIDTH
-		snapshot["barrier_height"] = BARRIER_BLUEPRINT_HEIGHT
-		snapshot["view_zoom"] = editor_board_zoom
-		snapshot["view_offset"] = editor_board_view_offset
-		snapshot["show_grid_guides"] = editor_barrier_grid_guides_enabled
-		snapshot["revision_key"] = "barrier|%s|z:%s|o:%s|g:%d" % [
-			str(Array(unit_bp.get("barrier_tiles", [])).hash()),
-			str(snappedf(editor_board_zoom, 0.001)),
-			str(editor_board_view_offset),
-			1 if editor_barrier_grid_guides_enabled else 0,
-		]
-		snapshot["revision_key"] = "%s|terrain:%s" % [String(snapshot.get("revision_key", "")), String(terrain_preview.get("revision_key", ""))]
-		for i in range(Array(unit_bp.get("barrier_tiles", [])).size()):
-			var tile: Dictionary = Array(unit_bp.get("barrier_tiles", []))[i]
-			var tile_slot := "joint" if tile.has("joint") else "muscle"
-			var muscle_part := _selected_component(role_key, tile_slot, int(tile.get(tile_slot, unit_bp.get(tile_slot, unit_bp.get("muscle", 0)))))
-			var tile_pos := _barrier_tile_screen_pos(tile)
-			snapshot["tile_%d" % i] = {
-				"index": int(tile.get("index", _barrier_pos_to_legacy_cell_index(tile_pos))),
-				"pos": tile_pos,
-				"kind": String(muscle_part.get("shape", "ether_pin")),
-				"damage_type": String(muscle_part.get("projectile_damage_type", muscle_part.get("damage_type", "blunt"))),
-				"terrain_preview": Dictionary(terrain_preview_tiles_by_index.get(i, {})).duplicate(true),
-			}
+		snapshot = _editor_barrier_screen_board_snapshot(role_key, unit_bp)
 	if board_mode == "custom" and not snapshot.is_empty():
 		snapshot = _apply_editor_board_dynamic_fields(snapshot, role_key, unit_bp, custom_board_cache_key, visual_stats)
 	var board_revision_key := String(snapshot.get("revision_key", ""))
@@ -53200,6 +53168,44 @@ func _refresh_editor_visual_views(precomputed_stats: Dictionary = {}, update_sid
 	if hot_path_profiler != null:
 		hot_path_profiler.record_value("teamedit.visual_refresh_usec", editor_board_snapshot_build_usec)
 		hot_path_profiler.scope_end("teamedit.visual_refresh")
+
+
+func _editor_barrier_screen_board_snapshot(role_key: String, unit_bp: Dictionary) -> Dictionary:
+	var snapshot := {}
+	var terrain_preview: Dictionary = _barrier_terrain_editor_preview(unit_bp)
+	var terrain_preview_tiles_by_index := {}
+	for raw_preview_tile in Array(terrain_preview.get("tiles", [])):
+		if raw_preview_tile is Dictionary:
+			var preview_tile: Dictionary = raw_preview_tile
+			terrain_preview_tiles_by_index[int(preview_tile.get("tile_index", -1))] = preview_tile
+	snapshot["terrain_preview"] = terrain_preview
+	snapshot["barrier_columns"] = BARRIER_MAP_COLUMNS
+	snapshot["barrier_rows"] = BARRIER_MAP_ROWS
+	snapshot["barrier_width"] = BARRIER_BLUEPRINT_WIDTH
+	snapshot["barrier_height"] = BARRIER_BLUEPRINT_HEIGHT
+	snapshot["view_zoom"] = editor_board_zoom
+	snapshot["view_offset"] = editor_board_view_offset
+	snapshot["show_grid_guides"] = editor_barrier_grid_guides_enabled
+	snapshot["revision_key"] = "barrier|%s|z:%s|o:%s|g:%d" % [
+		str(Array(unit_bp.get("barrier_tiles", [])).hash()),
+		str(snappedf(editor_board_zoom, 0.001)),
+		str(editor_board_view_offset),
+		1 if editor_barrier_grid_guides_enabled else 0,
+	]
+	snapshot["revision_key"] = "%s|terrain:%s" % [String(snapshot.get("revision_key", "")), String(terrain_preview.get("revision_key", ""))]
+	for i in range(Array(unit_bp.get("barrier_tiles", [])).size()):
+		var tile: Dictionary = Array(unit_bp.get("barrier_tiles", []))[i]
+		var tile_slot := "joint" if tile.has("joint") else "muscle"
+		var muscle_part := _selected_component(role_key, tile_slot, int(tile.get(tile_slot, unit_bp.get(tile_slot, unit_bp.get("muscle", 0)))))
+		var tile_pos := _barrier_tile_screen_pos(tile)
+		snapshot["tile_%d" % i] = {
+			"index": int(tile.get("index", _barrier_pos_to_legacy_cell_index(tile_pos))),
+			"pos": tile_pos,
+			"kind": String(muscle_part.get("shape", "ether_pin")),
+			"damage_type": String(muscle_part.get("projectile_damage_type", muscle_part.get("damage_type", "blunt"))),
+			"terrain_preview": Dictionary(terrain_preview_tiles_by_index.get(i, {})).duplicate(true),
+		}
+	return snapshot
 
 
 func _hide_editor_structure_reference() -> void:
