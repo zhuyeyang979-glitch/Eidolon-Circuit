@@ -669,6 +669,46 @@ static func editor_module_binding_side_idle_presentation() -> Dictionary:
 	}
 
 
+static func editor_module_binding_overlay_side_presentation(visible: bool, rect: Rect2, label: String, selected: bool, zh: bool, z_index: int) -> Dictionary:
+	if not visible:
+		return {
+			"visible": false,
+			"disabled": true,
+		}
+	return {
+		"visible": true,
+		"disabled": false,
+		"position": rect.position,
+		"size": rect.size,
+		"mouse_filter": Control.MOUSE_FILTER_STOP,
+		"z_index": z_index,
+		"text": label,
+		"tooltip": ("选择%s后再绑定攻击键" if zh else "Pick %s before choosing an attack key") % label,
+		"modulate": Color(1.0, 0.86, 0.22, 1.0) if selected else Color(0.56, 0.92, 1.0, 0.96),
+		"move_to_front": true,
+	}
+
+
+static func editor_module_binding_overlay_key_presentation(visible: bool, key_index: int, rect: Rect2, attack_key_label: String, selected: bool, zh: bool, z_index: int) -> Dictionary:
+	if not visible:
+		return {
+			"visible": false,
+			"disabled": true,
+		}
+	return {
+		"visible": true,
+		"disabled": false,
+		"position": rect.position,
+		"size": rect.size,
+		"mouse_filter": Control.MOUSE_FILTER_STOP,
+		"z_index": z_index,
+		"text": "%d %s" % [key_index, attack_key_label],
+		"tooltip": ("绑定到攻击键 %d（键盘 %s）" if zh else "Bind to attack key %d (keyboard %s)") % [key_index, attack_key_label],
+		"modulate": Color(1.0, 0.86, 0.22, 1.0) if selected else Color(0.58, 0.82, 1.0, 0.96),
+		"move_to_front": true,
+	}
+
+
 static func editor_sort_action_button_build_specs() -> Array:
 	var buttons := []
 	for raw_spec in Array(editor_action_build_specs().get("sort_actions", [])):

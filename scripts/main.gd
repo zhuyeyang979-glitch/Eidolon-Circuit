@@ -49485,42 +49485,39 @@ func _layout_module_binding_key_overlay() -> bool:
 			continue
 		var side_button: Button = editor_action_buttons[button_key]
 		var should_show_side := overlay_active and side_required
-		_set_canvas_item_visible_if_changed(side_button, should_show_side)
-		_set_button_disabled_if_changed(side_button, not should_show_side)
+		var side_rect := Rect2()
+		var selected: bool = _normalize_side_mount_action_side(editor_pending_module_binding.get("side_mount_action_side", "")) == side_key
 		if should_show_side:
-			var side_rect := _binding_overlay_rect_to_button_parent(side_button, editor_torso_detail_view._binding_action_side_rect(side_key))
-			_set_control_position_if_changed(side_button, side_rect.position)
-			_set_control_size_if_changed(side_button, side_rect.size)
-			side_button.mouse_filter = Control.MOUSE_FILTER_STOP
-			side_button.z_index = MODULE_BINDING_OVERLAY_Z_INDEX
-			_set_control_text_if_changed(side_button, _side_mount_action_side_label(side_key))
-			_set_control_tooltip_if_changed(side_button, ("选择%s后再绑定攻击键" if _ui_is_zh() else "Pick %s before choosing an attack key") % _side_mount_action_side_label(side_key))
-			var selected: bool = _normalize_side_mount_action_side(editor_pending_module_binding.get("side_mount_action_side", "")) == side_key
-			_set_canvas_item_modulate_if_changed(side_button, Color(1.0, 0.86, 0.22, 1.0) if selected else Color(0.56, 0.92, 1.0, 0.96))
-			side_button.move_to_front()
+			side_rect = _binding_overlay_rect_to_button_parent(side_button, editor_torso_detail_view._binding_action_side_rect(side_key))
+		_apply_editor_control_plan(side_button, UILifecycleService.editor_module_binding_overlay_side_presentation(
+			should_show_side,
+			side_rect,
+			_side_mount_action_side_label(side_key),
+			selected,
+			_ui_is_zh(),
+			MODULE_BINDING_OVERLAY_Z_INDEX
+		))
+		if should_show_side:
 			overlay_has_click_targets = true
 	for key_index in range(1, ATTACK_GROUP_COUNT + 1):
 		var button_key := "bind_key_%d" % key_index
 		if not editor_action_buttons.has(button_key):
 			continue
 		var key_button: Button = editor_action_buttons[button_key]
+		var key_rect := Rect2()
 		if key_ready:
-			var key_rect := _binding_overlay_rect_to_button_parent(key_button, editor_torso_detail_view._binding_key_rect(key_index))
-			_set_control_position_if_changed(key_button, key_rect.position)
-			_set_control_size_if_changed(key_button, key_rect.size)
-			key_button.mouse_filter = Control.MOUSE_FILTER_STOP
-			key_button.z_index = MODULE_BINDING_OVERLAY_Z_INDEX
-			_set_canvas_item_visible_if_changed(key_button, true)
-			_set_button_disabled_if_changed(key_button, false)
-			_set_control_text_if_changed(key_button, "%d %s" % [key_index, _attack_key_label(key_index)])
-			_set_control_tooltip_if_changed(key_button, ("绑定到攻击键 %d（键盘 %s）" if _ui_is_zh() else "Bind to attack key %d (keyboard %s)") % [key_index, _attack_key_label(key_index)])
-			var selected_key := int(editor_pending_module_binding.get("attack_key", 0))
-			_set_canvas_item_modulate_if_changed(key_button, Color(1.0, 0.86, 0.22, 1.0) if selected_key == key_index else Color(0.58, 0.82, 1.0, 0.96))
-			key_button.move_to_front()
+			key_rect = _binding_overlay_rect_to_button_parent(key_button, editor_torso_detail_view._binding_key_rect(key_index))
+		_apply_editor_control_plan(key_button, UILifecycleService.editor_module_binding_overlay_key_presentation(
+			key_ready,
+			key_index,
+			key_rect,
+			_attack_key_label(key_index),
+			int(editor_pending_module_binding.get("attack_key", 0)) == key_index,
+			_ui_is_zh(),
+			MODULE_BINDING_OVERLAY_Z_INDEX
+		))
+		if key_ready:
 			overlay_has_click_targets = true
-		elif overlay_active:
-			_set_canvas_item_visible_if_changed(key_button, false)
-			_set_button_disabled_if_changed(key_button, true)
 	if overlay_has_click_targets:
 		_clear_editor_hover_card(true)
 		_close_engine_momentum_allocation_panel()

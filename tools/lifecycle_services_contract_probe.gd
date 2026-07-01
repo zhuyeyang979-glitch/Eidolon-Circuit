@@ -749,6 +749,40 @@ func _init() -> void:
 	if bool(module_side_idle_plan.get("visible", true)) or not bool(module_side_idle_plan.get("disabled", false)):
 		_fail("UILifecycleService module binding side idle presentation failed.")
 		return
+	if not ui_lifecycle_source.contains("static func editor_module_binding_overlay_side_presentation("):
+		_fail("UILifecycleService should expose editor module binding overlay side presentation planning.")
+		return
+	var module_overlay_side_plan: Dictionary = ui_lifecycle_service.call("editor_module_binding_overlay_side_presentation", true, Rect2(Vector2(12.0, 34.0), Vector2(88.0, 26.0)), "左侧", true, true, 380)
+	_assert_vector(module_overlay_side_plan, "position", Vector2(12.0, 34.0), "module binding overlay side presentation")
+	_assert_vector(module_overlay_side_plan, "size", Vector2(88.0, 26.0), "module binding overlay side presentation")
+	if not bool(module_overlay_side_plan.get("visible", false)) or bool(module_overlay_side_plan.get("disabled", true)) or String(module_overlay_side_plan.get("text", "")) != "左侧":
+		_fail("UILifecycleService module binding overlay side text/state failed.")
+		return
+	if String(module_overlay_side_plan.get("tooltip", "")) != "选择左侧后再绑定攻击键" or int(module_overlay_side_plan.get("mouse_filter", -1)) != Control.MOUSE_FILTER_STOP or int(module_overlay_side_plan.get("z_index", -1)) != 380 or not bool(module_overlay_side_plan.get("move_to_front", false)):
+		_fail("UILifecycleService module binding overlay side metadata failed.")
+		return
+	_assert_color(module_overlay_side_plan, "modulate", Color(1.0, 0.86, 0.22, 1.0), "selected module binding overlay side presentation")
+	var hidden_overlay_side_plan: Dictionary = ui_lifecycle_service.call("editor_module_binding_overlay_side_presentation", false, Rect2(), "LEFT", false, false, 380)
+	if bool(hidden_overlay_side_plan.get("visible", true)) or not bool(hidden_overlay_side_plan.get("disabled", false)) or hidden_overlay_side_plan.has("position"):
+		_fail("UILifecycleService hidden module binding overlay side presentation failed.")
+		return
+	if not ui_lifecycle_source.contains("static func editor_module_binding_overlay_key_presentation("):
+		_fail("UILifecycleService should expose editor module binding overlay key presentation planning.")
+		return
+	var module_overlay_key_plan: Dictionary = ui_lifecycle_service.call("editor_module_binding_overlay_key_presentation", true, 3, Rect2(Vector2(44.0, 72.0), Vector2(58.0, 24.0)), "L", true, false, 380)
+	_assert_vector(module_overlay_key_plan, "position", Vector2(44.0, 72.0), "module binding overlay key presentation")
+	_assert_vector(module_overlay_key_plan, "size", Vector2(58.0, 24.0), "module binding overlay key presentation")
+	if not bool(module_overlay_key_plan.get("visible", false)) or bool(module_overlay_key_plan.get("disabled", true)) or String(module_overlay_key_plan.get("text", "")) != "3 L":
+		_fail("UILifecycleService module binding overlay key text/state failed.")
+		return
+	if String(module_overlay_key_plan.get("tooltip", "")) != "Bind to attack key 3 (keyboard L)" or int(module_overlay_key_plan.get("mouse_filter", -1)) != Control.MOUSE_FILTER_STOP or int(module_overlay_key_plan.get("z_index", -1)) != 380 or not bool(module_overlay_key_plan.get("move_to_front", false)):
+		_fail("UILifecycleService module binding overlay key metadata failed.")
+		return
+	_assert_color(module_overlay_key_plan, "modulate", Color(1.0, 0.86, 0.22, 1.0), "selected module binding overlay key presentation")
+	var hidden_overlay_key_plan: Dictionary = ui_lifecycle_service.call("editor_module_binding_overlay_key_presentation", false, 1, Rect2(), "J", false, true, 380)
+	if bool(hidden_overlay_key_plan.get("visible", true)) or not bool(hidden_overlay_key_plan.get("disabled", false)) or hidden_overlay_key_plan.has("position"):
+		_fail("UILifecycleService hidden module binding overlay key presentation failed.")
+		return
 	if not ui_lifecycle_source.contains("static func editor_sort_action_button_build_specs("):
 		_fail("UILifecycleService should expose editor sort action button build specs.")
 		return
