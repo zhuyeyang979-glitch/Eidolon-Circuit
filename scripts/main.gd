@@ -47083,12 +47083,15 @@ func _build_editor_ui() -> void:
 		guide_button.pressed.connect(_editor_action.bind(String(guide_spec.get("key", ""))))
 		root.add_child(guide_button)
 		editor_action_buttons[String(guide_spec.get("key", ""))] = guide_button
-	for i in range(ROLE_ORDER.size()):
-		var role_key: String = ROLE_ORDER[i]
+	var role_load_build_specs := UILifecycleService.editor_role_load_build_specs(ROLE_ORDER, 10)
+	var role_button_build_specs: Array = Array(role_load_build_specs.get("role_buttons", []))
+	for raw_role_button_build_spec in role_button_build_specs:
+		var role_button_build_spec := Dictionary(raw_role_button_build_spec)
+		var role_key := String(role_button_build_spec.get("key", ""))
 		var role_button := Button.new()
-		role_button.name = "Role%s" % role_key
-		role_button.position = Vector2(936.0 + float(i) * 92.0, 156.0)
-		role_button.size = Vector2(86.0, 32.0)
+		role_button.name = String(role_button_build_spec.get("name", "Role%s" % role_key))
+		role_button.position = role_button_build_spec.get("position", Vector2.ZERO)
+		role_button.size = role_button_build_spec.get("size", Vector2(86.0, 32.0))
 		role_button.focus_mode = Control.FOCUS_NONE
 		role_button.pressed.connect(_select_editor_role.bind(role_key))
 		root.add_child(role_button)
@@ -47166,16 +47169,19 @@ func _build_editor_ui() -> void:
 		action_button.pressed.connect(_editor_action.bind(String(action_spec.get("key", ""))))
 		root.add_child(action_button)
 		editor_action_buttons[String(action_spec.get("key", ""))] = action_button
-	for i in range(10):
+	var load_card_build_specs: Array = Array(role_load_build_specs.get("load_cards", []))
+	for raw_load_card_build_spec in load_card_build_specs:
+		var load_card_build_spec := Dictionary(raw_load_card_build_spec)
+		var load_card_index := int(load_card_build_spec.get("index", editor_load_card_buttons.size()))
 		var load_card_button := Button.new()
-		load_card_button.name = "LoadCard%d" % i
-		load_card_button.position = Vector2(936.0, 220.0 + float(i) * 34.0)
-		load_card_button.size = Vector2(270.0, 30.0)
+		load_card_button.name = String(load_card_build_spec.get("name", "LoadCard%d" % load_card_index))
+		load_card_button.position = load_card_build_spec.get("position", Vector2.ZERO)
+		load_card_button.size = load_card_build_spec.get("size", Vector2(270.0, 30.0))
 		load_card_button.focus_mode = Control.FOCUS_NONE
-		load_card_button.pressed.connect(_select_editor_load_card.bind(i))
-		load_card_button.mouse_entered.connect(_hover_editor_load_card.bind(i))
+		load_card_button.pressed.connect(_select_editor_load_card.bind(load_card_index))
+		load_card_button.mouse_entered.connect(_hover_editor_load_card.bind(load_card_index))
 		load_card_button.mouse_exited.connect(_clear_editor_unit_hover_card)
-		load_card_button.gui_input.connect(_handle_editor_load_card_input.bind(i))
+		load_card_button.gui_input.connect(_handle_editor_load_card_input.bind(load_card_index))
 		root.add_child(load_card_button)
 		editor_load_card_buttons.append(load_card_button)
 	editor_unit_label = _make_label(root, "UnitLabel", "", Vector2(936.0, 198.0), Vector2(270.0, 48.0), 13, Color(0.84, 0.93, 1.0, 1.0), HORIZONTAL_ALIGNMENT_LEFT)

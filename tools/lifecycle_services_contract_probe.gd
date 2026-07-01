@@ -236,6 +236,26 @@ func _init() -> void:
 		return
 	_assert_vector(fifth_ammo_tick_build_spec, "position", Vector2(1178.0, 278.0), "ammo tick build spec")
 	_assert_vector(fifth_ammo_tick_build_spec, "size", Vector2(34.0, 14.0), "ammo tick build spec")
+	var role_load_build_specs: Dictionary = UILifecycleService.editor_role_load_build_specs(["hero", "offense"], 3)
+	var role_button_build_specs: Array = Array(role_load_build_specs.get("role_buttons", []))
+	var load_card_build_specs: Array = Array(role_load_build_specs.get("load_cards", []))
+	if role_button_build_specs.size() != 2 or load_card_build_specs.size() != 3:
+		_fail("UILifecycleService role/load build spec counts failed.")
+		return
+	var first_role_button_build_spec: Dictionary = Dictionary(role_button_build_specs[0])
+	var second_role_button_build_spec: Dictionary = Dictionary(role_button_build_specs[1])
+	if String(first_role_button_build_spec.get("key", "")) != "hero" or String(first_role_button_build_spec.get("name", "")) != "Rolehero":
+		_fail("UILifecycleService role button build spec identity failed.")
+		return
+	_assert_vector(first_role_button_build_spec, "position", Vector2(936.0, 156.0), "role button build spec")
+	_assert_vector(first_role_button_build_spec, "size", Vector2(86.0, 32.0), "role button build spec")
+	_assert_vector(second_role_button_build_spec, "position", Vector2(1028.0, 156.0), "role button build spec")
+	var third_load_card_build_spec: Dictionary = Dictionary(load_card_build_specs[2])
+	if int(third_load_card_build_spec.get("index", -1)) != 2 or String(third_load_card_build_spec.get("name", "")) != "LoadCard2":
+		_fail("UILifecycleService load card build spec identity failed.")
+		return
+	_assert_vector(third_load_card_build_spec, "position", Vector2(936.0, 288.0), "load card build spec")
+	_assert_vector(third_load_card_build_spec, "size", Vector2(270.0, 30.0), "load card build spec")
 	Dictionary(Array(build_specs.get("canvas_tools", []))[0])["key"] = "mutated"
 	var fresh_build_specs: Dictionary = UILifecycleService.editor_action_build_specs()
 	if String(Dictionary(Array(fresh_build_specs.get("canvas_tools", []))[0]).get("key", "")) != "blank_canvas":

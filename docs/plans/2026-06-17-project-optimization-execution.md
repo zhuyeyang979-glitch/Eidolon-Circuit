@@ -858,6 +858,26 @@ GREEN: git diff --check
 
 `UILifecycleService.editor_ammo_size_build_specs()` now owns the pure identity, position, size, and slider-range data for the ammo-size title, slider, value label, and ticks. `_build_editor_ui()` remains the scene-tree adapter: it creates and styles concrete controls, connects the slider signal, and stores node references. `editor_ammo_size_control_presentation()` now reuses the same build specs so creation and refresh cannot drift apart. The main extraction probe rejects the old inline ammo-size creation formulas in `main.gd`.
 
+Follow-up editor role/load build specs extraction:
+
+```text
+RED: lifecycle_services_contract_probe failed on missing UILifecycleService.editor_role_load_build_specs()
+RED: main_file_extraction_contract_probe failed on missing UILifecycleService.editor_role_load_build_specs delegation
+GREEN: LIFECYCLE_SERVICES_CONTRACT_PROBE ok
+GREEN: MAIN_FILE_EXTRACTION_CONTRACT_PROBE ok services=9
+GREEN: Godot --check-only --script res://scripts/main.gd --quit-after 1
+GREEN: UNIT_EDITOR_NO_TEAM_ROLE_CONTROLS_PROBE ok
+GREEN: UNIT_EDITOR_PAGINATION_LAYOUT_PROBE ok unit=1 page=0 catalog=1 load=0 feedback=[P: (270.0, 654.0), S: (622.0, 26.0)]
+GREEN: EDITOR_LOAD_HOVER_PROBE hover_keeps_unit=0 preview=true page=1/1 entries=4
+GREEN: TEAMEDIT_UI_SIMPLIFIED_CONTROLS_PROBE ok summary_lines=2
+GREEN: UNIT_EDITOR_FULLSCREEN_LAYOUT_PROBE ok board=(908.0, 548.0) dock=(726.0, 132.0)
+GREEN: PART_LIBRARY_UI_PROBE groups=["torso", "limb", "terminal_weapon", "barrier_panel", "software_muscle", "software"] weapon=3 equipment=5 software=7 dashboard=40
+GREEN: SCREEN_LAYOUT_TOKEN_COVERAGE_PROBE ok
+KNOWN BASELINE FAILURE: PREBUILT_HERO_PRESETS_PROBE failed all three presets with socket_part_too_large in both the worktree and a fresh archive of baseline d54fe76
+```
+
+`UILifecycleService.editor_role_load_build_specs()` now owns pure identity, position, and size data for editor role buttons and saved-unit load cards. `_build_editor_ui()` remains the scene-tree adapter and retains all concrete node construction, signal wiring, and reference ownership. `editor_panel_role_chrome_presentation()` reuses the role build specs for horizontal placement and width while continuing to own mode-dependent vertical placement and height. The main extraction probe rejects the old inline role/load creation formulas in `main.gd`.
+
 Remaining items after this batch:
 
 - Continue editor UI extraction with `_build_editor_ui` and the remaining action presentation/control-mutation sections of `_apply_editor_panel_visibility`, then continue `_resolve_attack` and `_refresh_editor_visual_views` extraction.

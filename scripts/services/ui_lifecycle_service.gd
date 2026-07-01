@@ -236,6 +236,30 @@ static func editor_ammo_size_build_specs(tick_count: int) -> Dictionary:
 	}
 
 
+static func editor_role_load_build_specs(role_order: Array, load_card_count: int) -> Dictionary:
+	var role_buttons := []
+	for i in range(role_order.size()):
+		var role_key := String(role_order[i])
+		role_buttons.append({
+			"key": role_key,
+			"name": "Role%s" % role_key,
+			"position": Vector2(936.0 + float(i) * 92.0, 156.0),
+			"size": Vector2(86.0, 32.0),
+		})
+	var load_cards := []
+	for i in range(maxi(0, load_card_count)):
+		load_cards.append({
+			"index": i,
+			"name": "LoadCard%d" % i,
+			"position": Vector2(936.0, 220.0 + float(i) * 34.0),
+			"size": Vector2(270.0, 30.0),
+		})
+	return {
+		"role_buttons": role_buttons,
+		"load_cards": load_cards,
+	}
+
+
 static func editor_panel_role_chrome_presentation(mode: String, active_role_key: String, parts_visible: bool, panel_keys: Array, role_keys: Array, role_order: Array, role_short_labels: Dictionary, zh: bool) -> Dictionary:
 	var panel_texts := {"load": "单位库", "parts": "零件库"} if zh else {"load": "UNITS", "parts": "PARTS"}
 	var panel_buttons := {}
@@ -245,15 +269,23 @@ static func editor_panel_role_chrome_presentation(mode: String, active_role_key:
 			"text": String(panel_texts.get(panel_key, panel_key.to_upper())),
 			"modulate": Color(0.35, 0.95, 1.0, 1.0) if panel_key == String(mode) else Color(0.86, 0.9, 0.94, 1.0),
 		}
+	var role_build_specs_by_key := {}
+	var role_load_build_specs := editor_role_load_build_specs(role_order, 0)
+	for raw_role_build_spec in Array(role_load_build_specs.get("role_buttons", [])):
+		var role_build_spec := Dictionary(raw_role_build_spec)
+		role_build_specs_by_key[String(role_build_spec.get("key", ""))] = role_build_spec
 	var role_buttons := {}
 	for raw_role_key in role_keys:
 		var role_key := String(raw_role_key)
 		var role_index := role_order.find(role_key)
+		var role_build_spec := Dictionary(role_build_specs_by_key.get(role_key, {}))
+		var build_position: Vector2 = role_build_spec.get("position", Vector2(936.0 + float(role_index) * 92.0, 156.0))
+		var build_size: Vector2 = role_build_spec.get("size", Vector2(86.0, 32.0))
 		role_buttons[role_key] = {
 			"visible": false,
 			"disabled": true,
-			"position": Vector2(936.0 + float(role_index) * 92.0, 118.0 if parts_visible else 212.0),
-			"size": Vector2(86.0, 24.0 if parts_visible else 32.0),
+			"position": Vector2(build_position.x, 118.0 if parts_visible else 212.0),
+			"size": Vector2(build_size.x, 24.0 if parts_visible else build_size.y),
 			"text": ("身份:%s" if zh else "ROLE:%s") % String(role_short_labels.get(role_key, role_key.to_upper())),
 			"modulate": Color(0.35, 0.95, 1.0, 1.0) if role_key == String(active_role_key) else Color(0.84, 0.9, 0.94, 1.0),
 		}
