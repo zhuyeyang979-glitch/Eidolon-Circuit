@@ -1120,6 +1120,19 @@ func _init() -> void:
 	_assert_vector(hover_popup_build_spec, "size", Vector2(466.0, 500.0), "hover popup build spec")
 	_assert_vector(unit_hover_build_spec, "position", Vector2(410.0, 118.0), "unit hover build spec")
 	_assert_vector(unit_hover_build_spec, "size", Vector2(466.0, 500.0), "unit hover build spec")
+	if not ui_lifecycle_source.contains("static func editor_unit_hover_view_presentation("):
+		_fail("UILifecycleService should expose editor unit hover view presentation planning.")
+		return
+	var unit_hover_visible_plan: Dictionary = ui_lifecycle_service.call("editor_unit_hover_view_presentation", true)
+	_assert_vector(unit_hover_visible_plan, "position", Vector2(410.0, 118.0), "unit hover presentation")
+	_assert_vector(unit_hover_visible_plan, "size", Vector2(466.0, 500.0), "unit hover presentation")
+	if not bool(unit_hover_visible_plan.get("visible", false)) or not bool(unit_hover_visible_plan.get("move_to_front", false)) or int(unit_hover_visible_plan.get("z_index", -1)) != 255:
+		_fail("UILifecycleService visible unit hover presentation failed.")
+		return
+	var unit_hover_hidden_plan: Dictionary = ui_lifecycle_service.call("editor_unit_hover_view_presentation", false)
+	if bool(unit_hover_hidden_plan.get("visible", true)) or bool(unit_hover_hidden_plan.get("move_to_front", false)):
+		_fail("UILifecycleService hidden unit hover presentation failed.")
+		return
 	_assert_vector(torso_detail_build_spec, "position", Vector2(18.0, 338.0), "torso detail build spec")
 	_assert_vector(torso_detail_build_spec, "size", Vector2(888.0, 346.0), "torso detail build spec")
 	Dictionary(Array(build_specs.get("canvas_tools", []))[0])["key"] = "mutated"

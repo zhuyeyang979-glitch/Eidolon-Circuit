@@ -5064,6 +5064,12 @@ func _prepare_editor_unit_detail(entry: Dictionary, pinned: bool) -> bool:
 	return true
 
 
+func _apply_editor_unit_hover_view_presentation(visible: bool) -> void:
+	if editor_unit_hover_view == null:
+		return
+	_apply_editor_control_plan(editor_unit_hover_view, UILifecycleService.editor_unit_hover_view_presentation(visible))
+
+
 func _close_editor_unit_detail(suppress_token: String = "") -> void:
 	if suppress_token == "":
 		suppress_token = editor_unit_detail_token
@@ -5092,10 +5098,7 @@ func _show_editor_library_unit_hover(entry: Dictionary, pinned: bool = false) ->
 		("点击载入临时画布；不会自动写入队伍。" if _ui_is_zh() else "Click to load into the temporary canvas; this does not auto-write a team."),
 		("造价 %d / 入场 %d / 质量 %.0f / 长度 %.2f" if _ui_is_zh() else "Cost %d / deploy %d / mass %.0f / length %.2f") % [int(stats.get("cost", 0)), int(stats.get("deploy_cost", 0)), float(stats.get("mass", 0.0)), float(stats.get("length", 0.0))],
 	]
-	editor_unit_hover_view.position = Vector2(410.0, 118.0)
-	editor_unit_hover_view.size = Vector2(466.0, 500.0)
-	editor_unit_hover_view.visible = true
-	editor_unit_hover_view.move_to_front()
+	_apply_editor_unit_hover_view_presentation(true)
 	editor_unit_hover_view.set_close_button_enabled(pinned, editor_unit_detail_token)
 	editor_unit_hover_view.set_unit(_editor_player(), entry, stats, "\n".join(detail_lines), ui_language)
 
@@ -8224,10 +8227,7 @@ func _show_editor_empty_slot_hover(slot_index: int, pinned: bool = false) -> voi
 	var entry := {"empty": true, "slot": slot_index, "index": slot_index}
 	if not _prepare_editor_unit_detail(entry, pinned):
 		return
-	editor_unit_hover_view.position = Vector2(410.0, 118.0)
-	editor_unit_hover_view.size = Vector2(466.0, 500.0)
-	editor_unit_hover_view.visible = true
-	editor_unit_hover_view.move_to_front()
+	_apply_editor_unit_hover_view_presentation(true)
 	editor_unit_hover_view.set_close_button_enabled(pinned, editor_unit_detail_token)
 	editor_unit_hover_view.clear("空队伍槽 %02d\n当前没有放入单位。\n请先在单位库保存或载入单个单位，再在队伍编成界面填入槽位。" % [slot_index + 1] if _ui_is_zh() else "Empty roster slot %02d\nNo unit assigned.\nSave or load a single unit in the unit library first, then fill this slot in Team Compose." % [slot_index + 1])
 
@@ -8239,7 +8239,7 @@ func _clear_editor_unit_hover_card(force: bool = false) -> void:
 	editor_unit_detail_token = ""
 	if editor_unit_hover_view != null:
 		editor_unit_hover_view.set_close_button_enabled(false, "")
-		editor_unit_hover_view.visible = false
+		_apply_editor_unit_hover_view_presentation(false)
 
 
 func _show_editor_unit_hover(entry: Dictionary, pinned: bool = false) -> void:
@@ -8257,10 +8257,7 @@ func _show_editor_unit_hover(entry: Dictionary, pinned: bool = false) -> void:
 	var unit_index := int(entry.get("index", 0))
 	var stats := _compute_unit_stats(player_id, role_key, unit_index)
 	var detail := _editor_unit_hover_detail(player_id, role_key, unit_index, stats)
-	editor_unit_hover_view.position = Vector2(410.0, 118.0)
-	editor_unit_hover_view.size = Vector2(466.0, 500.0)
-	editor_unit_hover_view.visible = true
-	editor_unit_hover_view.move_to_front()
+	_apply_editor_unit_hover_view_presentation(true)
 	editor_unit_hover_view.set_close_button_enabled(pinned, editor_unit_detail_token)
 	editor_unit_hover_view.set_unit(player_id, entry, stats, detail, ui_language)
 

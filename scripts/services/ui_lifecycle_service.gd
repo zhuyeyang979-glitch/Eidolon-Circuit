@@ -938,6 +938,21 @@ static func editor_overlay_view_build_specs() -> Dictionary:
 	}
 
 
+static func editor_unit_hover_view_presentation(visible: bool) -> Dictionary:
+	if not visible:
+		return {
+			"visible": false,
+		}
+	var build_spec := Dictionary(editor_overlay_view_build_specs().get("unit_hover", {}))
+	return {
+		"visible": true,
+		"position": build_spec.get("position", Vector2(410.0, 118.0)),
+		"size": build_spec.get("size", Vector2(466.0, 500.0)),
+		"z_index": int(build_spec.get("z_index", 255)),
+		"move_to_front": true,
+	}
+
+
 static func editor_panel_role_chrome_presentation(mode: String, active_role_key: String, parts_visible: bool, panel_keys: Array, role_keys: Array, role_order: Array, role_short_labels: Dictionary, zh: bool) -> Dictionary:
 	var panel_texts := {"load": "单位库", "parts": "零件库"} if zh else {"load": "UNITS", "parts": "PARTS"}
 	var panel_buttons := {}
