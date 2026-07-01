@@ -49,6 +49,9 @@ func _init() -> void:
 		_fail("main.gd should delegate editor action presentation branching.")
 	if source.contains("var panel_specs := [") or source.contains("var board_primary_actions := [") or source.contains("var canvas_tools := [") or source.contains("var zoom_button_specs := ["):
 		_fail("main.gd should delegate editor action build specs.")
+	if source.contains("quick_button.name = \"BoardPrimary%s\" % String(board_primary_spec.get(\"key\", \"\"))"):
+		_fail("main.gd should delegate board-primary action button identity specs.")
+		return
 	if source.contains("sort_prev_button.text = \"<\"") or source.contains("template_menu_button.text = \"导入模板\""):
 		_fail("main.gd should delegate sort/template action build specs.")
 	if source.contains("var panel_texts_zh := {\"load\": \"单位库\", \"parts\": \"零件库\"}") or source.contains("Vector2(936.0 + float(ROLE_ORDER.find(String(role_key_button))) * 92.0") or source.contains("(\"身份:%s\" if _ui_is_zh() else \"ROLE:%s\") % _role_short(String(role_key_button))"):

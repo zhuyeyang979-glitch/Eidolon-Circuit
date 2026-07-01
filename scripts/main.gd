@@ -47566,14 +47566,15 @@ func _build_editor_ui() -> void:
 	for i in range(board_primary_actions.size()):
 		var board_primary_spec := Dictionary(board_primary_actions[i])
 		var quick_button := Button.new()
-		quick_button.name = "BoardPrimary%s" % String(board_primary_spec.get("key", ""))
+		var board_primary_key := String(board_primary_spec.get("key", ""))
+		quick_button.name = String(board_primary_spec.get("name", "BoardPrimary%s" % board_primary_key))
 		quick_button.text = String(board_primary_spec.get("text", ""))
 		quick_button.position = board_primary_spec.get("position", Vector2.ZERO)
 		quick_button.size = board_primary_spec.get("size", Vector2(146.0, 28.0))
 		quick_button.focus_mode = Control.FOCUS_NONE
-		quick_button.pressed.connect(_editor_action.bind(String(board_primary_spec.get("key", ""))))
+		quick_button.pressed.connect(_editor_action.bind(board_primary_key))
 		root.add_child(quick_button)
-		editor_action_buttons[String(board_primary_spec.get("key", ""))] = quick_button
+		editor_action_buttons[board_primary_key] = quick_button
 	var canvas_zoom_chrome_build_specs := UILifecycleService.editor_canvas_zoom_chrome_build_specs()
 	var canvas_tools_title_build_spec := Dictionary(canvas_zoom_chrome_build_specs.get("canvas_tools_title", {}))
 	editor_section_labels["canvas_tools"] = _make_label(root, String(canvas_tools_title_build_spec.get("name", "CanvasToolsTitle")), String(canvas_tools_title_build_spec.get("text", "")), canvas_tools_title_build_spec.get("position", Vector2.ZERO), canvas_tools_title_build_spec.get("size", Vector2.ZERO), 1, Color.TRANSPARENT, HORIZONTAL_ALIGNMENT_LEFT)

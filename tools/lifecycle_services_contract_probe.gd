@@ -157,6 +157,15 @@ func _init() -> void:
 	if panel_specs.size() != 2 or guide_specs.size() != 3 or unit_specs.size() != 20 or board_primary_specs.size() != 3 or canvas_specs.size() != 18 or zoom_specs.size() != 3 or page_specs.size() != 2 or sort_specs.size() != 3:
 		_fail("UILifecycleService editor action build spec counts changed unexpectedly.")
 		return
+	var save_canvas_build_spec: Dictionary = _spec_with_key(board_primary_specs, "save_canvas")
+	var training_import_build_spec: Dictionary = _spec_with_key(board_primary_specs, "training_import")
+	var open_saved_units_build_spec: Dictionary = _spec_with_key(board_primary_specs, "open_saved_units")
+	if String(save_canvas_build_spec.get("name", "")) != "BoardPrimarysave_canvas":
+		_fail("UILifecycleService save canvas board-primary identity failed.")
+		return
+	if String(training_import_build_spec.get("name", "")) != "BoardPrimarytraining_import" or String(open_saved_units_build_spec.get("name", "")) != "BoardPrimaryopen_saved_units":
+		_fail("UILifecycleService board-primary identity failed.")
+		return
 	var load_panel_spec := _spec_with_key(panel_specs, "load")
 	if String(load_panel_spec.get("text", "")) != "单位库":
 		_fail("UILifecycleService panel build spec contract failed.")

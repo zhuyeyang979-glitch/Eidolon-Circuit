@@ -1409,6 +1409,27 @@ GREEN: git diff --check
 
 `UILifecycleService.editor_shell_chrome_build_specs()` now owns pure identity/default-text/token specs for the hidden editor title/help labels and the options/back button. `_build_editor_ui()` consumes those specs while keeping label creation, hidden defaults, focus mode, token application, and options-menu signal wiring local. `_build_editor_ui()` is now 743 lines, and the extraction probe rejects old inline shell chrome formulas while preserving the literal `editor_options_button` token path for `screen_layout_token_coverage_probe`.
 
+Follow-up editor board-primary action identity specs extraction:
+
+```text
+RED: main_file_extraction_contract_probe failed on inline BoardPrimary%s node-name formula
+RED: lifecycle_services_contract_probe failed on missing board-primary action identity specs
+GREEN: MAIN_FILE_EXTRACTION_CONTRACT_PROBE ok services=9
+GREEN: LIFECYCLE_SERVICES_CONTRACT_PROBE ok
+GREEN: Godot --check-only --script res://scripts/main.gd --quit-after 1
+GREEN: Godot --check-only --script res://scripts/services/ui_lifecycle_service.gd --quit-after 1
+GREEN: SCREEN_LAYOUT_TOKEN_COVERAGE_PROBE ok
+GREEN: UNIT_EDITOR_FULLSCREEN_LAYOUT_PROBE ok
+GREEN: UNIT_EDITOR_PAGINATION_LAYOUT_PROBE ok
+GREEN: TEAMEDIT_SAVE_UNIT_BUTTON_PROBE ok
+GREEN: SAVED_UNITS_RETURN_TARGET_PROBE ok
+GREEN: TEAMEDIT_SAVE_UNIT_REAL_UI_PROBE ok
+GREEN: jq empty tools/probe_manifest.json
+GREEN: git diff --check
+```
+
+`UILifecycleService.editor_action_build_specs()` now owns pure board-primary button identity specs for `save_canvas`, `training_import`, and `open_saved_units`. `_build_editor_ui()` consumes those names while keeping concrete button creation, text, geometry, focus mode, signal wiring, and action-button registration local. `_build_editor_ui()` is now 744 lines, and the extraction probe rejects the old inline `BoardPrimary%s` node-name formula.
+
 Remaining items after this batch:
 
 - Continue editor UI extraction with `_build_editor_ui` and the remaining action presentation/control-mutation sections of `_apply_editor_panel_visibility`, then continue `_resolve_attack` and `_refresh_editor_visual_views` extraction.

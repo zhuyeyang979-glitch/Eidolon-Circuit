@@ -62,13 +62,16 @@ static func layer_snapshot(layers: Dictionary) -> Dictionary:
 	}
 
 
-static func _button_spec(key: String, text: String, position: Vector2, size: Vector2) -> Dictionary:
-	return {
+static func _button_spec(key: String, text: String, position: Vector2, size: Vector2, name: String = "") -> Dictionary:
+	var spec := {
 		"key": key,
 		"text": text,
 		"position": position,
 		"size": size,
 	}
+	if name != "":
+		spec["name"] = name
+	return spec
 
 
 static func editor_action_build_specs() -> Dictionary:
@@ -112,9 +115,9 @@ static func editor_action_build_specs() -> Dictionary:
 			Vector2(84.0, 26.0)
 		))
 	var board_primary_actions := [
-		_button_spec("save_canvas", "保存为单位", Vector2(352.0, 652.0), Vector2(146.0, 28.0)),
-		_button_spec("training_import", "训练测试", Vector2(508.0, 652.0), Vector2(146.0, 28.0)),
-		_button_spec("open_saved_units", "已保存单位", Vector2(664.0, 652.0), Vector2(146.0, 28.0)),
+		_button_spec("save_canvas", "保存为单位", Vector2(352.0, 652.0), Vector2(146.0, 28.0), "BoardPrimarysave_canvas"),
+		_button_spec("training_import", "训练测试", Vector2(508.0, 652.0), Vector2(146.0, 28.0), "BoardPrimarytraining_import"),
+		_button_spec("open_saved_units", "已保存单位", Vector2(664.0, 652.0), Vector2(146.0, 28.0), "BoardPrimaryopen_saved_units"),
 	]
 	var canvas_tool_keys := [
 		["blank_canvas", "空白画布"],
