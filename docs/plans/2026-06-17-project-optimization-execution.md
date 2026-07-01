@@ -1593,6 +1593,29 @@ GREEN: git diff --check
 
 `UILifecycleService.editor_board_zoom_presentation()` now owns the pure zoom label and zoom action button text/disabled plans. `_refresh_editor_board_zoom_ui()` consumes that plan through `_apply_editor_control_plan()` instead of directly mutating the zoom label and buttons.
 
+Follow-up editor orientation-popup presentation extraction:
+
+```text
+RED: main_file_extraction_contract_probe failed on missing UILifecycleService.editor_orientation_popup_presentation delegation
+RED: lifecycle_services_contract_probe failed on missing editor_orientation_popup_presentation service API
+GREEN: MAIN_FILE_EXTRACTION_CONTRACT_PROBE ok services=9
+GREEN: LIFECYCLE_SERVICES_CONTRACT_PROBE ok
+GREEN: Godot --check-only --script res://scripts/main.gd --quit-after 1
+GREEN: Godot --check-only --script res://scripts/services/ui_lifecycle_service.gd --quit-after 1
+GREEN: SCYTHE_INSTALL_ORIENTATION_UI_PROBE ok node=0
+GREEN: SCYTHE_MAGNETIC_LINK_ORIENTATION_POPUP_PROBE ok scythe=2 parent=1
+GREEN: SCYTHE_CATALOG_DROP_LINK_ORIENTATION_POPUP_PROBE ok scythe=2 parent=1 gap=0.000000 side=left
+GREEN: SCYTHE_MANUAL_LINK_ORIENTATION_POPUP_PROBE ok scythe=2 parent=1
+GREEN: SCYTHE_DRAG_PRESERVES_ORIENTATION_CHOICE_PROBE ok node=0 side=right
+GREEN: ASYMMETRIC_WEAPON_ORIENTATION_CHOICE_PROBE ok scythe=SCYTHE BLADE
+GREEN: UNIT_EDITOR_FULLSCREEN_LAYOUT_PROBE ok board=(908.0, 548.0) dock=(726.0, 132.0)
+GREEN: EDITOR_CONTROL_PLAN_ADAPTER_PROBE failed=false writes=11 noops=7
+GREEN: jq empty tools/probe_manifest.json
+GREEN: git diff --check
+```
+
+`UILifecycleService.editor_orientation_popup_presentation()` now owns the pure hidden/invalid/visible side-mount orientation popup plan, including popup clamp bounds, localized label/button text, enabled button state, panel size, and move-to-front intent. `_refresh_editor_orientation_popup()` keeps active-choice detection, node lookup, and socket anchor calculation local, then applies the returned panel/label/button plans through `_apply_editor_control_plan()`.
+
 Remaining items after this batch:
 
 - Continue editor UI extraction with `_build_editor_ui` and the remaining action presentation/control-mutation sections of `_apply_editor_panel_visibility`, then continue `_resolve_attack` and `_refresh_editor_visual_views` extraction.

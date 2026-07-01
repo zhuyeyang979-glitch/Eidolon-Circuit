@@ -1220,6 +1220,45 @@ static func editor_board_zoom_presentation(board_zoom: float, min_zoom: float, m
 	}
 
 
+static func editor_orientation_popup_presentation(show_popup: bool, node_valid: bool, anchor: Vector2, viewport: Vector2, zh: bool) -> Dictionary:
+	if not show_popup or not node_valid:
+		return {
+			"panel": {"visible": false},
+			"label": {},
+			"buttons": {},
+		}
+	var popup_size := Vector2(256.0, 86.0)
+	var clamped_anchor := anchor
+	clamped_anchor.x = clampf(clamped_anchor.x, 12.0, maxf(12.0, viewport.x - popup_size.x - 12.0))
+	clamped_anchor.y = clampf(clamped_anchor.y, 90.0, maxf(90.0, viewport.y - popup_size.y - 12.0))
+	return {
+		"panel": {
+			"visible": true,
+			"position": clamped_anchor,
+			"size": popup_size,
+			"modulate": Color(1.0, 1.0, 1.0, 1.0),
+			"move_to_front": true,
+		},
+		"label": {
+			"text": "选择镰刀侧挂刃朝向" if zh else "Choose scythe blade side",
+		},
+		"buttons": {
+			"left": {
+				"text": "左侧挂刃" if zh else "LEFT",
+				"disabled": false,
+			},
+			"right": {
+				"text": "右侧挂刃" if zh else "RIGHT",
+				"disabled": false,
+			},
+			"cancel": {
+				"text": "稍后" if zh else "LATER",
+				"disabled": false,
+			},
+		},
+	}
+
+
 static func editor_action_presentation(action_key: String, action_state: Dictionary, visible_unit_action_index: int, context: Dictionary) -> Dictionary:
 	var key := String(action_key)
 	var kind := String(action_state.get("kind", "unit"))

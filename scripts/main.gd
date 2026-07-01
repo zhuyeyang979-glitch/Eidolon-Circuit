@@ -17636,36 +17636,32 @@ func _refresh_editor_orientation_popup() -> void:
 		return
 	var unit_bp: Dictionary = _editor_current_blueprint()
 	var show_popup := _orientation_choice_is_active(unit_bp)
-	_set_canvas_item_visible_if_changed(editor_orientation_popup_panel, show_popup)
-	if not show_popup:
-		return
+	var node_valid := false
+	var anchor := Vector2.ZERO
 	var topology: Dictionary = unit_bp.get("custom_topology", {})
 	var nodes: Array = Array(topology.get("nodes", []))
 	var node_index := editor_pending_orientation_node_index
-	if node_index < 0 or node_index >= nodes.size() or not (nodes[node_index] is Dictionary):
-		_set_canvas_item_visible_if_changed(editor_orientation_popup_panel, false)
-		return
-	var node: Dictionary = nodes[node_index]
-	var popup_size := Vector2(256.0, 86.0)
-	var anchor := _topology_position_to_board(_topology_node_position(node)) + Vector2(18.0, -94.0)
-	var viewport := _ui_viewport_size()
-	anchor.x = clampf(anchor.x, 12.0, maxf(12.0, viewport.x - popup_size.x - 12.0))
-	anchor.y = clampf(anchor.y, 90.0, maxf(90.0, viewport.y - popup_size.y - 12.0))
-	_set_control_position_if_changed(editor_orientation_popup_panel, anchor)
-	_set_control_size_if_changed(editor_orientation_popup_panel, popup_size)
-	_set_canvas_item_modulate_if_changed(editor_orientation_popup_panel, Color(1.0, 1.0, 1.0, 1.0))
+	if show_popup and node_index >= 0 and node_index < nodes.size() and nodes[node_index] is Dictionary:
+		var node: Dictionary = nodes[node_index]
+		node_valid = true
+		anchor = _topology_position_to_board(_topology_node_position(node)) + Vector2(18.0, -94.0)
+	var popup_plan := UILifecycleService.editor_orientation_popup_presentation(
+		show_popup,
+		node_valid,
+		anchor,
+		_ui_viewport_size(),
+		_ui_is_zh()
+	)
+	_apply_editor_control_plan(editor_orientation_popup_panel, Dictionary(popup_plan.get("panel", {})))
 	if editor_orientation_popup_label != null:
-		_set_control_text_if_changed(editor_orientation_popup_label, "选择镰刀侧挂刃朝向" if _ui_is_zh() else "Choose scythe blade side")
+		_apply_editor_control_plan(editor_orientation_popup_label, Dictionary(popup_plan.get("label", {})))
+	var button_plans: Dictionary = Dictionary(popup_plan.get("buttons", {}))
 	if editor_orientation_popup_left_button != null:
-		_set_control_text_if_changed(editor_orientation_popup_left_button, "左侧挂刃" if _ui_is_zh() else "LEFT")
-		_set_button_disabled_if_changed(editor_orientation_popup_left_button, false)
+		_apply_editor_control_plan(editor_orientation_popup_left_button, Dictionary(button_plans.get("left", {})))
 	if editor_orientation_popup_right_button != null:
-		_set_control_text_if_changed(editor_orientation_popup_right_button, "右侧挂刃" if _ui_is_zh() else "RIGHT")
-		_set_button_disabled_if_changed(editor_orientation_popup_right_button, false)
+		_apply_editor_control_plan(editor_orientation_popup_right_button, Dictionary(button_plans.get("right", {})))
 	if editor_orientation_popup_cancel_button != null:
-		_set_control_text_if_changed(editor_orientation_popup_cancel_button, "稍后" if _ui_is_zh() else "LATER")
-		_set_button_disabled_if_changed(editor_orientation_popup_cancel_button, false)
-	editor_orientation_popup_panel.move_to_front()
+		_apply_editor_control_plan(editor_orientation_popup_cancel_button, Dictionary(button_plans.get("cancel", {})))
 
 
 func _orientation_choice_is_active(unit_bp: Dictionary) -> bool:

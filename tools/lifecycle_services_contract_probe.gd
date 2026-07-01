@@ -228,6 +228,43 @@ func _init() -> void:
 	if String(Dictionary(mid_zoom_plan.get("label", {})).get("text", "")) != "125%" or bool(Dictionary(mid_zoom_actions.get("board_zoom_out", {})).get("disabled", true)) or bool(Dictionary(mid_zoom_actions.get("board_zoom_in", {})).get("disabled", true)):
 		_fail("UILifecycleService middle board-zoom presentation contract failed.")
 		return
+	if not assembly_lifecycle_service.has_method("editor_orientation_popup_presentation"):
+		_fail("UILifecycleService should expose editor orientation popup presentation planning.")
+		return
+	var hidden_orientation_plan: Dictionary = assembly_lifecycle_service.call("editor_orientation_popup_presentation", false, false, Vector2(600.0, 70.0), Vector2(700.0, 400.0), true)
+	if bool(Dictionary(hidden_orientation_plan.get("panel", {})).get("visible", true)):
+		_fail("UILifecycleService hidden orientation popup contract failed.")
+		return
+	var invalid_orientation_plan: Dictionary = assembly_lifecycle_service.call("editor_orientation_popup_presentation", true, false, Vector2(600.0, 70.0), Vector2(700.0, 400.0), true)
+	if bool(Dictionary(invalid_orientation_plan.get("panel", {})).get("visible", true)):
+		_fail("UILifecycleService invalid orientation popup contract failed.")
+		return
+	var orientation_popup_plan: Dictionary = assembly_lifecycle_service.call("editor_orientation_popup_presentation", true, true, Vector2(600.0, 70.0), Vector2(700.0, 400.0), true)
+	var orientation_panel: Dictionary = Dictionary(orientation_popup_plan.get("panel", {}))
+	var orientation_label: Dictionary = Dictionary(orientation_popup_plan.get("label", {}))
+	var orientation_buttons: Dictionary = Dictionary(orientation_popup_plan.get("buttons", {}))
+	var orientation_left: Dictionary = Dictionary(orientation_buttons.get("left", {}))
+	var orientation_right: Dictionary = Dictionary(orientation_buttons.get("right", {}))
+	var orientation_cancel: Dictionary = Dictionary(orientation_buttons.get("cancel", {}))
+	if not bool(orientation_panel.get("visible", false)) or not bool(orientation_panel.get("move_to_front", false)):
+		_fail("UILifecycleService visible orientation popup panel contract failed.")
+		return
+	_assert_vector(orientation_panel, "position", Vector2(432.0, 90.0), "orientation popup panel presentation")
+	_assert_vector(orientation_panel, "size", Vector2(256.0, 86.0), "orientation popup panel presentation")
+	_assert_color(orientation_panel, "modulate", Color(1.0, 1.0, 1.0, 1.0), "orientation popup panel presentation")
+	if String(orientation_label.get("text", "")) != "选择镰刀侧挂刃朝向" or String(orientation_left.get("text", "")) != "左侧挂刃" or String(orientation_right.get("text", "")) != "右侧挂刃" or String(orientation_cancel.get("text", "")) != "稍后":
+		_fail("UILifecycleService zh orientation popup copy contract failed.")
+		return
+	if bool(orientation_left.get("disabled", true)) or bool(orientation_right.get("disabled", true)) or bool(orientation_cancel.get("disabled", true)):
+		_fail("UILifecycleService orientation popup buttons should be enabled.")
+		return
+	var english_orientation_plan: Dictionary = assembly_lifecycle_service.call("editor_orientation_popup_presentation", true, true, Vector2(-80.0, 500.0), Vector2(900.0, 560.0), false)
+	var english_orientation_panel: Dictionary = Dictionary(english_orientation_plan.get("panel", {}))
+	var english_orientation_buttons: Dictionary = Dictionary(english_orientation_plan.get("buttons", {}))
+	if String(Dictionary(english_orientation_plan.get("label", {})).get("text", "")) != "Choose scythe blade side" or String(Dictionary(english_orientation_buttons.get("cancel", {})).get("text", "")) != "LATER":
+		_fail("UILifecycleService en orientation popup copy contract failed.")
+		return
+	_assert_vector(english_orientation_panel, "position", Vector2(12.0, 462.0), "orientation popup clamped presentation")
 	var build_specs: Dictionary = UILifecycleService.editor_action_build_specs()
 	var panel_specs: Array = Array(build_specs.get("panel_buttons", []))
 	var guide_specs: Array = Array(build_specs.get("assembly_guide_actions", []))
