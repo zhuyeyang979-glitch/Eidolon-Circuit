@@ -1829,6 +1829,28 @@ GREEN: PART_LIBRARY_UI_PROBE groups=["torso", "limb", "terminal_weapon", "barrie
 
 `UILifecycleService.editor_unit_hover_view_presentation()` now owns the pure visible/hidden, position, size, z-index, and front-order plan for the editor unit hover preview view, using the existing unit-hover overlay build spec as its source of truth. `_show_editor_library_unit_hover()`, `_show_editor_empty_slot_hover()`, `_show_editor_unit_hover()`, and `_clear_editor_unit_hover_card()` now apply that plan through `_apply_editor_control_plan()` while keeping detail-token, close-button, and preview-content updates in `main.gd`.
 
+Follow-up editor part-hover popup presentation extraction:
+
+```text
+RED: lifecycle_services_contract_probe failed on missing editor_part_hover_popup_presentation service API
+RED: main_file_extraction_contract_probe failed on missing part-hover popup presentation delegation
+GREEN: LIFECYCLE_SERVICES_CONTRACT_PROBE ok
+GREEN: MAIN_FILE_EXTRACTION_CONTRACT_PROBE ok services=9
+GREEN: Godot --check-only --script res://scripts/main.gd --quit-after 1
+GREEN: Godot --check-only --script res://scripts/services/ui_lifecycle_service.gd --quit-after 1
+GREEN: EDITOR_CONTROL_PLAN_ADAPTER_PROBE failed=false writes=16 noops=12
+GREEN: PART_LIBRARY_UI_PROBE groups=["torso", "limb", "terminal_weapon", "barrier_panel", "software_muscle", "software"] weapon=3 equipment=5 software=7 dashboard=40
+GREEN: UNIT_EDITOR_PAGINATION_LAYOUT_PROBE ok unit=1 page=0 catalog=1 load=0 feedback=[P: (270.0, 654.0), S: (622.0, 26.0)]
+GREEN: UNIT_EDITOR_FULLSCREEN_LAYOUT_PROBE ok board=(908.0, 548.0) dock=(726.0, 132.0)
+GREEN: UNIT_EDITOR_TEMPLATE_DRAWER_RUNTIME_PROBE ok selected=octopus barrier=BarrierTemplatepin_wall
+GREEN: EDITOR_LOAD_HOVER_PROBE hover_keeps_unit=0 preview=true page=1/1 entries=4
+GREEN: EDITOR_ROSTER_OVERVIEW_PROBE blank_cost=0 team_cost=0 roster_cost=0 buttons=5
+GREEN: jq empty tools/probe_manifest.json
+GREEN: git diff --check
+```
+
+`UILifecycleService.editor_part_hover_popup_presentation()` now owns the pure visible/hidden, default/pinned/module size, z-index, optional position override, and front-order plan for the editor part hover popup. `_show_editor_part_hover()`, `_hover_torso_detail_payload()`, `_clear_editor_hover_card()`, and the dirty-hover flush path now apply service-backed or adapter-backed presentation plans while keeping dynamic pinned/torso positioning, hover content assembly, drag-ghost ordering, and stat-rail refresh in `main.gd`.
+
 Remaining items after this batch:
 
 - Continue editor UI extraction with `_build_editor_ui` and the remaining action presentation/control-mutation sections of `_apply_editor_panel_visibility`, then continue `_resolve_attack` and `_refresh_editor_visual_views` extraction.

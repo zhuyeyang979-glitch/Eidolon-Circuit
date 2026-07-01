@@ -5070,6 +5070,13 @@ func _apply_editor_unit_hover_view_presentation(visible: bool) -> void:
 	_apply_editor_control_plan(editor_unit_hover_view, UILifecycleService.editor_unit_hover_view_presentation(visible))
 
 
+func _apply_editor_part_hover_popup_presentation(visible: bool, pinned: bool = false, enlarged: bool = false, position: Variant = Vector2.INF) -> Dictionary:
+	var popup_plan := UILifecycleService.editor_part_hover_popup_presentation(visible, pinned, enlarged, position)
+	if editor_hover_popup_view != null:
+		_apply_editor_control_plan(editor_hover_popup_view, popup_plan)
+	return popup_plan
+
+
 func _close_editor_unit_detail(suppress_token: String = "") -> void:
 	if suppress_token == "":
 		suppress_token = editor_unit_detail_token
@@ -25101,7 +25108,7 @@ func flush_editor_dirty(budget_usec: int = 0) -> void:
 	if (flags & EDITOR_DIRTY_HOVER) != 0 and editor_hover_popup_view != null:
 		if hot_path_profiler != null:
 			hot_path_profiler.scope_begin("teamedit.flush.hover")
-		editor_hover_popup_view.move_to_front()
+		_apply_editor_control_plan(editor_hover_popup_view, {"move_to_front": true})
 		if hot_path_profiler != null:
 			hot_path_profiler.scope_end("teamedit.flush.hover")
 	if (flags & EDITOR_DIRTY_BOARD_UI) != 0:
@@ -51437,7 +51444,7 @@ func _clear_editor_hover_card(force: bool = false) -> void:
 	editor_hover_part_index = -1
 	editor_hover_pinned = false
 	if editor_hover_popup_view != null:
-		editor_hover_popup_view.z_index = 260
+		_apply_editor_part_hover_popup_presentation(false)
 		editor_hover_popup_view.clear_card()
 	if editor_stats_rail_view != null and editor_layer != null and editor_layer.visible:
 		var role_key: String = ROLE_ORDER[editor_role_index]
@@ -51495,12 +51502,12 @@ func _show_editor_part_hover(slot_key: String, part_index: int, part: Dictionary
 	var lines := _hover_card_player_detail_lines(slot_key, part, context)
 	var stat_entries := _hover_card_stat_entries(slot_key, part)
 	if editor_hover_popup_view != null:
-		editor_hover_popup_view.size = Vector2(506.0, 560.0) if pinned or slot_key == "module" else Vector2(466.0, 500.0)
-		editor_hover_popup_view.z_index = 340 if pinned else 260
-		editor_hover_popup_view.set_part(slot_key, part, title, subtitle, lines, ui_language, stat_entries, pinned, hover_token)
+		var hover_plan := UILifecycleService.editor_part_hover_popup_presentation(true, pinned, slot_key == "module", Vector2.INF)
+		var hover_position = Vector2.INF
 		if pinned:
-			editor_hover_popup_view.position = _editor_hover_pinned_position(editor_hover_popup_view.size, context)
-		editor_hover_popup_view.move_to_front()
+			hover_position = _editor_hover_pinned_position(hover_plan.get("size", Vector2(466.0, 500.0)), context)
+		_apply_editor_part_hover_popup_presentation(true, pinned, slot_key == "module", hover_position)
+		editor_hover_popup_view.set_part(slot_key, part, title, subtitle, lines, ui_language, stat_entries, pinned, hover_token)
 	if editor_drag_ghost_view != null and editor_drag_ghost_view.visible:
 		editor_drag_ghost_view.move_to_front()
 	_refresh_editor_stats_rail(current_stats, {}, {}, {}, title)
@@ -51545,9 +51552,11 @@ func _hover_torso_detail_payload(slot_kind: String, slot_index: int, payload_ind
 	_show_editor_part_hover(slot_key, part_index, part)
 	if editor_hover_popup_view != null:
 		if editor_torso_detail_view != null:
-			editor_hover_popup_view.size = Vector2(466.0, 500.0)
-			editor_hover_popup_view.position = Vector2(editor_torso_detail_view.position.x, maxf(82.0, editor_torso_detail_view.position.y - editor_hover_popup_view.size.y - 10.0))
-		editor_hover_popup_view.move_to_front()
+			var detail_hover_size: Vector2 = UILifecycleService.editor_part_hover_popup_presentation(true, false, false, Vector2.INF).get("size", Vector2(466.0, 500.0))
+			var detail_hover_position := Vector2(editor_torso_detail_view.position.x, maxf(82.0, editor_torso_detail_view.position.y - detail_hover_size.y - 10.0))
+			_apply_editor_part_hover_popup_presentation(true, false, false, detail_hover_position)
+		else:
+			_apply_editor_control_plan(editor_hover_popup_view, {"move_to_front": true})
 
 
 func _preview_blueprint_with_part(role_key: String, unit_bp: Dictionary, slot_key: String, part_index: int, part: Dictionary) -> Dictionary:

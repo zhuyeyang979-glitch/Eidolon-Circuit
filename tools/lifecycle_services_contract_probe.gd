@@ -1118,6 +1118,25 @@ func _init() -> void:
 	_assert_vector(stats_rail_build_spec, "size", Vector2(164.0, 508.0), "stats rail build spec")
 	_assert_vector(hover_popup_build_spec, "position", Vector2(410.0, 124.0), "hover popup build spec")
 	_assert_vector(hover_popup_build_spec, "size", Vector2(466.0, 500.0), "hover popup build spec")
+	if not ui_lifecycle_source.contains("static func editor_part_hover_popup_presentation("):
+		_fail("UILifecycleService should expose editor part hover popup presentation planning.")
+		return
+	var hover_popup_visible_plan: Dictionary = ui_lifecycle_service.call("editor_part_hover_popup_presentation", true, false, false, Vector2.INF)
+	_assert_vector(hover_popup_visible_plan, "position", Vector2(410.0, 124.0), "part hover popup presentation")
+	_assert_vector(hover_popup_visible_plan, "size", Vector2(466.0, 500.0), "part hover popup presentation")
+	if not bool(hover_popup_visible_plan.get("visible", false)) or not bool(hover_popup_visible_plan.get("move_to_front", false)) or int(hover_popup_visible_plan.get("z_index", -1)) != 260:
+		_fail("UILifecycleService visible part hover popup presentation failed.")
+		return
+	var hover_popup_pinned_plan: Dictionary = ui_lifecycle_service.call("editor_part_hover_popup_presentation", true, true, true, Vector2(720.0, 96.0))
+	_assert_vector(hover_popup_pinned_plan, "position", Vector2(720.0, 96.0), "pinned part hover popup presentation")
+	_assert_vector(hover_popup_pinned_plan, "size", Vector2(506.0, 560.0), "pinned part hover popup presentation")
+	if int(hover_popup_pinned_plan.get("z_index", -1)) != 340:
+		_fail("UILifecycleService pinned part hover popup z-index failed.")
+		return
+	var hover_popup_hidden_plan: Dictionary = ui_lifecycle_service.call("editor_part_hover_popup_presentation", false, false, false, Vector2.INF)
+	if bool(hover_popup_hidden_plan.get("visible", true)) or bool(hover_popup_hidden_plan.get("move_to_front", false)) or int(hover_popup_hidden_plan.get("z_index", -1)) != 260:
+		_fail("UILifecycleService hidden part hover popup presentation failed.")
+		return
 	_assert_vector(unit_hover_build_spec, "position", Vector2(410.0, 118.0), "unit hover build spec")
 	_assert_vector(unit_hover_build_spec, "size", Vector2(466.0, 500.0), "unit hover build spec")
 	if not ui_lifecycle_source.contains("static func editor_unit_hover_view_presentation("):
