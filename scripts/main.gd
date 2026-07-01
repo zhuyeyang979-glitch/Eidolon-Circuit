@@ -49905,36 +49905,22 @@ func _apply_editor_panel_visibility(role_key: String, unit_bp: Dictionary) -> vo
 	editor_catalog_sort_key = String(sort_plan.get("sort_key", editor_catalog_sort_key))
 	if editor_action_buttons.has("sort_key"):
 		var sort_key_button: Button = editor_action_buttons["sort_key"]
-		_set_control_text_if_changed(sort_key_button, String(sort_plan.get("sort_key_text", "")))
+		_apply_editor_control_plan(sort_key_button, {"text": String(sort_plan.get("sort_key_text", ""))})
 	_refresh_editor_board_zoom_ui()
 	if editor_action_buttons.has("sort_dir"):
 		var sort_dir_button: Button = editor_action_buttons["sort_dir"]
-		_set_control_text_if_changed(sort_dir_button, String(sort_plan.get("sort_dir_text", "")))
+		_apply_editor_control_plan(sort_dir_button, {"text": String(sort_plan.get("sort_dir_text", ""))})
 	_refresh_editor_orientation_popup()
 	if editor_sort_panel != null:
 		var sort_panel_plan := Dictionary(sort_plan.get("panel", {}))
-		_set_canvas_item_visible_if_changed(editor_sort_panel, bool(sort_panel_plan.get("visible", false)))
-		if editor_sort_panel.visible:
-			_set_control_size_if_changed(editor_sort_panel, sort_panel_plan.get("size", Vector2(278.0, 44.0)))
-			if bool(sort_panel_plan.get("move_to_front", false)):
-				editor_sort_panel.move_to_front()
+		_apply_editor_control_plan(editor_sort_panel, sort_panel_plan)
 	var sort_option_plans: Array = Array(sort_plan.get("options", []))
 	for i in range(editor_sort_option_buttons.size()):
 		var sort_option_button: Button = editor_sort_option_buttons[i]
-		if i >= sort_option_plans.size() or not (sort_option_plans[i] is Dictionary):
-			_set_canvas_item_visible_if_changed(sort_option_button, false)
-			_set_button_disabled_if_changed(sort_option_button, true)
-			continue
-		var sort_option_plan := Dictionary(sort_option_plans[i])
-		var show_sort_option := bool(sort_option_plan.get("visible", false))
-		_set_canvas_item_visible_if_changed(sort_option_button, show_sort_option)
-		_set_button_disabled_if_changed(sort_option_button, bool(sort_option_plan.get("disabled", true)))
-		if show_sort_option:
-			_set_control_position_if_changed(sort_option_button, sort_option_plan.get("position", Vector2.ZERO))
-			_set_control_text_if_changed(sort_option_button, String(sort_option_plan.get("text", "")))
-			_set_canvas_item_modulate_if_changed(sort_option_button, sort_option_plan.get("modulate", Color(0.84, 0.9, 0.94, 1.0)))
-			if bool(sort_option_plan.get("move_to_front", false)):
-				sort_option_button.move_to_front()
+		var sort_option_plan := {"visible": false, "disabled": true}
+		if i < sort_option_plans.size() and sort_option_plans[i] is Dictionary:
+			sort_option_plan = Dictionary(sort_option_plans[i])
+		_apply_editor_control_plan(sort_option_button, sort_option_plan)
 	if bool(sort_plan.get("sort_dir_move_to_front", false)) and editor_action_buttons.has("sort_dir"):
 		var sort_dir_front: Button = editor_action_buttons["sort_dir"]
 		sort_dir_front.move_to_front()
