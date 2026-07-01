@@ -9866,6 +9866,41 @@ func _set_button_disabled_if_changed(button: Button, value: bool) -> void:
 	editor_property_write_count += 1
 
 
+func _set_slider_editable_if_changed(slider: Slider, value: bool) -> void:
+	if slider == null:
+		return
+	if slider.editable == value:
+		editor_property_noop_count += 1
+		return
+	slider.editable = value
+	editor_property_write_count += 1
+
+
+func _apply_editor_control_plan(control: Control, plan: Dictionary, apply_disabled: bool = true) -> void:
+	if control == null:
+		return
+	if plan.has("visible"):
+		_set_canvas_item_visible_if_changed(control, bool(plan.get("visible", false)))
+	if apply_disabled and plan.has("disabled") and control is Button:
+		_set_button_disabled_if_changed(control as Button, bool(plan.get("disabled", true)))
+	if plan.has("position"):
+		_set_control_position_if_changed(control, plan.get("position", Vector2.ZERO))
+	if plan.has("size"):
+		_set_control_size_if_changed(control, plan.get("size", Vector2.ZERO))
+	if plan.has("text"):
+		_set_control_text_if_changed(control, String(plan.get("text", "")))
+	if plan.has("tooltip"):
+		_set_control_tooltip_if_changed(control, String(plan.get("tooltip", "")))
+	if plan.has("modulate"):
+		_set_canvas_item_modulate_if_changed(control, plan.get("modulate", Color.WHITE))
+	if plan.has("editable") and control is Slider:
+		_set_slider_editable_if_changed(control as Slider, bool(plan.get("editable", false)))
+	if plan.has("value") and control is Range:
+		_set_range_value_if_changed(control as Range, float(plan.get("value", 0.0)))
+	if bool(plan.get("move_to_front", false)):
+		control.move_to_front()
+
+
 func _layout_editor_save_unit_feedback() -> void:
 	if editor_save_unit_feedback_label == null:
 		return
@@ -49682,18 +49717,12 @@ func _apply_editor_panel_visibility(role_key: String, unit_bp: Dictionary) -> vo
 	for panel_key in editor_panel_buttons.keys():
 		var panel_button: Button = editor_panel_buttons[panel_key]
 		var panel_button_plan := Dictionary(panel_button_plans.get(String(panel_key), {}))
-		_set_control_text_if_changed(panel_button, String(panel_button_plan.get("text", "")))
-		_set_canvas_item_modulate_if_changed(panel_button, panel_button_plan.get("modulate", Color(0.86, 0.9, 0.94, 1.0)))
+		_apply_editor_control_plan(panel_button, panel_button_plan)
 	var role_button_plans: Dictionary = Dictionary(panel_role_chrome_plan.get("role_buttons", {}))
 	for role_key_button in editor_role_buttons.keys():
 		var role_button: Button = editor_role_buttons[role_key_button]
 		var role_button_plan := Dictionary(role_button_plans.get(String(role_key_button), {}))
-		_set_canvas_item_visible_if_changed(role_button, bool(role_button_plan.get("visible", false)))
-		_set_button_disabled_if_changed(role_button, bool(role_button_plan.get("disabled", true)))
-		_set_control_position_if_changed(role_button, role_button_plan.get("position", Vector2.ZERO))
-		_set_control_size_if_changed(role_button, role_button_plan.get("size", Vector2(86.0, 24.0)))
-		_set_control_text_if_changed(role_button, String(role_button_plan.get("text", "")))
-		_set_canvas_item_modulate_if_changed(role_button, role_button_plan.get("modulate", Color(0.84, 0.9, 0.94, 1.0)))
+		_apply_editor_control_plan(role_button, role_button_plan)
 	_refresh_editor_assembly_guide_ui(parts_visible, role_key)
 	for group_key in editor_part_group_buttons.keys():
 		var group_button: Button = editor_part_group_buttons[group_key]
@@ -49704,12 +49733,7 @@ func _apply_editor_panel_visibility(role_key: String, unit_bp: Dictionary) -> vo
 			parts_visible,
 			_part_group_name(String(group_key))
 		)
-		_set_canvas_item_visible_if_changed(group_button, bool(group_plan.get("visible", false)))
-		_set_button_disabled_if_changed(group_button, bool(group_plan.get("disabled", true)))
-		_set_control_position_if_changed(group_button, group_plan.get("position", Vector2.ZERO))
-		_set_control_size_if_changed(group_button, group_plan.get("size", Vector2(84.0, 24.0)))
-		_set_control_text_if_changed(group_button, String(group_plan.get("text", "")))
-		_set_canvas_item_modulate_if_changed(group_button, group_plan.get("modulate", Color(0.84, 0.9, 0.94, 1.0)))
+		_apply_editor_control_plan(group_button, group_plan)
 	var filter_options := _part_filter_options_for_group(editor_part_group_mode)
 	for i in range(editor_slot_buttons.size()):
 		var button: Button = editor_slot_buttons[i]
@@ -49749,33 +49773,18 @@ func _apply_editor_panel_visibility(role_key: String, unit_bp: Dictionary) -> vo
 	)
 	if editor_ammo_size_title_label != null:
 		var ammo_title_plan := Dictionary(ammo_size_plan.get("title", {}))
-		_set_canvas_item_visible_if_changed(editor_ammo_size_title_label, bool(ammo_title_plan.get("visible", false)))
-		_set_control_position_if_changed(editor_ammo_size_title_label, ammo_title_plan.get("position", Vector2(936.0, 258.0)))
-		_set_control_size_if_changed(editor_ammo_size_title_label, ammo_title_plan.get("size", Vector2(72.0, 18.0)))
-		_set_control_text_if_changed(editor_ammo_size_title_label, String(ammo_title_plan.get("text", "")))
+		_apply_editor_control_plan(editor_ammo_size_title_label, ammo_title_plan)
 	if editor_ammo_size_slider != null:
 		var ammo_slider_plan := Dictionary(ammo_size_plan.get("slider", {}))
-		_set_canvas_item_visible_if_changed(editor_ammo_size_slider, bool(ammo_slider_plan.get("visible", false)))
-		editor_ammo_size_slider.editable = bool(ammo_slider_plan.get("editable", false))
-		_set_control_position_if_changed(editor_ammo_size_slider, ammo_slider_plan.get("position", Vector2(1010.0, 257.0)))
-		_set_control_size_if_changed(editor_ammo_size_slider, ammo_slider_plan.get("size", Vector2(176.0, 22.0)))
-		_set_range_value_if_changed(editor_ammo_size_slider, float(ammo_slider_plan.get("value", editor_ammo_size_rank)))
-		_set_control_tooltip_if_changed(editor_ammo_size_slider, String(ammo_slider_plan.get("tooltip", "")))
+		_apply_editor_control_plan(editor_ammo_size_slider, ammo_slider_plan)
 	if editor_ammo_size_value_label != null:
 		var ammo_value_plan := Dictionary(ammo_size_plan.get("value", {}))
-		_set_canvas_item_visible_if_changed(editor_ammo_size_value_label, bool(ammo_value_plan.get("visible", false)))
-		_set_control_position_if_changed(editor_ammo_size_value_label, ammo_value_plan.get("position", Vector2(1190.0, 258.0)))
-		_set_control_size_if_changed(editor_ammo_size_value_label, ammo_value_plan.get("size", Vector2(54.0, 18.0)))
-		_set_control_text_if_changed(editor_ammo_size_value_label, String(ammo_value_plan.get("text", "")))
+		_apply_editor_control_plan(editor_ammo_size_value_label, ammo_value_plan)
 	var ammo_tick_plans: Array = Array(ammo_size_plan.get("ticks", []))
 	for i in range(editor_ammo_size_tick_labels.size()):
 		var tick_label: Label = editor_ammo_size_tick_labels[i]
 		var tick_plan := Dictionary(ammo_tick_plans[i]) if i < ammo_tick_plans.size() and ammo_tick_plans[i] is Dictionary else {}
-		_set_canvas_item_visible_if_changed(tick_label, bool(tick_plan.get("visible", false)))
-		_set_control_position_if_changed(tick_label, tick_plan.get("position", Vector2(1002.0 + float(i) * 44.0, 278.0)))
-		_set_control_size_if_changed(tick_label, tick_plan.get("size", Vector2(34.0, 14.0)))
-		_set_control_text_if_changed(tick_label, String(tick_plan.get("text", "")))
-		_set_canvas_item_modulate_if_changed(tick_label, tick_plan.get("modulate", Color(0.76, 0.9, 1.0, 0.72)))
+		_apply_editor_control_plan(tick_label, tick_plan)
 	var orientation_choice_active := custom_board_enabled and _orientation_choice_is_active(unit_bp)
 	var selected_handedness_active := custom_board_enabled and _selected_node_supports_visual_handedness(unit_bp)
 	var unit_page_actions_enabled := bool(visibility_plan.get("unit_page_actions_enabled", false))
@@ -49809,21 +49818,7 @@ func _apply_editor_panel_visibility(role_key: String, unit_bp: Dictionary) -> vo
 		var action_presentation := UILifecycleService.editor_action_presentation(action_key, action_state, visible_unit_action_index, action_presentation_context)
 		if not bool(action_presentation.get("managed", true)):
 			continue
-		var action_visible := bool(action_presentation.get("visible", false))
-		var action_disabled := bool(action_presentation.get("disabled", true))
-		_set_canvas_item_visible_if_changed(action_button, action_visible)
-		if bool(action_presentation.get("manage_disabled", true)):
-			_set_button_disabled_if_changed(action_button, action_disabled)
-		if action_presentation.has("position"):
-			_set_control_position_if_changed(action_button, action_presentation["position"])
-		if action_presentation.has("size"):
-			_set_control_size_if_changed(action_button, action_presentation["size"])
-		if action_presentation.has("text"):
-			_set_control_text_if_changed(action_button, String(action_presentation.get("text", "")))
-		if action_presentation.has("tooltip"):
-			_set_control_tooltip_if_changed(action_button, String(action_presentation.get("tooltip", "")))
-		if action_presentation.has("modulate"):
-			_set_canvas_item_modulate_if_changed(action_button, action_presentation["modulate"])
+		_apply_editor_control_plan(action_button, action_presentation, bool(action_presentation.get("manage_disabled", true)))
 		if bool(action_presentation.get("advance_unit_action_index", false)):
 			visible_unit_action_index += 1
 	var available_sort_keys := _current_editor_catalog_sort_keys()
@@ -49899,34 +49894,22 @@ func _apply_editor_panel_visibility(role_key: String, unit_bp: Dictionary) -> vo
 			_set_control_size_if_changed(editor_summary_label, info_summary_plan.get("size", Vector2.ZERO))
 	if editor_stats_label != null:
 		var info_stats_plan := Dictionary(info_plan.get("stats", {}))
-		_set_canvas_item_visible_if_changed(editor_stats_label, bool(info_stats_plan.get("visible", false)))
-		_set_control_position_if_changed(editor_stats_label, info_stats_plan.get("position", Vector2.ZERO))
-		_set_control_size_if_changed(editor_stats_label, info_stats_plan.get("size", Vector2.ZERO))
+		_apply_editor_control_plan(editor_stats_label, info_stats_plan)
 	if editor_detail_label != null:
 		var info_detail_plan := Dictionary(info_plan.get("detail", {}))
-		_set_canvas_item_visible_if_changed(editor_detail_label, bool(info_detail_plan.get("visible", false)))
-		_set_control_position_if_changed(editor_detail_label, info_detail_plan.get("position", Vector2.ZERO))
-		_set_control_size_if_changed(editor_detail_label, info_detail_plan.get("size", Vector2.ZERO))
+		_apply_editor_control_plan(editor_detail_label, info_detail_plan)
 	if component_art_view != null:
 		var info_component_art_plan := Dictionary(info_plan.get("component_art", {}))
-		_set_canvas_item_visible_if_changed(component_art_view, bool(info_component_art_plan.get("visible", false)))
-		_set_control_position_if_changed(component_art_view, info_component_art_plan.get("position", Vector2.ZERO))
-		_set_control_size_if_changed(component_art_view, info_component_art_plan.get("size", Vector2.ZERO))
+		_apply_editor_control_plan(component_art_view, info_component_art_plan)
 	if editor_battle_preview_view != null:
 		var info_battle_preview_plan := Dictionary(info_plan.get("battle_preview", {}))
-		_set_canvas_item_visible_if_changed(editor_battle_preview_view, bool(info_battle_preview_plan.get("visible", false)))
-		_set_control_position_if_changed(editor_battle_preview_view, info_battle_preview_plan.get("position", Vector2.ZERO))
-		_set_control_size_if_changed(editor_battle_preview_view, info_battle_preview_plan.get("size", Vector2.ZERO))
+		_apply_editor_control_plan(editor_battle_preview_view, info_battle_preview_plan)
 	if editor_structure_reference_view != null:
 		var info_structure_view_plan := Dictionary(info_plan.get("structure_reference_view", {}))
-		_set_canvas_item_visible_if_changed(editor_structure_reference_view, bool(info_structure_view_plan.get("visible", false)))
-		_set_control_position_if_changed(editor_structure_reference_view, info_structure_view_plan.get("position", Vector2.ZERO))
-		_set_control_size_if_changed(editor_structure_reference_view, info_structure_view_plan.get("size", Vector2.ZERO))
+		_apply_editor_control_plan(editor_structure_reference_view, info_structure_view_plan)
 	if editor_structure_reference_label != null:
 		var info_structure_label_plan := Dictionary(info_plan.get("structure_reference_label", {}))
-		_set_canvas_item_visible_if_changed(editor_structure_reference_label, bool(info_structure_label_plan.get("visible", false)))
-		_set_control_position_if_changed(editor_structure_reference_label, info_structure_label_plan.get("position", Vector2.ZERO))
-		_set_control_size_if_changed(editor_structure_reference_label, info_structure_label_plan.get("size", Vector2.ZERO))
+		_apply_editor_control_plan(editor_structure_reference_label, info_structure_label_plan)
 	if editor_catalog_page_label != null:
 		_set_canvas_item_visible_if_changed(editor_catalog_page_label, bool(Dictionary(info_plan.get("catalog_page", {})).get("visible", false)))
 	_layout_editor_save_unit_feedback()
@@ -49944,13 +49927,10 @@ func _apply_editor_panel_visibility(role_key: String, unit_bp: Dictionary) -> vo
 	var shop_feedback_plan := UILifecycleService.editor_shop_feedback_presentation(shop_visible, shop_pending_kind, shop_pending_detail, _ui_is_zh())
 	if editor_shop_hint_label != null:
 		var shop_hint_plan := Dictionary(shop_feedback_plan.get("hint", {}))
-		_set_canvas_item_visible_if_changed(editor_shop_hint_label, bool(shop_hint_plan.get("visible", false)))
-		_set_control_text_if_changed(editor_shop_hint_label, String(shop_hint_plan.get("text", "")))
+		_apply_editor_control_plan(editor_shop_hint_label, shop_hint_plan)
 	if editor_shop_pending_label != null:
 		var shop_pending_plan := Dictionary(shop_feedback_plan.get("pending", {}))
-		_set_canvas_item_visible_if_changed(editor_shop_pending_label, bool(shop_pending_plan.get("visible", false)))
-		_set_control_text_if_changed(editor_shop_pending_label, String(shop_pending_plan.get("text", "")))
-		_set_canvas_item_modulate_if_changed(editor_shop_pending_label, shop_pending_plan.get("modulate", Color(0.72, 0.88, 1.0, 0.78)))
+		_apply_editor_control_plan(editor_shop_pending_label, shop_pending_plan)
 	var color_controls_plan := UILifecycleService.editor_color_controls_presentation(
 		color_visible,
 		_editor_player(),
@@ -49961,31 +49941,21 @@ func _apply_editor_panel_visibility(role_key: String, unit_bp: Dictionary) -> vo
 		_ui_is_zh()
 	)
 	if editor_color_panel != null:
-		_set_canvas_item_visible_if_changed(editor_color_panel, bool(Dictionary(color_controls_plan.get("panel", {})).get("visible", false)))
+		_apply_editor_control_plan(editor_color_panel, Dictionary(color_controls_plan.get("panel", {})))
 	if editor_color_label != null:
 		var color_label_plan := Dictionary(color_controls_plan.get("label", {}))
-		_set_canvas_item_visible_if_changed(editor_color_label, bool(color_label_plan.get("visible", false)))
-		_set_control_text_if_changed(editor_color_label, String(color_label_plan.get("text", "")))
+		_apply_editor_control_plan(editor_color_label, color_label_plan)
 	var color_button_plans: Array = Array(color_controls_plan.get("buttons", []))
 	for i in range(editor_color_buttons.size()):
 		var color_button: Button = editor_color_buttons[i]
 		var color_button_plan := Dictionary(color_button_plans[i]) if i < color_button_plans.size() and color_button_plans[i] is Dictionary else {}
-		_set_canvas_item_visible_if_changed(color_button, bool(color_button_plan.get("visible", false)))
-		_set_button_disabled_if_changed(color_button, bool(color_button_plan.get("disabled", true)))
-		if color_button_plan.has("text"):
-			_set_control_text_if_changed(color_button, String(color_button_plan.get("text", "")))
-		if color_button_plan.has("modulate"):
-			_set_canvas_item_modulate_if_changed(color_button, color_button_plan.get("modulate", Color.WHITE))
+		_apply_editor_control_plan(color_button, color_button_plan)
 	if editor_primary_color_picker != null:
 		var primary_picker_plan := Dictionary(color_controls_plan.get("primary_picker", {}))
-		_set_canvas_item_visible_if_changed(editor_primary_color_picker, bool(primary_picker_plan.get("visible", false)))
-		_set_button_disabled_if_changed(editor_primary_color_picker, bool(primary_picker_plan.get("disabled", true)))
-		_set_control_text_if_changed(editor_primary_color_picker, String(primary_picker_plan.get("text", "")))
+		_apply_editor_control_plan(editor_primary_color_picker, primary_picker_plan)
 	if editor_accent_color_picker != null:
 		var accent_picker_plan := Dictionary(color_controls_plan.get("accent_picker", {}))
-		_set_canvas_item_visible_if_changed(editor_accent_color_picker, bool(accent_picker_plan.get("visible", false)))
-		_set_button_disabled_if_changed(editor_accent_color_picker, bool(accent_picker_plan.get("disabled", true)))
-		_set_control_text_if_changed(editor_accent_color_picker, String(accent_picker_plan.get("text", "")))
+		_apply_editor_control_plan(editor_accent_color_picker, accent_picker_plan)
 	if bool(color_controls_plan.get("sync_pickers", false)):
 		editor_color_picker_sync = true
 		if editor_primary_color_picker != null:
@@ -50009,16 +49979,15 @@ func _apply_editor_panel_visibility(role_key: String, unit_bp: Dictionary) -> vo
 	for i in range(editor_catalog_buttons.size()):
 		var button: Button = editor_catalog_buttons[i]
 		var catalog_button_plan := Dictionary(catalog_button_plans[i]) if i < catalog_button_plans.size() and catalog_button_plans[i] is Dictionary else {}
-		_set_canvas_item_visible_if_changed(button, bool(catalog_button_plan.get("visible", false)))
+		_apply_editor_control_plan(button, catalog_button_plan)
 	_update_editor_load_card_buttons(role_key)
 	var shop_button_plans: Dictionary = Dictionary(catalog_shop_surface_plan.get("shop_buttons", {}))
 	for shop_key in editor_shop_buttons.keys():
 		var shop_button: Button = editor_shop_buttons[shop_key]
 		var shop_button_plan := Dictionary(shop_button_plans.get(String(shop_key), {}))
-		_set_canvas_item_visible_if_changed(shop_button, bool(shop_button_plan.get("visible", false)))
-		_set_button_disabled_if_changed(shop_button, bool(shop_button_plan.get("disabled", true)))
+		_apply_editor_control_plan(shop_button, shop_button_plan)
 	if editor_shop_card_backdrop != null:
-		_set_canvas_item_visible_if_changed(editor_shop_card_backdrop, bool(Dictionary(catalog_shop_surface_plan.get("shop_backdrop", {})).get("visible", false)))
+		_apply_editor_control_plan(editor_shop_card_backdrop, Dictionary(catalog_shop_surface_plan.get("shop_backdrop", {})))
 	if editor_hover_popup_view != null and bool(catalog_shop_surface_plan.get("clear_catalog_hover", false)):
 		editor_hover_popup_view.clear_card()
 	if editor_unit_hover_view != null and bool(catalog_shop_surface_plan.get("clear_unit_hover", false)):
@@ -50034,16 +50003,12 @@ func _apply_editor_panel_visibility(role_key: String, unit_bp: Dictionary) -> vo
 	for label_key in editor_section_labels.keys():
 		var label: Label = editor_section_labels[label_key]
 		var section_label_plan: Dictionary = Dictionary(section_label_plans.get(String(label_key), default_section_label_plan))
-		if section_label_plan.has("visible"):
-			_set_canvas_item_visible_if_changed(label, bool(section_label_plan.get("visible", false)))
-		if section_label_plan.has("text"):
-			_set_control_text_if_changed(label, String(section_label_plan.get("text", "")))
+		_apply_editor_control_plan(label, section_label_plan)
 	var template_drawer_visible := bool(section_chrome_plan.get("template_drawer_visible", false))
 	if editor_action_buttons.has("toggle_templates"):
 		var template_toggle: Button = editor_action_buttons["toggle_templates"]
 		var template_toggle_plan: Dictionary = Dictionary(section_chrome_plan.get("template_toggle", {}))
-		_set_control_text_if_changed(template_toggle, String(template_toggle_plan.get("text", "")))
-		_set_canvas_item_visible_if_changed(template_toggle, bool(template_toggle_plan.get("visible", false)))
+		_apply_editor_control_plan(template_toggle, template_toggle_plan)
 	_layout_editor_template_drawer(role_key, template_drawer_visible)
 
 

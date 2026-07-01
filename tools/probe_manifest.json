@@ -111,6 +111,7 @@
     "effect_extraction_contract_probe",
     "codebase_slimdown_backlog_probe",
     "lifecycle_services_contract_probe",
+    "editor_control_plan_adapter_probe",
     "runtime_no_legacy_drive_reads_probe",
     "probe_manifest_no_legacy_fixture_probe",
     "probe_exit_status_contract_probe",

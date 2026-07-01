@@ -61,6 +61,13 @@ func _init() -> void:
 		_fail("main.gd should delegate editor role/load build specs.")
 	if source.contains("_make_label(root, \"UnitLabel\", \"\", Vector2(936.0, 198.0)") or source.contains("editor_battle_preview_view.position = Vector2(936.0, 278.0)") or source.contains("component_art_view.position = Vector2(936.0, 406.0)") or source.contains("editor_structure_reference_view.position = Vector2(936.0, 146.0)"):
 		_fail("main.gd should delegate editor info surface build specs.")
+	if source.find("func _apply_editor_control_plan(") < 0:
+		_fail("main.gd should provide a shared editor Control plan adapter.")
+		return
+	for direct_control_mutation in ["_set_canvas_item_visible_if_changed(role_button, bool(role_button_plan", "_set_control_position_if_changed(group_button, group_plan", "_set_canvas_item_visible_if_changed(action_button, action_visible)", "_set_canvas_item_visible_if_changed(editor_stats_label, bool(info_stats_plan", "_set_control_text_if_changed(color_button, String(color_button_plan"]:
+		if source.contains(direct_control_mutation):
+			_fail("main.gd should apply extracted editor plans through _apply_editor_control_plan instead of %s." % direct_control_mutation)
+			return
 	if source.contains("var filter_columns := 5 if editor_part_group_mode == \"terminal_weapon\" else 3"):
 		_fail("main.gd should delegate part-filter button layout planning.")
 	if source.contains("var group_index := EDITOR_PART_GROUP_ORDER.find(String(group_key))"):

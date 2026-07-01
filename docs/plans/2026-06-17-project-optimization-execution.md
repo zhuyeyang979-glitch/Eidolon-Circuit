@@ -897,6 +897,35 @@ GREEN: VIEW_EXTRACTION_CONTRACT_PROBE ok views=27
 
 `UILifecycleService.editor_info_surface_build_specs()` now owns pure identity, initial position/size, and visible-state position/size data for the editor unit, summary, stats, detail, battle-preview, component-art, and structure-reference surfaces. `_build_editor_ui()` remains responsible for concrete node construction, styling, texture behavior, mouse behavior, and stored references. `editor_info_panel_presentation()` reuses the build specs, and `_apply_editor_panel_visibility()` explicitly applies the returned fixed layouts along with visibility. The separate initial and visible layouts for unit/summary labels preserve existing behavior while removing duplicated formulas.
 
+Follow-up editor Control plan adapter extraction:
+
+```text
+RED: editor_control_plan_adapter_probe failed because _apply_editor_control_plan() did not exist
+RED: main_file_extraction_contract_probe failed because main.gd did not provide or adopt the shared adapter
+GREEN: EDITOR_CONTROL_PLAN_ADAPTER_PROBE failed=false writes=10 noops=7
+RED: editor_control_plan_adapter_probe failed because disabled-preservation argument did not exist
+RED: main_file_extraction_contract_probe rejected the remaining direct action-button mutation block
+GREEN: EDITOR_CONTROL_PLAN_ADAPTER_PROBE failed=false writes=11 noops=7
+GREEN: MAIN_FILE_EXTRACTION_CONTRACT_PROBE ok services=9
+GREEN: Godot --check-only --script res://scripts/main.gd --quit-after 1
+GREEN: LIFECYCLE_SERVICES_CONTRACT_PROBE ok
+GREEN: TEAMEDIT_DASHBOARD_SLIDER_FULL_REFRESH_PROBE ok full=1 ui=0
+GREEN: AMMO_SIZE_SLIDER_PROBE base=18 ranks=XS..XL ui=ok
+GREEN: AMMO_SIZE_UI_PROBE entries=5 tier=M ok
+GREEN: UNIT_EDITOR_NO_TEAM_ROLE_CONTROLS_PROBE ok
+GREEN: EDITOR_CANVAS_PROBE roundtrip=0.00 nodes=2 edges=1 fixed=0.000
+GREEN: UNIT_EDITOR_CLIPBOARD_PROBE ok
+GREEN: PART_LIBRARY_UI_PROBE groups=["torso", "limb", "terminal_weapon", "barrier_panel", "software_muscle", "software"] weapon=3 equipment=5 software=7 dashboard=40
+GREEN: TEAMEDIT_UI_SIMPLIFIED_CONTROLS_PROBE ok summary_lines=2
+GREEN: UNIT_EDITOR_PAGINATION_LAYOUT_PROBE ok unit=1 page=0 catalog=1 load=0 feedback=[P: (270.0, 654.0), S: (622.0, 26.0)]
+GREEN: UNIT_EDITOR_FULLSCREEN_LAYOUT_PROBE ok board=(908.0, 548.0) dock=(726.0, 132.0)
+GREEN: TEAMEDIT_DASHBOARD_SLIDER_FRAME_BUDGET_PROBE ok
+GREEN: SCREEN_LAYOUT_TOKEN_COVERAGE_PROBE ok
+KNOWN BASELINE FAILURE: editor_property_write_budget_probe and teamedit_property_write_budget_probe report repeat_write=54; fresh archives report 53 at 9e66eb2 and 54 at d381248
+```
+
+`main.gd` now owns a single `_apply_editor_control_plan()` scene-tree adapter over its existing guarded setters. It applies plan keys only when present, ignores presentation metadata, handles sliders through guarded editable/value setters, and optionally preserves externally managed button-disabled state. `_apply_editor_panel_visibility()` uses it across 26 plan-consumption sites without moving picker synchronization, hover clearing, conditional Unit/Summary geometry, or sort ordering side effects into the generic helper. The adapter has a dedicated core probe in `tools/probe_manifest.json`, and the extraction contract rejects representative returns to direct plan-property mutation.
+
 Remaining items after this batch:
 
 - Continue editor UI extraction with `_build_editor_ui` and the remaining action presentation/control-mutation sections of `_apply_editor_panel_visibility`, then continue `_resolve_attack` and `_refresh_editor_visual_views` extraction.
