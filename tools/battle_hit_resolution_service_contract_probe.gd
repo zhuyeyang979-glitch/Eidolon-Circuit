@@ -23,8 +23,10 @@ func _init() -> void:
 		"extends RefCounted",
 		"attack_entry_intent",
 		"projectile_preflight_intent",
+		"apply_event_patch",
 		"target_hit_context",
 		"momentum_damage_gate_intent",
+		"momentum_damage_gate_event_patch",
 		"melee_type_adjustments",
 		"combo_scaling_intent",
 		"damage_intent",
@@ -69,8 +71,10 @@ func _init() -> void:
 		"func _battle_hit_resolution_service() -> BattleHitResolutionService",
 		"_battle_hit_resolution_service().attack_entry_intent",
 		"_battle_hit_resolution_service().projectile_preflight_intent",
+		"_battle_hit_resolution_service().apply_event_patch",
 		"_battle_hit_resolution_service().target_hit_context",
 		"_battle_hit_resolution_service().momentum_damage_gate_intent",
+		"_battle_hit_resolution_service().momentum_damage_gate_event_patch",
 		"_battle_hit_resolution_service().melee_type_adjustments",
 		"_battle_hit_resolution_service().combo_scaling_intent",
 		"_battle_hit_resolution_service().damage_stack_intent",
@@ -91,6 +95,15 @@ func _init() -> void:
 	if resolve_body.contains("if false and _is_laser_telegraph_event"):
 		_fail("_resolve_attack should not keep disabled laser telegraph fallback.")
 		return
+	for stale_fragment in [
+		"for key in event_patch.keys()",
+		"for key in hit_patch.keys()",
+		"event[\"raw_momentum\"] =",
+		"event[\"contact_gate_model\"] =",
+	]:
+		if resolve_body.contains(stale_fragment):
+			_fail("_resolve_attack should delegate event patch application and momentum-gate metadata: %s" % stale_fragment)
+			return
 	var melee_pair_body := _function_body(main_source, "func _apply_melee_momentum_stagger_pair")
 	if melee_pair_body.is_empty():
 		_fail("Unable to locate _apply_melee_momentum_stagger_pair body.")
@@ -132,6 +145,18 @@ func _check_entry(service) -> void:
 
 
 func _check_projectile_preflight(service) -> void:
+	var source_event := {"keep": 1, "replace": 2, "remove": 3, "nested": {"value": 7}}
+	var patch_source := {"replace": 9, "added": 4, "erase_remove": true, "erase_keep": false}
+	var patched_event: Dictionary = service.apply_event_patch(source_event, patch_source)
+	_assert_eq(int(patched_event.get("keep", 0)), 1, "event patch retained field")
+	_assert_eq(int(patched_event.get("replace", 0)), 9, "event patch replacement")
+	_assert_eq(int(patched_event.get("added", 0)), 4, "event patch added field")
+	if patched_event.has("remove") or patched_event.has("erase_remove") or patched_event.has("erase_keep"):
+		_fail("Event patch should apply erase controls without retaining control keys: %s" % str(patched_event))
+	var patched_nested: Dictionary = Dictionary(patched_event.get("nested", {}))
+	patched_nested["value"] = 99
+	if int(Dictionary(source_event.get("nested", {})).get("value", 0)) != 7 or int(source_event.get("replace", 0)) != 2 or not patch_source.has("erase_remove"):
+		_fail("Event patch should not mutate source dictionaries.")
 	var bullet: Dictionary = service.projectile_preflight_intent({
 		"event": {"projectile": true, "projectile_style": "bullet"},
 		"behavior": "bullet_hell",
@@ -200,6 +225,17 @@ func _check_damage_and_combo(service) -> void:
 	_assert_close(float(gate.get("capped_momentum", 0.0)), 20.0, "momentum gate capped momentum")
 	_assert_close(float(gate.get("break_gate", 0.0)), 59.0, "momentum gate break gate")
 	_assert_close(float(gate.get("knock_momentum", 0.0)), 40.0, "momentum gate knock")
+	var gate_event := {"raw_momentum": 25.0, "unrelated": "keep"}
+	var gate_patch: Dictionary = service.momentum_damage_gate_event_patch(gate_event, gate)
+	_assert_close(float(gate_patch.get("raw_momentum", 0.0)), 25.0, "momentum gate event raw momentum")
+	_assert_close(float(gate_patch.get("momentum", 0.0)), 20.0, "momentum gate event momentum")
+	_assert_close(float(gate_patch.get("damage_after_break", 0.0)), 60.0, "momentum gate event damage")
+	_assert_close(float(gate_patch.get("effective_break_value", 0.0)), 59.0, "momentum gate event break value")
+	if bool(gate_patch.get("contact_gate_blocked", true)) or bool(gate_patch.get("threshold_blocked", true)) or String(gate_patch.get("contact_gate_model", "")) != "momentum_damage_gate":
+		_fail("Momentum gate event patch should expose pass telemetry: %s" % str(gate_patch))
+	var patched_gate_event: Dictionary = service.apply_event_patch(gate_event, gate_patch)
+	if String(patched_gate_event.get("unrelated", "")) != "keep" or gate_event.has("contact_gate_model"):
+		_fail("Momentum gate event application should preserve unrelated fields and source ownership.")
 	var equal_block: Dictionary = service.momentum_damage_gate_intent({
 		"momentum": 20.0,
 		"damage_coefficient": 2.0,

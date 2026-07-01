@@ -37096,14 +37096,7 @@ func _resolve_attack(attacker, event: Dictionary) -> void:
 		"projectile_trace_spawned": bool(event.get("projectile_trace_spawned", false)),
 	})
 	var event_patch: Dictionary = Dictionary(preflight.get("event_patch", {}))
-	for key in event_patch.keys():
-		if String(key).begins_with("erase_"):
-			continue
-		event[key] = event_patch[key]
-	if bool(event_patch.get("erase_explosion_damage", false)):
-		event.erase("explosion_damage")
-	if bool(event_patch.get("erase_explosion_damage_type", false)):
-		event.erase("explosion_damage_type")
+	event = _battle_hit_resolution_service().apply_event_patch(event, event_patch)
 	match String(preflight.get("action", "continue")):
 		"queue_laser_telegraph":
 			_queue_laser_telegraph(attacker, event)
@@ -37180,8 +37173,7 @@ func _resolve_attack(attacker, event: Dictionary) -> void:
 			"state": String(target.current_state),
 		})
 		var hit_patch: Dictionary = Dictionary(hit_context.get("event_patch", {}))
-		for key in hit_patch.keys():
-			event[key] = hit_patch[key]
+		event = _battle_hit_resolution_service().apply_event_patch(event, hit_patch)
 
 		var damage_type := String(hit_context.get("damage_type", event.get("damage_type", "blunt")))
 		if bool(event.get("projectile", false)) and _one_way_shield_intercept(attacker, target, event):
@@ -37252,16 +37244,10 @@ func _resolve_attack(attacker, event: Dictionary) -> void:
 		var adjustment_coefficient := multiplier
 		if raw_damage > 0.001:
 			adjustment_coefficient = maxf(0.0, float(material_adjusted_damage) / raw_damage)
-		event["raw_momentum"] = float(event.get("raw_momentum", event_momentum_for_gate))
-		event["momentum"] = event_momentum_for_gate
-		event["capped_momentum"] = event_momentum_for_gate
-		event["damage_coefficient"] = damage_coefficient
-		event["adjustment_coefficient"] = adjustment_coefficient
-		event["break_value"] = break_value
-		event["break_value_adjustment"] = break_value_adjustment
-		event["knock_adjustment_coefficient"] = knock_adjustment
+		var gate_intent := {}
 		if not nullified:
-			var gate_intent := _battle_hit_resolution_service().momentum_damage_gate_intent({
+			gate_intent = _battle_hit_resolution_service().momentum_damage_gate_intent({
+				"raw_momentum": float(event.get("raw_momentum", event_momentum_for_gate)),
 				"momentum": event_momentum_for_gate,
 				"damage_coefficient": damage_coefficient,
 				"adjustment_coefficient": adjustment_coefficient,
@@ -37271,13 +37257,18 @@ func _resolve_attack(attacker, event: Dictionary) -> void:
 				"knock_adjustment_coefficient": knock_adjustment,
 				"non_damage": non_damage,
 			})
-			event["contact_gate_blocked"] = bool(gate_intent.get("threshold_blocked", false))
-			event["threshold_blocked"] = bool(gate_intent.get("threshold_blocked", false))
-			event["contact_gate_model"] = String(gate_intent.get("formula", "momentum_damage_gate"))
-			event["damage_after_break"] = float(gate_intent.get("damage_value", material_adjusted_damage))
-			event["effective_break_value"] = float(gate_intent.get("effective_break_value", break_value))
-			event["break_gate"] = float(gate_intent.get("break_gate", event["effective_break_value"]))
-			event["knock_momentum"] = float(gate_intent.get("knock_momentum", event_momentum_for_gate))
+		var gate_event_patch := _battle_hit_resolution_service().momentum_damage_gate_event_patch(event, gate_intent, {
+			"raw_momentum": float(event.get("raw_momentum", event_momentum_for_gate)),
+			"momentum": event_momentum_for_gate,
+			"capped_momentum": event_momentum_for_gate,
+			"damage_coefficient": damage_coefficient,
+			"adjustment_coefficient": adjustment_coefficient,
+			"break_value": break_value,
+			"break_value_adjustment": break_value_adjustment,
+			"knock_adjustment_coefficient": knock_adjustment,
+		})
+		event = _battle_hit_resolution_service().apply_event_patch(event, gate_event_patch)
+		if not nullified:
 			contact_gate_blocked = bool(event.get("contact_gate_blocked", false))
 		var combo_damage := damage
 		if not non_damage and not nullified and not contact_gate_blocked:

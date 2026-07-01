@@ -57,6 +57,19 @@ func projectile_preflight_intent(context: Dictionary) -> Dictionary:
 	}
 
 
+func apply_event_patch(event: Dictionary, patch: Dictionary) -> Dictionary:
+	var result := event.duplicate(true)
+	var patch_copy := patch.duplicate(true)
+	for raw_key in patch_copy.keys():
+		var key := String(raw_key)
+		if key.begins_with("erase_"):
+			if bool(patch_copy.get(raw_key, false)):
+				result.erase(key.trim_prefix("erase_"))
+			continue
+		result[raw_key] = patch_copy[raw_key]
+	return result
+
+
 func target_hit_context(event: Dictionary, hit: Dictionary, target_snapshot: Dictionary = {}) -> Dictionary:
 	var patch := {
 		"target_part_index": int(hit.get("part_index", -1)),
@@ -114,6 +127,29 @@ func momentum_damage_gate_intent(context: Dictionary) -> Dictionary:
 		"knock_momentum": momentum * knock_adjustment,
 		"non_damage": non_damage,
 	}
+
+
+func momentum_damage_gate_event_patch(event: Dictionary, gate_intent: Dictionary, input_context: Dictionary = {}) -> Dictionary:
+	var momentum := float(input_context.get("momentum", gate_intent.get("momentum", event.get("momentum", 0.0))))
+	var patch := {
+		"raw_momentum": float(input_context.get("raw_momentum", event.get("raw_momentum", gate_intent.get("raw_momentum", momentum)))),
+		"momentum": momentum,
+		"capped_momentum": float(input_context.get("capped_momentum", gate_intent.get("capped_momentum", momentum))),
+		"damage_coefficient": float(input_context.get("damage_coefficient", gate_intent.get("damage_coefficient", event.get("damage_coefficient", 0.0)))),
+		"adjustment_coefficient": float(input_context.get("adjustment_coefficient", gate_intent.get("adjustment_coefficient", event.get("adjustment_coefficient", 0.0)))),
+		"break_value": float(input_context.get("break_value", gate_intent.get("break_value", event.get("break_value", 0.0)))),
+		"break_value_adjustment": float(input_context.get("break_value_adjustment", gate_intent.get("break_value_adjustment", event.get("break_value_adjustment", 1.0)))),
+		"knock_adjustment_coefficient": float(input_context.get("knock_adjustment_coefficient", gate_intent.get("knock_adjustment_coefficient", event.get("knock_adjustment_coefficient", 1.0)))),
+	}
+	if not gate_intent.is_empty():
+		patch["contact_gate_blocked"] = bool(gate_intent.get("threshold_blocked", false))
+		patch["threshold_blocked"] = bool(gate_intent.get("threshold_blocked", false))
+		patch["contact_gate_model"] = String(gate_intent.get("formula", "momentum_damage_gate"))
+		patch["damage_after_break"] = float(gate_intent.get("damage_value", 0.0))
+		patch["effective_break_value"] = float(gate_intent.get("effective_break_value", patch["break_value"]))
+		patch["break_gate"] = float(gate_intent.get("break_gate", patch["effective_break_value"]))
+		patch["knock_momentum"] = float(gate_intent.get("knock_momentum", momentum))
+	return patch
 
 
 func melee_type_adjustments(damage_type: String) -> Dictionary:

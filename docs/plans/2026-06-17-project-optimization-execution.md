@@ -926,6 +926,25 @@ KNOWN BASELINE FAILURE: editor_property_write_budget_probe and teamedit_property
 
 `main.gd` now owns a single `_apply_editor_control_plan()` scene-tree adapter over its existing guarded setters. It applies plan keys only when present, ignores presentation metadata, handles sliders through guarded editable/value setters, and optionally preserves externally managed button-disabled state. `_apply_editor_panel_visibility()` uses it across 26 plan-consumption sites without moving picker synchronization, hover clearing, conditional Unit/Summary geometry, or sort ordering side effects into the generic helper. The adapter has a dedicated core probe in `tools/probe_manifest.json`, and the extraction contract rejects representative returns to direct plan-property mutation.
 
+Follow-up battle hit event-patch extraction:
+
+```text
+RED: battle_hit_resolution_service_contract_probe failed on missing BattleHitResolutionService.apply_event_patch()
+GREEN: BATTLE_HIT_RESOLUTION_SERVICE_CONTRACT_PROBE ok
+GREEN: Godot --check-only --script res://scripts/main.gd --quit-after 1
+GREEN: MAIN_FILE_EXTRACTION_CONTRACT_PROBE ok services=9
+GREEN: MOMENTUM_DAMAGE_GATE_RUNTIME_PROBE ok damage=11 momentum=60.0 break=0.50
+GREEN: MELEE_DAMAGE_TYPE_RULE_PROBE ok
+GREEN: PROJECTILE_PROFILE_WHITELIST_PROBE ok
+GREEN: MISSILE_LOCK_INVALID_NO_AMMO_PROBE ok
+GREEN: TERRAIN_OCCLUSION_RUNTIME_PROBE ok feature=terrain-wall-alpha kind=solid
+GREEN: LOCAL_BATTLE_REPLAY_CONSISTENCY_PROBE ok
+GREEN: BATTLE_ATTACK_HEAVY_REPLAY_DESYNC_PROBE checkpoints=6 desync_step=360
+GREEN: BATTLE_ATTACK_HEAVY_REPLAY_DESYNC_PROBE ok
+```
+
+`BattleHitResolutionService.apply_event_patch()` now owns event-patch copying, replacement, and `erase_*` control handling for projectile preflight and target-hit contexts without mutating the source dictionaries. `BattleHitResolutionService.momentum_damage_gate_event_patch()` owns the pure event telemetry patch for raw/capped momentum, coefficients, break values, and gate result metadata. `_resolve_attack()` applies those patches through the service and keeps world-state mutation, hit iteration, shield interception, damage side effects, combo scaling, and nullification gating local. The extraction contract now requires the new delegation tokens and rejects the stale inline patch loops and direct momentum metadata assignments.
+
 Remaining items after this batch:
 
 - Continue editor UI extraction with `_build_editor_ui` and the remaining action presentation/control-mutation sections of `_apply_editor_panel_visibility`, then continue `_resolve_attack` and `_refresh_editor_visual_views` extraction.
