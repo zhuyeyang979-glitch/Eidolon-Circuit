@@ -37110,6 +37110,20 @@ func _execute_projectile_preflight_intent(attacker, event: Dictionary, preflight
 	return false
 
 
+func _prepare_attack_missile_lock(attacker, event: Dictionary) -> bool:
+	if not _is_missile_projectile_event(event):
+		return true
+	var missile_target = event.get("locked_target", null)
+	if not _is_live_unit(missile_target) or _map_line_occluded(attacker, missile_target, event):
+		missile_target = _acquire_missile_lock_target(attacker, event)
+	if not _is_live_unit(missile_target):
+		_show_battle_message("%s MISSILE: no lock" % String(attacker.unit_name), 0.52)
+		return false
+	event["locked_target"] = missile_target
+	event["aim_locked"] = true
+	return true
+
+
 func _resolve_attack(attacker, event: Dictionary) -> void:
 	var entry_intent := _battle_hit_resolution_service().attack_entry_intent({
 		"attacker_live": _is_live_unit(attacker),
@@ -37139,15 +37153,8 @@ func _resolve_attack(attacker, event: Dictionary) -> void:
 		_mark_unit_attack_executed(attacker)
 		return
 
-	if _is_missile_projectile_event(event):
-		var missile_target = event.get("locked_target", null)
-		if not _is_live_unit(missile_target) or _map_line_occluded(attacker, missile_target, event):
-			missile_target = _acquire_missile_lock_target(attacker, event)
-		if not _is_live_unit(missile_target):
-			_show_battle_message("%s MISSILE: no lock" % String(attacker.unit_name), 0.52)
-			return
-		event["locked_target"] = missile_target
-		event["aim_locked"] = true
+	if not _prepare_attack_missile_lock(attacker, event):
+		return
 	if bool(event.get("projectile", false)) and not _event_is_explicit_gun_activation(event):
 		_clear_projectile_fields_for_runtime_melee(event)
 		if _unit_uses_direct_runtime_topology(attacker):

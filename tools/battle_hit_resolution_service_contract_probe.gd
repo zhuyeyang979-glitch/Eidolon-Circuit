@@ -103,6 +103,8 @@ func _init() -> void:
 		"event[\"contact_gate_model\"] =",
 		"match String(entry_intent.get(\"action\", \"\"))",
 		"match String(preflight.get(\"action\", \"continue\"))",
+		"_acquire_missile_lock_target(attacker, event)",
+		"event[\"locked_target\"] = missile_target",
 		"for raw_intent in post_hit_intents:",
 		"match String(post_intent.get(\"action\", \"\"))",
 	]:
@@ -155,6 +157,27 @@ func _init() -> void:
 	]:
 		if preflight_dispatch_body.find(token) < 0:
 			_fail("_execute_projectile_preflight_intent missing dispatch token: %s" % token)
+			return
+	if resolve_body.count("_prepare_attack_missile_lock(attacker, event)") != 1:
+		_fail("_resolve_attack should prepare missile lock through one helper.")
+		return
+	var missile_lock_body := _function_body(main_source, "func _prepare_attack_missile_lock")
+	if missile_lock_body.is_empty():
+		_fail("Unable to locate _prepare_attack_missile_lock body.")
+		return
+	for token in [
+		"_is_missile_projectile_event",
+		"_map_line_occluded",
+		"_acquire_missile_lock_target",
+		"MISSILE: no lock",
+		"_show_battle_message",
+		"event[\"locked_target\"]",
+		"event[\"aim_locked\"]",
+		"return true",
+		"return false",
+	]:
+		if missile_lock_body.find(token) < 0:
+			_fail("_prepare_attack_missile_lock missing token: %s" % token)
 			return
 	var post_hit_body := _function_body(main_source, "func _execute_post_hit_intents")
 	if post_hit_body.is_empty():

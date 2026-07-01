@@ -2002,6 +2002,26 @@ GREEN: BATTLE_ATTACK_HEAVY_REPLAY_DESYNC_PROBE ok
 
 `_execute_projectile_preflight_intent()` now owns the imperative dispatch for queued laser telegraphs, true-bullet locks, chemical projectiles, chemical fireworks, and missiles. `_resolve_attack()` applies the pure service event patch, delegates exactly one preflight action, and keeps the ready/expanded chemical projectile continuation path explicit for normal target resolution. The extraction contract requires all five side-effect routes and rejects renewed inline preflight matching.
 
+Follow-up attack missile-lock preparation extraction:
+
+```text
+RED: battle_hit_resolution_service_contract_probe failed because _resolve_attack still acquired and wrote missile locks inline
+GREEN: BATTLE_HIT_RESOLUTION_SERVICE_CONTRACT_PROBE ok
+GREEN: Godot --check-only --script res://scripts/main.gd --quit-after 1
+GREEN: MISSILE_LOCK_RUNTIME_FIRE_PROBE ok
+GREEN: MISSILE_LOCK_INVALID_NO_AMMO_PROBE ok
+GREEN: MISSILE_OCCLUSION_BREAK_LOCK_PROBE ok
+GREEN: MISSILE_LOCK_PRIORITY_NEAR_PROBE ok
+GREEN: MISSILE_LOCK_PRIORITY_FAR_PROBE ok
+GREEN: MISSILE_LOCK_PRIORITY_SCREEN_ROLE_PROBE ok
+GREEN: MISSILE_LOCK_BARRIER_SUPPORT_PROBE ok
+GREEN: LOCAL_BATTLE_REPLAY_CONSISTENCY_PROBE ok
+GREEN: BATTLE_ATTACK_HEAVY_REPLAY_DESYNC_PROBE checkpoints=6 desync_step=360
+GREEN: BATTLE_ATTACK_HEAVY_REPLAY_DESYNC_PROBE ok
+```
+
+`_prepare_attack_missile_lock()` now owns existing-lock reuse, occlusion-triggered target reacquisition, no-lock feedback, and `locked_target` / `aim_locked` event mutation. `_resolve_attack()` consumes the helper as one continue/stop gate before projectile activation setup. The extraction contract rejects direct missile target acquisition and lock-field writes in `_resolve_attack()` while requiring the helper's non-missile, no-target, and successful-lock paths.
+
 Remaining items after this batch:
 
 - Continue editor UI extraction with `_build_editor_ui` and the remaining action presentation/control-mutation sections of `_apply_editor_panel_visibility`, then continue `_resolve_attack` and `_refresh_editor_visual_views` extraction.
