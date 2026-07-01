@@ -102,6 +102,7 @@ func _init() -> void:
 		"event[\"raw_momentum\"] =",
 		"event[\"contact_gate_model\"] =",
 		"match String(entry_intent.get(\"action\", \"\"))",
+		"match String(preflight.get(\"action\", \"continue\"))",
 		"for raw_intent in post_hit_intents:",
 		"match String(post_intent.get(\"action\", \"\"))",
 	]:
@@ -129,6 +130,31 @@ func _init() -> void:
 	]:
 		if entry_dispatch_body.find(token) < 0:
 			_fail("_execute_attack_entry_intent missing dispatch token: %s" % token)
+			return
+	if resolve_body.count("_execute_projectile_preflight_intent(attacker, event, preflight)") != 1:
+		_fail("_resolve_attack should dispatch projectile preflight through one helper.")
+		return
+	var preflight_dispatch_body := _function_body(main_source, "func _execute_projectile_preflight_intent")
+	if preflight_dispatch_body.is_empty():
+		_fail("Unable to locate _execute_projectile_preflight_intent body.")
+		return
+	for token in [
+		"\"queue_laser_telegraph\"",
+		"\"queue_true_bullet\"",
+		"\"queue_chemical\"",
+		"\"resolve_chemical_firework\"",
+		"\"queue_missile\"",
+		"_queue_laser_telegraph",
+		"_queue_true_bullet_lock",
+		"_prepare_chemical_projectile_event",
+		"_queue_chemical_projectile",
+		"_resolve_chemical_firework",
+		"_queue_missile_projectile",
+		"return true",
+		"return false",
+	]:
+		if preflight_dispatch_body.find(token) < 0:
+			_fail("_execute_projectile_preflight_intent missing dispatch token: %s" % token)
 			return
 	var post_hit_body := _function_body(main_source, "func _execute_post_hit_intents")
 	if post_hit_body.is_empty():

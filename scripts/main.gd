@@ -37088,6 +37088,28 @@ func _execute_attack_entry_intent(attacker, event: Dictionary, entry_intent: Dic
 	return false
 
 
+func _execute_projectile_preflight_intent(attacker, event: Dictionary, preflight: Dictionary) -> bool:
+	match String(preflight.get("action", "continue")):
+		"queue_laser_telegraph":
+			_queue_laser_telegraph(attacker, event)
+			return true
+		"queue_true_bullet":
+			_queue_true_bullet_lock(attacker, event)
+			return true
+		"queue_chemical":
+			_prepare_chemical_projectile_event(event)
+			_queue_chemical_projectile(attacker, event)
+			return true
+		"resolve_chemical_firework":
+			_prepare_chemical_projectile_event(event)
+			_resolve_chemical_firework(attacker, event)
+			return true
+		"queue_missile":
+			_queue_missile_projectile(attacker, event)
+			return true
+	return false
+
+
 func _resolve_attack(attacker, event: Dictionary) -> void:
 	var entry_intent := _battle_hit_resolution_service().attack_entry_intent({
 		"attacker_live": _is_live_unit(attacker),
@@ -37167,24 +37189,8 @@ func _resolve_attack(attacker, event: Dictionary) -> void:
 	})
 	var event_patch: Dictionary = Dictionary(preflight.get("event_patch", {}))
 	event = _battle_hit_resolution_service().apply_event_patch(event, event_patch)
-	match String(preflight.get("action", "continue")):
-		"queue_laser_telegraph":
-			_queue_laser_telegraph(attacker, event)
-			return
-		"queue_true_bullet":
-			_queue_true_bullet_lock(attacker, event)
-			return
-		"queue_chemical":
-			_prepare_chemical_projectile_event(event)
-			_queue_chemical_projectile(attacker, event)
-			return
-		"resolve_chemical_firework":
-			_prepare_chemical_projectile_event(event)
-			_resolve_chemical_firework(attacker, event)
-			return
-		"queue_missile":
-			_queue_missile_projectile(attacker, event)
-			return
+	if _execute_projectile_preflight_intent(attacker, event, preflight):
+		return
 	if _is_true_bullet_event(event):
 		_queue_true_bullet_lock(attacker, event)
 		return

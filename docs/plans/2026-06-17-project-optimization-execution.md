@@ -1983,6 +1983,25 @@ GREEN: BATTLE_ATTACK_HEAVY_REPLAY_DESYNC_PROBE ok
 
 `_execute_attack_entry_intent()` now owns the imperative dispatch for invalid-entry return, runtime-topology execution marking, missing-gun-source feedback, and runtime-melee projectile-field clearing. `_resolve_attack()` delegates both the pre-normalization and post-normalization intents through that helper while preserving the original gate order. The extraction probe now resolves the exact `func _resolve_attack(` signature instead of accidentally matching `_resolve_attack_command_window()`, requires both helper calls, and rejects renewed inline entry dispatch.
 
+Follow-up projectile-preflight side-effect dispatch extraction:
+
+```text
+RED: battle_hit_resolution_service_contract_probe failed because _resolve_attack still dispatched projectile preflight actions inline
+GREEN: BATTLE_HIT_RESOLUTION_SERVICE_CONTRACT_PROBE ok
+GREEN: Godot --check-only --script res://scripts/main.gd --quit-after 1
+GREEN: BATTLE_PROJECTILE_LIFECYCLE_SERVICE_CONTRACT_PROBE ok
+GREEN: PROJECTILE_RUNTIME_SERVICE_CONTRACT_PROBE ok
+GREEN: LASER_BEAM_RUNTIME_FIRE_PROBE ok ammo=7->6 target_hp=100.0
+GREEN: MISSILE_LOCK_RUNTIME_FIRE_PROBE ok
+GREEN: CHEMICAL_SPRAYER_FIRST_CONTACT_PROBE ok blocker=140->129 rear=140->140
+GREEN: HARDWARE_FAULT_TRUE_BULLET_QUEUE_DEPENDENCY_PROBE ok
+GREEN: LOCAL_BATTLE_REPLAY_CONSISTENCY_PROBE ok
+GREEN: BATTLE_ATTACK_HEAVY_REPLAY_DESYNC_PROBE checkpoints=6 desync_step=360
+GREEN: BATTLE_ATTACK_HEAVY_REPLAY_DESYNC_PROBE ok
+```
+
+`_execute_projectile_preflight_intent()` now owns the imperative dispatch for queued laser telegraphs, true-bullet locks, chemical projectiles, chemical fireworks, and missiles. `_resolve_attack()` applies the pure service event patch, delegates exactly one preflight action, and keeps the ready/expanded chemical projectile continuation path explicit for normal target resolution. The extraction contract requires all five side-effect routes and rejects renewed inline preflight matching.
+
 Remaining items after this batch:
 
 - Continue editor UI extraction with `_build_editor_ui` and the remaining action presentation/control-mutation sections of `_apply_editor_panel_visibility`, then continue `_resolve_attack` and `_refresh_editor_visual_views` extraction.
