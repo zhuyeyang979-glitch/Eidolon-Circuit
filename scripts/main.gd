@@ -47714,32 +47714,40 @@ func _build_editor_ui() -> void:
 		editor_sort_option_buttons.append(sort_option_button)
 	editor_section_labels["catalog"] = _make_label(root, "CatalogTitle", "零件卡片", Vector2(936.0, 330.0), Vector2(168.0, 20.0), 12, Color(0.9, 0.96, 1.0, 1.0), HORIZONTAL_ALIGNMENT_LEFT)
 	editor_catalog_page_label = _make_label(root, "CatalogPage", "", Vector2(1110.0, 330.0), Vector2(96.0, 20.0), 11, Color(1.0, 0.86, 0.28, 1.0), HORIZONTAL_ALIGNMENT_RIGHT)
-	editor_color_panel = _add_ui_rect(root, "EditorColorPalettePanel", Vector2(932.0, 146.0), Vector2(278.0, 274.0), Color(0.006, 0.014, 0.021, 0.92))
-	editor_color_label = _make_label(root, "EditorColorLabel", "队伍颜色", Vector2(944.0, 158.0), Vector2(254.0, 24.0), 14, Color(0.9, 0.96, 1.0, 1.0), HORIZONTAL_ALIGNMENT_LEFT)
-	for i in range(TEAM_COLOR_PRESETS.size()):
-		var preset: Dictionary = TEAM_COLOR_PRESETS[i]
+	var color_controls_build_specs := UILifecycleService.editor_color_controls_build_specs(TEAM_COLOR_PRESETS.size())
+	var color_panel_build_spec := Dictionary(color_controls_build_specs.get("panel", {}))
+	editor_color_panel = _add_ui_rect(root, String(color_panel_build_spec.get("name", "")), color_panel_build_spec.get("position", Vector2.ZERO), color_panel_build_spec.get("size", Vector2.ZERO), Color(0.006, 0.014, 0.021, 0.92))
+	var color_label_build_spec := Dictionary(color_controls_build_specs.get("label", {}))
+	editor_color_label = _make_label(root, String(color_label_build_spec.get("name", "")), String(color_label_build_spec.get("text", "")), color_label_build_spec.get("position", Vector2.ZERO), color_label_build_spec.get("size", Vector2.ZERO), 14, Color(0.9, 0.96, 1.0, 1.0), HORIZONTAL_ALIGNMENT_LEFT)
+	var color_button_build_specs: Array = Array(color_controls_build_specs.get("buttons", []))
+	for raw_color_button_build_spec in color_button_build_specs:
+		var color_button_build_spec := Dictionary(raw_color_button_build_spec)
+		var color_button_index := int(color_button_build_spec.get("index", editor_color_buttons.size()))
+		var preset: Dictionary = TEAM_COLOR_PRESETS[color_button_index] if color_button_index >= 0 and color_button_index < TEAM_COLOR_PRESETS.size() else {}
 		var color_button := Button.new()
-		color_button.name = "EditorColorButton%d" % i
-		color_button.position = Vector2(944.0 + float(i % 2) * 128.0, 190.0 + float(floori(float(i) / 2.0)) * 58.0)
-		color_button.size = Vector2(118.0, 46.0)
+		color_button.name = String(color_button_build_spec.get("name", ""))
+		color_button.position = color_button_build_spec.get("position", Vector2.ZERO)
+		color_button.size = color_button_build_spec.get("size", Vector2.ZERO)
 		color_button.focus_mode = Control.FOCUS_NONE
 		color_button.text = String(preset.get("name", "COLOR"))
-		color_button.pressed.connect(_select_editor_team_color.bind(i))
+		color_button.pressed.connect(_select_editor_team_color.bind(color_button_index))
 		root.add_child(color_button)
 		editor_color_buttons.append(color_button)
+	var color_primary_picker_build_spec := Dictionary(color_controls_build_specs.get("primary_picker", {}))
 	editor_primary_color_picker = ColorPickerButton.new()
-	editor_primary_color_picker.name = "EditorPrimaryColorPicker"
-	editor_primary_color_picker.position = Vector2(944.0, 370.0)
-	editor_primary_color_picker.size = Vector2(118.0, 34.0)
-	editor_primary_color_picker.text = "主色"
+	editor_primary_color_picker.name = String(color_primary_picker_build_spec.get("name", ""))
+	editor_primary_color_picker.position = color_primary_picker_build_spec.get("position", Vector2.ZERO)
+	editor_primary_color_picker.size = color_primary_picker_build_spec.get("size", Vector2.ZERO)
+	editor_primary_color_picker.text = String(color_primary_picker_build_spec.get("text", ""))
 	editor_primary_color_picker.focus_mode = Control.FOCUS_NONE
 	editor_primary_color_picker.color_changed.connect(_set_editor_custom_primary_color)
 	root.add_child(editor_primary_color_picker)
+	var color_accent_picker_build_spec := Dictionary(color_controls_build_specs.get("accent_picker", {}))
 	editor_accent_color_picker = ColorPickerButton.new()
-	editor_accent_color_picker.name = "EditorAccentColorPicker"
-	editor_accent_color_picker.position = Vector2(1072.0, 370.0)
-	editor_accent_color_picker.size = Vector2(118.0, 34.0)
-	editor_accent_color_picker.text = "辅色"
+	editor_accent_color_picker.name = String(color_accent_picker_build_spec.get("name", ""))
+	editor_accent_color_picker.position = color_accent_picker_build_spec.get("position", Vector2.ZERO)
+	editor_accent_color_picker.size = color_accent_picker_build_spec.get("size", Vector2.ZERO)
+	editor_accent_color_picker.text = String(color_accent_picker_build_spec.get("text", ""))
 	editor_accent_color_picker.focus_mode = Control.FOCUS_NONE
 	editor_accent_color_picker.color_changed.connect(_set_editor_custom_accent_color)
 	root.add_child(editor_accent_color_picker)

@@ -343,6 +343,43 @@ static func editor_roster_overview_build_specs(slot_count: int) -> Dictionary:
 	}
 
 
+static func editor_color_controls_build_specs(button_count: int) -> Dictionary:
+	var buttons := []
+	for i in range(maxi(0, button_count)):
+		buttons.append({
+			"index": i,
+			"name": "EditorColorButton%d" % i,
+			"position": Vector2(944.0 + float(i % 2) * 128.0, 190.0 + float(floori(float(i) / 2.0)) * 58.0),
+			"size": Vector2(118.0, 46.0),
+		})
+	return {
+		"panel": {
+			"name": "EditorColorPalettePanel",
+			"position": Vector2(932.0, 146.0),
+			"size": Vector2(278.0, 274.0),
+		},
+		"label": {
+			"name": "EditorColorLabel",
+			"text": "队伍颜色",
+			"position": Vector2(944.0, 158.0),
+			"size": Vector2(254.0, 24.0),
+		},
+		"buttons": buttons,
+		"primary_picker": {
+			"name": "EditorPrimaryColorPicker",
+			"text": "主色",
+			"position": Vector2(944.0, 370.0),
+			"size": Vector2(118.0, 34.0),
+		},
+		"accent_picker": {
+			"name": "EditorAccentColorPicker",
+			"text": "辅色",
+			"position": Vector2(1072.0, 370.0),
+			"size": Vector2(118.0, 34.0),
+		},
+	}
+
+
 static func editor_panel_role_chrome_presentation(mode: String, active_role_key: String, parts_visible: bool, panel_keys: Array, role_keys: Array, role_order: Array, role_short_labels: Dictionary, zh: bool) -> Dictionary:
 	var panel_texts := {"load": "单位库", "parts": "零件库"} if zh else {"load": "UNITS", "parts": "PARTS"}
 	var panel_buttons := {}

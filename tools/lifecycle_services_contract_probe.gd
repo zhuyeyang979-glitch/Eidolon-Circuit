@@ -316,6 +316,33 @@ func _init() -> void:
 	_assert_vector(fourth_roster_slot_build_spec, "size", Vector2(82.0, 26.0), "roster slot build spec")
 	_assert_vector(fourth_roster_slot_build_spec, "thumb_position", Vector2(611.0, 47.0), "roster thumb build spec")
 	_assert_vector(fourth_roster_slot_build_spec, "thumb_size", Vector2(20.0, 20.0), "roster thumb build spec")
+	var color_build_specs: Dictionary = UILifecycleService.editor_color_controls_build_specs(4)
+	var color_panel_build_spec: Dictionary = Dictionary(color_build_specs.get("panel", {}))
+	var color_label_build_spec: Dictionary = Dictionary(color_build_specs.get("label", {}))
+	var color_button_build_specs: Array = Array(color_build_specs.get("buttons", []))
+	var color_primary_picker_build_spec: Dictionary = Dictionary(color_build_specs.get("primary_picker", {}))
+	var color_accent_picker_build_spec: Dictionary = Dictionary(color_build_specs.get("accent_picker", {}))
+	if String(color_panel_build_spec.get("name", "")) != "EditorColorPalettePanel" or String(color_label_build_spec.get("name", "")) != "EditorColorLabel":
+		_fail("UILifecycleService color build spec panel/label identity failed.")
+		return
+	if color_button_build_specs.size() != 4:
+		_fail("UILifecycleService color button build spec count failed.")
+		return
+	if String(color_primary_picker_build_spec.get("name", "")) != "EditorPrimaryColorPicker" or String(color_accent_picker_build_spec.get("name", "")) != "EditorAccentColorPicker":
+		_fail("UILifecycleService color picker build spec identity failed.")
+		return
+	_assert_vector(color_panel_build_spec, "position", Vector2(932.0, 146.0), "color panel build spec")
+	_assert_vector(color_panel_build_spec, "size", Vector2(278.0, 274.0), "color panel build spec")
+	_assert_vector(color_label_build_spec, "position", Vector2(944.0, 158.0), "color label build spec")
+	_assert_vector(color_label_build_spec, "size", Vector2(254.0, 24.0), "color label build spec")
+	var third_color_button_build_spec: Dictionary = Dictionary(color_button_build_specs[2])
+	if int(third_color_button_build_spec.get("index", -1)) != 2 or String(third_color_button_build_spec.get("name", "")) != "EditorColorButton2":
+		_fail("UILifecycleService color button build spec identity failed.")
+		return
+	_assert_vector(third_color_button_build_spec, "position", Vector2(944.0, 248.0), "color button build spec")
+	_assert_vector(third_color_button_build_spec, "size", Vector2(118.0, 46.0), "color button build spec")
+	_assert_vector(color_primary_picker_build_spec, "position", Vector2(944.0, 370.0), "primary color picker build spec")
+	_assert_vector(color_accent_picker_build_spec, "position", Vector2(1072.0, 370.0), "accent color picker build spec")
 	Dictionary(Array(build_specs.get("canvas_tools", []))[0])["key"] = "mutated"
 	var fresh_build_specs: Dictionary = UILifecycleService.editor_action_build_specs()
 	if String(Dictionary(Array(fresh_build_specs.get("canvas_tools", []))[0]).get("key", "")) != "blank_canvas":
