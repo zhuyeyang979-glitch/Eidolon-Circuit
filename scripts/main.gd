@@ -49639,64 +49639,66 @@ func _update_editor_load_card_buttons(role_key: String) -> void:
 	var entries := _editor_load_entries() if load_visible else []
 	var max_page := maxi(0, int(ceilf(float(entries.size()) / float(page_size))) - 1)
 	editor_load_page = clampi(editor_load_page, 0, max_page)
-	if editor_action_buttons.has("prev_catalog") and load_visible:
-		var prev_button: Button = editor_action_buttons["prev_catalog"]
-		_set_button_disabled_if_changed(prev_button, editor_load_page <= 0 or max_page <= 0)
-		_set_control_text_if_changed(prev_button, "<")
-	if editor_action_buttons.has("next_catalog") and load_visible:
-		var next_button: Button = editor_action_buttons["next_catalog"]
-		_set_button_disabled_if_changed(next_button, editor_load_page >= max_page or max_page <= 0)
-		_set_control_text_if_changed(next_button, ">")
-	if not load_visible:
-		for hidden_button in editor_load_card_buttons:
-			var button: Button = hidden_button
-			_set_canvas_item_visible_if_changed(button, false)
-			_set_button_disabled_if_changed(button, true)
-		return
 	var player_id := _editor_player()
-	if editor_catalog_page_label != null and load_visible:
-		_set_control_position_if_changed(editor_catalog_page_label, Vector2(966.0, 654.0))
-		_set_control_size_if_changed(editor_catalog_page_label, Vector2(210.0, 22.0))
-		_set_control_text_if_changed(editor_catalog_page_label, ("页 %d/%d  %d" if _ui_is_zh() else "P %d/%d  %d") % [editor_load_page + 1, max_page + 1, entries.size()])
+	var card_models := []
 	for i in range(editor_load_card_buttons.size()):
-		var button: Button = editor_load_card_buttons[i]
 		var actual_index := editor_load_page * page_size + i
-		var show_button := load_visible and actual_index < entries.size()
-		_set_canvas_item_visible_if_changed(button, show_button)
-		_set_button_disabled_if_changed(button, not show_button)
-		if not show_button:
-			_set_control_text_if_changed(button, "")
+		if not load_visible or actual_index >= entries.size():
+			card_models.append({
+				"visible": false,
+				"actual_index": actual_index,
+			})
 			continue
 		var entry: Dictionary = entries[actual_index]
 		if bool(entry.get("empty", false)):
 			var empty_role := String(entry.get("role", ROLE_ORDER[actual_index % ROLE_ORDER.size()]))
-			_set_control_position_if_changed(button, Vector2(936.0, 224.0 + float(i) * 34.0))
-			_set_control_size_if_changed(button, Vector2(270.0, 30.0))
-			if _ui_is_zh():
-				_set_control_text_if_changed(button, "%02d %s  空  ¥0" % [actual_index + 1, _role_short(empty_role)])
-			else:
-				_set_control_text_if_changed(button, "%02d %s  EMPTY  $0" % [actual_index + 1, _role_short(empty_role)])
-			_set_canvas_item_modulate_if_changed(button, Color(0.58, 0.64, 0.68, 0.76))
+			var empty_text := ("%02d %s  空  ¥0" if _ui_is_zh() else "%02d %s  EMPTY  $0") % [actual_index + 1, _role_short(empty_role)]
+			card_models.append({
+				"visible": true,
+				"kind": "empty",
+				"actual_index": actual_index,
+				"text": empty_text,
+			})
 			continue
 		var entry_role := String(entry.get("role", role_key))
 		var entry_index := int(entry.get("index", 0))
 		var stats := _editor_load_entry_stats(player_id, role_key, entry)
-		var in_sortie := bool(entry.get("in_sortie", false))
 		var prefix := ""
+		var card_kind := "unit"
 		if editor_load_mode == "team":
 			prefix = ("队" if _ui_is_zh() else "T")
-			_set_control_position_if_changed(button, Vector2(936.0, 224.0 + float(i) * 34.0))
+			card_kind = "team"
 		elif bool(entry.get("builtin_hero_preset", false)):
 			prefix = ("预" if _ui_is_zh() else "P")
-			_set_control_position_if_changed(button, Vector2(936.0, 250.0 + float(i) * 34.0))
+			card_kind = "builtin"
 		else:
 			prefix = ("库" if _ui_is_zh() else "U")
-			_set_control_position_if_changed(button, Vector2(936.0, 250.0 + float(i) * 34.0))
-		_set_control_size_if_changed(button, Vector2(270.0, 30.0))
+			if bool(entry.get("unit_library", false)):
+				card_kind = "library"
 		var localized_name := _short_part_name(String(stats.get("name", "")))
 		var index_text := ("#%d" % (entry_index + 1)) if entry_index >= 0 else ""
-		_set_control_text_if_changed(button, "%s%02d %s%s  %s  ¥%d" % [prefix, actual_index + 1, _role_short(entry_role), index_text, localized_name, int(stats.get("cost", 0))] if _ui_is_zh() else "%s%02d %s%s  %s  $%d" % [prefix, actual_index + 1, _role_short(entry_role), index_text, localized_name, int(stats.get("cost", 0))])
-		_set_canvas_item_modulate_if_changed(button, Color(0.74, 1.0, 0.48, 1.0) if bool(entry.get("builtin_hero_preset", false)) else (Color(0.38, 0.96, 1.0, 1.0) if bool(entry.get("unit_library", false)) else (Color(1.0, 0.86, 0.28, 1.0) if (editor_load_mode == "unit" and entry_index == int(editor_unit_indices.get(entry_role, 0))) else Color(0.84, 0.9, 0.94, 1.0))))
+		var card_text := ("%s%02d %s%s  %s  ¥%d" if _ui_is_zh() else "%s%02d %s%s  %s  $%d") % [prefix, actual_index + 1, _role_short(entry_role), index_text, localized_name, int(stats.get("cost", 0))]
+		card_models.append({
+			"visible": true,
+			"kind": card_kind,
+			"actual_index": actual_index,
+			"text": card_text,
+			"selected": editor_load_mode == "unit" and entry_index == int(editor_unit_indices.get(entry_role, 0)),
+		})
+	var load_plan := UILifecycleService.editor_load_card_buttons_presentation(load_visible, editor_load_page, max_page, entries.size(), card_models, _ui_is_zh())
+	if editor_action_buttons.has("prev_catalog") and load_visible:
+		var prev_button: Button = editor_action_buttons["prev_catalog"]
+		_apply_editor_control_plan(prev_button, Dictionary(load_plan.get("prev", {})))
+	if editor_action_buttons.has("next_catalog") and load_visible:
+		var next_button: Button = editor_action_buttons["next_catalog"]
+		_apply_editor_control_plan(next_button, Dictionary(load_plan.get("next", {})))
+	if editor_catalog_page_label != null and load_visible:
+		_apply_editor_control_plan(editor_catalog_page_label, Dictionary(load_plan.get("page", {})))
+	var card_plans: Array = Array(load_plan.get("cards", []))
+	for i in range(editor_load_card_buttons.size()):
+		var button: Button = editor_load_card_buttons[i]
+		var card_plan := Dictionary(card_plans[i]) if i < card_plans.size() and card_plans[i] is Dictionary else {"visible": false, "disabled": true, "text": ""}
+		_apply_editor_control_plan(button, card_plan)
 
 
 func _refresh_editor_assembly_guide_ui(parts_visible: bool, role_key: String) -> void:

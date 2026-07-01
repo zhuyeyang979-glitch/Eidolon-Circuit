@@ -386,6 +386,56 @@ func _init() -> void:
 		return
 	_assert_vector(third_load_card_build_spec, "position", Vector2(936.0, 288.0), "load card build spec")
 	_assert_vector(third_load_card_build_spec, "size", Vector2(270.0, 30.0), "load card build spec")
+	var load_card_ui_lifecycle_source := FileAccess.get_file_as_string(ProjectSettings.globalize_path("res://scripts/services/ui_lifecycle_service.gd"))
+	if not load_card_ui_lifecycle_source.contains("static func editor_load_card_buttons_presentation("):
+		_fail("UILifecycleService should expose editor load card button presentation planning.")
+		return
+	var load_card_ui_lifecycle_service := UILifecycleService.new()
+	var load_card_plan: Dictionary = load_card_ui_lifecycle_service.call("editor_load_card_buttons_presentation", true, 1, 2, 14, [
+		{"visible": false, "actual_index": 9},
+		{"visible": true, "kind": "empty", "actual_index": 0, "text": "01 H  EMPTY  $0"},
+		{"visible": true, "kind": "builtin", "actual_index": 1, "text": "P02 H#1  Ace  $120"},
+		{"visible": true, "kind": "library", "actual_index": 2, "text": "U03 P#2  Spark  $80"},
+		{"visible": true, "kind": "unit", "actual_index": 3, "text": "U04 B#3  Wall  $50", "selected": true},
+	], false)
+	var load_prev_plan: Dictionary = Dictionary(load_card_plan.get("prev", {}))
+	var load_next_plan: Dictionary = Dictionary(load_card_plan.get("next", {}))
+	var load_page_plan: Dictionary = Dictionary(load_card_plan.get("page", {}))
+	if String(load_prev_plan.get("text", "")) != "<" or bool(load_prev_plan.get("disabled", true)) or String(load_next_plan.get("text", "")) != ">" or bool(load_next_plan.get("disabled", true)):
+		_fail("UILifecycleService load card nav presentation failed.")
+		return
+	if String(load_page_plan.get("text", "")) != "P 2/3  14":
+		_fail("UILifecycleService load card page presentation failed.")
+		return
+	_assert_vector(load_page_plan, "position", Vector2(966.0, 654.0), "load card page presentation")
+	_assert_vector(load_page_plan, "size", Vector2(210.0, 22.0), "load card page presentation")
+	var load_card_plans: Array = Array(load_card_plan.get("cards", []))
+	if load_card_plans.size() != 5:
+		_fail("UILifecycleService load card presentation count failed.")
+		return
+	var hidden_load_card_plan: Dictionary = Dictionary(load_card_plans[0])
+	var empty_load_card_plan: Dictionary = Dictionary(load_card_plans[1])
+	var builtin_load_card_plan: Dictionary = Dictionary(load_card_plans[2])
+	var library_load_card_plan: Dictionary = Dictionary(load_card_plans[3])
+	var selected_load_card_plan: Dictionary = Dictionary(load_card_plans[4])
+	if bool(hidden_load_card_plan.get("visible", true)) or not bool(hidden_load_card_plan.get("disabled", false)) or String(hidden_load_card_plan.get("text", "x")) != "":
+		_fail("UILifecycleService hidden load card presentation failed.")
+		return
+	if String(empty_load_card_plan.get("text", "")) != "01 H  EMPTY  $0":
+		_fail("UILifecycleService empty load card presentation failed.")
+		return
+	_assert_vector(empty_load_card_plan, "position", Vector2(936.0, 258.0), "empty load card presentation")
+	_assert_color(empty_load_card_plan, "modulate", Color(0.58, 0.64, 0.68, 0.76), "empty load card presentation")
+	_assert_vector(builtin_load_card_plan, "position", Vector2(936.0, 318.0), "builtin load card presentation")
+	_assert_color(builtin_load_card_plan, "modulate", Color(0.74, 1.0, 0.48, 1.0), "builtin load card presentation")
+	_assert_vector(library_load_card_plan, "position", Vector2(936.0, 352.0), "library load card presentation")
+	_assert_color(library_load_card_plan, "modulate", Color(0.38, 0.96, 1.0, 1.0), "library load card presentation")
+	_assert_color(selected_load_card_plan, "modulate", Color(1.0, 0.86, 0.28, 1.0), "selected load card presentation")
+	var hidden_load_card_plan_set: Dictionary = load_card_ui_lifecycle_service.call("editor_load_card_buttons_presentation", false, 0, 0, 0, [{"visible": true, "kind": "unit", "text": "stale"}], true)
+	var hidden_load_cards: Array = Array(hidden_load_card_plan_set.get("cards", []))
+	if hidden_load_cards.size() != 1 or bool(Dictionary(hidden_load_cards[0]).get("visible", true)) or String(Dictionary(hidden_load_card_plan_set.get("prev", {})).get("text", "x")) != "":
+		_fail("UILifecycleService hidden load card mode presentation failed.")
+		return
 	var info_surface_build_specs: Dictionary = UILifecycleService.editor_info_surface_build_specs()
 	var info_unit_build_spec: Dictionary = Dictionary(info_surface_build_specs.get("unit", {}))
 	var info_summary_build_spec: Dictionary = Dictionary(info_surface_build_specs.get("summary", {}))

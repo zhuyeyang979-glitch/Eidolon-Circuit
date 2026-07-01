@@ -263,6 +263,58 @@ static func editor_role_load_build_specs(role_order: Array, load_card_count: int
 	}
 
 
+static func editor_load_card_buttons_presentation(load_visible: bool, load_page: int, max_page: int, entry_count: int, card_models: Array, zh: bool) -> Dictionary:
+	var card_plans := []
+	for i in range(card_models.size()):
+		var model: Dictionary = Dictionary(card_models[i])
+		var visible := load_visible and bool(model.get("visible", false))
+		var card_plan := {
+			"visible": visible,
+			"disabled": not visible,
+			"text": "",
+		}
+		if visible:
+			var kind := String(model.get("kind", "unit"))
+			var y_origin := 224.0 if kind == "empty" or kind == "team" else 250.0
+			card_plan["position"] = Vector2(936.0, y_origin + float(i) * 34.0)
+			card_plan["size"] = Vector2(270.0, 30.0)
+			card_plan["text"] = String(model.get("text", ""))
+			if kind == "empty":
+				card_plan["modulate"] = Color(0.58, 0.64, 0.68, 0.76)
+			elif kind == "builtin":
+				card_plan["modulate"] = Color(0.74, 1.0, 0.48, 1.0)
+			elif kind == "library":
+				card_plan["modulate"] = Color(0.38, 0.96, 1.0, 1.0)
+			elif bool(model.get("selected", false)):
+				card_plan["modulate"] = Color(1.0, 0.86, 0.28, 1.0)
+			else:
+				card_plan["modulate"] = Color(0.84, 0.9, 0.94, 1.0)
+		card_plans.append(card_plan)
+	if not load_visible:
+		return {
+			"prev": {"text": ""},
+			"next": {"text": ""},
+			"page": {},
+			"cards": card_plans,
+		}
+	return {
+		"prev": {
+			"text": "<",
+			"disabled": load_page <= 0 or max_page <= 0,
+		},
+		"next": {
+			"text": ">",
+			"disabled": load_page >= max_page or max_page <= 0,
+		},
+		"page": {
+			"position": Vector2(966.0, 654.0),
+			"size": Vector2(210.0, 22.0),
+			"text": ("页 %d/%d  %d" if zh else "P %d/%d  %d") % [load_page + 1, max_page + 1, entry_count],
+		},
+		"cards": card_plans,
+	}
+
+
 static func editor_info_surface_build_specs() -> Dictionary:
 	return {
 		"unit": {
