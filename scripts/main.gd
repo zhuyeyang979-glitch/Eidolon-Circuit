@@ -49690,63 +49690,27 @@ func _update_editor_load_card_buttons(role_key: String) -> void:
 
 func _refresh_editor_assembly_guide_ui(parts_visible: bool, role_key: String) -> void:
 	var show_guide := parts_visible and unit_editor_assembly_guide_service != null
+	var model := {}
+	if show_guide:
+		editor_assembly_guide_step_index = unit_editor_assembly_guide_service.clamp_step_index(role_key, editor_assembly_guide_step_index)
+		model = unit_editor_assembly_guide_service.step_model(role_key, editor_assembly_guide_step_index, _ui_is_zh())
+	var guide_plan := UILifecycleService.editor_assembly_guide_presentation(
+		show_guide,
+		model,
+		_editor_connection_evaluation_passed(),
+		_ui_is_zh()
+	)
 	if editor_assembly_guide_label != null:
-		_set_canvas_item_visible_if_changed(editor_assembly_guide_label, show_guide)
+		_apply_editor_control_plan(editor_assembly_guide_label, Dictionary(guide_plan.get("guide_label", {})))
 	if editor_assembly_tutorial_panel != null:
-		_set_canvas_item_visible_if_changed(editor_assembly_tutorial_panel, show_guide)
+		_apply_editor_control_plan(editor_assembly_tutorial_panel, Dictionary(guide_plan.get("tutorial_panel", {})))
 	if editor_assembly_tutorial_label != null:
-		_set_canvas_item_visible_if_changed(editor_assembly_tutorial_label, show_guide)
+		_apply_editor_control_plan(editor_assembly_tutorial_label, Dictionary(guide_plan.get("tutorial_label", {})))
+	var action_plans: Dictionary = Dictionary(guide_plan.get("actions", {}))
 	for action_key in ["assembly_guide_prev", "assembly_guide_apply", "assembly_guide_next"]:
 		if editor_action_buttons.has(action_key):
 			var action_button: Button = editor_action_buttons[action_key]
-			_set_canvas_item_visible_if_changed(action_button, show_guide)
-			_set_button_disabled_if_changed(action_button, not show_guide)
-	if not show_guide:
-		return
-	editor_assembly_guide_step_index = unit_editor_assembly_guide_service.clamp_step_index(role_key, editor_assembly_guide_step_index)
-	var model: Dictionary = unit_editor_assembly_guide_service.step_model(role_key, editor_assembly_guide_step_index, _ui_is_zh())
-	if editor_assembly_guide_label != null:
-		_set_control_position_if_changed(editor_assembly_guide_label, Vector2(936.0, 118.0))
-		_set_control_size_if_changed(editor_assembly_guide_label, Vector2(160.0, 22.0))
-		_set_control_text_if_changed(editor_assembly_guide_label, ("推荐 %s" if _ui_is_zh() else "GUIDE %s") % String(model.get("short_label", "")))
-		_set_control_tooltip_if_changed(editor_assembly_guide_label, String(model.get("tooltip_text", "")))
-		_set_canvas_item_modulate_if_changed(editor_assembly_guide_label, Color(1.0, 0.88, 0.30, 1.0))
-	if editor_assembly_tutorial_panel != null:
-		_set_control_position_if_changed(editor_assembly_tutorial_panel, Vector2(194.0, 102.0))
-		_set_control_size_if_changed(editor_assembly_tutorial_panel, Vector2(706.0, 66.0))
-		_set_canvas_item_modulate_if_changed(editor_assembly_tutorial_panel, Color(1.0, 1.0, 1.0, 1.0))
-	if editor_assembly_tutorial_label != null:
-		_set_control_position_if_changed(editor_assembly_tutorial_label, Vector2(320.0, 108.0))
-		_set_control_size_if_changed(editor_assembly_tutorial_label, Vector2(568.0, 60.0))
-		_set_control_text_if_changed(editor_assembly_tutorial_label, String(model.get("tutorial_text", "")))
-		_set_control_tooltip_if_changed(editor_assembly_tutorial_label, String(model.get("instruction", "")))
-		_set_canvas_item_modulate_if_changed(editor_assembly_tutorial_label, Color(0.86, 0.94, 1.0, 1.0))
-	if editor_action_buttons.has("assembly_guide_prev"):
-		var prev_button: Button = editor_action_buttons["assembly_guide_prev"]
-		_set_control_position_if_changed(prev_button, Vector2(1100.0, 118.0))
-		_set_control_size_if_changed(prev_button, Vector2(24.0, 22.0))
-		_set_control_text_if_changed(prev_button, "<")
-		_set_control_tooltip_if_changed(prev_button, "上一推荐步骤" if _ui_is_zh() else "Previous recommended step")
-		_set_button_disabled_if_changed(prev_button, not bool(model.get("can_prev", false)))
-		_set_canvas_item_modulate_if_changed(prev_button, Color(0.84, 0.94, 1.0, 1.0) if bool(model.get("can_prev", false)) else Color(0.54, 0.62, 0.68, 0.7))
-	if editor_action_buttons.has("assembly_guide_apply"):
-		var apply_button: Button = editor_action_buttons["assembly_guide_apply"]
-		_set_control_position_if_changed(apply_button, Vector2(1128.0, 118.0))
-		_set_control_size_if_changed(apply_button, Vector2(48.0, 22.0))
-		_set_control_text_if_changed(apply_button, "前往" if _ui_is_zh() else "GO")
-		_set_control_tooltip_if_changed(apply_button, "跳到当前推荐步骤；不会自动安装零件。" if _ui_is_zh() else "Jump to this step; no parts are installed automatically.")
-		_set_button_disabled_if_changed(apply_button, false)
-		_set_canvas_item_modulate_if_changed(apply_button, Color(1.0, 0.86, 0.28, 1.0))
-	if editor_action_buttons.has("assembly_guide_next"):
-		var next_button: Button = editor_action_buttons["assembly_guide_next"]
-		var connection_gate_active := String(model.get("key", "")) == "connection" and not _editor_connection_evaluation_passed()
-		var can_next := bool(model.get("can_next", false)) and not connection_gate_active
-		_set_control_position_if_changed(next_button, Vector2(1180.0, 118.0))
-		_set_control_size_if_changed(next_button, Vector2(26.0, 22.0))
-		_set_control_text_if_changed(next_button, ">")
-		_set_control_tooltip_if_changed(next_button, ("先通过连接评估" if _ui_is_zh() else "Pass connection evaluation first") if connection_gate_active else ("下一推荐步骤" if _ui_is_zh() else "Next recommended step"))
-		_set_button_disabled_if_changed(next_button, not can_next)
-		_set_canvas_item_modulate_if_changed(next_button, Color(0.84, 0.94, 1.0, 1.0) if can_next else Color(0.54, 0.62, 0.68, 0.7))
+			_apply_editor_control_plan(action_button, Dictionary(action_plans.get(action_key, {})))
 
 
 func _editor_connection_state_color() -> Color:

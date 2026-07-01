@@ -144,6 +144,60 @@ func _init() -> void:
 	if bool(guide_plan.get("managed", true)):
 		_fail("UILifecycleService should leave assembly-guide action presentation unmanaged.")
 		return
+	var assembly_lifecycle_service := UILifecycleService.new()
+	if not assembly_lifecycle_service.has_method("editor_assembly_guide_presentation"):
+		_fail("UILifecycleService should expose editor assembly-guide presentation planning.")
+		return
+	var assembly_model := {
+		"key": "connection",
+		"short_label": "连接",
+		"tooltip_text": "连接提示",
+		"tutorial_text": "连接教程",
+		"instruction": "连接说明",
+		"can_prev": true,
+		"can_next": true,
+	}
+	var blocked_assembly_plan: Dictionary = assembly_lifecycle_service.call("editor_assembly_guide_presentation", true, assembly_model, false, true)
+	var assembly_label: Dictionary = Dictionary(blocked_assembly_plan.get("guide_label", {}))
+	var assembly_tutorial_panel: Dictionary = Dictionary(blocked_assembly_plan.get("tutorial_panel", {}))
+	var assembly_tutorial_label: Dictionary = Dictionary(blocked_assembly_plan.get("tutorial_label", {}))
+	if not bool(assembly_label.get("visible", false)) or String(assembly_label.get("text", "")) != "推荐 连接" or String(assembly_label.get("tooltip", "")) != "连接提示":
+		_fail("UILifecycleService assembly-guide label presentation contract failed.")
+		return
+	_assert_vector(assembly_label, "position", Vector2(936.0, 118.0), "assembly-guide label presentation")
+	_assert_vector(assembly_label, "size", Vector2(160.0, 22.0), "assembly-guide label presentation")
+	_assert_color(assembly_label, "modulate", Color(1.0, 0.88, 0.30, 1.0), "assembly-guide label presentation")
+	if not bool(assembly_tutorial_panel.get("visible", false)) or not bool(assembly_tutorial_label.get("visible", false)) or String(assembly_tutorial_label.get("text", "")) != "连接教程" or String(assembly_tutorial_label.get("tooltip", "")) != "连接说明":
+		_fail("UILifecycleService assembly-guide tutorial presentation contract failed.")
+		return
+	_assert_vector(assembly_tutorial_panel, "position", Vector2(194.0, 102.0), "assembly-guide panel presentation")
+	_assert_vector(assembly_tutorial_label, "position", Vector2(320.0, 108.0), "assembly-guide tutorial presentation")
+	var assembly_actions: Dictionary = Dictionary(blocked_assembly_plan.get("actions", {}))
+	var prev_assembly_action: Dictionary = Dictionary(assembly_actions.get("assembly_guide_prev", {}))
+	var apply_assembly_action: Dictionary = Dictionary(assembly_actions.get("assembly_guide_apply", {}))
+	var next_assembly_action: Dictionary = Dictionary(assembly_actions.get("assembly_guide_next", {}))
+	if String(prev_assembly_action.get("text", "")) != "<" or bool(prev_assembly_action.get("disabled", true)):
+		_fail("UILifecycleService assembly-guide prev action contract failed.")
+		return
+	if String(apply_assembly_action.get("text", "")) != "前往" or bool(apply_assembly_action.get("disabled", true)):
+		_fail("UILifecycleService assembly-guide apply action contract failed.")
+		return
+	if String(next_assembly_action.get("text", "")) != ">" or not bool(next_assembly_action.get("disabled", false)) or String(next_assembly_action.get("tooltip", "")) != "先通过连接评估":
+		_fail("UILifecycleService assembly-guide connection gate contract failed.")
+		return
+	_assert_vector(prev_assembly_action, "position", Vector2(1100.0, 118.0), "assembly-guide prev action")
+	_assert_vector(apply_assembly_action, "size", Vector2(48.0, 22.0), "assembly-guide apply action")
+	_assert_color(next_assembly_action, "modulate", Color(0.54, 0.62, 0.68, 0.7), "assembly-guide gated next action")
+	var passed_assembly_plan: Dictionary = assembly_lifecycle_service.call("editor_assembly_guide_presentation", true, assembly_model, true, false)
+	var passed_next_action: Dictionary = Dictionary(Dictionary(passed_assembly_plan.get("actions", {})).get("assembly_guide_next", {}))
+	if bool(passed_next_action.get("disabled", true)) or String(passed_next_action.get("tooltip", "")) != "Next recommended step":
+		_fail("UILifecycleService assembly-guide next action should unlock after connection evaluation.")
+		return
+	var hidden_assembly_plan: Dictionary = assembly_lifecycle_service.call("editor_assembly_guide_presentation", false, assembly_model, true, false)
+	var hidden_actions: Dictionary = Dictionary(hidden_assembly_plan.get("actions", {}))
+	if bool(Dictionary(hidden_assembly_plan.get("guide_label", {})).get("visible", true)) or bool(Dictionary(hidden_assembly_plan.get("tutorial_panel", {})).get("visible", true)) or bool(Dictionary(hidden_actions.get("assembly_guide_next", {})).get("visible", true)) or not bool(Dictionary(hidden_actions.get("assembly_guide_next", {})).get("disabled", false)):
+		_fail("UILifecycleService hidden assembly-guide presentation contract failed.")
+		return
 	var build_specs: Dictionary = UILifecycleService.editor_action_build_specs()
 	var panel_specs: Array = Array(build_specs.get("panel_buttons", []))
 	var guide_specs: Array = Array(build_specs.get("assembly_guide_actions", []))

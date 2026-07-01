@@ -1126,6 +1126,79 @@ static func editor_action_state(action_key: String, visibility_plan: Dictionary,
 	return state
 
 
+static func editor_assembly_guide_presentation(show_guide: bool, model: Dictionary, connection_evaluation_passed: bool, zh: bool) -> Dictionary:
+	var action_plans := {}
+	for action_key in EDITOR_ASSEMBLY_GUIDE_ACTION_KEYS:
+		action_plans[action_key] = {
+			"visible": show_guide,
+			"disabled": not show_guide,
+		}
+	if not show_guide:
+		return {
+			"guide_label": {"visible": false},
+			"tutorial_panel": {"visible": false},
+			"tutorial_label": {"visible": false},
+			"actions": action_plans,
+		}
+	var enabled_modulate := Color(0.84, 0.94, 1.0, 1.0)
+	var disabled_modulate := Color(0.54, 0.62, 0.68, 0.7)
+	var connection_gate_active := String(model.get("key", "")) == "connection" and not connection_evaluation_passed
+	var can_prev := bool(model.get("can_prev", false))
+	var can_next := bool(model.get("can_next", false)) and not connection_gate_active
+	action_plans["assembly_guide_prev"] = {
+		"visible": true,
+		"disabled": not can_prev,
+		"position": Vector2(1100.0, 118.0),
+		"size": Vector2(24.0, 22.0),
+		"text": "<",
+		"tooltip": "上一推荐步骤" if zh else "Previous recommended step",
+		"modulate": enabled_modulate if can_prev else disabled_modulate,
+	}
+	action_plans["assembly_guide_apply"] = {
+		"visible": true,
+		"disabled": false,
+		"position": Vector2(1128.0, 118.0),
+		"size": Vector2(48.0, 22.0),
+		"text": "前往" if zh else "GO",
+		"tooltip": "跳到当前推荐步骤；不会自动安装零件。" if zh else "Jump to this step; no parts are installed automatically.",
+		"modulate": Color(1.0, 0.86, 0.28, 1.0),
+	}
+	action_plans["assembly_guide_next"] = {
+		"visible": true,
+		"disabled": not can_next,
+		"position": Vector2(1180.0, 118.0),
+		"size": Vector2(26.0, 22.0),
+		"text": ">",
+		"tooltip": ("先通过连接评估" if zh else "Pass connection evaluation first") if connection_gate_active else ("下一推荐步骤" if zh else "Next recommended step"),
+		"modulate": enabled_modulate if can_next else disabled_modulate,
+	}
+	return {
+		"guide_label": {
+			"visible": true,
+			"position": Vector2(936.0, 118.0),
+			"size": Vector2(160.0, 22.0),
+			"text": ("推荐 %s" if zh else "GUIDE %s") % String(model.get("short_label", "")),
+			"tooltip": String(model.get("tooltip_text", "")),
+			"modulate": Color(1.0, 0.88, 0.30, 1.0),
+		},
+		"tutorial_panel": {
+			"visible": true,
+			"position": Vector2(194.0, 102.0),
+			"size": Vector2(706.0, 66.0),
+			"modulate": Color(1.0, 1.0, 1.0, 1.0),
+		},
+		"tutorial_label": {
+			"visible": true,
+			"position": Vector2(320.0, 108.0),
+			"size": Vector2(568.0, 60.0),
+			"text": String(model.get("tutorial_text", "")),
+			"tooltip": String(model.get("instruction", "")),
+			"modulate": Color(0.86, 0.94, 1.0, 1.0),
+		},
+		"actions": action_plans,
+	}
+
+
 static func editor_action_presentation(action_key: String, action_state: Dictionary, visible_unit_action_index: int, context: Dictionary) -> Dictionary:
 	var key := String(action_key)
 	var kind := String(action_state.get("kind", "unit"))
