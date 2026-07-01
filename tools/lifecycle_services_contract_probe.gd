@@ -446,6 +446,48 @@ func _init() -> void:
 	_assert_vector(fourth_roster_slot_build_spec, "size", Vector2(82.0, 26.0), "roster slot build spec")
 	_assert_vector(fourth_roster_slot_build_spec, "thumb_position", Vector2(611.0, 47.0), "roster thumb build spec")
 	_assert_vector(fourth_roster_slot_build_spec, "thumb_size", Vector2(20.0, 20.0), "roster thumb build spec")
+	var roster_ui_lifecycle_source := FileAccess.get_file_as_string(ProjectSettings.globalize_path("res://scripts/services/ui_lifecycle_service.gd"))
+	if not roster_ui_lifecycle_source.contains("static func editor_roster_overview_presentation("):
+		_fail("UILifecycleService should expose editor roster overview presentation planning.")
+		return
+	var roster_ui_lifecycle_service := UILifecycleService.new()
+	var roster_overview_plan: Dictionary = roster_ui_lifecycle_service.call("editor_roster_overview_presentation", "barrier", 1, 2, [
+		{"visible": false, "actual_index": 4},
+		{"visible": true, "kind": "empty", "actual_index": 2, "role_short": "B"},
+		{"visible": true, "kind": "unit", "unit_index": 4, "role_short": "H", "cost": 120, "blank": true, "selected": false},
+		{"visible": true, "kind": "unit", "unit_index": 0, "role_short": "P", "cost": 90, "blank": false, "selected": true},
+	], false)
+	if String(Dictionary(roster_overview_plan.get("title", {})).get("text", "")) != "BARRIER GROUP" or String(Dictionary(roster_overview_plan.get("page", {})).get("text", "")) != "2/3":
+		_fail("UILifecycleService roster overview title/page presentation failed.")
+		return
+	if not bool(Dictionary(roster_overview_plan.get("prev", {})).get("visible", false)) or bool(Dictionary(roster_overview_plan.get("prev", {})).get("disabled", true)) or bool(Dictionary(roster_overview_plan.get("next", {})).get("disabled", true)):
+		_fail("UILifecycleService roster overview nav presentation failed.")
+		return
+	var roster_slot_plans: Array = Array(roster_overview_plan.get("slots", []))
+	if roster_slot_plans.size() != 4:
+		_fail("UILifecycleService roster overview slot presentation count failed.")
+		return
+	var hidden_roster_slot_plan: Dictionary = Dictionary(roster_slot_plans[0])
+	var empty_roster_slot_plan: Dictionary = Dictionary(roster_slot_plans[1])
+	var blank_roster_slot_plan: Dictionary = Dictionary(roster_slot_plans[2])
+	var selected_roster_slot_plan: Dictionary = Dictionary(roster_slot_plans[3])
+	if bool(hidden_roster_slot_plan.get("visible", true)) or not bool(hidden_roster_slot_plan.get("disabled", false)) or String(hidden_roster_slot_plan.get("text", "x")) != "":
+		_fail("UILifecycleService hidden roster slot presentation failed.")
+		return
+	if bool(Dictionary(hidden_roster_slot_plan.get("thumb", {})).get("visible", true)) or String(Dictionary(hidden_roster_slot_plan.get("thumb", {})).get("status", "")) != "reserve":
+		_fail("UILifecycleService hidden roster thumb presentation failed.")
+		return
+	if String(empty_roster_slot_plan.get("text", "")) != "03 +B":
+		_fail("UILifecycleService empty roster slot presentation failed.")
+		return
+	_assert_color(empty_roster_slot_plan, "modulate", Color(0.58, 0.64, 0.68, 0.76), "empty roster slot presentation")
+	if String(blank_roster_slot_plan.get("text", "")) != "05 H 120 BLK" or String(Dictionary(blank_roster_slot_plan.get("thumb", {})).get("status", "")) != "reserve":
+		_fail("UILifecycleService blank roster slot presentation failed.")
+		return
+	if String(selected_roster_slot_plan.get("text", "")) != "01 P 90" or String(Dictionary(selected_roster_slot_plan.get("thumb", {})).get("status", "")) != "pending":
+		_fail("UILifecycleService selected roster slot presentation failed.")
+		return
+	_assert_color(selected_roster_slot_plan, "modulate", Color(1.0, 0.86, 0.28, 1.0), "selected roster slot presentation")
 	var color_build_specs: Dictionary = UILifecycleService.editor_color_controls_build_specs(4)
 	var color_panel_build_spec: Dictionary = Dictionary(color_build_specs.get("panel", {}))
 	var color_label_build_spec: Dictionary = Dictionary(color_build_specs.get("label", {}))

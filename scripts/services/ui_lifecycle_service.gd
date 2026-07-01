@@ -346,6 +346,67 @@ static func editor_roster_overview_build_specs(slot_count: int) -> Dictionary:
 	}
 
 
+static func editor_roster_overview_presentation(role_key: String, roster_page: int, max_page: int, slot_models: Array, zh: bool) -> Dictionary:
+	var title := "英雄单位页" if zh else "HERO PAGES"
+	if role_key == "puppet":
+		title = "傀儡组" if zh else "PUPPET GROUP"
+	elif role_key == "barrier":
+		title = "结界组" if zh else "BARRIER GROUP"
+	var slot_plans := []
+	for raw_model in slot_models:
+		var model: Dictionary = Dictionary(raw_model)
+		var visible := bool(model.get("visible", false))
+		var actual_index := int(model.get("actual_index", 0))
+		var slot_plan := {
+			"visible": visible,
+			"disabled": not visible,
+			"text": "",
+			"thumb": {
+				"visible": visible,
+				"status": "reserve",
+				"actual_index": actual_index,
+			},
+		}
+		if visible:
+			var kind := String(model.get("kind", "unit"))
+			if kind == "empty":
+				slot_plan["text"] = ("%02d + %s" if zh else "%02d +%s") % [actual_index + 1, String(model.get("role_short", ""))]
+				slot_plan["modulate"] = Color(0.58, 0.64, 0.68, 0.76)
+			else:
+				var blank := bool(model.get("blank", false))
+				var selected := bool(model.get("selected", false))
+				var blank_suffix := " 空" if zh and blank else (" BLK" if blank else "")
+				slot_plan["text"] = "%02d %s %d%s" % [int(model.get("unit_index", 0)) + 1, String(model.get("role_short", "")), int(model.get("cost", 0)), blank_suffix]
+				slot_plan["modulate"] = Color(1.0, 0.86, 0.28, 1.0) if selected else Color(0.82, 0.9, 0.94, 0.92)
+				var unit_thumb_plan := Dictionary(slot_plan["thumb"])
+				unit_thumb_plan["status"] = "pending" if selected else ("reserve" if blank else "live")
+				slot_plan["thumb"] = unit_thumb_plan
+		else:
+			var hidden_thumb_plan := Dictionary(slot_plan["thumb"])
+			hidden_thumb_plan["visible"] = false
+			slot_plan["thumb"] = hidden_thumb_plan
+		slot_plans.append(slot_plan)
+	return {
+		"title": {
+			"visible": true,
+			"text": title,
+		},
+		"page": {
+			"visible": true,
+			"text": "%d/%d" % [roster_page + 1, max_page + 1],
+		},
+		"prev": {
+			"visible": true,
+			"disabled": roster_page <= 0,
+		},
+		"next": {
+			"visible": true,
+			"disabled": roster_page >= max_page,
+		},
+		"slots": slot_plans,
+	}
+
+
 static func editor_color_controls_build_specs(button_count: int) -> Dictionary:
 	var buttons := []
 	for i in range(maxi(0, button_count)):

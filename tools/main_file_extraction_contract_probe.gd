@@ -38,6 +38,9 @@ func _init() -> void:
 	if source.find("UILifecycleService.editor_module_binding_overlay_side_presentation") < 0 or source.find("UILifecycleService.editor_module_binding_overlay_key_presentation") < 0:
 		_fail("main.gd should delegate editor module binding overlay button presentation planning.")
 		return
+	if source.find("UILifecycleService.editor_roster_overview_presentation") < 0:
+		_fail("main.gd should delegate editor roster overview presentation planning.")
+		return
 	if source.contains("\"size_tier_rank\": float(_size_tier_rank(_part_size_tier_label(part, slot_key)))"):
 		_fail("main.gd should not derive part size-tier rank inside slot-volume adapters.")
 	if source.contains("\"booster_boost_momentum\":"):
@@ -137,6 +140,9 @@ func _init() -> void:
 		return
 	if source.contains("_set_canvas_item_visible_if_changed(side_button, should_show_side)") or source.contains("side_button.z_index = MODULE_BINDING_OVERLAY_Z_INDEX") or source.contains("_set_control_tooltip_if_changed(side_button, (\"选择%s后再绑定攻击键\"") or source.contains("_set_canvas_item_modulate_if_changed(side_button, Color(1.0, 0.86, 0.22, 1.0) if selected") or source.contains("_set_control_position_if_changed(key_button, key_rect.position)") or source.contains("key_button.z_index = MODULE_BINDING_OVERLAY_Z_INDEX") or source.contains("_set_control_text_if_changed(key_button, \"%d %s\"") or source.contains("_set_canvas_item_visible_if_changed(key_button, false)"):
 		_fail("main.gd should delegate editor module binding overlay button presentation planning.")
+		return
+	if source.contains("var title := \"\"") or source.contains("_set_control_text_if_changed(label, title)") or source.contains("_set_control_text_if_changed(page_label, \"%d/%d\"") or source.contains("_set_canvas_item_visible_if_changed(editor_roster_prev_button, true)") or source.contains("_set_canvas_item_visible_if_changed(button, visible_entry)") or source.contains("_set_control_text_if_changed(button, (\"%02d + %s\"") or source.contains("_set_canvas_item_modulate_if_changed(button, Color(1.0, 0.86, 0.28, 1.0) if selected"):
+		_fail("main.gd should delegate editor roster overview presentation planning.")
 		return
 	for direct_control_mutation in ["_set_canvas_item_visible_if_changed(role_button, bool(role_button_plan", "_set_control_position_if_changed(group_button, group_plan", "_set_canvas_item_visible_if_changed(button, slot_visible)", "_set_button_disabled_if_changed(button, not slot_visible)", "_set_canvas_item_visible_if_changed(filter_button, bool(filter_plan", "_set_control_position_if_changed(filter_button, filter_plan", "_set_control_text_if_changed(sort_key_button, String(sort_plan.get(\"sort_key_text\", \"\")))", "_set_control_text_if_changed(sort_dir_button, String(sort_plan.get(\"sort_dir_text\", \"\")))", "_set_canvas_item_visible_if_changed(editor_sort_panel, bool(sort_panel_plan", "_set_canvas_item_visible_if_changed(sort_option_button, show_sort_option)", "_set_control_position_if_changed(sort_option_button, sort_option_plan", "sort_dir_front.move_to_front()", "_set_canvas_item_visible_if_changed(editor_unit_label, bool(info_unit_plan", "_set_control_position_if_changed(editor_unit_label, info_unit_plan", "_set_canvas_item_visible_if_changed(editor_summary_label, bool(info_summary_plan", "_set_canvas_item_visible_if_changed(editor_catalog_page_label, bool(Dictionary(info_plan.get(\"catalog_page\", {})).get(\"visible\", false)))", "_set_canvas_item_visible_if_changed(catalog_title, bool(Dictionary(info_plan.get(\"catalog_title\", {})).get(\"visible\", false)))", "_set_canvas_item_visible_if_changed(action_button, action_visible)", "_set_canvas_item_visible_if_changed(editor_stats_label, bool(info_stats_plan", "_set_control_text_if_changed(color_button, String(color_button_plan"]:
 		if source.contains(direct_control_mutation):

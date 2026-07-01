@@ -8103,6 +8103,9 @@ func _select_editor_roster_overview_slot(local_slot: int) -> void:
 	if entry.is_empty():
 		return
 	if bool(entry.get("empty", false)):
+		if _editor_is_blank_work_canvas():
+			_show_editor_empty_slot_hover(int(entry.get("slot", local_slot)), true)
+			return
 		_create_editor_role_page(String(entry.get("role", ROLE_ORDER[editor_role_index])))
 		return
 	_switch_editor_to_roster_page(entry)
@@ -8151,60 +8154,68 @@ func _update_editor_roster_overview() -> void:
 	var page_size := maxi(1, editor_roster_slot_buttons.size())
 	var max_page := maxi(0, int(ceilf(float(maxi(1, entries.size())) / float(page_size))) - 1)
 	editor_roster_page = clampi(editor_roster_page, 0, max_page)
-	if editor_section_labels.has("roster_overview"):
-		var label: Label = editor_section_labels["roster_overview"]
-		var title := ""
-		if role_key == "puppet":
-			title = "傀儡组" if _ui_is_zh() else "PUPPET GROUP"
-		elif role_key == "barrier":
-			title = "结界组" if _ui_is_zh() else "BARRIER GROUP"
-		else:
-			title = "英雄单位页" if _ui_is_zh() else "HERO PAGES"
-		_set_control_text_if_changed(label, title)
-		_set_canvas_item_visible_if_changed(label, true)
-	if editor_section_labels.has("roster_page"):
-		var page_label: Label = editor_section_labels["roster_page"]
-		_set_control_text_if_changed(page_label, "%d/%d" % [editor_roster_page + 1, max_page + 1])
-		_set_canvas_item_visible_if_changed(page_label, true)
-	if editor_roster_prev_button != null:
-		_set_canvas_item_visible_if_changed(editor_roster_prev_button, true)
-		_set_button_disabled_if_changed(editor_roster_prev_button, editor_roster_page <= 0)
-	if editor_roster_next_button != null:
-		_set_canvas_item_visible_if_changed(editor_roster_next_button, true)
-		_set_button_disabled_if_changed(editor_roster_next_button, editor_roster_page >= max_page)
+	var roster_slot_models := []
+	var roster_thumb_payloads := []
 	for i in range(editor_roster_slot_buttons.size()):
 		var actual_index := editor_roster_page * page_size + i
+		var visible_entry := actual_index < entries.size()
+		var slot_model := {
+			"visible": visible_entry,
+			"actual_index": actual_index,
+		}
+		var thumb_payload := {
+			"actual_index": actual_index,
+			"entry": {},
+			"stats": {},
+			"status": "reserve",
+		}
+		if visible_entry:
+			var entry: Dictionary = entries[actual_index]
+			thumb_payload["entry"] = entry
+			if bool(entry.get("empty", false)):
+				var empty_role := String(entry.get("role", ROLE_ORDER[actual_index % ROLE_ORDER.size()]))
+				var empty_stats := _compute_unit_stats(player_id, empty_role, -1, _make_editor_blank_blueprint(empty_role))
+				slot_model["kind"] = "empty"
+				slot_model["role_short"] = _role_short(empty_role)
+				thumb_payload["stats"] = empty_stats
+			else:
+				var entry_role_key := String(entry.get("role", "hero"))
+				var unit_index := int(entry.get("index", 0))
+				var stats := _compute_unit_stats(player_id, entry_role_key, unit_index)
+				var selected := not _editor_is_blank_work_canvas() and entry_role_key == role_key and unit_index == int(editor_unit_indices.get(role_key, 0))
+				var blank := bool(stats.get("blank_canvas", false))
+				slot_model["kind"] = "unit"
+				slot_model["unit_index"] = unit_index
+				slot_model["role_short"] = _role_short(entry_role_key)
+				slot_model["cost"] = int(stats.get("cost", 0))
+				slot_model["blank"] = blank
+				slot_model["selected"] = selected
+				thumb_payload["stats"] = stats
+				thumb_payload["status"] = "pending" if selected else ("reserve" if blank else "live")
+		roster_slot_models.append(slot_model)
+		roster_thumb_payloads.append(thumb_payload)
+	var roster_overview_plan := UILifecycleService.editor_roster_overview_presentation(role_key, editor_roster_page, max_page, roster_slot_models, _ui_is_zh())
+	if editor_section_labels.has("roster_overview"):
+		var label: Label = editor_section_labels["roster_overview"]
+		_apply_editor_control_plan(label, Dictionary(roster_overview_plan.get("title", {})))
+	if editor_section_labels.has("roster_page"):
+		var page_label: Label = editor_section_labels["roster_page"]
+		_apply_editor_control_plan(page_label, Dictionary(roster_overview_plan.get("page", {})))
+	if editor_roster_prev_button != null:
+		_apply_editor_control_plan(editor_roster_prev_button, Dictionary(roster_overview_plan.get("prev", {})))
+	if editor_roster_next_button != null:
+		_apply_editor_control_plan(editor_roster_next_button, Dictionary(roster_overview_plan.get("next", {})))
+	var roster_slot_plans: Array = Array(roster_overview_plan.get("slots", []))
+	for i in range(editor_roster_slot_buttons.size()):
 		var button: Button = editor_roster_slot_buttons[i]
 		var thumb: SortieThumbView = editor_roster_slot_thumb_views[i] if i < editor_roster_slot_thumb_views.size() else null
-		var visible_entry := actual_index < entries.size()
-		_set_canvas_item_visible_if_changed(button, visible_entry)
-		_set_button_disabled_if_changed(button, not visible_entry)
+		var slot_plan := Dictionary(roster_slot_plans[i]) if i < roster_slot_plans.size() and roster_slot_plans[i] is Dictionary else {"visible": false, "disabled": true, "text": ""}
+		_apply_editor_control_plan(button, slot_plan)
+		var thumb_payload: Dictionary = Dictionary(roster_thumb_payloads[i]) if i < roster_thumb_payloads.size() and roster_thumb_payloads[i] is Dictionary else {}
+		var thumb_plan := Dictionary(slot_plan.get("thumb", {}))
 		if thumb != null:
-			_set_canvas_item_visible_if_changed(thumb, visible_entry)
-		if not visible_entry:
-			_set_control_text_if_changed(button, "")
-			if thumb != null:
-				thumb.set_entry(player_id, actual_index, {}, {}, "reserve", ui_language)
-			continue
-		var entry: Dictionary = entries[actual_index]
-		if bool(entry.get("empty", false)):
-			var empty_role := String(entry.get("role", ROLE_ORDER[actual_index % ROLE_ORDER.size()]))
-			_set_control_text_if_changed(button, ("%02d + %s" if _ui_is_zh() else "%02d +%s") % [actual_index + 1, _role_short(empty_role)])
-			_set_canvas_item_modulate_if_changed(button, Color(0.58, 0.64, 0.68, 0.76))
-			if thumb != null:
-				var empty_stats := _compute_unit_stats(player_id, empty_role, -1, _make_editor_blank_blueprint(empty_role))
-				thumb.set_entry(player_id, actual_index, entry, empty_stats, "reserve", ui_language)
-			continue
-		var entry_role_key := String(entry.get("role", "hero"))
-		var unit_index := int(entry.get("index", 0))
-		var stats := _compute_unit_stats(player_id, entry_role_key, unit_index)
-		var selected: bool = not _editor_is_blank_work_canvas() and entry_role_key == role_key and unit_index == int(editor_unit_indices.get(role_key, 0))
-		var blank: bool = bool(stats.get("blank_canvas", false))
-		var role_short: String = _role_short(entry_role_key)
-		_set_control_text_if_changed(button, "%02d %s %d%s" % [unit_index + 1, role_short, int(stats.get("cost", 0)), " 空" if _ui_is_zh() and blank else (" BLK" if blank else "")])
-		_set_canvas_item_modulate_if_changed(button, Color(1.0, 0.86, 0.28, 1.0) if selected else Color(0.82, 0.9, 0.94, 0.92))
-		if thumb != null:
-			thumb.set_entry(player_id, actual_index, entry, stats, "pending" if selected else ("reserve" if blank else "live"), ui_language)
+			_apply_editor_control_plan(thumb, thumb_plan)
+			thumb.set_entry(player_id, int(thumb_payload.get("actual_index", 0)), Dictionary(thumb_payload.get("entry", {})), Dictionary(thumb_payload.get("stats", {})), String(thumb_payload.get("status", "reserve")), ui_language)
 
 
 func _show_editor_empty_slot_hover(slot_index: int, pinned: bool = false) -> void:
