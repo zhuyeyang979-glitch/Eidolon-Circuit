@@ -554,6 +554,22 @@ static func editor_module_binding_button_build_specs(attack_group_count: int, ke
 	}
 
 
+static func editor_sort_action_button_build_specs() -> Array:
+	var buttons := []
+	for raw_spec in Array(editor_action_build_specs().get("sort_actions", [])):
+		var spec: Dictionary = Dictionary(raw_spec).duplicate(true)
+		match String(spec.get("key", "")):
+			"sort_prev":
+				spec["intent"] = "cycle"
+				spec["delta"] = -1
+			"sort_key":
+				spec["intent"] = "toggle_menu"
+			"sort_dir":
+				spec["intent"] = "toggle_direction"
+		buttons.append(spec)
+	return buttons
+
+
 static func editor_panel_role_chrome_presentation(mode: String, active_role_key: String, parts_visible: bool, panel_keys: Array, role_keys: Array, role_order: Array, role_short_labels: Dictionary, zh: bool) -> Dictionary:
 	var panel_texts := {"load": "单位库", "parts": "零件库"} if zh else {"load": "UNITS", "parts": "PARTS"}
 	var panel_buttons := {}

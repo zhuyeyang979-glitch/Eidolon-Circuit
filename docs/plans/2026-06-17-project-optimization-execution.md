@@ -1246,6 +1246,26 @@ GREEN: git diff --check
 
 `UILifecycleService.editor_module_binding_button_build_specs()` now owns pure identity/action-key/layout/z-index specs for module binding key buttons and side-action buttons. `_build_editor_ui()` consumes the merged button specs while keeping side-label localization, concrete button construction, signal wiring, and action-button references local. `_build_editor_ui()` is now 710 lines, and the extraction probe rejects old inline module-binding key/side button formulas.
 
+Follow-up editor sort-action button build specs extraction:
+
+```text
+RED: main_file_extraction_contract_probe failed on missing UILifecycleService.editor_sort_action_button_build_specs delegation
+RED: lifecycle_services_contract_probe failed on missing editor_sort_action_button_build_specs service API
+GREEN: MAIN_FILE_EXTRACTION_CONTRACT_PROBE ok services=9
+GREEN: LIFECYCLE_SERVICES_CONTRACT_PROBE ok
+GREEN: Godot --check-only --script res://scripts/main.gd --quit-after 1
+GREEN: Godot --check-only --script res://scripts/services/ui_lifecycle_service.gd --quit-after 1
+GREEN: WEAPON_CATALOG_SUBMENU_PROBE ok melee_options=6 gun_options=10
+GREEN: WEAPON_SUBCATEGORY_FILTER_PROBE ok
+GREEN: PART_LIBRARY_UI_PROBE groups=["torso", "limb", "terminal_weapon", "barrier_panel", "software_muscle", "software"] weapon=3 equipment=5 software=7 dashboard=40
+GREEN: EDITOR_CATALOG_REVISION_CACHE_PROBE ok skips=1
+GREEN: UNIT_EDITOR_PAGINATION_LAYOUT_PROBE ok unit=1 page=0 catalog=1 load=0 feedback=[P: (270.0, 654.0), S: (622.0, 26.0)]
+GREEN: jq empty tools/probe_manifest.json
+GREEN: git diff --check
+```
+
+`UILifecycleService.editor_sort_action_button_build_specs()` now owns pure identity/text/layout/click-intent specs for the three sort action buttons. `_build_editor_ui()` consumes those specs in one loop while keeping concrete button construction, signal wiring, and action-button references local. `_build_editor_ui()` is now 700 lines, and the extraction probe rejects the old inline `sort_prev` / `sort_key` / `sort_dir` construction and signal-wiring formulas.
+
 Remaining items after this batch:
 
 - Continue editor UI extraction with `_build_editor_ui` and the remaining action presentation/control-mutation sections of `_apply_editor_panel_visibility`, then continue `_resolve_attack` and `_refresh_editor_visual_views` extraction.

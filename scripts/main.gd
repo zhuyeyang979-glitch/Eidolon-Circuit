@@ -47674,34 +47674,24 @@ func _build_editor_ui() -> void:
 		shop_button.mouse_exited.connect(_clear_editor_hover_card)
 		root.add_child(shop_button)
 		editor_shop_buttons[slot_key] = shop_button
-	var sort_action_specs: Array = Array(editor_action_build_specs.get("sort_actions", []))
-	var sort_prev_spec := _editor_build_spec_for_key(sort_action_specs, "sort_prev")
-	var sort_prev_button := Button.new()
-	sort_prev_button.text = String(sort_prev_spec.get("text", "<"))
-	sort_prev_button.position = sort_prev_spec.get("position", Vector2(936.0, 294.0))
-	sort_prev_button.size = sort_prev_spec.get("size", Vector2(24.0, 22.0))
-	sort_prev_button.focus_mode = Control.FOCUS_NONE
-	sort_prev_button.pressed.connect(_cycle_editor_catalog_sort.bind(-1))
-	root.add_child(sort_prev_button)
-	editor_action_buttons["sort_prev"] = sort_prev_button
-	var sort_key_spec := _editor_build_spec_for_key(sort_action_specs, "sort_key")
-	var sort_key_button := Button.new()
-	sort_key_button.text = String(sort_key_spec.get("text", "排序"))
-	sort_key_button.position = sort_key_spec.get("position", Vector2(936.0, 294.0))
-	sort_key_button.size = sort_key_spec.get("size", Vector2(160.0, 22.0))
-	sort_key_button.focus_mode = Control.FOCUS_NONE
-	sort_key_button.pressed.connect(_toggle_editor_sort_menu)
-	root.add_child(sort_key_button)
-	editor_action_buttons["sort_key"] = sort_key_button
-	var sort_dir_spec := _editor_build_spec_for_key(sort_action_specs, "sort_dir")
-	var sort_dir_button := Button.new()
-	sort_dir_button.text = String(sort_dir_spec.get("text", "升序"))
-	sort_dir_button.position = sort_dir_spec.get("position", Vector2(1100.0, 294.0))
-	sort_dir_button.size = sort_dir_spec.get("size", Vector2(106.0, 22.0))
-	sort_dir_button.focus_mode = Control.FOCUS_NONE
-	sort_dir_button.pressed.connect(_toggle_editor_catalog_sort_direction)
-	root.add_child(sort_dir_button)
-	editor_action_buttons["sort_dir"] = sort_dir_button
+	var sort_action_button_build_specs := UILifecycleService.editor_sort_action_button_build_specs()
+	for raw_sort_action_button_build_spec in sort_action_button_build_specs:
+		var sort_action_button_build_spec := Dictionary(raw_sort_action_button_build_spec)
+		var sort_action_key := String(sort_action_button_build_spec.get("key", ""))
+		var sort_action_button := Button.new()
+		sort_action_button.text = String(sort_action_button_build_spec.get("text", ""))
+		sort_action_button.position = sort_action_button_build_spec.get("position", Vector2.ZERO)
+		sort_action_button.size = sort_action_button_build_spec.get("size", Vector2.ZERO)
+		sort_action_button.focus_mode = Control.FOCUS_NONE
+		match String(sort_action_button_build_spec.get("intent", "")):
+			"cycle":
+				sort_action_button.pressed.connect(_cycle_editor_catalog_sort.bind(int(sort_action_button_build_spec.get("delta", 0))))
+			"toggle_menu":
+				sort_action_button.pressed.connect(_toggle_editor_sort_menu)
+			"toggle_direction":
+				sort_action_button.pressed.connect(_toggle_editor_catalog_sort_direction)
+		root.add_child(sort_action_button)
+		editor_action_buttons[sort_action_key] = sort_action_button
 	var sort_menu_build_specs := UILifecycleService.editor_sort_menu_build_specs(EDITOR_SORT_KEY_ORDER)
 	var sort_panel_build_spec := Dictionary(sort_menu_build_specs.get("panel", {}))
 	editor_sort_panel = _add_ui_rect(root, String(sort_panel_build_spec.get("name", "EditorSortSubmenu")), sort_panel_build_spec.get("position", Vector2.ZERO), sort_panel_build_spec.get("size", Vector2.ZERO), Color(0.006, 0.014, 0.021, 0.94))

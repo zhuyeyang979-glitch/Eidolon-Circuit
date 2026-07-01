@@ -496,6 +496,32 @@ func _init() -> void:
 	if int(first_module_key_button_build_spec.get("z_index", -1)) != 240 or int(right_module_side_button_build_spec.get("z_index", -1)) != 380:
 		_fail("UILifecycleService module binding z-index build spec failed.")
 		return
+	if not ui_lifecycle_source.contains("static func editor_sort_action_button_build_specs("):
+		_fail("UILifecycleService should expose editor sort action button build specs.")
+		return
+	var sort_action_button_build_specs: Array = ui_lifecycle_service.call("editor_sort_action_button_build_specs")
+	if sort_action_button_build_specs.size() != 3:
+		_fail("UILifecycleService sort action button build spec count failed.")
+		return
+	var prev_sort_action_build_spec: Dictionary = Dictionary(sort_action_button_build_specs[0])
+	var key_sort_action_build_spec: Dictionary = Dictionary(sort_action_button_build_specs[1])
+	var dir_sort_action_build_spec: Dictionary = Dictionary(sort_action_button_build_specs[2])
+	if String(prev_sort_action_build_spec.get("key", "")) != "sort_prev" or String(prev_sort_action_build_spec.get("intent", "")) != "cycle":
+		_fail("UILifecycleService sort previous action identity failed.")
+		return
+	if int(prev_sort_action_build_spec.get("delta", 0)) != -1:
+		_fail("UILifecycleService sort previous delta failed.")
+		return
+	if String(key_sort_action_build_spec.get("key", "")) != "sort_key" or String(key_sort_action_build_spec.get("intent", "")) != "toggle_menu":
+		_fail("UILifecycleService sort key action identity failed.")
+		return
+	if String(dir_sort_action_build_spec.get("key", "")) != "sort_dir" or String(dir_sort_action_build_spec.get("intent", "")) != "toggle_direction":
+		_fail("UILifecycleService sort direction action identity failed.")
+		return
+	_assert_vector(prev_sort_action_build_spec, "position", Vector2(936.0, 294.0), "sort action button build spec")
+	_assert_vector(prev_sort_action_build_spec, "size", Vector2(24.0, 22.0), "sort action button build spec")
+	_assert_vector(key_sort_action_build_spec, "size", Vector2(160.0, 22.0), "sort action button build spec")
+	_assert_vector(dir_sort_action_build_spec, "position", Vector2(1100.0, 294.0), "sort action button build spec")
 	Dictionary(Array(build_specs.get("canvas_tools", []))[0])["key"] = "mutated"
 	var fresh_build_specs: Dictionary = UILifecycleService.editor_action_build_specs()
 	if String(Dictionary(Array(fresh_build_specs.get("canvas_tools", []))[0]).get("key", "")) != "blank_canvas":
