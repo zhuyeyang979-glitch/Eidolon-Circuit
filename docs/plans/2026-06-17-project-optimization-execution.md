@@ -1366,6 +1366,29 @@ GREEN: git diff --check
 
 `UILifecycleService.editor_auxiliary_chrome_build_specs()` now owns pure identity/layout/z-index specs for the assembly guide, legality status, assembly tutorial panel/label, performance overlay, and save feedback label. `_build_editor_ui()` consumes those specs while keeping colors, autowrap, visibility defaults, runtime tutorial/status text, signal wiring, and feedback relayout local. `_build_editor_ui()` is now 724 lines, and the extraction probe rejects old inline auxiliary chrome formulas.
 
+Follow-up editor overlay view build specs extraction:
+
+```text
+RED: main_file_extraction_contract_probe failed on missing UILifecycleService.editor_overlay_view_build_specs delegation
+RED: lifecycle_services_contract_probe failed on missing editor_overlay_view_build_specs service API
+GREEN: MAIN_FILE_EXTRACTION_CONTRACT_PROBE ok services=9
+GREEN: LIFECYCLE_SERVICES_CONTRACT_PROBE ok
+GREEN: Godot --check-only --script res://scripts/main.gd --quit-after 1
+GREEN: Godot --check-only --script res://scripts/services/ui_lifecycle_service.gd --quit-after 1
+GREEN: VIEW_EXTRACTION_CONTRACT_PROBE ok views=27
+GREEN: UNIT_EDITOR_TORSO_DETAIL_BUTTON_PROBE ok
+GREEN: ENGINE_POWER_ALLOCATION_OPEN_PROBE ok
+GREEN: POWER_ALLOCATION_CLICK_PART_HOVER_PROBE ok
+GREEN: EDITOR_PART_DETAIL_GLOBAL_CLOSE_BUTTON_PROBE ok
+GREEN: EDITOR_PART_DETAIL_CLICK_OUTSIDE_CLOSE_PROBE ok
+GREEN: UNIT_EDITOR_FULLSCREEN_LAYOUT_PROBE ok
+GREEN: EDITOR_SCROLL_REGIONS_PROBE ok
+GREEN: jq empty tools/probe_manifest.json
+GREEN: git diff --check
+```
+
+`UILifecycleService.editor_overlay_view_build_specs()` now owns pure identity/layout/z-index specs for the stats rail, part-hover popup, unit-hover preview, torso-detail panel, engine-allocation panel, and drag ghost. `_build_editor_ui()` consumes those specs while keeping concrete view construction, mouse filters, visibility defaults, signal wiring, board-rect mirroring, and runtime drag-ghost z-index refresh local. `_build_editor_ui()` is now 735 lines, and the extraction probe rejects old inline overlay view initialization formulas without blocking runtime drag-ghost z-index refresh.
+
 Remaining items after this batch:
 
 - Continue editor UI extraction with `_build_editor_ui` and the remaining action presentation/control-mutation sections of `_apply_editor_panel_visibility`, then continue `_resolve_attack` and `_refresh_editor_visual_views` extraction.

@@ -640,6 +640,17 @@ static func editor_auxiliary_chrome_build_specs() -> Dictionary:
 	}
 
 
+static func editor_overlay_view_build_specs() -> Dictionary:
+	return {
+		"stats_rail": {"name": "EditorStatsRail", "position": Vector2(18.0, 104.0), "size": Vector2(164.0, 508.0)},
+		"hover_popup": {"name": "EditorPartHoverPopup", "position": Vector2(410.0, 124.0), "size": Vector2(466.0, 500.0), "z_index": 260},
+		"unit_hover": {"name": "EditorUnitHoverPreview", "position": Vector2(410.0, 118.0), "size": Vector2(466.0, 500.0), "z_index": 255},
+		"torso_detail": {"name": "EditorTorsoDetail", "position": Vector2(18.0, 338.0), "size": Vector2(888.0, 346.0), "z_index": 285},
+		"engine_allocation": {"name": "EngineMomentumAllocationPanel", "mirror_board_rect": true, "z_index": 290},
+		"drag_ghost": {"name": "EditorPartDragGhost", "z_index": 250},
+	}
+
+
 static func editor_panel_role_chrome_presentation(mode: String, active_role_key: String, parts_visible: bool, panel_keys: Array, role_keys: Array, role_order: Array, role_short_labels: Dictionary, zh: bool) -> Dictionary:
 	var panel_texts := {"load": "单位库", "parts": "零件库"} if zh else {"load": "UNITS", "parts": "PARTS"}
 	var panel_buttons := {}

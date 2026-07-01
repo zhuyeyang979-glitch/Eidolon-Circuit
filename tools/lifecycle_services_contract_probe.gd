@@ -678,6 +678,42 @@ func _init() -> void:
 	_assert_vector(tutorial_label_build_spec, "size", Vector2(568.0, 60.0), "assembly tutorial label build spec")
 	_assert_vector(perf_overlay_build_spec, "position", Vector2(42.0, 86.0), "perf overlay build spec")
 	_assert_vector(save_feedback_build_spec, "size", Vector2(622.0, 26.0), "save feedback build spec")
+	if not ui_lifecycle_source.contains("static func editor_overlay_view_build_specs("):
+		_fail("UILifecycleService should expose editor overlay view build specs.")
+		return
+	var overlay_view_build_specs: Dictionary = ui_lifecycle_service.call("editor_overlay_view_build_specs")
+	var stats_rail_build_spec: Dictionary = Dictionary(overlay_view_build_specs.get("stats_rail", {}))
+	var hover_popup_build_spec: Dictionary = Dictionary(overlay_view_build_specs.get("hover_popup", {}))
+	var unit_hover_build_spec: Dictionary = Dictionary(overlay_view_build_specs.get("unit_hover", {}))
+	var torso_detail_build_spec: Dictionary = Dictionary(overlay_view_build_specs.get("torso_detail", {}))
+	var engine_allocation_build_spec: Dictionary = Dictionary(overlay_view_build_specs.get("engine_allocation", {}))
+	var drag_ghost_build_spec: Dictionary = Dictionary(overlay_view_build_specs.get("drag_ghost", {}))
+	if String(stats_rail_build_spec.get("name", "")) != "EditorStatsRail" or String(hover_popup_build_spec.get("name", "")) != "EditorPartHoverPopup":
+		_fail("UILifecycleService overlay stats/hover identity failed.")
+		return
+	if String(unit_hover_build_spec.get("name", "")) != "EditorUnitHoverPreview" or String(torso_detail_build_spec.get("name", "")) != "EditorTorsoDetail":
+		_fail("UILifecycleService overlay unit/torso identity failed.")
+		return
+	if String(engine_allocation_build_spec.get("name", "")) != "EngineMomentumAllocationPanel" or String(drag_ghost_build_spec.get("name", "")) != "EditorPartDragGhost":
+		_fail("UILifecycleService overlay engine/drag identity failed.")
+		return
+	if int(hover_popup_build_spec.get("z_index", -1)) != 260 or int(unit_hover_build_spec.get("z_index", -1)) != 255:
+		_fail("UILifecycleService hover overlay z-index failed.")
+		return
+	if int(torso_detail_build_spec.get("z_index", -1)) != 285 or int(engine_allocation_build_spec.get("z_index", -1)) != 290 or int(drag_ghost_build_spec.get("z_index", -1)) != 250:
+		_fail("UILifecycleService detail overlay z-index failed.")
+		return
+	if not bool(engine_allocation_build_spec.get("mirror_board_rect", false)):
+		_fail("UILifecycleService engine allocation should preserve board-rect mirroring intent.")
+		return
+	_assert_vector(stats_rail_build_spec, "position", Vector2(18.0, 104.0), "stats rail build spec")
+	_assert_vector(stats_rail_build_spec, "size", Vector2(164.0, 508.0), "stats rail build spec")
+	_assert_vector(hover_popup_build_spec, "position", Vector2(410.0, 124.0), "hover popup build spec")
+	_assert_vector(hover_popup_build_spec, "size", Vector2(466.0, 500.0), "hover popup build spec")
+	_assert_vector(unit_hover_build_spec, "position", Vector2(410.0, 118.0), "unit hover build spec")
+	_assert_vector(unit_hover_build_spec, "size", Vector2(466.0, 500.0), "unit hover build spec")
+	_assert_vector(torso_detail_build_spec, "position", Vector2(18.0, 338.0), "torso detail build spec")
+	_assert_vector(torso_detail_build_spec, "size", Vector2(888.0, 346.0), "torso detail build spec")
 	Dictionary(Array(build_specs.get("canvas_tools", []))[0])["key"] = "mutated"
 	var fresh_build_specs: Dictionary = UILifecycleService.editor_action_build_specs()
 	if String(Dictionary(Array(fresh_build_specs.get("canvas_tools", []))[0]).get("key", "")) != "blank_canvas":

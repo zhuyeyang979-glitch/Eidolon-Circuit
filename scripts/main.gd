@@ -47292,35 +47292,40 @@ func _build_editor_ui() -> void:
 	editor_assembly_tutorial_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	editor_assembly_tutorial_label.vertical_alignment = VERTICAL_ALIGNMENT_TOP
 	editor_assembly_tutorial_label.z_index = int(assembly_tutorial_label_build_spec.get("z_index", 341))
+	var overlay_view_build_specs := UILifecycleService.editor_overlay_view_build_specs()
+	var stats_rail_view_build_spec := Dictionary(overlay_view_build_specs.get("stats_rail", {}))
 	editor_stats_rail_view = EditorStatsRailView.new()
-	editor_stats_rail_view.name = "EditorStatsRail"
-	editor_stats_rail_view.position = Vector2(18.0, 104.0)
-	editor_stats_rail_view.size = Vector2(164.0, 508.0)
+	editor_stats_rail_view.name = String(stats_rail_view_build_spec.get("name", "EditorStatsRail"))
+	editor_stats_rail_view.position = stats_rail_view_build_spec.get("position", Vector2.ZERO)
+	editor_stats_rail_view.size = stats_rail_view_build_spec.get("size", Vector2.ZERO)
 	editor_stats_rail_view.mouse_filter = Control.MOUSE_FILTER_STOP
 	root.add_child(editor_stats_rail_view)
+	var hover_popup_view_build_spec := Dictionary(overlay_view_build_specs.get("hover_popup", {}))
 	editor_hover_popup_view = EditorPartHoverPopupView.new()
-	editor_hover_popup_view.name = "EditorPartHoverPopup"
-	editor_hover_popup_view.position = Vector2(410.0, 124.0)
-	editor_hover_popup_view.size = Vector2(466.0, 500.0)
-	editor_hover_popup_view.z_index = 260
+	editor_hover_popup_view.name = String(hover_popup_view_build_spec.get("name", "EditorPartHoverPopup"))
+	editor_hover_popup_view.position = hover_popup_view_build_spec.get("position", Vector2.ZERO)
+	editor_hover_popup_view.size = hover_popup_view_build_spec.get("size", Vector2.ZERO)
+	editor_hover_popup_view.z_index = int(hover_popup_view_build_spec.get("z_index", 260))
 	editor_hover_popup_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	editor_hover_popup_view.visible = false
 	editor_hover_popup_view.close_requested.connect(_close_editor_hover_detail)
 	root.add_child(editor_hover_popup_view)
+	var unit_hover_view_build_spec := Dictionary(overlay_view_build_specs.get("unit_hover", {}))
 	editor_unit_hover_view = ScoutUnitDetailView.new()
-	editor_unit_hover_view.name = "EditorUnitHoverPreview"
-	editor_unit_hover_view.position = Vector2(410.0, 118.0)
-	editor_unit_hover_view.size = Vector2(466.0, 500.0)
-	editor_unit_hover_view.z_index = 255
+	editor_unit_hover_view.name = String(unit_hover_view_build_spec.get("name", "EditorUnitHoverPreview"))
+	editor_unit_hover_view.position = unit_hover_view_build_spec.get("position", Vector2.ZERO)
+	editor_unit_hover_view.size = unit_hover_view_build_spec.get("size", Vector2.ZERO)
+	editor_unit_hover_view.z_index = int(unit_hover_view_build_spec.get("z_index", 255))
 	editor_unit_hover_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	editor_unit_hover_view.visible = false
 	editor_unit_hover_view.close_requested.connect(_close_editor_unit_detail)
 	root.add_child(editor_unit_hover_view)
+	var torso_detail_view_build_spec := Dictionary(overlay_view_build_specs.get("torso_detail", {}))
 	editor_torso_detail_view = TorsoDetailPanelView.new()
-	editor_torso_detail_view.name = "EditorTorsoDetail"
-	editor_torso_detail_view.position = Vector2(18.0, 338.0)
-	editor_torso_detail_view.size = Vector2(888.0, 346.0)
-	editor_torso_detail_view.z_index = 285
+	editor_torso_detail_view.name = String(torso_detail_view_build_spec.get("name", "EditorTorsoDetail"))
+	editor_torso_detail_view.position = torso_detail_view_build_spec.get("position", Vector2.ZERO)
+	editor_torso_detail_view.size = torso_detail_view_build_spec.get("size", Vector2.ZERO)
+	editor_torso_detail_view.z_index = int(torso_detail_view_build_spec.get("z_index", 285))
 	editor_torso_detail_view.mouse_filter = Control.MOUSE_FILTER_STOP
 	editor_torso_detail_view.visible = false
 	editor_torso_detail_view.payload_dropped.connect(_drop_catalog_part_on_torso_detail)
@@ -47337,11 +47342,16 @@ func _build_editor_ui() -> void:
 	editor_torso_detail_view.binding_cancel_requested.connect(_cancel_torso_detail_binding)
 	editor_torso_detail_view.close_requested.connect(_close_editor_torso_detail)
 	root.add_child(editor_torso_detail_view)
+	var engine_allocation_view_build_spec := Dictionary(overlay_view_build_specs.get("engine_allocation", {}))
 	engine_momentum_allocation_view = EngineMomentumAllocationPanelView.new()
-	engine_momentum_allocation_view.name = "EngineMomentumAllocationPanel"
-	engine_momentum_allocation_view.position = assembly_board_view.position
-	engine_momentum_allocation_view.size = assembly_board_view.size
-	engine_momentum_allocation_view.z_index = 290
+	engine_momentum_allocation_view.name = String(engine_allocation_view_build_spec.get("name", "EngineMomentumAllocationPanel"))
+	if bool(engine_allocation_view_build_spec.get("mirror_board_rect", true)):
+		engine_momentum_allocation_view.position = assembly_board_view.position
+		engine_momentum_allocation_view.size = assembly_board_view.size
+	else:
+		engine_momentum_allocation_view.position = engine_allocation_view_build_spec.get("position", Vector2.ZERO)
+		engine_momentum_allocation_view.size = engine_allocation_view_build_spec.get("size", Vector2.ZERO)
+	engine_momentum_allocation_view.z_index = int(engine_allocation_view_build_spec.get("z_index", 290))
 	engine_momentum_allocation_view.mouse_filter = Control.MOUSE_FILTER_STOP
 	engine_momentum_allocation_view.visible = false
 	engine_momentum_allocation_view.close_requested.connect(_close_engine_momentum_allocation_panel)
@@ -47352,10 +47362,11 @@ func _build_editor_ui() -> void:
 	engine_momentum_allocation_view.entry_detail_requested.connect(_show_power_allocation_entry_detail)
 	engine_momentum_allocation_view.segment_detail_requested.connect(_show_power_allocation_segment_detail)
 	root.add_child(engine_momentum_allocation_view)
+	var drag_ghost_view_build_spec := Dictionary(overlay_view_build_specs.get("drag_ghost", {}))
 	editor_drag_ghost_view = PartDragGhostView.new()
-	editor_drag_ghost_view.name = "EditorPartDragGhost"
+	editor_drag_ghost_view.name = String(drag_ghost_view_build_spec.get("name", "EditorPartDragGhost"))
 	editor_drag_ghost_view.visible = false
-	editor_drag_ghost_view.z_index = 250
+	editor_drag_ghost_view.z_index = int(drag_ghost_view_build_spec.get("z_index", 250))
 	editor_drag_ghost_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(editor_drag_ghost_view)
 	var perf_overlay_build_spec := Dictionary(auxiliary_chrome_build_specs.get("perf_overlay", {}))
