@@ -1266,6 +1266,24 @@ GREEN: git diff --check
 
 `UILifecycleService.editor_sort_action_button_build_specs()` now owns pure identity/text/layout/click-intent specs for the three sort action buttons. `_build_editor_ui()` consumes those specs in one loop while keeping concrete button construction, signal wiring, and action-button references local. `_build_editor_ui()` is now 700 lines, and the extraction probe rejects the old inline `sort_prev` / `sort_key` / `sort_dir` construction and signal-wiring formulas.
 
+Follow-up editor save-unit dialog build specs extraction:
+
+```text
+RED: main_file_extraction_contract_probe failed on missing UILifecycleService.editor_save_unit_dialog_build_specs delegation
+RED: lifecycle_services_contract_probe failed on missing editor_save_unit_dialog_build_specs service API
+GREEN: MAIN_FILE_EXTRACTION_CONTRACT_PROBE ok services=9
+GREEN: LIFECYCLE_SERVICES_CONTRACT_PROBE ok
+GREEN: Godot --check-only --script res://scripts/main.gd --quit-after 1
+GREEN: Godot --check-only --script res://scripts/services/ui_lifecycle_service.gd --quit-after 1
+GREEN: TEAMEDIT_SAVE_UNIT_REAL_UI_PROBE ok
+GREEN: TEAMEDIT_SAVE_COMPLEX_UNIT_REAL_UI_PROBE ok
+GREEN: UNIT_EDITOR_PAGINATION_LAYOUT_PROBE ok unit=1 page=0 catalog=1 load=0 feedback=[P: (270.0, 654.0), S: (622.0, 26.0)]
+GREEN: jq empty tools/probe_manifest.json
+GREEN: git diff --check
+```
+
+`UILifecycleService.editor_save_unit_dialog_build_specs()` now owns pure identity/layout/action specs for the save-unit dialog panel, title, name edit, role label, role buttons, and save/cancel action buttons. `_build_editor_ui()` consumes those specs while keeping placeholder localization, role-name localization, concrete control construction, signal wiring, and save-unit references local. `_build_editor_ui()` is now 705 lines, and the extraction probe rejects old inline save-unit panel/title/role/action layout formulas.
+
 Remaining items after this batch:
 
 - Continue editor UI extraction with `_build_editor_ui` and the remaining action presentation/control-mutation sections of `_apply_editor_panel_visibility`, then continue `_resolve_attack` and `_refresh_editor_visual_views` extraction.

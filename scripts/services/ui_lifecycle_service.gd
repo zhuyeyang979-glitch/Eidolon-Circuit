@@ -570,6 +570,32 @@ static func editor_sort_action_button_build_specs() -> Array:
 	return buttons
 
 
+static func editor_save_unit_dialog_build_specs(role_order: Array) -> Dictionary:
+	var role_buttons := []
+	for i in range(role_order.size()):
+		var role_key := String(role_order[i])
+		role_buttons.append({
+			"index": i,
+			"key": role_key,
+			"name": "SaveUnitRole%s" % role_key,
+			"position": Vector2(18.0 + float(i) * 148.0, 114.0),
+			"size": Vector2(136.0, 28.0),
+		})
+	var action_buttons := [
+		{"name": "save_name_stay", "text": "保存", "action": "save", "position": Vector2(18.0, 170.0), "size": Vector2(136.0, 30.0)},
+		{"name": "save_name_save_as", "text": "另存为", "action": "save_as", "position": Vector2(168.0, 170.0), "size": Vector2(136.0, 30.0)},
+		{"name": "save_name_cancel", "text": "取消", "action": "cancel", "position": Vector2(318.0, 170.0), "size": Vector2(136.0, 30.0)},
+	]
+	return {
+		"panel": {"name": "SaveUnitNamePanel", "position": Vector2(390.0, 188.0), "size": Vector2(474.0, 236.0), "z_index": 295},
+		"title": {"name": "SaveUnitNameLabel", "text": "保存为单位", "position": Vector2(18.0, 14.0), "size": Vector2(438.0, 24.0)},
+		"name_edit": {"name": "SaveUnitNameEdit", "position": Vector2(18.0, 48.0), "size": Vector2(438.0, 30.0)},
+		"role_label": {"name": "SaveUnitRoleLabel", "text": "单位类型", "position": Vector2(18.0, 92.0), "size": Vector2(438.0, 18.0)},
+		"role_buttons": role_buttons,
+		"action_buttons": action_buttons,
+	}
+
+
 static func editor_panel_role_chrome_presentation(mode: String, active_role_key: String, parts_visible: bool, panel_keys: Array, role_keys: Array, role_order: Array, role_short_labels: Dictionary, zh: bool) -> Dictionary:
 	var panel_texts := {"load": "单位库", "parts": "零件库"} if zh else {"load": "UNITS", "parts": "PARTS"}
 	var panel_buttons := {}

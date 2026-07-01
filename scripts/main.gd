@@ -47361,50 +47361,55 @@ func _build_editor_ui() -> void:
 	editor_save_unit_feedback_label.z_index = 300
 	editor_save_unit_feedback_label.visible = false
 	_layout_editor_save_unit_feedback()
+	var save_unit_dialog_build_specs := UILifecycleService.editor_save_unit_dialog_build_specs(ROLE_ORDER)
+	var save_unit_panel_build_spec := Dictionary(save_unit_dialog_build_specs.get("panel", {}))
 	editor_save_unit_name_panel = ColorRect.new()
-	editor_save_unit_name_panel.name = "SaveUnitNamePanel"
-	editor_save_unit_name_panel.position = Vector2(390.0, 188.0)
-	editor_save_unit_name_panel.size = Vector2(474.0, 236.0)
+	editor_save_unit_name_panel.name = String(save_unit_panel_build_spec.get("name", "SaveUnitNamePanel"))
+	editor_save_unit_name_panel.position = save_unit_panel_build_spec.get("position", Vector2.ZERO)
+	editor_save_unit_name_panel.size = save_unit_panel_build_spec.get("size", Vector2.ZERO)
 	editor_save_unit_name_panel.color = Color(0.01, 0.018, 0.026, 0.96)
-	editor_save_unit_name_panel.z_index = 295
+	editor_save_unit_name_panel.z_index = int(save_unit_panel_build_spec.get("z_index", 295))
 	editor_save_unit_name_panel.visible = false
 	root.add_child(editor_save_unit_name_panel)
-	editor_save_unit_name_label = _make_label(editor_save_unit_name_panel, "SaveUnitNameLabel", "保存为单位", Vector2(18.0, 14.0), Vector2(438.0, 24.0), 15, Color(1.0, 0.88, 0.28, 1.0), HORIZONTAL_ALIGNMENT_LEFT)
+	var save_unit_title_build_spec := Dictionary(save_unit_dialog_build_specs.get("title", {}))
+	editor_save_unit_name_label = _make_label(editor_save_unit_name_panel, String(save_unit_title_build_spec.get("name", "SaveUnitNameLabel")), String(save_unit_title_build_spec.get("text", "保存为单位")), save_unit_title_build_spec.get("position", Vector2.ZERO), save_unit_title_build_spec.get("size", Vector2.ZERO), 15, Color(1.0, 0.88, 0.28, 1.0), HORIZONTAL_ALIGNMENT_LEFT)
+	var save_unit_name_edit_build_spec := Dictionary(save_unit_dialog_build_specs.get("name_edit", {}))
 	editor_save_unit_name_edit = LineEdit.new()
-	editor_save_unit_name_edit.name = "SaveUnitNameEdit"
-	editor_save_unit_name_edit.position = Vector2(18.0, 48.0)
-	editor_save_unit_name_edit.size = Vector2(438.0, 30.0)
+	editor_save_unit_name_edit.name = String(save_unit_name_edit_build_spec.get("name", "SaveUnitNameEdit"))
+	editor_save_unit_name_edit.position = save_unit_name_edit_build_spec.get("position", Vector2.ZERO)
+	editor_save_unit_name_edit.size = save_unit_name_edit_build_spec.get("size", Vector2.ZERO)
 	editor_save_unit_name_edit.placeholder_text = "单位名称" if _ui_is_zh() else "Unit name"
 	editor_save_unit_name_edit.text_submitted.connect(_confirm_save_unit_name_dialog.bind("save"))
 	editor_save_unit_name_panel.add_child(editor_save_unit_name_edit)
-	_make_label(editor_save_unit_name_panel, "SaveUnitRoleLabel", "单位类型", Vector2(18.0, 92.0), Vector2(438.0, 18.0), 11, Color(0.76, 0.9, 1.0, 0.86), HORIZONTAL_ALIGNMENT_LEFT)
-	for i in range(ROLE_ORDER.size()):
-		var role_key: String = ROLE_ORDER[i]
+	var save_unit_role_label_build_spec := Dictionary(save_unit_dialog_build_specs.get("role_label", {}))
+	_make_label(editor_save_unit_name_panel, String(save_unit_role_label_build_spec.get("name", "SaveUnitRoleLabel")), String(save_unit_role_label_build_spec.get("text", "单位类型")), save_unit_role_label_build_spec.get("position", Vector2.ZERO), save_unit_role_label_build_spec.get("size", Vector2.ZERO), 11, Color(0.76, 0.9, 1.0, 0.86), HORIZONTAL_ALIGNMENT_LEFT)
+	var save_unit_role_button_build_specs: Array = Array(save_unit_dialog_build_specs.get("role_buttons", []))
+	for raw_save_unit_role_button_build_spec in save_unit_role_button_build_specs:
+		var save_unit_role_button_build_spec := Dictionary(raw_save_unit_role_button_build_spec)
+		var role_key: String = String(save_unit_role_button_build_spec.get("key", ""))
 		var role_button := Button.new()
-		role_button.name = "SaveUnitRole%s" % role_key
+		role_button.name = String(save_unit_role_button_build_spec.get("name", "SaveUnitRole%s" % role_key))
 		role_button.text = _role_name(role_key)
-		role_button.position = Vector2(18.0 + float(i) * 148.0, 114.0)
-		role_button.size = Vector2(136.0, 28.0)
+		role_button.position = save_unit_role_button_build_spec.get("position", Vector2.ZERO)
+		role_button.size = save_unit_role_button_build_spec.get("size", Vector2.ZERO)
 		role_button.focus_mode = Control.FOCUS_NONE
 		role_button.disabled = true
 		editor_save_unit_name_panel.add_child(role_button)
 		editor_save_unit_role_buttons[role_key] = role_button
-	var save_name_buttons := [
-		["save_name_stay", "保存", "save", Vector2(18.0, 170.0), Vector2(136.0, 30.0)],
-		["save_name_save_as", "另存为", "save_as", Vector2(168.0, 170.0), Vector2(136.0, 30.0)],
-		["save_name_cancel", "取消", "cancel", Vector2(318.0, 170.0), Vector2(136.0, 30.0)],
-	]
-	for spec in save_name_buttons:
+	var save_unit_action_button_build_specs: Array = Array(save_unit_dialog_build_specs.get("action_buttons", []))
+	for raw_save_unit_action_button_build_spec in save_unit_action_button_build_specs:
+		var save_unit_action_button_build_spec := Dictionary(raw_save_unit_action_button_build_spec)
 		var button := Button.new()
-		button.name = String(spec[0])
-		button.text = String(spec[1])
-		button.position = spec[3]
-		button.size = spec[4]
+		button.name = String(save_unit_action_button_build_spec.get("name", ""))
+		button.text = String(save_unit_action_button_build_spec.get("text", ""))
+		button.position = save_unit_action_button_build_spec.get("position", Vector2.ZERO)
+		button.size = save_unit_action_button_build_spec.get("size", Vector2.ZERO)
 		button.focus_mode = Control.FOCUS_NONE
-		if String(spec[2]) == "cancel":
+		var save_action := String(save_unit_action_button_build_spec.get("action", ""))
+		if save_action == "cancel":
 			button.pressed.connect(_hide_save_unit_name_dialog)
 		else:
-			button.pressed.connect(_confirm_save_unit_name_dialog.bind(String(spec[2])))
+			button.pressed.connect(_confirm_save_unit_name_dialog.bind(save_action))
 		editor_save_unit_name_panel.add_child(button)
 	var roster_overview_build_specs := UILifecycleService.editor_roster_overview_build_specs(5)
 	var roster_title_build_spec := Dictionary(roster_overview_build_specs.get("title", {}))

@@ -522,6 +522,39 @@ func _init() -> void:
 	_assert_vector(prev_sort_action_build_spec, "size", Vector2(24.0, 22.0), "sort action button build spec")
 	_assert_vector(key_sort_action_build_spec, "size", Vector2(160.0, 22.0), "sort action button build spec")
 	_assert_vector(dir_sort_action_build_spec, "position", Vector2(1100.0, 294.0), "sort action button build spec")
+	if not ui_lifecycle_source.contains("static func editor_save_unit_dialog_build_specs("):
+		_fail("UILifecycleService should expose editor save-unit dialog build specs.")
+		return
+	var save_unit_dialog_build_specs: Dictionary = ui_lifecycle_service.call("editor_save_unit_dialog_build_specs", ["hero", "offense", "barrier"])
+	var save_unit_panel_build_spec: Dictionary = Dictionary(save_unit_dialog_build_specs.get("panel", {}))
+	var save_unit_title_build_spec: Dictionary = Dictionary(save_unit_dialog_build_specs.get("title", {}))
+	var save_unit_name_edit_build_spec: Dictionary = Dictionary(save_unit_dialog_build_specs.get("name_edit", {}))
+	var save_unit_role_label_build_spec: Dictionary = Dictionary(save_unit_dialog_build_specs.get("role_label", {}))
+	var save_unit_role_button_build_specs: Array = Array(save_unit_dialog_build_specs.get("role_buttons", []))
+	var save_unit_action_button_build_specs: Array = Array(save_unit_dialog_build_specs.get("action_buttons", []))
+	if String(save_unit_panel_build_spec.get("name", "")) != "SaveUnitNamePanel" or String(save_unit_title_build_spec.get("name", "")) != "SaveUnitNameLabel":
+		_fail("UILifecycleService save-unit panel/title identity failed.")
+		return
+	if String(save_unit_name_edit_build_spec.get("name", "")) != "SaveUnitNameEdit" or String(save_unit_role_label_build_spec.get("name", "")) != "SaveUnitRoleLabel":
+		_fail("UILifecycleService save-unit input/role label identity failed.")
+		return
+	if save_unit_role_button_build_specs.size() != 3 or save_unit_action_button_build_specs.size() != 3:
+		_fail("UILifecycleService save-unit role/action button counts failed.")
+		return
+	_assert_vector(save_unit_panel_build_spec, "position", Vector2(390.0, 188.0), "save-unit panel build spec")
+	_assert_vector(save_unit_panel_build_spec, "size", Vector2(474.0, 236.0), "save-unit panel build spec")
+	_assert_vector(save_unit_title_build_spec, "position", Vector2(18.0, 14.0), "save-unit title build spec")
+	_assert_vector(save_unit_name_edit_build_spec, "position", Vector2(18.0, 48.0), "save-unit name edit build spec")
+	var third_save_unit_role_button_build_spec: Dictionary = Dictionary(save_unit_role_button_build_specs[2])
+	var save_as_action_button_build_spec: Dictionary = Dictionary(save_unit_action_button_build_specs[1])
+	if String(third_save_unit_role_button_build_spec.get("key", "")) != "barrier" or String(third_save_unit_role_button_build_spec.get("name", "")) != "SaveUnitRolebarrier":
+		_fail("UILifecycleService save-unit role button identity failed.")
+		return
+	if String(save_as_action_button_build_spec.get("name", "")) != "save_name_save_as" or String(save_as_action_button_build_spec.get("action", "")) != "save_as":
+		_fail("UILifecycleService save-unit action button identity failed.")
+		return
+	_assert_vector(third_save_unit_role_button_build_spec, "position", Vector2(314.0, 114.0), "save-unit role button build spec")
+	_assert_vector(save_as_action_button_build_spec, "position", Vector2(168.0, 170.0), "save-unit action button build spec")
 	Dictionary(Array(build_specs.get("canvas_tools", []))[0])["key"] = "mutated"
 	var fresh_build_specs: Dictionary = UILifecycleService.editor_action_build_specs()
 	if String(Dictionary(Array(fresh_build_specs.get("canvas_tools", []))[0]).get("key", "")) != "blank_canvas":
