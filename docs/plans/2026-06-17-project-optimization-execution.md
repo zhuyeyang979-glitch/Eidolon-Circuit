@@ -1897,6 +1897,29 @@ GREEN: git diff --check
 
 `UILifecycleService.editor_stats_rail_view_presentation()` now owns the pure visible/hidden, position, size, and mouse-filter plan for the editor stats rail view. Stats rail construction in `_build_editor_ui()` and refresh visibility in `_refresh_editor_stats_rail()` now apply that plan while keeping stat entry assembly, header selection, legality-note generation, `set_stats()`, and engine-allocation summary refresh in `main.gd`.
 
+Follow-up editor perf-overlay presentation extraction:
+
+```text
+RED: lifecycle_services_contract_probe failed on missing editor_perf_overlay_presentation service API
+RED: main_file_extraction_contract_probe failed on missing perf-overlay presentation delegation
+GREEN: LIFECYCLE_SERVICES_CONTRACT_PROBE ok
+GREEN: MAIN_FILE_EXTRACTION_CONTRACT_PROBE ok services=9
+GREEN: Godot --check-only --script res://scripts/main.gd --quit-after 1
+GREEN: Godot --check-only --script res://scripts/services/ui_lifecycle_service.gd --quit-after 1
+GREEN: EDITOR_CONTROL_PLAN_ADAPTER_PROBE failed=false writes=16 noops=12
+GREEN: TEAMEDIT_LIVE_PERF_OVERLAY_PROBE ok
+GREEN: PART_LIBRARY_UI_PROBE groups=["torso", "limb", "terminal_weapon", "barrier_panel", "software_muscle", "software"] weapon=3 equipment=5 software=7 dashboard=40
+GREEN: UNIT_EDITOR_PAGINATION_LAYOUT_PROBE ok unit=1 page=0 catalog=1 load=0 feedback=[P: (270.0, 654.0), S: (622.0, 26.0)]
+GREEN: UNIT_EDITOR_FULLSCREEN_LAYOUT_PROBE ok board=(908.0, 548.0) dock=(726.0, 132.0)
+GREEN: UNIT_EDITOR_TEMPLATE_DRAWER_RUNTIME_PROBE ok selected=octopus barrier=BarrierTemplatepin_wall
+GREEN: EDITOR_LOAD_HOVER_PROBE hover_keeps_unit=0 preview=true page=1/1 entries=4
+GREEN: EDITOR_ROSTER_OVERVIEW_PROBE blank_cost=0 team_cost=0 roster_cost=0 buttons=5
+GREEN: jq empty tools/probe_manifest.json
+GREEN: git diff --check
+```
+
+`UILifecycleService.editor_perf_overlay_presentation()` now owns the pure visible/hidden, text, position, size, z-index, and word-wrap plan for the TeamEdit performance overlay. `_set_editor_perf_overlay_enabled()`, `_update_editor_perf_overlay()`, and perf-overlay construction in `_build_editor_ui()` now apply that plan while keeping diagnostics text generation and sampling state in `main.gd`.
+
 Remaining items after this batch:
 
 - Continue editor UI extraction with `_build_editor_ui` and the remaining action presentation/control-mutation sections of `_apply_editor_panel_visibility`, then continue `_resolve_attack` and `_refresh_editor_visual_views` extraction.

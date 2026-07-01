@@ -1077,6 +1077,22 @@ func _init() -> void:
 	_assert_vector(tutorial_label_build_spec, "size", Vector2(568.0, 60.0), "assembly tutorial label build spec")
 	_assert_vector(perf_overlay_build_spec, "position", Vector2(42.0, 86.0), "perf overlay build spec")
 	_assert_vector(save_feedback_build_spec, "size", Vector2(622.0, 26.0), "save feedback build spec")
+	if not ui_lifecycle_source.contains("static func editor_perf_overlay_presentation("):
+		_fail("UILifecycleService should expose editor perf overlay presentation planning.")
+		return
+	var perf_overlay_visible_plan: Dictionary = ui_lifecycle_service.call("editor_perf_overlay_presentation", true, "TeamEdit PERF\nCPU tick: 1.25ms")
+	_assert_vector(perf_overlay_visible_plan, "position", Vector2(42.0, 86.0), "perf overlay presentation")
+	_assert_vector(perf_overlay_visible_plan, "size", Vector2(330.0, 180.0), "perf overlay presentation")
+	if not bool(perf_overlay_visible_plan.get("visible", false)) or String(perf_overlay_visible_plan.get("text", "")) != "TeamEdit PERF\nCPU tick: 1.25ms":
+		_fail("UILifecycleService visible perf overlay presentation visibility/text failed.")
+		return
+	if int(perf_overlay_visible_plan.get("z_index", -1)) != 330 or int(perf_overlay_visible_plan.get("autowrap_mode", -1)) != TextServer.AUTOWRAP_WORD_SMART:
+		_fail("UILifecycleService visible perf overlay presentation z-index/autowrap failed.")
+		return
+	var perf_overlay_hidden_plan: Dictionary = ui_lifecycle_service.call("editor_perf_overlay_presentation", false, "")
+	if bool(perf_overlay_hidden_plan.get("visible", true)) or int(perf_overlay_hidden_plan.get("z_index", -1)) != 330 or int(perf_overlay_hidden_plan.get("autowrap_mode", -1)) != TextServer.AUTOWRAP_WORD_SMART:
+		_fail("UILifecycleService hidden perf overlay presentation failed.")
+		return
 	if not ui_lifecycle_source.contains("static func editor_save_unit_feedback_presentation("):
 		_fail("UILifecycleService should expose editor save-unit feedback presentation planning.")
 		return

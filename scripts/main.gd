@@ -5076,6 +5076,12 @@ func _apply_editor_stats_rail_view_presentation(visible: bool) -> void:
 	_apply_editor_control_plan(editor_stats_rail_view, UILifecycleService.editor_stats_rail_view_presentation(visible))
 
 
+func _apply_editor_perf_overlay_presentation(visible: bool, text: String = "") -> void:
+	if editor_perf_overlay_label == null:
+		return
+	_apply_editor_control_plan(editor_perf_overlay_label, UILifecycleService.editor_perf_overlay_presentation(visible, text))
+
+
 func _apply_editor_drag_ghost_view_presentation(visible: bool, position: Variant = Vector2.INF, move_to_front: bool = false) -> void:
 	if editor_drag_ghost_view == null:
 		return
@@ -25212,8 +25218,7 @@ func _flush_editor_deferred_ui() -> void:
 
 func _set_editor_perf_overlay_enabled(enabled: bool) -> void:
 	editor_perf_overlay_enabled = enabled
-	if editor_perf_overlay_label != null:
-		editor_perf_overlay_label.visible = enabled
+	_apply_editor_perf_overlay_presentation(enabled)
 	if enabled:
 		_update_editor_perf_overlay()
 
@@ -25311,10 +25316,10 @@ func _editor_perf_overlay_text() -> String:
 func _update_editor_perf_overlay() -> void:
 	if editor_perf_overlay_label == null:
 		return
-	editor_perf_overlay_label.visible = editor_perf_overlay_enabled
 	if not editor_perf_overlay_enabled:
+		_apply_editor_perf_overlay_presentation(false)
 		return
-	editor_perf_overlay_label.text = _editor_perf_overlay_text()
+	_apply_editor_perf_overlay_presentation(true, _editor_perf_overlay_text())
 
 
 func _set_battle_action_diagnostics_overlay_enabled(enabled: bool) -> void:
@@ -47439,9 +47444,7 @@ func _build_editor_ui() -> void:
 	root.add_child(editor_drag_ghost_view)
 	var perf_overlay_build_spec := Dictionary(auxiliary_chrome_build_specs.get("perf_overlay", {}))
 	editor_perf_overlay_label = _make_label(root, String(perf_overlay_build_spec.get("name", "TeamEditPerfOverlay")), String(perf_overlay_build_spec.get("text", "")), perf_overlay_build_spec.get("position", Vector2.ZERO), perf_overlay_build_spec.get("size", Vector2.ZERO), 10, Color(0.62, 1.0, 0.84, 0.92), HORIZONTAL_ALIGNMENT_LEFT)
-	editor_perf_overlay_label.z_index = int(perf_overlay_build_spec.get("z_index", 330))
-	editor_perf_overlay_label.visible = false
-	editor_perf_overlay_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_apply_editor_perf_overlay_presentation(false)
 	var save_feedback_build_spec := Dictionary(auxiliary_chrome_build_specs.get("save_feedback", {}))
 	editor_save_unit_feedback_label = _make_label(root, String(save_feedback_build_spec.get("name", "SaveUnitFeedback")), String(save_feedback_build_spec.get("text", "")), save_feedback_build_spec.get("position", Vector2.ZERO), save_feedback_build_spec.get("size", Vector2.ZERO), 11, Color(0.45, 1.0, 0.62, 1.0), HORIZONTAL_ALIGNMENT_CENTER)
 	editor_save_unit_feedback_label.z_index = int(save_feedback_build_spec.get("z_index", 300))

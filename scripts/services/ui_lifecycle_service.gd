@@ -927,6 +927,18 @@ static func editor_save_unit_feedback_presentation() -> Dictionary:
 	}
 
 
+static func editor_perf_overlay_presentation(visible: bool, text: String = "") -> Dictionary:
+	var build_spec := Dictionary(editor_auxiliary_chrome_build_specs().get("perf_overlay", {}))
+	return {
+		"visible": visible,
+		"text": text,
+		"position": build_spec.get("position", Vector2(42.0, 86.0)),
+		"size": build_spec.get("size", Vector2(330.0, 180.0)),
+		"z_index": int(build_spec.get("z_index", 330)),
+		"autowrap_mode": TextServer.AUTOWRAP_WORD_SMART,
+	}
+
+
 static func editor_overlay_view_build_specs() -> Dictionary:
 	return {
 		"stats_rail": {"name": "EditorStatsRail", "position": Vector2(18.0, 104.0), "size": Vector2(164.0, 508.0)},
