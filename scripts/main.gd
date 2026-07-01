@@ -47462,19 +47462,23 @@ func _build_editor_ui() -> void:
 		roster_thumb.visible = false
 		root.add_child(roster_thumb)
 		editor_roster_slot_thumb_views.append(roster_thumb)
+	var dashboard_control_build_specs := UILifecycleService.editor_dashboard_controls_build_specs()
+	var power_dock_build_spec := Dictionary(dashboard_control_build_specs.get("power_dock", {}))
 	editor_power_dock_view = UnitEditorPowerDockView.new()
-	editor_power_dock_view.name = "UnitEditorPowerAllocationDock"
-	editor_power_dock_view.position = Vector2(190.0, 24.0)
-	editor_power_dock_view.size = Vector2(726.0, 132.0)
-	editor_power_dock_view.z_index = 254
+	editor_power_dock_view.name = String(power_dock_build_spec.get("name", "UnitEditorPowerAllocationDock"))
+	editor_power_dock_view.position = power_dock_build_spec.get("position", Vector2.ZERO)
+	editor_power_dock_view.size = power_dock_build_spec.get("size", Vector2.ZERO)
+	editor_power_dock_view.z_index = int(power_dock_build_spec.get("z_index", 254))
 	editor_power_dock_view.mouse_filter = Control.MOUSE_FILTER_STOP
 	editor_power_dock_view.allocation_changed.connect(_set_engine_momentum_allocation_ratio)
 	editor_power_dock_view.allocation_drag_finished.connect(_finish_engine_momentum_allocation_drag)
 	editor_power_dock_view.open_requested.connect(_toggle_engine_momentum_allocation_for_active_target)
 	root.add_child(editor_power_dock_view)
-	editor_section_labels["board"] = _make_label(root, "BoardTitle", "", Vector2.ZERO, Vector2.ZERO, 1, Color.TRANSPARENT, HORIZONTAL_ALIGNMENT_LEFT)
+	var board_title_build_spec := Dictionary(dashboard_control_build_specs.get("board_title", {}))
+	editor_section_labels["board"] = _make_label(root, String(board_title_build_spec.get("name", "BoardTitle")), String(board_title_build_spec.get("text", "")), board_title_build_spec.get("position", Vector2.ZERO), board_title_build_spec.get("size", Vector2.ZERO), 1, Color.TRANSPARENT, HORIZONTAL_ALIGNMENT_LEFT)
 	editor_section_labels["board"].visible = false
-	editor_board_hint_label = _make_label(root, "BoardHint", "", Vector2(296.0, 72.0), Vector2(620.0, 18.0), 10, Color(1.0, 0.9, 0.45, 1.0), HORIZONTAL_ALIGNMENT_RIGHT)
+	var board_hint_build_spec := Dictionary(dashboard_control_build_specs.get("board_hint", {}))
+	editor_board_hint_label = _make_label(root, String(board_hint_build_spec.get("name", "BoardHint")), String(board_hint_build_spec.get("text", "")), board_hint_build_spec.get("position", Vector2.ZERO), board_hint_build_spec.get("size", Vector2.ZERO), 10, Color(1.0, 0.9, 0.45, 1.0), HORIZONTAL_ALIGNMENT_RIGHT)
 	var orientation_popup_build_specs := UILifecycleService.editor_orientation_popup_build_specs()
 	var orientation_popup_panel_build_spec := Dictionary(orientation_popup_build_specs.get("panel", {}))
 	editor_orientation_popup_panel = ColorRect.new()
@@ -47508,25 +47512,28 @@ func _build_editor_ui() -> void:
 			orientation_button.pressed.connect(_cancel_visual_handedness_choice)
 			editor_orientation_popup_cancel_button = orientation_button
 		editor_orientation_popup_panel.add_child(orientation_button)
+	var legacy_power_button_build_spec := Dictionary(dashboard_control_build_specs.get("legacy_power_button", {}))
 	editor_engine_allocation_button = Button.new()
-	editor_engine_allocation_button.name = "DashboardPowerAllocationButton"
-	editor_engine_allocation_button.text = "动力预算"
-	editor_engine_allocation_button.position = Vector2(52.0, 108.0)
-	editor_engine_allocation_button.size = Vector2(82.0, 24.0)
+	editor_engine_allocation_button.name = String(legacy_power_button_build_spec.get("name", "DashboardPowerAllocationButton"))
+	editor_engine_allocation_button.text = String(legacy_power_button_build_spec.get("text", "动力预算"))
+	editor_engine_allocation_button.position = legacy_power_button_build_spec.get("position", Vector2.ZERO)
+	editor_engine_allocation_button.size = legacy_power_button_build_spec.get("size", Vector2.ZERO)
 	editor_engine_allocation_button.focus_mode = Control.FOCUS_NONE
 	editor_engine_allocation_button.visible = false
 	editor_engine_allocation_button.disabled = true
 	editor_engine_allocation_button.pressed.connect(_open_dashboard_engine_allocation)
 	root.add_child(editor_engine_allocation_button)
+	var torso_detail_button_build_spec := Dictionary(dashboard_control_build_specs.get("torso_detail_button", {}))
 	editor_torso_detail_button = Button.new()
-	editor_torso_detail_button.name = "DashboardTorsoDetailButton"
-	editor_torso_detail_button.text = "核心详情"
-	editor_torso_detail_button.position = Vector2(228.0, 108.0)
-	editor_torso_detail_button.size = Vector2(86.0, 24.0)
+	editor_torso_detail_button.name = String(torso_detail_button_build_spec.get("name", "DashboardTorsoDetailButton"))
+	editor_torso_detail_button.text = String(torso_detail_button_build_spec.get("text", "核心详情"))
+	editor_torso_detail_button.position = torso_detail_button_build_spec.get("position", Vector2.ZERO)
+	editor_torso_detail_button.size = torso_detail_button_build_spec.get("size", Vector2.ZERO)
 	editor_torso_detail_button.focus_mode = Control.FOCUS_NONE
 	editor_torso_detail_button.pressed.connect(_toggle_dashboard_torso_detail)
 	root.add_child(editor_torso_detail_button)
-	editor_engine_allocation_summary_label = _make_label(root, "DashboardPowerAllocationSummary", "", Vector2(140.0, 109.0), Vector2(82.0, 22.0), 9, Color(0.78, 0.92, 1.0, 0.94), HORIZONTAL_ALIGNMENT_LEFT)
+	var legacy_power_summary_build_spec := Dictionary(dashboard_control_build_specs.get("legacy_power_summary", {}))
+	editor_engine_allocation_summary_label = _make_label(root, String(legacy_power_summary_build_spec.get("name", "DashboardPowerAllocationSummary")), String(legacy_power_summary_build_spec.get("text", "")), legacy_power_summary_build_spec.get("position", Vector2.ZERO), legacy_power_summary_build_spec.get("size", Vector2.ZERO), 9, Color(0.78, 0.92, 1.0, 0.94), HORIZONTAL_ALIGNMENT_LEFT)
 	editor_engine_allocation_summary_label.autowrap_mode = TextServer.AUTOWRAP_OFF
 	editor_engine_allocation_summary_label.visible = false
 	var board_primary_actions: Array = Array(editor_action_build_specs.get("board_primary_actions", []))

@@ -609,6 +609,17 @@ static func editor_orientation_popup_build_specs() -> Dictionary:
 	}
 
 
+static func editor_dashboard_controls_build_specs() -> Dictionary:
+	return {
+		"power_dock": {"name": "UnitEditorPowerAllocationDock", "position": Vector2(190.0, 24.0), "size": Vector2(726.0, 132.0), "z_index": 254},
+		"board_title": {"name": "BoardTitle", "text": "", "position": Vector2.ZERO, "size": Vector2.ZERO},
+		"board_hint": {"name": "BoardHint", "text": "", "position": Vector2(296.0, 72.0), "size": Vector2(620.0, 18.0)},
+		"legacy_power_button": {"name": "DashboardPowerAllocationButton", "text": "动力预算", "position": Vector2(52.0, 108.0), "size": Vector2(82.0, 24.0)},
+		"torso_detail_button": {"name": "DashboardTorsoDetailButton", "text": "核心详情", "position": Vector2(228.0, 108.0), "size": Vector2(86.0, 24.0)},
+		"legacy_power_summary": {"name": "DashboardPowerAllocationSummary", "text": "", "position": Vector2(140.0, 109.0), "size": Vector2(82.0, 22.0)},
+	}
+
+
 static func editor_panel_role_chrome_presentation(mode: String, active_role_key: String, parts_visible: bool, panel_keys: Array, role_keys: Array, role_order: Array, role_short_labels: Dictionary, zh: bool) -> Dictionary:
 	var panel_texts := {"load": "单位库", "parts": "零件库"} if zh else {"load": "UNITS", "parts": "PARTS"}
 	var panel_buttons := {}

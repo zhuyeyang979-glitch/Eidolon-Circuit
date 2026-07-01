@@ -1304,6 +1304,26 @@ GREEN: git diff --check
 
 `UILifecycleService.editor_orientation_popup_build_specs()` now owns pure identity/layout/z-index specs for the side-mount orientation popup panel, label, and left/right/cancel buttons. `_build_editor_ui()` consumes those specs while keeping concrete control construction, localized runtime text refresh, signal wiring, and orientation-popup references local. `_build_editor_ui()` is now 704 lines, and the extraction probe rejects old inline side-mount popup panel/label/button layout formulas.
 
+Follow-up editor dashboard controls build specs extraction:
+
+```text
+RED: main_file_extraction_contract_probe failed on missing UILifecycleService.editor_dashboard_controls_build_specs delegation
+RED: lifecycle_services_contract_probe failed on missing editor_dashboard_controls_build_specs service API
+GREEN: MAIN_FILE_EXTRACTION_CONTRACT_PROBE ok services=9
+GREEN: LIFECYCLE_SERVICES_CONTRACT_PROBE ok
+GREEN: Godot --check-only --script res://scripts/main.gd --quit-after 1
+GREEN: Godot --check-only --script res://scripts/services/ui_lifecycle_service.gd --quit-after 1
+GREEN: UNIT_EDITOR_NO_POWER_TOPBAR_PROBE ok dock_pos=(190.0, 24.0)
+GREEN: UNIT_EDITOR_POWER_BUDGET_NO_DUPLICATE_PROBE ok
+GREEN: UNIT_EDITOR_TORSO_DETAIL_BUTTON_PROBE ok
+GREEN: ENGINE_POWER_ALLOCATION_OPEN_PROBE ok
+GREEN: POWER_ALLOCATION_PANEL_HEAT_LIVE_UPDATE_PROBE ok
+GREEN: jq empty tools/probe_manifest.json
+GREEN: git diff --check
+```
+
+`UILifecycleService.editor_dashboard_controls_build_specs()` now owns pure identity/layout/z-index specs for the power allocation dock, board title/hint, legacy power budget button, torso detail button, and legacy power summary. `_build_editor_ui()` consumes those specs while keeping concrete control construction, visibility/disabled defaults, colors, signal wiring, and dashboard references local. `_build_editor_ui()` is now 711 lines, and the extraction probe rejects old inline dashboard/topbar layout formulas.
+
 Remaining items after this batch:
 
 - Continue editor UI extraction with `_build_editor_ui` and the remaining action presentation/control-mutation sections of `_apply_editor_panel_visibility`, then continue `_resolve_attack` and `_refresh_editor_visual_views` extraction.

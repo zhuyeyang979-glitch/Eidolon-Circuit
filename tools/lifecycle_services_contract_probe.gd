@@ -589,6 +589,38 @@ func _init() -> void:
 	_assert_vector(left_orientation_button_build_spec, "position", Vector2(10.0, 42.0), "orientation popup button build spec")
 	_assert_vector(right_orientation_button_build_spec, "position", Vector2(102.0, 42.0), "orientation popup button build spec")
 	_assert_vector(cancel_orientation_button_build_spec, "size", Vector2(52.0, 28.0), "orientation popup button build spec")
+	if not ui_lifecycle_source.contains("static func editor_dashboard_controls_build_specs("):
+		_fail("UILifecycleService should expose editor dashboard controls build specs.")
+		return
+	var dashboard_control_build_specs: Dictionary = ui_lifecycle_service.call("editor_dashboard_controls_build_specs")
+	var power_dock_build_spec: Dictionary = Dictionary(dashboard_control_build_specs.get("power_dock", {}))
+	var board_title_build_spec: Dictionary = Dictionary(dashboard_control_build_specs.get("board_title", {}))
+	var board_hint_build_spec: Dictionary = Dictionary(dashboard_control_build_specs.get("board_hint", {}))
+	var legacy_power_button_build_spec: Dictionary = Dictionary(dashboard_control_build_specs.get("legacy_power_button", {}))
+	var torso_detail_button_build_spec: Dictionary = Dictionary(dashboard_control_build_specs.get("torso_detail_button", {}))
+	var legacy_power_summary_build_spec: Dictionary = Dictionary(dashboard_control_build_specs.get("legacy_power_summary", {}))
+	if String(power_dock_build_spec.get("name", "")) != "UnitEditorPowerAllocationDock" or String(board_title_build_spec.get("name", "")) != "BoardTitle":
+		_fail("UILifecycleService dashboard power dock/board title identity failed.")
+		return
+	if String(board_hint_build_spec.get("name", "")) != "BoardHint" or String(legacy_power_button_build_spec.get("name", "")) != "DashboardPowerAllocationButton":
+		_fail("UILifecycleService dashboard hint/legacy button identity failed.")
+		return
+	if String(torso_detail_button_build_spec.get("name", "")) != "DashboardTorsoDetailButton" or String(legacy_power_summary_build_spec.get("name", "")) != "DashboardPowerAllocationSummary":
+		_fail("UILifecycleService dashboard torso/summary identity failed.")
+		return
+	if int(power_dock_build_spec.get("z_index", -1)) != 254:
+		_fail("UILifecycleService dashboard power dock z-index failed.")
+		return
+	_assert_vector(power_dock_build_spec, "position", Vector2(190.0, 24.0), "dashboard power dock build spec")
+	_assert_vector(power_dock_build_spec, "size", Vector2(726.0, 132.0), "dashboard power dock build spec")
+	_assert_vector(board_hint_build_spec, "position", Vector2(296.0, 72.0), "dashboard board hint build spec")
+	_assert_vector(board_hint_build_spec, "size", Vector2(620.0, 18.0), "dashboard board hint build spec")
+	_assert_vector(legacy_power_button_build_spec, "position", Vector2(52.0, 108.0), "dashboard legacy power button build spec")
+	_assert_vector(legacy_power_button_build_spec, "size", Vector2(82.0, 24.0), "dashboard legacy power button build spec")
+	_assert_vector(torso_detail_button_build_spec, "position", Vector2(228.0, 108.0), "dashboard torso detail button build spec")
+	_assert_vector(torso_detail_button_build_spec, "size", Vector2(86.0, 24.0), "dashboard torso detail button build spec")
+	_assert_vector(legacy_power_summary_build_spec, "position", Vector2(140.0, 109.0), "dashboard legacy summary build spec")
+	_assert_vector(legacy_power_summary_build_spec, "size", Vector2(82.0, 22.0), "dashboard legacy summary build spec")
 	Dictionary(Array(build_specs.get("canvas_tools", []))[0])["key"] = "mutated"
 	var fresh_build_specs: Dictionary = UILifecycleService.editor_action_build_specs()
 	if String(Dictionary(Array(fresh_build_specs.get("canvas_tools", []))[0]).get("key", "")) != "blank_canvas":
