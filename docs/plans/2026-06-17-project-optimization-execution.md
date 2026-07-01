@@ -837,6 +837,27 @@ GREEN: git diff --check
 
 `UILifecycleService.editor_part_library_build_specs()` now owns the pure identity, position, and size data for editor part-group, build-slot, and part-filter buttons. `_build_editor_ui()` remains the scene-tree adapter: it creates concrete `Button` nodes, connects selection signals, and stores the node references from the returned specs. The main extraction probe now rejects the old inline group/slot/filter layout formulas in `main.gd`.
 
+Follow-up editor ammo-size build specs extraction:
+
+```text
+RED: lifecycle_services_contract_probe failed on missing UILifecycleService.editor_ammo_size_build_specs()
+RED: main_file_extraction_contract_probe failed on missing UILifecycleService.editor_ammo_size_build_specs delegation
+GREEN: LIFECYCLE_SERVICES_CONTRACT_PROBE ok
+GREEN: MAIN_FILE_EXTRACTION_CONTRACT_PROBE ok services=9
+GREEN: Godot --check-only --script res://scripts/main.gd --quit-after 1
+GREEN: AMMO_SIZE_SLIDER_PROBE base=18 ranks=XS..XL ui=ok
+GREEN: AMMO_SIZE_UI_PROBE entries=5 tier=M ok
+GREEN: PART_LIBRARY_UI_PROBE groups=["torso", "limb", "terminal_weapon", "barrier_panel", "software_muscle", "software"] weapon=3 equipment=5 software=7 dashboard=40
+GREEN: UNIT_EDITOR_PAGINATION_LAYOUT_PROBE ok unit=1 page=0 catalog=1 load=0 feedback=[P: (270.0, 654.0), S: (622.0, 26.0)]
+GREEN: TEAMEDIT_UI_SIMPLIFIED_CONTROLS_PROBE ok summary_lines=2
+GREEN: UNIT_EDITOR_FULLSCREEN_LAYOUT_PROBE ok board=(908.0, 548.0) dock=(726.0, 132.0)
+GREEN: SCREEN_LAYOUT_TOKEN_COVERAGE_PROBE ok
+GREEN: jq empty tools/probe_manifest.json
+GREEN: git diff --check
+```
+
+`UILifecycleService.editor_ammo_size_build_specs()` now owns the pure identity, position, size, and slider-range data for the ammo-size title, slider, value label, and ticks. `_build_editor_ui()` remains the scene-tree adapter: it creates and styles concrete controls, connects the slider signal, and stores node references. `editor_ammo_size_control_presentation()` now reuses the same build specs so creation and refresh cannot drift apart. The main extraction probe rejects the old inline ammo-size creation formulas in `main.gd`.
+
 Remaining items after this batch:
 
 - Continue editor UI extraction with `_build_editor_ui` and the remaining action presentation/control-mutation sections of `_apply_editor_panel_visibility`, then continue `_resolve_attack` and `_refresh_editor_visual_views` extraction.

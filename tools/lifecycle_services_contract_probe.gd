@@ -211,6 +211,31 @@ func _init() -> void:
 		return
 	_assert_vector(fifth_filter_spec, "position", Vector2(936.0, 228.0), "filter build spec")
 	_assert_vector(fifth_filter_spec, "size", Vector2(64.0, 22.0), "filter build spec")
+	var ammo_size_build_specs: Dictionary = UILifecycleService.editor_ammo_size_build_specs(5)
+	var ammo_title_build_spec: Dictionary = Dictionary(ammo_size_build_specs.get("title", {}))
+	var ammo_slider_build_spec: Dictionary = Dictionary(ammo_size_build_specs.get("slider", {}))
+	var ammo_value_build_spec: Dictionary = Dictionary(ammo_size_build_specs.get("value", {}))
+	var ammo_tick_build_specs: Array = Array(ammo_size_build_specs.get("ticks", []))
+	if String(ammo_title_build_spec.get("name", "")) != "AmmoSizeTitle" or String(ammo_slider_build_spec.get("name", "")) != "AmmoSizeSlider" or String(ammo_value_build_spec.get("name", "")) != "AmmoSizeValue":
+		_fail("UILifecycleService ammo-size build spec identity failed.")
+		return
+	_assert_vector(ammo_title_build_spec, "position", Vector2(936.0, 258.0), "ammo title build spec")
+	_assert_vector(ammo_title_build_spec, "size", Vector2(72.0, 18.0), "ammo title build spec")
+	_assert_vector(ammo_slider_build_spec, "position", Vector2(1010.0, 257.0), "ammo slider build spec")
+	_assert_vector(ammo_slider_build_spec, "size", Vector2(176.0, 22.0), "ammo slider build spec")
+	if float(ammo_slider_build_spec.get("min_value", 0.0)) != 1.0 or float(ammo_slider_build_spec.get("max_value", 0.0)) != 5.0 or float(ammo_slider_build_spec.get("step", 0.0)) != 1.0:
+		_fail("UILifecycleService ammo slider range build spec failed.")
+		return
+	_assert_vector(ammo_value_build_spec, "position", Vector2(1190.0, 258.0), "ammo value build spec")
+	if ammo_tick_build_specs.size() != 5:
+		_fail("UILifecycleService ammo tick build spec count failed.")
+		return
+	var fifth_ammo_tick_build_spec: Dictionary = Dictionary(ammo_tick_build_specs[4])
+	if int(fifth_ammo_tick_build_spec.get("index", -1)) != 4 or String(fifth_ammo_tick_build_spec.get("name", "")) != "AmmoSizeTick4":
+		_fail("UILifecycleService ammo tick build spec identity failed.")
+		return
+	_assert_vector(fifth_ammo_tick_build_spec, "position", Vector2(1178.0, 278.0), "ammo tick build spec")
+	_assert_vector(fifth_ammo_tick_build_spec, "size", Vector2(34.0, 14.0), "ammo tick build spec")
 	Dictionary(Array(build_specs.get("canvas_tools", []))[0])["key"] = "mutated"
 	var fresh_build_specs: Dictionary = UILifecycleService.editor_action_build_specs()
 	if String(Dictionary(Array(fresh_build_specs.get("canvas_tools", []))[0]).get("key", "")) != "blank_canvas":

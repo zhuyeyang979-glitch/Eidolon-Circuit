@@ -204,6 +204,38 @@ static func editor_part_library_build_specs(group_order: Array, build_slot_count
 	}
 
 
+static func editor_ammo_size_build_specs(tick_count: int) -> Dictionary:
+	var ticks := []
+	for i in range(maxi(0, tick_count)):
+		ticks.append({
+			"index": i,
+			"name": "AmmoSizeTick%d" % i,
+			"position": Vector2(1002.0 + float(i) * 44.0, 278.0),
+			"size": Vector2(34.0, 14.0),
+		})
+	return {
+		"title": {
+			"name": "AmmoSizeTitle",
+			"position": Vector2(936.0, 258.0),
+			"size": Vector2(72.0, 18.0),
+		},
+		"slider": {
+			"name": "AmmoSizeSlider",
+			"position": Vector2(1010.0, 257.0),
+			"size": Vector2(176.0, 22.0),
+			"min_value": 1.0,
+			"max_value": 5.0,
+			"step": 1.0,
+		},
+		"value": {
+			"name": "AmmoSizeValue",
+			"position": Vector2(1190.0, 258.0),
+			"size": Vector2(54.0, 18.0),
+		},
+		"ticks": ticks,
+	}
+
+
 static func editor_panel_role_chrome_presentation(mode: String, active_role_key: String, parts_visible: bool, panel_keys: Array, role_keys: Array, role_order: Array, role_short_labels: Dictionary, zh: bool) -> Dictionary:
 	var panel_texts := {"load": "单位库", "parts": "零件库"} if zh else {"load": "UNITS", "parts": "PARTS"}
 	var panel_buttons := {}
@@ -267,33 +299,39 @@ static func editor_part_filter_button_presentation(button_index: int, filter_opt
 
 
 static func editor_ammo_size_control_presentation(ammo_slider_visible: bool, ammo_size_rank: int, zh: bool, value_text: String, tick_labels: Array) -> Dictionary:
+	var build_specs := editor_ammo_size_build_specs(tick_labels.size())
+	var title_build_spec := Dictionary(build_specs.get("title", {}))
+	var slider_build_spec := Dictionary(build_specs.get("slider", {}))
+	var value_build_spec := Dictionary(build_specs.get("value", {}))
+	var tick_build_specs: Array = Array(build_specs.get("ticks", []))
 	var title_plan := {
 		"visible": ammo_slider_visible,
-		"position": Vector2(936.0, 258.0),
-		"size": Vector2(72.0, 18.0),
+		"position": title_build_spec.get("position", Vector2.ZERO),
+		"size": title_build_spec.get("size", Vector2.ZERO),
 		"text": "弹药尺寸" if zh else "AMMO SIZE",
 	}
 	var slider_plan := {
 		"visible": ammo_slider_visible,
 		"editable": ammo_slider_visible,
-		"position": Vector2(1010.0, 257.0),
-		"size": Vector2(176.0, 22.0),
+		"position": slider_build_spec.get("position", Vector2.ZERO),
+		"size": slider_build_spec.get("size", Vector2.ZERO),
 		"value": float(ammo_size_rank),
 		"tooltip": "安装弹药时选择弹仓尺寸；弹数、价格、质量和槽位体积同步增加。" if zh else "Choose ammo bay size at install time; ammo count, cost, mass, and slot volume scale together.",
 	}
 	var value_plan := {
 		"visible": ammo_slider_visible,
-		"position": Vector2(1190.0, 258.0),
-		"size": Vector2(54.0, 18.0),
+		"position": value_build_spec.get("position", Vector2.ZERO),
+		"size": value_build_spec.get("size", Vector2.ZERO),
 		"text": String(value_text),
 	}
 	var tick_plans := []
 	for i in range(tick_labels.size()):
 		var rank := i + 1
+		var tick_build_spec := Dictionary(tick_build_specs[i])
 		tick_plans.append({
 			"visible": ammo_slider_visible,
-			"position": Vector2(1002.0 + float(i) * 44.0, 278.0),
-			"size": Vector2(34.0, 14.0),
+			"position": tick_build_spec.get("position", Vector2.ZERO),
+			"size": tick_build_spec.get("size", Vector2.ZERO),
 			"text": String(tick_labels[i]),
 			"modulate": Color(1.0, 0.86, 0.28, 1.0) if rank == ammo_size_rank else Color(0.76, 0.9, 1.0, 0.72),
 		})

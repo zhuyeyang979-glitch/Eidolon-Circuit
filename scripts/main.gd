@@ -47132,21 +47132,28 @@ func _build_editor_ui() -> void:
 		filter_button.pressed.connect(_select_editor_part_filter.bind(filter_index))
 		root.add_child(filter_button)
 		editor_part_filter_buttons.append(filter_button)
-	editor_ammo_size_title_label = _make_label(root, "AmmoSizeTitle", "", Vector2(936.0, 258.0), Vector2(72.0, 18.0), 10, Color(1.0, 0.88, 0.32, 1.0), HORIZONTAL_ALIGNMENT_LEFT)
+	var ammo_size_build_specs := UILifecycleService.editor_ammo_size_build_specs(5)
+	var ammo_title_build_spec := Dictionary(ammo_size_build_specs.get("title", {}))
+	editor_ammo_size_title_label = _make_label(root, String(ammo_title_build_spec.get("name", "AmmoSizeTitle")), "", ammo_title_build_spec.get("position", Vector2.ZERO), ammo_title_build_spec.get("size", Vector2(72.0, 18.0)), 10, Color(1.0, 0.88, 0.32, 1.0), HORIZONTAL_ALIGNMENT_LEFT)
+	var ammo_slider_build_spec := Dictionary(ammo_size_build_specs.get("slider", {}))
 	editor_ammo_size_slider = HSlider.new()
-	editor_ammo_size_slider.name = "AmmoSizeSlider"
-	editor_ammo_size_slider.min_value = 1.0
-	editor_ammo_size_slider.max_value = 5.0
-	editor_ammo_size_slider.step = 1.0
+	editor_ammo_size_slider.name = String(ammo_slider_build_spec.get("name", "AmmoSizeSlider"))
+	editor_ammo_size_slider.min_value = float(ammo_slider_build_spec.get("min_value", 1.0))
+	editor_ammo_size_slider.max_value = float(ammo_slider_build_spec.get("max_value", 5.0))
+	editor_ammo_size_slider.step = float(ammo_slider_build_spec.get("step", 1.0))
 	editor_ammo_size_slider.value = float(editor_ammo_size_rank)
 	editor_ammo_size_slider.focus_mode = Control.FOCUS_NONE
-	editor_ammo_size_slider.position = Vector2(1010.0, 257.0)
-	editor_ammo_size_slider.size = Vector2(176.0, 22.0)
+	editor_ammo_size_slider.position = ammo_slider_build_spec.get("position", Vector2.ZERO)
+	editor_ammo_size_slider.size = ammo_slider_build_spec.get("size", Vector2(176.0, 22.0))
 	editor_ammo_size_slider.value_changed.connect(_set_editor_ammo_size_rank_from_slider)
 	root.add_child(editor_ammo_size_slider)
-	editor_ammo_size_value_label = _make_label(root, "AmmoSizeValue", "", Vector2(1190.0, 258.0), Vector2(54.0, 18.0), 10, Color(0.78, 0.92, 1.0, 0.94), HORIZONTAL_ALIGNMENT_RIGHT)
-	for i in range(5):
-		var tick_label := _make_label(root, "AmmoSizeTick%d" % i, "", Vector2(1002.0 + float(i) * 44.0, 278.0), Vector2(34.0, 14.0), 8, Color(0.76, 0.9, 1.0, 0.82), HORIZONTAL_ALIGNMENT_CENTER)
+	var ammo_value_build_spec := Dictionary(ammo_size_build_specs.get("value", {}))
+	editor_ammo_size_value_label = _make_label(root, String(ammo_value_build_spec.get("name", "AmmoSizeValue")), "", ammo_value_build_spec.get("position", Vector2.ZERO), ammo_value_build_spec.get("size", Vector2(54.0, 18.0)), 10, Color(0.78, 0.92, 1.0, 0.94), HORIZONTAL_ALIGNMENT_RIGHT)
+	var ammo_tick_build_specs: Array = Array(ammo_size_build_specs.get("ticks", []))
+	for raw_ammo_tick_build_spec in ammo_tick_build_specs:
+		var ammo_tick_build_spec := Dictionary(raw_ammo_tick_build_spec)
+		var tick_index := int(ammo_tick_build_spec.get("index", editor_ammo_size_tick_labels.size()))
+		var tick_label := _make_label(root, String(ammo_tick_build_spec.get("name", "AmmoSizeTick%d" % tick_index)), "", ammo_tick_build_spec.get("position", Vector2.ZERO), ammo_tick_build_spec.get("size", Vector2(34.0, 14.0)), 8, Color(0.76, 0.9, 1.0, 0.82), HORIZONTAL_ALIGNMENT_CENTER)
 		editor_ammo_size_tick_labels.append(tick_label)
 	var actions: Array = Array(editor_action_build_specs.get("unit_actions", []))
 	for i in range(actions.size()):
