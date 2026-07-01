@@ -1036,6 +1036,24 @@ GREEN: VIEW_EXTRACTION_CONTRACT_PROBE ok views=27
 
 `_cache_editor_custom_board_snapshot()` now owns the custom board revision key assignment, base/current snapshot cache writes, build-time telemetry, and rebuild counters. `_refresh_editor_visual_views()` delegates the cache mutation and keeps marker assignment, dynamic-field application, and final board submission local. The visual-refresh probe now requires the helper and rejects direct custom-board cache-write fragments from `_refresh_editor_visual_views()`.
 
+Follow-up editor visual refresh board submission extraction:
+
+```text
+RED: editor_visual_refresh_no_deep_snapshot_probe failed on missing _submit_editor_visual_snapshot helper
+GREEN: EDITOR_VISUAL_REFRESH_NO_DEEP_SNAPSHOT_PROBE ok
+GREEN: Godot --check-only --script res://scripts/main.gd --quit-after 1
+GREEN: EDITOR_RENDER_CACHE_PROBE ok apply=1 noop=0 skip=2 submit=2
+GREEN: EDITOR_BOARD_SNAPSHOT_LAZY_PROBE ok hits=0 skips=2 rebuild=0
+GREEN: EDITOR_BOARD_SNAPSHOT_INCREMENTAL_PROBE ok rebuilds=1 dynamic=4
+GREEN: EDITOR_BOARD_MODEL_INCREMENTAL_PROBE ok shallow=1 skip=1
+GREEN: ASSEMBLY_BOARD_SET_BOARD_NOOP_PROBE ok apply=1 noop=0 skip=2
+GREEN: BOARD_ZOOM_SOCKET_FOLLOW_PROBE ok marker=0:torso_port:0
+GREEN: TEAMEDIT_ASSEMBLY_FRAME_BUDGET_PROBE ok p95=1.06ms max=1.06ms catalog_delta=0 hot=teamedit.visual_refresh
+GREEN: VIEW_EXTRACTION_CONTRACT_PROBE ok views=27
+```
+
+`_submit_editor_visual_snapshot()` now owns the final board revision lookup, `assembly_board_view.set_board()` call, orientation popup refresh, optional torso/engine side-panel refresh, and hot-path profiler record/close. `_refresh_editor_visual_views()` delegates final submission after custom dynamic fields are applied, and the visual-refresh probe rejects the old direct board submission/profiler fragments from the orchestration function.
+
 Remaining items after this batch:
 
 - Continue editor UI extraction with `_build_editor_ui` and the remaining action presentation/control-mutation sections of `_apply_editor_panel_visibility`, then continue `_resolve_attack` and `_refresh_editor_visual_views` extraction.

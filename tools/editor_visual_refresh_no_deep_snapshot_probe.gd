@@ -41,6 +41,10 @@ func _init() -> void:
 	if custom_cache_block.is_empty():
 		_fail("Missing _cache_editor_custom_board_snapshot helper.")
 		return
+	var submit_block := _function_block(source, "func _submit_editor_visual_snapshot(")
+	if submit_block.is_empty():
+		_fail("Missing _submit_editor_visual_snapshot helper.")
+		return
 	if block.contains("topology.duplicate(true)"):
 		_fail("TeamEdit visual refresh still deep-copies full topology.")
 		return
@@ -56,6 +60,9 @@ func _init() -> void:
 	if not block.contains("_cache_editor_custom_board_snapshot(snapshot, custom_board_cache_key, snapshot_build_start)"):
 		_fail("TeamEdit visual refresh should delegate custom board cache writes.")
 		return
+	if not block.contains("_submit_editor_visual_snapshot(snapshot, board_mode, illegal_parts, update_side_panels)"):
+		_fail("TeamEdit visual refresh should delegate board snapshot submission.")
+		return
 	for stale_fragment in [
 		"var source_nodes_raw",
 		"var source_edges_raw",
@@ -70,6 +77,9 @@ func _init() -> void:
 		"editor_board_snapshot_cache_key =",
 		"editor_board_base_snapshot_rebuild_count +=",
 		"editor_board_snapshot_rebuild_count +=",
+		"var board_revision_key",
+		"assembly_board_view.set_board(",
+		"hot_path_profiler.record_value(\"teamedit.visual_refresh_usec\"",
 		"terrain_preview_tiles_by_index",
 		"snapshot[\"barrier_columns\"]",
 		"snapshot[\"tile_%d\" % i]",
@@ -113,6 +123,23 @@ func _init() -> void:
 	]:
 		if not custom_cache_block.contains(token):
 			_fail("Custom board cache helper missing token: %s" % token)
+			return
+	for token in [
+		"assembly_board_view.set_board",
+		"editor_selected_body_part",
+		"illegal_parts",
+		"editor_snap_part",
+		"editor_snap_timer",
+		"ui_language",
+		"editor_canvas_motion_phase",
+		"_refresh_editor_orientation_popup",
+		"_refresh_torso_detail_view",
+		"_refresh_engine_momentum_allocation_view",
+		"hot_path_profiler.record_value",
+		"hot_path_profiler.scope_end",
+	]:
+		if not submit_block.contains(token):
+			_fail("Board visual snapshot submit helper missing token: %s" % token)
 			return
 	for token in [
 		"_barrier_terrain_editor_preview",

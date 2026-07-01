@@ -53108,15 +53108,7 @@ func _refresh_editor_visual_views(precomputed_stats: Dictionary = {}, update_sid
 		snapshot = _editor_barrier_screen_board_snapshot(role_key, unit_bp)
 	if board_mode == "custom" and not snapshot.is_empty():
 		snapshot = _apply_editor_board_dynamic_fields(snapshot, role_key, unit_bp, custom_board_cache_key, visual_stats)
-	var board_revision_key := String(snapshot.get("revision_key", ""))
-	assembly_board_view.set_board(snapshot, editor_selected_body_part, illegal_parts, editor_snap_part, clampf(editor_snap_timer / 0.28, 0.0, 1.0), board_mode, ui_language, editor_canvas_motion_phase, board_revision_key)
-	_refresh_editor_orientation_popup()
-	if update_side_panels:
-		_refresh_torso_detail_view()
-		_refresh_engine_momentum_allocation_view()
-	if hot_path_profiler != null:
-		hot_path_profiler.record_value("teamedit.visual_refresh_usec", editor_board_snapshot_build_usec)
-		hot_path_profiler.scope_end("teamedit.visual_refresh")
+	_submit_editor_visual_snapshot(snapshot, board_mode, illegal_parts, update_side_panels)
 
 
 func _editor_shallow_topology_snapshot(topology: Dictionary) -> Dictionary:
@@ -53190,6 +53182,18 @@ func _cache_editor_custom_board_snapshot(snapshot: Dictionary, custom_board_cach
 	editor_board_base_snapshot_rebuild_count += 1
 	editor_board_snapshot_rebuild_count += 1
 	return snapshot
+
+
+func _submit_editor_visual_snapshot(snapshot: Dictionary, board_mode: String, illegal_parts: Dictionary, update_side_panels: bool) -> void:
+	var board_revision_key := String(snapshot.get("revision_key", ""))
+	assembly_board_view.set_board(snapshot, editor_selected_body_part, illegal_parts, editor_snap_part, clampf(editor_snap_timer / 0.28, 0.0, 1.0), board_mode, ui_language, editor_canvas_motion_phase, board_revision_key)
+	_refresh_editor_orientation_popup()
+	if update_side_panels:
+		_refresh_torso_detail_view()
+		_refresh_engine_momentum_allocation_view()
+	if hot_path_profiler != null:
+		hot_path_profiler.record_value("teamedit.visual_refresh_usec", editor_board_snapshot_build_usec)
+		hot_path_profiler.scope_end("teamedit.visual_refresh")
 
 
 func _editor_barrier_screen_board_snapshot(role_key: String, unit_bp: Dictionary) -> Dictionary:
