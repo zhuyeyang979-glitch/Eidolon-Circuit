@@ -29,22 +29,40 @@ func _init() -> void:
 	if barrier_block.is_empty():
 		_fail("Missing _editor_barrier_screen_board_snapshot helper.")
 		return
+	var shallow_block := _function_block(source, "func _editor_shallow_topology_snapshot(")
+	if shallow_block.is_empty():
+		_fail("Missing _editor_shallow_topology_snapshot helper.")
+		return
 	if block.contains("topology.duplicate(true)"):
 		_fail("TeamEdit visual refresh still deep-copies full topology.")
 		return
-	if not block.contains("duplicate(false)") or not block.contains("editor_board_shallow_node_snapshot_count"):
-		_fail("TeamEdit visual refresh does not use the shallow node snapshot path.")
+	if not block.contains("_editor_shallow_topology_snapshot(topology)"):
+		_fail("TeamEdit visual refresh should delegate shallow topology snapshot building.")
 		return
 	if not block.contains("_editor_barrier_screen_board_snapshot(role_key, unit_bp)"):
 		_fail("TeamEdit visual refresh should delegate barrier screen board snapshot building.")
 		return
 	for stale_fragment in [
+		"var source_nodes_raw",
+		"var source_edges_raw",
+		"var shallow_nodes",
+		"var shallow_edges",
 		"terrain_preview_tiles_by_index",
 		"snapshot[\"barrier_columns\"]",
 		"snapshot[\"tile_%d\" % i]",
 	]:
 		if block.contains(stale_fragment):
-			_fail("TeamEdit visual refresh should not inline barrier snapshot construction: %s" % stale_fragment)
+			_fail("TeamEdit visual refresh should not inline snapshot construction: %s" % stale_fragment)
+			return
+	for token in [
+		"duplicate(false)",
+		"editor_board_shallow_node_snapshot_count",
+		"TOPOLOGY_BOARD_PHYSICAL_UNITS",
+		"nodes",
+		"edges",
+	]:
+		if not shallow_block.contains(token):
+			_fail("Shallow topology snapshot helper missing token: %s" % token)
 			return
 	for token in [
 		"_barrier_terrain_editor_preview",

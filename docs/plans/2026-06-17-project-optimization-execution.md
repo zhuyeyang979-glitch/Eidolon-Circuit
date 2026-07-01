@@ -983,6 +983,24 @@ GREEN: VIEW_EXTRACTION_CONTRACT_PROBE ok views=27
 
 `_editor_barrier_screen_board_snapshot()` now owns the barrier screen-board snapshot construction for terrain preview, board dimensions, zoom/offset/grid-guide state, revision key, and per-tile visual payloads. `_refresh_editor_visual_views()` delegates only that branch, while cache hit/rebuild routing, custom-board dynamic-field application, `assembly_board_view.set_board()`, and side-panel refreshes remain in the orchestration function. The visual-refresh probe now resolves the exact `_refresh_editor_visual_views(` signature, requires the helper, and rejects the stale inline barrier snapshot fragments.
 
+Follow-up editor visual refresh shallow topology snapshot extraction:
+
+```text
+RED: editor_visual_refresh_no_deep_snapshot_probe failed on missing _editor_shallow_topology_snapshot helper
+GREEN: EDITOR_VISUAL_REFRESH_NO_DEEP_SNAPSHOT_PROBE ok
+GREEN: Godot --check-only --script res://scripts/main.gd --quit-after 1
+GREEN: EDITOR_RENDER_CACHE_PROBE ok apply=1 noop=0 skip=2 submit=2
+GREEN: EDITOR_BOARD_SNAPSHOT_LAZY_PROBE ok hits=0 skips=2 rebuild=0
+GREEN: EDITOR_BOARD_SNAPSHOT_INCREMENTAL_PROBE ok rebuilds=1 dynamic=4
+GREEN: EDITOR_BOARD_MODEL_INCREMENTAL_PROBE ok shallow=1 skip=1
+GREEN: ASSEMBLY_BOARD_SET_BOARD_NOOP_PROBE ok apply=1 noop=0 skip=2
+GREEN: BOARD_ZOOM_SOCKET_FOLLOW_PROBE ok marker=0:torso_port:0
+GREEN: BARRIER_TERRAIN_EDITOR_PREVIEW_PROBE ok
+GREEN: VIEW_EXTRACTION_CONTRACT_PROBE ok views=27
+```
+
+`_editor_shallow_topology_snapshot()` now owns the shallow node/edge copy path for custom topology boards, including the shallow snapshot counter and board distance-scale initialization. `_refresh_editor_visual_views()` delegates that setup and keeps the later visual stats fill, node enrichment, edge-state construction, cache writes, dynamic-field application, and board submission in place. The visual-refresh probe now requires the helper and rejects the old inline `source_nodes_raw`, `source_edges_raw`, `shallow_nodes`, and `shallow_edges` fragments from `_refresh_editor_visual_views()`.
+
 Remaining items after this batch:
 
 - Continue editor UI extraction with `_build_editor_ui` and the remaining action presentation/control-mutation sections of `_apply_editor_panel_visibility`, then continue `_resolve_attack` and `_refresh_editor_visual_views` extraction.

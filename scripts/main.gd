@@ -52981,19 +52981,7 @@ func _refresh_editor_visual_views(precomputed_stats: Dictionary = {}, update_sid
 	elif _role_uses_body_board(role_key) and unit_bp.has("custom_topology") and not barrier_screen_board:
 		var snapshot_build_start := Time.get_ticks_usec()
 		var topology: Dictionary = unit_bp.get("custom_topology", {})
-		var source_nodes_raw: Array = Array(topology.get("nodes", []))
-		var source_edges_raw: Array = Array(topology.get("edges", []))
-		var shallow_nodes: Array = []
-		shallow_nodes.resize(source_nodes_raw.size())
-		for node_i in range(source_nodes_raw.size()):
-			shallow_nodes[node_i] = Dictionary(source_nodes_raw[node_i]).duplicate(false) if source_nodes_raw[node_i] is Dictionary else source_nodes_raw[node_i]
-		var shallow_edges: Array = []
-		shallow_edges.resize(source_edges_raw.size())
-		for edge_i in range(source_edges_raw.size()):
-			shallow_edges[edge_i] = Dictionary(source_edges_raw[edge_i]).duplicate(false) if source_edges_raw[edge_i] is Dictionary else source_edges_raw[edge_i]
-		snapshot = {"nodes": shallow_nodes, "edges": shallow_edges}
-		editor_board_shallow_node_snapshot_count += 1
-		snapshot["distance_scale"] = TOPOLOGY_BOARD_PHYSICAL_UNITS
+		snapshot = _editor_shallow_topology_snapshot(topology)
 		if visual_stats.is_empty():
 			visual_stats = _compute_unit_stats(player_id, role_key, -1, unit_bp)
 		snapshot["joint_slot_profiles"] = Array(visual_stats.get("joint_slot_profiles", []))
@@ -53168,6 +53156,25 @@ func _refresh_editor_visual_views(precomputed_stats: Dictionary = {}, update_sid
 	if hot_path_profiler != null:
 		hot_path_profiler.record_value("teamedit.visual_refresh_usec", editor_board_snapshot_build_usec)
 		hot_path_profiler.scope_end("teamedit.visual_refresh")
+
+
+func _editor_shallow_topology_snapshot(topology: Dictionary) -> Dictionary:
+	var source_nodes_raw: Array = Array(topology.get("nodes", []))
+	var source_edges_raw: Array = Array(topology.get("edges", []))
+	var shallow_nodes: Array = []
+	shallow_nodes.resize(source_nodes_raw.size())
+	for node_i in range(source_nodes_raw.size()):
+		shallow_nodes[node_i] = Dictionary(source_nodes_raw[node_i]).duplicate(false) if source_nodes_raw[node_i] is Dictionary else source_nodes_raw[node_i]
+	var shallow_edges: Array = []
+	shallow_edges.resize(source_edges_raw.size())
+	for edge_i in range(source_edges_raw.size()):
+		shallow_edges[edge_i] = Dictionary(source_edges_raw[edge_i]).duplicate(false) if source_edges_raw[edge_i] is Dictionary else source_edges_raw[edge_i]
+	editor_board_shallow_node_snapshot_count += 1
+	return {
+		"nodes": shallow_nodes,
+		"edges": shallow_edges,
+		"distance_scale": TOPOLOGY_BOARD_PHYSICAL_UNITS,
+	}
 
 
 func _editor_barrier_screen_board_snapshot(role_key: String, unit_bp: Dictionary) -> Dictionary:
