@@ -53094,41 +53094,9 @@ func _refresh_editor_visual_views(precomputed_stats: Dictionary = {}, update_sid
 		var display_nodes_for_edges := _board_nodes_with_art_visual_positions(role_key, unit_bp, nodes, source_edges_for_conflicts)
 		source_nodes_for_edges = display_nodes_for_edges
 		nodes = display_nodes_for_edges
-		var endpoint_conflicts := _topology_endpoint_conflicts(role_key, unit_bp, source_nodes_for_edges, source_edges_for_conflicts)
-		var edge_states := {}
-		for edge in Array(topology.get("edges", [])):
-			var a := _topology_edge_node_a(edge)
-			var b := _topology_edge_node_b(edge)
-			if a < 0 or b < 0 or a >= nodes.size() or b >= nodes.size():
-				continue
-			var source_nodes: Array = source_nodes_for_edges
-			var node_a: Dictionary = source_nodes[a]
-			var node_b: Dictionary = source_nodes[b]
-			var actual_distance := _topology_edge_distance_units(node_a, node_b)
-			var fixed_distance := _topology_edge_fixed_distance_units(role_key, node_a, node_b, unit_bp)
-			var material_edge_error := _topology_material_edge_error(role_key, unit_bp, source_nodes, source_edges_for_conflicts, a, b)
-			var edge_points := _topology_edge_socket_board_points(role_key, unit_bp, source_nodes, source_edges_for_conflicts, a, b)
-			var socket_point_a: Vector2 = edge_points.get("a", Vector2.ZERO)
-			var socket_point_b: Vector2 = edge_points.get("b", Vector2.ZERO)
-			var socket_gap := socket_point_a.distance_to(socket_point_b) / maxf(1.0, _topology_board_uniform_scale()) * TOPOLOGY_BOARD_PHYSICAL_UNITS
-			var invalid_edge := socket_gap > TOPOLOGY_EDGE_TOLERANCE or not _topology_edge_can_connect(node_a, node_b) or bool(endpoint_conflicts.get(_topology_edge_key(a, b), false)) or material_edge_error != ""
-			edge_states[_topology_edge_key(a, b)] = {
-				"invalid": invalid_edge,
-				"actual": actual_distance,
-				"fixed": fixed_distance,
-				"material_error": material_edge_error,
-				"pa": edge_points.get("a", Vector2.ZERO),
-				"pb": edge_points.get("b", Vector2.ZERO),
-				"socket_a": String(edge_points.get("socket_a", "")),
-				"socket_b": String(edge_points.get("socket_b", "")),
-			}
-			if invalid_edge:
-				var marked_a: Dictionary = nodes[a]
-				var marked_b: Dictionary = nodes[b]
-				marked_a["illegal"] = true
-				marked_b["illegal"] = true
-				nodes[a] = marked_a
-				nodes[b] = marked_b
+		var edge_state_snapshot := _editor_topology_edge_state_snapshot(role_key, unit_bp, nodes, source_nodes_for_edges, source_edges_for_conflicts)
+		nodes = Array(edge_state_snapshot.get("nodes", nodes))
+		var edge_states: Dictionary = Dictionary(edge_state_snapshot.get("edge_states", {}))
 		snapshot["socket_markers"] = _topology_socket_markers_for_board(role_key, unit_bp, source_nodes_for_edges, source_edges_for_conflicts)
 		snapshot["material_highlights"] = _topology_material_highlights_for_board(role_key, unit_bp, source_nodes_for_edges, source_edges_for_conflicts)
 		snapshot["nodes"] = nodes
@@ -53174,6 +53142,48 @@ func _editor_shallow_topology_snapshot(topology: Dictionary) -> Dictionary:
 		"nodes": shallow_nodes,
 		"edges": shallow_edges,
 		"distance_scale": TOPOLOGY_BOARD_PHYSICAL_UNITS,
+	}
+
+
+func _editor_topology_edge_state_snapshot(role_key: String, unit_bp: Dictionary, nodes: Array, source_nodes_for_edges: Array, source_edges_for_conflicts: Array) -> Dictionary:
+	var endpoint_conflicts := _topology_endpoint_conflicts(role_key, unit_bp, source_nodes_for_edges, source_edges_for_conflicts)
+	var edge_states := {}
+	for edge in Array(source_edges_for_conflicts):
+		var a := _topology_edge_node_a(edge)
+		var b := _topology_edge_node_b(edge)
+		if a < 0 or b < 0 or a >= nodes.size() or b >= nodes.size():
+			continue
+		var source_nodes: Array = source_nodes_for_edges
+		var node_a: Dictionary = source_nodes[a]
+		var node_b: Dictionary = source_nodes[b]
+		var actual_distance := _topology_edge_distance_units(node_a, node_b)
+		var fixed_distance := _topology_edge_fixed_distance_units(role_key, node_a, node_b, unit_bp)
+		var material_edge_error := _topology_material_edge_error(role_key, unit_bp, source_nodes, source_edges_for_conflicts, a, b)
+		var edge_points := _topology_edge_socket_board_points(role_key, unit_bp, source_nodes, source_edges_for_conflicts, a, b)
+		var socket_point_a: Vector2 = edge_points.get("a", Vector2.ZERO)
+		var socket_point_b: Vector2 = edge_points.get("b", Vector2.ZERO)
+		var socket_gap := socket_point_a.distance_to(socket_point_b) / maxf(1.0, _topology_board_uniform_scale()) * TOPOLOGY_BOARD_PHYSICAL_UNITS
+		var invalid_edge := socket_gap > TOPOLOGY_EDGE_TOLERANCE or not _topology_edge_can_connect(node_a, node_b) or bool(endpoint_conflicts.get(_topology_edge_key(a, b), false)) or material_edge_error != ""
+		edge_states[_topology_edge_key(a, b)] = {
+			"invalid": invalid_edge,
+			"actual": actual_distance,
+			"fixed": fixed_distance,
+			"material_error": material_edge_error,
+			"pa": edge_points.get("a", Vector2.ZERO),
+			"pb": edge_points.get("b", Vector2.ZERO),
+			"socket_a": String(edge_points.get("socket_a", "")),
+			"socket_b": String(edge_points.get("socket_b", "")),
+		}
+		if invalid_edge:
+			var marked_a: Dictionary = nodes[a]
+			var marked_b: Dictionary = nodes[b]
+			marked_a["illegal"] = true
+			marked_b["illegal"] = true
+			nodes[a] = marked_a
+			nodes[b] = marked_b
+	return {
+		"nodes": nodes,
+		"edge_states": edge_states,
 	}
 
 

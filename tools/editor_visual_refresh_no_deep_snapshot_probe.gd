@@ -33,6 +33,10 @@ func _init() -> void:
 	if shallow_block.is_empty():
 		_fail("Missing _editor_shallow_topology_snapshot helper.")
 		return
+	var edge_state_block := _function_block(source, "func _editor_topology_edge_state_snapshot(")
+	if edge_state_block.is_empty():
+		_fail("Missing _editor_topology_edge_state_snapshot helper.")
+		return
 	if block.contains("topology.duplicate(true)"):
 		_fail("TeamEdit visual refresh still deep-copies full topology.")
 		return
@@ -42,11 +46,17 @@ func _init() -> void:
 	if not block.contains("_editor_barrier_screen_board_snapshot(role_key, unit_bp)"):
 		_fail("TeamEdit visual refresh should delegate barrier screen board snapshot building.")
 		return
+	if not block.contains("_editor_topology_edge_state_snapshot(role_key, unit_bp, nodes, source_nodes_for_edges, source_edges_for_conflicts)"):
+		_fail("TeamEdit visual refresh should delegate topology edge-state snapshot building.")
+		return
 	for stale_fragment in [
 		"var source_nodes_raw",
 		"var source_edges_raw",
 		"var shallow_nodes",
 		"var shallow_edges",
+		"var endpoint_conflicts",
+		"var edge_states := {}",
+		"for edge in Array(topology.get(\"edges\", []))",
 		"terrain_preview_tiles_by_index",
 		"snapshot[\"barrier_columns\"]",
 		"snapshot[\"tile_%d\" % i]",
@@ -63,6 +73,19 @@ func _init() -> void:
 	]:
 		if not shallow_block.contains(token):
 			_fail("Shallow topology snapshot helper missing token: %s" % token)
+			return
+	for token in [
+		"_topology_endpoint_conflicts",
+		"_topology_edge_socket_board_points",
+		"_topology_edge_can_connect",
+		"TOPOLOGY_EDGE_TOLERANCE",
+		"edge_states",
+		"nodes",
+		"invalid",
+		"material_error",
+	]:
+		if not edge_state_block.contains(token):
+			_fail("Topology edge-state snapshot helper missing token: %s" % token)
 			return
 	for token in [
 		"_barrier_terrain_editor_preview",
