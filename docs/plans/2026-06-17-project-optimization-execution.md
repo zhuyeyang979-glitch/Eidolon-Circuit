@@ -1324,6 +1324,26 @@ GREEN: git diff --check
 
 `UILifecycleService.editor_dashboard_controls_build_specs()` now owns pure identity/layout/z-index specs for the power allocation dock, board title/hint, legacy power budget button, torso detail button, and legacy power summary. `_build_editor_ui()` consumes those specs while keeping concrete control construction, visibility/disabled defaults, colors, signal wiring, and dashboard references local. `_build_editor_ui()` is now 711 lines, and the extraction probe rejects old inline dashboard/topbar layout formulas.
 
+Follow-up editor canvas/zoom chrome build specs extraction:
+
+```text
+RED: main_file_extraction_contract_probe failed on missing UILifecycleService.editor_canvas_zoom_chrome_build_specs delegation
+RED: lifecycle_services_contract_probe failed on missing editor_canvas_zoom_chrome_build_specs service API
+GREEN: MAIN_FILE_EXTRACTION_CONTRACT_PROBE ok services=9
+GREEN: LIFECYCLE_SERVICES_CONTRACT_PROBE ok
+GREEN: Godot --check-only --script res://scripts/main.gd --quit-after 1
+GREEN: Godot --check-only --script res://scripts/services/ui_lifecycle_service.gd --quit-after 1
+GREEN: EDITOR_BOARD_ZOOM_PROBE node=0 zoom=1.00 label=100% hover=0
+GREEN: UNIT_EDITOR_PAGINATION_LAYOUT_PROBE ok
+GREEN: UNIT_EDITOR_FULLSCREEN_LAYOUT_PROBE ok
+GREEN: UNIT_EDITOR_NO_HEADER_HELP_PROBE ok
+GREEN: EDITOR_SCROLL_REGIONS_PROBE ok
+GREEN: jq empty tools/probe_manifest.json
+GREEN: git diff --check
+```
+
+`UILifecycleService.editor_canvas_zoom_chrome_build_specs()` now owns pure identity/layout/default-text specs for the canvas tools title, canvas topology note, board zoom title, and board zoom value label. `_build_editor_ui()` consumes those specs while keeping label construction, colors, alignment, autowrap, visibility defaults, and zoom button wiring local. `_build_editor_ui()` is now 716 lines, and the extraction probe rejects old inline canvas/zoom chrome label formulas.
+
 Remaining items after this batch:
 
 - Continue editor UI extraction with `_build_editor_ui` and the remaining action presentation/control-mutation sections of `_apply_editor_panel_visibility`, then continue `_resolve_attack` and `_refresh_editor_visual_views` extraction.

@@ -621,6 +621,28 @@ func _init() -> void:
 	_assert_vector(torso_detail_button_build_spec, "size", Vector2(86.0, 24.0), "dashboard torso detail button build spec")
 	_assert_vector(legacy_power_summary_build_spec, "position", Vector2(140.0, 109.0), "dashboard legacy summary build spec")
 	_assert_vector(legacy_power_summary_build_spec, "size", Vector2(82.0, 22.0), "dashboard legacy summary build spec")
+	if not ui_lifecycle_source.contains("static func editor_canvas_zoom_chrome_build_specs("):
+		_fail("UILifecycleService should expose editor canvas/zoom chrome build specs.")
+		return
+	var canvas_zoom_chrome_build_specs: Dictionary = ui_lifecycle_service.call("editor_canvas_zoom_chrome_build_specs")
+	var canvas_tools_title_build_spec: Dictionary = Dictionary(canvas_zoom_chrome_build_specs.get("canvas_tools_title", {}))
+	var canvas_note_build_spec: Dictionary = Dictionary(canvas_zoom_chrome_build_specs.get("canvas_note", {}))
+	var board_zoom_title_build_spec: Dictionary = Dictionary(canvas_zoom_chrome_build_specs.get("board_zoom_title", {}))
+	var board_zoom_value_build_spec: Dictionary = Dictionary(canvas_zoom_chrome_build_specs.get("board_zoom_value", {}))
+	if String(canvas_tools_title_build_spec.get("name", "")) != "CanvasToolsTitle" or String(canvas_note_build_spec.get("name", "")) != "CanvasTopologyText":
+		_fail("UILifecycleService canvas chrome label identity failed.")
+		return
+	if String(board_zoom_title_build_spec.get("name", "")) != "BoardZoomTitle" or String(board_zoom_value_build_spec.get("name", "")) != "BoardZoomValue":
+		_fail("UILifecycleService board zoom label identity failed.")
+		return
+	if String(board_zoom_value_build_spec.get("text", "")) != "100%":
+		_fail("UILifecycleService board zoom default text failed.")
+		return
+	_assert_vector(canvas_tools_title_build_spec, "position", Vector2.ZERO, "canvas tools title build spec")
+	_assert_vector(canvas_note_build_spec, "size", Vector2.ZERO, "canvas note build spec")
+	_assert_vector(board_zoom_title_build_spec, "position", Vector2.ZERO, "board zoom title build spec")
+	_assert_vector(board_zoom_value_build_spec, "position", Vector2(72.0, 656.0), "board zoom value build spec")
+	_assert_vector(board_zoom_value_build_spec, "size", Vector2(54.0, 18.0), "board zoom value build spec")
 	Dictionary(Array(build_specs.get("canvas_tools", []))[0])["key"] = "mutated"
 	var fresh_build_specs: Dictionary = UILifecycleService.editor_action_build_specs()
 	if String(Dictionary(Array(fresh_build_specs.get("canvas_tools", []))[0]).get("key", "")) != "blank_canvas":

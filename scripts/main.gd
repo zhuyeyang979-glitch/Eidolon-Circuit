@@ -47548,7 +47548,9 @@ func _build_editor_ui() -> void:
 		quick_button.pressed.connect(_editor_action.bind(String(board_primary_spec.get("key", ""))))
 		root.add_child(quick_button)
 		editor_action_buttons[String(board_primary_spec.get("key", ""))] = quick_button
-	editor_section_labels["canvas_tools"] = _make_label(root, "CanvasToolsTitle", "", Vector2.ZERO, Vector2.ZERO, 1, Color.TRANSPARENT, HORIZONTAL_ALIGNMENT_LEFT)
+	var canvas_zoom_chrome_build_specs := UILifecycleService.editor_canvas_zoom_chrome_build_specs()
+	var canvas_tools_title_build_spec := Dictionary(canvas_zoom_chrome_build_specs.get("canvas_tools_title", {}))
+	editor_section_labels["canvas_tools"] = _make_label(root, String(canvas_tools_title_build_spec.get("name", "CanvasToolsTitle")), String(canvas_tools_title_build_spec.get("text", "")), canvas_tools_title_build_spec.get("position", Vector2.ZERO), canvas_tools_title_build_spec.get("size", Vector2.ZERO), 1, Color.TRANSPARENT, HORIZONTAL_ALIGNMENT_LEFT)
 	editor_section_labels["canvas_tools"].visible = false
 	var canvas_tools: Array = Array(editor_action_build_specs.get("canvas_tools", []))
 	for i in range(canvas_tools.size()):
@@ -47574,7 +47576,8 @@ func _build_editor_ui() -> void:
 		button.pressed.connect(_select_editor_body_part.bind(part_key))
 		root.add_child(button)
 		editor_board_labels[part_key] = button
-	editor_section_labels["canvas_note"] = _make_label(root, "CanvasTopologyText", "", Vector2.ZERO, Vector2.ZERO, 1, Color.TRANSPARENT, HORIZONTAL_ALIGNMENT_CENTER)
+	var canvas_note_build_spec := Dictionary(canvas_zoom_chrome_build_specs.get("canvas_note", {}))
+	editor_section_labels["canvas_note"] = _make_label(root, String(canvas_note_build_spec.get("name", "CanvasTopologyText")), String(canvas_note_build_spec.get("text", "")), canvas_note_build_spec.get("position", Vector2.ZERO), canvas_note_build_spec.get("size", Vector2.ZERO), 1, Color.TRANSPARENT, HORIZONTAL_ALIGNMENT_CENTER)
 	editor_section_labels["canvas_note"].autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	editor_section_labels["canvas_note"].visible = false
 	var module_binding_button_build_specs := UILifecycleService.editor_module_binding_button_build_specs(ATTACK_GROUP_COUNT, MODULE_BINDING_TRYOUT_Z_INDEX, MODULE_BINDING_OVERLAY_Z_INDEX)
@@ -47595,7 +47598,8 @@ func _build_editor_ui() -> void:
 		binding_button.pressed.connect(_editor_action.bind(button_key))
 		root.add_child(binding_button)
 		editor_action_buttons[button_key] = binding_button
-	var board_zoom_title := _make_label(root, "BoardZoomTitle", "", Vector2.ZERO, Vector2.ZERO, 1, Color.TRANSPARENT, HORIZONTAL_ALIGNMENT_LEFT)
+	var board_zoom_title_build_spec := Dictionary(canvas_zoom_chrome_build_specs.get("board_zoom_title", {}))
+	var board_zoom_title := _make_label(root, String(board_zoom_title_build_spec.get("name", "BoardZoomTitle")), String(board_zoom_title_build_spec.get("text", "")), board_zoom_title_build_spec.get("position", Vector2.ZERO), board_zoom_title_build_spec.get("size", Vector2.ZERO), 1, Color.TRANSPARENT, HORIZONTAL_ALIGNMENT_LEFT)
 	board_zoom_title.visible = false
 	var zoom_button_specs: Array = Array(editor_action_build_specs.get("board_zoom_actions", []))
 	for i in range(zoom_button_specs.size()):
@@ -47608,7 +47612,8 @@ func _build_editor_ui() -> void:
 		zoom_button.pressed.connect(_editor_action.bind(String(zoom_button_spec.get("key", ""))))
 		root.add_child(zoom_button)
 		editor_action_buttons[String(zoom_button_spec.get("key", ""))] = zoom_button
-	editor_board_zoom_label = _make_label(root, "BoardZoomValue", "100%", Vector2(72.0, 656.0), Vector2(54.0, 18.0), 11, Color(1.0, 0.86, 0.28, 1.0), HORIZONTAL_ALIGNMENT_CENTER)
+	var board_zoom_value_build_spec := Dictionary(canvas_zoom_chrome_build_specs.get("board_zoom_value", {}))
+	editor_board_zoom_label = _make_label(root, String(board_zoom_value_build_spec.get("name", "BoardZoomValue")), String(board_zoom_value_build_spec.get("text", "100%")), board_zoom_value_build_spec.get("position", Vector2.ZERO), board_zoom_value_build_spec.get("size", Vector2.ZERO), 11, Color(1.0, 0.86, 0.28, 1.0), HORIZONTAL_ALIGNMENT_CENTER)
 	var template_toggle_spec := Dictionary(editor_action_build_specs.get("template_toggle", {}))
 	var template_menu_button := Button.new()
 	template_menu_button.text = String(template_toggle_spec.get("text", ""))

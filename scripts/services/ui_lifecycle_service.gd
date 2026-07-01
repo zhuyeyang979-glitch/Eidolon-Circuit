@@ -620,6 +620,15 @@ static func editor_dashboard_controls_build_specs() -> Dictionary:
 	}
 
 
+static func editor_canvas_zoom_chrome_build_specs() -> Dictionary:
+	return {
+		"canvas_tools_title": {"name": "CanvasToolsTitle", "text": "", "position": Vector2.ZERO, "size": Vector2.ZERO},
+		"canvas_note": {"name": "CanvasTopologyText", "text": "", "position": Vector2.ZERO, "size": Vector2.ZERO},
+		"board_zoom_title": {"name": "BoardZoomTitle", "text": "", "position": Vector2.ZERO, "size": Vector2.ZERO},
+		"board_zoom_value": {"name": "BoardZoomValue", "text": "100%", "position": Vector2(72.0, 656.0), "size": Vector2(54.0, 18.0)},
+	}
+
+
 static func editor_panel_role_chrome_presentation(mode: String, active_role_key: String, parts_visible: bool, panel_keys: Array, role_keys: Array, role_order: Array, role_short_labels: Dictionary, zh: bool) -> Dictionary:
 	var panel_texts := {"load": "单位库", "parts": "零件库"} if zh else {"load": "UNITS", "parts": "PARTS"}
 	var panel_buttons := {}
