@@ -469,6 +469,41 @@ static func editor_shop_surface_build_specs(slot_order: Array) -> Dictionary:
 	}
 
 
+static func editor_sort_menu_build_specs(sort_key_order: Array) -> Dictionary:
+	var options := []
+	for i in range(sort_key_order.size()):
+		var sort_key := String(sort_key_order[i])
+		options.append({
+			"index": i,
+			"key": sort_key,
+			"name": "SortOption%d" % i,
+			"position": Vector2(940.0 + float(i % 3) * 88.0, 326.0 + float(floori(float(i) / 3.0)) * 28.0),
+			"size": Vector2(82.0, 24.0),
+			"z_index": 61,
+		})
+	return {
+		"panel": {
+			"name": "EditorSortSubmenu",
+			"position": Vector2(932.0, 318.0),
+			"size": Vector2(278.0, 112.0),
+			"z_index": 60,
+		},
+		"options": options,
+		"catalog_title": {
+			"name": "CatalogTitle",
+			"text": "零件卡片",
+			"position": Vector2(936.0, 330.0),
+			"size": Vector2(168.0, 20.0),
+		},
+		"catalog_page": {
+			"name": "CatalogPage",
+			"text": "",
+			"position": Vector2(1110.0, 330.0),
+			"size": Vector2(96.0, 20.0),
+		},
+	}
+
+
 static func editor_panel_role_chrome_presentation(mode: String, active_role_key: String, parts_visible: bool, panel_keys: Array, role_keys: Array, role_order: Array, role_short_labels: Dictionary, zh: bool) -> Dictionary:
 	var panel_texts := {"load": "单位库", "parts": "零件库"} if zh else {"load": "UNITS", "parts": "PARTS"}
 	var panel_buttons := {}

@@ -421,6 +421,33 @@ func _init() -> void:
 		return
 	_assert_vector(third_shop_button_build_spec, "position", Vector2(936.0, 420.0), "shop button build spec")
 	_assert_vector(third_shop_button_build_spec, "size", Vector2(270.0, 76.0), "shop button build spec")
+	if not ui_lifecycle_source.contains("static func editor_sort_menu_build_specs("):
+		_fail("UILifecycleService should expose editor sort menu build specs.")
+		return
+	var sort_menu_build_specs: Dictionary = ui_lifecycle_service.call("editor_sort_menu_build_specs", ["cost", "mass", "name", "slot"])
+	var sort_panel_build_spec: Dictionary = Dictionary(sort_menu_build_specs.get("panel", {}))
+	var sort_option_build_specs: Array = Array(sort_menu_build_specs.get("options", []))
+	var catalog_title_build_spec: Dictionary = Dictionary(sort_menu_build_specs.get("catalog_title", {}))
+	var catalog_page_build_spec: Dictionary = Dictionary(sort_menu_build_specs.get("catalog_page", {}))
+	if String(sort_panel_build_spec.get("name", "")) != "EditorSortSubmenu":
+		_fail("UILifecycleService sort panel build spec identity failed.")
+		return
+	if sort_option_build_specs.size() != 4:
+		_fail("UILifecycleService sort option build spec count failed.")
+		return
+	if String(catalog_title_build_spec.get("name", "")) != "CatalogTitle" or String(catalog_page_build_spec.get("name", "")) != "CatalogPage":
+		_fail("UILifecycleService catalog header build spec identity failed.")
+		return
+	_assert_vector(sort_panel_build_spec, "position", Vector2(932.0, 318.0), "sort panel build spec")
+	_assert_vector(sort_panel_build_spec, "size", Vector2(278.0, 112.0), "sort panel build spec")
+	var fourth_sort_option_build_spec: Dictionary = Dictionary(sort_option_build_specs[3])
+	if int(fourth_sort_option_build_spec.get("index", -1)) != 3 or String(fourth_sort_option_build_spec.get("key", "")) != "slot" or String(fourth_sort_option_build_spec.get("name", "")) != "SortOption3":
+		_fail("UILifecycleService sort option build spec identity failed.")
+		return
+	_assert_vector(fourth_sort_option_build_spec, "position", Vector2(940.0, 354.0), "sort option build spec")
+	_assert_vector(fourth_sort_option_build_spec, "size", Vector2(82.0, 24.0), "sort option build spec")
+	_assert_vector(catalog_title_build_spec, "position", Vector2(936.0, 330.0), "catalog title build spec")
+	_assert_vector(catalog_page_build_spec, "position", Vector2(1110.0, 330.0), "catalog page build spec")
 	Dictionary(Array(build_specs.get("canvas_tools", []))[0])["key"] = "mutated"
 	var fresh_build_specs: Dictionary = UILifecycleService.editor_action_build_specs()
 	if String(Dictionary(Array(fresh_build_specs.get("canvas_tools", []))[0]).get("key", "")) != "blank_canvas":

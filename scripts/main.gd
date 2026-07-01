@@ -47714,22 +47714,28 @@ func _build_editor_ui() -> void:
 	sort_dir_button.pressed.connect(_toggle_editor_catalog_sort_direction)
 	root.add_child(sort_dir_button)
 	editor_action_buttons["sort_dir"] = sort_dir_button
-	editor_sort_panel = _add_ui_rect(root, "EditorSortSubmenu", Vector2(932.0, 318.0), Vector2(278.0, 112.0), Color(0.006, 0.014, 0.021, 0.94))
+	var sort_menu_build_specs := UILifecycleService.editor_sort_menu_build_specs(EDITOR_SORT_KEY_ORDER)
+	var sort_panel_build_spec := Dictionary(sort_menu_build_specs.get("panel", {}))
+	editor_sort_panel = _add_ui_rect(root, String(sort_panel_build_spec.get("name", "EditorSortSubmenu")), sort_panel_build_spec.get("position", Vector2.ZERO), sort_panel_build_spec.get("size", Vector2.ZERO), Color(0.006, 0.014, 0.021, 0.94))
 	editor_sort_panel.visible = false
 	editor_sort_panel.mouse_filter = Control.MOUSE_FILTER_STOP
-	editor_sort_panel.z_index = 60
-	for i in range(EDITOR_SORT_KEY_ORDER.size()):
+	editor_sort_panel.z_index = int(sort_panel_build_spec.get("z_index", 60))
+	var sort_option_build_specs: Array = Array(sort_menu_build_specs.get("options", []))
+	for raw_sort_option_build_spec in sort_option_build_specs:
+		var sort_option_build_spec := Dictionary(raw_sort_option_build_spec)
 		var sort_option_button := Button.new()
-		sort_option_button.name = "SortOption%d" % i
-		sort_option_button.position = Vector2(940.0 + float(i % 3) * 88.0, 326.0 + float(floori(float(i) / 3.0)) * 28.0)
-		sort_option_button.size = Vector2(82.0, 24.0)
+		sort_option_button.name = String(sort_option_build_spec.get("name", "SortOption%d" % editor_sort_option_buttons.size()))
+		sort_option_button.position = sort_option_build_spec.get("position", Vector2.ZERO)
+		sort_option_button.size = sort_option_build_spec.get("size", Vector2.ZERO)
 		sort_option_button.focus_mode = Control.FOCUS_NONE
-		sort_option_button.z_index = 61
-		sort_option_button.pressed.connect(_select_editor_catalog_sort.bind(String(EDITOR_SORT_KEY_ORDER[i])))
+		sort_option_button.z_index = int(sort_option_build_spec.get("z_index", 61))
+		sort_option_button.pressed.connect(_select_editor_catalog_sort.bind(String(sort_option_build_spec.get("key", ""))))
 		root.add_child(sort_option_button)
 		editor_sort_option_buttons.append(sort_option_button)
-	editor_section_labels["catalog"] = _make_label(root, "CatalogTitle", "零件卡片", Vector2(936.0, 330.0), Vector2(168.0, 20.0), 12, Color(0.9, 0.96, 1.0, 1.0), HORIZONTAL_ALIGNMENT_LEFT)
-	editor_catalog_page_label = _make_label(root, "CatalogPage", "", Vector2(1110.0, 330.0), Vector2(96.0, 20.0), 11, Color(1.0, 0.86, 0.28, 1.0), HORIZONTAL_ALIGNMENT_RIGHT)
+	var catalog_title_build_spec := Dictionary(sort_menu_build_specs.get("catalog_title", {}))
+	editor_section_labels["catalog"] = _make_label(root, String(catalog_title_build_spec.get("name", "CatalogTitle")), String(catalog_title_build_spec.get("text", "零件卡片")), catalog_title_build_spec.get("position", Vector2.ZERO), catalog_title_build_spec.get("size", Vector2.ZERO), 12, Color(0.9, 0.96, 1.0, 1.0), HORIZONTAL_ALIGNMENT_LEFT)
+	var catalog_page_build_spec := Dictionary(sort_menu_build_specs.get("catalog_page", {}))
+	editor_catalog_page_label = _make_label(root, String(catalog_page_build_spec.get("name", "CatalogPage")), String(catalog_page_build_spec.get("text", "")), catalog_page_build_spec.get("position", Vector2.ZERO), catalog_page_build_spec.get("size", Vector2.ZERO), 11, Color(1.0, 0.86, 0.28, 1.0), HORIZONTAL_ALIGNMENT_RIGHT)
 	var color_controls_build_specs := UILifecycleService.editor_color_controls_build_specs(TEAM_COLOR_PRESETS.size())
 	var color_panel_build_spec := Dictionary(color_controls_build_specs.get("panel", {}))
 	editor_color_panel = _add_ui_rect(root, String(color_panel_build_spec.get("name", "")), color_panel_build_spec.get("position", Vector2.ZERO), color_panel_build_spec.get("size", Vector2.ZERO), Color(0.006, 0.014, 0.021, 0.92))
