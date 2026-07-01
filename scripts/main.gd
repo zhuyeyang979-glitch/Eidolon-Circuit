@@ -47406,45 +47406,53 @@ func _build_editor_ui() -> void:
 		else:
 			button.pressed.connect(_confirm_save_unit_name_dialog.bind(String(spec[2])))
 		editor_save_unit_name_panel.add_child(button)
-	editor_section_labels["roster_overview"] = _make_label(root, "RosterOverviewTitle", "队伍总览", Vector2(236.0, 46.0), Vector2(112.0, 22.0), 13, Color(1.0, 0.86, 0.28, 1.0), HORIZONTAL_ALIGNMENT_LEFT)
+	var roster_overview_build_specs := UILifecycleService.editor_roster_overview_build_specs(5)
+	var roster_title_build_spec := Dictionary(roster_overview_build_specs.get("title", {}))
+	editor_section_labels["roster_overview"] = _make_label(root, String(roster_title_build_spec.get("name", "")), String(roster_title_build_spec.get("text", "")), roster_title_build_spec.get("position", Vector2.ZERO), roster_title_build_spec.get("size", Vector2.ZERO), 13, Color(1.0, 0.86, 0.28, 1.0), HORIZONTAL_ALIGNMENT_LEFT)
 	editor_section_labels["roster_overview"].visible = false
-	editor_section_labels["roster_page"] = _make_label(root, "RosterOverviewPage", "", Vector2(792.0, 46.0), Vector2(52.0, 22.0), 11, Color(0.82, 0.9, 0.96, 1.0), HORIZONTAL_ALIGNMENT_CENTER)
+	var roster_page_build_spec := Dictionary(roster_overview_build_specs.get("page", {}))
+	editor_section_labels["roster_page"] = _make_label(root, String(roster_page_build_spec.get("name", "")), String(roster_page_build_spec.get("text", "")), roster_page_build_spec.get("position", Vector2.ZERO), roster_page_build_spec.get("size", Vector2.ZERO), 11, Color(0.82, 0.9, 0.96, 1.0), HORIZONTAL_ALIGNMENT_CENTER)
 	editor_section_labels["roster_page"].visible = false
+	var roster_prev_build_spec := Dictionary(roster_overview_build_specs.get("prev", {}))
 	var roster_prev_button := Button.new()
-	roster_prev_button.name = "EditorRosterPrev"
-	roster_prev_button.text = "<"
-	roster_prev_button.position = Vector2(846.0, 44.0)
-	roster_prev_button.size = Vector2(22.0, 24.0)
+	roster_prev_button.name = String(roster_prev_build_spec.get("name", ""))
+	roster_prev_button.text = String(roster_prev_build_spec.get("text", ""))
+	roster_prev_button.position = roster_prev_build_spec.get("position", Vector2.ZERO)
+	roster_prev_button.size = roster_prev_build_spec.get("size", Vector2.ZERO)
 	roster_prev_button.focus_mode = Control.FOCUS_NONE
 	roster_prev_button.visible = false
 	roster_prev_button.pressed.connect(_change_editor_roster_page.bind(-1))
 	root.add_child(roster_prev_button)
 	editor_roster_prev_button = roster_prev_button
+	var roster_next_build_spec := Dictionary(roster_overview_build_specs.get("next", {}))
 	var roster_next_button := Button.new()
-	roster_next_button.name = "EditorRosterNext"
-	roster_next_button.text = ">"
-	roster_next_button.position = Vector2(870.0, 44.0)
-	roster_next_button.size = Vector2(22.0, 24.0)
+	roster_next_button.name = String(roster_next_build_spec.get("name", ""))
+	roster_next_button.text = String(roster_next_build_spec.get("text", ""))
+	roster_next_button.position = roster_next_build_spec.get("position", Vector2.ZERO)
+	roster_next_button.size = roster_next_build_spec.get("size", Vector2.ZERO)
 	roster_next_button.focus_mode = Control.FOCUS_NONE
 	roster_next_button.visible = false
 	roster_next_button.pressed.connect(_change_editor_roster_page.bind(1))
 	root.add_child(roster_next_button)
 	editor_roster_next_button = roster_next_button
-	for i in range(5):
+	var roster_slot_build_specs: Array = Array(roster_overview_build_specs.get("slots", []))
+	for raw_roster_slot_build_spec in roster_slot_build_specs:
+		var roster_slot_build_spec := Dictionary(raw_roster_slot_build_spec)
+		var roster_slot_index := int(roster_slot_build_spec.get("index", editor_roster_slot_buttons.size()))
 		var roster_button := Button.new()
-		roster_button.name = "EditorRosterSlot%d" % i
-		roster_button.position = Vector2(350.0 + float(i) * 86.0, 44.0)
-		roster_button.size = Vector2(82.0, 26.0)
+		roster_button.name = String(roster_slot_build_spec.get("name", ""))
+		roster_button.position = roster_slot_build_spec.get("position", Vector2.ZERO)
+		roster_button.size = roster_slot_build_spec.get("size", Vector2.ZERO)
 		roster_button.focus_mode = Control.FOCUS_NONE
-		roster_button.pressed.connect(_select_editor_roster_overview_slot.bind(i))
-		roster_button.mouse_entered.connect(_hover_editor_roster_overview_slot.bind(i))
+		roster_button.pressed.connect(_select_editor_roster_overview_slot.bind(roster_slot_index))
+		roster_button.mouse_entered.connect(_hover_editor_roster_overview_slot.bind(roster_slot_index))
 		roster_button.mouse_exited.connect(_clear_editor_unit_hover_card)
 		roster_button.visible = false
 		root.add_child(roster_button)
 		editor_roster_slot_buttons.append(roster_button)
 		var roster_thumb := SortieThumbView.new()
-		roster_thumb.position = roster_button.position + Vector2(3.0, 3.0)
-		roster_thumb.size = Vector2(20.0, 20.0)
+		roster_thumb.position = roster_slot_build_spec.get("thumb_position", roster_button.position)
+		roster_thumb.size = roster_slot_build_spec.get("thumb_size", Vector2.ZERO)
 		roster_thumb.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		roster_thumb.visible = false
 		root.add_child(roster_thumb)

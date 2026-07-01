@@ -288,6 +288,34 @@ func _init() -> void:
 	_assert_vector(info_structure_view_build_spec, "size", Vector2(270.0, 112.0), "info structure preview build spec")
 	_assert_vector(info_structure_label_build_spec, "position", Vector2(936.0, 260.0), "info structure label build spec")
 	_assert_vector(info_structure_label_build_spec, "size", Vector2(270.0, 18.0), "info structure label build spec")
+	var roster_overview_build_specs: Dictionary = UILifecycleService.editor_roster_overview_build_specs(5)
+	var roster_title_build_spec: Dictionary = Dictionary(roster_overview_build_specs.get("title", {}))
+	var roster_page_build_spec: Dictionary = Dictionary(roster_overview_build_specs.get("page", {}))
+	var roster_prev_build_spec: Dictionary = Dictionary(roster_overview_build_specs.get("prev", {}))
+	var roster_next_build_spec: Dictionary = Dictionary(roster_overview_build_specs.get("next", {}))
+	var roster_slot_build_specs: Array = Array(roster_overview_build_specs.get("slots", []))
+	if String(roster_title_build_spec.get("name", "")) != "RosterOverviewTitle" or String(roster_page_build_spec.get("name", "")) != "RosterOverviewPage":
+		_fail("UILifecycleService roster overview label build spec identity failed.")
+		return
+	if String(roster_prev_build_spec.get("name", "")) != "EditorRosterPrev" or String(roster_next_build_spec.get("name", "")) != "EditorRosterNext":
+		_fail("UILifecycleService roster overview nav build spec identity failed.")
+		return
+	if roster_slot_build_specs.size() != 5:
+		_fail("UILifecycleService roster overview slot build spec count failed.")
+		return
+	_assert_vector(roster_title_build_spec, "position", Vector2(236.0, 46.0), "roster title build spec")
+	_assert_vector(roster_title_build_spec, "size", Vector2(112.0, 22.0), "roster title build spec")
+	_assert_vector(roster_page_build_spec, "position", Vector2(792.0, 46.0), "roster page build spec")
+	_assert_vector(roster_prev_build_spec, "position", Vector2(846.0, 44.0), "roster prev build spec")
+	_assert_vector(roster_next_build_spec, "position", Vector2(870.0, 44.0), "roster next build spec")
+	var fourth_roster_slot_build_spec: Dictionary = Dictionary(roster_slot_build_specs[3])
+	if int(fourth_roster_slot_build_spec.get("index", -1)) != 3 or String(fourth_roster_slot_build_spec.get("name", "")) != "EditorRosterSlot3":
+		_fail("UILifecycleService roster slot build spec identity failed.")
+		return
+	_assert_vector(fourth_roster_slot_build_spec, "position", Vector2(608.0, 44.0), "roster slot build spec")
+	_assert_vector(fourth_roster_slot_build_spec, "size", Vector2(82.0, 26.0), "roster slot build spec")
+	_assert_vector(fourth_roster_slot_build_spec, "thumb_position", Vector2(611.0, 47.0), "roster thumb build spec")
+	_assert_vector(fourth_roster_slot_build_spec, "thumb_size", Vector2(20.0, 20.0), "roster thumb build spec")
 	Dictionary(Array(build_specs.get("canvas_tools", []))[0])["key"] = "mutated"
 	var fresh_build_specs: Dictionary = UILifecycleService.editor_action_build_specs()
 	if String(Dictionary(Array(fresh_build_specs.get("canvas_tools", []))[0]).get("key", "")) != "blank_canvas":

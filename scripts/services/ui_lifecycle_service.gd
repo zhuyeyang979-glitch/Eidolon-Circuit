@@ -308,6 +308,41 @@ static func editor_info_surface_build_specs() -> Dictionary:
 	}
 
 
+static func editor_roster_overview_build_specs(slot_count: int) -> Dictionary:
+	var slots := []
+	for i in range(maxi(0, slot_count)):
+		var slot_position := Vector2(350.0 + float(i) * 86.0, 44.0)
+		slots.append({
+			"index": i,
+			"name": "EditorRosterSlot%d" % i,
+			"position": slot_position,
+			"size": Vector2(82.0, 26.0),
+			"thumb_position": slot_position + Vector2(3.0, 3.0),
+			"thumb_size": Vector2(20.0, 20.0),
+		})
+	var prev_spec := _button_spec("roster_prev", "<", Vector2(846.0, 44.0), Vector2(22.0, 24.0))
+	prev_spec["name"] = "EditorRosterPrev"
+	var next_spec := _button_spec("roster_next", ">", Vector2(870.0, 44.0), Vector2(22.0, 24.0))
+	next_spec["name"] = "EditorRosterNext"
+	return {
+		"title": {
+			"name": "RosterOverviewTitle",
+			"text": "队伍总览",
+			"position": Vector2(236.0, 46.0),
+			"size": Vector2(112.0, 22.0),
+		},
+		"page": {
+			"name": "RosterOverviewPage",
+			"text": "",
+			"position": Vector2(792.0, 46.0),
+			"size": Vector2(52.0, 22.0),
+		},
+		"prev": prev_spec,
+		"next": next_spec,
+		"slots": slots,
+	}
+
+
 static func editor_panel_role_chrome_presentation(mode: String, active_role_key: String, parts_visible: bool, panel_keys: Array, role_keys: Array, role_order: Array, role_short_labels: Dictionary, zh: bool) -> Dictionary:
 	var panel_texts := {"load": "单位库", "parts": "零件库"} if zh else {"load": "UNITS", "parts": "PARTS"}
 	var panel_buttons := {}
