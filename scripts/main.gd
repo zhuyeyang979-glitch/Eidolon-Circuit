@@ -49844,6 +49844,24 @@ func _refresh_editor_info_panel_presentation(unit_visible: bool, stats_visible: 
 		_apply_editor_control_plan(catalog_title, Dictionary(info_plan.get("catalog_title", {})))
 
 
+func _refresh_editor_shop_feedback_presentation(shop_visible: bool, role_key: String) -> void:
+	var shop_pending_kind := "none"
+	var shop_pending_detail := ""
+	if _has_pending_payload_part():
+		shop_pending_kind = "payload"
+		shop_pending_detail = _pending_payload_install_hint(role_key)
+	elif _has_pending_canvas_part():
+		shop_pending_kind = "canvas"
+		shop_pending_detail = _pending_canvas_part_name(role_key)
+	var shop_feedback_plan := UILifecycleService.editor_shop_feedback_presentation(shop_visible, shop_pending_kind, shop_pending_detail, _ui_is_zh())
+	if editor_shop_hint_label != null:
+		var shop_hint_plan := Dictionary(shop_feedback_plan.get("hint", {}))
+		_apply_editor_control_plan(editor_shop_hint_label, shop_hint_plan)
+	if editor_shop_pending_label != null:
+		var shop_pending_plan := Dictionary(shop_feedback_plan.get("pending", {}))
+		_apply_editor_control_plan(editor_shop_pending_label, shop_pending_plan)
+
+
 func _apply_editor_panel_visibility(role_key: String, unit_bp: Dictionary) -> void:
 	var body_board_enabled := _role_uses_body_board(role_key)
 	var barrier_screen_board := role_key == "barrier" and _barrier_uses_screen_board(unit_bp)
@@ -49948,21 +49966,7 @@ func _apply_editor_panel_visibility(role_key: String, unit_bp: Dictionary) -> vo
 	_refresh_editor_action_button_presentations(visibility_plan, barrier_screen_board, custom_board_enabled, unit_bp)
 	_refresh_editor_sort_controls_presentation(parts_visible)
 	_refresh_editor_info_panel_presentation(unit_visible, stats_visible, parts_visible, load_visible)
-	var shop_pending_kind := "none"
-	var shop_pending_detail := ""
-	if _has_pending_payload_part():
-		shop_pending_kind = "payload"
-		shop_pending_detail = _pending_payload_install_hint(role_key)
-	elif _has_pending_canvas_part():
-		shop_pending_kind = "canvas"
-		shop_pending_detail = _pending_canvas_part_name(role_key)
-	var shop_feedback_plan := UILifecycleService.editor_shop_feedback_presentation(shop_visible, shop_pending_kind, shop_pending_detail, _ui_is_zh())
-	if editor_shop_hint_label != null:
-		var shop_hint_plan := Dictionary(shop_feedback_plan.get("hint", {}))
-		_apply_editor_control_plan(editor_shop_hint_label, shop_hint_plan)
-	if editor_shop_pending_label != null:
-		var shop_pending_plan := Dictionary(shop_feedback_plan.get("pending", {}))
-		_apply_editor_control_plan(editor_shop_pending_label, shop_pending_plan)
+	_refresh_editor_shop_feedback_presentation(shop_visible, role_key)
 	var color_controls_plan := UILifecycleService.editor_color_controls_presentation(
 		color_visible,
 		_editor_player(),
