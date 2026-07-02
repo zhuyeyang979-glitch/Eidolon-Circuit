@@ -49862,6 +49862,47 @@ func _refresh_editor_shop_feedback_presentation(shop_visible: bool, role_key: St
 		_apply_editor_control_plan(editor_shop_pending_label, shop_pending_plan)
 
 
+func _refresh_editor_color_controls_presentation(color_visible: bool) -> void:
+	var editor_player_id := _editor_player()
+	var color_controls_plan := UILifecycleService.editor_color_controls_presentation(
+		color_visible,
+		editor_player_id,
+		_team_color_name(editor_player_id),
+		_team_color_index(editor_player_id),
+		TEAM_COLOR_PRESETS,
+		editor_color_buttons.size(),
+		_ui_is_zh(),
+		_team_primary_color(editor_player_id),
+		_team_accent_color(editor_player_id)
+	)
+	if editor_color_panel != null:
+		_apply_editor_control_plan(editor_color_panel, Dictionary(color_controls_plan.get("panel", {})))
+	if editor_color_label != null:
+		var color_label_plan := Dictionary(color_controls_plan.get("label", {}))
+		_apply_editor_control_plan(editor_color_label, color_label_plan)
+	var color_button_plans: Array = Array(color_controls_plan.get("buttons", []))
+	for i in range(editor_color_buttons.size()):
+		var color_button: Button = editor_color_buttons[i]
+		var color_button_plan := Dictionary(color_button_plans[i]) if i < color_button_plans.size() and color_button_plans[i] is Dictionary else {}
+		_apply_editor_control_plan(color_button, color_button_plan)
+	if editor_primary_color_picker != null:
+		var primary_picker_plan := Dictionary(color_controls_plan.get("primary_picker", {}))
+		_apply_editor_control_plan(editor_primary_color_picker, primary_picker_plan)
+	if editor_accent_color_picker != null:
+		var accent_picker_plan := Dictionary(color_controls_plan.get("accent_picker", {}))
+		_apply_editor_control_plan(editor_accent_color_picker, accent_picker_plan)
+	if bool(color_controls_plan.get("sync_pickers", false)):
+		var picker_colors := Dictionary(color_controls_plan.get("picker_colors", {}))
+		editor_color_picker_sync = true
+		var primary_picker_color: Variant = picker_colors.get("primary", null)
+		if editor_primary_color_picker != null and primary_picker_color is Color:
+			_set_color_picker_button_color_if_changed(editor_primary_color_picker, primary_picker_color)
+		var accent_picker_color: Variant = picker_colors.get("accent", null)
+		if editor_accent_color_picker != null and accent_picker_color is Color:
+			_set_color_picker_button_color_if_changed(editor_accent_color_picker, accent_picker_color)
+		editor_color_picker_sync = false
+
+
 func _apply_editor_panel_visibility(role_key: String, unit_bp: Dictionary) -> void:
 	var body_board_enabled := _role_uses_body_board(role_key)
 	var barrier_screen_board := role_key == "barrier" and _barrier_uses_screen_board(unit_bp)
@@ -49967,43 +50008,7 @@ func _apply_editor_panel_visibility(role_key: String, unit_bp: Dictionary) -> vo
 	_refresh_editor_sort_controls_presentation(parts_visible)
 	_refresh_editor_info_panel_presentation(unit_visible, stats_visible, parts_visible, load_visible)
 	_refresh_editor_shop_feedback_presentation(shop_visible, role_key)
-	var color_controls_plan := UILifecycleService.editor_color_controls_presentation(
-		color_visible,
-		_editor_player(),
-		_team_color_name(_editor_player()),
-		_team_color_index(_editor_player()),
-		TEAM_COLOR_PRESETS,
-		editor_color_buttons.size(),
-		_ui_is_zh(),
-		_team_primary_color(_editor_player()),
-		_team_accent_color(_editor_player())
-	)
-	if editor_color_panel != null:
-		_apply_editor_control_plan(editor_color_panel, Dictionary(color_controls_plan.get("panel", {})))
-	if editor_color_label != null:
-		var color_label_plan := Dictionary(color_controls_plan.get("label", {}))
-		_apply_editor_control_plan(editor_color_label, color_label_plan)
-	var color_button_plans: Array = Array(color_controls_plan.get("buttons", []))
-	for i in range(editor_color_buttons.size()):
-		var color_button: Button = editor_color_buttons[i]
-		var color_button_plan := Dictionary(color_button_plans[i]) if i < color_button_plans.size() and color_button_plans[i] is Dictionary else {}
-		_apply_editor_control_plan(color_button, color_button_plan)
-	if editor_primary_color_picker != null:
-		var primary_picker_plan := Dictionary(color_controls_plan.get("primary_picker", {}))
-		_apply_editor_control_plan(editor_primary_color_picker, primary_picker_plan)
-	if editor_accent_color_picker != null:
-		var accent_picker_plan := Dictionary(color_controls_plan.get("accent_picker", {}))
-		_apply_editor_control_plan(editor_accent_color_picker, accent_picker_plan)
-	if bool(color_controls_plan.get("sync_pickers", false)):
-		var picker_colors := Dictionary(color_controls_plan.get("picker_colors", {}))
-		editor_color_picker_sync = true
-		var primary_picker_color: Variant = picker_colors.get("primary", null)
-		if editor_primary_color_picker != null and primary_picker_color is Color:
-			_set_color_picker_button_color_if_changed(editor_primary_color_picker, primary_picker_color)
-		var accent_picker_color: Variant = picker_colors.get("accent", null)
-		if editor_accent_color_picker != null and accent_picker_color is Color:
-			_set_color_picker_button_color_if_changed(editor_accent_color_picker, accent_picker_color)
-		editor_color_picker_sync = false
+	_refresh_editor_color_controls_presentation(color_visible)
 	var catalog_button_visibilities := []
 	for catalog_button in editor_catalog_buttons:
 		var button: Button = catalog_button

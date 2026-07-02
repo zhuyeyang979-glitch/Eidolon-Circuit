@@ -108,6 +108,9 @@ func _init() -> void:
 	if source.find("func _refresh_editor_shop_feedback_presentation(") < 0:
 		_fail("main.gd should centralize editor shop feedback presentation application.")
 		return
+	if source.find("func _refresh_editor_color_controls_presentation(") < 0:
+		_fail("main.gd should centralize editor color controls presentation application.")
+		return
 	var build_editor_ui_block := _function_block(source, "func _build_editor_ui(")
 	if build_editor_ui_block.is_empty():
 		_fail("main.gd should keep _build_editor_ui available.")
@@ -194,6 +197,9 @@ func _init() -> void:
 	if panel_visibility_block.count("_refresh_editor_shop_feedback_presentation(") != 1:
 		_fail("_apply_editor_panel_visibility should delegate shop feedback presentation application.")
 		return
+	if panel_visibility_block.count("_refresh_editor_color_controls_presentation(") != 1:
+		_fail("_apply_editor_panel_visibility should delegate color controls presentation application.")
+		return
 	for stale_action_presentation_fragment in [
 		"UILifecycleService.editor_action_presentations(",
 		"for action_key_variant in editor_action_buttons.keys():",
@@ -262,6 +268,25 @@ func _init() -> void:
 		return
 	if shop_feedback_block.count("UILifecycleService.editor_shop_feedback_presentation(") != 1:
 		_fail("_refresh_editor_shop_feedback_presentation should request one shop feedback presentation plan.")
+		return
+	for stale_color_controls_fragment in [
+		"UILifecycleService.editor_color_controls_presentation(",
+		"var color_button_plans: Array = Array(color_controls_plan.get(\"buttons\", []))",
+		"editor_color_picker_sync = true",
+		"_set_color_picker_button_color_if_changed(editor_primary_color_picker",
+	]:
+		if panel_visibility_block.find(stale_color_controls_fragment) >= 0:
+			_fail("_apply_editor_panel_visibility should not inline color controls presentation application: %s" % stale_color_controls_fragment)
+			return
+	var color_controls_block := _function_block(source, "func _refresh_editor_color_controls_presentation(")
+	if color_controls_block.is_empty():
+		_fail("main.gd should keep _refresh_editor_color_controls_presentation available.")
+		return
+	if color_controls_block.count("UILifecycleService.editor_color_controls_presentation(") != 1:
+		_fail("_refresh_editor_color_controls_presentation should request one color controls presentation plan.")
+		return
+	if color_controls_block.count("editor_color_picker_sync = true") != 1 or color_controls_block.count("editor_color_picker_sync = false") != 1:
+		_fail("_refresh_editor_color_controls_presentation should preserve picker sync guard updates.")
 		return
 	var board_ui_block := _function_block(source, "func _update_editor_board_ui(")
 	if board_ui_block.is_empty():

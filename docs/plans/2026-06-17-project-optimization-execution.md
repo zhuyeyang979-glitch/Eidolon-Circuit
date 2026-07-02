@@ -2396,6 +2396,22 @@ GREEN: UNIT_EDITOR_FULLSCREEN_LAYOUT_PROBE ok board=(908.0, 548.0) dock=(726.0, 
 
 `_refresh_editor_shop_feedback_presentation()` now owns the main scene-tree adapter for editor shop feedback: it preserves the payload-pending before canvas-pending priority, computes the localized pending detail, requests one `UILifecycleService.editor_shop_feedback_presentation()` plan, and applies the hint/pending label plans through `_apply_editor_control_plan()`. `_apply_editor_panel_visibility()` now delegates the full shop feedback section with a single call.
 
+Follow-up editor color controls presentation adapter extraction:
+
+```text
+RED: main_file_extraction_contract_probe failed because main.gd should centralize editor color controls presentation application
+GREEN: Godot --check-only --script res://scripts/main.gd --quit-after 1
+GREEN: MAIN_FILE_EXTRACTION_CONTRACT_PROBE ok services=9
+GREEN: LIFECYCLE_SERVICES_CONTRACT_PROBE ok
+GREEN: PART_LIBRARY_UI_PROBE groups=["torso", "limb", "terminal_weapon", "barrier_panel", "software_muscle", "software"] weapon=3 equipment=5 software=7 dashboard=40
+GREEN: UNIT_EDITOR_PAGINATION_LAYOUT_PROBE ok unit=1 page=0 catalog=1 load=0 feedback=[P: (270.0, 654.0), S: (622.0, 26.0)]
+GREEN: CATALOG_CARD_TEXT_READABILITY_PROBE ok title=11 line=9 plate=0.62 rev=2
+GREEN: UNIT_EDITOR_FULLSCREEN_LAYOUT_PROBE ok board=(908.0, 548.0) dock=(726.0, 132.0)
+GREEN: EDITOR_ROSTER_OVERVIEW_PROBE blank_cost=0 team_cost=0 roster_cost=0 buttons=5
+```
+
+`_refresh_editor_color_controls_presentation()` now owns the main scene-tree adapter for editor color controls: it requests one `UILifecycleService.editor_color_controls_presentation()` plan, applies the palette panel/title/button/picker plans through `_apply_editor_control_plan()`, and keeps the existing guarded picker-color synchronization local to the adapter. `_apply_editor_panel_visibility()` now delegates the full color controls section with a single call.
+
 Remaining items after this batch:
 
 - Continue editor UI extraction with `_build_editor_ui` and the remaining action presentation/control-mutation sections of `_apply_editor_panel_visibility`, then continue `_resolve_attack` and `_refresh_editor_visual_views` extraction.
