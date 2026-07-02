@@ -99,6 +99,9 @@ func _init() -> void:
 	if source.find("func _refresh_editor_action_button_presentations(") < 0:
 		_fail("main.gd should centralize editor action button presentation application.")
 		return
+	if source.find("func _refresh_editor_sort_controls_presentation(") < 0:
+		_fail("main.gd should centralize editor sort controls presentation application.")
+		return
 	var build_editor_ui_block := _function_block(source, "func _build_editor_ui(")
 	if build_editor_ui_block.is_empty():
 		_fail("main.gd should keep _build_editor_ui available.")
@@ -176,6 +179,9 @@ func _init() -> void:
 	if panel_visibility_block.count("_refresh_editor_action_button_presentations(") != 1:
 		_fail("_apply_editor_panel_visibility should delegate action button presentation application.")
 		return
+	if panel_visibility_block.count("_refresh_editor_sort_controls_presentation(") != 1:
+		_fail("_apply_editor_panel_visibility should delegate sort controls presentation application.")
+		return
 	for stale_action_presentation_fragment in [
 		"UILifecycleService.editor_action_presentations(",
 		"for action_key_variant in editor_action_buttons.keys():",
@@ -190,6 +196,25 @@ func _init() -> void:
 		return
 	if action_button_presentations_block.count("UILifecycleService.editor_action_presentations(") != 1:
 		_fail("_refresh_editor_action_button_presentations should request one action presentation plan.")
+		return
+	for stale_sort_presentation_fragment in [
+		"UILifecycleService.editor_sort_controls_presentation(",
+		"var available_sort_keys := _current_editor_catalog_sort_keys()",
+		"var sort_option_plans: Array = Array(sort_plan.get(\"options\", []))",
+		"sort_dir_move_to_front",
+	]:
+		if panel_visibility_block.find(stale_sort_presentation_fragment) >= 0:
+			_fail("_apply_editor_panel_visibility should not inline sort controls presentation application: %s" % stale_sort_presentation_fragment)
+			return
+	var sort_controls_block := _function_block(source, "func _refresh_editor_sort_controls_presentation(")
+	if sort_controls_block.is_empty():
+		_fail("main.gd should keep _refresh_editor_sort_controls_presentation available.")
+		return
+	if sort_controls_block.count("UILifecycleService.editor_sort_controls_presentation(") != 1:
+		_fail("_refresh_editor_sort_controls_presentation should request one sort controls presentation plan.")
+		return
+	if sort_controls_block.count("_refresh_editor_board_zoom_ui()") != 1 or sort_controls_block.count("_refresh_editor_orientation_popup()") != 1:
+		_fail("_refresh_editor_sort_controls_presentation should preserve adjacent zoom and orientation refresh hooks.")
 		return
 	var board_ui_block := _function_block(source, "func _update_editor_board_ui(")
 	if board_ui_block.is_empty():

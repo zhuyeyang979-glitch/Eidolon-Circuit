@@ -2352,6 +2352,21 @@ GREEN: BOUND_MODULE_TRYOUT_UI_PROBE ok
 
 `_refresh_editor_action_button_presentations()` now owns the main scene-tree adapter for editor action button presentation plans: it gathers the local clipboard, selection, orientation, board-tool, grid, match-format, and connection-color context, requests one `UILifecycleService.editor_action_presentations()` plan, and applies each managed action button plan through `_apply_editor_control_plan()`. `_apply_editor_panel_visibility()` now delegates that full action-button presentation section with a single call, leaving the remaining sort, info, shop, color, catalog, and section surfaces as the next extraction targets.
 
+Follow-up editor sort controls presentation adapter extraction:
+
+```text
+RED: main_file_extraction_contract_probe failed because main.gd should centralize editor sort controls presentation application
+GREEN: Godot --check-only --script res://scripts/main.gd --quit-after 1
+GREEN: MAIN_FILE_EXTRACTION_CONTRACT_PROBE ok services=9
+GREEN: PART_LIBRARY_UI_PROBE groups=["torso", "limb", "terminal_weapon", "barrier_panel", "software_muscle", "software"] weapon=3 equipment=5 software=7 dashboard=40
+GREEN: CATALOG_CARD_TEXT_READABILITY_PROBE ok title=11 line=9 plate=0.62 rev=2
+GREEN: UNIT_EDITOR_PAGINATION_LAYOUT_PROBE ok unit=1 page=0 catalog=1 load=0 feedback=[P: (270.0, 654.0), S: (622.0, 26.0)]
+GREEN: EDITOR_BOARD_ZOOM_PROBE node=0 zoom=1.00 label=100% hover=0
+GREEN: SCYTHE_INSTALL_ORIENTATION_UI_PROBE ok node=0
+```
+
+`_refresh_editor_sort_controls_presentation()` now owns the main scene-tree adapter for editor sort controls: it normalizes `editor_catalog_sort_key`, applies sort-key and sort-direction button text, applies sort submenu and option button plans, preserves the sort-dir front-order plan, and keeps the adjacent board-zoom and orientation-popup refresh hooks in the same order as before. `_apply_editor_panel_visibility()` now delegates the full sort controls section with a single call.
+
 Remaining items after this batch:
 
 - Continue editor UI extraction with `_build_editor_ui` and the remaining action presentation/control-mutation sections of `_apply_editor_panel_visibility`, then continue `_resolve_attack` and `_refresh_editor_visual_views` extraction.

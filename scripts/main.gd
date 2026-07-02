@@ -49764,6 +49764,43 @@ func _refresh_editor_action_button_presentations(visibility_plan: Dictionary, ba
 		_apply_editor_control_plan(action_button, action_presentation, bool(action_presentation.get("manage_disabled", true)))
 
 
+func _refresh_editor_sort_controls_presentation(parts_visible: bool) -> void:
+	var available_sort_keys := _current_editor_catalog_sort_keys()
+	var sort_names := EDITOR_SORT_KEY_NAMES_ZH if _ui_is_zh() else EDITOR_SORT_KEY_NAMES_EN
+	var sort_plan := UILifecycleService.editor_sort_controls_presentation(
+		parts_visible,
+		editor_sort_menu_open,
+		available_sort_keys,
+		editor_catalog_sort_key,
+		editor_catalog_sort_ascending,
+		EDITOR_SORT_KEY_ORDER,
+		sort_names,
+		_ui_is_zh()
+	)
+	editor_catalog_sort_key = String(sort_plan.get("sort_key", editor_catalog_sort_key))
+	if editor_action_buttons.has("sort_key"):
+		var sort_key_button: Button = editor_action_buttons["sort_key"]
+		_apply_editor_control_plan(sort_key_button, {"text": String(sort_plan.get("sort_key_text", ""))})
+	_refresh_editor_board_zoom_ui()
+	if editor_action_buttons.has("sort_dir"):
+		var sort_dir_button: Button = editor_action_buttons["sort_dir"]
+		_apply_editor_control_plan(sort_dir_button, {"text": String(sort_plan.get("sort_dir_text", ""))})
+	_refresh_editor_orientation_popup()
+	if editor_sort_panel != null:
+		var sort_panel_plan := Dictionary(sort_plan.get("panel", {}))
+		_apply_editor_control_plan(editor_sort_panel, sort_panel_plan)
+	var sort_option_plans: Array = Array(sort_plan.get("options", []))
+	for i in range(editor_sort_option_buttons.size()):
+		var sort_option_button: Button = editor_sort_option_buttons[i]
+		var sort_option_plan := {"visible": false, "disabled": true}
+		if i < sort_option_plans.size() and sort_option_plans[i] is Dictionary:
+			sort_option_plan = Dictionary(sort_option_plans[i])
+		_apply_editor_control_plan(sort_option_button, sort_option_plan)
+	if bool(sort_plan.get("sort_dir_move_to_front", false)) and editor_action_buttons.has("sort_dir"):
+		var sort_dir_front: Button = editor_action_buttons["sort_dir"]
+		_apply_editor_control_plan(sort_dir_front, {"move_to_front": true})
+
+
 func _apply_editor_panel_visibility(role_key: String, unit_bp: Dictionary) -> void:
 	var body_board_enabled := _role_uses_body_board(role_key)
 	var barrier_screen_board := role_key == "barrier" and _barrier_uses_screen_board(unit_bp)
@@ -49866,40 +49903,7 @@ func _apply_editor_panel_visibility(role_key: String, unit_bp: Dictionary) -> vo
 		var tick_plan := Dictionary(ammo_tick_plans[i]) if i < ammo_tick_plans.size() and ammo_tick_plans[i] is Dictionary else {}
 		_apply_editor_control_plan(tick_label, tick_plan)
 	_refresh_editor_action_button_presentations(visibility_plan, barrier_screen_board, custom_board_enabled, unit_bp)
-	var available_sort_keys := _current_editor_catalog_sort_keys()
-	var sort_names := EDITOR_SORT_KEY_NAMES_ZH if _ui_is_zh() else EDITOR_SORT_KEY_NAMES_EN
-	var sort_plan := UILifecycleService.editor_sort_controls_presentation(
-		parts_visible,
-		editor_sort_menu_open,
-		available_sort_keys,
-		editor_catalog_sort_key,
-		editor_catalog_sort_ascending,
-		EDITOR_SORT_KEY_ORDER,
-		sort_names,
-		_ui_is_zh()
-	)
-	editor_catalog_sort_key = String(sort_plan.get("sort_key", editor_catalog_sort_key))
-	if editor_action_buttons.has("sort_key"):
-		var sort_key_button: Button = editor_action_buttons["sort_key"]
-		_apply_editor_control_plan(sort_key_button, {"text": String(sort_plan.get("sort_key_text", ""))})
-	_refresh_editor_board_zoom_ui()
-	if editor_action_buttons.has("sort_dir"):
-		var sort_dir_button: Button = editor_action_buttons["sort_dir"]
-		_apply_editor_control_plan(sort_dir_button, {"text": String(sort_plan.get("sort_dir_text", ""))})
-	_refresh_editor_orientation_popup()
-	if editor_sort_panel != null:
-		var sort_panel_plan := Dictionary(sort_plan.get("panel", {}))
-		_apply_editor_control_plan(editor_sort_panel, sort_panel_plan)
-	var sort_option_plans: Array = Array(sort_plan.get("options", []))
-	for i in range(editor_sort_option_buttons.size()):
-		var sort_option_button: Button = editor_sort_option_buttons[i]
-		var sort_option_plan := {"visible": false, "disabled": true}
-		if i < sort_option_plans.size() and sort_option_plans[i] is Dictionary:
-			sort_option_plan = Dictionary(sort_option_plans[i])
-		_apply_editor_control_plan(sort_option_button, sort_option_plan)
-	if bool(sort_plan.get("sort_dir_move_to_front", false)) and editor_action_buttons.has("sort_dir"):
-		var sort_dir_front: Button = editor_action_buttons["sort_dir"]
-		_apply_editor_control_plan(sort_dir_front, {"move_to_front": true})
+	_refresh_editor_sort_controls_presentation(parts_visible)
 	var info_plan := UILifecycleService.editor_info_panel_presentation(
 		unit_visible,
 		stats_visible,
