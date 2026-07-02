@@ -49801,6 +49801,49 @@ func _refresh_editor_sort_controls_presentation(parts_visible: bool) -> void:
 		_apply_editor_control_plan(sort_dir_front, {"move_to_front": true})
 
 
+func _refresh_editor_info_panel_presentation(unit_visible: bool, stats_visible: bool, parts_visible: bool, load_visible: bool) -> void:
+	var info_plan := UILifecycleService.editor_info_panel_presentation(
+		unit_visible,
+		stats_visible,
+		parts_visible,
+		editor_sort_menu_open,
+		load_visible,
+		editor_structure_reference_view.visible if editor_structure_reference_view != null else false,
+		editor_structure_reference_label.visible if editor_structure_reference_label != null else false,
+		_ui_is_zh()
+	)
+	if editor_unit_label != null:
+		var info_unit_plan := Dictionary(info_plan.get("unit", {}))
+		_apply_editor_control_plan(editor_unit_label, info_unit_plan)
+	if editor_summary_label != null:
+		var info_summary_plan := Dictionary(info_plan.get("summary", {}))
+		_apply_editor_control_plan(editor_summary_label, info_summary_plan)
+	if editor_stats_label != null:
+		var info_stats_plan := Dictionary(info_plan.get("stats", {}))
+		_apply_editor_control_plan(editor_stats_label, info_stats_plan)
+	if editor_detail_label != null:
+		var info_detail_plan := Dictionary(info_plan.get("detail", {}))
+		_apply_editor_control_plan(editor_detail_label, info_detail_plan)
+	if component_art_view != null:
+		var info_component_art_plan := Dictionary(info_plan.get("component_art", {}))
+		_apply_editor_control_plan(component_art_view, info_component_art_plan)
+	if editor_battle_preview_view != null:
+		var info_battle_preview_plan := Dictionary(info_plan.get("battle_preview", {}))
+		_apply_editor_control_plan(editor_battle_preview_view, info_battle_preview_plan)
+	if editor_structure_reference_view != null:
+		var info_structure_view_plan := Dictionary(info_plan.get("structure_reference_view", {}))
+		_apply_editor_control_plan(editor_structure_reference_view, info_structure_view_plan)
+	if editor_structure_reference_label != null:
+		var info_structure_label_plan := Dictionary(info_plan.get("structure_reference_label", {}))
+		_apply_editor_control_plan(editor_structure_reference_label, info_structure_label_plan)
+	if editor_catalog_page_label != null:
+		_apply_editor_control_plan(editor_catalog_page_label, Dictionary(info_plan.get("catalog_page", {})))
+	_layout_editor_save_unit_feedback()
+	if editor_section_labels.has("catalog") and editor_section_labels["catalog"] is Label:
+		var catalog_title := editor_section_labels["catalog"] as Label
+		_apply_editor_control_plan(catalog_title, Dictionary(info_plan.get("catalog_title", {})))
+
+
 func _apply_editor_panel_visibility(role_key: String, unit_bp: Dictionary) -> void:
 	var body_board_enabled := _role_uses_body_board(role_key)
 	var barrier_screen_board := role_key == "barrier" and _barrier_uses_screen_board(unit_bp)
@@ -49904,46 +49947,7 @@ func _apply_editor_panel_visibility(role_key: String, unit_bp: Dictionary) -> vo
 		_apply_editor_control_plan(tick_label, tick_plan)
 	_refresh_editor_action_button_presentations(visibility_plan, barrier_screen_board, custom_board_enabled, unit_bp)
 	_refresh_editor_sort_controls_presentation(parts_visible)
-	var info_plan := UILifecycleService.editor_info_panel_presentation(
-		unit_visible,
-		stats_visible,
-		parts_visible,
-		editor_sort_menu_open,
-		load_visible,
-		editor_structure_reference_view.visible if editor_structure_reference_view != null else false,
-		editor_structure_reference_label.visible if editor_structure_reference_label != null else false,
-		_ui_is_zh()
-	)
-	if editor_unit_label != null:
-		var info_unit_plan := Dictionary(info_plan.get("unit", {}))
-		_apply_editor_control_plan(editor_unit_label, info_unit_plan)
-	if editor_summary_label != null:
-		var info_summary_plan := Dictionary(info_plan.get("summary", {}))
-		_apply_editor_control_plan(editor_summary_label, info_summary_plan)
-	if editor_stats_label != null:
-		var info_stats_plan := Dictionary(info_plan.get("stats", {}))
-		_apply_editor_control_plan(editor_stats_label, info_stats_plan)
-	if editor_detail_label != null:
-		var info_detail_plan := Dictionary(info_plan.get("detail", {}))
-		_apply_editor_control_plan(editor_detail_label, info_detail_plan)
-	if component_art_view != null:
-		var info_component_art_plan := Dictionary(info_plan.get("component_art", {}))
-		_apply_editor_control_plan(component_art_view, info_component_art_plan)
-	if editor_battle_preview_view != null:
-		var info_battle_preview_plan := Dictionary(info_plan.get("battle_preview", {}))
-		_apply_editor_control_plan(editor_battle_preview_view, info_battle_preview_plan)
-	if editor_structure_reference_view != null:
-		var info_structure_view_plan := Dictionary(info_plan.get("structure_reference_view", {}))
-		_apply_editor_control_plan(editor_structure_reference_view, info_structure_view_plan)
-	if editor_structure_reference_label != null:
-		var info_structure_label_plan := Dictionary(info_plan.get("structure_reference_label", {}))
-		_apply_editor_control_plan(editor_structure_reference_label, info_structure_label_plan)
-	if editor_catalog_page_label != null:
-		_apply_editor_control_plan(editor_catalog_page_label, Dictionary(info_plan.get("catalog_page", {})))
-	_layout_editor_save_unit_feedback()
-	if editor_section_labels.has("catalog") and editor_section_labels["catalog"] is Label:
-		var catalog_title := editor_section_labels["catalog"] as Label
-		_apply_editor_control_plan(catalog_title, Dictionary(info_plan.get("catalog_title", {})))
+	_refresh_editor_info_panel_presentation(unit_visible, stats_visible, parts_visible, load_visible)
 	var shop_pending_kind := "none"
 	var shop_pending_detail := ""
 	if _has_pending_payload_part():

@@ -102,6 +102,9 @@ func _init() -> void:
 	if source.find("func _refresh_editor_sort_controls_presentation(") < 0:
 		_fail("main.gd should centralize editor sort controls presentation application.")
 		return
+	if source.find("func _refresh_editor_info_panel_presentation(") < 0:
+		_fail("main.gd should centralize editor info panel presentation application.")
+		return
 	var build_editor_ui_block := _function_block(source, "func _build_editor_ui(")
 	if build_editor_ui_block.is_empty():
 		_fail("main.gd should keep _build_editor_ui available.")
@@ -182,6 +185,9 @@ func _init() -> void:
 	if panel_visibility_block.count("_refresh_editor_sort_controls_presentation(") != 1:
 		_fail("_apply_editor_panel_visibility should delegate sort controls presentation application.")
 		return
+	if panel_visibility_block.count("_refresh_editor_info_panel_presentation(") != 1:
+		_fail("_apply_editor_panel_visibility should delegate info panel presentation application.")
+		return
 	for stale_action_presentation_fragment in [
 		"UILifecycleService.editor_action_presentations(",
 		"for action_key_variant in editor_action_buttons.keys():",
@@ -215,6 +221,25 @@ func _init() -> void:
 		return
 	if sort_controls_block.count("_refresh_editor_board_zoom_ui()") != 1 or sort_controls_block.count("_refresh_editor_orientation_popup()") != 1:
 		_fail("_refresh_editor_sort_controls_presentation should preserve adjacent zoom and orientation refresh hooks.")
+		return
+	for stale_info_presentation_fragment in [
+		"UILifecycleService.editor_info_panel_presentation(",
+		"if editor_unit_label != null:",
+		"_layout_editor_save_unit_feedback()",
+		"editor_section_labels.has(\"catalog\")",
+	]:
+		if panel_visibility_block.find(stale_info_presentation_fragment) >= 0:
+			_fail("_apply_editor_panel_visibility should not inline info panel presentation application: %s" % stale_info_presentation_fragment)
+			return
+	var info_panel_block := _function_block(source, "func _refresh_editor_info_panel_presentation(")
+	if info_panel_block.is_empty():
+		_fail("main.gd should keep _refresh_editor_info_panel_presentation available.")
+		return
+	if info_panel_block.count("UILifecycleService.editor_info_panel_presentation(") != 1:
+		_fail("_refresh_editor_info_panel_presentation should request one info panel presentation plan.")
+		return
+	if info_panel_block.count("_layout_editor_save_unit_feedback()") != 1:
+		_fail("_refresh_editor_info_panel_presentation should preserve save feedback relayout.")
 		return
 	var board_ui_block := _function_block(source, "func _update_editor_board_ui(")
 	if board_ui_block.is_empty():
