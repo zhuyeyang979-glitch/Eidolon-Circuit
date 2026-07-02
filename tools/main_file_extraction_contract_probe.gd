@@ -103,7 +103,7 @@ func _init() -> void:
 	if build_editor_ui_block.count("_add_editor_action_button_from_spec(") < 7:
 		_fail("_build_editor_ui should reuse the editor action button creation helper.")
 		return
-	if build_editor_ui_block.count("_apply_editor_button_build_spec(") < 11:
+	if build_editor_ui_block.count("_apply_editor_button_build_spec(") < 25:
 		_fail("_build_editor_ui should reuse the editor button build spec property helper.")
 		return
 	for stale_action_build_fragment in [
@@ -129,9 +129,23 @@ func _init() -> void:
 		"roster_prev_button.position = roster_prev_build_spec.get(\"position\"",
 		"roster_next_button.position = roster_next_build_spec.get(\"position\"",
 		"roster_button.position = roster_slot_build_spec.get(\"position\"",
+		"orientation_button.position = orientation_popup_button_build_spec.get(\"position\"",
+		"editor_engine_allocation_button.position = legacy_power_button_build_spec.get(\"position\"",
+		"editor_torso_detail_button.position = torso_detail_button_build_spec.get(\"position\"",
+		"button.position = body_part_button_build_spec.get(\"position\"",
+		"binding_button.position = module_binding_button_spec.get(\"position\"",
+		"frame_button.position = archetype_button_build_spec.get(\"position\"",
+		"barrier_template_button.position = barrier_template_button_build_spec.get(\"position\"",
+		"shop_button.position = shop_button_build_spec.get(\"position\"",
+		"sort_action_button.position = sort_action_button_build_spec.get(\"position\"",
+		"sort_option_button.position = sort_option_build_spec.get(\"position\"",
+		"color_button.position = color_button_build_spec.get(\"position\"",
+		"editor_primary_color_picker.position = color_primary_picker_build_spec.get(\"position\"",
+		"editor_accent_color_picker.position = color_accent_picker_build_spec.get(\"position\"",
+		"catalog_button.position = catalog_card_build_spec.get(\"position\"",
 	]:
 		if build_editor_ui_block.find(stale_button_build_fragment) >= 0:
-			_fail("_build_editor_ui should apply role/load/part-library button specs through the helper: %s" % stale_button_build_fragment)
+			_fail("_build_editor_ui should apply editor button build specs through the helper: %s" % stale_button_build_fragment)
 			return
 	var orientation_buttons_block := _function_block(source, "func _refresh_editor_orientation_buttons(")
 	if orientation_buttons_block.is_empty():

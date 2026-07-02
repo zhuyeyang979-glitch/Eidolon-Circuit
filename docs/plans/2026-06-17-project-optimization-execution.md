@@ -2315,6 +2315,28 @@ GREEN: EDITOR_ROSTER_OVERVIEW_PROBE blank_cost=0 team_cost=0 roster_cost=0 butto
 
 `_build_editor_ui()` now also applies `_apply_editor_button_build_spec()` to editor panel buttons, save-unit role buttons, save-unit action buttons, roster page buttons, and roster slot buttons. Those sections still keep their local signal wiring, disabled/hidden initialization, hover routing, and stored-reference ownership.
 
+Follow-up editor dashboard/template/shop/sort/color build-spec adapter adoption:
+
+```text
+RED: main_file_extraction_contract_probe failed because _build_editor_ui should reuse the editor button build spec property helper
+GREEN: Godot --check-only --script res://scripts/main.gd --quit-after 1
+GREEN: MAIN_FILE_EXTRACTION_CONTRACT_PROBE ok services=9
+GREEN: PART_LIBRARY_UI_PROBE groups=["torso", "limb", "terminal_weapon", "barrier_panel", "software_muscle", "software"] weapon=3 equipment=5 software=7 dashboard=40
+GREEN: UNIT_EDITOR_TEMPLATE_DRAWER_RUNTIME_PROBE ok selected=octopus barrier=BarrierTemplatepin_wall
+GREEN: UNIT_EDITOR_FULLSCREEN_LAYOUT_PROBE ok board=(908.0, 548.0) dock=(726.0, 132.0)
+GREEN: EDITOR_ROSTER_OVERVIEW_PROBE blank_cost=0 team_cost=0 roster_cost=0 buttons=5
+GREEN: SCYTHE_INSTALL_ORIENTATION_UI_PROBE ok node=0
+GREEN: BOUND_MODULE_TRYOUT_UI_PROBE ok
+GREEN: UNIT_EDITOR_TORSO_DETAIL_BUTTON_PROBE ok torso=0 second=1
+GREEN: CATALOG_CARD_TEXT_READABILITY_PROBE ok title=11 line=9 plate=0.62 rev=2
+GREEN: UNIT_EDITOR_POWER_DOCK_MOVED_UP_PROBE ok dock=[P: (190.0, 24.0), S: (726.0, 132.0)] rail=[P: (18.0, 104.0), S: (164.0, 508.0)]
+GREEN: UNIT_EDITOR_LEGACY_POWER_TABLE_REMOVED_PROBE ok non_explicit_detail_closed=true dock_entries=4
+GREEN: UNIT_EDITOR_POWER_ALLOCATION_TOPBAR_PROBE ok dock_entries=4
+GREEN: UNIT_EDITOR_NO_POWER_TOPBAR_PROBE ok dock_pos=(190.0, 24.0)
+```
+
+`_build_editor_ui()` now also applies `_apply_editor_button_build_spec()` to orientation popup buttons, legacy dashboard power and torso-detail buttons, body-part buttons, module-binding buttons, archetype and barrier-template buttons, shop-slot buttons, sort action/option buttons, team color buttons and pickers, and part catalog cards. Local signal wiring, special initial hidden/disabled state, hover routing, and reference dictionaries remain local to their sections. The older `engine_allocation_dashboard_visible_probe.gd` still asserts the retired legacy dashboard power button should be visible, so current power-dock probes are the authoritative verification path for that surface.
+
 Remaining items after this batch:
 
 - Continue editor UI extraction with `_build_editor_ui` and the remaining action presentation/control-mutation sections of `_apply_editor_panel_visibility`, then continue `_resolve_attack` and `_refresh_editor_visual_views` extraction.

@@ -47631,11 +47631,7 @@ func _build_editor_ui() -> void:
 		var orientation_popup_button_build_spec := Dictionary(raw_orientation_popup_button_build_spec)
 		var orientation_button_key := String(orientation_popup_button_build_spec.get("key", ""))
 		var orientation_button := Button.new()
-		orientation_button.name = String(orientation_popup_button_build_spec.get("name", ""))
-		orientation_button.text = String(orientation_popup_button_build_spec.get("text", ""))
-		orientation_button.position = orientation_popup_button_build_spec.get("position", Vector2.ZERO)
-		orientation_button.size = orientation_popup_button_build_spec.get("size", Vector2.ZERO)
-		orientation_button.focus_mode = Control.FOCUS_NONE
+		_apply_editor_button_build_spec(orientation_button, orientation_popup_button_build_spec)
 		if orientation_button_key == "left":
 			orientation_button.pressed.connect(_set_pending_visual_handedness.bind("left"))
 			editor_orientation_popup_left_button = orientation_button
@@ -47648,22 +47644,14 @@ func _build_editor_ui() -> void:
 		editor_orientation_popup_panel.add_child(orientation_button)
 	var legacy_power_button_build_spec := Dictionary(dashboard_control_build_specs.get("legacy_power_button", {}))
 	editor_engine_allocation_button = Button.new()
-	editor_engine_allocation_button.name = String(legacy_power_button_build_spec.get("name", "DashboardPowerAllocationButton"))
-	editor_engine_allocation_button.text = String(legacy_power_button_build_spec.get("text", "动力预算"))
-	editor_engine_allocation_button.position = legacy_power_button_build_spec.get("position", Vector2.ZERO)
-	editor_engine_allocation_button.size = legacy_power_button_build_spec.get("size", Vector2.ZERO)
-	editor_engine_allocation_button.focus_mode = Control.FOCUS_NONE
+	_apply_editor_button_build_spec(editor_engine_allocation_button, legacy_power_button_build_spec, Vector2.ZERO, "DashboardPowerAllocationButton", "动力预算")
 	editor_engine_allocation_button.visible = false
 	editor_engine_allocation_button.disabled = true
 	editor_engine_allocation_button.pressed.connect(_open_dashboard_engine_allocation)
 	root.add_child(editor_engine_allocation_button)
 	var torso_detail_button_build_spec := Dictionary(dashboard_control_build_specs.get("torso_detail_button", {}))
 	editor_torso_detail_button = Button.new()
-	editor_torso_detail_button.name = String(torso_detail_button_build_spec.get("name", "DashboardTorsoDetailButton"))
-	editor_torso_detail_button.text = String(torso_detail_button_build_spec.get("text", "核心详情"))
-	editor_torso_detail_button.position = torso_detail_button_build_spec.get("position", Vector2.ZERO)
-	editor_torso_detail_button.size = torso_detail_button_build_spec.get("size", Vector2.ZERO)
-	editor_torso_detail_button.focus_mode = Control.FOCUS_NONE
+	_apply_editor_button_build_spec(editor_torso_detail_button, torso_detail_button_build_spec, Vector2.ZERO, "DashboardTorsoDetailButton", "核心详情")
 	editor_torso_detail_button.pressed.connect(_toggle_dashboard_torso_detail)
 	root.add_child(editor_torso_detail_button)
 	var legacy_power_summary_build_spec := Dictionary(dashboard_control_build_specs.get("legacy_power_summary", {}))
@@ -47687,11 +47675,7 @@ func _build_editor_ui() -> void:
 		var body_part_button_build_spec := Dictionary(raw_body_part_button_build_spec)
 		var part_key: String = String(body_part_button_build_spec.get("key", ""))
 		var button := Button.new()
-		button.name = String(body_part_button_build_spec.get("name", "EditorBodyPart%s" % part_key))
-		button.text = _body_part_ui_name(part_key)
-		button.position = body_part_button_build_spec.get("position", Vector2.ZERO)
-		button.size = body_part_button_build_spec.get("size", Vector2.ZERO)
-		button.focus_mode = Control.FOCUS_NONE
+		_apply_editor_button_build_spec(button, body_part_button_build_spec, Vector2.ZERO, "EditorBodyPart%s" % part_key, _body_part_ui_name(part_key))
 		button.pressed.connect(_select_editor_body_part.bind(part_key))
 		root.add_child(button)
 		editor_board_labels[part_key] = button
@@ -47706,13 +47690,9 @@ func _build_editor_ui() -> void:
 		var side_key := String(module_binding_button_spec.get("side", ""))
 		var button_key := String(module_binding_button_spec.get("key", ""))
 		var binding_button := Button.new()
-		binding_button.name = String(module_binding_button_spec.get("name", button_key))
-		binding_button.text = _side_mount_action_side_label(side_key) if side_key != "" else String(module_binding_button_spec.get("text", ""))
-		binding_button.position = module_binding_button_spec.get("position", Vector2.ZERO)
-		binding_button.size = module_binding_button_spec.get("size", Vector2.ZERO)
-		binding_button.focus_mode = Control.FOCUS_NONE
+		var binding_button_text := _side_mount_action_side_label(side_key) if side_key != "" else String(module_binding_button_spec.get("text", ""))
+		_apply_editor_button_build_spec(binding_button, module_binding_button_spec, Vector2.ZERO, button_key, binding_button_text)
 		binding_button.mouse_filter = Control.MOUSE_FILTER_STOP
-		binding_button.z_index = int(module_binding_button_spec.get("z_index", MODULE_BINDING_TRYOUT_Z_INDEX))
 		binding_button.visible = false
 		binding_button.pressed.connect(_editor_action.bind(button_key))
 		root.add_child(binding_button)
@@ -47738,11 +47718,7 @@ func _build_editor_ui() -> void:
 		var archetype_button_build_spec := Dictionary(raw_archetype_button_build_spec)
 		var archetype_key: String = String(archetype_button_build_spec.get("key", ""))
 		var frame_button := Button.new()
-		frame_button.name = String(archetype_button_build_spec.get("name", "TemplateArchetype%s" % archetype_key))
-		frame_button.text = _archetype_name(archetype_key).to_upper()
-		frame_button.position = archetype_button_build_spec.get("position", Vector2.ZERO)
-		frame_button.size = archetype_button_build_spec.get("size", Vector2.ZERO)
-		frame_button.focus_mode = Control.FOCUS_NONE
+		_apply_editor_button_build_spec(frame_button, archetype_button_build_spec, Vector2.ZERO, "TemplateArchetype%s" % archetype_key, _archetype_name(archetype_key).to_upper())
 		frame_button.pressed.connect(_apply_archetype.bind(archetype_key))
 		root.add_child(frame_button)
 		editor_archetype_buttons[archetype_key] = frame_button
@@ -47752,11 +47728,7 @@ func _build_editor_ui() -> void:
 		var barrier_template_button_build_spec := Dictionary(raw_barrier_template_button_build_spec)
 		var barrier_key: String = String(barrier_template_button_build_spec.get("key", ""))
 		var barrier_template_button := Button.new()
-		barrier_template_button.name = String(barrier_template_button_build_spec.get("name", "BarrierTemplate%s" % barrier_key))
-		barrier_template_button.text = String(BARRIER_TEMPLATE_DEFAULTS[barrier_key].get("name", "BARRIER")).to_upper()
-		barrier_template_button.position = barrier_template_button_build_spec.get("position", Vector2.ZERO)
-		barrier_template_button.size = barrier_template_button_build_spec.get("size", Vector2.ZERO)
-		barrier_template_button.focus_mode = Control.FOCUS_NONE
+		_apply_editor_button_build_spec(barrier_template_button, barrier_template_button_build_spec, Vector2.ZERO, "BarrierTemplate%s" % barrier_key, String(BARRIER_TEMPLATE_DEFAULTS[barrier_key].get("name", "BARRIER")).to_upper())
 		barrier_template_button.pressed.connect(_apply_barrier_template.bind(barrier_key))
 		root.add_child(barrier_template_button)
 		editor_template_buttons.append(barrier_template_button)
@@ -47786,10 +47758,7 @@ func _build_editor_ui() -> void:
 		var shop_button_build_spec := Dictionary(raw_shop_button_build_spec)
 		var slot_key: String = String(shop_button_build_spec.get("key", ""))
 		var shop_button := Button.new()
-		shop_button.name = String(shop_button_build_spec.get("name", "ShopButton%s" % slot_key))
-		shop_button.position = shop_button_build_spec.get("position", Vector2.ZERO)
-		shop_button.size = shop_button_build_spec.get("size", Vector2.ZERO)
-		shop_button.focus_mode = Control.FOCUS_NONE
+		_apply_editor_button_build_spec(shop_button, shop_button_build_spec, Vector2.ZERO, "ShopButton%s" % slot_key)
 		shop_button.pressed.connect(_cycle_body_part_component.bind(slot_key, 1))
 		shop_button.mouse_entered.connect(_hover_shop_component.bind(slot_key))
 		shop_button.mouse_exited.connect(_clear_editor_hover_card)
@@ -47800,10 +47769,7 @@ func _build_editor_ui() -> void:
 		var sort_action_button_build_spec := Dictionary(raw_sort_action_button_build_spec)
 		var sort_action_key := String(sort_action_button_build_spec.get("key", ""))
 		var sort_action_button := Button.new()
-		sort_action_button.text = String(sort_action_button_build_spec.get("text", ""))
-		sort_action_button.position = sort_action_button_build_spec.get("position", Vector2.ZERO)
-		sort_action_button.size = sort_action_button_build_spec.get("size", Vector2.ZERO)
-		sort_action_button.focus_mode = Control.FOCUS_NONE
+		_apply_editor_button_build_spec(sort_action_button, sort_action_button_build_spec)
 		match String(sort_action_button_build_spec.get("intent", "")):
 			"cycle":
 				sort_action_button.pressed.connect(_cycle_editor_catalog_sort.bind(int(sort_action_button_build_spec.get("delta", 0))))
@@ -47823,11 +47789,7 @@ func _build_editor_ui() -> void:
 	for raw_sort_option_build_spec in sort_option_build_specs:
 		var sort_option_build_spec := Dictionary(raw_sort_option_build_spec)
 		var sort_option_button := Button.new()
-		sort_option_button.name = String(sort_option_build_spec.get("name", "SortOption%d" % editor_sort_option_buttons.size()))
-		sort_option_button.position = sort_option_build_spec.get("position", Vector2.ZERO)
-		sort_option_button.size = sort_option_build_spec.get("size", Vector2.ZERO)
-		sort_option_button.focus_mode = Control.FOCUS_NONE
-		sort_option_button.z_index = int(sort_option_build_spec.get("z_index", 61))
+		_apply_editor_button_build_spec(sort_option_button, sort_option_build_spec, Vector2.ZERO, "SortOption%d" % editor_sort_option_buttons.size())
 		sort_option_button.pressed.connect(_select_editor_catalog_sort.bind(String(sort_option_build_spec.get("key", ""))))
 		root.add_child(sort_option_button)
 		editor_sort_option_buttons.append(sort_option_button)
@@ -47846,30 +47808,18 @@ func _build_editor_ui() -> void:
 		var color_button_index := int(color_button_build_spec.get("index", editor_color_buttons.size()))
 		var preset: Dictionary = TEAM_COLOR_PRESETS[color_button_index] if color_button_index >= 0 and color_button_index < TEAM_COLOR_PRESETS.size() else {}
 		var color_button := Button.new()
-		color_button.name = String(color_button_build_spec.get("name", ""))
-		color_button.position = color_button_build_spec.get("position", Vector2.ZERO)
-		color_button.size = color_button_build_spec.get("size", Vector2.ZERO)
-		color_button.focus_mode = Control.FOCUS_NONE
-		color_button.text = String(preset.get("name", "COLOR"))
+		_apply_editor_button_build_spec(color_button, color_button_build_spec, Vector2.ZERO, "", String(preset.get("name", "COLOR")))
 		color_button.pressed.connect(_select_editor_team_color.bind(color_button_index))
 		root.add_child(color_button)
 		editor_color_buttons.append(color_button)
 	var color_primary_picker_build_spec := Dictionary(color_controls_build_specs.get("primary_picker", {}))
 	editor_primary_color_picker = ColorPickerButton.new()
-	editor_primary_color_picker.name = String(color_primary_picker_build_spec.get("name", ""))
-	editor_primary_color_picker.position = color_primary_picker_build_spec.get("position", Vector2.ZERO)
-	editor_primary_color_picker.size = color_primary_picker_build_spec.get("size", Vector2.ZERO)
-	editor_primary_color_picker.text = String(color_primary_picker_build_spec.get("text", ""))
-	editor_primary_color_picker.focus_mode = Control.FOCUS_NONE
+	_apply_editor_button_build_spec(editor_primary_color_picker, color_primary_picker_build_spec)
 	editor_primary_color_picker.color_changed.connect(_set_editor_custom_primary_color)
 	root.add_child(editor_primary_color_picker)
 	var color_accent_picker_build_spec := Dictionary(color_controls_build_specs.get("accent_picker", {}))
 	editor_accent_color_picker = ColorPickerButton.new()
-	editor_accent_color_picker.name = String(color_accent_picker_build_spec.get("name", ""))
-	editor_accent_color_picker.position = color_accent_picker_build_spec.get("position", Vector2.ZERO)
-	editor_accent_color_picker.size = color_accent_picker_build_spec.get("size", Vector2.ZERO)
-	editor_accent_color_picker.text = String(color_accent_picker_build_spec.get("text", ""))
-	editor_accent_color_picker.focus_mode = Control.FOCUS_NONE
+	_apply_editor_button_build_spec(editor_accent_color_picker, color_accent_picker_build_spec)
 	editor_accent_color_picker.color_changed.connect(_set_editor_custom_accent_color)
 	root.add_child(editor_accent_color_picker)
 	var catalog_page_actions: Array = Array(editor_action_build_specs.get("catalog_page_actions", []))
@@ -47881,10 +47831,7 @@ func _build_editor_ui() -> void:
 		var catalog_card_build_spec := Dictionary(raw_catalog_card_build_spec)
 		var catalog_card_index := int(catalog_card_build_spec.get("index", editor_catalog_buttons.size()))
 		var catalog_button := PartCatalogCardButton.new()
-		catalog_button.name = String(catalog_card_build_spec.get("name", "CatalogCard%d" % catalog_card_index))
-		catalog_button.position = catalog_card_build_spec.get("position", Vector2.ZERO)
-		catalog_button.size = catalog_card_build_spec.get("size", Vector2.ZERO)
-		catalog_button.focus_mode = Control.FOCUS_NONE
+		_apply_editor_button_build_spec(catalog_button, catalog_card_build_spec, Vector2.ZERO, "CatalogCard%d" % catalog_card_index)
 		catalog_button.set_art_sheets(null, null, null, null, null, null, null, null, null, null)
 		catalog_button.pressed.connect(_select_catalog_component.bind(catalog_card_index))
 		catalog_button.mouse_entered.connect(_hover_catalog_component.bind(catalog_card_index))
