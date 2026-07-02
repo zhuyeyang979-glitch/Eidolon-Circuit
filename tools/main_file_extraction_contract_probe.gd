@@ -93,12 +93,18 @@ func _init() -> void:
 	if source.find("func _add_editor_action_button_from_spec(") < 0:
 		_fail("main.gd should centralize editor action button creation.")
 		return
+	if source.find("func _apply_editor_button_build_spec(") < 0:
+		_fail("main.gd should centralize editor button build spec property application.")
+		return
 	var build_editor_ui_block := _function_block(source, "func _build_editor_ui(")
 	if build_editor_ui_block.is_empty():
 		_fail("main.gd should keep _build_editor_ui available.")
 		return
 	if build_editor_ui_block.count("_add_editor_action_button_from_spec(") < 7:
 		_fail("_build_editor_ui should reuse the editor action button creation helper.")
+		return
+	if build_editor_ui_block.count("_apply_editor_button_build_spec(") < 5:
+		_fail("_build_editor_ui should reuse the editor button build spec property helper.")
 		return
 	for stale_action_build_fragment in [
 		"var guide_button := Button.new()",
@@ -110,6 +116,16 @@ func _init() -> void:
 	]:
 		if build_editor_ui_block.find(stale_action_build_fragment) >= 0:
 			_fail("_build_editor_ui should create editor action buttons through the helper instead of inline loops: %s" % stale_action_build_fragment)
+			return
+	for stale_button_build_fragment in [
+		"role_button.position = role_button_build_spec.get(\"position\"",
+		"group_button.position = group_spec.get(\"position\"",
+		"slot_button.position = slot_spec.get(\"position\"",
+		"filter_button.position = filter_spec.get(\"position\"",
+		"load_card_button.position = load_card_build_spec.get(\"position\"",
+	]:
+		if build_editor_ui_block.find(stale_button_build_fragment) >= 0:
+			_fail("_build_editor_ui should apply role/load/part-library button specs through the helper: %s" % stale_button_build_fragment)
 			return
 	var orientation_buttons_block := _function_block(source, "func _refresh_editor_orientation_buttons(")
 	if orientation_buttons_block.is_empty():

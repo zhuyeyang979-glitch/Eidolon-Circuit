@@ -2285,6 +2285,21 @@ GREEN: PART_LIBRARY_UI_PROBE groups=["torso", "limb", "terminal_weapon", "barrie
 
 `_add_editor_action_button_from_spec()` now owns the concrete Button construction, default sizing, optional node-name application, `_editor_action` signal wiring, scene-tree insertion, and `editor_action_buttons` registration for ordinary editor action specs. `_build_editor_ui()` reuses it for assembly-guide, unit, board-primary, canvas-tool, board-zoom, template-toggle, and catalog-page actions while keeping special-case controls such as sort action intent buttons, module-binding overlays, save-dialog buttons, and orientation-popup buttons local.
 
+Follow-up editor button build-spec property adapter extraction:
+
+```text
+RED: main_file_extraction_contract_probe failed because main.gd should centralize editor button build spec property application
+GREEN: MAIN_FILE_EXTRACTION_CONTRACT_PROBE ok services=9
+GREEN: Godot --check-only --script res://scripts/main.gd --quit-after 1
+GREEN: LIFECYCLE_SERVICES_CONTRACT_PROBE ok
+GREEN: PART_LIBRARY_UI_PROBE groups=["torso", "limb", "terminal_weapon", "barrier_panel", "software_muscle", "software"] weapon=3 equipment=5 software=7 dashboard=40
+GREEN: UNIT_EDITOR_PAGINATION_LAYOUT_PROBE ok unit=1 page=0 catalog=1 load=0 feedback=[P: (270.0, 654.0), S: (622.0, 26.0)]
+GREEN: UNIT_EDITOR_TEMPLATE_DRAWER_RUNTIME_PROBE ok selected=octopus barrier=BarrierTemplatepin_wall
+GREEN: UNIT_EDITOR_FULLSCREEN_LAYOUT_PROBE ok board=(908.0, 548.0) dock=(726.0, 132.0)
+```
+
+`_apply_editor_button_build_spec()` now owns the concrete Button property application for build specs, including optional name/text, position, size, focus mode, visibility, disabled state, z-index, and mouse filter. `_add_editor_action_button_from_spec()` reuses the same adapter, and `_build_editor_ui()` now consumes it for role buttons, part-group buttons, legacy slot buttons, part-filter buttons, and saved-unit load cards while keeping each section's signal wiring, hover routing, and reference registration local.
+
 Remaining items after this batch:
 
 - Continue editor UI extraction with `_build_editor_ui` and the remaining action presentation/control-mutation sections of `_apply_editor_panel_visibility`, then continue `_resolve_attack` and `_refresh_editor_visual_views` extraction.

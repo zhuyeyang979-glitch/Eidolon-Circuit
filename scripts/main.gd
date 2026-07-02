@@ -47218,13 +47218,11 @@ func _editor_build_spec_for_key(specs: Array, key: String) -> Dictionary:
 	return {}
 
 
-func _add_editor_action_button_from_spec(root: Control, spec: Dictionary, default_size: Vector2 = Vector2.ZERO, default_key: String = "", default_name: String = "") -> Button:
-	var action_key := String(spec.get("key", default_key))
-	var button := Button.new()
+func _apply_editor_button_build_spec(button: Button, spec: Dictionary, default_size: Vector2 = Vector2.ZERO, default_name: String = "", default_text: String = "") -> void:
 	var button_name := String(spec.get("name", default_name))
 	if button_name != "":
 		button.name = button_name
-	button.text = String(spec.get("text", ""))
+	button.text = String(spec.get("text", default_text))
 	button.position = spec.get("position", Vector2.ZERO)
 	button.size = spec.get("size", default_size)
 	button.focus_mode = Control.FOCUS_NONE
@@ -47234,6 +47232,14 @@ func _add_editor_action_button_from_spec(root: Control, spec: Dictionary, defaul
 		button.disabled = bool(spec.get("disabled", false))
 	if spec.has("z_index"):
 		button.z_index = int(spec.get("z_index", button.z_index))
+	if spec.has("mouse_filter"):
+		button.mouse_filter = int(spec.get("mouse_filter", button.mouse_filter))
+
+
+func _add_editor_action_button_from_spec(root: Control, spec: Dictionary, default_size: Vector2 = Vector2.ZERO, default_key: String = "", default_name: String = "") -> Button:
+	var action_key := String(spec.get("key", default_key))
+	var button := Button.new()
+	_apply_editor_button_build_spec(button, spec, default_size, default_name)
 	if action_key != "":
 		button.pressed.connect(_editor_action.bind(action_key))
 	root.add_child(button)
@@ -47301,10 +47307,7 @@ func _build_editor_ui() -> void:
 		var role_button_build_spec := Dictionary(raw_role_button_build_spec)
 		var role_key := String(role_button_build_spec.get("key", ""))
 		var role_button := Button.new()
-		role_button.name = String(role_button_build_spec.get("name", "Role%s" % role_key))
-		role_button.position = role_button_build_spec.get("position", Vector2.ZERO)
-		role_button.size = role_button_build_spec.get("size", Vector2(86.0, 32.0))
-		role_button.focus_mode = Control.FOCUS_NONE
+		_apply_editor_button_build_spec(role_button, role_button_build_spec, Vector2(86.0, 32.0), "Role%s" % role_key)
 		role_button.pressed.connect(_select_editor_role.bind(role_key))
 		root.add_child(role_button)
 		editor_role_labels[role_key] = role_button
@@ -47315,10 +47318,7 @@ func _build_editor_ui() -> void:
 		var group_spec := Dictionary(raw_group_spec)
 		var group_key := String(group_spec.get("key", ""))
 		var group_button := Button.new()
-		group_button.name = String(group_spec.get("name", "PartGroup%s" % group_key))
-		group_button.position = group_spec.get("position", Vector2.ZERO)
-		group_button.size = group_spec.get("size", Vector2(84.0, 24.0))
-		group_button.focus_mode = Control.FOCUS_NONE
+		_apply_editor_button_build_spec(group_button, group_spec, Vector2(84.0, 24.0), "PartGroup%s" % group_key)
 		group_button.pressed.connect(_select_editor_part_group.bind(group_key))
 		root.add_child(group_button)
 		editor_part_group_buttons[group_key] = group_button
@@ -47327,10 +47327,7 @@ func _build_editor_ui() -> void:
 		var slot_spec := Dictionary(raw_slot_spec)
 		var slot_index := int(slot_spec.get("index", editor_slot_buttons.size()))
 		var slot_button := Button.new()
-		slot_button.name = String(slot_spec.get("name", "Slot%d" % slot_index))
-		slot_button.position = slot_spec.get("position", Vector2.ZERO)
-		slot_button.size = slot_spec.get("size", Vector2(130.0, 24.0))
-		slot_button.focus_mode = Control.FOCUS_NONE
+		_apply_editor_button_build_spec(slot_button, slot_spec, Vector2(130.0, 24.0), "Slot%d" % slot_index)
 		slot_button.pressed.connect(_select_editor_slot.bind(slot_index))
 		root.add_child(slot_button)
 		editor_slot_labels.append(slot_button)
@@ -47340,10 +47337,7 @@ func _build_editor_ui() -> void:
 		var filter_spec := Dictionary(raw_filter_spec)
 		var filter_index := int(filter_spec.get("index", editor_part_filter_buttons.size()))
 		var filter_button := Button.new()
-		filter_button.name = String(filter_spec.get("name", "PartFilter%d" % filter_index))
-		filter_button.position = filter_spec.get("position", Vector2.ZERO)
-		filter_button.size = filter_spec.get("size", Vector2(64.0, 22.0))
-		filter_button.focus_mode = Control.FOCUS_NONE
+		_apply_editor_button_build_spec(filter_button, filter_spec, Vector2(64.0, 22.0), "PartFilter%d" % filter_index)
 		filter_button.pressed.connect(_select_editor_part_filter.bind(filter_index))
 		root.add_child(filter_button)
 		editor_part_filter_buttons.append(filter_button)
@@ -47379,10 +47373,7 @@ func _build_editor_ui() -> void:
 		var load_card_build_spec := Dictionary(raw_load_card_build_spec)
 		var load_card_index := int(load_card_build_spec.get("index", editor_load_card_buttons.size()))
 		var load_card_button := Button.new()
-		load_card_button.name = String(load_card_build_spec.get("name", "LoadCard%d" % load_card_index))
-		load_card_button.position = load_card_build_spec.get("position", Vector2.ZERO)
-		load_card_button.size = load_card_build_spec.get("size", Vector2(270.0, 30.0))
-		load_card_button.focus_mode = Control.FOCUS_NONE
+		_apply_editor_button_build_spec(load_card_button, load_card_build_spec, Vector2(270.0, 30.0), "LoadCard%d" % load_card_index)
 		load_card_button.pressed.connect(_select_editor_load_card.bind(load_card_index))
 		load_card_button.mouse_entered.connect(_hover_editor_load_card.bind(load_card_index))
 		load_card_button.mouse_exited.connect(_clear_editor_unit_hover_card)
