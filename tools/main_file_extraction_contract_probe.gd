@@ -103,7 +103,7 @@ func _init() -> void:
 	if build_editor_ui_block.count("_add_editor_action_button_from_spec(") < 7:
 		_fail("_build_editor_ui should reuse the editor action button creation helper.")
 		return
-	if build_editor_ui_block.count("_apply_editor_button_build_spec(") < 5:
+	if build_editor_ui_block.count("_apply_editor_button_build_spec(") < 11:
 		_fail("_build_editor_ui should reuse the editor button build spec property helper.")
 		return
 	for stale_action_build_fragment in [
@@ -118,11 +118,17 @@ func _init() -> void:
 			_fail("_build_editor_ui should create editor action buttons through the helper instead of inline loops: %s" % stale_action_build_fragment)
 			return
 	for stale_button_build_fragment in [
+		"panel_button.position = panel_spec.get(\"position\"",
 		"role_button.position = role_button_build_spec.get(\"position\"",
 		"group_button.position = group_spec.get(\"position\"",
 		"slot_button.position = slot_spec.get(\"position\"",
 		"filter_button.position = filter_spec.get(\"position\"",
 		"load_card_button.position = load_card_build_spec.get(\"position\"",
+		"role_button.position = save_unit_role_button_build_spec.get(\"position\"",
+		"button.position = save_unit_action_button_build_spec.get(\"position\"",
+		"roster_prev_button.position = roster_prev_build_spec.get(\"position\"",
+		"roster_next_button.position = roster_next_build_spec.get(\"position\"",
+		"roster_button.position = roster_slot_build_spec.get(\"position\"",
 	]:
 		if build_editor_ui_block.find(stale_button_build_fragment) >= 0:
 			_fail("_build_editor_ui should apply role/load/part-library button specs through the helper: %s" % stale_button_build_fragment)

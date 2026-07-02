@@ -47287,10 +47287,7 @@ func _build_editor_ui() -> void:
 	for i in range(panel_specs.size()):
 		var panel_spec := Dictionary(panel_specs[i])
 		var panel_button := Button.new()
-		panel_button.text = String(panel_spec.get("text", ""))
-		panel_button.position = panel_spec.get("position", Vector2.ZERO)
-		panel_button.size = panel_spec.get("size", Vector2(132.0, 30.0))
-		panel_button.focus_mode = Control.FOCUS_NONE
+		_apply_editor_button_build_spec(panel_button, panel_spec, Vector2(132.0, 30.0))
 		panel_button.pressed.connect(_editor_action.bind("panel_%s" % String(panel_spec.get("key", ""))))
 		root.add_child(panel_button)
 		editor_panel_buttons[String(panel_spec.get("key", ""))] = panel_button
@@ -47544,11 +47541,7 @@ func _build_editor_ui() -> void:
 		var save_unit_role_button_build_spec := Dictionary(raw_save_unit_role_button_build_spec)
 		var role_key: String = String(save_unit_role_button_build_spec.get("key", ""))
 		var role_button := Button.new()
-		role_button.name = String(save_unit_role_button_build_spec.get("name", "SaveUnitRole%s" % role_key))
-		role_button.text = _role_name(role_key)
-		role_button.position = save_unit_role_button_build_spec.get("position", Vector2.ZERO)
-		role_button.size = save_unit_role_button_build_spec.get("size", Vector2.ZERO)
-		role_button.focus_mode = Control.FOCUS_NONE
+		_apply_editor_button_build_spec(role_button, save_unit_role_button_build_spec, Vector2.ZERO, "SaveUnitRole%s" % role_key, _role_name(role_key))
 		role_button.disabled = true
 		editor_save_unit_name_panel.add_child(role_button)
 		editor_save_unit_role_buttons[role_key] = role_button
@@ -47556,11 +47549,7 @@ func _build_editor_ui() -> void:
 	for raw_save_unit_action_button_build_spec in save_unit_action_button_build_specs:
 		var save_unit_action_button_build_spec := Dictionary(raw_save_unit_action_button_build_spec)
 		var button := Button.new()
-		button.name = String(save_unit_action_button_build_spec.get("name", ""))
-		button.text = String(save_unit_action_button_build_spec.get("text", ""))
-		button.position = save_unit_action_button_build_spec.get("position", Vector2.ZERO)
-		button.size = save_unit_action_button_build_spec.get("size", Vector2.ZERO)
-		button.focus_mode = Control.FOCUS_NONE
+		_apply_editor_button_build_spec(button, save_unit_action_button_build_spec)
 		var save_action := String(save_unit_action_button_build_spec.get("action", ""))
 		if save_action == "cancel":
 			button.pressed.connect(_hide_save_unit_name_dialog)
@@ -47576,22 +47565,14 @@ func _build_editor_ui() -> void:
 	editor_section_labels["roster_page"].visible = false
 	var roster_prev_build_spec := Dictionary(roster_overview_build_specs.get("prev", {}))
 	var roster_prev_button := Button.new()
-	roster_prev_button.name = String(roster_prev_build_spec.get("name", ""))
-	roster_prev_button.text = String(roster_prev_build_spec.get("text", ""))
-	roster_prev_button.position = roster_prev_build_spec.get("position", Vector2.ZERO)
-	roster_prev_button.size = roster_prev_build_spec.get("size", Vector2.ZERO)
-	roster_prev_button.focus_mode = Control.FOCUS_NONE
+	_apply_editor_button_build_spec(roster_prev_button, roster_prev_build_spec)
 	roster_prev_button.visible = false
 	roster_prev_button.pressed.connect(_change_editor_roster_page.bind(-1))
 	root.add_child(roster_prev_button)
 	editor_roster_prev_button = roster_prev_button
 	var roster_next_build_spec := Dictionary(roster_overview_build_specs.get("next", {}))
 	var roster_next_button := Button.new()
-	roster_next_button.name = String(roster_next_build_spec.get("name", ""))
-	roster_next_button.text = String(roster_next_build_spec.get("text", ""))
-	roster_next_button.position = roster_next_build_spec.get("position", Vector2.ZERO)
-	roster_next_button.size = roster_next_build_spec.get("size", Vector2.ZERO)
-	roster_next_button.focus_mode = Control.FOCUS_NONE
+	_apply_editor_button_build_spec(roster_next_button, roster_next_build_spec)
 	roster_next_button.visible = false
 	roster_next_button.pressed.connect(_change_editor_roster_page.bind(1))
 	root.add_child(roster_next_button)
@@ -47601,10 +47582,7 @@ func _build_editor_ui() -> void:
 		var roster_slot_build_spec := Dictionary(raw_roster_slot_build_spec)
 		var roster_slot_index := int(roster_slot_build_spec.get("index", editor_roster_slot_buttons.size()))
 		var roster_button := Button.new()
-		roster_button.name = String(roster_slot_build_spec.get("name", ""))
-		roster_button.position = roster_slot_build_spec.get("position", Vector2.ZERO)
-		roster_button.size = roster_slot_build_spec.get("size", Vector2.ZERO)
-		roster_button.focus_mode = Control.FOCUS_NONE
+		_apply_editor_button_build_spec(roster_button, roster_slot_build_spec)
 		roster_button.pressed.connect(_select_editor_roster_overview_slot.bind(roster_slot_index))
 		roster_button.mouse_entered.connect(_hover_editor_roster_overview_slot.bind(roster_slot_index))
 		roster_button.mouse_exited.connect(_clear_editor_unit_hover_card)
