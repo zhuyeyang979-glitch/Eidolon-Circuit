@@ -53,14 +53,15 @@ func _init() -> void:
 	if custom_snapshot_block.is_empty():
 		_fail("Missing _editor_custom_board_snapshot helper.")
 		return
+	var visual_snapshot_block := _function_block(source, "func _editor_visual_snapshot_for_current_board(")
+	if visual_snapshot_block.is_empty():
+		_fail("Missing _editor_visual_snapshot_for_current_board helper.")
+		return
 	if block.contains("topology.duplicate(true)"):
 		_fail("TeamEdit visual refresh still deep-copies full topology.")
 		return
-	if block.count("_editor_custom_board_snapshot(role_key, unit_bp, custom_board_cache_key, visual_stats, player_id)") != 1:
-		_fail("TeamEdit visual refresh should delegate custom board snapshot assembly once.")
-		return
-	if not block.contains("_editor_barrier_screen_board_snapshot(role_key, unit_bp)"):
-		_fail("TeamEdit visual refresh should delegate barrier screen board snapshot building.")
+	if block.count("_editor_visual_snapshot_for_current_board(role_key, unit_bp, custom_board_cache_key, visual_stats, barrier_screen_board, player_id)") != 1:
+		_fail("TeamEdit visual refresh should delegate base board snapshot selection once.")
 		return
 	if not block.contains("_submit_editor_visual_snapshot(snapshot, board_mode, illegal_parts, update_side_panels)"):
 		_fail("TeamEdit visual refresh should delegate board snapshot submission.")
@@ -90,6 +91,11 @@ func _init() -> void:
 		"terrain_preview_tiles_by_index",
 		"snapshot[\"barrier_columns\"]",
 		"snapshot[\"tile_%d\" % i]",
+		"editor_board_base_snapshot_hit_count +=",
+		"editor_board_snapshot_cache_hit_count +=",
+		"editor_board_base_snapshot_cache.duplicate(false)",
+		"_editor_custom_board_snapshot(role_key, unit_bp, custom_board_cache_key, visual_stats, player_id)",
+		"_editor_barrier_screen_board_snapshot(role_key, unit_bp)",
 		"var snapshot_build_start",
 		"var topology:",
 		"snapshot[\"joint_slot_profiles\"]",
@@ -116,6 +122,21 @@ func _init() -> void:
 	]:
 		if not custom_snapshot_block.contains(token):
 			_fail("Custom board snapshot helper missing token: %s" % token)
+			return
+	for token in [
+		"editor_board_base_snapshot_cache_key",
+		"editor_board_base_snapshot_cache",
+		"editor_board_base_snapshot_hit_count",
+		"editor_board_snapshot_cache_hit_count",
+		"duplicate(false)",
+		"_editor_custom_board_snapshot(role_key, unit_bp, custom_board_cache_key, visual_stats, player_id)",
+		"_editor_barrier_screen_board_snapshot(role_key, unit_bp)",
+		"\"snapshot\"",
+		"\"visual_stats\"",
+		"\"board_mode\"",
+	]:
+		if not visual_snapshot_block.contains(token):
+			_fail("Visual snapshot selection helper missing token: %s" % token)
 			return
 	for token in [
 		"duplicate(false)",

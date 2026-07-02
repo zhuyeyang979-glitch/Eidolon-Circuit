@@ -53061,6 +53061,18 @@ func _refresh_editor_visual_views(precomputed_stats: Dictionary = {}, update_sid
 	editor_visual_revision_key = visual_revision
 	if update_side_panels:
 		_refresh_editor_selected_part_preview(BUILD_SLOTS[editor_slot_index], selected_component, clampf(editor_snap_timer / 0.28, 0.0, 1.0))
+	var visual_snapshot := _editor_visual_snapshot_for_current_board(role_key, unit_bp, custom_board_cache_key, visual_stats, barrier_screen_board, player_id)
+	snapshot = Dictionary(visual_snapshot.get("snapshot", snapshot))
+	visual_stats = Dictionary(visual_snapshot.get("visual_stats", visual_stats))
+	board_mode = String(visual_snapshot.get("board_mode", board_mode))
+	if board_mode == "custom" and not snapshot.is_empty():
+		snapshot = _apply_editor_board_dynamic_fields(snapshot, role_key, unit_bp, custom_board_cache_key, visual_stats)
+	_submit_editor_visual_snapshot(snapshot, board_mode, illegal_parts, update_side_panels)
+
+
+func _editor_visual_snapshot_for_current_board(role_key: String, unit_bp: Dictionary, custom_board_cache_key: String, visual_stats: Dictionary, barrier_screen_board: bool, player_id: int) -> Dictionary:
+	var snapshot := {}
+	var board_mode := role_key
 	if not barrier_screen_board and custom_board_cache_key != "" and custom_board_cache_key == editor_board_base_snapshot_cache_key and not editor_board_base_snapshot_cache.is_empty():
 		editor_board_base_snapshot_hit_count += 1
 		editor_board_snapshot_cache_hit_count += 1
@@ -53074,9 +53086,11 @@ func _refresh_editor_visual_views(precomputed_stats: Dictionary = {}, update_sid
 	elif barrier_screen_board:
 		board_mode = "barrier"
 		snapshot = _editor_barrier_screen_board_snapshot(role_key, unit_bp)
-	if board_mode == "custom" and not snapshot.is_empty():
-		snapshot = _apply_editor_board_dynamic_fields(snapshot, role_key, unit_bp, custom_board_cache_key, visual_stats)
-	_submit_editor_visual_snapshot(snapshot, board_mode, illegal_parts, update_side_panels)
+	return {
+		"snapshot": snapshot,
+		"visual_stats": visual_stats,
+		"board_mode": board_mode,
+	}
 
 
 func _editor_custom_board_snapshot(role_key: String, unit_bp: Dictionary, custom_board_cache_key: String, visual_stats: Dictionary, player_id: int) -> Dictionary:

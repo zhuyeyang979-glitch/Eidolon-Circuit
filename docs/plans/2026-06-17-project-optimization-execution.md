@@ -2255,6 +2255,29 @@ GREEN: ASSEMBLY_TEMPLATE_PROBE skipped headless
 
 The dynamic board overlay now recomputes `material_highlights` on cached custom snapshots and both visual-refresh and board-dynamic revision keys include hover/drag preview state. `editor_material_highlight_probe` now latches assertion failures so stale hover material states cannot produce a false-green result.
 
+Follow-up editor visual snapshot source selection extraction:
+
+```text
+RED: editor_visual_refresh_no_deep_snapshot_probe failed on missing _editor_visual_snapshot_for_current_board helper
+GREEN: EDITOR_VISUAL_REFRESH_NO_DEEP_SNAPSHOT_PROBE ok
+GREEN: Godot --check-only --script res://scripts/main.gd --quit-after 1
+GREEN: EDITOR_BOARD_MODEL_INCREMENTAL_PROBE ok shallow=1 skip=1
+GREEN: EDITOR_BOARD_SNAPSHOT_INCREMENTAL_PROBE ok rebuilds=1 dynamic=4
+GREEN: EDITOR_BOARD_SNAPSHOT_LAZY_PROBE ok hits=0 skips=2 rebuild=0
+GREEN: EDITOR_RENDER_CACHE_PROBE ok apply=1 noop=0 skip=2 submit=2
+GREEN: ASSEMBLY_BOARD_SET_BOARD_NOOP_PROBE ok apply=1 noop=0 skip=2
+GREEN: EDITOR_MATERIAL_HIGHLIGHT_PROBE same=metal diff=chain same_state=legal_socket diff_state=illegal_material
+GREEN: POSE_DRAG_NO_FULL_REFRESH_PROBE ok visual_delta=0 catalog_delta=0
+GREEN: TEAMEDIT_POSE_EDIT_FRAME_BUDGET_PROBE ok root_redraw=0 component_updates=0
+GREEN: TEAMEDIT_ASSEMBLY_FRAME_BUDGET_PROBE ok p95=1.32ms max=1.32ms catalog_delta=0 hot=teamedit.visual_refresh
+GREEN: TEAMEDIT_HOVER_FRAME_BUDGET_PROBE ok refreshes=2 rebuilds=1
+GREEN: MODULE_BINDING_GROUP_HALO_VISUAL_PROBE ok groups=2
+GREEN: BOARD_ZOOM_SOCKET_FOLLOW_PROBE ok marker=0:torso_port:0 delta=34.987px
+GREEN: BARRIER_TERRAIN_EDITOR_PREVIEW_PROBE ok
+```
+
+`_editor_visual_snapshot_for_current_board()` now owns base snapshot source selection for visual refresh: cached custom-board reuse, custom-board snapshot creation, and barrier screen-board snapshot creation. `_refresh_editor_visual_views()` now handles the revision gate, optional part preview refresh, returned snapshot unpacking, dynamic overlay application, and final submission without carrying the cache/custom/barrier source branch inline.
+
 Follow-up editor orientation action button presentation extraction:
 
 ```text
