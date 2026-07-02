@@ -2278,6 +2278,26 @@ GREEN: BARRIER_TERRAIN_EDITOR_PREVIEW_PROBE ok
 
 `_editor_visual_snapshot_for_current_board()` now owns base snapshot source selection for visual refresh: cached custom-board reuse, custom-board snapshot creation, and barrier screen-board snapshot creation. `_refresh_editor_visual_views()` now handles the revision gate, optional part preview refresh, returned snapshot unpacking, dynamic overlay application, and final submission without carrying the cache/custom/barrier source branch inline.
 
+Follow-up editor visual revision skip extraction:
+
+```text
+RED: editor_visual_refresh_no_deep_snapshot_probe failed on missing _try_skip_editor_visual_refresh helper
+GREEN: EDITOR_VISUAL_REFRESH_NO_DEEP_SNAPSHOT_PROBE ok
+GREEN: Godot --check-only --script res://scripts/main.gd --quit-after 1
+GREEN: EDITOR_BOARD_MODEL_INCREMENTAL_PROBE ok shallow=1 skip=1
+GREEN: EDITOR_BOARD_SNAPSHOT_LAZY_PROBE ok hits=0 skips=2 rebuild=0
+GREEN: EDITOR_RENDER_CACHE_PROBE ok apply=1 noop=0 skip=2 submit=2
+GREEN: ASSEMBLY_BOARD_SET_BOARD_NOOP_PROBE ok apply=1 noop=0 skip=2
+GREEN: TEAMEDIT_HOVER_FRAME_BUDGET_PROBE ok refreshes=2 rebuilds=1
+GREEN: EDITOR_MATERIAL_HIGHLIGHT_PROBE same=metal diff=chain same_state=legal_socket diff_state=illegal_material
+GREEN: POSE_DRAG_NO_FULL_REFRESH_PROBE ok visual_delta=0 catalog_delta=0
+GREEN: TEAMEDIT_POSE_EDIT_FRAME_BUDGET_PROBE ok root_redraw=0 component_updates=0
+GREEN: TEAMEDIT_ASSEMBLY_FRAME_BUDGET_PROBE ok p95=1.29ms max=1.29ms catalog_delta=0 hot=teamedit.visual_refresh
+GREEN: BOARD_ZOOM_SOCKET_FOLLOW_PROBE ok marker=0:torso_port:0 delta=34.987px
+```
+
+`_try_skip_editor_visual_refresh()` now owns the revision-equality skip branch: skip counter increments, optional torso/engine side-panel refreshes, orientation popup refresh, hot-path skip count, and profiler scope close. `_refresh_editor_visual_views()` now computes the revision and consumes one skip helper before setting the new revision key and continuing into snapshot selection.
+
 Follow-up editor orientation action button presentation extraction:
 
 ```text

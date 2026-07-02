@@ -57,8 +57,15 @@ func _init() -> void:
 	if visual_snapshot_block.is_empty():
 		_fail("Missing _editor_visual_snapshot_for_current_board helper.")
 		return
+	var visual_skip_block := _function_block(source, "func _try_skip_editor_visual_refresh(")
+	if visual_skip_block.is_empty():
+		_fail("Missing _try_skip_editor_visual_refresh helper.")
+		return
 	if block.contains("topology.duplicate(true)"):
 		_fail("TeamEdit visual refresh still deep-copies full topology.")
+		return
+	if block.count("_try_skip_editor_visual_refresh(visual_revision, update_side_panels)") != 1:
+		_fail("TeamEdit visual refresh should delegate revision skip handling once.")
 		return
 	if block.count("_editor_visual_snapshot_for_current_board(role_key, unit_bp, custom_board_cache_key, visual_stats, barrier_screen_board, player_id)") != 1:
 		_fail("TeamEdit visual refresh should delegate base board snapshot selection once.")
@@ -96,6 +103,8 @@ func _init() -> void:
 		"editor_board_base_snapshot_cache.duplicate(false)",
 		"_editor_custom_board_snapshot(role_key, unit_bp, custom_board_cache_key, visual_stats, player_id)",
 		"_editor_barrier_screen_board_snapshot(role_key, unit_bp)",
+		"editor_visual_refresh_skip_count +=",
+		"hot_path_profiler.count(\"teamedit.visual_refresh.skip\")",
 		"var snapshot_build_start",
 		"var topology:",
 		"snapshot[\"joint_slot_profiles\"]",
@@ -137,6 +146,20 @@ func _init() -> void:
 	]:
 		if not visual_snapshot_block.contains(token):
 			_fail("Visual snapshot selection helper missing token: %s" % token)
+			return
+	for token in [
+		"visual_revision == editor_visual_revision_key",
+		"editor_visual_refresh_skip_count +=",
+		"_refresh_torso_detail_view()",
+		"_refresh_engine_momentum_allocation_view()",
+		"_refresh_editor_orientation_popup()",
+		"hot_path_profiler.count(\"teamedit.visual_refresh.skip\")",
+		"hot_path_profiler.scope_end(\"teamedit.visual_refresh\")",
+		"return true",
+		"return false",
+	]:
+		if not visual_skip_block.contains(token):
+			_fail("Visual refresh skip helper missing token: %s" % token)
 			return
 	for token in [
 		"duplicate(false)",
