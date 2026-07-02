@@ -73,6 +73,10 @@ func _init() -> void:
 	if begin_refresh_block.is_empty():
 		_fail("Missing _begin_editor_visual_refresh helper.")
 		return
+	var revision_commit_block := _function_block(source, "func _commit_editor_visual_revision(")
+	if revision_commit_block.is_empty():
+		_fail("Missing _commit_editor_visual_revision helper.")
+		return
 	if block.contains("topology.duplicate(true)"):
 		_fail("TeamEdit visual refresh still deep-copies full topology.")
 		return
@@ -82,8 +86,8 @@ func _init() -> void:
 	if block.count("_try_skip_editor_visual_refresh(visual_revision, update_side_panels)") != 1:
 		_fail("TeamEdit visual refresh should delegate revision skip handling once.")
 		return
-	if block.count("_refresh_editor_visual_selected_part_preview(update_side_panels)") != 1:
-		_fail("TeamEdit visual refresh should delegate selected part preview refresh once.")
+	if block.count("_commit_editor_visual_revision(visual_revision, update_side_panels)") != 1:
+		_fail("TeamEdit visual refresh should delegate revision commit once.")
 		return
 	if block.count("_editor_visual_snapshot_for_current_board(role_key, unit_bp, custom_board_cache_key, visual_stats, barrier_screen_board, player_id)") != 1:
 		_fail("TeamEdit visual refresh should delegate base board snapshot selection once.")
@@ -140,9 +144,18 @@ func _init() -> void:
 		"editor_visual_refresh_count +=",
 		"if assembly_board_view == null:",
 		"hot_path_profiler.scope_end(\"teamedit.visual_refresh\")",
+		"editor_visual_revision_key = visual_revision",
+		"_refresh_editor_visual_selected_part_preview(update_side_panels)",
 	]:
 		if block.contains(stale_fragment):
 			_fail("TeamEdit visual refresh should not inline snapshot construction: %s" % stale_fragment)
+			return
+	for token in [
+		"editor_visual_revision_key = visual_revision",
+		"_refresh_editor_visual_selected_part_preview(update_side_panels)",
+	]:
+		if not revision_commit_block.contains(token):
+			_fail("Visual revision commit helper missing token: %s" % token)
 			return
 	for token in [
 		"editor_board_visual_request_count +=",

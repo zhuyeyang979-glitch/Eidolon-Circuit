@@ -53062,6 +53062,11 @@ func _begin_editor_visual_refresh() -> bool:
 	return true
 
 
+func _commit_editor_visual_revision(visual_revision: String, update_side_panels: bool) -> void:
+	editor_visual_revision_key = visual_revision
+	_refresh_editor_visual_selected_part_preview(update_side_panels)
+
+
 func _refresh_editor_visual_views(precomputed_stats: Dictionary = {}, update_side_panels: bool = true) -> void:
 	if not _begin_editor_visual_refresh():
 		return
@@ -53077,8 +53082,7 @@ func _refresh_editor_visual_views(precomputed_stats: Dictionary = {}, update_sid
 	var visual_revision := _editor_visual_revision_signature(role_key, unit_bp, visual_stats, custom_board_cache_key, update_side_panels)
 	if _try_skip_editor_visual_refresh(visual_revision, update_side_panels):
 		return
-	editor_visual_revision_key = visual_revision
-	_refresh_editor_visual_selected_part_preview(update_side_panels)
+	_commit_editor_visual_revision(visual_revision, update_side_panels)
 	var visual_snapshot := _editor_visual_snapshot_for_current_board(role_key, unit_bp, custom_board_cache_key, visual_stats, barrier_screen_board, player_id)
 	snapshot = Dictionary(visual_snapshot.get("snapshot", snapshot))
 	visual_stats = Dictionary(visual_snapshot.get("visual_stats", visual_stats))

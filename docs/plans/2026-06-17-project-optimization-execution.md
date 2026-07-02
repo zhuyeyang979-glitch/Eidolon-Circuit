@@ -2370,6 +2370,30 @@ GREEN: BARRIER_TERRAIN_EDITOR_PREVIEW_PROBE ok
 
 `_begin_editor_visual_refresh()` now owns the visual-refresh request counters, hot-path profiler scope begin, and null `assembly_board_view` early exit with profiler scope close. `_refresh_editor_visual_views()` now starts with a single entry-gate call before computing editor player, role, blueprint, legality, revision, snapshot source, dynamic overlay, and final submission.
 
+Follow-up editor visual revision commit extraction:
+
+```text
+RED: editor_visual_refresh_no_deep_snapshot_probe failed on missing _commit_editor_visual_revision helper
+GREEN: Godot --check-only --script res://scripts/main.gd --quit-after 1
+GREEN: EDITOR_VISUAL_REFRESH_NO_DEEP_SNAPSHOT_PROBE ok
+GREEN: EDITOR_SIDE_PREVIEW_DIRTY_PROBE ok updates=3 noop=1
+GREEN: EDITOR_BOARD_MODEL_INCREMENTAL_PROBE ok shallow=1 skip=1
+GREEN: EDITOR_BOARD_SNAPSHOT_INCREMENTAL_PROBE ok rebuilds=1 dynamic=4
+GREEN: EDITOR_BOARD_SNAPSHOT_LAZY_PROBE ok hits=0 skips=2 rebuild=0
+GREEN: EDITOR_RENDER_CACHE_PROBE ok apply=1 noop=0 skip=2 submit=2
+GREEN: ASSEMBLY_BOARD_SET_BOARD_NOOP_PROBE ok apply=1 noop=0 skip=2
+GREEN: EDITOR_MATERIAL_HIGHLIGHT_PROBE same=metal diff=chain same_state=legal_socket diff_state=illegal_material
+GREEN: POSE_DRAG_NO_FULL_REFRESH_PROBE ok visual_delta=0 catalog_delta=0
+GREEN: TEAMEDIT_POSE_EDIT_FRAME_BUDGET_PROBE ok root_redraw=0 component_updates=0
+GREEN: TEAMEDIT_ASSEMBLY_FRAME_BUDGET_PROBE ok p95=1.99ms max=1.99ms catalog_delta=0 hot=teamedit.visual_refresh
+GREEN: TEAMEDIT_HOVER_FRAME_BUDGET_PROBE ok refreshes=2 rebuilds=1
+GREEN: MODULE_BINDING_GROUP_HALO_VISUAL_PROBE ok groups=2
+GREEN: BOARD_ZOOM_SOCKET_FOLLOW_PROBE ok marker=0:torso_port:0 delta=34.987px
+GREEN: BARRIER_TERRAIN_EDITOR_PREVIEW_PROBE ok
+```
+
+`_commit_editor_visual_revision()` now owns the non-skip visual revision write and selected-part side preview refresh. `_refresh_editor_visual_views()` delegates that state commit with one call after the skip helper returns false, keeping the skip and non-skip side-preview paths aligned through the same selected-preview helper.
+
 Follow-up editor orientation action button presentation extraction:
 
 ```text
