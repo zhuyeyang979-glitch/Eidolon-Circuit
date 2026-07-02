@@ -37435,6 +37435,29 @@ func _apply_attack_target_outcome_result(target, target_outcome: Dictionary, kil
 	}
 
 
+func _prepare_attack_projectile_preflight(attacker, event: Dictionary) -> Dictionary:
+	var preflight := _battle_hit_resolution_service().projectile_preflight_intent({
+		"event": event,
+		"behavior": _projectile_behavior_for_data(event),
+		"bullet_hell_default_speed_mult": BULLET_HELL_DEFAULT_SPEED_MULT,
+		"standard_missile_explosion_radius": STANDARD_MISSILE_EXPLOSION_RADIUS,
+		"laser_telegraph": _is_laser_telegraph_event(event),
+		"true_bullet": _is_true_bullet_event(event),
+		"chemical_projectile": _is_chemical_projectile_event(event),
+		"chemical_ready": bool(event.get("chemical_projectile_ready", false)),
+		"chemical_firework": _chemical_firework_event(event),
+		"chemical_firework_expanded": bool(event.get("chemical_firework_expanded", false)),
+		"missile_projectile": _is_missile_projectile_event(event),
+		"consumes_on_first_hit": _projectile_consumes_on_first_hit(event),
+		"projectile_trace_spawned": bool(event.get("projectile_trace_spawned", false)),
+	})
+	var event_patch: Dictionary = Dictionary(preflight.get("event_patch", {}))
+	event = _battle_hit_resolution_service().apply_event_patch(event, event_patch)
+	if _execute_projectile_preflight_intent(attacker, event, preflight):
+		return {"event": event, "stop": true}
+	return {"event": event, "stop": false}
+
+
 func _resolve_attack(attacker, event: Dictionary) -> void:
 	var entry_intent := _battle_hit_resolution_service().attack_entry_intent({
 		"attacker_live": _is_live_unit(attacker),
@@ -37468,24 +37491,9 @@ func _resolve_attack(attacker, event: Dictionary) -> void:
 		return
 	if not _prepare_attack_activation(attacker, event):
 		return
-	var preflight := _battle_hit_resolution_service().projectile_preflight_intent({
-		"event": event,
-		"behavior": _projectile_behavior_for_data(event),
-		"bullet_hell_default_speed_mult": BULLET_HELL_DEFAULT_SPEED_MULT,
-		"standard_missile_explosion_radius": STANDARD_MISSILE_EXPLOSION_RADIUS,
-		"laser_telegraph": _is_laser_telegraph_event(event),
-		"true_bullet": _is_true_bullet_event(event),
-		"chemical_projectile": _is_chemical_projectile_event(event),
-		"chemical_ready": bool(event.get("chemical_projectile_ready", false)),
-		"chemical_firework": _chemical_firework_event(event),
-		"chemical_firework_expanded": bool(event.get("chemical_firework_expanded", false)),
-		"missile_projectile": _is_missile_projectile_event(event),
-		"consumes_on_first_hit": _projectile_consumes_on_first_hit(event),
-		"projectile_trace_spawned": bool(event.get("projectile_trace_spawned", false)),
-	})
-	var event_patch: Dictionary = Dictionary(preflight.get("event_patch", {}))
-	event = _battle_hit_resolution_service().apply_event_patch(event, event_patch)
-	if _execute_projectile_preflight_intent(attacker, event, preflight):
+	var preflight_preparation := _prepare_attack_projectile_preflight(attacker, event)
+	event = Dictionary(preflight_preparation.get("event", event))
+	if bool(preflight_preparation.get("stop", false)):
 		return
 	var projectile_impact_preparation := _prepare_attack_projectile_impact(attacker, event)
 	if bool(projectile_impact_preparation.get("stop", false)):

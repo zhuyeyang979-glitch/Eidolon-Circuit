@@ -102,6 +102,9 @@ func _init() -> void:
 		"event[\"raw_momentum\"] =",
 		"event[\"contact_gate_model\"] =",
 		"match String(entry_intent.get(\"action\", \"\"))",
+		"var preflight := _battle_hit_resolution_service().projectile_preflight_intent({",
+		"var event_patch: Dictionary = Dictionary(preflight.get(\"event_patch\", {}))",
+		"event = _battle_hit_resolution_service().apply_event_patch(event, event_patch)",
 		"match String(preflight.get(\"action\", \"continue\"))",
 		"_acquire_missile_lock_target(attacker, event)",
 		"event[\"locked_target\"] = missile_target",
@@ -171,8 +174,35 @@ func _init() -> void:
 		if entry_dispatch_body.find(token) < 0:
 			_fail("_execute_attack_entry_intent missing dispatch token: %s" % token)
 			return
-	if resolve_body.count("_execute_projectile_preflight_intent(attacker, event, preflight)") != 1:
-		_fail("_resolve_attack should dispatch projectile preflight through one helper.")
+	if resolve_body.count("_prepare_attack_projectile_preflight(attacker, event)") != 1:
+		_fail("_resolve_attack should prepare projectile preflight through one helper.")
+		return
+	var preflight_preparation_body := _function_body(main_source, "func _prepare_attack_projectile_preflight")
+	if preflight_preparation_body.is_empty():
+		_fail("Unable to locate _prepare_attack_projectile_preflight body.")
+		return
+	for token in [
+		"_battle_hit_resolution_service().projectile_preflight_intent({",
+		"_projectile_behavior_for_data(event)",
+		"BULLET_HELL_DEFAULT_SPEED_MULT",
+		"STANDARD_MISSILE_EXPLOSION_RADIUS",
+		"_is_laser_telegraph_event(event)",
+		"_is_true_bullet_event(event)",
+		"_is_chemical_projectile_event(event)",
+		"_chemical_firework_event(event)",
+		"_is_missile_projectile_event(event)",
+		"_projectile_consumes_on_first_hit(event)",
+		"Dictionary(preflight.get(\"event_patch\", {}))",
+		"_battle_hit_resolution_service().apply_event_patch(event, event_patch)",
+		"_execute_projectile_preflight_intent(attacker, event, preflight)",
+		"\"event\"",
+		"\"stop\"",
+	]:
+		if preflight_preparation_body.find(token) < 0:
+			_fail("_prepare_attack_projectile_preflight missing token: %s" % token)
+			return
+	if preflight_preparation_body.count("_execute_projectile_preflight_intent(attacker, event, preflight)") != 1:
+		_fail("_prepare_attack_projectile_preflight should dispatch projectile preflight through one helper.")
 		return
 	var preflight_dispatch_body := _function_body(main_source, "func _execute_projectile_preflight_intent")
 	if preflight_dispatch_body.is_empty():

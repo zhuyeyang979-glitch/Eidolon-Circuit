@@ -2002,6 +2002,29 @@ GREEN: BATTLE_ATTACK_HEAVY_REPLAY_DESYNC_PROBE ok
 
 `_execute_projectile_preflight_intent()` now owns the imperative dispatch for queued laser telegraphs, true-bullet locks, chemical projectiles, chemical fireworks, and missiles. `_resolve_attack()` applies the pure service event patch, delegates exactly one preflight action, and keeps the ready/expanded chemical projectile continuation path explicit for normal target resolution. The extraction contract requires all five side-effect routes and rejects renewed inline preflight matching.
 
+Follow-up attack projectile-preflight preparation extraction:
+
+```text
+RED: battle_hit_resolution_service_contract_probe failed because _resolve_attack still assembled projectile_preflight_intent and event_patch inline
+GREEN: BATTLE_HIT_RESOLUTION_SERVICE_CONTRACT_PROBE ok
+GREEN: Godot --check-only --script res://scripts/main.gd --quit-after 1
+GREEN: BATTLE_PROJECTILE_LIFECYCLE_SERVICE_CONTRACT_PROBE ok
+GREEN: PROJECTILE_RUNTIME_SERVICE_CONTRACT_PROBE ok
+GREEN: LASER_PROJECTILE_GATE_PROBE ok
+GREEN: MISSILE_PROJECTILE_GATE_PROBE ok
+GREEN: CHEMICAL_SPRAYER_FIRST_CONTACT_PROBE ok blocker=140->129 rear=140->140
+GREEN: HARDWARE_FAULT_TRUE_BULLET_QUEUE_DEPENDENCY_PROBE ok
+GREEN: PROJECTILE_WARNING_ONLY_GUN_ACTIVATE_PROBE gun='投射物必须由枪械末端肌肉发射' melee=''
+GREEN: LASER_BEAM_RUNTIME_FIRE_PROBE ok ammo=7->6 target_hp=100.0
+GREEN: MISSILE_LOCK_RUNTIME_FIRE_PROBE ok
+GREEN: CHEMICAL_HEAT_PROBE queued=true impact=true dot=true boost_motion=true straight_cooling=true hp=120->105->64 heat=44.00
+GREEN: LOCAL_BATTLE_REPLAY_CONSISTENCY_PROBE ok
+GREEN: BATTLE_ATTACK_HEAVY_REPLAY_DESYNC_PROBE checkpoints=6 desync_step=360
+GREEN: BATTLE_ATTACK_HEAVY_REPLAY_DESYNC_PROBE ok
+```
+
+`_prepare_attack_projectile_preflight()` now owns projectile-preflight intent assembly, service event-patch application, and dispatch through `_execute_projectile_preflight_intent()`. `_resolve_attack()` consumes only the returned event and stop flag before projectile-impact preparation, keeping the attack-level gate order intact while removing another pure/service assembly block from the main resolver.
+
 Follow-up attack missile-lock preparation extraction:
 
 ```text
