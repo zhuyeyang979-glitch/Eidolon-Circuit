@@ -114,6 +114,9 @@ func _init() -> void:
 	if source.find("func _refresh_editor_catalog_shop_surface_presentation(") < 0:
 		_fail("main.gd should centralize editor catalog/shop surface presentation application.")
 		return
+	if source.find("func _refresh_editor_section_chrome_presentation(") < 0:
+		_fail("main.gd should centralize editor section chrome presentation application.")
+		return
 	var build_editor_ui_block := _function_block(source, "func _build_editor_ui(")
 	if build_editor_ui_block.is_empty():
 		_fail("main.gd should keep _build_editor_ui available.")
@@ -205,6 +208,9 @@ func _init() -> void:
 		return
 	if panel_visibility_block.count("_refresh_editor_catalog_shop_surface_presentation(") != 1:
 		_fail("_apply_editor_panel_visibility should delegate catalog/shop surface presentation application.")
+		return
+	if panel_visibility_block.count("_refresh_editor_section_chrome_presentation(") != 1:
+		_fail("_apply_editor_panel_visibility should delegate section chrome presentation application.")
 		return
 	for stale_action_presentation_fragment in [
 		"UILifecycleService.editor_action_presentations(",
@@ -317,6 +323,25 @@ func _init() -> void:
 		return
 	if catalog_shop_block.count("clear_card()") != 1 or catalog_shop_block.count("_clear_editor_unit_hover_card(true)") != 1:
 		_fail("_refresh_editor_catalog_shop_surface_presentation should preserve hover clear side effects.")
+		return
+	for stale_section_chrome_fragment in [
+		"UILifecycleService.editor_section_chrome_presentation(",
+		"var section_label_plans: Dictionary = Dictionary(section_chrome_plan.get(\"labels\", {}))",
+		"var template_drawer_visible := bool(section_chrome_plan.get(\"template_drawer_visible\", false))",
+		"section_chrome_plan.get(\"template_toggle\", {})",
+	]:
+		if panel_visibility_block.find(stale_section_chrome_fragment) >= 0:
+			_fail("_apply_editor_panel_visibility should not inline section chrome presentation application: %s" % stale_section_chrome_fragment)
+			return
+	var section_chrome_block := _function_block(source, "func _refresh_editor_section_chrome_presentation(")
+	if section_chrome_block.is_empty():
+		_fail("main.gd should keep _refresh_editor_section_chrome_presentation available.")
+		return
+	if section_chrome_block.count("UILifecycleService.editor_section_chrome_presentation(") != 1:
+		_fail("_refresh_editor_section_chrome_presentation should request one section chrome presentation plan.")
+		return
+	if section_chrome_block.count("_layout_editor_template_drawer(role_key, template_drawer_visible, unit_bp)") != 1:
+		_fail("_refresh_editor_section_chrome_presentation should preserve template drawer layout refresh.")
 		return
 	var board_ui_block := _function_block(source, "func _update_editor_board_ui(")
 	if board_ui_block.is_empty():

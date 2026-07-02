@@ -49935,6 +49935,27 @@ func _refresh_editor_catalog_shop_surface_presentation(parts_visible: bool, shop
 		_clear_editor_unit_hover_card(true)
 
 
+func _refresh_editor_section_chrome_presentation(parts_visible: bool, template_visible: bool, role_key: String, unit_bp: Dictionary) -> void:
+	var section_chrome_plan := UILifecycleService.editor_section_chrome_presentation(
+		parts_visible,
+		template_visible,
+		editor_template_menu_open,
+		_ui_is_zh()
+	)
+	var section_label_plans: Dictionary = Dictionary(section_chrome_plan.get("labels", {}))
+	var default_section_label_plan: Dictionary = Dictionary(section_label_plans.get("_default", {"visible": true}))
+	for label_key in editor_section_labels.keys():
+		var label: Label = editor_section_labels[label_key]
+		var section_label_plan: Dictionary = Dictionary(section_label_plans.get(String(label_key), default_section_label_plan))
+		_apply_editor_control_plan(label, section_label_plan)
+	var template_drawer_visible := bool(section_chrome_plan.get("template_drawer_visible", false))
+	if editor_action_buttons.has("toggle_templates"):
+		var template_toggle: Button = editor_action_buttons["toggle_templates"]
+		var template_toggle_plan: Dictionary = Dictionary(section_chrome_plan.get("template_toggle", {}))
+		_apply_editor_control_plan(template_toggle, template_toggle_plan)
+	_layout_editor_template_drawer(role_key, template_drawer_visible, unit_bp)
+
+
 func _apply_editor_panel_visibility(role_key: String, unit_bp: Dictionary) -> void:
 	var body_board_enabled := _role_uses_body_board(role_key)
 	var barrier_screen_board := role_key == "barrier" and _barrier_uses_screen_board(unit_bp)
@@ -50042,24 +50063,7 @@ func _apply_editor_panel_visibility(role_key: String, unit_bp: Dictionary) -> vo
 	_refresh_editor_shop_feedback_presentation(shop_visible, role_key)
 	_refresh_editor_color_controls_presentation(color_visible)
 	_refresh_editor_catalog_shop_surface_presentation(parts_visible, shop_visible, load_visible, body_board_enabled, role_key)
-	var section_chrome_plan := UILifecycleService.editor_section_chrome_presentation(
-		parts_visible,
-		template_visible,
-		editor_template_menu_open,
-		_ui_is_zh()
-	)
-	var section_label_plans: Dictionary = Dictionary(section_chrome_plan.get("labels", {}))
-	var default_section_label_plan: Dictionary = Dictionary(section_label_plans.get("_default", {"visible": true}))
-	for label_key in editor_section_labels.keys():
-		var label: Label = editor_section_labels[label_key]
-		var section_label_plan: Dictionary = Dictionary(section_label_plans.get(String(label_key), default_section_label_plan))
-		_apply_editor_control_plan(label, section_label_plan)
-	var template_drawer_visible := bool(section_chrome_plan.get("template_drawer_visible", false))
-	if editor_action_buttons.has("toggle_templates"):
-		var template_toggle: Button = editor_action_buttons["toggle_templates"]
-		var template_toggle_plan: Dictionary = Dictionary(section_chrome_plan.get("template_toggle", {}))
-		_apply_editor_control_plan(template_toggle, template_toggle_plan)
-	_layout_editor_template_drawer(role_key, template_drawer_visible, unit_bp)
+	_refresh_editor_section_chrome_presentation(parts_visible, template_visible, role_key, unit_bp)
 
 
 func _update_editor_board_ui(role_key: String, unit_bp: Dictionary, precomputed_stats: Dictionary = {}) -> void:
