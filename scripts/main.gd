@@ -50206,43 +50206,46 @@ func _update_editor_board_ui(role_key: String, unit_bp: Dictionary, precomputed_
 		var lightweight_board_ui := bool(precomputed_stats.get("lightweight", false))
 		var topology_note := "" if lightweight_board_ui else _topology_rule_note(unit_bp, role_key, {})
 		var action_note := "" if lightweight_board_ui else _action_module_rule_note(unit_bp, role_key)
-		var rule_short := "规则正常" if _ui_is_zh() else "RULE OK"
-		if lightweight_board_ui:
-			rule_short = "编辑中" if _ui_is_zh() else "EDITING"
-		elif topology_note.begins_with("INVALID") and topology_note.find("snap") >= 0:
-			rule_short = "未贴合" if _ui_is_zh() else "SNAP GAP"
-		elif topology_note.begins_with("INVALID"):
-			rule_short = "拓扑非法" if _ui_is_zh() else "INVALID TOPOLOGY"
-		elif _custom_module_material_rule_note(unit_bp).begins_with("INVALID"):
-			rule_short = "模块材料非法" if _ui_is_zh() else "INVALID MODULE MATERIAL"
-		elif action_note.begins_with("INVALID"):
-			rule_short = "行动绑定非法" if _ui_is_zh() else "INVALID ACTION BIND"
-		var pending_note := "  待放置: %s" % _pending_canvas_part_name(role_key) if _has_pending_canvas_part() else ""
-		if _has_pending_payload_part():
-			pending_note += "  待安装: %s" % _pending_payload_part_name(role_key) if _ui_is_zh() else "  pending install: %s" % _pending_payload_part_name(role_key)
-		if _orientation_choice_is_active(unit_bp):
-			pending_note += "  选侧挂刃: 左/右" if _ui_is_zh() else "  choose side mount: LEFT/RIGHT"
-		elif selected_handedness_active and not nodes.is_empty():
-			var selected_side := _topology_node_visual_handedness(Dictionary(nodes[editor_topology_node_index]))
-			pending_note += "  刃向:%s" % ("左" if selected_side == "left" else "右") if _ui_is_zh() else "  side:%s" % selected_side.to_upper()
-		var board_hint := "%s  %s %d/%d  %sx%d" % [rule_short, _short_part_name(node_label), clampi(editor_topology_node_index + 1, 1, maxi(1, nodes.size())), nodes.size(), "模块" if _ui_is_zh() else "MOD", module_count]
+		var module_material_note := ""
+		if not lightweight_board_ui and not topology_note.begins_with("INVALID"):
+			module_material_note = _custom_module_material_rule_note(unit_bp)
 		var selected_summary := String(selected_node_feedback.get("summary", "")).strip_edges()
-		if selected_summary != "":
-			board_hint += "  %s" % selected_summary
-		board_hint += pending_note
-		_set_control_text_if_changed(editor_board_hint_label, board_hint)
+		var selected_side := ""
+		if selected_handedness_active and not nodes.is_empty():
+			selected_side = _topology_node_visual_handedness(Dictionary(nodes[editor_topology_node_index]))
+		_apply_editor_control_plan(editor_board_hint_label, UILifecycleService.editor_board_hint_presentation("custom", {
+			"lightweight": lightweight_board_ui,
+			"snap_invalid": topology_note.begins_with("INVALID") and topology_note.find("snap") >= 0,
+			"topology_invalid": topology_note.begins_with("INVALID"),
+			"module_material_invalid": module_material_note.begins_with("INVALID"),
+			"action_invalid": action_note.begins_with("INVALID"),
+			"short_node_label": _short_part_name(node_label),
+			"node_number": editor_topology_node_index + 1,
+			"node_count": nodes.size(),
+			"module_count": module_count,
+			"selected_summary": selected_summary,
+			"pending_canvas_name": _pending_canvas_part_name(role_key) if _has_pending_canvas_part() else "",
+			"pending_payload_name": _pending_payload_part_name(role_key) if _has_pending_payload_part() else "",
+			"orientation_choice_active": _orientation_choice_is_active(unit_bp),
+			"selected_handedness_active": selected_handedness_active and not nodes.is_empty(),
+			"selected_side": selected_side,
+		}, _ui_is_zh()))
 	elif barrier_screen_board:
 		var tile_count := Array(unit_bp.get("barrier_tiles", [])).size()
 		var stats := precomputed_stats if not precomputed_stats.is_empty() else _editor_current_stats()
-		var pending_note := "  待放置:%s" % _pending_canvas_part_name(role_key) if _has_pending_canvas_part() else ""
-		if _has_pending_payload_part():
-			pending_note += "  待安装:%s" % _pending_payload_part_name(role_key) if _ui_is_zh() else "  pending install:%s" % _pending_payload_part_name(role_key)
-		_set_control_text_if_changed(editor_board_hint_label, "以太屏幕蓝图 %d/%d  %.1fx%.1f%s" % [tile_count, maxi(1, int(stats.get("material_slots", 4))), BARRIER_BLUEPRINT_WIDTH, BARRIER_BLUEPRINT_HEIGHT, pending_note] if _ui_is_zh() else "Ether screen blueprint %d/%d  %.1fx%.1f%s" % [tile_count, maxi(1, int(stats.get("material_slots", 4))), BARRIER_BLUEPRINT_WIDTH, BARRIER_BLUEPRINT_HEIGHT, pending_note])
+		_apply_editor_control_plan(editor_board_hint_label, UILifecycleService.editor_board_hint_presentation("barrier", {
+			"tile_count": tile_count,
+			"material_slots": int(stats.get("material_slots", 4)),
+			"width": BARRIER_BLUEPRINT_WIDTH,
+			"height": BARRIER_BLUEPRINT_HEIGHT,
+			"pending_canvas_name": _pending_canvas_part_name(role_key) if _has_pending_canvas_part() else "",
+			"pending_payload_name": _pending_payload_part_name(role_key) if _has_pending_payload_part() else "",
+		}, _ui_is_zh()))
 	elif body_board_enabled:
 		_ensure_custom_topology(unit_bp)
-		_set_control_text_if_changed(editor_board_hint_label, "自由画布就绪：拖入构件；双击核心打开详情，单击拖动。" if _ui_is_zh() else "FREE CANVAS READY: drag parts in; double-click core for details, single-click to drag.")
+		_apply_editor_control_plan(editor_board_hint_label, UILifecycleService.editor_board_hint_presentation("body", {}, _ui_is_zh()))
 	else:
-		_set_control_text_if_changed(editor_board_hint_label, "机体画布未启用" if _ui_is_zh() else "Body board inactive")
+		_apply_editor_control_plan(editor_board_hint_label, UILifecycleService.editor_board_hint_presentation("inactive", {}, _ui_is_zh()))
 	var illegal_parts := _illegal_module_material_parts(unit_bp) if body_board_enabled else {}
 	for part_key in BODY_PART_ORDER:
 		var button: Button = editor_board_labels[part_key]

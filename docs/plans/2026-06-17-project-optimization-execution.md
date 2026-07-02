@@ -2208,6 +2208,27 @@ GREEN: UNIT_EDITOR_PAGINATION_LAYOUT_PROBE ok unit=1 page=0 catalog=1 load=0 fee
 
 The same verification pass exposed a stale side-mount alias conflict: legacy `visual_handedness`-only paths could be masked by a default `visual_mount_side`. `_topology_node_visual_handedness()` now resolves conflicting aliases by preserving the explicit non-default side, so old `visual_handedness` data and new `visual_mount_side` data both survive board enrichment, runtime segments, and renderer conversion.
 
+Follow-up editor board hint presentation extraction:
+
+```text
+RED: lifecycle_services_contract_probe failed because UILifecycleService did not expose editor_board_hint_presentation
+RED: main_file_extraction_contract_probe failed because _update_editor_board_ui still set board hint text inline
+GREEN: LIFECYCLE_SERVICES_CONTRACT_PROBE ok
+GREEN: MAIN_FILE_EXTRACTION_CONTRACT_PROBE ok services=9
+GREEN: Godot --check-only --script res://scripts/main.gd --quit-after 1
+GREEN: Godot --check-only --script res://scripts/services/ui_lifecycle_service.gd --quit-after 1
+GREEN: UNIT_EDITOR_TEMPLATE_DRAWER_RUNTIME_PROBE ok selected=octopus barrier=BarrierTemplatepin_wall
+GREEN: UNIT_EDITOR_ASSEMBLY_GUIDE_UI_PROBE ok
+GREEN: EDITOR_BOARD_ZOOM_PROBE node=0 zoom=1.00 label=100% hover=0
+GREEN: UNIT_EDITOR_CLIPBOARD_PROBE ok
+GREEN: UNIT_EDITOR_FULLSCREEN_LAYOUT_PROBE ok board=(908.0, 548.0) dock=(726.0, 132.0)
+GREEN: UNIT_EDITOR_PAGINATION_LAYOUT_PROBE ok unit=1 page=0 catalog=1 load=0 feedback=[P: (270.0, 654.0), S: (622.0, 26.0)]
+GREEN: BARRIER_TERRAIN_EDITOR_PREVIEW_PROBE ok
+GREEN: EDITOR_BOARD_SNAPSHOT_INCREMENTAL_PROBE ok rebuilds=1 dynamic=4
+```
+
+`UILifecycleService.editor_board_hint_presentation()` now owns the pure board hint text plan for custom topology boards, ether-screen barrier boards, enabled free-canvas boards, and inactive body-board states. `_update_editor_board_ui()` keeps the underlying state sampling local, including topology/action/material validity, pending placement/install labels, selected node summary, side-mount choice state, tile counts, and board dimensions, then applies the returned label plan through `_apply_editor_control_plan()`.
+
 Remaining items after this batch:
 
 - Continue editor UI extraction with `_build_editor_ui` and the remaining action presentation/control-mutation sections of `_apply_editor_panel_visibility`, then continue `_resolve_attack` and `_refresh_editor_visual_views` extraction.

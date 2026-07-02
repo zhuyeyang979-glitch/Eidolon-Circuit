@@ -1373,6 +1373,63 @@ static func editor_catalog_shop_surface_presentation(parts_visible: bool, shop_v
 	}
 
 
+static func editor_board_hint_presentation(board_state: String, context: Dictionary, zh: bool) -> Dictionary:
+	var state := String(board_state)
+	if state == "custom":
+		var rule_short := "规则正常" if zh else "RULE OK"
+		if bool(context.get("lightweight", false)):
+			rule_short = "编辑中" if zh else "EDITING"
+		elif bool(context.get("snap_invalid", false)):
+			rule_short = "未贴合" if zh else "SNAP GAP"
+		elif bool(context.get("topology_invalid", false)):
+			rule_short = "拓扑非法" if zh else "INVALID TOPOLOGY"
+		elif bool(context.get("module_material_invalid", false)):
+			rule_short = "模块材料非法" if zh else "INVALID MODULE MATERIAL"
+		elif bool(context.get("action_invalid", false)):
+			rule_short = "行动绑定非法" if zh else "INVALID ACTION BIND"
+		var text := "%s  %s %d/%d  %sx%d" % [
+			rule_short,
+			String(context.get("short_node_label", "NODE")),
+			clampi(int(context.get("node_number", 1)), 1, maxi(1, int(context.get("node_count", 1)))),
+			maxi(1, int(context.get("node_count", 1))),
+			"模块" if zh else "MOD",
+			maxi(0, int(context.get("module_count", 1))),
+		]
+		var selected_summary := String(context.get("selected_summary", "")).strip_edges()
+		if selected_summary != "":
+			text += "  %s" % selected_summary
+		var pending_canvas_name := String(context.get("pending_canvas_name", "")).strip_edges()
+		if pending_canvas_name != "":
+			text += "  待放置: %s" % pending_canvas_name if zh else "  pending place: %s" % pending_canvas_name
+		var pending_payload_name := String(context.get("pending_payload_name", "")).strip_edges()
+		if pending_payload_name != "":
+			text += "  待安装: %s" % pending_payload_name if zh else "  pending install: %s" % pending_payload_name
+		if bool(context.get("orientation_choice_active", false)):
+			text += "  选侧挂刃: 左/右" if zh else "  choose side mount: LEFT/RIGHT"
+		elif bool(context.get("selected_handedness_active", false)):
+			var selected_side := String(context.get("selected_side", "right")).to_lower()
+			text += "  刃向:%s" % ("左" if selected_side == "left" else "右") if zh else "  side:%s" % selected_side.to_upper()
+		return {"text": text}
+	if state == "barrier":
+		var pending_note := ""
+		var barrier_pending_canvas_name := String(context.get("pending_canvas_name", "")).strip_edges()
+		if barrier_pending_canvas_name != "":
+			pending_note += "  待放置:%s" % barrier_pending_canvas_name if zh else "  pending place:%s" % barrier_pending_canvas_name
+		var barrier_pending_payload_name := String(context.get("pending_payload_name", "")).strip_edges()
+		if barrier_pending_payload_name != "":
+			pending_note += "  待安装:%s" % barrier_pending_payload_name if zh else "  pending install:%s" % barrier_pending_payload_name
+		var tile_count := int(context.get("tile_count", 0))
+		var material_slots := maxi(1, int(context.get("material_slots", 4)))
+		var width := float(context.get("width", 0.0))
+		var height := float(context.get("height", 0.0))
+		return {
+			"text": "以太屏幕蓝图 %d/%d  %.1fx%.1f%s" % [tile_count, material_slots, width, height, pending_note] if zh else "Ether screen blueprint %d/%d  %.1fx%.1f%s" % [tile_count, material_slots, width, height, pending_note],
+		}
+	if state == "body":
+		return {"text": "自由画布就绪：拖入构件；双击核心打开详情，单击拖动。" if zh else "FREE CANVAS READY: drag parts in; double-click core for details, single-click to drag."}
+	return {"text": "机体画布未启用" if zh else "Body board inactive"}
+
+
 static func editor_panel_visibility_plan(panel_mode: String, load_mode: String, body_board_enabled: bool, barrier_screen_board: bool, has_custom_topology: bool, part_group_mode: String, part_filter_mode: String, roster_count: int) -> Dictionary:
 	var normalized_load_mode := String(load_mode)
 	if normalized_load_mode == "team":

@@ -78,6 +78,9 @@ func _init() -> void:
 	if source.find("UILifecycleService.editor_orientation_action_buttons_presentation") < 0:
 		_fail("main.gd should delegate editor orientation action button presentation planning.")
 		return
+	if source.find("UILifecycleService.editor_board_hint_presentation") < 0:
+		_fail("main.gd should delegate editor board hint presentation planning.")
+		return
 	var orientation_buttons_block := _function_block(source, "func _refresh_editor_orientation_buttons(")
 	if orientation_buttons_block.is_empty():
 		_fail("main.gd should keep _refresh_editor_orientation_buttons available.")
@@ -96,6 +99,23 @@ func _init() -> void:
 	]:
 		if orientation_buttons_block.find(stale_orientation_fragment) >= 0:
 			_fail("_refresh_editor_orientation_buttons should apply service plans instead of inline mutation: %s" % stale_orientation_fragment)
+			return
+	var board_ui_block := _function_block(source, "func _update_editor_board_ui(")
+	if board_ui_block.is_empty():
+		_fail("main.gd should keep _update_editor_board_ui available.")
+		return
+	if board_ui_block.count("UILifecycleService.editor_board_hint_presentation(") < 3:
+		_fail("_update_editor_board_ui should request board hint presentation plans for board states.")
+		return
+	for stale_board_hint_fragment in [
+		"_set_control_text_if_changed(editor_board_hint_label",
+		"var rule_short := \"规则正常\"",
+		"Ether screen blueprint %d/%d",
+		"自由画布就绪：拖入构件",
+		"机体画布未启用",
+	]:
+		if board_ui_block.find(stale_board_hint_fragment) >= 0:
+			_fail("_update_editor_board_ui should apply service board-hint plans instead of inline text mutation: %s" % stale_board_hint_fragment)
 			return
 	if source.contains("\"size_tier_rank\": float(_size_tier_rank(_part_size_tier_label(part, slot_key)))"):
 		_fail("main.gd should not derive part size-tier rank inside slot-volume adapters.")

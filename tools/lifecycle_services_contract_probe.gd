@@ -1557,6 +1557,53 @@ func _init() -> void:
 	if bool(Dictionary(Dictionary(blocked_shop_plan.get("shop_buttons", {})).get("core", {})).get("visible", true)) or not bool(Dictionary(Dictionary(blocked_shop_plan.get("shop_buttons", {})).get("core", {})).get("disabled", false)):
 		_fail("UILifecycleService body-disabled shop surface contract failed.")
 		return
+	if not assembly_lifecycle_service.has_method("editor_board_hint_presentation"):
+		_fail("UILifecycleService should expose editor board hint presentation planning.")
+		return
+	var custom_hint_plan: Dictionary = assembly_lifecycle_service.call("editor_board_hint_presentation", "custom", {
+		"short_node_label": "LEFT SCYTHE",
+		"node_number": 2,
+		"node_count": 4,
+		"module_count": 3,
+		"selected_summary": "mass ok",
+		"pending_canvas_name": "爪刃",
+		"pending_payload_name": "核心软件",
+		"orientation_choice_active": true,
+	}, true)
+	if String(custom_hint_plan.get("text", "")) != "规则正常  LEFT SCYTHE 2/4  模块x3  mass ok  待放置: 爪刃  待安装: 核心软件  选侧挂刃: 左/右":
+		_fail("UILifecycleService custom board hint contract failed.")
+		return
+	var invalid_custom_hint_plan: Dictionary = assembly_lifecycle_service.call("editor_board_hint_presentation", "custom", {
+		"topology_invalid": true,
+		"short_node_label": "NODE",
+		"node_number": 1,
+		"node_count": 1,
+		"module_count": 1,
+		"selected_handedness_active": true,
+		"selected_side": "right",
+	}, false)
+	if String(invalid_custom_hint_plan.get("text", "")) != "INVALID TOPOLOGY  NODE 1/1  MODx1  side:RIGHT":
+		_fail("UILifecycleService invalid custom board hint contract failed.")
+		return
+	var barrier_hint_plan: Dictionary = assembly_lifecycle_service.call("editor_board_hint_presentation", "barrier", {
+		"tile_count": 3,
+		"material_slots": 5,
+		"width": 2.0,
+		"height": 1.5,
+		"pending_canvas_name": "屏障",
+		"pending_payload_name": "插件",
+	}, true)
+	if String(barrier_hint_plan.get("text", "")) != "以太屏幕蓝图 3/5  2.0x1.5  待放置:屏障  待安装:插件":
+		_fail("UILifecycleService barrier board hint contract failed.")
+		return
+	var body_hint_plan: Dictionary = assembly_lifecycle_service.call("editor_board_hint_presentation", "body", {}, false)
+	if String(body_hint_plan.get("text", "")) != "FREE CANVAS READY: drag parts in; double-click core for details, single-click to drag.":
+		_fail("UILifecycleService body board hint contract failed.")
+		return
+	var inactive_hint_plan: Dictionary = assembly_lifecycle_service.call("editor_board_hint_presentation", "inactive", {}, true)
+	if String(inactive_hint_plan.get("text", "")) != "机体画布未启用":
+		_fail("UILifecycleService inactive board hint contract failed.")
+		return
 
 	var task := LoadingTask.create("idle", "Idle", 1.0, Callable(), LoadingTask.PHASE_IDLE, false, true)
 	var prepared := LoadingLifecycleService.prepare_task(task, "editor", 4)
