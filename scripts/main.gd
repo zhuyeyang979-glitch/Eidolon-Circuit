@@ -49956,6 +49956,32 @@ func _refresh_editor_section_chrome_presentation(parts_visible: bool, template_v
 	_layout_editor_template_drawer(role_key, template_drawer_visible, unit_bp)
 
 
+func _refresh_editor_panel_role_chrome_presentation(mode: String, role_key: String, parts_visible: bool) -> void:
+	var role_short_labels := {}
+	for role_key_button in editor_role_buttons.keys():
+		role_short_labels[String(role_key_button)] = _role_short(String(role_key_button))
+	var panel_role_chrome_plan := UILifecycleService.editor_panel_role_chrome_presentation(
+		mode,
+		role_key,
+		parts_visible,
+		editor_panel_buttons.keys(),
+		editor_role_buttons.keys(),
+		ROLE_ORDER,
+		role_short_labels,
+		_ui_is_zh()
+	)
+	var panel_button_plans: Dictionary = Dictionary(panel_role_chrome_plan.get("panel_buttons", {}))
+	for panel_key in editor_panel_buttons.keys():
+		var panel_button: Button = editor_panel_buttons[panel_key]
+		var panel_button_plan := Dictionary(panel_button_plans.get(String(panel_key), {}))
+		_apply_editor_control_plan(panel_button, panel_button_plan)
+	var role_button_plans: Dictionary = Dictionary(panel_role_chrome_plan.get("role_buttons", {}))
+	for role_key_button in editor_role_buttons.keys():
+		var role_button: Button = editor_role_buttons[role_key_button]
+		var role_button_plan := Dictionary(role_button_plans.get(String(role_key_button), {}))
+		_apply_editor_control_plan(role_button, role_button_plan)
+
+
 func _apply_editor_panel_visibility(role_key: String, unit_bp: Dictionary) -> void:
 	var body_board_enabled := _role_uses_body_board(role_key)
 	var barrier_screen_board := role_key == "barrier" and _barrier_uses_screen_board(unit_bp)
@@ -49980,29 +50006,7 @@ func _apply_editor_panel_visibility(role_key: String, unit_bp: Dictionary) -> vo
 	var color_visible := bool(visibility_plan.get("color_visible", false))
 	var stats_visible := bool(visibility_plan.get("stats_visible", false))
 	var custom_board_enabled := bool(visibility_plan.get("custom_board_enabled", false))
-	var role_short_labels := {}
-	for role_key_button in editor_role_buttons.keys():
-		role_short_labels[String(role_key_button)] = _role_short(String(role_key_button))
-	var panel_role_chrome_plan := UILifecycleService.editor_panel_role_chrome_presentation(
-		mode,
-		role_key,
-		parts_visible,
-		editor_panel_buttons.keys(),
-		editor_role_buttons.keys(),
-		ROLE_ORDER,
-		role_short_labels,
-		_ui_is_zh()
-	)
-	var panel_button_plans: Dictionary = Dictionary(panel_role_chrome_plan.get("panel_buttons", {}))
-	for panel_key in editor_panel_buttons.keys():
-		var panel_button: Button = editor_panel_buttons[panel_key]
-		var panel_button_plan := Dictionary(panel_button_plans.get(String(panel_key), {}))
-		_apply_editor_control_plan(panel_button, panel_button_plan)
-	var role_button_plans: Dictionary = Dictionary(panel_role_chrome_plan.get("role_buttons", {}))
-	for role_key_button in editor_role_buttons.keys():
-		var role_button: Button = editor_role_buttons[role_key_button]
-		var role_button_plan := Dictionary(role_button_plans.get(String(role_key_button), {}))
-		_apply_editor_control_plan(role_button, role_button_plan)
+	_refresh_editor_panel_role_chrome_presentation(mode, role_key, parts_visible)
 	_refresh_editor_assembly_guide_ui(parts_visible, role_key)
 	for group_key in editor_part_group_buttons.keys():
 		var group_button: Button = editor_part_group_buttons[group_key]

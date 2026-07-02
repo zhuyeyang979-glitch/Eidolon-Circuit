@@ -117,6 +117,9 @@ func _init() -> void:
 	if source.find("func _refresh_editor_section_chrome_presentation(") < 0:
 		_fail("main.gd should centralize editor section chrome presentation application.")
 		return
+	if source.find("func _refresh_editor_panel_role_chrome_presentation(") < 0:
+		_fail("main.gd should centralize editor panel/role chrome presentation application.")
+		return
 	var build_editor_ui_block := _function_block(source, "func _build_editor_ui(")
 	if build_editor_ui_block.is_empty():
 		_fail("main.gd should keep _build_editor_ui available.")
@@ -211,6 +214,28 @@ func _init() -> void:
 		return
 	if panel_visibility_block.count("_refresh_editor_section_chrome_presentation(") != 1:
 		_fail("_apply_editor_panel_visibility should delegate section chrome presentation application.")
+		return
+	if panel_visibility_block.count("_refresh_editor_panel_role_chrome_presentation(") != 1:
+		_fail("_apply_editor_panel_visibility should delegate panel/role chrome presentation application.")
+		return
+	for stale_panel_role_fragment in [
+		"UILifecycleService.editor_panel_role_chrome_presentation(",
+		"var role_short_labels := {}",
+		"var panel_button_plans: Dictionary = Dictionary(panel_role_chrome_plan.get(\"panel_buttons\", {}))",
+		"var role_button_plans: Dictionary = Dictionary(panel_role_chrome_plan.get(\"role_buttons\", {}))",
+	]:
+		if panel_visibility_block.find(stale_panel_role_fragment) >= 0:
+			_fail("_apply_editor_panel_visibility should not inline panel/role chrome presentation application: %s" % stale_panel_role_fragment)
+			return
+	var panel_role_chrome_block := _function_block(source, "func _refresh_editor_panel_role_chrome_presentation(")
+	if panel_role_chrome_block.is_empty():
+		_fail("main.gd should keep _refresh_editor_panel_role_chrome_presentation available.")
+		return
+	if panel_role_chrome_block.count("UILifecycleService.editor_panel_role_chrome_presentation(") != 1:
+		_fail("_refresh_editor_panel_role_chrome_presentation should request one panel/role chrome presentation plan.")
+		return
+	if panel_role_chrome_block.count("_role_short(String(role_key_button))") != 1:
+		_fail("_refresh_editor_panel_role_chrome_presentation should preserve role short label input.")
 		return
 	for stale_action_presentation_fragment in [
 		"UILifecycleService.editor_action_presentations(",

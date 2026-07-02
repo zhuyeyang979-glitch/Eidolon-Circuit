@@ -2446,6 +2446,23 @@ GREEN: EDITOR_ROSTER_OVERVIEW_PROBE blank_cost=0 team_cost=0 roster_cost=0 butto
 
 `_refresh_editor_section_chrome_presentation()` now owns the main scene-tree adapter for editor section chrome: it requests one `UILifecycleService.editor_section_chrome_presentation()` plan, applies section label and template-toggle plans through `_apply_editor_control_plan()`, and preserves `_layout_editor_template_drawer()` with the planned drawer visibility. `_apply_editor_panel_visibility()` now delegates the full section chrome block with a single call.
 
+Follow-up editor panel/role chrome presentation adapter extraction:
+
+```text
+RED: main_file_extraction_contract_probe failed because main.gd should centralize editor panel/role chrome presentation application
+GREEN: Godot --check-only --script res://scripts/main.gd --quit-after 1
+GREEN: MAIN_FILE_EXTRACTION_CONTRACT_PROBE ok services=9
+GREEN: LIFECYCLE_SERVICES_CONTRACT_PROBE ok
+GREEN: PART_LIBRARY_UI_PROBE groups=["torso", "limb", "terminal_weapon", "barrier_panel", "software_muscle", "software"] weapon=3 equipment=5 software=7 dashboard=40
+GREEN: UNIT_EDITOR_PAGINATION_LAYOUT_PROBE ok unit=1 page=0 catalog=1 load=0 feedback=[P: (270.0, 654.0), S: (622.0, 26.0)]
+GREEN: UNIT_EDITOR_FULLSCREEN_LAYOUT_PROBE ok board=(908.0, 548.0) dock=(726.0, 132.0)
+GREEN: UNIT_EDITOR_TEMPLATE_DRAWER_RUNTIME_PROBE ok selected=octopus barrier=BarrierTemplatepin_wall
+GREEN: EDITOR_ROSTER_OVERVIEW_PROBE blank_cost=0 team_cost=0 roster_cost=0 buttons=5
+GREEN: CATALOG_CARD_TEXT_READABILITY_PROBE ok title=11 line=9 plate=0.62 rev=2
+```
+
+`_refresh_editor_panel_role_chrome_presentation()` now owns the main scene-tree adapter for editor panel/role chrome: it preserves the role-short label data input, requests one `UILifecycleService.editor_panel_role_chrome_presentation()` plan, and applies panel/role button plans through `_apply_editor_control_plan()`. `_apply_editor_panel_visibility()` now delegates the full panel/role chrome block with a single call.
+
 Remaining items after this batch:
 
 - Continue editor UI extraction with `_build_editor_ui` and the remaining action presentation/control-mutation sections of `_apply_editor_panel_visibility`, then continue `_resolve_attack` and `_refresh_editor_visual_views` extraction.
