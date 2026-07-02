@@ -147,6 +147,13 @@ func _init() -> void:
 		"if bool(target_outcome.get(\"return_from_resolve\", false)):",
 		"if bool(target_outcome.get(\"continue_target\", false)):",
 		"if bool(target_outcome.get(\"killed\", false)):",
+		"for target in _enemy_units(int(attacker.owner_id)):",
+		"_prepare_attack_target_contact(attacker, target, event, first_projectile_impact)",
+		"_prepare_attack_damage_stack(attacker, target, event, damage_type)",
+		"_resolve_attack_target_outcome(attacker, target, event, damage_type, material_class, damage_stack)",
+		"_apply_attack_target_outcome_result(target, target_outcome, killed_units)",
+		"for killed_unit in killed_units:",
+		"_handle_unit_killed(killed_unit, int(attacker.owner_id))",
 		"for raw_intent in post_hit_intents:",
 		"match String(post_intent.get(\"action\", \"\"))",
 	]:
@@ -323,8 +330,37 @@ func _init() -> void:
 		if projectile_impact_body.find(token) < 0:
 			_fail("_prepare_attack_projectile_impact missing token: %s" % token)
 			return
-	if resolve_body.count("_prepare_attack_target_contact(attacker, target, event, first_projectile_impact)") != 1:
-		_fail("_resolve_attack should prepare each target contact through one helper.")
+	if resolve_body.count("_resolve_attack_targets(attacker, event, first_projectile_impact)") != 1:
+		_fail("_resolve_attack should delegate target iteration and kill dispatch through one helper.")
+		return
+	var attack_targets_body := _function_body(main_source, "func _resolve_attack_targets")
+	if attack_targets_body.is_empty():
+		_fail("Unable to locate _resolve_attack_targets body.")
+		return
+	for token in [
+		"var killed_units: Array = []",
+		"for target in _enemy_units(int(attacker.owner_id)):",
+		"_prepare_attack_target_contact(attacker, target, event, first_projectile_impact)",
+		"event = Dictionary(target_contact.get(\"event\", event))",
+		"if bool(target_contact.get(\"skip\", false))",
+		"var damage_type := String(target_contact.get(\"damage_type\", event.get(\"damage_type\", \"blunt\")))",
+		"var material_class := String(target_contact.get(\"material_class\", event.get(\"material_class\", \"weapon\")))",
+		"_prepare_attack_damage_stack(attacker, target, event, damage_type)",
+		"event = Dictionary(damage_stack.get(\"event\", event))",
+		"if bool(damage_stack.get(\"skip\", false))",
+		"_resolve_attack_target_outcome(attacker, target, event, damage_type, material_class, damage_stack)",
+		"_apply_attack_target_outcome_result(target, target_outcome, killed_units)",
+		"killed_units = Array(target_outcome_result.get(\"killed_units\", killed_units))",
+		"return_from_resolve",
+		"continue_target",
+		"for killed_unit in killed_units:",
+		"_handle_unit_killed(killed_unit, int(attacker.owner_id))",
+	]:
+		if attack_targets_body.find(token) < 0:
+			_fail("_resolve_attack_targets missing token: %s" % token)
+			return
+	if attack_targets_body.count("_prepare_attack_target_contact(attacker, target, event, first_projectile_impact)") != 1:
+		_fail("_resolve_attack_targets should prepare each target contact through one helper.")
 		return
 	var target_contact_body := _function_body(main_source, "func _prepare_attack_target_contact")
 	if target_contact_body.is_empty():
@@ -350,8 +386,8 @@ func _init() -> void:
 		if target_contact_body.find(token) < 0:
 			_fail("_prepare_attack_target_contact missing token: %s" % token)
 			return
-	if resolve_body.count("_prepare_attack_damage_stack(attacker, target, event, damage_type)") != 1:
-		_fail("_resolve_attack should prepare each damage stack through one helper.")
+	if attack_targets_body.count("_prepare_attack_damage_stack(attacker, target, event, damage_type)") != 1:
+		_fail("_resolve_attack_targets should prepare each damage stack through one helper.")
 		return
 	var damage_stack_body := _function_body(main_source, "func _prepare_attack_damage_stack")
 	if damage_stack_body.is_empty():
@@ -386,8 +422,8 @@ func _init() -> void:
 		if damage_stack_body.find(token) < 0:
 			_fail("_prepare_attack_damage_stack missing token: %s" % token)
 			return
-	if resolve_body.count("_resolve_attack_target_outcome(attacker, target, event, damage_type, material_class, damage_stack)") != 1:
-		_fail("_resolve_attack should resolve each target outcome through one helper.")
+	if attack_targets_body.count("_resolve_attack_target_outcome(attacker, target, event, damage_type, material_class, damage_stack)") != 1:
+		_fail("_resolve_attack_targets should resolve each target outcome through one helper.")
 		return
 	var target_outcome_body := _function_body(main_source, "func _resolve_attack_target_outcome")
 	if target_outcome_body.is_empty():
@@ -412,8 +448,8 @@ func _init() -> void:
 		if target_outcome_body.find(token) < 0:
 			_fail("_resolve_attack_target_outcome missing token: %s" % token)
 			return
-	if resolve_body.count("_apply_attack_target_outcome_result(target, target_outcome, killed_units)") != 1:
-		_fail("_resolve_attack should apply each target outcome through one killed-unit aggregation helper.")
+	if attack_targets_body.count("_apply_attack_target_outcome_result(target, target_outcome, killed_units)") != 1:
+		_fail("_resolve_attack_targets should apply each target outcome through one killed-unit aggregation helper.")
 		return
 	var target_outcome_result_body := _function_body(main_source, "func _apply_attack_target_outcome_result")
 	if target_outcome_result_body.is_empty():

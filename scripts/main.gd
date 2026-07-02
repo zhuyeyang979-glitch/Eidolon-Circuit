@@ -37470,6 +37470,31 @@ func _prepare_attack_entry_gate(attacker, event: Dictionary, require_live_runtim
 	return _execute_attack_entry_intent(attacker, event, entry_intent)
 
 
+func _resolve_attack_targets(attacker, event: Dictionary, first_projectile_impact: Dictionary) -> void:
+	var killed_units: Array = []
+	for target in _enemy_units(int(attacker.owner_id)):
+		var target_contact := _prepare_attack_target_contact(attacker, target, event, first_projectile_impact)
+		event = Dictionary(target_contact.get("event", event))
+		if bool(target_contact.get("skip", false)):
+			continue
+		var damage_type := String(target_contact.get("damage_type", event.get("damage_type", "blunt")))
+		var material_class := String(target_contact.get("material_class", event.get("material_class", "weapon")))
+		var damage_stack := _prepare_attack_damage_stack(attacker, target, event, damage_type)
+		event = Dictionary(damage_stack.get("event", event))
+		if bool(damage_stack.get("skip", false)):
+			continue
+		var target_outcome := _resolve_attack_target_outcome(attacker, target, event, damage_type, material_class, damage_stack)
+		var target_outcome_result := _apply_attack_target_outcome_result(target, target_outcome, killed_units)
+		killed_units = Array(target_outcome_result.get("killed_units", killed_units))
+		if bool(target_outcome_result.get("return_from_resolve", false)):
+			return
+		if bool(target_outcome_result.get("continue_target", false)):
+			continue
+
+	for killed_unit in killed_units:
+		_handle_unit_killed(killed_unit, int(attacker.owner_id))
+
+
 func _resolve_attack(attacker, event: Dictionary) -> void:
 	if _prepare_attack_entry_gate(attacker, event, true):
 		return
@@ -37495,29 +37520,7 @@ func _resolve_attack(attacker, event: Dictionary) -> void:
 	if bool(projectile_impact_preparation.get("stop", false)):
 		return
 	var first_projectile_impact: Dictionary = Dictionary(projectile_impact_preparation.get("first_projectile_impact", {}))
-
-	var killed_units: Array = []
-	for target in _enemy_units(int(attacker.owner_id)):
-		var target_contact := _prepare_attack_target_contact(attacker, target, event, first_projectile_impact)
-		event = Dictionary(target_contact.get("event", event))
-		if bool(target_contact.get("skip", false)):
-			continue
-		var damage_type := String(target_contact.get("damage_type", event.get("damage_type", "blunt")))
-		var material_class := String(target_contact.get("material_class", event.get("material_class", "weapon")))
-		var damage_stack := _prepare_attack_damage_stack(attacker, target, event, damage_type)
-		event = Dictionary(damage_stack.get("event", event))
-		if bool(damage_stack.get("skip", false)):
-			continue
-		var target_outcome := _resolve_attack_target_outcome(attacker, target, event, damage_type, material_class, damage_stack)
-		var target_outcome_result := _apply_attack_target_outcome_result(target, target_outcome, killed_units)
-		killed_units = Array(target_outcome_result.get("killed_units", killed_units))
-		if bool(target_outcome_result.get("return_from_resolve", false)):
-			return
-		if bool(target_outcome_result.get("continue_target", false)):
-			continue
-
-	for killed_unit in killed_units:
-		_handle_unit_killed(killed_unit, int(attacker.owner_id))
+	_resolve_attack_targets(attacker, event, first_projectile_impact)
 
 
 func _execute_post_hit_intents(attacker, target, event: Dictionary, post_hit_intents: Array, damage: int, damage_type: String, counter_tier: int, material_class: String, nullified: bool, chemical_dot_total: int) -> Dictionary:

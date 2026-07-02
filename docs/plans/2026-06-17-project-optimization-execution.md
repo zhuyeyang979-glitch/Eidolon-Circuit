@@ -2208,6 +2208,26 @@ GREEN: BATTLE_ATTACK_HEAVY_REPLAY_DESYNC_PROBE ok
 
 `_apply_attack_target_outcome_result()` now owns target-outcome killed-unit aggregation: effect-kill de-duplication, resolve-return control, target-continue control, and direct killed-target appending. `_resolve_attack()` now consumes only the returned killed-unit list and loop-control flags before final kill dispatch, leaving target contact, damage stack, and outcome resolution as separate helpers.
 
+Follow-up attack target-loop extraction:
+
+```text
+RED: battle_hit_resolution_service_contract_probe failed because _resolve_attack still iterated enemy targets and dispatched killed_units inline
+GREEN: BATTLE_HIT_RESOLUTION_SERVICE_CONTRACT_PROBE ok
+GREEN: Godot --check-only --script res://scripts/main.gd --quit-after 1
+GREEN: SNIPER_HIT_VFX_ON_TARGET_PROBE ok effects=2
+GREEN: RUNTIME_CONTACT_DAMAGE_PROBE hp_delta=332 target_v=9.600
+GREEN: CHEMICAL_DOT_PROBE ok dps=6.00 hp=160->153
+GREEN: CHEMICAL_HEAT_PROBE queued=true impact=true dot=true boost_motion=true straight_cooling=true hp=120->105->64 heat=44.00
+GREEN: COMBAT_PROBE runtime_topology_contact=true hp_delta=5 min_gap=-0.1200 segments=3
+GREEN: MOMENTUM_DAMAGE_GATE_RUNTIME_PROBE ok damage=11 momentum=60.0 break=0.50
+GREEN: LOCAL_BATTLE_REPLAY_CONSISTENCY_PROBE ok
+GREEN: BATTLE_FULL_MATCH_REPLAY_PROBE ok
+GREEN: BATTLE_ATTACK_HEAVY_REPLAY_DESYNC_PROBE checkpoints=6 desync_step=360
+GREEN: BATTLE_ATTACK_HEAVY_REPLAY_DESYNC_PROBE ok
+```
+
+`_resolve_attack_targets()` now owns per-target iteration, target-contact preparation, damage-stack preparation, target-outcome resolution, killed-unit aggregation, and final killed-unit dispatch. `_resolve_attack()` now stops after attack-level gates, projectile-impact preparation, and a single target-resolution delegation, preserving the original suicide/return early exit inside the extracted helper.
+
 Follow-up editor custom-board snapshot assembly extraction:
 
 ```text
