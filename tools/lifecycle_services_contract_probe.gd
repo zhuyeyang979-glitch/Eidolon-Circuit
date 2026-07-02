@@ -1572,6 +1572,58 @@ func _init() -> void:
 	if bool(Dictionary(Dictionary(blocked_shop_plan.get("shop_buttons", {})).get("core", {})).get("visible", true)) or not bool(Dictionary(Dictionary(blocked_shop_plan.get("shop_buttons", {})).get("core", {})).get("disabled", false)):
 		_fail("UILifecycleService body-disabled shop surface contract failed.")
 		return
+	if not assembly_lifecycle_service.has_method("editor_board_ui_revision_key"):
+		_fail("UILifecycleService should expose editor board UI revision key planning.")
+		return
+	var board_ui_key: String = assembly_lifecycle_service.call("editor_board_ui_revision_key", {
+		"role_key": "hero",
+		"panel_mode": "parts",
+		"body_board_enabled": true,
+		"editor_slot_index": 2,
+		"selected_part_index": 7,
+		"topology_node_index": 3,
+		"open_torso_node_index": 1,
+		"custom_board_cache_key": "board-cache",
+		"dynamic_revision_key": "dyn-4",
+		"part_group_mode": "terminal_weapon",
+		"catalog_page": 5,
+		"catalog_sort_ascending": false,
+		"catalog_sort_key": "cost",
+		"part_filter_mode": "ammo",
+		"pending_place_slot": "muscle",
+		"pending_place_index": 9,
+		"pending_payload_slot": "module",
+		"pending_payload_index": 4,
+		"barrier_grid_guides_enabled": true,
+		"board_tool": "pose",
+		"ui_language": "zh",
+	})
+	if board_ui_key != "hero|parts|true|2|7|3|1|board-cache|dyn-4|terminal_weapon|5|0|cost|ammo|muscle|9|module|4|1|pose|zh":
+		_fail("UILifecycleService board UI revision key contract failed: %s" % board_ui_key)
+		return
+	if not assembly_lifecycle_service.has_method("editor_catalog_domain_revision_key"):
+		_fail("UILifecycleService should expose editor catalog domain revision key planning.")
+		return
+	var catalog_domain_key: String = assembly_lifecycle_service.call("editor_catalog_domain_revision_key", {
+		"panel_mode": "parts",
+		"role_key": "hero",
+		"slot_key": "muscle",
+		"part_group_mode": "terminal_weapon",
+		"part_filter_mode": "ammo",
+		"catalog_sort_key": "cost",
+		"catalog_sort_ascending": true,
+		"catalog_page": 2,
+		"selected_part_index": 8,
+		"catalog_source_signature": "catalog-sig",
+		"ui_language": "en",
+	})
+	if catalog_domain_key != "hero|muscle|terminal_weapon|ammo|cost|1|2|8|catalog-sig|en":
+		_fail("UILifecycleService catalog domain revision key contract failed: %s" % catalog_domain_key)
+		return
+	var hidden_catalog_domain_key: String = assembly_lifecycle_service.call("editor_catalog_domain_revision_key", {"panel_mode": "load"})
+	if hidden_catalog_domain_key != "hidden|load":
+		_fail("UILifecycleService hidden catalog domain revision key contract failed.")
+		return
 	if not assembly_lifecycle_service.has_method("editor_board_hint_presentation"):
 		_fail("UILifecycleService should expose editor board hint presentation planning.")
 		return

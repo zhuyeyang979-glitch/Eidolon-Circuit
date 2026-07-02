@@ -1418,6 +1418,50 @@ static func editor_catalog_shop_surface_presentation(parts_visible: bool, shop_v
 	}
 
 
+static func editor_board_ui_revision_key(context: Dictionary) -> String:
+	return "%s|%s|%s|%d|%d|%d|%d|%s|%s|%s|%d|%d|%s|%s|%s|%d|%s|%d|%d|%s|%s" % [
+		String(context.get("role_key", "")),
+		String(context.get("panel_mode", "")),
+		str(bool(context.get("body_board_enabled", false))),
+		int(context.get("editor_slot_index", 0)),
+		int(context.get("selected_part_index", 0)),
+		int(context.get("topology_node_index", 0)),
+		int(context.get("open_torso_node_index", 0)),
+		String(context.get("custom_board_cache_key", "")),
+		String(context.get("dynamic_revision_key", "")),
+		String(context.get("part_group_mode", "")),
+		int(context.get("catalog_page", 0)),
+		1 if bool(context.get("catalog_sort_ascending", false)) else 0,
+		String(context.get("catalog_sort_key", "")),
+		String(context.get("part_filter_mode", "")),
+		String(context.get("pending_place_slot", "")),
+		int(context.get("pending_place_index", -1)),
+		String(context.get("pending_payload_slot", "")),
+		int(context.get("pending_payload_index", -1)),
+		1 if bool(context.get("barrier_grid_guides_enabled", false)) else 0,
+		String(context.get("board_tool", "")),
+		String(context.get("ui_language", "")),
+	]
+
+
+static func editor_catalog_domain_revision_key(context: Dictionary) -> String:
+	var panel_mode := String(context.get("panel_mode", ""))
+	if panel_mode != "parts":
+		return "hidden|%s" % panel_mode
+	return "%s|%s|%s|%s|%s|%d|%d|%d|%s|%s" % [
+		String(context.get("role_key", "")),
+		String(context.get("slot_key", "")),
+		String(context.get("part_group_mode", "")),
+		String(context.get("part_filter_mode", "")),
+		String(context.get("catalog_sort_key", "")),
+		1 if bool(context.get("catalog_sort_ascending", false)) else 0,
+		int(context.get("catalog_page", 0)),
+		int(context.get("selected_part_index", 0)),
+		String(context.get("catalog_source_signature", "")),
+		String(context.get("ui_language", "")),
+	]
+
+
 static func editor_board_hint_presentation(board_state: String, context: Dictionary, zh: bool) -> Dictionary:
 	var state := String(board_state)
 	if state == "custom":

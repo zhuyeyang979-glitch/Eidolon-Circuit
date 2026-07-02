@@ -50160,29 +50160,29 @@ func _update_editor_board_ui(role_key: String, unit_bp: Dictionary, precomputed_
 	var custom_board_cache_key := _editor_board_snapshot_cache_key(role_key, unit_bp) if custom_board_enabled else ""
 	var board_selected_slot: String = BUILD_SLOTS[editor_slot_index]
 	var board_selected_part_index := _editor_selected_part_index_for_slot(unit_bp, role_key, board_selected_slot)
-	var board_ui_revision_key := "%s|%s|%s|%d|%d|%d|%d|%s|%s|%s|%d|%d|%s|%s|%s|%d|%s|%d|%d|%s|%s" % [
-		role_key,
-		editor_panel_mode,
-		str(body_board_enabled),
-		editor_slot_index,
-		board_selected_part_index,
-		editor_topology_node_index,
-		editor_open_torso_node_index,
-		custom_board_cache_key,
-		_editor_board_dynamic_revision_key() if custom_board_enabled else "",
-		editor_part_group_mode,
-		editor_catalog_page,
-		1 if editor_catalog_sort_ascending else 0,
-		editor_catalog_sort_key,
-		editor_part_filter_mode,
-		editor_pending_place_slot,
-		editor_pending_place_index,
-		editor_pending_payload_slot,
-		editor_pending_payload_index,
-		1 if editor_barrier_grid_guides_enabled else 0,
-		editor_board_tool,
-		ui_language,
-	]
+	var board_ui_revision_key := UILifecycleService.editor_board_ui_revision_key({
+		"role_key": role_key,
+		"panel_mode": editor_panel_mode,
+		"body_board_enabled": body_board_enabled,
+		"editor_slot_index": editor_slot_index,
+		"selected_part_index": board_selected_part_index,
+		"topology_node_index": editor_topology_node_index,
+		"open_torso_node_index": editor_open_torso_node_index,
+		"custom_board_cache_key": custom_board_cache_key,
+		"dynamic_revision_key": _editor_board_dynamic_revision_key() if custom_board_enabled else "",
+		"part_group_mode": editor_part_group_mode,
+		"catalog_page": editor_catalog_page,
+		"catalog_sort_ascending": editor_catalog_sort_ascending,
+		"catalog_sort_key": editor_catalog_sort_key,
+		"part_filter_mode": editor_part_filter_mode,
+		"pending_place_slot": editor_pending_place_slot,
+		"pending_place_index": editor_pending_place_index,
+		"pending_payload_slot": editor_pending_payload_slot,
+		"pending_payload_index": editor_pending_payload_index,
+		"barrier_grid_guides_enabled": editor_barrier_grid_guides_enabled,
+		"board_tool": editor_board_tool,
+		"ui_language": ui_language,
+	})
 	if board_ui_revision_key == editor_board_ui_revision_key:
 		editor_board_ui_revision_skip_count += 1
 		if hot_path_profiler != null:
@@ -50326,23 +50326,20 @@ func _update_editor_board_ui(role_key: String, unit_bp: Dictionary, precomputed_
 		_apply_editor_control_plan(button, shop_slot_plan)
 	var template_drawer_visible := editor_panel_mode == "load" and editor_template_menu_open
 	_layout_editor_template_drawer(role_key, template_drawer_visible, unit_bp)
-	var catalog_domain_key := ""
-	if editor_panel_mode == "parts":
-		var catalog_slot_key: String = BUILD_SLOTS[editor_slot_index]
-		catalog_domain_key = "%s|%s|%s|%s|%s|%d|%d|%d|%s|%s" % [
-			role_key,
-			catalog_slot_key,
-			editor_part_group_mode,
-			editor_part_filter_mode,
-			editor_catalog_sort_key,
-			1 if editor_catalog_sort_ascending else 0,
-			editor_catalog_page,
-			_editor_selected_part_index_for_slot(unit_bp, role_key, catalog_slot_key),
-			_editor_catalog_cache_source_signature(role_key, catalog_slot_key),
-			ui_language,
-		]
-	else:
-		catalog_domain_key = "hidden|%s" % editor_panel_mode
+	var catalog_slot_key: String = BUILD_SLOTS[editor_slot_index] if editor_panel_mode == "parts" else ""
+	var catalog_domain_key := UILifecycleService.editor_catalog_domain_revision_key({
+		"panel_mode": editor_panel_mode,
+		"role_key": role_key,
+		"slot_key": catalog_slot_key,
+		"part_group_mode": editor_part_group_mode,
+		"part_filter_mode": editor_part_filter_mode,
+		"catalog_sort_key": editor_catalog_sort_key,
+		"catalog_sort_ascending": editor_catalog_sort_ascending,
+		"catalog_page": editor_catalog_page,
+		"selected_part_index": _editor_selected_part_index_for_slot(unit_bp, role_key, catalog_slot_key) if catalog_slot_key != "" else 0,
+		"catalog_source_signature": _editor_catalog_cache_source_signature(role_key, catalog_slot_key) if catalog_slot_key != "" else "",
+		"ui_language": ui_language,
+	})
 	if catalog_domain_key != editor_catalog_domain_revision_key:
 		editor_catalog_domain_revision_key = catalog_domain_key
 		_update_editor_catalog_buttons(role_key, unit_bp)

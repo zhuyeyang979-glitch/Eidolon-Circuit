@@ -84,6 +84,12 @@ func _init() -> void:
 	if source.find("UILifecycleService.editor_body_shop_slot_text_presentation") < 0:
 		_fail("main.gd should delegate editor body shop-slot text presentation planning.")
 		return
+	if source.find("UILifecycleService.editor_board_ui_revision_key") < 0:
+		_fail("main.gd should delegate editor board UI revision key planning.")
+		return
+	if source.find("UILifecycleService.editor_catalog_domain_revision_key") < 0:
+		_fail("main.gd should delegate editor catalog domain revision key planning.")
+		return
 	var orientation_buttons_block := _function_block(source, "func _refresh_editor_orientation_buttons(")
 	if orientation_buttons_block.is_empty():
 		_fail("main.gd should keep _refresh_editor_orientation_buttons available.")
@@ -120,6 +126,12 @@ func _init() -> void:
 		if board_ui_block.find(stale_board_hint_fragment) >= 0:
 			_fail("_update_editor_board_ui should apply service board-hint plans instead of inline text mutation: %s" % stale_board_hint_fragment)
 			return
+	if board_ui_block.find("var board_ui_revision_key := \"%s|%s|%s|%d|%d|%d|%d|%s|%s|%s|%d|%d|%s|%s|%s|%d|%s|%d|%d|%s|%s\"") >= 0:
+		_fail("_update_editor_board_ui should delegate board UI revision key assembly.")
+		return
+	if board_ui_block.find("catalog_domain_key = \"%s|%s|%s|%s|%s|%d|%d|%d|%s|%s\"") >= 0 or board_ui_block.find("catalog_domain_key = \"hidden|%s\"") >= 0:
+		_fail("_update_editor_board_ui should delegate catalog domain revision key assembly.")
+		return
 	if source.contains("\"size_tier_rank\": float(_size_tier_rank(_part_size_tier_label(part, slot_key)))"):
 		_fail("main.gd should not derive part size-tier rank inside slot-volume adapters.")
 	if source.contains("\"booster_boost_momentum\":"):

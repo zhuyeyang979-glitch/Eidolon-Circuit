@@ -2248,6 +2248,26 @@ GREEN: EDITOR_BOARD_SNAPSHOT_INCREMENTAL_PROBE ok rebuilds=1 dynamic=4
 
 `UILifecycleService.editor_body_shop_slot_text_presentation()` now owns the pure inactive/active shop-slot button text assembly, including localized buy/install titles, part cost lines, length/interface or software volume notes, pending placement markers, selected-node prefixes, and per-slot rule copy. `_update_editor_board_ui()` still owns catalog selection, selected topology-node lookup, and module counts, then feeds the returned text into the existing body shop-slot button presentation plan.
 
+Follow-up editor board UI revision key extraction:
+
+```text
+RED: lifecycle_services_contract_probe failed because UILifecycleService did not expose editor_board_ui_revision_key
+RED: main_file_extraction_contract_probe failed because _update_editor_board_ui still assembled board/catalog revision keys inline
+GREEN: LIFECYCLE_SERVICES_CONTRACT_PROBE ok
+GREEN: MAIN_FILE_EXTRACTION_CONTRACT_PROBE ok services=9
+GREEN: Godot --check-only --script res://scripts/main.gd --quit-after 1
+GREEN: Godot --check-only --script res://scripts/services/ui_lifecycle_service.gd --quit-after 1
+GREEN: EDITOR_BOARD_SNAPSHOT_INCREMENTAL_PROBE ok rebuilds=1 dynamic=4
+GREEN: EDITOR_BOARD_MODEL_INCREMENTAL_PROBE ok shallow=1 skip=1
+GREEN: EDITOR_BOARD_SNAPSHOT_LAZY_PROBE ok hits=0 skips=2 rebuild=0
+GREEN: PART_LIBRARY_UI_PROBE groups=["torso", "limb", "terminal_weapon", "barrier_panel", "software_muscle", "software"] weapon=3 equipment=5 software=7 dashboard=40
+GREEN: UNIT_EDITOR_PAGINATION_LAYOUT_PROBE ok unit=1 page=0 catalog=1 load=0 feedback=[P: (270.0, 654.0), S: (622.0, 26.0)]
+GREEN: UNIT_EDITOR_TEMPLATE_DRAWER_RUNTIME_PROBE ok selected=octopus barrier=BarrierTemplatepin_wall
+GREEN: EDITOR_BOARD_ZOOM_PROBE node=0 zoom=1.00 label=100% hover=0
+```
+
+`UILifecycleService.editor_board_ui_revision_key()` and `editor_catalog_domain_revision_key()` now own the pure stable serialization of board-UI and catalog-domain invalidation keys. `_update_editor_board_ui()` keeps all source-state sampling local, including selected catalog indices, custom-board dynamic revision, pending placement/install state, sort state, barrier grid state, and catalog source signatures, then compares the returned keys against the existing caches.
+
 Remaining items after this batch:
 
 - Continue editor UI extraction with `_build_editor_ui` and the remaining action presentation/control-mutation sections of `_apply_editor_panel_visibility`, then continue `_resolve_attack` and `_refresh_editor_visual_views` extraction.
