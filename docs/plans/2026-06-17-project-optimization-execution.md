@@ -2480,6 +2480,23 @@ GREEN: EDITOR_ROSTER_OVERVIEW_PROBE blank_cost=0 team_cost=0 roster_cost=0 butto
 
 `_refresh_editor_part_library_control_presentations()` now owns the main scene-tree adapter for editor part-library controls: it applies group, legacy slot, and filter button plans, preserves localized group/filter label inputs, and keeps all concrete button mutation behind `_apply_editor_control_plan()`. `_apply_editor_panel_visibility()` now delegates the full group/slot/filter block with a single call.
 
+Follow-up editor ammo-size control presentation adapter extraction:
+
+```text
+RED: main_file_extraction_contract_probe failed because main.gd should centralize editor ammo-size control presentation application
+GREEN: Godot --check-only --script res://scripts/main.gd --quit-after 1
+GREEN: MAIN_FILE_EXTRACTION_CONTRACT_PROBE ok services=9
+GREEN: LIFECYCLE_SERVICES_CONTRACT_PROBE ok
+GREEN: AMMO_SIZE_SLIDER_PROBE base=18 ranks=XS..XL ui=ok
+GREEN: PART_LIBRARY_UI_PROBE groups=["torso", "limb", "terminal_weapon", "barrier_panel", "software_muscle", "software"] weapon=3 equipment=5 software=7 dashboard=40
+GREEN: UNIT_EDITOR_PAGINATION_LAYOUT_PROBE ok unit=1 page=0 catalog=1 load=0 feedback=[P: (270.0, 654.0), S: (622.0, 26.0)]
+GREEN: UNIT_EDITOR_FULLSCREEN_LAYOUT_PROBE ok board=(908.0, 548.0) dock=(726.0, 132.0)
+GREEN: CATALOG_CARD_TEXT_READABILITY_PROBE ok title=11 line=9 plate=0.62 rev=2
+GREEN: EDITOR_ROSTER_OVERVIEW_PROBE blank_cost=0 team_cost=0 roster_cost=0 buttons=5
+```
+
+`_refresh_editor_ammo_size_control_presentation()` now owns the main scene-tree adapter for editor ammo-size controls: it preserves tick/value label inputs, requests one `UILifecycleService.editor_ammo_size_control_presentation()` plan, and applies title, slider, value, and tick label plans through `_apply_editor_control_plan()`. `_apply_editor_panel_visibility()` now delegates the full ammo-size block with a single call.
+
 Remaining items after this batch:
 
 - Continue editor UI extraction with `_build_editor_ui` and the remaining action presentation/control-mutation sections of `_apply_editor_panel_visibility`, then continue `_resolve_attack` and `_refresh_editor_visual_views` extraction.

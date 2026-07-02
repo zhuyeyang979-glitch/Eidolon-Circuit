@@ -123,6 +123,9 @@ func _init() -> void:
 	if source.find("func _refresh_editor_part_library_control_presentations(") < 0:
 		_fail("main.gd should centralize editor part-library control presentation application.")
 		return
+	if source.find("func _refresh_editor_ammo_size_control_presentation(") < 0:
+		_fail("main.gd should centralize editor ammo-size control presentation application.")
+		return
 	var build_editor_ui_block := _function_block(source, "func _build_editor_ui(")
 	if build_editor_ui_block.is_empty():
 		_fail("main.gd should keep _build_editor_ui available.")
@@ -224,6 +227,9 @@ func _init() -> void:
 	if panel_visibility_block.count("_refresh_editor_part_library_control_presentations(") != 1:
 		_fail("_apply_editor_panel_visibility should delegate part-library control presentation application.")
 		return
+	if panel_visibility_block.count("_refresh_editor_ammo_size_control_presentation(") != 1:
+		_fail("_apply_editor_panel_visibility should delegate ammo-size control presentation application.")
+		return
 	for stale_panel_role_fragment in [
 		"UILifecycleService.editor_panel_role_chrome_presentation(",
 		"var role_short_labels := {}",
@@ -267,6 +273,25 @@ func _init() -> void:
 		return
 	if part_library_controls_block.count("_part_group_name(String(group_key))") != 1 or part_library_controls_block.count("_part_filter_name(Dictionary(filter_options[i]))") != 1:
 		_fail("_refresh_editor_part_library_control_presentations should preserve localized group/filter labels.")
+		return
+	for stale_ammo_size_fragment in [
+		"UILifecycleService.editor_ammo_size_control_presentation(",
+		"var ammo_tick_labels := []",
+		"_ammo_size_slider_text(editor_ammo_size_rank)",
+		"var ammo_tick_plans: Array = Array(ammo_size_plan.get(\"ticks\", []))",
+	]:
+		if panel_visibility_block.find(stale_ammo_size_fragment) >= 0:
+			_fail("_apply_editor_panel_visibility should not inline ammo-size control presentation application: %s" % stale_ammo_size_fragment)
+			return
+	var ammo_size_block := _function_block(source, "func _refresh_editor_ammo_size_control_presentation(")
+	if ammo_size_block.is_empty():
+		_fail("main.gd should keep _refresh_editor_ammo_size_control_presentation available.")
+		return
+	if ammo_size_block.count("UILifecycleService.editor_ammo_size_control_presentation(") != 1:
+		_fail("_refresh_editor_ammo_size_control_presentation should request one ammo-size control presentation plan.")
+		return
+	if ammo_size_block.count("_volume_rank_label(float(rank))") != 1 or ammo_size_block.count("_ammo_size_slider_text(editor_ammo_size_rank)") != 1:
+		_fail("_refresh_editor_ammo_size_control_presentation should preserve ammo-size label inputs.")
 		return
 	for stale_action_presentation_fragment in [
 		"UILifecycleService.editor_action_presentations(",

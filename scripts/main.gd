@@ -50013,6 +50013,33 @@ func _refresh_editor_part_library_control_presentations(parts_visible: bool) -> 
 		_apply_editor_control_plan(filter_button, filter_plan)
 
 
+func _refresh_editor_ammo_size_control_presentation(ammo_slider_visible: bool) -> void:
+	var ammo_tick_labels := []
+	for rank in range(1, 6):
+		ammo_tick_labels.append(_volume_rank_label(float(rank)))
+	var ammo_size_plan := UILifecycleService.editor_ammo_size_control_presentation(
+		ammo_slider_visible,
+		editor_ammo_size_rank,
+		_ui_is_zh(),
+		_ammo_size_slider_text(editor_ammo_size_rank),
+		ammo_tick_labels
+	)
+	if editor_ammo_size_title_label != null:
+		var ammo_title_plan := Dictionary(ammo_size_plan.get("title", {}))
+		_apply_editor_control_plan(editor_ammo_size_title_label, ammo_title_plan)
+	if editor_ammo_size_slider != null:
+		var ammo_slider_plan := Dictionary(ammo_size_plan.get("slider", {}))
+		_apply_editor_control_plan(editor_ammo_size_slider, ammo_slider_plan)
+	if editor_ammo_size_value_label != null:
+		var ammo_value_plan := Dictionary(ammo_size_plan.get("value", {}))
+		_apply_editor_control_plan(editor_ammo_size_value_label, ammo_value_plan)
+	var ammo_tick_plans: Array = Array(ammo_size_plan.get("ticks", []))
+	for i in range(editor_ammo_size_tick_labels.size()):
+		var tick_label: Label = editor_ammo_size_tick_labels[i]
+		var tick_plan := Dictionary(ammo_tick_plans[i]) if i < ammo_tick_plans.size() and ammo_tick_plans[i] is Dictionary else {}
+		_apply_editor_control_plan(tick_label, tick_plan)
+
+
 func _apply_editor_panel_visibility(role_key: String, unit_bp: Dictionary) -> void:
 	var body_board_enabled := _role_uses_body_board(role_key)
 	var barrier_screen_board := role_key == "barrier" and _barrier_uses_screen_board(unit_bp)
@@ -50041,30 +50068,7 @@ func _apply_editor_panel_visibility(role_key: String, unit_bp: Dictionary) -> vo
 	_refresh_editor_assembly_guide_ui(parts_visible, role_key)
 	_refresh_editor_part_library_control_presentations(parts_visible)
 	var ammo_slider_visible := bool(visibility_plan.get("ammo_slider_visible", false))
-	var ammo_tick_labels := []
-	for rank in range(1, 6):
-		ammo_tick_labels.append(_volume_rank_label(float(rank)))
-	var ammo_size_plan := UILifecycleService.editor_ammo_size_control_presentation(
-		ammo_slider_visible,
-		editor_ammo_size_rank,
-		_ui_is_zh(),
-		_ammo_size_slider_text(editor_ammo_size_rank),
-		ammo_tick_labels
-	)
-	if editor_ammo_size_title_label != null:
-		var ammo_title_plan := Dictionary(ammo_size_plan.get("title", {}))
-		_apply_editor_control_plan(editor_ammo_size_title_label, ammo_title_plan)
-	if editor_ammo_size_slider != null:
-		var ammo_slider_plan := Dictionary(ammo_size_plan.get("slider", {}))
-		_apply_editor_control_plan(editor_ammo_size_slider, ammo_slider_plan)
-	if editor_ammo_size_value_label != null:
-		var ammo_value_plan := Dictionary(ammo_size_plan.get("value", {}))
-		_apply_editor_control_plan(editor_ammo_size_value_label, ammo_value_plan)
-	var ammo_tick_plans: Array = Array(ammo_size_plan.get("ticks", []))
-	for i in range(editor_ammo_size_tick_labels.size()):
-		var tick_label: Label = editor_ammo_size_tick_labels[i]
-		var tick_plan := Dictionary(ammo_tick_plans[i]) if i < ammo_tick_plans.size() and ammo_tick_plans[i] is Dictionary else {}
-		_apply_editor_control_plan(tick_label, tick_plan)
+	_refresh_editor_ammo_size_control_presentation(ammo_slider_visible)
 	_refresh_editor_action_button_presentations(visibility_plan, barrier_screen_board, custom_board_enabled, unit_bp)
 	_refresh_editor_sort_controls_presentation(parts_visible)
 	_refresh_editor_info_panel_presentation(unit_visible, stats_visible, parts_visible, load_visible)
