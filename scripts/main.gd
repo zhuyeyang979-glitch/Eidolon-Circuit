@@ -37409,6 +37409,32 @@ func _resolve_attack_target_outcome(attacker, target, event: Dictionary, damage_
 	return _execute_post_hit_intents(attacker, target, event, post_hit_intents, damage, damage_type, counter_tier, material_class, nullified, chemical_dot_total)
 
 
+func _apply_attack_target_outcome_result(target, target_outcome: Dictionary, killed_units: Array) -> Dictionary:
+	var next_killed_units := killed_units.duplicate()
+	for killed_by_effect in Array(target_outcome.get("killed_units", [])):
+		if not next_killed_units.has(killed_by_effect):
+			next_killed_units.append(killed_by_effect)
+	if bool(target_outcome.get("return_from_resolve", false)):
+		return {
+			"killed_units": next_killed_units,
+			"return_from_resolve": true,
+			"continue_target": false,
+		}
+	if bool(target_outcome.get("continue_target", false)):
+		return {
+			"killed_units": next_killed_units,
+			"return_from_resolve": false,
+			"continue_target": true,
+		}
+	if bool(target_outcome.get("killed", false)):
+		next_killed_units.append(target)
+	return {
+		"killed_units": next_killed_units,
+		"return_from_resolve": false,
+		"continue_target": false,
+	}
+
+
 func _resolve_attack(attacker, event: Dictionary) -> void:
 	var entry_intent := _battle_hit_resolution_service().attack_entry_intent({
 		"attacker_live": _is_live_unit(attacker),
@@ -37479,15 +37505,12 @@ func _resolve_attack(attacker, event: Dictionary) -> void:
 		if bool(damage_stack.get("skip", false)):
 			continue
 		var target_outcome := _resolve_attack_target_outcome(attacker, target, event, damage_type, material_class, damage_stack)
-		for killed_by_effect in Array(target_outcome.get("killed_units", [])):
-			if not killed_units.has(killed_by_effect):
-				killed_units.append(killed_by_effect)
-		if bool(target_outcome.get("return_from_resolve", false)):
+		var target_outcome_result := _apply_attack_target_outcome_result(target, target_outcome, killed_units)
+		killed_units = Array(target_outcome_result.get("killed_units", killed_units))
+		if bool(target_outcome_result.get("return_from_resolve", false)):
 			return
-		if bool(target_outcome.get("continue_target", false)):
+		if bool(target_outcome_result.get("continue_target", false)):
 			continue
-		if bool(target_outcome.get("killed", false)):
-			killed_units.append(target)
 
 	for killed_unit in killed_units:
 		_handle_unit_killed(killed_unit, int(attacker.owner_id))

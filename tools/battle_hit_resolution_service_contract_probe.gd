@@ -138,6 +138,11 @@ func _init() -> void:
 		".post_hit_intents({",
 		"_execute_post_hit_intents(attacker, target, event, post_hit_intents",
 		"post_hit_result.get(\"killed_units\"",
+		"for killed_by_effect in Array(target_outcome.get(\"killed_units\", [])):",
+		"if not killed_units.has(killed_by_effect):",
+		"if bool(target_outcome.get(\"return_from_resolve\", false)):",
+		"if bool(target_outcome.get(\"continue_target\", false)):",
+		"if bool(target_outcome.get(\"killed\", false)):",
 		"for raw_intent in post_hit_intents:",
 		"match String(post_intent.get(\"action\", \"\"))",
 	]:
@@ -355,6 +360,26 @@ func _init() -> void:
 	]:
 		if target_outcome_body.find(token) < 0:
 			_fail("_resolve_attack_target_outcome missing token: %s" % token)
+			return
+	if resolve_body.count("_apply_attack_target_outcome_result(target, target_outcome, killed_units)") != 1:
+		_fail("_resolve_attack should apply each target outcome through one killed-unit aggregation helper.")
+		return
+	var target_outcome_result_body := _function_body(main_source, "func _apply_attack_target_outcome_result")
+	if target_outcome_result_body.is_empty():
+		_fail("Unable to locate _apply_attack_target_outcome_result body.")
+		return
+	for token in [
+		"Array(target_outcome.get(\"killed_units\", []))",
+		"if not next_killed_units.has(killed_by_effect)",
+		"next_killed_units.append(killed_by_effect)",
+		"return_from_resolve",
+		"continue_target",
+		"if bool(target_outcome.get(\"killed\", false))",
+		"next_killed_units.append(target)",
+		"\"killed_units\"",
+	]:
+		if target_outcome_result_body.find(token) < 0:
+			_fail("_apply_attack_target_outcome_result missing token: %s" % token)
 			return
 	var post_hit_body := _function_body(main_source, "func _execute_post_hit_intents")
 	if post_hit_body.is_empty():
