@@ -61,6 +61,10 @@ func _init() -> void:
 	if visual_skip_block.is_empty():
 		_fail("Missing _try_skip_editor_visual_refresh helper.")
 		return
+	var dynamic_overlay_block := _function_block(source, "func _apply_editor_visual_snapshot_dynamic_overlay(")
+	if dynamic_overlay_block.is_empty():
+		_fail("Missing _apply_editor_visual_snapshot_dynamic_overlay helper.")
+		return
 	if block.contains("topology.duplicate(true)"):
 		_fail("TeamEdit visual refresh still deep-copies full topology.")
 		return
@@ -69,6 +73,9 @@ func _init() -> void:
 		return
 	if block.count("_editor_visual_snapshot_for_current_board(role_key, unit_bp, custom_board_cache_key, visual_stats, barrier_screen_board, player_id)") != 1:
 		_fail("TeamEdit visual refresh should delegate base board snapshot selection once.")
+		return
+	if block.count("snapshot = _apply_editor_visual_snapshot_dynamic_overlay(snapshot, board_mode, role_key, unit_bp, custom_board_cache_key, visual_stats)") != 1:
+		_fail("TeamEdit visual refresh should delegate dynamic overlay application once.")
 		return
 	if not block.contains("_submit_editor_visual_snapshot(snapshot, board_mode, illegal_parts, update_side_panels)"):
 		_fail("TeamEdit visual refresh should delegate board snapshot submission.")
@@ -111,6 +118,8 @@ func _init() -> void:
 		"_board_nodes_with_art_visual_positions",
 		"_topology_socket_markers_for_board",
 		"_topology_material_highlights_for_board",
+		"if board_mode == \"custom\" and not snapshot.is_empty():",
+		"_apply_editor_board_dynamic_fields(snapshot, role_key, unit_bp, custom_board_cache_key, visual_stats)",
 	]:
 		if block.contains(stale_fragment):
 			_fail("TeamEdit visual refresh should not inline snapshot construction: %s" % stale_fragment)
@@ -160,6 +169,15 @@ func _init() -> void:
 	]:
 		if not visual_skip_block.contains(token):
 			_fail("Visual refresh skip helper missing token: %s" % token)
+			return
+	for token in [
+		"board_mode == \"custom\"",
+		"not snapshot.is_empty()",
+		"_apply_editor_board_dynamic_fields(snapshot, role_key, unit_bp, custom_board_cache_key, visual_stats)",
+		"return snapshot",
+	]:
+		if not dynamic_overlay_block.contains(token):
+			_fail("Visual dynamic overlay helper missing token: %s" % token)
 			return
 	for token in [
 		"duplicate(false)",

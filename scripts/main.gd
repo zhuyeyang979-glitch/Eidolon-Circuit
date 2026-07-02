@@ -53071,8 +53071,7 @@ func _refresh_editor_visual_views(precomputed_stats: Dictionary = {}, update_sid
 	snapshot = Dictionary(visual_snapshot.get("snapshot", snapshot))
 	visual_stats = Dictionary(visual_snapshot.get("visual_stats", visual_stats))
 	board_mode = String(visual_snapshot.get("board_mode", board_mode))
-	if board_mode == "custom" and not snapshot.is_empty():
-		snapshot = _apply_editor_board_dynamic_fields(snapshot, role_key, unit_bp, custom_board_cache_key, visual_stats)
+	snapshot = _apply_editor_visual_snapshot_dynamic_overlay(snapshot, board_mode, role_key, unit_bp, custom_board_cache_key, visual_stats)
 	_submit_editor_visual_snapshot(snapshot, board_mode, illegal_parts, update_side_panels)
 
 
@@ -53097,6 +53096,12 @@ func _editor_visual_snapshot_for_current_board(role_key: String, unit_bp: Dictio
 		"visual_stats": visual_stats,
 		"board_mode": board_mode,
 	}
+
+
+func _apply_editor_visual_snapshot_dynamic_overlay(snapshot: Dictionary, board_mode: String, role_key: String, unit_bp: Dictionary, custom_board_cache_key: String, visual_stats: Dictionary) -> Dictionary:
+	if board_mode == "custom" and not snapshot.is_empty():
+		return _apply_editor_board_dynamic_fields(snapshot, role_key, unit_bp, custom_board_cache_key, visual_stats)
+	return snapshot
 
 
 func _editor_custom_board_snapshot(role_key: String, unit_bp: Dictionary, custom_board_cache_key: String, visual_stats: Dictionary, player_id: int) -> Dictionary:
