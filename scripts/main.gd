@@ -50268,37 +50268,59 @@ func _update_editor_board_ui(role_key: String, unit_bp: Dictionary, precomputed_
 	for slot_key in BODY_GROUP_SLOTS:
 		var button: Button = editor_shop_buttons[slot_key]
 		if not body_board_enabled:
+			var inactive_shop_slot_text := UILifecycleService.editor_body_shop_slot_text_presentation(
+				false,
+				slot_key,
+				_slot_name(slot_key),
+				"",
+				0,
+				0.0,
+				1,
+				0,
+				false,
+				false,
+				"",
+				_ui_is_zh()
+			)
 			_apply_editor_control_plan(button, UILifecycleService.editor_body_shop_slot_button_presentation(
 				false,
-				"%s 零件库：仅机甲" % _slot_name(slot_key) if _ui_is_zh() else "%s PARTS: mech only" % _slot_name(slot_key),
+				String(inactive_shop_slot_text.get("text", "")),
 				"",
 				false,
 				false
 			))
 			continue
-		var catalog: Array = _catalog_for(role_key, slot_key)
 		var index := int(selected_bp.get(slot_key, 0))
 		var part: Dictionary = _selected_component(role_key, slot_key, index)
-		var volume_note := ""
-		if slot_key == "module":
-			volume_note = "软件 x%d / 无体积" % _module_indices_for_topology_node(selected_bp, unit_bp).size() if _ui_is_zh() and custom_board_enabled else ("软件 / 无体积" if _ui_is_zh() else ("software x%d / no volume" % _module_indices_for_topology_node(selected_bp, unit_bp).size() if custom_board_enabled else "software / no volume"))
-		else:
-			volume_note = ("长 %.2f / 接口 %d" if _ui_is_zh() else "L %.2f / ends %d") % [float(part.get("length", 0.0)), int(part.get("connection_ends", 1))]
 		if custom_board_enabled and _topology_node_is_component(selected_bp) and _topology_node_slot(selected_bp) == slot_key:
 			index = _topology_node_part_index(selected_bp, unit_bp)
 			part = _selected_component(role_key, slot_key, index)
-			volume_note = ("长 %.2f / 接口 %d" if _ui_is_zh() else "L %.2f / ends %d") % [float(part.get("length", 0.0)), int(part.get("connection_ends", 1))]
-		var pending_marker := ("待放置 " if _ui_is_zh() else "PENDING ") if _has_pending_canvas_part() and editor_pending_place_slot == slot_key else ""
 		var selected_marker := ""
 		if custom_board_enabled and _topology_node_is_component(selected_bp) and _topology_node_slot(selected_bp) == slot_key:
 			selected_marker = String(selected_node_feedback.get("shop_marker", ""))
 			if selected_marker == "":
 				selected_marker = "当前节点 " if _ui_is_zh() else "NODE "
+		var pending_shop_slot: bool = _has_pending_canvas_part() and editor_pending_place_slot == slot_key
+		var module_count: int = _module_indices_for_topology_node(selected_bp, unit_bp).size() if custom_board_enabled else 0
+		var shop_slot_text: Dictionary = UILifecycleService.editor_body_shop_slot_text_presentation(
+			true,
+			slot_key,
+			_slot_name(slot_key),
+			_short_part_display_name(part),
+			int(part.get("cost", 0)),
+			float(part.get("length", 0.0)),
+			int(part.get("connection_ends", 1)),
+			module_count,
+			custom_board_enabled,
+			pending_shop_slot,
+			selected_marker,
+			_ui_is_zh()
+		)
 		var shop_slot_plan := UILifecycleService.editor_body_shop_slot_button_presentation(
 			true,
 			"",
-			_shop_slot_button_text(slot_key, part, volume_note, pending_marker, selected_marker),
-			_has_pending_canvas_part() and editor_pending_place_slot == slot_key,
+			String(shop_slot_text.get("text", "")),
+			pending_shop_slot,
 			custom_board_enabled and _topology_node_is_component(selected_bp) and _topology_node_slot(selected_bp) == slot_key
 		)
 		_apply_editor_control_plan(button, shop_slot_plan)
@@ -50364,38 +50386,6 @@ func _editor_selected_node_feedback(role_key: String, unit_bp: Dictionary, nodes
 		"is_torso": _topology_node_is_torso(role_key, node, unit_bp),
 		"board_tool": editor_board_tool,
 	})
-
-
-func _shop_slot_button_text(slot_key: String, part: Dictionary, volume_note: String, pending_marker: String, selected_marker: String) -> String:
-	var part_name := _short_part_display_name(part)
-	var cost := int(part.get("cost", 0))
-	if _ui_is_zh():
-		var title := String({
-			"joint": "购买关节",
-			"limb_muscle": "购买连接件",
-			"muscle": "购买武器/核心硬件",
-			"module": "安装行动模块",
-		}.get(slot_key, "购买%s" % _slot_name(slot_key)))
-		var rule := String({
-			"joint": "只可连接肌肉；负责旋转/伸缩",
-			"limb_muscle": "两端接硬件插槽；自身不主动转向",
-			"muscle": "武器多为单接口；核心决定插槽",
-			"module": "无体积；先选节点再绑定部位/键位",
-		}.get(slot_key, "拖入画布或安装"))
-		return "%s%s%s\n%s\n价格%d | %s\n%s" % [pending_marker, selected_marker, title, part_name, cost, volume_note, rule]
-	var title_en := String({
-		"joint": "BUY JOINT",
-		"limb_muscle": "BUY CONNECTOR",
-		"muscle": "BUY WEAPON/CORE",
-		"module": "INSTALL ACTION MODULE",
-	}.get(slot_key, "BUY %s" % _slot_name(slot_key)))
-	var rule_en := String({
-		"joint": "Connects only to muscle; rotates/extends",
-		"limb_muscle": "Two hardware sockets; no active rotation",
-		"muscle": "Weapons are usually one-ended; cores hold slots",
-		"module": "No volume; select node, then bind part/key",
-	}.get(slot_key, "Drag to canvas or install"))
-	return "%s%s%s\n%s\nCOST %d | %s\n%s" % [pending_marker, selected_marker, title_en, part_name, cost, volume_note, rule_en]
 
 
 func _catalog_card_title(slot_key: String, part: Dictionary, actual_index: int, selected: bool) -> String:

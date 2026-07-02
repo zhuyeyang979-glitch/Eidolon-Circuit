@@ -81,6 +81,9 @@ func _init() -> void:
 	if source.find("UILifecycleService.editor_board_hint_presentation") < 0:
 		_fail("main.gd should delegate editor board hint presentation planning.")
 		return
+	if source.find("UILifecycleService.editor_body_shop_slot_text_presentation") < 0:
+		_fail("main.gd should delegate editor body shop-slot text presentation planning.")
+		return
 	var orientation_buttons_block := _function_block(source, "func _refresh_editor_orientation_buttons(")
 	if orientation_buttons_block.is_empty():
 		_fail("main.gd should keep _refresh_editor_orientation_buttons available.")
@@ -210,6 +213,13 @@ func _init() -> void:
 		return
 	if source.contains("_set_button_disabled_if_changed(button, not body_board_enabled)") or source.contains("_set_control_text_if_changed(button, \"%s 零件库：仅机甲\"") or source.contains("_set_control_text_if_changed(button, _shop_slot_button_text(") or source.contains("_set_canvas_item_modulate_if_changed(button, Color(1.0, 0.86, 0.28, 1.0))"):
 		_fail("main.gd should delegate editor body shop-slot button presentation planning.")
+		return
+	var board_ui_shop_block := _function_block(source, "func _update_editor_board_ui(")
+	if board_ui_shop_block.find("_shop_slot_button_text(") >= 0 or board_ui_shop_block.find("%s 零件库：仅机甲") >= 0 or board_ui_shop_block.find("软件 x%d / 无体积") >= 0 or board_ui_shop_block.find("长 %.2f / 接口 %d") >= 0:
+		_fail("_update_editor_board_ui should delegate body shop-slot text assembly.")
+		return
+	if source.contains("func _shop_slot_button_text("):
+		_fail("main.gd should not keep the old body shop-slot text helper.")
 		return
 	if source.contains("_set_control_text_if_changed(side_button, \"编辑 P%d\"") or source.contains("_set_canvas_item_modulate_if_changed(side_button, Color(0.35, 0.95, 1.0, 1.0) if player_id == 1"):
 		_fail("main.gd should delegate editor edit-side button presentation planning.")

@@ -2229,6 +2229,25 @@ GREEN: EDITOR_BOARD_SNAPSHOT_INCREMENTAL_PROBE ok rebuilds=1 dynamic=4
 
 `UILifecycleService.editor_board_hint_presentation()` now owns the pure board hint text plan for custom topology boards, ether-screen barrier boards, enabled free-canvas boards, and inactive body-board states. `_update_editor_board_ui()` keeps the underlying state sampling local, including topology/action/material validity, pending placement/install labels, selected node summary, side-mount choice state, tile counts, and board dimensions, then applies the returned label plan through `_apply_editor_control_plan()`.
 
+Follow-up editor body shop-slot text extraction:
+
+```text
+RED: lifecycle_services_contract_probe failed because UILifecycleService did not expose editor_body_shop_slot_text_presentation
+RED: main_file_extraction_contract_probe failed because _update_editor_board_ui still assembled shop-slot text inline
+GREEN: LIFECYCLE_SERVICES_CONTRACT_PROBE ok
+GREEN: MAIN_FILE_EXTRACTION_CONTRACT_PROBE ok services=9
+GREEN: Godot --check-only --script res://scripts/main.gd --quit-after 1
+GREEN: Godot --check-only --script res://scripts/services/ui_lifecycle_service.gd --quit-after 1
+GREEN: PART_LIBRARY_UI_PROBE groups=["torso", "limb", "terminal_weapon", "barrier_panel", "software_muscle", "software"] weapon=3 equipment=5 software=7 dashboard=40
+GREEN: UNIT_EDITOR_TEMPLATE_DRAWER_RUNTIME_PROBE ok selected=octopus barrier=BarrierTemplatepin_wall
+GREEN: UNIT_EDITOR_PAGINATION_LAYOUT_PROBE ok unit=1 page=0 catalog=1 load=0 feedback=[P: (270.0, 654.0), S: (622.0, 26.0)]
+GREEN: UNIT_EDITOR_FULLSCREEN_LAYOUT_PROBE ok board=(908.0, 548.0) dock=(726.0, 132.0)
+GREEN: UNIT_EDITOR_CLIPBOARD_PROBE ok
+GREEN: EDITOR_BOARD_SNAPSHOT_INCREMENTAL_PROBE ok rebuilds=1 dynamic=4
+```
+
+`UILifecycleService.editor_body_shop_slot_text_presentation()` now owns the pure inactive/active shop-slot button text assembly, including localized buy/install titles, part cost lines, length/interface or software volume notes, pending placement markers, selected-node prefixes, and per-slot rule copy. `_update_editor_board_ui()` still owns catalog selection, selected topology-node lookup, and module counts, then feeds the returned text into the existing body shop-slot button presentation plan.
+
 Remaining items after this batch:
 
 - Continue editor UI extraction with `_build_editor_ui` and the remaining action presentation/control-mutation sections of `_apply_editor_panel_visibility`, then continue `_resolve_attack` and `_refresh_editor_visual_views` extraction.

@@ -817,6 +817,21 @@ func _init() -> void:
 	if not ui_lifecycle_source.contains("static func editor_body_shop_slot_button_presentation("):
 		_fail("UILifecycleService should expose editor body shop-slot button presentation planning.")
 		return
+	if not ui_lifecycle_service.has_method("editor_body_shop_slot_text_presentation"):
+		_fail("UILifecycleService should expose editor body shop-slot text presentation planning.")
+		return
+	var inactive_shop_slot_text_plan: Dictionary = ui_lifecycle_service.call("editor_body_shop_slot_text_presentation", false, "muscle", "核心", "", 0, 0.0, 1, 0, false, false, "", true)
+	if String(inactive_shop_slot_text_plan.get("text", "")) != "核心 零件库：仅机甲":
+		_fail("UILifecycleService inactive body shop-slot text failed.")
+		return
+	var zh_shop_slot_text_plan: Dictionary = ui_lifecycle_service.call("editor_body_shop_slot_text_presentation", true, "muscle", "肌肉", "SCYTHE BLADE", 120, 0.45, 1, 0, true, true, "当前节点 ", true)
+	if String(zh_shop_slot_text_plan.get("text", "")) != "待放置 当前节点 购买武器/核心硬件\nSCYTHE BLADE\n价格120 | 长 0.45 / 接口 1\n武器多为单接口；核心决定插槽":
+		_fail("UILifecycleService zh body shop-slot text failed.")
+		return
+	var module_shop_slot_text_plan: Dictionary = ui_lifecycle_service.call("editor_body_shop_slot_text_presentation", true, "module", "MODULE", "Hook Return", 60, 0.0, 0, 2, true, false, "NODE ", false)
+	if String(module_shop_slot_text_plan.get("text", "")) != "NODE INSTALL ACTION MODULE\nHook Return\nCOST 60 | software x2 / no volume\nNo volume; select node, then bind part/key":
+		_fail("UILifecycleService en module shop-slot text failed.")
+		return
 	var inactive_shop_slot_plan: Dictionary = ui_lifecycle_service.call("editor_body_shop_slot_button_presentation", false, "核心 零件库：仅机甲", "CORE BODY", false, false)
 	if not bool(inactive_shop_slot_plan.get("disabled", false)) or String(inactive_shop_slot_plan.get("text", "")) != "核心 零件库：仅机甲" or inactive_shop_slot_plan.has("modulate"):
 		_fail("UILifecycleService inactive body shop-slot button presentation failed.")

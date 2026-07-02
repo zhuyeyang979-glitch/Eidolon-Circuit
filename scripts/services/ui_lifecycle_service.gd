@@ -719,6 +719,51 @@ static func editor_body_shop_slot_button_presentation(body_board_enabled: bool, 
 	}
 
 
+static func editor_body_shop_slot_text_presentation(body_board_enabled: bool, slot_key: String, slot_label: String, part_name: String, cost: int, length: float, connection_ends: int, module_count: int, custom_board_enabled: bool, pending: bool, selected_marker: String, zh: bool) -> Dictionary:
+	var label := String(slot_label)
+	if not body_board_enabled:
+		return {
+			"text": "%s 零件库：仅机甲" % label if zh else "%s PARTS: mech only" % label,
+		}
+	var key := String(slot_key)
+	var title := ""
+	var rule := ""
+	var volume_note := ""
+	if zh:
+		title = String({
+			"joint": "购买关节",
+			"limb_muscle": "购买连接件",
+			"muscle": "购买武器/核心硬件",
+			"module": "安装行动模块",
+		}.get(key, "购买%s" % label))
+		rule = String({
+			"joint": "只可连接肌肉；负责旋转/伸缩",
+			"limb_muscle": "两端接硬件插槽；自身不主动转向",
+			"muscle": "武器多为单接口；核心决定插槽",
+			"module": "无体积；先选节点再绑定部位/键位",
+		}.get(key, "拖入画布或安装"))
+		volume_note = "软件 x%d / 无体积" % maxi(0, module_count) if key == "module" and custom_board_enabled else ("软件 / 无体积" if key == "module" else "长 %.2f / 接口 %d" % [length, connection_ends])
+		return {
+			"text": "%s%s%s\n%s\n价格%d | %s\n%s" % ["待放置 " if pending else "", String(selected_marker), title, String(part_name), int(cost), volume_note, rule],
+		}
+	title = String({
+		"joint": "BUY JOINT",
+		"limb_muscle": "BUY CONNECTOR",
+		"muscle": "BUY WEAPON/CORE",
+		"module": "INSTALL ACTION MODULE",
+	}.get(key, "BUY %s" % label))
+	rule = String({
+		"joint": "Connects only to muscle; rotates/extends",
+		"limb_muscle": "Two hardware sockets; no active rotation",
+		"muscle": "Weapons are usually one-ended; cores hold slots",
+		"module": "No volume; select node, then bind part/key",
+	}.get(key, "Drag to canvas or install"))
+	volume_note = "software x%d / no volume" % maxi(0, module_count) if key == "module" and custom_board_enabled else ("software / no volume" if key == "module" else "L %.2f / ends %d" % [length, connection_ends])
+	return {
+		"text": "%s%s%s\n%s\nCOST %d | %s\n%s" % ["PENDING " if pending else "", String(selected_marker), title, String(part_name), int(cost), volume_note, rule],
+	}
+
+
 static func editor_edit_side_button_presentation(player_id: int, zh: bool) -> Dictionary:
 	return {
 		"text": "编辑 P%d" % player_id if zh else "EDIT P%d" % player_id,
