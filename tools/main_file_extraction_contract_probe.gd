@@ -111,6 +111,9 @@ func _init() -> void:
 	if source.find("func _refresh_editor_color_controls_presentation(") < 0:
 		_fail("main.gd should centralize editor color controls presentation application.")
 		return
+	if source.find("func _refresh_editor_catalog_shop_surface_presentation(") < 0:
+		_fail("main.gd should centralize editor catalog/shop surface presentation application.")
+		return
 	var build_editor_ui_block := _function_block(source, "func _build_editor_ui(")
 	if build_editor_ui_block.is_empty():
 		_fail("main.gd should keep _build_editor_ui available.")
@@ -200,6 +203,9 @@ func _init() -> void:
 	if panel_visibility_block.count("_refresh_editor_color_controls_presentation(") != 1:
 		_fail("_apply_editor_panel_visibility should delegate color controls presentation application.")
 		return
+	if panel_visibility_block.count("_refresh_editor_catalog_shop_surface_presentation(") != 1:
+		_fail("_apply_editor_panel_visibility should delegate catalog/shop surface presentation application.")
+		return
 	for stale_action_presentation_fragment in [
 		"UILifecycleService.editor_action_presentations(",
 		"for action_key_variant in editor_action_buttons.keys():",
@@ -287,6 +293,30 @@ func _init() -> void:
 		return
 	if color_controls_block.count("editor_color_picker_sync = true") != 1 or color_controls_block.count("editor_color_picker_sync = false") != 1:
 		_fail("_refresh_editor_color_controls_presentation should preserve picker sync guard updates.")
+		return
+	for stale_catalog_shop_fragment in [
+		"UILifecycleService.editor_catalog_shop_surface_presentation(",
+		"var catalog_button_visibilities := []",
+		"var catalog_button_plans: Array = Array(catalog_shop_surface_plan.get(\"catalog_buttons\", []))",
+		"var shop_button_plans: Dictionary = Dictionary(catalog_shop_surface_plan.get(\"shop_buttons\", {}))",
+		"catalog_shop_surface_plan.get(\"clear_catalog_hover\"",
+		"catalog_shop_surface_plan.get(\"clear_unit_hover\"",
+	]:
+		if panel_visibility_block.find(stale_catalog_shop_fragment) >= 0:
+			_fail("_apply_editor_panel_visibility should not inline catalog/shop surface presentation application: %s" % stale_catalog_shop_fragment)
+			return
+	var catalog_shop_block := _function_block(source, "func _refresh_editor_catalog_shop_surface_presentation(")
+	if catalog_shop_block.is_empty():
+		_fail("main.gd should keep _refresh_editor_catalog_shop_surface_presentation available.")
+		return
+	if catalog_shop_block.count("UILifecycleService.editor_catalog_shop_surface_presentation(") != 1:
+		_fail("_refresh_editor_catalog_shop_surface_presentation should request one catalog/shop surface presentation plan.")
+		return
+	if catalog_shop_block.count("_update_editor_load_card_buttons(role_key)") != 1:
+		_fail("_refresh_editor_catalog_shop_surface_presentation should preserve load-card button refresh.")
+		return
+	if catalog_shop_block.count("clear_card()") != 1 or catalog_shop_block.count("_clear_editor_unit_hover_card(true)") != 1:
+		_fail("_refresh_editor_catalog_shop_surface_presentation should preserve hover clear side effects.")
 		return
 	var board_ui_block := _function_block(source, "func _update_editor_board_ui(")
 	if board_ui_block.is_empty():
