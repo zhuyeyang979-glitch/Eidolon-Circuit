@@ -101,6 +101,7 @@ func _init() -> void:
 		"for key in hit_patch.keys()",
 		"event[\"raw_momentum\"] =",
 		"event[\"contact_gate_model\"] =",
+		"_battle_hit_resolution_service().attack_entry_intent({",
 		"match String(entry_intent.get(\"action\", \"\"))",
 		"var preflight := _battle_hit_resolution_service().projectile_preflight_intent({",
 		"var event_patch: Dictionary = Dictionary(preflight.get(\"event_patch\", {}))",
@@ -152,8 +153,28 @@ func _init() -> void:
 		if resolve_body.contains(stale_fragment):
 			_fail("_resolve_attack should delegate event patch application and momentum-gate metadata: %s" % stale_fragment)
 			return
-	if resolve_body.count("_execute_attack_entry_intent(attacker, event, entry_intent)") != 2:
-		_fail("_resolve_attack should dispatch both pre-normalize and post-normalize entry intents through one helper.")
+	if resolve_body.count("_prepare_attack_entry_gate(attacker, event, ") != 2:
+		_fail("_resolve_attack should prepare both pre-normalize and post-normalize entry gates through one helper.")
+		return
+	var entry_gate_body := _function_body(main_source, "func _prepare_attack_entry_gate")
+	if entry_gate_body.is_empty():
+		_fail("Unable to locate _prepare_attack_entry_gate body.")
+		return
+	for token in [
+		"_battle_hit_resolution_service().attack_entry_intent({",
+		"\"attacker_live\": _is_live_unit(attacker)",
+		"\"event_empty\": event.is_empty()",
+		"\"projectile\": bool(event.get(\"projectile\", false))",
+		"\"runtime_topology\": _is_live_unit(attacker) and _unit_uses_direct_runtime_topology(attacker) if require_live_runtime_topology else _unit_uses_direct_runtime_topology(attacker)",
+		"\"explicit_gun_activation\": _event_is_explicit_gun_activation(event)",
+		"\"has_gun_source\": _projectile_event_has_gun_source(event)",
+		"_execute_attack_entry_intent(attacker, event, entry_intent)",
+	]:
+		if entry_gate_body.find(token) < 0:
+			_fail("_prepare_attack_entry_gate missing token: %s" % token)
+			return
+	if entry_gate_body.count("_execute_attack_entry_intent(attacker, event, entry_intent)") != 1:
+		_fail("_prepare_attack_entry_gate should dispatch exactly one entry intent.")
 		return
 	var entry_dispatch_body := _function_body(main_source, "func _execute_attack_entry_intent")
 	if entry_dispatch_body.is_empty():

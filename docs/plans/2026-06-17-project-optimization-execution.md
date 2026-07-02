@@ -1983,6 +1983,25 @@ GREEN: BATTLE_ATTACK_HEAVY_REPLAY_DESYNC_PROBE ok
 
 `_execute_attack_entry_intent()` now owns the imperative dispatch for invalid-entry return, runtime-topology execution marking, missing-gun-source feedback, and runtime-melee projectile-field clearing. `_resolve_attack()` delegates both the pre-normalization and post-normalization intents through that helper while preserving the original gate order. The extraction probe now resolves the exact `func _resolve_attack(` signature instead of accidentally matching `_resolve_attack_command_window()`, requires both helper calls, and rejects renewed inline entry dispatch.
 
+Follow-up attack-entry gate preparation extraction:
+
+```text
+RED: battle_hit_resolution_service_contract_probe failed because _resolve_attack still assembled attack_entry_intent inline
+GREEN: BATTLE_HIT_RESOLUTION_SERVICE_CONTRACT_PROBE ok
+GREEN: Godot --check-only --script res://scripts/main.gd --quit-after 1
+GREEN: BATTLE_ACTION_EVENT_SERVICE_CONTRACT_PROBE ok
+GREEN: PROJECTILE_WARNING_ONLY_GUN_ACTIVATE_PROBE gun='投射物必须由枪械末端肌肉发射' melee=''
+GREEN: RUNTIME_MELEE_NEVER_PROJECTILE_GATE_PROBE message=''
+GREEN: MELEE_PROJECTILE_GATE_PROBE ok
+GREEN: BOOT_DRIVER_MELEE_NO_PROJECTILE_PROBE ok
+GREEN: COMBAT_PROBE runtime_topology_contact=true hp_delta=5 min_gap=-0.1200 segments=3
+GREEN: LOCAL_BATTLE_REPLAY_CONSISTENCY_PROBE ok
+GREEN: BATTLE_ATTACK_HEAVY_REPLAY_DESYNC_PROBE checkpoints=6 desync_step=360
+GREEN: BATTLE_ATTACK_HEAVY_REPLAY_DESYNC_PROBE ok
+```
+
+`_prepare_attack_entry_gate()` now owns attack-entry intent assembly and dispatch for both pre-normalization and post-normalization checks. `_resolve_attack()` keeps the original normalize boundary and direct-runtime fallback order, but no longer carries the repeated attacker-live/event/projectile/gun-source context dictionaries inline.
+
 Follow-up projectile-preflight side-effect dispatch extraction:
 
 ```text

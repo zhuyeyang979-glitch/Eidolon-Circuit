@@ -37458,30 +37458,26 @@ func _prepare_attack_projectile_preflight(attacker, event: Dictionary) -> Dictio
 	return {"event": event, "stop": false}
 
 
-func _resolve_attack(attacker, event: Dictionary) -> void:
+func _prepare_attack_entry_gate(attacker, event: Dictionary, require_live_runtime_topology: bool) -> bool:
 	var entry_intent := _battle_hit_resolution_service().attack_entry_intent({
 		"attacker_live": _is_live_unit(attacker),
 		"event_empty": event.is_empty(),
 		"projectile": bool(event.get("projectile", false)),
-		"runtime_topology": _is_live_unit(attacker) and _unit_uses_direct_runtime_topology(attacker),
+		"runtime_topology": _is_live_unit(attacker) and _unit_uses_direct_runtime_topology(attacker) if require_live_runtime_topology else _unit_uses_direct_runtime_topology(attacker),
 		"explicit_gun_activation": _event_is_explicit_gun_activation(event),
 		"has_gun_source": _projectile_event_has_gun_source(event),
 	})
-	if _execute_attack_entry_intent(attacker, event, entry_intent):
+	return _execute_attack_entry_intent(attacker, event, entry_intent)
+
+
+func _resolve_attack(attacker, event: Dictionary) -> void:
+	if _prepare_attack_entry_gate(attacker, event, true):
 		return
 	if not _is_live_unit(attacker) or event.is_empty():
 		return
 	event = _normalize_runtime_attack_event(attacker, event)
 
-	entry_intent = _battle_hit_resolution_service().attack_entry_intent({
-		"attacker_live": _is_live_unit(attacker),
-		"event_empty": event.is_empty(),
-		"projectile": bool(event.get("projectile", false)),
-		"runtime_topology": _unit_uses_direct_runtime_topology(attacker),
-		"explicit_gun_activation": _event_is_explicit_gun_activation(event),
-		"has_gun_source": _projectile_event_has_gun_source(event),
-	})
-	if _execute_attack_entry_intent(attacker, event, entry_intent):
+	if _prepare_attack_entry_gate(attacker, event, false):
 		return
 	if not bool(event.get("projectile", false)) and _unit_uses_direct_runtime_topology(attacker):
 		_mark_unit_attack_executed(attacker)
