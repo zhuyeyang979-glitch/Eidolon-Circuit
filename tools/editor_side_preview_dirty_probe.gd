@@ -22,11 +22,13 @@ func _init() -> void:
 	main._refresh_editor_visual_views()
 	if int(main.editor_side_preview_update_count) != updates:
 		_fail("Board refresh updated side preview without selected part change.")
+		return
 	main.editor_slot_index = MainScene.BUILD_SLOTS.find("booster")
 	main.selected_component = main._selected_component("hero", "booster", 0)
 	main._refresh_editor_visual_views()
 	if int(main.editor_side_preview_update_count) <= updates:
 		_fail("Selected part change did not update side preview.")
+		return
 	print("EDITOR_SIDE_PREVIEW_DIRTY_PROBE ok updates=%d noop=%d" % [
 		int(main.editor_side_preview_update_count),
 		int(main.editor_side_preview_noop_count),

@@ -2321,6 +2321,31 @@ GREEN: BARRIER_TERRAIN_EDITOR_PREVIEW_PROBE ok
 
 `_apply_editor_visual_snapshot_dynamic_overlay()` now owns the custom-board dynamic-overlay gate for visual refresh. `_refresh_editor_visual_views()` unpacks the selected snapshot, applies one dynamic-overlay helper call, and then delegates submission, leaving the custom-mode/empty-snapshot branch outside the orchestration function.
 
+Follow-up editor visual selected preview extraction:
+
+```text
+RED: editor_visual_refresh_no_deep_snapshot_probe failed on missing _refresh_editor_visual_selected_part_preview helper
+RED: editor_side_preview_dirty_probe returned a false green after push_error; after latching failures it failed with "Selected part change did not update side preview"
+GREEN: Godot --check-only --script res://scripts/main.gd --quit-after 1
+GREEN: EDITOR_VISUAL_REFRESH_NO_DEEP_SNAPSHOT_PROBE ok
+GREEN: EDITOR_SIDE_PREVIEW_DIRTY_PROBE ok updates=3 noop=1
+GREEN: EDITOR_BOARD_MODEL_INCREMENTAL_PROBE ok shallow=1 skip=1
+GREEN: EDITOR_BOARD_SNAPSHOT_INCREMENTAL_PROBE ok rebuilds=1 dynamic=4
+GREEN: EDITOR_BOARD_SNAPSHOT_LAZY_PROBE ok hits=0 skips=2 rebuild=0
+GREEN: EDITOR_RENDER_CACHE_PROBE ok apply=1 noop=0 skip=2 submit=2
+GREEN: ASSEMBLY_BOARD_SET_BOARD_NOOP_PROBE ok apply=1 noop=0 skip=2
+GREEN: EDITOR_MATERIAL_HIGHLIGHT_PROBE same=metal diff=chain same_state=legal_socket diff_state=illegal_material
+GREEN: POSE_DRAG_NO_FULL_REFRESH_PROBE ok visual_delta=0 catalog_delta=0
+GREEN: TEAMEDIT_POSE_EDIT_FRAME_BUDGET_PROBE ok root_redraw=0 component_updates=0
+GREEN: TEAMEDIT_ASSEMBLY_FRAME_BUDGET_PROBE ok p95=0.72ms max=0.72ms catalog_delta=0 hot=teamedit.visual_refresh
+GREEN: TEAMEDIT_HOVER_FRAME_BUDGET_PROBE ok refreshes=2 rebuilds=1
+GREEN: MODULE_BINDING_GROUP_HALO_VISUAL_PROBE ok groups=2
+GREEN: BOARD_ZOOM_SOCKET_FOLLOW_PROBE ok marker=0:torso_port:0 delta=34.987px
+GREEN: BARRIER_TERRAIN_EDITOR_PREVIEW_PROBE ok
+```
+
+`_refresh_editor_visual_selected_part_preview()` now owns the `update_side_panels` gate for selected-part side preview refresh. `_refresh_editor_visual_views()` delegates the non-skip preview refresh with one helper call, and `_try_skip_editor_visual_refresh()` now calls the same helper before torso/engine side-panel refreshes so selected-component-only changes update side preview without forcing a board rebuild. `editor_side_preview_dirty_probe` now returns immediately after `_fail()` calls so a pushed error cannot continue into a false-green `ok` print.
+
 Follow-up editor orientation action button presentation extraction:
 
 ```text

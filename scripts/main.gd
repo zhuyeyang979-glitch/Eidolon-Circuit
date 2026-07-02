@@ -53033,6 +53033,7 @@ func _try_skip_editor_visual_refresh(visual_revision: String, update_side_panels
 	if visual_revision == editor_visual_revision_key:
 		editor_visual_refresh_skip_count += 1
 		if update_side_panels:
+			_refresh_editor_visual_selected_part_preview(update_side_panels)
 			_refresh_torso_detail_view()
 			_refresh_engine_momentum_allocation_view()
 		_refresh_editor_orientation_popup()
@@ -53041,6 +53042,12 @@ func _try_skip_editor_visual_refresh(visual_revision: String, update_side_panels
 			hot_path_profiler.scope_end("teamedit.visual_refresh")
 		return true
 	return false
+
+
+func _refresh_editor_visual_selected_part_preview(update_side_panels: bool) -> void:
+	if not update_side_panels:
+		return
+	_refresh_editor_selected_part_preview(BUILD_SLOTS[editor_slot_index], selected_component, clampf(editor_snap_timer / 0.28, 0.0, 1.0))
 
 
 func _refresh_editor_visual_views(precomputed_stats: Dictionary = {}, update_side_panels: bool = true) -> void:
@@ -53065,8 +53072,7 @@ func _refresh_editor_visual_views(precomputed_stats: Dictionary = {}, update_sid
 	if _try_skip_editor_visual_refresh(visual_revision, update_side_panels):
 		return
 	editor_visual_revision_key = visual_revision
-	if update_side_panels:
-		_refresh_editor_selected_part_preview(BUILD_SLOTS[editor_slot_index], selected_component, clampf(editor_snap_timer / 0.28, 0.0, 1.0))
+	_refresh_editor_visual_selected_part_preview(update_side_panels)
 	var visual_snapshot := _editor_visual_snapshot_for_current_board(role_key, unit_bp, custom_board_cache_key, visual_stats, barrier_screen_board, player_id)
 	snapshot = Dictionary(visual_snapshot.get("snapshot", snapshot))
 	visual_stats = Dictionary(visual_snapshot.get("visual_stats", visual_stats))

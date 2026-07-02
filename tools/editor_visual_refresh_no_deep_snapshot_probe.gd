@@ -65,11 +65,18 @@ func _init() -> void:
 	if dynamic_overlay_block.is_empty():
 		_fail("Missing _apply_editor_visual_snapshot_dynamic_overlay helper.")
 		return
+	var selected_preview_block := _function_block(source, "func _refresh_editor_visual_selected_part_preview(")
+	if selected_preview_block.is_empty():
+		_fail("Missing _refresh_editor_visual_selected_part_preview helper.")
+		return
 	if block.contains("topology.duplicate(true)"):
 		_fail("TeamEdit visual refresh still deep-copies full topology.")
 		return
 	if block.count("_try_skip_editor_visual_refresh(visual_revision, update_side_panels)") != 1:
 		_fail("TeamEdit visual refresh should delegate revision skip handling once.")
+		return
+	if block.count("_refresh_editor_visual_selected_part_preview(update_side_panels)") != 1:
+		_fail("TeamEdit visual refresh should delegate selected part preview refresh once.")
 		return
 	if block.count("_editor_visual_snapshot_for_current_board(role_key, unit_bp, custom_board_cache_key, visual_stats, barrier_screen_board, player_id)") != 1:
 		_fail("TeamEdit visual refresh should delegate base board snapshot selection once.")
@@ -120,6 +127,7 @@ func _init() -> void:
 		"_topology_material_highlights_for_board",
 		"if board_mode == \"custom\" and not snapshot.is_empty():",
 		"_apply_editor_board_dynamic_fields(snapshot, role_key, unit_bp, custom_board_cache_key, visual_stats)",
+		"_refresh_editor_selected_part_preview(BUILD_SLOTS[editor_slot_index], selected_component, clampf(editor_snap_timer / 0.28, 0.0, 1.0))",
 	]:
 		if block.contains(stale_fragment):
 			_fail("TeamEdit visual refresh should not inline snapshot construction: %s" % stale_fragment)
@@ -178,6 +186,14 @@ func _init() -> void:
 	]:
 		if not dynamic_overlay_block.contains(token):
 			_fail("Visual dynamic overlay helper missing token: %s" % token)
+			return
+	for token in [
+		"if not update_side_panels:",
+		"return",
+		"_refresh_editor_selected_part_preview(BUILD_SLOTS[editor_slot_index], selected_component, clampf(editor_snap_timer / 0.28, 0.0, 1.0))",
+	]:
+		if not selected_preview_block.contains(token):
+			_fail("Selected part preview helper missing token: %s" % token)
 			return
 	for token in [
 		"duplicate(false)",
