@@ -49982,32 +49982,7 @@ func _refresh_editor_panel_role_chrome_presentation(mode: String, role_key: Stri
 		_apply_editor_control_plan(role_button, role_button_plan)
 
 
-func _apply_editor_panel_visibility(role_key: String, unit_bp: Dictionary) -> void:
-	var body_board_enabled := _role_uses_body_board(role_key)
-	var barrier_screen_board := role_key == "barrier" and _barrier_uses_screen_board(unit_bp)
-	var current_roster: Array = Array(blueprints.get(_editor_player(), {}).get(role_key, []))
-	var visibility_plan := UILifecycleService.editor_panel_visibility_plan(
-		String(editor_panel_mode),
-		String(editor_load_mode),
-		body_board_enabled,
-		barrier_screen_board,
-		unit_bp.has("custom_topology"),
-		String(editor_part_group_mode),
-		String(editor_part_filter_mode),
-		current_roster.size()
-	)
-	editor_load_mode = String(visibility_plan.get("load_mode", editor_load_mode))
-	var mode := String(visibility_plan.get("mode", editor_panel_mode))
-	var load_visible := bool(visibility_plan.get("load_visible", false))
-	var unit_visible := bool(visibility_plan.get("unit_visible", false))
-	var parts_visible := bool(visibility_plan.get("parts_visible", false))
-	var shop_visible := bool(visibility_plan.get("shop_visible", false))
-	var template_visible := bool(visibility_plan.get("template_visible", false))
-	var color_visible := bool(visibility_plan.get("color_visible", false))
-	var stats_visible := bool(visibility_plan.get("stats_visible", false))
-	var custom_board_enabled := bool(visibility_plan.get("custom_board_enabled", false))
-	_refresh_editor_panel_role_chrome_presentation(mode, role_key, parts_visible)
-	_refresh_editor_assembly_guide_ui(parts_visible, role_key)
+func _refresh_editor_part_library_control_presentations(parts_visible: bool) -> void:
 	for group_key in editor_part_group_buttons.keys():
 		var group_button: Button = editor_part_group_buttons[group_key]
 		var group_plan := UILifecycleService.editor_part_group_button_presentation(
@@ -50036,6 +50011,35 @@ func _apply_editor_panel_visibility(role_key: String, unit_bp: Dictionary) -> vo
 			filter_text
 		)
 		_apply_editor_control_plan(filter_button, filter_plan)
+
+
+func _apply_editor_panel_visibility(role_key: String, unit_bp: Dictionary) -> void:
+	var body_board_enabled := _role_uses_body_board(role_key)
+	var barrier_screen_board := role_key == "barrier" and _barrier_uses_screen_board(unit_bp)
+	var current_roster: Array = Array(blueprints.get(_editor_player(), {}).get(role_key, []))
+	var visibility_plan := UILifecycleService.editor_panel_visibility_plan(
+		String(editor_panel_mode),
+		String(editor_load_mode),
+		body_board_enabled,
+		barrier_screen_board,
+		unit_bp.has("custom_topology"),
+		String(editor_part_group_mode),
+		String(editor_part_filter_mode),
+		current_roster.size()
+	)
+	editor_load_mode = String(visibility_plan.get("load_mode", editor_load_mode))
+	var mode := String(visibility_plan.get("mode", editor_panel_mode))
+	var load_visible := bool(visibility_plan.get("load_visible", false))
+	var unit_visible := bool(visibility_plan.get("unit_visible", false))
+	var parts_visible := bool(visibility_plan.get("parts_visible", false))
+	var shop_visible := bool(visibility_plan.get("shop_visible", false))
+	var template_visible := bool(visibility_plan.get("template_visible", false))
+	var color_visible := bool(visibility_plan.get("color_visible", false))
+	var stats_visible := bool(visibility_plan.get("stats_visible", false))
+	var custom_board_enabled := bool(visibility_plan.get("custom_board_enabled", false))
+	_refresh_editor_panel_role_chrome_presentation(mode, role_key, parts_visible)
+	_refresh_editor_assembly_guide_ui(parts_visible, role_key)
+	_refresh_editor_part_library_control_presentations(parts_visible)
 	var ammo_slider_visible := bool(visibility_plan.get("ammo_slider_visible", false))
 	var ammo_tick_labels := []
 	for rank in range(1, 6):
