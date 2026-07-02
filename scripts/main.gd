@@ -15564,6 +15564,7 @@ func _editor_board_dynamic_revision_key() -> String:
 		str(editor_pending_orientation_node_index),
 		str(snappedf(editor_snap_timer, 0.01)),
 		str(editor_assembly_template_collapsed),
+		_editor_topology_preview_revision_key(),
 		_editor_pending_binding_signature(),
 		_editor_bound_allocation_signature(),
 		_editor_tryout_signature(),
@@ -15734,6 +15735,7 @@ func _apply_editor_board_dynamic_fields(snapshot: Dictionary, role_key: String, 
 	var socket_nodes: Array = visual_nodes if visual_nodes.size() == source_nodes.size() else source_nodes
 	if not socket_nodes.is_empty():
 		_refresh_editor_board_dynamic_socket_geometry(snapshot, role_key, unit_bp, socket_nodes, source_edges)
+		snapshot["material_highlights"] = _topology_material_highlights_for_board(role_key, unit_bp, socket_nodes, source_edges)
 	if editor_dragging_node_index >= 0 and editor_dragging_node_index < socket_nodes.size() and _topology_node_edge_count(source_edges, editor_dragging_node_index) <= 0:
 		var socket_candidate := _topology_socket_candidate(role_key, unit_bp, socket_nodes, source_edges, editor_dragging_node_index, true)
 		if not socket_candidate.is_empty():
@@ -53037,7 +53039,7 @@ func _refresh_editor_selected_part_preview(slot_key: String, part: Dictionary, s
 
 
 func _editor_visual_revision_signature(role_key: String, unit_bp: Dictionary, stats: Dictionary, custom_board_cache_key: String, update_side_panels: bool) -> String:
-	return "%s|%s|%s|%d|%d|%s|%s|%s|%s|%s|%d|%s|%s|%s|%s|%s|%s|%s|%d|%d|%d|%d|%s" % [
+	return "%s|%s|%s|%d|%d|%s|%s|%s|%s|%s|%d|%s|%s|%s|%s|%s|%s|%s|%s|%d|%d|%d|%d|%s" % [
 		role_key,
 		custom_board_cache_key,
 		editor_selected_body_part,
@@ -53054,6 +53056,7 @@ func _editor_visual_revision_signature(role_key: String, unit_bp: Dictionary, st
 		str(editor_selected_topology_nodes.hash()),
 		str(snappedf(editor_board_zoom, 0.001)),
 		str(editor_board_view_offset),
+		_editor_topology_preview_revision_key(),
 		_editor_pending_binding_signature(),
 		_editor_tryout_signature(),
 		1 if _barrier_uses_screen_board(unit_bp) else 0,
@@ -53061,6 +53064,17 @@ func _editor_visual_revision_signature(role_key: String, unit_bp: Dictionary, st
 		1 if editor_barrier_grid_guides_enabled else 0,
 		1 if editor_assembly_template_collapsed else 0,
 		_battle_terrain_snapshot_revision_key() if role_key == "barrier" and _barrier_uses_screen_board(unit_bp) else "",
+	]
+
+
+func _editor_topology_preview_revision_key() -> String:
+	return "%d|%d|%s|%d|%s|%d" % [
+		editor_dragging_node_index,
+		1 if editor_drag_catalog_active else 0,
+		editor_drag_catalog_slot,
+		editor_drag_catalog_index,
+		editor_hover_slot_key,
+		editor_hover_part_index,
 	]
 
 
@@ -53113,29 +53127,9 @@ func _refresh_editor_visual_views(precomputed_stats: Dictionary = {}, update_sid
 		snapshot = editor_board_base_snapshot_cache.duplicate(false)
 		board_mode = "custom"
 	elif _role_uses_body_board(role_key) and unit_bp.has("custom_topology") and not barrier_screen_board:
-		var snapshot_build_start := Time.get_ticks_usec()
-		var topology: Dictionary = unit_bp.get("custom_topology", {})
-		snapshot = _editor_shallow_topology_snapshot(topology)
-		if visual_stats.is_empty():
-			visual_stats = _compute_unit_stats(player_id, role_key, -1, unit_bp)
-		snapshot["joint_slot_profiles"] = Array(visual_stats.get("joint_slot_profiles", []))
-		snapshot["swept_collision_count"] = int(visual_stats.get("swept_collision_count", 0))
-		var nodes: Array = snapshot.get("nodes", [])
-		var edges_for_snapshot: Array = snapshot.get("edges", [])
-		var source_nodes_for_edges: Array = topology.get("nodes", [])
-		nodes = _editor_enriched_topology_nodes_snapshot(role_key, unit_bp, nodes, source_nodes_for_edges, edges_for_snapshot)
-		var source_edges_for_conflicts: Array = topology.get("edges", [])
-		var display_nodes_for_edges := _board_nodes_with_art_visual_positions(role_key, unit_bp, nodes, source_edges_for_conflicts)
-		source_nodes_for_edges = display_nodes_for_edges
-		nodes = display_nodes_for_edges
-		var edge_state_snapshot := _editor_topology_edge_state_snapshot(role_key, unit_bp, nodes, source_nodes_for_edges, source_edges_for_conflicts)
-		nodes = Array(edge_state_snapshot.get("nodes", nodes))
-		var edge_states: Dictionary = Dictionary(edge_state_snapshot.get("edge_states", {}))
-		snapshot["socket_markers"] = _topology_socket_markers_for_board(role_key, unit_bp, source_nodes_for_edges, source_edges_for_conflicts)
-		snapshot["material_highlights"] = _topology_material_highlights_for_board(role_key, unit_bp, source_nodes_for_edges, source_edges_for_conflicts)
-		snapshot["nodes"] = nodes
-		snapshot["edge_states"] = edge_states
-		snapshot = _cache_editor_custom_board_snapshot(snapshot, custom_board_cache_key, snapshot_build_start)
+		var custom_board_snapshot := _editor_custom_board_snapshot(role_key, unit_bp, custom_board_cache_key, visual_stats, player_id)
+		snapshot = Dictionary(custom_board_snapshot.get("snapshot", {}))
+		visual_stats = Dictionary(custom_board_snapshot.get("visual_stats", visual_stats))
 		board_mode = "custom"
 	elif barrier_screen_board:
 		board_mode = "barrier"
@@ -53143,6 +53137,36 @@ func _refresh_editor_visual_views(precomputed_stats: Dictionary = {}, update_sid
 	if board_mode == "custom" and not snapshot.is_empty():
 		snapshot = _apply_editor_board_dynamic_fields(snapshot, role_key, unit_bp, custom_board_cache_key, visual_stats)
 	_submit_editor_visual_snapshot(snapshot, board_mode, illegal_parts, update_side_panels)
+
+
+func _editor_custom_board_snapshot(role_key: String, unit_bp: Dictionary, custom_board_cache_key: String, visual_stats: Dictionary, player_id: int) -> Dictionary:
+	var snapshot_build_start := Time.get_ticks_usec()
+	var topology: Dictionary = unit_bp.get("custom_topology", {})
+	var snapshot := _editor_shallow_topology_snapshot(topology)
+	if visual_stats.is_empty():
+		visual_stats = _compute_unit_stats(player_id, role_key, -1, unit_bp)
+	snapshot["joint_slot_profiles"] = Array(visual_stats.get("joint_slot_profiles", []))
+	snapshot["swept_collision_count"] = int(visual_stats.get("swept_collision_count", 0))
+	var nodes: Array = snapshot.get("nodes", [])
+	var edges_for_snapshot: Array = snapshot.get("edges", [])
+	var source_nodes_for_edges: Array = topology.get("nodes", [])
+	nodes = _editor_enriched_topology_nodes_snapshot(role_key, unit_bp, nodes, source_nodes_for_edges, edges_for_snapshot)
+	var source_edges_for_conflicts: Array = topology.get("edges", [])
+	var display_nodes_for_edges := _board_nodes_with_art_visual_positions(role_key, unit_bp, nodes, source_edges_for_conflicts)
+	source_nodes_for_edges = display_nodes_for_edges
+	nodes = display_nodes_for_edges
+	var edge_state_snapshot := _editor_topology_edge_state_snapshot(role_key, unit_bp, nodes, source_nodes_for_edges, source_edges_for_conflicts)
+	nodes = Array(edge_state_snapshot.get("nodes", nodes))
+	var edge_states: Dictionary = Dictionary(edge_state_snapshot.get("edge_states", {}))
+	snapshot["socket_markers"] = _topology_socket_markers_for_board(role_key, unit_bp, source_nodes_for_edges, source_edges_for_conflicts)
+	snapshot["material_highlights"] = _topology_material_highlights_for_board(role_key, unit_bp, source_nodes_for_edges, source_edges_for_conflicts)
+	snapshot["nodes"] = nodes
+	snapshot["edge_states"] = edge_states
+	snapshot = _cache_editor_custom_board_snapshot(snapshot, custom_board_cache_key, snapshot_build_start)
+	return {
+		"snapshot": snapshot,
+		"visual_stats": visual_stats,
+	}
 
 
 func _editor_shallow_topology_snapshot(topology: Dictionary) -> Dictionary:

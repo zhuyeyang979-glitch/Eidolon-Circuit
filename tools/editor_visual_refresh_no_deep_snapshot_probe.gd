@@ -49,23 +49,18 @@ func _init() -> void:
 	if submit_block.is_empty():
 		_fail("Missing _submit_editor_visual_snapshot helper.")
 		return
+	var custom_snapshot_block := _function_block(source, "func _editor_custom_board_snapshot(")
+	if custom_snapshot_block.is_empty():
+		_fail("Missing _editor_custom_board_snapshot helper.")
+		return
 	if block.contains("topology.duplicate(true)"):
 		_fail("TeamEdit visual refresh still deep-copies full topology.")
 		return
-	if not block.contains("_editor_shallow_topology_snapshot(topology)"):
-		_fail("TeamEdit visual refresh should delegate shallow topology snapshot building.")
-		return
-	if not block.contains("_editor_enriched_topology_nodes_snapshot(role_key, unit_bp, nodes, source_nodes_for_edges, edges_for_snapshot)"):
-		_fail("TeamEdit visual refresh should delegate topology node enrichment.")
+	if block.count("_editor_custom_board_snapshot(role_key, unit_bp, custom_board_cache_key, visual_stats, player_id)") != 1:
+		_fail("TeamEdit visual refresh should delegate custom board snapshot assembly once.")
 		return
 	if not block.contains("_editor_barrier_screen_board_snapshot(role_key, unit_bp)"):
 		_fail("TeamEdit visual refresh should delegate barrier screen board snapshot building.")
-		return
-	if not block.contains("_editor_topology_edge_state_snapshot(role_key, unit_bp, nodes, source_nodes_for_edges, source_edges_for_conflicts)"):
-		_fail("TeamEdit visual refresh should delegate topology edge-state snapshot building.")
-		return
-	if not block.contains("_cache_editor_custom_board_snapshot(snapshot, custom_board_cache_key, snapshot_build_start)"):
-		_fail("TeamEdit visual refresh should delegate custom board cache writes.")
 		return
 	if not block.contains("_submit_editor_visual_snapshot(snapshot, board_mode, illegal_parts, update_side_panels)"):
 		_fail("TeamEdit visual refresh should delegate board snapshot submission.")
@@ -95,9 +90,32 @@ func _init() -> void:
 		"terrain_preview_tiles_by_index",
 		"snapshot[\"barrier_columns\"]",
 		"snapshot[\"tile_%d\" % i]",
+		"var snapshot_build_start",
+		"var topology:",
+		"snapshot[\"joint_slot_profiles\"]",
+		"_board_nodes_with_art_visual_positions",
+		"_topology_socket_markers_for_board",
+		"_topology_material_highlights_for_board",
 	]:
 		if block.contains(stale_fragment):
 			_fail("TeamEdit visual refresh should not inline snapshot construction: %s" % stale_fragment)
+			return
+	for token in [
+		"_editor_shallow_topology_snapshot(topology)",
+		"_compute_unit_stats(player_id, role_key, -1, unit_bp)",
+		"joint_slot_profiles",
+		"swept_collision_count",
+		"_editor_enriched_topology_nodes_snapshot",
+		"_board_nodes_with_art_visual_positions",
+		"_editor_topology_edge_state_snapshot",
+		"_topology_socket_markers_for_board",
+		"_topology_material_highlights_for_board",
+		"_cache_editor_custom_board_snapshot",
+		"\"snapshot\"",
+		"\"visual_stats\"",
+	]:
+		if not custom_snapshot_block.contains(token):
+			_fail("Custom board snapshot helper missing token: %s" % token)
 			return
 	for token in [
 		"duplicate(false)",

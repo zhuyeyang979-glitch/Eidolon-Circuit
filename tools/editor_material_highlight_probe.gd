@@ -2,10 +2,12 @@ extends SceneTree
 
 const MainScene := preload("res://scripts/main.gd")
 
+var _failed := false
+
 
 func _fail(message: String) -> void:
 	push_error(message)
-	quit(1)
+	_failed = true
 
 
 func _first_torso(main) -> int:
@@ -61,5 +63,8 @@ func _init() -> void:
 	var diff_state := _highlight_state(main, limb)
 	if not diff_state in ["illegal_material", "illegal_group"]:
 		_fail("Different-material hover should mark direct limb endpoint illegal, got %s." % diff_state)
+	if _failed:
+		quit(1)
+		return
 	print("EDITOR_MATERIAL_HIGHLIGHT_PROBE same=%s diff=%s same_state=%s diff_state=%s" % [material_a, material_b, same_state, diff_state])
 	quit()

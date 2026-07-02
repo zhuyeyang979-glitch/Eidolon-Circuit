@@ -2147,6 +2147,33 @@ GREEN: BATTLE_ATTACK_HEAVY_REPLAY_DESYNC_PROBE ok
 
 `_resolve_attack_target_outcome()` now owns damage-stack field consumption, projectile/melee hit VFX, contact-gate blocked feedback and stagger/displacement/hitstop, successful-hit rule recording, post-hit intent planning, and post-hit side-effect execution. `_resolve_attack()` now retains only attack-level gates plus per-target contact, damage-stack, outcome-control, and killed-unit aggregation. The extraction contract rejects renewed inline outcome dispatch and requires all four killed/continue/return result fields.
 
+Follow-up editor custom-board snapshot assembly extraction:
+
+```text
+RED: editor_visual_refresh_no_deep_snapshot_probe failed because _refresh_editor_visual_views still assembled custom topology snapshots inline
+RED: editor_material_highlight_probe failed with stale legal_socket after changing hover material because the probe did not latch failure exits and the cached dynamic revision omitted preview state
+GREEN: EDITOR_VISUAL_REFRESH_NO_DEEP_SNAPSHOT_PROBE ok
+GREEN: Godot --check-only --script res://scripts/main.gd --quit-after 1
+GREEN: EDITOR_BOARD_MODEL_INCREMENTAL_PROBE ok shallow=1 skip=1
+GREEN: EDITOR_BOARD_SNAPSHOT_INCREMENTAL_PROBE ok rebuilds=1 dynamic=4
+GREEN: EDITOR_BOARD_SNAPSHOT_LAZY_PROBE ok hits=0 skips=2 rebuild=0
+GREEN: EDITOR_RENDER_CACHE_PROBE ok apply=1 noop=0 skip=2 submit=2
+GREEN: ASSEMBLY_BOARD_SET_BOARD_NOOP_PROBE ok apply=1 noop=0 skip=2
+GREEN: POSE_DRAG_NO_FULL_REFRESH_PROBE ok visual_delta=0 catalog_delta=0
+GREEN: TEAMEDIT_POSE_EDIT_FRAME_BUDGET_PROBE ok root_redraw=0 component_updates=0
+GREEN: TEAMEDIT_ASSEMBLY_FRAME_BUDGET_PROBE ok p95=0.61ms max=0.61ms catalog_delta=0 hot=teamedit.visual_refresh
+GREEN: TEAMEDIT_HOVER_FRAME_BUDGET_PROBE ok refreshes=2 rebuilds=1
+GREEN: MODULE_BINDING_GROUP_HALO_VISUAL_PROBE ok groups=2
+GREEN: EDITOR_MATERIAL_HIGHLIGHT_PROBE same=metal diff=chain same_state=legal_socket diff_state=illegal_material
+GREEN: BOARD_ZOOM_SOCKET_FOLLOW_PROBE ok marker=0:torso_port:0 delta=34.987px
+GREEN: BARRIER_TERRAIN_EDITOR_PREVIEW_PROBE ok
+GREEN: ASSEMBLY_TEMPLATE_PROBE skipped headless
+```
+
+`_editor_custom_board_snapshot()` now owns the custom topology snapshot assembly pipeline: shallow snapshot creation, optional stats computation, visual stats fields, topology node enrichment, art-position display-node mapping, edge-state validation, socket/material marker generation, and cache writes. `_refresh_editor_visual_views()` now chooses cache/custom/barrier branches and keeps dynamic overlay plus final submission orchestration.
+
+The dynamic board overlay now recomputes `material_highlights` on cached custom snapshots and both visual-refresh and board-dynamic revision keys include hover/drag preview state. `editor_material_highlight_probe` now latches assertion failures so stale hover material states cannot produce a false-green result.
+
 Remaining items after this batch:
 
 - Continue editor UI extraction with `_build_editor_ui` and the remaining action presentation/control-mutation sections of `_apply_editor_panel_visibility`, then continue `_resolve_attack` and `_refresh_editor_visual_views` extraction.
