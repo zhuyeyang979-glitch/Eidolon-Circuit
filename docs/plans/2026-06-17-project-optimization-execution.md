@@ -2337,6 +2337,21 @@ GREEN: UNIT_EDITOR_NO_POWER_TOPBAR_PROBE ok dock_pos=(190.0, 24.0)
 
 `_build_editor_ui()` now also applies `_apply_editor_button_build_spec()` to orientation popup buttons, legacy dashboard power and torso-detail buttons, body-part buttons, module-binding buttons, archetype and barrier-template buttons, shop-slot buttons, sort action/option buttons, team color buttons and pickers, and part catalog cards. Local signal wiring, special initial hidden/disabled state, hover routing, and reference dictionaries remain local to their sections. The older `engine_allocation_dashboard_visible_probe.gd` still asserts the retired legacy dashboard power button should be visible, so current power-dock probes are the authoritative verification path for that surface.
 
+Follow-up editor action button presentation adapter extraction:
+
+```text
+RED: main_file_extraction_contract_probe failed because main.gd should centralize editor action button presentation application
+GREEN: Godot --check-only --script res://scripts/main.gd --quit-after 1
+GREEN: MAIN_FILE_EXTRACTION_CONTRACT_PROBE ok services=9
+GREEN: UNIT_EDITOR_CLIPBOARD_PROBE ok
+GREEN: EDITOR_BOARD_ZOOM_PROBE node=0 zoom=1.00 label=100% hover=0
+GREEN: UNIT_EDITOR_TEMPLATE_DRAWER_RUNTIME_PROBE ok selected=octopus barrier=BarrierTemplatepin_wall
+GREEN: SCYTHE_INSTALL_ORIENTATION_UI_PROBE ok node=0
+GREEN: BOUND_MODULE_TRYOUT_UI_PROBE ok
+```
+
+`_refresh_editor_action_button_presentations()` now owns the main scene-tree adapter for editor action button presentation plans: it gathers the local clipboard, selection, orientation, board-tool, grid, match-format, and connection-color context, requests one `UILifecycleService.editor_action_presentations()` plan, and applies each managed action button plan through `_apply_editor_control_plan()`. `_apply_editor_panel_visibility()` now delegates that full action-button presentation section with a single call, leaving the remaining sort, info, shop, color, catalog, and section surfaces as the next extraction targets.
+
 Remaining items after this batch:
 
 - Continue editor UI extraction with `_build_editor_ui` and the remaining action presentation/control-mutation sections of `_apply_editor_panel_visibility`, then continue `_resolve_attack` and `_refresh_editor_visual_views` extraction.

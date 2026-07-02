@@ -96,6 +96,9 @@ func _init() -> void:
 	if source.find("func _apply_editor_button_build_spec(") < 0:
 		_fail("main.gd should centralize editor button build spec property application.")
 		return
+	if source.find("func _refresh_editor_action_button_presentations(") < 0:
+		_fail("main.gd should centralize editor action button presentation application.")
+		return
 	var build_editor_ui_block := _function_block(source, "func _build_editor_ui(")
 	if build_editor_ui_block.is_empty():
 		_fail("main.gd should keep _build_editor_ui available.")
@@ -166,6 +169,28 @@ func _init() -> void:
 		if orientation_buttons_block.find(stale_orientation_fragment) >= 0:
 			_fail("_refresh_editor_orientation_buttons should apply service plans instead of inline mutation: %s" % stale_orientation_fragment)
 			return
+	var panel_visibility_block := _function_block(source, "func _apply_editor_panel_visibility(")
+	if panel_visibility_block.is_empty():
+		_fail("main.gd should keep _apply_editor_panel_visibility available.")
+		return
+	if panel_visibility_block.count("_refresh_editor_action_button_presentations(") != 1:
+		_fail("_apply_editor_panel_visibility should delegate action button presentation application.")
+		return
+	for stale_action_presentation_fragment in [
+		"UILifecycleService.editor_action_presentations(",
+		"for action_key_variant in editor_action_buttons.keys():",
+		"var action_presentation_context := {",
+	]:
+		if panel_visibility_block.find(stale_action_presentation_fragment) >= 0:
+			_fail("_apply_editor_panel_visibility should not inline action button presentation application: %s" % stale_action_presentation_fragment)
+			return
+	var action_button_presentations_block := _function_block(source, "func _refresh_editor_action_button_presentations(")
+	if action_button_presentations_block.is_empty():
+		_fail("main.gd should keep _refresh_editor_action_button_presentations available.")
+		return
+	if action_button_presentations_block.count("UILifecycleService.editor_action_presentations(") != 1:
+		_fail("_refresh_editor_action_button_presentations should request one action presentation plan.")
+		return
 	var board_ui_block := _function_block(source, "func _update_editor_board_ui(")
 	if board_ui_block.is_empty():
 		_fail("main.gd should keep _update_editor_board_ui available.")

@@ -49725,6 +49725,45 @@ func _editor_connection_state_color() -> Color:
 			return Color(0.82, 0.9, 1.0, 0.82)
 
 
+func _refresh_editor_action_button_presentations(visibility_plan: Dictionary, barrier_screen_board: bool, custom_board_enabled: bool, unit_bp: Dictionary) -> void:
+	var orientation_choice_active := custom_board_enabled and _orientation_choice_is_active(unit_bp)
+	var selected_handedness_active := custom_board_enabled and _selected_node_supports_visual_handedness(unit_bp)
+	var unit_page_actions_enabled := bool(visibility_plan.get("unit_page_actions_enabled", false))
+	var clipboard_busy := _unit_editor_clipboard_busy()
+	var has_selection := not editor_selected_topology_nodes.is_empty()
+	var has_topology_clipboard := not editor_topology_clipboard.is_empty() and String(editor_topology_clipboard.get("kind", "")) == "topology_nodes"
+	var action_presentation_context := {
+		"zh": _ui_is_zh(),
+		"load_mode": editor_load_mode,
+		"board_tool": editor_board_tool,
+		"connection_state_color": _editor_connection_state_color(),
+		"barrier_grid_enabled": editor_barrier_grid_guides_enabled,
+		"unit_page_actions_enabled": unit_page_actions_enabled,
+		"match_format_text": _match_format_short(),
+	}
+	var action_plans := UILifecycleService.editor_action_presentations(
+		editor_action_buttons.keys(),
+		visibility_plan,
+		{
+			"barrier_screen_board": barrier_screen_board,
+			"orientation_choice_active": orientation_choice_active,
+			"selected_handedness_active": selected_handedness_active,
+			"sort_menu_open": editor_sort_menu_open,
+			"clipboard_busy": clipboard_busy,
+			"has_selection": has_selection,
+			"has_topology_clipboard": has_topology_clipboard,
+		},
+		action_presentation_context
+	)
+	for action_key_variant in editor_action_buttons.keys():
+		var action_key := String(action_key_variant)
+		var action_button: Button = editor_action_buttons[action_key_variant]
+		var action_presentation := Dictionary(action_plans.get(action_key, {}))
+		if not bool(action_presentation.get("managed", true)):
+			continue
+		_apply_editor_control_plan(action_button, action_presentation, bool(action_presentation.get("manage_disabled", true)))
+
+
 func _apply_editor_panel_visibility(role_key: String, unit_bp: Dictionary) -> void:
 	var body_board_enabled := _role_uses_body_board(role_key)
 	var barrier_screen_board := role_key == "barrier" and _barrier_uses_screen_board(unit_bp)
@@ -49826,42 +49865,7 @@ func _apply_editor_panel_visibility(role_key: String, unit_bp: Dictionary) -> vo
 		var tick_label: Label = editor_ammo_size_tick_labels[i]
 		var tick_plan := Dictionary(ammo_tick_plans[i]) if i < ammo_tick_plans.size() and ammo_tick_plans[i] is Dictionary else {}
 		_apply_editor_control_plan(tick_label, tick_plan)
-	var orientation_choice_active := custom_board_enabled and _orientation_choice_is_active(unit_bp)
-	var selected_handedness_active := custom_board_enabled and _selected_node_supports_visual_handedness(unit_bp)
-	var unit_page_actions_enabled := bool(visibility_plan.get("unit_page_actions_enabled", false))
-	var clipboard_busy := _unit_editor_clipboard_busy()
-	var has_selection := not editor_selected_topology_nodes.is_empty()
-	var has_topology_clipboard := not editor_topology_clipboard.is_empty() and String(editor_topology_clipboard.get("kind", "")) == "topology_nodes"
-	var action_presentation_context := {
-		"zh": _ui_is_zh(),
-		"load_mode": editor_load_mode,
-		"board_tool": editor_board_tool,
-		"connection_state_color": _editor_connection_state_color(),
-		"barrier_grid_enabled": editor_barrier_grid_guides_enabled,
-		"unit_page_actions_enabled": unit_page_actions_enabled,
-		"match_format_text": _match_format_short(),
-	}
-	var action_plans := UILifecycleService.editor_action_presentations(
-		editor_action_buttons.keys(),
-		visibility_plan,
-		{
-			"barrier_screen_board": barrier_screen_board,
-			"orientation_choice_active": orientation_choice_active,
-			"selected_handedness_active": selected_handedness_active,
-			"sort_menu_open": editor_sort_menu_open,
-			"clipboard_busy": clipboard_busy,
-			"has_selection": has_selection,
-			"has_topology_clipboard": has_topology_clipboard,
-		},
-		action_presentation_context
-	)
-	for action_key_variant in editor_action_buttons.keys():
-		var action_key := String(action_key_variant)
-		var action_button: Button = editor_action_buttons[action_key_variant]
-		var action_presentation := Dictionary(action_plans.get(action_key, {}))
-		if not bool(action_presentation.get("managed", true)):
-			continue
-		_apply_editor_control_plan(action_button, action_presentation, bool(action_presentation.get("manage_disabled", true)))
+	_refresh_editor_action_button_presentations(visibility_plan, barrier_screen_board, custom_board_enabled, unit_bp)
 	var available_sort_keys := _current_editor_catalog_sort_keys()
 	var sort_names := EDITOR_SORT_KEY_NAMES_ZH if _ui_is_zh() else EDITOR_SORT_KEY_NAMES_EN
 	var sort_plan := UILifecycleService.editor_sort_controls_presentation(
