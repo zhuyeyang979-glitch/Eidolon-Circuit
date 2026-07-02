@@ -47218,6 +47218,30 @@ func _editor_build_spec_for_key(specs: Array, key: String) -> Dictionary:
 	return {}
 
 
+func _add_editor_action_button_from_spec(root: Control, spec: Dictionary, default_size: Vector2 = Vector2.ZERO, default_key: String = "", default_name: String = "") -> Button:
+	var action_key := String(spec.get("key", default_key))
+	var button := Button.new()
+	var button_name := String(spec.get("name", default_name))
+	if button_name != "":
+		button.name = button_name
+	button.text = String(spec.get("text", ""))
+	button.position = spec.get("position", Vector2.ZERO)
+	button.size = spec.get("size", default_size)
+	button.focus_mode = Control.FOCUS_NONE
+	if spec.has("visible"):
+		button.visible = bool(spec.get("visible", true))
+	if spec.has("disabled"):
+		button.disabled = bool(spec.get("disabled", false))
+	if spec.has("z_index"):
+		button.z_index = int(spec.get("z_index", button.z_index))
+	if action_key != "":
+		button.pressed.connect(_editor_action.bind(action_key))
+	root.add_child(button)
+	if action_key != "":
+		editor_action_buttons[action_key] = button
+	return button
+
+
 func _build_editor_ui() -> void:
 	editor_layer = CanvasLayer.new()
 	add_child(editor_layer)
@@ -47270,15 +47294,7 @@ func _build_editor_ui() -> void:
 	var guide_actions: Array = Array(editor_action_build_specs.get("assembly_guide_actions", []))
 	for spec in guide_actions:
 		var guide_spec := Dictionary(spec)
-		var guide_button := Button.new()
-		guide_button.name = String(guide_spec.get("key", "")).capitalize()
-		guide_button.text = String(guide_spec.get("text", ""))
-		guide_button.position = guide_spec.get("position", Vector2.ZERO)
-		guide_button.size = guide_spec.get("size", Vector2(24.0, 22.0))
-		guide_button.focus_mode = Control.FOCUS_NONE
-		guide_button.pressed.connect(_editor_action.bind(String(guide_spec.get("key", ""))))
-		root.add_child(guide_button)
-		editor_action_buttons[String(guide_spec.get("key", ""))] = guide_button
+		_add_editor_action_button_from_spec(root, guide_spec, Vector2(24.0, 22.0), "", String(guide_spec.get("key", "")).capitalize())
 	var role_load_build_specs := UILifecycleService.editor_role_load_build_specs(ROLE_ORDER, 10)
 	var role_button_build_specs: Array = Array(role_load_build_specs.get("role_buttons", []))
 	for raw_role_button_build_spec in role_button_build_specs:
@@ -47357,14 +47373,7 @@ func _build_editor_ui() -> void:
 	var actions: Array = Array(editor_action_build_specs.get("unit_actions", []))
 	for i in range(actions.size()):
 		var action_spec := Dictionary(actions[i])
-		var action_button := Button.new()
-		action_button.text = String(action_spec.get("text", ""))
-		action_button.position = action_spec.get("position", Vector2.ZERO)
-		action_button.size = action_spec.get("size", Vector2(84.0, 26.0))
-		action_button.focus_mode = Control.FOCUS_NONE
-		action_button.pressed.connect(_editor_action.bind(String(action_spec.get("key", ""))))
-		root.add_child(action_button)
-		editor_action_buttons[String(action_spec.get("key", ""))] = action_button
+		_add_editor_action_button_from_spec(root, action_spec, Vector2(84.0, 26.0))
 	var load_card_build_specs: Array = Array(role_load_build_specs.get("load_cards", []))
 	for raw_load_card_build_spec in load_card_build_specs:
 		var load_card_build_spec := Dictionary(raw_load_card_build_spec)
@@ -47695,16 +47704,7 @@ func _build_editor_ui() -> void:
 	var board_primary_actions: Array = Array(editor_action_build_specs.get("board_primary_actions", []))
 	for i in range(board_primary_actions.size()):
 		var board_primary_spec := Dictionary(board_primary_actions[i])
-		var quick_button := Button.new()
-		var board_primary_key := String(board_primary_spec.get("key", ""))
-		quick_button.name = String(board_primary_spec.get("name", "BoardPrimary%s" % board_primary_key))
-		quick_button.text = String(board_primary_spec.get("text", ""))
-		quick_button.position = board_primary_spec.get("position", Vector2.ZERO)
-		quick_button.size = board_primary_spec.get("size", Vector2(146.0, 28.0))
-		quick_button.focus_mode = Control.FOCUS_NONE
-		quick_button.pressed.connect(_editor_action.bind(board_primary_key))
-		root.add_child(quick_button)
-		editor_action_buttons[board_primary_key] = quick_button
+		_add_editor_action_button_from_spec(root, board_primary_spec, Vector2(146.0, 28.0))
 	var canvas_zoom_chrome_build_specs := UILifecycleService.editor_canvas_zoom_chrome_build_specs()
 	var canvas_tools_title_build_spec := Dictionary(canvas_zoom_chrome_build_specs.get("canvas_tools_title", {}))
 	editor_section_labels["canvas_tools"] = _make_label(root, String(canvas_tools_title_build_spec.get("name", "CanvasToolsTitle")), String(canvas_tools_title_build_spec.get("text", "")), canvas_tools_title_build_spec.get("position", Vector2.ZERO), canvas_tools_title_build_spec.get("size", Vector2.ZERO), 1, Color.TRANSPARENT, HORIZONTAL_ALIGNMENT_LEFT)
@@ -47712,14 +47712,7 @@ func _build_editor_ui() -> void:
 	var canvas_tools: Array = Array(editor_action_build_specs.get("canvas_tools", []))
 	for i in range(canvas_tools.size()):
 		var canvas_tool_spec := Dictionary(canvas_tools[i])
-		var canvas_button := Button.new()
-		canvas_button.text = String(canvas_tool_spec.get("text", ""))
-		canvas_button.position = canvas_tool_spec.get("position", Vector2.ZERO)
-		canvas_button.size = canvas_tool_spec.get("size", Vector2(72.0, 24.0))
-		canvas_button.focus_mode = Control.FOCUS_NONE
-		canvas_button.pressed.connect(_editor_action.bind(String(canvas_tool_spec.get("key", ""))))
-		root.add_child(canvas_button)
-		editor_action_buttons[String(canvas_tool_spec.get("key", ""))] = canvas_button
+		_add_editor_action_button_from_spec(root, canvas_tool_spec, Vector2(72.0, 24.0))
 	var body_part_button_build_specs := UILifecycleService.editor_body_part_button_build_specs(BODY_PART_ORDER)
 	for raw_body_part_button_build_spec in body_part_button_build_specs:
 		var body_part_button_build_spec := Dictionary(raw_body_part_button_build_spec)
@@ -47761,25 +47754,11 @@ func _build_editor_ui() -> void:
 	var zoom_button_specs: Array = Array(editor_action_build_specs.get("board_zoom_actions", []))
 	for i in range(zoom_button_specs.size()):
 		var zoom_button_spec := Dictionary(zoom_button_specs[i])
-		var zoom_button := Button.new()
-		zoom_button.text = String(zoom_button_spec.get("text", ""))
-		zoom_button.position = zoom_button_spec.get("position", Vector2.ZERO)
-		zoom_button.size = zoom_button_spec.get("size", Vector2(42.0, 24.0))
-		zoom_button.focus_mode = Control.FOCUS_NONE
-		zoom_button.pressed.connect(_editor_action.bind(String(zoom_button_spec.get("key", ""))))
-		root.add_child(zoom_button)
-		editor_action_buttons[String(zoom_button_spec.get("key", ""))] = zoom_button
+		_add_editor_action_button_from_spec(root, zoom_button_spec, Vector2(42.0, 24.0))
 	var board_zoom_value_build_spec := Dictionary(canvas_zoom_chrome_build_specs.get("board_zoom_value", {}))
 	editor_board_zoom_label = _make_label(root, String(board_zoom_value_build_spec.get("name", "BoardZoomValue")), String(board_zoom_value_build_spec.get("text", "100%")), board_zoom_value_build_spec.get("position", Vector2.ZERO), board_zoom_value_build_spec.get("size", Vector2.ZERO), 11, Color(1.0, 0.86, 0.28, 1.0), HORIZONTAL_ALIGNMENT_CENTER)
 	var template_toggle_spec := Dictionary(editor_action_build_specs.get("template_toggle", {}))
-	var template_menu_button := Button.new()
-	template_menu_button.text = String(template_toggle_spec.get("text", ""))
-	template_menu_button.position = template_toggle_spec.get("position", Vector2(936.0, 146.0))
-	template_menu_button.size = template_toggle_spec.get("size", Vector2(270.0, 26.0))
-	template_menu_button.focus_mode = Control.FOCUS_NONE
-	template_menu_button.pressed.connect(_editor_action.bind(String(template_toggle_spec.get("key", "toggle_templates"))))
-	root.add_child(template_menu_button)
-	editor_action_buttons[String(template_toggle_spec.get("key", "toggle_templates"))] = template_menu_button
+	_add_editor_action_button_from_spec(root, template_toggle_spec, Vector2(270.0, 26.0), "toggle_templates")
 	var template_drawer_build_specs := UILifecycleService.editor_template_drawer_build_specs(ARCHETYPE_ORDER, BARRIER_TEMPLATE_ORDER)
 	var template_panel_build_spec := Dictionary(template_drawer_build_specs.get("panel", {}))
 	editor_template_panel = _add_ui_rect(root, String(template_panel_build_spec.get("name", "TemplateSubmenuPanel")), template_panel_build_spec.get("position", Vector2.ZERO), template_panel_build_spec.get("size", Vector2.ZERO), Color(0.006, 0.014, 0.021, 0.92))
@@ -47927,14 +47906,7 @@ func _build_editor_ui() -> void:
 	var catalog_page_actions: Array = Array(editor_action_build_specs.get("catalog_page_actions", []))
 	for page_action in catalog_page_actions:
 		var page_action_spec := Dictionary(page_action)
-		var page_button := Button.new()
-		page_button.text = String(page_action_spec.get("text", ""))
-		page_button.position = page_action_spec.get("position", Vector2.ZERO)
-		page_button.size = page_action_spec.get("size", Vector2(24.0, 22.0))
-		page_button.focus_mode = Control.FOCUS_NONE
-		page_button.pressed.connect(_editor_action.bind(String(page_action_spec.get("key", ""))))
-		root.add_child(page_button)
-		editor_action_buttons[String(page_action_spec.get("key", ""))] = page_button
+		_add_editor_action_button_from_spec(root, page_action_spec, Vector2(24.0, 22.0))
 	var catalog_card_build_specs := UILifecycleService.editor_catalog_card_build_specs(8)
 	for raw_catalog_card_build_spec in catalog_card_build_specs:
 		var catalog_card_build_spec := Dictionary(raw_catalog_card_build_spec)

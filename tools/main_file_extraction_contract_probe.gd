@@ -90,6 +90,27 @@ func _init() -> void:
 	if source.find("UILifecycleService.editor_catalog_domain_revision_key") < 0:
 		_fail("main.gd should delegate editor catalog domain revision key planning.")
 		return
+	if source.find("func _add_editor_action_button_from_spec(") < 0:
+		_fail("main.gd should centralize editor action button creation.")
+		return
+	var build_editor_ui_block := _function_block(source, "func _build_editor_ui(")
+	if build_editor_ui_block.is_empty():
+		_fail("main.gd should keep _build_editor_ui available.")
+		return
+	if build_editor_ui_block.count("_add_editor_action_button_from_spec(") < 7:
+		_fail("_build_editor_ui should reuse the editor action button creation helper.")
+		return
+	for stale_action_build_fragment in [
+		"var guide_button := Button.new()",
+		"var quick_button := Button.new()",
+		"var canvas_button := Button.new()",
+		"var zoom_button := Button.new()",
+		"var template_menu_button := Button.new()",
+		"var page_button := Button.new()",
+	]:
+		if build_editor_ui_block.find(stale_action_build_fragment) >= 0:
+			_fail("_build_editor_ui should create editor action buttons through the helper instead of inline loops: %s" % stale_action_build_fragment)
+			return
 	var orientation_buttons_block := _function_block(source, "func _refresh_editor_orientation_buttons(")
 	if orientation_buttons_block.is_empty():
 		_fail("main.gd should keep _refresh_editor_orientation_buttons available.")

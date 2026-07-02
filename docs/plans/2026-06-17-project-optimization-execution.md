@@ -2268,6 +2268,23 @@ GREEN: EDITOR_BOARD_ZOOM_PROBE node=0 zoom=1.00 label=100% hover=0
 
 `UILifecycleService.editor_board_ui_revision_key()` and `editor_catalog_domain_revision_key()` now own the pure stable serialization of board-UI and catalog-domain invalidation keys. `_update_editor_board_ui()` keeps all source-state sampling local, including selected catalog indices, custom-board dynamic revision, pending placement/install state, sort state, barrier grid state, and catalog source signatures, then compares the returned keys against the existing caches.
 
+Follow-up editor action button creation adapter extraction:
+
+```text
+RED: main_file_extraction_contract_probe failed because main.gd should centralize editor action button creation
+GREEN: MAIN_FILE_EXTRACTION_CONTRACT_PROBE ok services=9
+GREEN: Godot --check-only --script res://scripts/main.gd --quit-after 1
+GREEN: LIFECYCLE_SERVICES_CONTRACT_PROBE ok
+GREEN: UNIT_EDITOR_PAGINATION_LAYOUT_PROBE ok unit=1 page=0 catalog=1 load=0 feedback=[P: (270.0, 654.0), S: (622.0, 26.0)]
+GREEN: UNIT_EDITOR_TEMPLATE_DRAWER_RUNTIME_PROBE ok selected=octopus barrier=BarrierTemplatepin_wall
+GREEN: EDITOR_BOARD_ZOOM_PROBE node=0 zoom=1.00 label=100% hover=0
+GREEN: UNIT_EDITOR_FULLSCREEN_LAYOUT_PROBE ok board=(908.0, 548.0) dock=(726.0, 132.0)
+GREEN: UNIT_EDITOR_CLIPBOARD_PROBE ok
+GREEN: PART_LIBRARY_UI_PROBE groups=["torso", "limb", "terminal_weapon", "barrier_panel", "software_muscle", "software"] weapon=3 equipment=5 software=7 dashboard=40
+```
+
+`_add_editor_action_button_from_spec()` now owns the concrete Button construction, default sizing, optional node-name application, `_editor_action` signal wiring, scene-tree insertion, and `editor_action_buttons` registration for ordinary editor action specs. `_build_editor_ui()` reuses it for assembly-guide, unit, board-primary, canvas-tool, board-zoom, template-toggle, and catalog-page actions while keeping special-case controls such as sort action intent buttons, module-binding overlays, save-dialog buttons, and orientation-popup buttons local.
+
 Remaining items after this batch:
 
 - Continue editor UI extraction with `_build_editor_ui` and the remaining action presentation/control-mutation sections of `_apply_editor_panel_visibility`, then continue `_resolve_attack` and `_refresh_editor_visual_views` extraction.
