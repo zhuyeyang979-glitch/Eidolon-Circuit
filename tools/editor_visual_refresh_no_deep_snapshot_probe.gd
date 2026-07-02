@@ -69,8 +69,15 @@ func _init() -> void:
 	if selected_preview_block.is_empty():
 		_fail("Missing _refresh_editor_visual_selected_part_preview helper.")
 		return
+	var begin_refresh_block := _function_block(source, "func _begin_editor_visual_refresh(")
+	if begin_refresh_block.is_empty():
+		_fail("Missing _begin_editor_visual_refresh helper.")
+		return
 	if block.contains("topology.duplicate(true)"):
 		_fail("TeamEdit visual refresh still deep-copies full topology.")
+		return
+	if block.count("if not _begin_editor_visual_refresh():") != 1:
+		_fail("TeamEdit visual refresh should delegate entry gate once.")
 		return
 	if block.count("_try_skip_editor_visual_refresh(visual_revision, update_side_panels)") != 1:
 		_fail("TeamEdit visual refresh should delegate revision skip handling once.")
@@ -128,9 +135,26 @@ func _init() -> void:
 		"if board_mode == \"custom\" and not snapshot.is_empty():",
 		"_apply_editor_board_dynamic_fields(snapshot, role_key, unit_bp, custom_board_cache_key, visual_stats)",
 		"_refresh_editor_selected_part_preview(BUILD_SLOTS[editor_slot_index], selected_component, clampf(editor_snap_timer / 0.28, 0.0, 1.0))",
+		"editor_board_visual_request_count +=",
+		"hot_path_profiler.scope_begin(\"teamedit.visual_refresh\")",
+		"editor_visual_refresh_count +=",
+		"if assembly_board_view == null:",
+		"hot_path_profiler.scope_end(\"teamedit.visual_refresh\")",
 	]:
 		if block.contains(stale_fragment):
 			_fail("TeamEdit visual refresh should not inline snapshot construction: %s" % stale_fragment)
+			return
+	for token in [
+		"editor_board_visual_request_count +=",
+		"hot_path_profiler.scope_begin(\"teamedit.visual_refresh\")",
+		"editor_visual_refresh_count +=",
+		"if assembly_board_view == null:",
+		"hot_path_profiler.scope_end(\"teamedit.visual_refresh\")",
+		"return false",
+		"return true",
+	]:
+		if not begin_refresh_block.contains(token):
+			_fail("Visual refresh entry helper missing token: %s" % token)
 			return
 	for token in [
 		"_editor_shallow_topology_snapshot(topology)",

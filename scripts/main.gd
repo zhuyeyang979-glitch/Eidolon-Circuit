@@ -53050,7 +53050,7 @@ func _refresh_editor_visual_selected_part_preview(update_side_panels: bool) -> v
 	_refresh_editor_selected_part_preview(BUILD_SLOTS[editor_slot_index], selected_component, clampf(editor_snap_timer / 0.28, 0.0, 1.0))
 
 
-func _refresh_editor_visual_views(precomputed_stats: Dictionary = {}, update_side_panels: bool = true) -> void:
+func _begin_editor_visual_refresh() -> bool:
 	editor_board_visual_request_count += 1
 	if hot_path_profiler != null:
 		hot_path_profiler.scope_begin("teamedit.visual_refresh")
@@ -53058,6 +53058,12 @@ func _refresh_editor_visual_views(precomputed_stats: Dictionary = {}, update_sid
 	if assembly_board_view == null:
 		if hot_path_profiler != null:
 			hot_path_profiler.scope_end("teamedit.visual_refresh")
+		return false
+	return true
+
+
+func _refresh_editor_visual_views(precomputed_stats: Dictionary = {}, update_side_panels: bool = true) -> void:
+	if not _begin_editor_visual_refresh():
 		return
 	var player_id := _editor_player()
 	var role_key: String = ROLE_ORDER[editor_role_index]
