@@ -291,6 +291,40 @@ func _init() -> void:
 		_fail("UILifecycleService en orientation popup copy contract failed.")
 		return
 	_assert_vector(english_orientation_panel, "position", Vector2(12.0, 462.0), "orientation popup clamped presentation")
+	if not assembly_lifecycle_service.has_method("editor_orientation_action_buttons_presentation"):
+		_fail("UILifecycleService should expose editor orientation action button presentation planning.")
+		return
+	var orientation_action_choice_plan: Dictionary = assembly_lifecycle_service.call("editor_orientation_action_buttons_presentation", true, false, true)
+	var orientation_action_choice_left: Dictionary = Dictionary(orientation_action_choice_plan.get("set_handedness_left", {}))
+	var orientation_action_choice_right: Dictionary = Dictionary(orientation_action_choice_plan.get("set_handedness_right", {}))
+	var orientation_action_choice_flip: Dictionary = Dictionary(orientation_action_choice_plan.get("flip_handedness", {}))
+	if not bool(orientation_action_choice_left.get("visible", false)) or bool(orientation_action_choice_left.get("disabled", true)) or String(orientation_action_choice_left.get("text", "")) != "左挂刃" or not bool(orientation_action_choice_left.get("move_to_front", false)):
+		_fail("UILifecycleService orientation choice left action presentation failed.")
+		return
+	if not bool(orientation_action_choice_right.get("visible", false)) or bool(orientation_action_choice_right.get("disabled", true)) or String(orientation_action_choice_right.get("text", "")) != "右挂刃" or not bool(orientation_action_choice_right.get("move_to_front", false)):
+		_fail("UILifecycleService orientation choice right action presentation failed.")
+		return
+	if bool(orientation_action_choice_flip.get("visible", true)) or not bool(orientation_action_choice_flip.get("disabled", false)):
+		_fail("UILifecycleService should hide flip action during explicit orientation choice.")
+		return
+	_assert_vector(orientation_action_choice_left, "position", Vector2(776.0, 688.0), "orientation left action presentation")
+	_assert_vector(orientation_action_choice_right, "position", Vector2(846.0, 688.0), "orientation right action presentation")
+	_assert_vector(orientation_action_choice_left, "size", Vector2(66.0, 24.0), "orientation left action presentation")
+	_assert_color(orientation_action_choice_left, "modulate", Color(0.42, 1.0, 0.82, 1.0), "orientation visible action presentation")
+	var orientation_action_flip_plan: Dictionary = assembly_lifecycle_service.call("editor_orientation_action_buttons_presentation", false, true, false)
+	var orientation_action_flip: Dictionary = Dictionary(orientation_action_flip_plan.get("flip_handedness", {}))
+	var orientation_action_hidden_left: Dictionary = Dictionary(orientation_action_flip_plan.get("set_handedness_left", {}))
+	if not bool(orientation_action_flip.get("visible", false)) or bool(orientation_action_flip.get("disabled", true)) or String(orientation_action_flip.get("text", "")) != "FLIP SIDE" or not bool(orientation_action_flip.get("move_to_front", false)):
+		_fail("UILifecycleService selected flip orientation action presentation failed.")
+		return
+	if bool(orientation_action_hidden_left.get("visible", true)) or not bool(orientation_action_hidden_left.get("disabled", false)):
+		_fail("UILifecycleService should hide left orientation action outside orientation choice.")
+		return
+	_assert_vector(orientation_action_flip, "position", Vector2(776.0, 688.0), "orientation flip action presentation")
+	var orientation_action_hidden_plan: Dictionary = assembly_lifecycle_service.call("editor_orientation_action_buttons_presentation", false, false, true)
+	if bool(Dictionary(orientation_action_hidden_plan.get("set_handedness_left", {})).get("visible", true)) or bool(Dictionary(orientation_action_hidden_plan.get("set_handedness_right", {})).get("visible", true)) or bool(Dictionary(orientation_action_hidden_plan.get("flip_handedness", {})).get("visible", true)):
+		_fail("UILifecycleService should hide all orientation action buttons when inactive.")
+		return
 	var build_specs: Dictionary = UILifecycleService.editor_action_build_specs()
 	var panel_specs: Array = Array(build_specs.get("panel_buttons", []))
 	var guide_specs: Array = Array(build_specs.get("assembly_guide_actions", []))

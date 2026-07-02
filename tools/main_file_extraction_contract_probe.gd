@@ -6,6 +6,16 @@ func _fail(message: String) -> void:
 	quit(1)
 
 
+func _function_block(source: String, signature: String) -> String:
+	var start := source.find(signature)
+	if start < 0:
+		return ""
+	var next := source.find("\nfunc ", start + signature.length())
+	if next < 0:
+		next = source.length()
+	return source.substr(start, next - start)
+
+
 func _init() -> void:
 	var required_files := [
 		"res://scripts/services/action_profile_registry.gd",
@@ -65,6 +75,28 @@ func _init() -> void:
 	if source.find("UILifecycleService.editor_save_unit_name_panel_presentation") < 0:
 		_fail("main.gd should delegate editor save-unit name panel presentation planning.")
 		return
+	if source.find("UILifecycleService.editor_orientation_action_buttons_presentation") < 0:
+		_fail("main.gd should delegate editor orientation action button presentation planning.")
+		return
+	var orientation_buttons_block := _function_block(source, "func _refresh_editor_orientation_buttons(")
+	if orientation_buttons_block.is_empty():
+		_fail("main.gd should keep _refresh_editor_orientation_buttons available.")
+		return
+	if orientation_buttons_block.count("UILifecycleService.editor_orientation_action_buttons_presentation(") != 1:
+		_fail("_refresh_editor_orientation_buttons should request one orientation action button presentation plan.")
+		return
+	for stale_orientation_fragment in [
+		"_set_canvas_item_visible_if_changed(action_button, show_orientation_action)",
+		"_set_button_disabled_if_changed(action_button, not show_orientation_action)",
+		"var x_pos := 776.0",
+		"_set_control_text_if_changed(action_button, \"左挂刃\"",
+		"_set_control_text_if_changed(action_button, \"翻侧刃\"",
+		"_set_canvas_item_modulate_if_changed(action_button",
+		"action_button.move_to_front()",
+	]:
+		if orientation_buttons_block.find(stale_orientation_fragment) >= 0:
+			_fail("_refresh_editor_orientation_buttons should apply service plans instead of inline mutation: %s" % stale_orientation_fragment)
+			return
 	if source.contains("\"size_tier_rank\": float(_size_tier_rank(_part_size_tier_label(part, slot_key)))"):
 		_fail("main.gd should not derive part size-tier rank inside slot-volume adapters.")
 	if source.contains("\"booster_boost_momentum\":"):

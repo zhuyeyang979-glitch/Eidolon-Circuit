@@ -17842,31 +17842,12 @@ func _refresh_editor_orientation_buttons() -> void:
 	var custom_board_enabled := _role_uses_body_board(role_key) and unit_bp.has("custom_topology") and not (role_key == "barrier" and _barrier_uses_screen_board(unit_bp))
 	var orientation_choice_active := custom_board_enabled and _orientation_choice_is_active(unit_bp)
 	var selected_handedness_active := custom_board_enabled and _selected_node_supports_visual_handedness(unit_bp)
+	var orientation_action_plans := UILifecycleService.editor_orientation_action_buttons_presentation(orientation_choice_active, selected_handedness_active, _ui_is_zh())
 	for action_name in ["set_handedness_left", "set_handedness_right", "flip_handedness"]:
 		if not editor_action_buttons.has(action_name):
 			continue
 		var action_button: Button = editor_action_buttons[action_name]
-		var show_orientation_action := false
-		if action_name in ["set_handedness_left", "set_handedness_right"]:
-			show_orientation_action = orientation_choice_active
-		elif action_name == "flip_handedness":
-			show_orientation_action = selected_handedness_active and not orientation_choice_active
-		_set_canvas_item_visible_if_changed(action_button, show_orientation_action)
-		_set_button_disabled_if_changed(action_button, not show_orientation_action)
-		var x_pos := 776.0
-		if action_name == "set_handedness_right":
-			x_pos = 846.0
-		_set_control_position_if_changed(action_button, Vector2(x_pos, 688.0))
-		_set_control_size_if_changed(action_button, Vector2(66.0, 24.0))
-		if action_name == "set_handedness_left":
-			_set_control_text_if_changed(action_button, "左挂刃" if _ui_is_zh() else "LEFT")
-		elif action_name == "set_handedness_right":
-			_set_control_text_if_changed(action_button, "右挂刃" if _ui_is_zh() else "RIGHT")
-		else:
-			_set_control_text_if_changed(action_button, "翻侧刃" if _ui_is_zh() else "FLIP SIDE")
-		_set_canvas_item_modulate_if_changed(action_button, Color(0.42, 1.0, 0.82, 1.0) if show_orientation_action else Color(0.78, 0.9, 1.0, 0.72))
-		if show_orientation_action:
-			action_button.move_to_front()
+		_apply_editor_control_plan(action_button, Dictionary(orientation_action_plans.get(action_name, {})))
 	_refresh_editor_orientation_popup()
 
 
@@ -43518,6 +43499,16 @@ func _default_visual_handedness_for_part(part: Dictionary) -> String:
 func _topology_node_visual_handedness(node: Dictionary) -> String:
 	var explicit_mount_side := String(node.get("visual_mount_side", "")).strip_edges()
 	var explicit_handedness := String(node.get("visual_handedness", "")).strip_edges()
+	var default_side := _normalize_mount_side(node.get("default_mount_side", node.get("default_visual_handedness", "right")))
+	if explicit_mount_side != "" and explicit_handedness != "":
+		var mount_side := _normalize_mount_side(explicit_mount_side)
+		var handedness := _normalize_mount_side(explicit_handedness)
+		if mount_side != handedness:
+			if mount_side == default_side and handedness != default_side:
+				return handedness
+			if handedness == default_side and mount_side != default_side:
+				return mount_side
+		return mount_side
 	if explicit_mount_side != "":
 		return _normalize_mount_side(explicit_mount_side)
 	if explicit_handedness != "":

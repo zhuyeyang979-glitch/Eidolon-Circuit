@@ -2174,6 +2174,40 @@ GREEN: ASSEMBLY_TEMPLATE_PROBE skipped headless
 
 The dynamic board overlay now recomputes `material_highlights` on cached custom snapshots and both visual-refresh and board-dynamic revision keys include hover/drag preview state. `editor_material_highlight_probe` now latches assertion failures so stale hover material states cannot produce a false-green result.
 
+Follow-up editor orientation action button presentation extraction:
+
+```text
+RED: lifecycle_services_contract_probe failed because UILifecycleService did not expose editor_orientation_action_buttons_presentation
+RED: main_file_extraction_contract_probe failed because _refresh_editor_orientation_buttons still mutated action buttons inline
+GREEN: LIFECYCLE_SERVICES_CONTRACT_PROBE ok
+GREEN: MAIN_FILE_EXTRACTION_CONTRACT_PROBE ok services=9
+GREEN: Godot --check-only --script res://scripts/main.gd --quit-after 1
+GREEN: ASYMMETRIC_WEAPON_ORIENTATION_CHOICE_PROBE ok scythe=SCYTHE BLADE
+GREEN: SCYTHE_INSTALL_ORIENTATION_UI_PROBE ok node=0
+GREEN: SCYTHE_CATALOG_DROP_LINK_ORIENTATION_POPUP_PROBE ok scythe=2 parent=1 gap=0.000000 side=left
+GREEN: SCYTHE_MANUAL_LINK_ORIENTATION_POPUP_PROBE ok scythe=2 parent=1
+GREEN: SCYTHE_MAGNETIC_LINK_ORIENTATION_POPUP_PROBE ok scythe=2 parent=1
+GREEN: SCYTHE_HANDEDNESS_BOARD_RUNTIME_PROBE ok node=1
+GREEN: SCYTHE_MODULE_BINDING_HANDEDNESS_PROBE ok
+GREEN: SCYTHE_MODULE_BINDING_MOUNT_SIDE_PROBE ok
+GREEN: SCYTHE_MOUNT_SIDE_BOARD_RUNTIME_PROBE ok node=2
+GREEN: SCYTHE_SIDE_CHOICE_DOES_NOT_MOVE_SOCKET_PROBE ok scythe=2
+GREEN: SCYTHE_DRAG_PRESERVES_ORIENTATION_CHOICE_PROBE ok node=0 side=right
+GREEN: SCYTHE_LINK_VISUAL_PARENT_AXIS_PROBE ok scythe=2
+GREEN: UNIT_EDITOR_TEMPLATE_DRAWER_RUNTIME_PROBE ok selected=octopus barrier=BarrierTemplatepin_wall
+GREEN: UNIT_EDITOR_ASSEMBLY_GUIDE_UI_PROBE ok
+GREEN: EDITOR_BOARD_ZOOM_PROBE node=0 zoom=1.00 label=100% hover=0
+GREEN: UNIT_EDITOR_CLIPBOARD_PROBE ok
+GREEN: PART_LIBRARY_UI_PROBE groups=["torso", "limb", "terminal_weapon", "barrier_panel", "software_muscle", "software"] weapon=3 equipment=5 software=7 dashboard=40
+GREEN: UNIT_EDITOR_NO_TEAM_ROLE_CONTROLS_PROBE ok
+GREEN: UNIT_EDITOR_FULLSCREEN_LAYOUT_PROBE ok board=(908.0, 548.0) dock=(726.0, 132.0)
+GREEN: UNIT_EDITOR_PAGINATION_LAYOUT_PROBE ok unit=1 page=0 catalog=1 load=0 feedback=[P: (270.0, 654.0), S: (622.0, 26.0)]
+```
+
+`UILifecycleService.editor_orientation_action_buttons_presentation()` now owns the pure visible/disabled/text/position/size/modulate/front-order plan for left/right/flip side-mounted blade orientation actions. `_refresh_editor_orientation_buttons()` still owns active-state detection and applies those plans through `_apply_editor_control_plan()` before refreshing the popup.
+
+The same verification pass exposed a stale side-mount alias conflict: legacy `visual_handedness`-only paths could be masked by a default `visual_mount_side`. `_topology_node_visual_handedness()` now resolves conflicting aliases by preserving the explicit non-default side, so old `visual_handedness` data and new `visual_mount_side` data both survive board enrichment, runtime segments, and renderer conversion.
+
 Remaining items after this batch:
 
 - Continue editor UI extraction with `_build_editor_ui` and the remaining action presentation/control-mutation sections of `_apply_editor_panel_visibility`, then continue `_resolve_attack` and `_refresh_editor_visual_views` extraction.

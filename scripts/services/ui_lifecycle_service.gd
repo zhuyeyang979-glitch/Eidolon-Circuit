@@ -1618,6 +1618,38 @@ static func editor_orientation_popup_presentation(show_popup: bool, node_valid: 
 	}
 
 
+static func editor_orientation_action_buttons_presentation(orientation_choice_active: bool, selected_handedness_active: bool, zh: bool) -> Dictionary:
+	var visible_color := Color(0.42, 1.0, 0.82, 1.0)
+	var hidden_color := Color(0.78, 0.9, 1.0, 0.72)
+	var plans := {}
+	for action_key in ["set_handedness_left", "set_handedness_right", "flip_handedness"]:
+		var visible := false
+		if action_key in ["set_handedness_left", "set_handedness_right"]:
+			visible = orientation_choice_active
+		elif action_key == "flip_handedness":
+			visible = selected_handedness_active and not orientation_choice_active
+		var x_pos := 776.0
+		if action_key == "set_handedness_right":
+			x_pos = 846.0
+		var text := ""
+		if action_key == "set_handedness_left":
+			text = "左挂刃" if zh else "LEFT"
+		elif action_key == "set_handedness_right":
+			text = "右挂刃" if zh else "RIGHT"
+		else:
+			text = "翻侧刃" if zh else "FLIP SIDE"
+		plans[action_key] = {
+			"visible": visible,
+			"disabled": not visible,
+			"position": Vector2(x_pos, 688.0),
+			"size": Vector2(66.0, 24.0),
+			"text": text,
+			"modulate": visible_color if visible else hidden_color,
+			"move_to_front": visible,
+		}
+	return plans
+
+
 static func editor_action_presentation(action_key: String, action_state: Dictionary, visible_unit_action_index: int, context: Dictionary) -> Dictionary:
 	var key := String(action_key)
 	var kind := String(action_state.get("kind", "unit"))
