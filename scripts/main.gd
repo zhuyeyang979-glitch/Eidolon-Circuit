@@ -18,6 +18,7 @@ const UnitStatsService = preload("res://scripts/services/unit_stats_service.gd")
 const TrainingEntryService = preload("res://scripts/services/training_entry_service.gd")
 const SavedUnitLibraryService = preload("res://scripts/services/saved_unit_library_service.gd")
 const BattleInputService = preload("res://scripts/services/battle_input_service.gd")
+const BattleContactTapeService = preload("res://scripts/services/battle_contact_tape_service.gd")
 const ProjectileRuntimeService = preload("res://scripts/services/projectile_runtime_service.gd")
 const RuntimeContactService = preload("res://scripts/services/runtime_contact_service.gd")
 const HardwareFaultRuntimeService = preload("res://scripts/services/hardware_fault_runtime_service.gd")
@@ -1570,6 +1571,11 @@ var battle_active_input_frame := {}
 var battle_pending_pressed_actions := {}
 var battle_pending_released_actions := {}
 var battle_replay_seed := 0
+var battle_contact_simulation_step := 0
+var battle_contact_tape_mode := "off"
+var battle_contact_tape_frames: Array = []
+var battle_contact_tape_cursor := 0
+var battle_contact_replay_error := ""
 var battle_presentation_active := false
 var battle_presentation_alpha := 1.0
 var battle_camera_snapshot_initialized := false
@@ -11726,6 +11732,11 @@ func _begin_battle(mode: String, preloaded: bool = false, reason: String = "", r
 	battle_pending_released_actions.clear()
 	battle_attack_execution_count = 0
 	battle_replay_seed = match_seed
+	battle_contact_simulation_step = 0
+	battle_contact_tape_mode = "off"
+	battle_contact_tape_frames.clear()
+	battle_contact_tape_cursor = 0
+	battle_contact_replay_error = ""
 	battle_presentation_active = false
 	battle_presentation_alpha = 1.0
 	battle_camera_snapshot_initialized = false
@@ -26072,6 +26083,60 @@ func _capture_battle_input_frame() -> Dictionary:
 	return _battle_input_service().capture_input_frame(_battle_input_action_names(), battle_pending_pressed_actions, battle_pending_released_actions, Callable(self, "_input_action_just_pressed_for_service"), Callable(self, "_input_action_just_released_for_service"), Callable(self, "_input_action_strength_for_service"))
 
 
+func _begin_battle_contact_capture() -> bool:
+	if game_state != STATE_BATTLE or battle_contact_simulation_step != 0 or not _gpu_collision_available():
+		return false
+	battle_contact_tape_mode = "capture"
+	battle_contact_tape_frames.clear()
+	battle_contact_tape_cursor = 0
+	battle_contact_replay_error = ""
+	return true
+
+
+func _take_battle_contact_capture() -> Dictionary:
+	if battle_contact_tape_mode != "capture" or battle_contact_replay_error != "":
+		return {}
+	var tape := {
+		"schema_version": BattleContactTapeService.SCHEMA_VERSION,
+		"replay_seed": battle_replay_seed,
+		"frames": battle_contact_tape_frames.duplicate(true),
+	}
+	battle_contact_tape_mode = "off"
+	battle_contact_tape_frames.clear()
+	return tape
+
+
+func _begin_battle_contact_playback(tape: Dictionary) -> bool:
+	if game_state != STATE_BATTLE or battle_contact_simulation_step != 0 or int(tape.get("schema_version", -1)) != BattleContactTapeService.SCHEMA_VERSION:
+		battle_contact_replay_error = "invalid contact tape schema or battle state"
+		return false
+	if int(tape.get("replay_seed", 0)) != battle_replay_seed or not (tape.get("frames") is Array):
+		battle_contact_replay_error = "contact tape seed or frames do not match this battle"
+		return false
+	var frames: Array = tape["frames"]
+	var previous_step := -1
+	for raw_frame in frames:
+		if not (raw_frame is Dictionary) or int(Dictionary(raw_frame).get("step", -1)) <= previous_step:
+			battle_contact_replay_error = "contact tape steps are missing or unordered"
+			return false
+		previous_step = int(Dictionary(raw_frame).get("step", -1))
+	battle_contact_tape_frames = frames.duplicate(true)
+	battle_contact_tape_cursor = 0
+	battle_contact_replay_error = ""
+	battle_contact_tape_mode = "playback"
+	return true
+
+
+func _battle_contact_playback_complete() -> bool:
+	return battle_contact_tape_mode == "playback" and battle_contact_replay_error == "" and battle_contact_tape_cursor == battle_contact_tape_frames.size()
+
+
+func _reject_battle_contact_replay(reason: String) -> void:
+	if battle_contact_replay_error == "":
+		battle_contact_replay_error = reason
+		push_error("Battle contact replay rejected: %s" % reason)
+
+
 func _battle_replay_checkpoint_state() -> Dictionary:
 	var units: Array = []
 	for unit_index in range(all_units.size()):
@@ -26999,6 +27064,8 @@ func _tick_battle_with_input_frame(delta: float, input_frame: Dictionary) -> voi
 
 
 func _tick_battle_frame(delta: float, supplied_input_frame: Dictionary, use_supplied_input_frame: bool) -> void:
+	if battle_contact_tape_mode == "playback" and battle_contact_replay_error != "":
+		return
 	_reset_battle_vfx_frame_budget()
 	var plan := _battle_runtime_facade().frame_step_plan(delta, battle_simulation_accumulator, {
 		"game_over": game_over,
@@ -27015,6 +27082,8 @@ func _tick_battle_frame(delta: float, supplied_input_frame: Dictionary, use_supp
 		_capture_battle_motion_before_step()
 		_consume_battle_input_edges_once(input_frame, step_index == 0)
 		_tick_battle_simulation(BATTLE_SIMULATION_DELTA)
+		if battle_contact_tape_mode == "playback" and battle_contact_replay_error != "":
+			return
 		battle_input_frame_active = false
 		_capture_battle_motion_after_step()
 	battle_simulation_accumulator = float(plan.get("accumulator_after", battle_simulation_accumulator))
@@ -27029,6 +27098,7 @@ func _tick_battle_frame(delta: float, supplied_input_frame: Dictionary, use_supp
 
 
 func _tick_battle_simulation(delta: float, _input_frame: Dictionary = {}) -> void:
+	battle_contact_simulation_step += 1
 	battle_simulation_time_seconds += delta
 	if battle_controller != null:
 		battle_controller.note_tick()
@@ -33421,7 +33491,7 @@ func _resolve_unit_body_spacing(delta: float) -> void:
 		"delta": delta,
 		"live_subject_count": live_subjects.size(),
 		"has_runtime_subject": has_runtime_subject,
-		"gpu_available": _gpu_collision_available() if has_runtime_subject else false,
+		"gpu_available": (battle_contact_tape_mode == "playback" or _gpu_collision_available()) if has_runtime_subject else false,
 	})
 	if bool(plan.get("gpu_runtime_contact", false)):
 		_gpu_collision_and_response_step(live_subjects, delta)
@@ -33663,10 +33733,34 @@ func _gpu_collision_and_response_step(live_subjects: Array, delta: float) -> voi
 	if gpu_colliders.size() < 2:
 		return
 	gpu_collision_pair_dispatch_count += 1
-	var records := gpu_collision_pipeline.compute_contact_responses_deferred(gpu_colliders, RUNTIME_CONTACT_REQUIRED_OVERLAP, delta)
-	gpu_collision_candidate_count += int(gpu_collision_pipeline.last_candidate_count)
+	var records: Array = []
+	var candidates := 0
+	var readback_bytes := 0
+	if battle_contact_tape_mode == "playback":
+		if battle_contact_tape_cursor >= battle_contact_tape_frames.size():
+			_reject_battle_contact_replay("contact tape ended before simulation step %d" % battle_contact_simulation_step)
+			return
+		var decoded: Dictionary = BattleContactTapeService.decode_step(battle_contact_tape_frames[battle_contact_tape_cursor], battle_contact_simulation_step, entries.size())
+		if decoded.has("error"):
+			_reject_battle_contact_replay(String(decoded["error"]))
+			return
+		records = Array(decoded.get("records", []))
+		candidates = int(decoded.get("candidate_count", 0))
+		readback_bytes = int(decoded.get("readback_bytes", 0))
+		battle_contact_tape_cursor += 1
+	else:
+		records = gpu_collision_pipeline.compute_contact_responses_deferred(gpu_colliders, RUNTIME_CONTACT_REQUIRED_OVERLAP, delta)
+		candidates = int(gpu_collision_pipeline.last_candidate_count)
+		readback_bytes = int(gpu_collision_pipeline.last_readback_bytes)
+		if battle_contact_tape_mode == "capture":
+			var captured_step: Dictionary = BattleContactTapeService.encode_step(battle_contact_simulation_step, entries.size(), records, candidates, readback_bytes)
+			if captured_step.is_empty():
+				_reject_battle_contact_replay("cannot encode contact step %d" % battle_contact_simulation_step)
+				return
+			battle_contact_tape_frames.append(captured_step)
+	gpu_collision_candidate_count += candidates
 	gpu_collision_contact_count += records.size()
-	gpu_collision_readback_bytes += int(gpu_collision_pipeline.last_readback_bytes)
+	gpu_collision_readback_bytes += readback_bytes
 	if records.is_empty():
 		return
 	for raw_record in records:
