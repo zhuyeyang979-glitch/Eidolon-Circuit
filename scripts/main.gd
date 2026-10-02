@@ -4593,8 +4593,8 @@ func _builtin_hero_preset_definitions() -> Array:
 
 
 func _builtin_hero_preset_blueprint(definition: Dictionary) -> Dictionary:
-	var torso_index := _builtin_hero_torso_index()
 	var limb_index := _builtin_hero_limb_index()
+	var torso_index := _builtin_hero_torso_index(limb_index)
 	var engine_index := _builtin_hero_engine_index()
 	var booster_index := _builtin_hero_booster_index()
 	var cooling_index := _builtin_hero_cooling_index()
@@ -4658,10 +4658,21 @@ func _builtin_hero_preset_blueprint(definition: Dictionary) -> Dictionary:
 	return canonical
 
 
-func _builtin_hero_torso_index() -> int:
+func _builtin_hero_torso_index(limb_index: int) -> int:
+	if limb_index < 0:
+		return -1
+	var limb_part := _selected_component("hero", "limb_muscle", limb_index)
+	var required_size_rank := _size_tier_rank(_part_size_tier_label(limb_part, "limb_muscle"))
+	var limb_maker := String(limb_part.get("maker", "")).strip_edges().to_upper()
 	for i in range(_catalog_for("hero", "muscle").size()):
 		var part: Dictionary = _selected_component("hero", "muscle", i)
-		if _component_is_torso(part) and _part_slot_volume_rank(part, "muscle") <= 2.0 and _torso_plugin_capacity_for_part(part) >= 3 and _torso_software_capacity_for_part(part) >= 1:
+		if not _component_is_torso(part) or _part_slot_volume_rank(part, "muscle") > 2.0:
+			continue
+		if _size_tier_rank(_part_size_tier_label(part, "muscle")) < required_size_rank:
+			continue
+		if limb_maker != "" and String(part.get("maker", "")).strip_edges().to_upper() != limb_maker:
+			continue
+		if _torso_plugin_capacity_for_part(part) >= 3 and _torso_software_capacity_for_part(part) >= 1:
 			return i
 	return -1
 
