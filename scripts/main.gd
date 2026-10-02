@@ -1630,6 +1630,8 @@ var command_buffers := {1: [], 2: []}
 var command_timers := {1: 0.0, 2: 0.0}
 var battle_command_log: Array = []
 var battle_attack_rule_log: Array = []
+var battle_passive_contact_damage := {1: 0, 2: 0}
+var battle_passive_contact_latest := {1: {}, 2: {}}
 var battle_attack_execution_count := 0
 var battle_command_log_last_cache := {1: "", 2: ""}
 var attack_command_windows := {1: {}, 2: {}}
@@ -9076,6 +9078,8 @@ func _cleanup_battle_runtime(preserve_for_return: bool = false) -> void:
 		battle_attack_feedback_events = {1: {}, 2: {}}
 		battle_command_log.clear()
 		battle_attack_rule_log.clear()
+		battle_passive_contact_damage = {1: 0, 2: 0}
+		battle_passive_contact_latest = {1: {}, 2: {}}
 		battle_command_log_last_cache = {1: "", 2: ""}
 	_commit_battle_cleanup_intent(cleanup_intent)
 
@@ -11690,13 +11694,17 @@ func _start_battle(mode: String, preloaded: bool = false) -> void:
 	_begin_battle(mode)
 
 
-func _begin_battle(mode: String, preloaded: bool = false, reason: String = "") -> void:
+func _begin_battle(mode: String, preloaded: bool = false, reason: String = "", replay_seed_override: int = -1) -> void:
 	var nav_reason := reason if reason != "" else "battle:%s" % mode
 	var loading_queued := not preloaded and _should_queue_loading_transition(STATE_BATTLE)
 	var show_intent := _battle_mode_show_intent(mode, preloaded, loading_queued, nav_reason, false)
 	if loading_queued:
-		queue_loading_transition(STATE_BATTLE, nav_reason, preload_battle_content(mode), Callable(self, "_begin_battle").bind(mode, true, nav_reason))
+		queue_loading_transition(STATE_BATTLE, nav_reason, preload_battle_content(mode), Callable(self, "_begin_battle").bind(mode, true, nav_reason, replay_seed_override))
 		return
+	var match_seed := replay_seed_override
+	if match_seed < 0:
+		match_seed = maxi(1, int(randi()))
+	seed(match_seed)
 	battle_mode = String(show_intent.get("battle_mode", mode))
 	_commit_battle_mode_show_intent(show_intent)
 	_transition_page(STATE_BATTLE, String(show_intent.get("reason", nav_reason)), Dictionary(show_intent.get("payload", {"mode": battle_mode})))
@@ -11717,7 +11725,7 @@ func _begin_battle(mode: String, preloaded: bool = false, reason: String = "") -
 	battle_pending_pressed_actions.clear()
 	battle_pending_released_actions.clear()
 	battle_attack_execution_count = 0
-	battle_replay_seed = 0
+	battle_replay_seed = match_seed
 	battle_presentation_active = false
 	battle_presentation_alpha = 1.0
 	battle_camera_snapshot_initialized = false
@@ -11749,6 +11757,8 @@ func _begin_battle(mode: String, preloaded: bool = false, reason: String = "") -
 	command_timers = {1: 0.0, 2: 0.0}
 	battle_command_log.clear()
 	battle_attack_rule_log.clear()
+	battle_passive_contact_damage = {1: 0, 2: 0}
+	battle_passive_contact_latest = {1: {}, 2: {}}
 	battle_command_log_last_cache = {1: "", 2: ""}
 	attack_command_windows = {1: {}, 2: {}}
 	pending_deploys = {
@@ -11771,6 +11781,8 @@ func _begin_battle(mode: String, preloaded: bool = false, reason: String = "") -
 	battle_attack_feedback_events = {1: {}, 2: {}}
 	battle_command_log.clear()
 	battle_attack_rule_log.clear()
+	battle_passive_contact_damage = {1: 0, 2: 0}
+	battle_passive_contact_latest = {1: {}, 2: {}}
 	battle_command_log_last_cache = {1: "", 2: ""}
 	salvo_landing_preview_effects.clear()
 	_apply_ai_side_roster_mapping(mode)
@@ -11836,10 +11848,8 @@ func _begin_battle_from_start_payload(payload: Dictionary, preloaded: bool = fal
 		queue_loading_transition(STATE_BATTLE, nav_reason, preload_battle_content(mode), Callable(self, "_begin_battle_from_start_payload").bind(canonical_payload, true, nav_reason))
 		return true
 	var replay_seed := int(canonical_payload.get("replay_seed", 0))
-	seed(replay_seed)
 	ai_battle_seat = clampi(int(canonical_payload.get("ai_seat", ai_battle_seat)), 1, 3)
-	_begin_battle(mode, preloaded, nav_reason)
-	battle_replay_seed = replay_seed
+	_begin_battle(mode, preloaded, nav_reason, replay_seed)
 	return game_state == STATE_BATTLE
 
 
@@ -28523,7 +28533,32 @@ func _attack_rule_hardware_fault_post_review_text(breakdown: Dictionary) -> Stri
 
 
 func _battle_review_diagnostic_summary_text() -> String:
-	return "%s\n\n%s" % [_battle_attack_rule_summary_text(2), _battle_command_log_summary_text(2)]
+	var sections := PackedStringArray()
+	var contact_summary := _battle_contact_damage_summary_text()
+	if contact_summary != "":
+		sections.append(contact_summary)
+	sections.append(_battle_attack_rule_summary_text(2))
+	sections.append(_battle_command_log_summary_text(2))
+	return "\n".join(sections)
+
+func _battle_contact_damage_summary_text() -> String:
+	var lines := PackedStringArray()
+	for player_id in [1, 2]:
+		var total := int(battle_passive_contact_damage.get(player_id, 0))
+		if total <= 0:
+			continue
+		if lines.is_empty():
+			lines.append("英雄碰撞受伤" if _ui_is_zh() else "Hero contact damage")
+		var latest: Dictionary = Dictionary(battle_passive_contact_latest.get(player_id, {}))
+		var source_id := int(latest.get("attacker", 0))
+		var part := _compact_feedback_text(String(latest.get("part", "CONTACT")), 18)
+		var last_damage := int(latest.get("damage", 0))
+		var stamp := float(latest.get("time", 0.0))
+		if _ui_is_zh():
+			lines.append("P%d 共失去 %d HP；最近 P%d %s 碰撞 -%d（%.1fs）" % [player_id, total, source_id, part, last_damage, stamp])
+		else:
+			lines.append("P%d lost %d HP; last P%d %s contact -%d at %.1fs" % [player_id, total, source_id, part, last_damage, stamp])
+	return "\n".join(lines)
 
 
 func _battle_command_log_summary_text(max_lines: int = 6) -> String:
@@ -34416,7 +34451,19 @@ func _apply_runtime_contact_damage(attacker, attacker_collider: Dictionary, targ
 			"damage_type": damage_type,
 			"counter_tier": counter_tier,
 		})
+	var health_before := int(target.health)
 	var killed: bool = target.take_hit(damage, "normal", int(attacker.owner_id), damage_type, material_class)
+	if contact_source != "active_melee" and String(target.role) == "hero":
+		var health_lost := maxi(0, health_before - int(target.health))
+		if health_lost > 0:
+			var victim_id := int(target.owner_id)
+			battle_passive_contact_damage[victim_id] = int(battle_passive_contact_damage.get(victim_id, 0)) + health_lost
+			battle_passive_contact_latest[victim_id] = {
+				"attacker": int(attacker.owner_id),
+				"part": String(event.get("group_name", "CONTACT")),
+				"damage": health_lost,
+				"time": maxf(0.0, MATCH_TARGET_SECONDS - match_time_remaining),
+			}
 	if not killed:
 		_consume_hardware_fault_destruction_for_target(target, hardware_fault_transition, int(attacker.owner_id))
 	if contact_source == "active_melee":
