@@ -5,6 +5,7 @@ const Transaction = preload("res://scripts/services/saved_unit_file_transaction.
 var failures: Array[String] = []
 var reject_final := false
 var blocked_destination := ""
+var blocked_restore_destination := ""
 
 
 func _init() -> void:
@@ -28,7 +29,12 @@ func _run_probe() -> void:
 	if not _write_fixture(old_path, old_bytes):
 		quit(2)
 		return
+	var missing_parent := fixture_dir.path_join("unwritable_%d" % Time.get_ticks_usec())
+	var write_failed_path := missing_parent.path_join("new_unit.json")
 	var transaction = Transaction.new()
+	var write_failed_reason: String = transaction.save(write_failed_path, "{\"v\":0}", Callable(self, "_validate_fixture"))
+	_assert(write_failed_reason == "cannot write to unit library", "missing parent rejects the staged write")
+	_assert(not FileAccess.file_exists(write_failed_path), "failed staged write leaves no destination")
 	var validator := Callable(self, "_validate_fixture")
 	var invalid_reason: String = transaction.save(old_path, "{invalid", validator)
 	_assert(invalid_reason != "", "invalid staged JSON is rejected")
@@ -51,10 +57,27 @@ func _run_probe() -> void:
 	_assert(blocked_reason == "cannot replace the saved unit", "failed rename reports commit failure")
 	_assert(DirAccess.dir_exists_absolute(blocked_destination), "failed rename preserves a concurrent destination")
 	_assert(FileAccess.get_file_as_string(blocked_destination.path_join("keep.txt")) == "keep", "failed rename preserves concurrent destination bytes")
-	_assert(_sidecars_absent(fixture_dir), "transaction leaves no pending or backup files")
+	var restore_dir := fixture_dir.path_join("restore_failure_%d" % Time.get_ticks_usec())
+	_assert(DirAccess.make_dir_absolute(restore_dir) == OK, "restore failure fixture directory is created")
+	blocked_restore_destination = restore_dir.path_join("existing_unit.json")
+	var restore_old_bytes := "{\"v\":8}"
+	_assert(_write_fixture(blocked_restore_destination, restore_old_bytes), "restore failure fixture old file is written")
+	var restore_reason: String = transaction.save(blocked_restore_destination, "{\"v\":9}", Callable(self, "_validate_restore_blocker"))
+	_assert(restore_reason.contains("restoration failed"), "failed restoration is reported")
+	_assert(DirAccess.dir_exists_absolute(blocked_restore_destination), "failed restoration preserves the concurrent destination")
+	_assert(FileAccess.get_file_as_string(blocked_restore_destination.path_join("keep.txt")) == "keep", "failed restoration preserves concurrent destination bytes")
+	var recovery_backups: Array[String] = []
+	for file_name in DirAccess.get_files_at(restore_dir):
+		if file_name.begins_with("existing_unit.json.") and file_name.ends_with(".backup"):
+			recovery_backups.append(restore_dir.path_join(file_name))
+	_assert(recovery_backups.size() == 1, "failed restoration retains exactly one recovery backup")
+	for recovery_backup in recovery_backups:
+		_assert(FileAccess.get_file_as_string(recovery_backup) == restore_old_bytes, "recovery backup preserves old bytes")
+		_assert(restore_reason.contains(recovery_backup), "failure message names the recovery backup")
+	_assert(_sidecars_absent(fixture_dir), "completed transactions leave no root pending or backup files")
 
 	if failures.is_empty():
-		print("PASS: Saved unit transaction validates staging, restores old bytes, and preserves blocked destinations")
+		print("PASS: Saved unit write, validation, replacement, and recovery failure paths")
 		quit(0)
 		return
 	for failure in failures:
@@ -89,6 +112,18 @@ func _validate_commit_blocker(path: String) -> String:
 		if not _write_fixture(blocked_destination.path_join("keep.txt"), "keep"):
 			return "fixture could not write its marker"
 	return ""
+
+
+func _validate_restore_blocker(path: String) -> String:
+	if path != blocked_restore_destination:
+		return _validate_fixture(path)
+	if DirAccess.remove_absolute(path) != OK:
+		return "fixture could not remove the replacement"
+	if DirAccess.make_dir_absolute(path) != OK:
+		return "fixture could not block the restore destination"
+	if not _write_fixture(path.path_join("keep.txt"), "keep"):
+		return "fixture could not write its restore marker"
+	return "fixture final readback rejected"
 
 
 func _write_fixture(path: String, contents: String) -> bool:
