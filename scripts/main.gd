@@ -1674,6 +1674,7 @@ var unit2_boost_momentum_reference_cache := -1.0
 var unit2_turn_speed_reference_cache := -1.0
 var resolving_unit2_balance_reference := false
 var match_time_remaining := MATCH_TARGET_SECONDS
+var match_duration_seconds := MATCH_TARGET_SECONDS
 var identity_transfer_active := false
 var identity_freeze_timer := 0.0
 var hitstop_timer := 0.0
@@ -11779,6 +11780,7 @@ func _begin_battle(mode: String, preloaded: bool = false, reason: String = "", r
 	hero_idle_puppet_summon_timers = {1: 0.0, 2: 0.0}
 	training_respawn_timer = 0.0
 	match_time_remaining = MATCH_TARGET_SECONDS
+	match_duration_seconds = MATCH_TARGET_SECONDS
 	command_buffers = {1: [], 2: []}
 	command_timers = {1: 0.0, 2: 0.0}
 	battle_command_log.clear()
@@ -28592,6 +28594,10 @@ func _note_battle_command_cache(player_id: int) -> void:
 	_record_battle_command_log(player_id, "cache", command_text, cached_state, "direction_buffer")
 
 
+func _battle_elapsed_seconds() -> float:
+	return maxf(0.0, match_duration_seconds - match_time_remaining)
+
+
 func _record_battle_command_log(player_id: int, event_kind: String, command_text: String, command_state: String, source: String = "", attack_index: int = -1, consumed: bool = false) -> void:
 	if player_id <= 0:
 		return
@@ -28601,7 +28607,7 @@ func _record_battle_command_log(player_id: int, event_kind: String, command_text
 	var state := String(command_state).strip_edges()
 	if state == "":
 		state = "command"
-	var elapsed := maxf(0.0, MATCH_TARGET_SECONDS - match_time_remaining)
+	var elapsed := _battle_elapsed_seconds()
 	battle_command_log.append({
 		"time": elapsed,
 		"player_id": player_id,
@@ -28621,7 +28627,7 @@ func _record_battle_attack_rule_log(player_id: int, raw_breakdown: Dictionary) -
 		return
 	var breakdown := _normalize_attack_rule_breakdown(raw_breakdown)
 	battle_attack_rule_log.append({
-		"time": maxf(0.0, MATCH_TARGET_SECONDS - match_time_remaining),
+		"time": _battle_elapsed_seconds(),
 		"player_id": player_id,
 		"breakdown": breakdown,
 	})
@@ -28708,7 +28714,7 @@ func _take_hit_with_review(target, damage: int, state: String, attacker_owner: i
 		if source_unit != null and is_instance_valid(source_unit):
 			actor_name = String(source_unit.unit_name)
 		var health_lost := maxi(0, health_before - int(target.health))
-		var stamp := maxf(0.0, MATCH_TARGET_SECONDS - match_time_remaining)
+		var stamp := _battle_elapsed_seconds()
 		battle_damage_review.record(int(target.owner_id), health_lost, attacker_owner, category, source_label, actor_name, stamp)
 		if category == "passive" and health_lost > 0:
 			var victim_id := int(target.owner_id)
@@ -48670,6 +48676,7 @@ func _local_replay_open_latest() -> void:
 		_local_replay_show_load_error("录像无法开始战斗。" if _ui_is_zh() else "Replay battle could not start.")
 		return
 	match_time_remaining = float(setup.get("match_seconds", MATCH_TARGET_SECONDS))
+	match_duration_seconds = match_time_remaining
 	var opening_digest := _battle_input_service().replay_checkpoint_digest(_battle_replay_checkpoint_state())
 	if opening_digest != String(setup.get("initial_checkpoint_digest", "")) or not _begin_battle_contact_playback(Dictionary(payload["contact_tape"])):
 		_local_replay_apply_setup(previous)
