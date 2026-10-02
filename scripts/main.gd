@@ -34372,6 +34372,7 @@ func _runtime_contact_material_class(collider: Dictionary) -> String:
 func _apply_runtime_contact_damage(attacker, attacker_collider: Dictionary, target, target_collider: Dictionary, normal: Vector2, contact_momentum: float, hit_position: Vector2, contact_source: String = "runtime_contact") -> void:
 	if contact_momentum <= 0.001 or not _is_live_unit(attacker) or not _is_live_unit(target):
 		return
+	var is_active_attack_contact := contact_source == "active_melee" or contact_source == "active_module_contact"
 	var damage_type := _runtime_contact_damage_type(attacker_collider)
 	var material_class := _runtime_contact_material_class(attacker_collider)
 	var attacker_path_stiffness := _runtime_contact_path_stiffness(attacker, attacker_collider)
@@ -34420,7 +34421,7 @@ func _apply_runtime_contact_damage(attacker, attacker_collider: Dictionary, targ
 	var damage_float := float(intent.get("damage_float", 0.0))
 	if bool(intent.get("threshold_blocked", false)):
 		_spawn_hit_effect(target, 1, damage_type, true, "threshold", hit_position)
-		if contact_source == "active_melee":
+		if is_active_attack_contact:
 			_record_attack_rule_result(attacker, event, {
 				"outcome": "blocked",
 				"blocked": true,
@@ -34440,7 +34441,7 @@ func _apply_runtime_contact_damage(attacker, attacker_collider: Dictionary, targ
 	var counter_tier := _counter_tier_for_hit(target, damage_type)
 	_spawn_hit_effect(target, 0, damage_type, false, "impact", hit_position)
 	_apply_hitstop(damage_type, counter_tier, damage)
-	if contact_source == "active_melee":
+	if is_active_attack_contact:
 		_record_attack_rule_result(attacker, event, {
 			"outcome": "hit",
 			"raw_damage": damage_float,
@@ -34453,7 +34454,7 @@ func _apply_runtime_contact_damage(attacker, attacker_collider: Dictionary, targ
 		})
 	var health_before := int(target.health)
 	var killed: bool = target.take_hit(damage, "normal", int(attacker.owner_id), damage_type, material_class)
-	if contact_source != "active_melee" and String(target.role) == "hero":
+	if not is_active_attack_contact and String(target.role) == "hero":
 		var health_lost := maxi(0, health_before - int(target.health))
 		if health_lost > 0:
 			var victim_id := int(target.owner_id)
@@ -34466,7 +34467,7 @@ func _apply_runtime_contact_damage(attacker, attacker_collider: Dictionary, targ
 			}
 	if not killed:
 		_consume_hardware_fault_destruction_for_target(target, hardware_fault_transition, int(attacker.owner_id))
-	if contact_source == "active_melee":
+	if is_active_attack_contact:
 		_training_validation_sample_record_hit(int(attacker.owner_id), float(damage), event)
 	if not killed and _is_back_hit(attacker, target, event):
 		_apply_back_hit_heat(attacker, target, event, damage)
