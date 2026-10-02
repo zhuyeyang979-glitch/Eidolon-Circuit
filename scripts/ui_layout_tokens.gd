@@ -121,7 +121,7 @@ const EDITOR_OPTIONS_BUTTON_RECT := Rect2(Vector2(1040.0, 24.0), Vector2(168.0, 
 const EDITOR_BOARD_RECT := Rect2(Vector2(8.0, 94.0), Vector2(908.0, 548.0))
 
 const BATTLE_MENU_BUTTON_RECT := Rect2(Vector2(1092.0, 650.0), Vector2(128.0, 34.0))
-const BATTLE_HELP_RECT := Rect2(Vector2(82.0, 684.0), Vector2(1000.0, 24.0))
+const BATTLE_HELP_RECT := Rect2(Vector2(82.0, 680.0), Vector2(1000.0, 28.0))
 
 
 static func left_sidebar_rect() -> Rect2:

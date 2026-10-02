@@ -460,6 +460,7 @@ const PUPPET_HP_SEGMENT_MAX = 12
 
 const RING_LENGTH = 24.0
 const VIEW_WIDTH = 7.2
+const BATTLE_PRESENTATION_ZOOM = 1.3
 const VIEW_HEIGHT = 5.2
 const BATTLE_HALF_HEIGHT = 7.5
 const MOBIUS_ENABLED_DEFAULT = true
@@ -9831,8 +9832,8 @@ func _combat_state_name(state_key: String) -> String:
 
 func _battle_help_text() -> String:
 	if _ui_is_zh():
-		return "热量核心：进攻/撤退/停手/G主动散热。英雄高频：WASD移动，Q/E转向，双击Boost，U/I/O/J/K/L攻击。战术低频：Tab选入口，双攻击键部署；Esc选项。"
-	return "HEAT CORE: attack / disengage / stop / G cool. High-frequency hero: WASD move, Q/E turn, double-tap Boost, U-I-O-J-K-L attack. Low-frequency tactics: Tab portal, paired attack buttons deploy; Esc options."
+		return "WASD 移动 · Q/E 转向 · 双击冲刺 · U/I/O/J/K/L 攻击 · 双键部署 · G 散热 · Tab 入口 · Esc 选项"
+	return "WASD move · Q/E turn · double tap Boost · U/I/O/J/K/L attack · paired keys deploy · G cool · Tab portal · Esc options"
 
 
 func _find_control_by_name(root: Node, target_name: String) -> Control:
@@ -35926,7 +35927,7 @@ func _gameplay_direction_screen_vector(direction: Vector2, fallback: Vector2 = V
 
 
 func _gameplay_ray_screen_end(start_screen: Vector2, direction: Vector2, world_range: float, min_pixels: float = 80.0) -> Vector2:
-	var screen_length := maxf(min_pixels, maxf(0.0, world_range) * _battle_world_to_screen_scale())
+	var screen_length := maxf(min_pixels, maxf(0.0, world_range) * _battle_world_to_screen_scale() * BATTLE_PRESENTATION_ZOOM)
 	return start_screen + _gameplay_direction_screen_vector(direction) * screen_length
 
 
@@ -41110,7 +41111,7 @@ func _compute_unit_stats(player_id: int, role_key: String, unit_index: int = -1,
 		_apply_module_recovery_entry_pose_defaults(role_key, runtime_bp, true)
 		stats["teamedit_runtime_topology"] = true
 		stats["runtime_topology_segments"] = _runtime_topology_segments_for_blueprint(role_key, runtime_bp)
-		stats["runtime_visual_scale"] = _battle_world_to_screen_scale()
+		stats["runtime_visual_scale"] = _battle_world_to_screen_scale() * BATTLE_PRESENTATION_ZOOM
 		stats["runtime_topology_nodes"] = Array(Dictionary(runtime_bp.get("custom_topology", {})).get("nodes", [])).duplicate(true)
 		stats["runtime_topology_edges"] = Array(Dictionary(runtime_bp.get("custom_topology", {})).get("edges", [])).duplicate(true)
 		stats["runtime_module_bindings"] = _runtime_module_bindings_for_blueprint(role_key, runtime_bp)
@@ -48612,7 +48613,7 @@ func _build_battle_ui() -> void:
 	hud.add_child(battle_menu_button)
 	_build_battle_runtime_menu(hud)
 	_build_post_battle_review_ui(hud)
-	_make_token_label(hud, "BattleHelp", _battle_help_text(), "battle_help", 14, Color(0.84, 0.88, 0.94, 1.0), HORIZONTAL_ALIGNMENT_CENTER)
+	_make_token_label(hud, "BattleHelp", _battle_help_text(), "battle_help", 16, Color(0.9, 0.94, 1.0, 1.0), HORIZONTAL_ALIGNMENT_CENTER)
 
 
 func _build_battle_runtime_menu(root: Control) -> void:
@@ -55755,6 +55756,12 @@ func _mobius_config() -> Dictionary:
 	return config
 
 
+func _mobius_presentation_config() -> Dictionary:
+	var config := _mobius_config()
+	config["screen_scale"] = float(config["screen_scale"]) * BATTLE_PRESENTATION_ZOOM
+	return config
+
+
 func _mobius_camera_coord() -> Vector2:
 	return Vector2(camera_mobius_s, camera_lane_center)
 
@@ -55777,7 +55784,7 @@ func _clamp_camera_lane_center(lane_value: float) -> float:
 func _mobius_project_coord(coord: Vector2) -> Dictionary:
 	if not mobius_enabled:
 		return {}
-	return MobiusWorld.project_to_screen(coord, _presentation_camera_coord(), _mobius_config(), mobius_rotation_state)
+	return MobiusWorld.project_to_screen(coord, _presentation_camera_coord(), _mobius_presentation_config(), mobius_rotation_state)
 
 
 func _project_combat_coord_to_screen(coord: Vector2) -> Dictionary:
@@ -55805,7 +55812,7 @@ func _mobius_surface_input_for_unit(unit, input_vector: Vector2) -> Vector2:
 
 func _mobius_boundary_points(lane_value: float) -> PackedVector2Array:
 	var points := PackedVector2Array()
-	var config := _mobius_config()
+	var config := _mobius_presentation_config()
 	config["twist_visual_enabled"] = true
 	var segment_count := 72
 	var span := VIEW_WIDTH * 1.2
@@ -55893,7 +55900,7 @@ func _refresh_mobius_surface_view() -> void:
 		battle_backdrop.visible = game_state == STATE_BATTLE and not mobius_battle_visible
 	if not mobius_battle_visible:
 		return
-	var surface_config := _mobius_config()
+	var surface_config := _mobius_presentation_config()
 	surface_config["stardust_band_enabled"] = false
 	surface_config["surface_field_kind"] = "square_grid_field"
 	surface_config["surface_projection_mode"] = "world_grid"
@@ -56091,7 +56098,7 @@ func _first_live_unit_any_role(player_id: int):
 
 
 func _screen_from_ring(ring_value: float, lane_value: float) -> Dictionary:
-	var screen_scale := _battle_world_to_screen_scale()
+	var screen_scale := _battle_world_to_screen_scale() * BATTLE_PRESENTATION_ZOOM
 	var lifted_coord := Vector2(ring_value, lane_value)
 	if mobius_enabled:
 		lifted_coord = MobiusWorld.lift_ring_lane_near(camera_mobius_s, ring_value, lane_value, RING_LENGTH)
