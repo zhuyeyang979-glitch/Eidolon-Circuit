@@ -20,6 +20,7 @@ const SavedUnitLibraryService = preload("res://scripts/services/saved_unit_libra
 const BattleInputService = preload("res://scripts/services/battle_input_service.gd")
 const BattleContactTapeService = preload("res://scripts/services/battle_contact_tape_service.gd")
 const BattleReplayFileService = preload("res://scripts/services/battle_replay_file_service.gd")
+const BattleDamageReviewService = preload("res://scripts/services/battle_damage_review_service.gd")
 const BattleReplaySession = preload("res://scripts/services/battle_replay_session.gd")
 const ProjectileRuntimeService = preload("res://scripts/services/projectile_runtime_service.gd")
 const RuntimeContactService = preload("res://scripts/services/runtime_contact_service.gd")
@@ -1646,6 +1647,7 @@ var battle_command_log: Array = []
 var battle_attack_rule_log: Array = []
 var battle_passive_contact_damage := {1: 0, 2: 0}
 var battle_passive_contact_latest := {1: {}, 2: {}}
+var battle_damage_review = BattleDamageReviewService.new()
 var battle_attack_execution_count := 0
 var battle_command_log_last_cache := {1: "", 2: ""}
 var attack_command_windows := {1: {}, 2: {}}
@@ -9094,6 +9096,7 @@ func _cleanup_battle_runtime(preserve_for_return: bool = false) -> void:
 		battle_attack_rule_log.clear()
 		battle_passive_contact_damage = {1: 0, 2: 0}
 		battle_passive_contact_latest = {1: {}, 2: {}}
+		battle_damage_review.reset()
 		battle_command_log_last_cache = {1: "", 2: ""}
 	_commit_battle_cleanup_intent(cleanup_intent)
 
@@ -11781,6 +11784,7 @@ func _begin_battle(mode: String, preloaded: bool = false, reason: String = "", r
 	battle_attack_rule_log.clear()
 	battle_passive_contact_damage = {1: 0, 2: 0}
 	battle_passive_contact_latest = {1: {}, 2: {}}
+	battle_damage_review.reset()
 	battle_command_log_last_cache = {1: "", 2: ""}
 	attack_command_windows = {1: {}, 2: {}}
 	pending_deploys = {
@@ -11805,6 +11809,7 @@ func _begin_battle(mode: String, preloaded: bool = false, reason: String = "", r
 	battle_attack_rule_log.clear()
 	battle_passive_contact_damage = {1: 0, 2: 0}
 	battle_passive_contact_latest = {1: {}, 2: {}}
+	battle_damage_review.reset()
 	battle_command_log_last_cache = {1: "", 2: ""}
 	salvo_landing_preview_effects.clear()
 	if mode == MODE_PVP:
@@ -26831,7 +26836,7 @@ func _apply_terrain_hazard_to_unit(hazard: Dictionary, unit, delta: float) -> vo
 		var blocked := final_damage <= 0 or bool(event.get("contact_gate_blocked", false))
 		_spawn_hit_effect(unit, 1, damage_type, blocked, "field")
 		if not blocked:
-			var killed: bool = unit.take_hit(final_damage, "normal", owner, damage_type, "field")
+			var killed: bool = _take_hit_with_review(unit, final_damage, "normal", owner, damage_type, "field", "environment", "Terrain hazard " + feature_id)
 			unit.set_meta("terrain_hazard_damage_last", final_damage)
 			if killed:
 				_handle_unit_killed(unit, owner)
@@ -28694,9 +28699,26 @@ func _attack_rule_hardware_fault_post_review_text(breakdown: Dictionary) -> Stri
 	]
 
 
+func _take_hit_with_review(target, damage: int, state: String, attacker_owner: int, damage_type: String, material_class: String, category: String, source_label: String, source_unit = null) -> bool:
+	var health_before := int(target.health)
+	var killed: bool = target.take_hit(damage, state, attacker_owner, damage_type, material_class)
+	if String(target.role) == "hero":
+		var actor_name := ""
+		if source_unit != null and is_instance_valid(source_unit):
+			actor_name = String(source_unit.unit_name)
+		var health_lost := maxi(0, health_before - int(target.health))
+		var stamp := maxf(0.0, MATCH_TARGET_SECONDS - match_time_remaining)
+		battle_damage_review.record(int(target.owner_id), health_lost, attacker_owner, category, source_label, actor_name, stamp)
+		if category == "passive" and health_lost > 0:
+			var victim_id := int(target.owner_id)
+			battle_passive_contact_damage[victim_id] = int(battle_passive_contact_damage.get(victim_id, 0)) + health_lost
+			battle_passive_contact_latest[victim_id] = {"attacker": attacker_owner, "part": source_label, "damage": health_lost, "time": stamp}
+	return killed
+
+
 func _battle_review_diagnostic_summary_text() -> String:
 	var sections := PackedStringArray()
-	var contact_summary := _battle_contact_damage_summary_text()
+	var contact_summary := battle_damage_review.summary(_ui_is_zh())
 	if contact_summary != "":
 		sections.append(contact_summary)
 	sections.append(_battle_attack_rule_summary_text(2))
@@ -30201,7 +30223,7 @@ func _update_served_balls(delta: float) -> void:
 			if blocked:
 				continue
 			_apply_hitstop(damage_type, 2, final_damage)
-			var killed: bool = target.take_hit(final_damage, "active", owner, damage_type, "weapon")
+			var killed: bool = _take_hit_with_review(target, final_damage, "active", owner, damage_type, "weapon", "active", "Served ball", ball)
 			ball.set_meta("served_ball_timer", 0.0)
 			ball.velocity *= -0.35
 			if killed:
@@ -31517,7 +31539,7 @@ func _terrain_mechanism_damage_pulse_intent(owner_id: int, mechanism_feature: Di
 			final_damage = 0
 		var killed := false
 		if final_damage > 0:
-			killed = unit.take_hit(final_damage, damage_state, source_owner, damage_type, "field")
+			killed = _take_hit_with_review(unit, final_damage, damage_state, source_owner, damage_type, "field", "environment", "Terrain mechanism " + String(mechanism_feature.get("feature_id", "")))
 			unit.set_meta("terrain_mechanism_damage_feature_id", String(mechanism_feature.get("feature_id", "")))
 			unit.set_meta("terrain_mechanism_damage_last", final_damage)
 			if killed:
@@ -32087,7 +32109,7 @@ func _try_force_barrier_entry(player_id: int, stats: Dictionary, spawn: Dictiona
 		_show_battle_message("FORCED ENTRY CHARGE failed to beat %s threshold" % String(event.get("stiffness_segment_name", "barrier")), 0.9)
 		return true
 	_apply_hitstop(damage_type, 2, final_damage)
-	var killed: bool = blocker.take_hit(final_damage, "active", player_id, damage_type, "field")
+	var killed: bool = _take_hit_with_review(blocker, final_damage, "active", player_id, damage_type, "field", "active", "Forced entry charge")
 	_show_battle_message("FORCED ENTRY CHARGE %d %s: rest of barrier phases in" % [final_damage, damage_type.to_upper()], 1.0)
 	if killed:
 		_handle_unit_killed(blocker, player_id)
@@ -33140,7 +33162,7 @@ func _apply_cage_wall(barrier, player_id: int, delta: float) -> void:
 			if blocked:
 				continue
 			_apply_hitstop(damage_type, 1, final_damage)
-			if target.take_hit(final_damage, "normal", player_id, damage_type, "field"):
+			if _take_hit_with_review(target, final_damage, "normal", player_id, damage_type, "field", "field", "Cage wall", barrier):
 				_handle_unit_killed(target, player_id)
 
 
@@ -33398,7 +33420,7 @@ func _apply_trap_damage(trap, target, player_id: int, damage_type: String, damag
 	if blocked:
 		return
 	_apply_hitstop(damage_type, 1, final_damage)
-	var killed: bool = target.take_hit(final_damage, "active", player_id, damage_type, "field")
+	var killed: bool = _take_hit_with_review(target, final_damage, "active", player_id, damage_type, "field", "field", "Field effect", trap)
 	if killed:
 		_handle_unit_killed(target, player_id)
 
@@ -33502,7 +33524,7 @@ func _apply_barrier_field_damage(barrier, target, player_id: int, damage_type: S
 	_spawn_hit_effect(target, 1, damage_type, blocked, "field")
 	if blocked:
 		return
-	var killed: bool = target.take_hit(final_damage, "normal", player_id, damage_type, "field")
+	var killed: bool = _take_hit_with_review(target, final_damage, "normal", player_id, damage_type, "field", "field", "Barrier field", barrier)
 	if killed:
 		_handle_unit_killed(target, player_id)
 
@@ -34638,19 +34660,7 @@ func _apply_runtime_contact_damage(attacker, attacker_collider: Dictionary, targ
 			"damage_type": damage_type,
 			"counter_tier": counter_tier,
 		})
-	var health_before := int(target.health)
-	var killed: bool = target.take_hit(damage, "normal", int(attacker.owner_id), damage_type, material_class)
-	if not is_active_attack_contact and String(target.role) == "hero":
-		var health_lost := maxi(0, health_before - int(target.health))
-		if health_lost > 0:
-			var victim_id := int(target.owner_id)
-			battle_passive_contact_damage[victim_id] = int(battle_passive_contact_damage.get(victim_id, 0)) + health_lost
-			battle_passive_contact_latest[victim_id] = {
-				"attacker": int(attacker.owner_id),
-				"part": String(event.get("group_name", "CONTACT")),
-				"damage": health_lost,
-				"time": maxf(0.0, MATCH_TARGET_SECONDS - match_time_remaining),
-			}
+	var killed: bool = _take_hit_with_review(target, damage, "normal", int(attacker.owner_id), damage_type, material_class, "active" if is_active_attack_contact else "passive", String(event.get("group_name", "Contact")), attacker)
 	if not killed:
 		_consume_hardware_fault_destruction_for_target(target, hardware_fault_transition, int(attacker.owner_id))
 	if is_active_attack_contact:
@@ -37817,7 +37827,7 @@ func _execute_post_hit_intents(attacker, target, event: Dictionary, post_hit_int
 			"take_hit":
 				var unit_damage := _unit_damage_after_part_absorption(event, damage)
 				var health_before := int(target.health)
-				killed = target.take_hit(unit_damage, String(event.get("state", "normal")), int(attacker.owner_id), damage_type, material_class)
+				killed = _take_hit_with_review(target, unit_damage, String(event.get("state", "normal")), int(attacker.owner_id), damage_type, material_class, "active", "Projectile" if bool(event.get("projectile", false)) else "Active melee", attacker)
 				_training_validation_sample_record_hit(int(attacker.owner_id), float(maxi(0, health_before - int(target.health))), event)
 			"chemical_dot":
 				if not killed:
@@ -38132,7 +38142,7 @@ func _one_way_shield_intercept(attacker, target, event: Dictionary) -> bool:
 		_show_battle_message("%s 未破阈值：%s" % [best.unit_name, damage_type.to_upper()] if _ui_is_zh() else "%s threshold held: %s" % [best.unit_name, damage_type.to_upper()], 0.42)
 		return true
 	_apply_hitstop(damage_type, 1, damage)
-	if best.take_hit(damage, "armor", int(attacker.owner_id), damage_type, "projectile"):
+	if _take_hit_with_review(best, damage, "armor", int(attacker.owner_id), damage_type, "projectile", "active", "Shield intercept", attacker):
 		_handle_unit_killed(best, int(attacker.owner_id))
 	else:
 		_show_battle_message("%s intercepted %s" % [best.unit_name, damage_type.to_upper()], 0.42)
@@ -39660,7 +39670,7 @@ func _reflect_projectile_from_target_shield(target, attacker, event: Dictionary)
 		if blocked:
 			break
 		_apply_hitstop(damage_type, 1, final_damage)
-		if reflected_target.take_hit(final_damage, "armor", int(target.owner_id), damage_type, "projectile"):
+		if _take_hit_with_review(reflected_target, final_damage, "armor", int(target.owner_id), damage_type, "projectile", "active", "Reflected projectile", target):
 			_handle_unit_killed(reflected_target, int(target.owner_id))
 		break
 
@@ -39748,7 +39758,7 @@ func _apply_explosion_damage(attacker, primary_target, event: Dictionary) -> Arr
 		if blocked:
 			continue
 		_apply_hitstop(damage_type, 1, final_damage)
-		if target.take_hit(final_damage, String(event.get("state", "normal")), owner, damage_type, "field"):
+		if _take_hit_with_review(target, final_damage, String(event.get("state", "normal")), owner, damage_type, "field", "active", "Explosion", attacker):
 			killed_units.append(target)
 	return killed_units
 
@@ -39835,7 +39845,7 @@ func _update_chemical_dot_status(unit, delta: float) -> void:
 	if bool(intent.get("spawn_fx", false)):
 		_spawn_hit_effect(unit, 1, "chemical", false, "spray")
 	unit.set_meta("chemical_dot_fx_timer", float(intent.get("fx_timer", 0.0)))
-	if unit.take_hit(damage, "active", owner, "chemical", "projectile"):
+	if _take_hit_with_review(unit, damage, "active", owner, "chemical", "projectile", "status", "Chemical damage over time"):
 		_handle_unit_killed(unit, owner)
 
 
@@ -39868,7 +39878,7 @@ func _update_takeover_status(unit, delta: float) -> void:
 		var final_damage := _projectile_material_adjusted_damage(unit, event, damage)
 		var blocked := final_damage <= 0 or bool(event.get("contact_gate_blocked", false))
 		_spawn_hit_effect(unit, 1, damage_type, blocked, "hack")
-		if not blocked and unit.take_hit(final_damage, "active", owner, damage_type, "field"):
+		if not blocked and _take_hit_with_review(unit, final_damage, "active", owner, damage_type, "field", "status", "Takeover damage"):
 			_handle_unit_killed(unit, owner)
 			return
 	if bool(intent.get("complete", false)):
