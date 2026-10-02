@@ -9832,6 +9832,8 @@ func _combat_state_name(state_key: String) -> String:
 
 
 func _battle_help_text() -> String:
+	if battle_mode == MODE_TRAINING:
+		return "WASD 移动 · Q/E 转向 · U 后按 WASD 出招 · G 散热 · Esc 选项" if _ui_is_zh() else "WASD move · Q/E turn · U then WASD to attack · G cool · Esc options"
 	if _ui_is_zh():
 		return "WASD 移动 · Q/E 转向 · 双击冲刺 · U/I/O/J/K/L 攻击 · 双键部署 · G 散热 · Tab 入口 · Esc 选项"
 	return "WASD move · Q/E turn · double tap Boost · U/I/O/J/K/L attack · paired keys deploy · G cool · Tab portal · Esc options"
