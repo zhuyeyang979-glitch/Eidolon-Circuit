@@ -17,6 +17,7 @@ const PartCatalogService = preload("res://scripts/services/part_catalog_service.
 const UnitStatsService = preload("res://scripts/services/unit_stats_service.gd")
 const TrainingEntryService = preload("res://scripts/services/training_entry_service.gd")
 const SavedUnitLibraryService = preload("res://scripts/services/saved_unit_library_service.gd")
+const SavedUnitFileTransaction = preload("res://scripts/services/saved_unit_file_transaction.gd")
 const BattleInputService = preload("res://scripts/services/battle_input_service.gd")
 const ProjectileRuntimeService = preload("res://scripts/services/projectile_runtime_service.gd")
 const RuntimeContactService = preload("res://scripts/services/runtime_contact_service.gd")
@@ -4218,26 +4219,10 @@ func _save_editor_current_unit_to_library_named(unit_name_override: String = "",
 	if not bool(save_audit.get("accepted", false)):
 		_set_save_unit_failure_feedback(String(save_audit.get("blocking_note", "unit is not eligible for the library")))
 		return ""
-	var file := FileAccess.open(export_path, FileAccess.WRITE)
-	if file == null:
-		_set_save_unit_failure_feedback("cannot write to unit library")
-		return ""
-	file.store_string(JSON.stringify(payload, "\t"))
-	file.close()
+	var save_reason := SavedUnitFileTransaction.new().save(export_path, JSON.stringify(payload, "\t"), Callable(self, "_saved_unit_file_validation_reason"))
 	_invalidate_saved_unit_library_cache()
-	var readback := _unit_library_entry_from_file(export_path)
-	var readback_reason := _saved_unit_rejection_reason_from_file(export_path) if readback.is_empty() or bool(readback.get("canonical_rejected", false)) else ""
-	var readback_status := _saved_unit_library_service().readback_status(readback, readback_reason)
-	if not bool(readback_status.get("ok", false)):
-		_remove_user_json_file(export_path)
-		_invalidate_saved_unit_library_cache()
-		_set_save_unit_failure_feedback(String(readback_status.get("reason", "saved file cannot be read back by the unit library")))
-		return ""
-	var readback_legality_note := _saved_unit_entry_illegal_note(readback)
-	if readback_legality_note != "":
-		_remove_user_json_file(export_path)
-		_invalidate_saved_unit_library_cache()
-		_set_save_unit_failure_feedback(readback_legality_note)
+	if save_reason != "":
+		_set_save_unit_failure_feedback(save_reason)
 		return ""
 	editor_working_blueprint = unit_bp.duplicate(true)
 	editor_canvas_mode = "blank"
@@ -4253,6 +4238,16 @@ func _save_editor_current_unit_to_library_named(unit_name_override: String = "",
 		_play_sfx_wave("clack", 780.0, 0.055, -16.0)
 	_update_editor_ui()
 	return export_path
+
+
+func _saved_unit_file_validation_reason(path: String) -> String:
+	_invalidate_saved_unit_library_cache()
+	var readback := _unit_library_entry_from_file(path)
+	var readback_reason := _saved_unit_rejection_reason_from_file(path) if readback.is_empty() or bool(readback.get("canonical_rejected", false)) else ""
+	var readback_status := _saved_unit_library_service().readback_status(readback, readback_reason)
+	if not bool(readback_status.get("ok", false)):
+		return String(readback_status.get("reason", "saved file cannot be read back by the unit library"))
+	return _saved_unit_entry_illegal_note(readback)
 
 
 func _default_save_unit_name() -> String:
