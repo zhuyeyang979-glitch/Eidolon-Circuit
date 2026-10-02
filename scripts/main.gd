@@ -11655,7 +11655,7 @@ func _prepare_training_battle_loadouts(require_dummy: bool = true) -> bool:
 	if hero_entry.is_empty():
 		var player_roster: Dictionary = Dictionary(blueprints.get(1, {}))
 		var fallback_key := "fallback_missing_hero" if Array(player_roster.get("hero", [])).is_empty() else "fallback_invalid_roster"
-		var starter := _ai_starter_unit("P1 Training Starter")
+		var starter: Dictionary = _builtin_hero_preset_blueprint(Dictionary(_builtin_hero_preset_definitions()[0]))
 		var starter_state := _training_entry_service().starter_loadout(starter)
 		if not bool(starter_state.get("ok", false)):
 			training_import_error_note = "INVALID: training starter could not be prepared."
