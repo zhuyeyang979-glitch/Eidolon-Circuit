@@ -10783,6 +10783,9 @@ func _normalize_attack_rule_breakdown(raw_breakdown: Dictionary) -> Dictionary:
 	if raw_breakdown.is_empty():
 		return {}
 	var normalized := raw_breakdown.duplicate(true)
+	# Keep advisory replay logs stable after JSON contact-tape round trips.
+	if normalized.has("raw_damage"):
+		normalized["raw_damage"] = roundf(float(normalized["raw_damage"]) * 1000000.0) / 1000000.0
 	var tags: Array = []
 	for raw_tag in Array(raw_breakdown.get("reason_tags", [])):
 		var tag := String(raw_tag).strip_edges()
