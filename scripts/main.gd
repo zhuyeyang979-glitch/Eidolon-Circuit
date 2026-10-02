@@ -11731,6 +11731,7 @@ func _begin_battle(mode: String, preloaded: bool = false, reason: String = "", r
 	seed(match_seed)
 	battle_mode = String(show_intent.get("battle_mode", mode))
 	_commit_battle_mode_show_intent(show_intent)
+	_set_named_label(hud_layer, "BattleHelp", _battle_help_text())
 	_transition_page(STATE_BATTLE, String(show_intent.get("reason", nav_reason)), Dictionary(show_intent.get("payload", {"mode": battle_mode})))
 	_hide_post_battle_review()
 	game_over = false
