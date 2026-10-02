@@ -45,11 +45,7 @@ func summary(zh: bool) -> String:
         if lines.is_empty():
             lines.append("英雄生命损失" if zh else "Hero HP lost")
         var event: Dictionary = latest.get(player_id, {})
-        var actor := String(event.get("actor", ""))
-        var source := String(event.get("source", ""))
-        var source_text := (actor + " " + source).strip_edges()
-        if source_text.length() > 30:
-            source_text = source_text.substr(0, 29) + "…"
+        var source_text := _source_text(event, zh)
         var attacker := int(event.get("attacker", 0))
         var from_text := "P%d" % attacker if attacker in [1, 2] else ("环境" if zh else "world")
         if zh:
@@ -57,6 +53,21 @@ func summary(zh: bool) -> String:
         else:
             lines.append("P%d -%d HP (%s); last %s %s -%d at %.1fs" % [player_id, total, "/".join(parts), from_text, source_text, int(event.get("damage", 0)), float(event.get("time", 0.0))])
     return "\n".join(lines)
+
+
+func _source_text(event: Dictionary, zh: bool) -> String:
+    var attacker := int(event.get("attacker", 0))
+    var actor := String(event.get("actor", ""))
+    if attacker in [1, 2] and actor.begins_with("P%d " % attacker):
+        actor = actor.substr(3)
+    actor = actor.replace("DEFENSE_TOWER", "防御塔" if zh else "Defense Tower")
+    var source := String(event.get("source", ""))
+    if source == "Field effect":
+        source = "场域" if zh else "field"
+    var result := (source + " · " + actor).strip_edges().trim_prefix("· ").trim_suffix(" ·")
+    if result.length() > 30:
+        result = result.substr(0, 29) + "…"
+    return result
 
 
 func _category_name(kind: String, zh: bool) -> String:
