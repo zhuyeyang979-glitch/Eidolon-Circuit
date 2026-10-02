@@ -23,7 +23,7 @@
 
 | 状态 | 来源 | 当前可得结论 |
 | --- | --- | --- |
-| 有限历史证据 | `tools/run_godot_checked.ps1`、`tools/run_probe_manifest.py`、`tools/run_verify.py`、`tools/probe_manifest.json`、`e2e/` | 本地 `MEMORY.md` 记录 2026-07-03 修复后 E2E 13/13 通过；不是 2026-10-02 的新运行结果。 |
+| 有限历史证据 | `tools/run_godot_checked.ps1`、`tools/run_probe_manifest.py`、`tools/run_verify.py`、`tools/probe_manifest.json`、`e2e/` | 本地 `MEMORY.md` 记录 2026-07-03 修复后 E2E 13/13 通过；不是 2026-10-02 的新运行结果。现有闭环用例覆盖训练输入和返回菜单，尚未证明存档后重开或重赛。 |
 | 未完成验收 | `.godotmaker/evaluation.json`、`.godotmaker/verify_report.json`、`.godotmaker/stage.jsonl` | 最后正式评价仍为 `reject`（整套 E2E 稳定性）；随后修复有记录，但缺新的完整评价和玩家实机验收。 |
 | 参考截图 | `e2e/screenshots/`、`.godotmaker/evaluation-runs/` | 用于定位历史界面；动态截图和单帧不能证明动作流畅或操作闭环。 |
 | 试玩版本 | Git 标签与交付包 | 2026-10-02 在活动 checkout 未发现 `v0.1.0` Git 标签；不宣称已发布可试玩版本。 |
