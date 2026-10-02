@@ -1710,6 +1710,7 @@ var saved_unit_thumb_views: Array = []
 var saved_unit_card_text_scrolls: Array = []
 var saved_unit_card_text_labels: Array = []
 var saved_unit_filter_buttons: Array = []
+var saved_unit_load_target_button: Button
 var saved_unit_action_buttons := {}
 var saved_unit_detail_view: ScoutUnitDetailView
 var saved_unit_title_label: Label
@@ -4205,14 +4206,21 @@ func _save_editor_current_unit_to_library_named(unit_name_override: String = "",
 		unit_bp["unit_name"] = clean_name
 		unit_bp["name"] = clean_name
 	_ensure_saved_units_dir()
+	var source_path := editor_source_saved_unit_path
+	var source_exists := source_path != "" and FileAccess.file_exists(source_path)
+	if source_exists:
+		var source_entry := _unit_library_entry_from_file(source_path)
+		if String(source_entry.get("role", "")) != role_key or String(source_entry.get("save_kind", "")) != SAVE_KIND_SINGLE_UNIT:
+			source_path = ""
+			source_exists = false
 	var matching_path := ""
-	if path == "" and not save_as_new and not (editor_source_saved_unit_path != "" and FileAccess.file_exists(editor_source_saved_unit_path)):
+	if path == "" and not save_as_new and not source_exists:
 		var matching_entry := _latest_saved_unit_named_for_role(String(unit_bp.get("unit_name", unit_bp.get("name", ""))), role_key)
 		if not matching_entry.is_empty():
 			matching_path = String(matching_entry.get("path", ""))
 	var stem := _safe_save_stem(String(unit_bp.get("unit_name", unit_bp.get("name", role_key))), "%s_unit" % role_key)
 	var generated_path := "%s/%s_%d.json" % [SAVED_UNITS_DIR, stem, int(Time.get_unix_time_from_system())]
-	var export_path := _saved_unit_library_service().resolve_save_path(path, save_as_new, editor_source_saved_unit_path, FileAccess.file_exists(editor_source_saved_unit_path), matching_path, generated_path)
+	var export_path := _saved_unit_library_service().resolve_save_path(path, save_as_new, source_path, source_exists, matching_path, generated_path)
 	var payload := _saved_unit_library_service().build_save_payload(unit_bp, role_key, SAVED_UNIT_SCHEMA_VERSION, _json_safe_value(unit_bp), SAVE_KIND_SINGLE_UNIT)
 	var save_audit := _unit_library_save_audit(_editor_player(), role_key, unit_bp, payload)
 	if not bool(save_audit.get("accepted", false)):
@@ -5649,6 +5657,11 @@ func _show_unit_editor_preserve_loaded_blueprint() -> void:
 	_show_editor_preserve_canvas()
 
 
+func _toggle_saved_units_target_player() -> void:
+	editor_player_id = 2 if _editor_player() == 1 else 1
+	_update_saved_units_ui()
+
+
 func _saved_units_action(action_key: String) -> void:
 	if saved_units_controller != null:
 		var entries := _saved_unit_filtered_entries()
@@ -5929,6 +5942,8 @@ func _update_saved_units_ui() -> void:
 			saved_unit_detail_view.clear("悬停或点击单位查看详情。" if _ui_is_zh() else "Hover or click a unit to inspect it.")
 		else:
 			_show_saved_unit_detail(detail_entry)
+	if saved_unit_load_target_button != null:
+		saved_unit_load_target_button.text = "TO P%d (SWITCH)" % _editor_player()
 	for key in saved_unit_action_buttons.keys():
 		var action_button: Button = saved_unit_action_buttons[key]
 		var has_selected := not _saved_unit_entry_at_absolute_index(saved_unit_selected_index).is_empty()
@@ -47105,6 +47120,13 @@ func _build_saved_units_ui() -> void:
 		button.pressed.connect(_set_saved_unit_filter.bind(String(filters[i][0])))
 		root.add_child(button)
 		saved_unit_filter_buttons.append(button)
+	saved_unit_load_target_button = Button.new()
+	saved_unit_load_target_button.name = "SavedUnitLoadTargetButton"
+	saved_unit_load_target_button.position = Vector2(630.0, 88.0)
+	saved_unit_load_target_button.size = Vector2(164.0, 30.0)
+	saved_unit_load_target_button.focus_mode = Control.FOCUS_NONE
+	saved_unit_load_target_button.pressed.connect(_toggle_saved_units_target_player)
+	root.add_child(saved_unit_load_target_button)
 	for i in range(12):
 		var card := Button.new()
 		card.name = "SavedUnitCard%d" % i
@@ -48127,6 +48149,7 @@ func _build_scout_ui() -> void:
 	scout_player_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	for side in [1, 2]:
 		var side_button := Button.new()
+		side_button.name = "ScoutSortieSide%d" % side
 		side_button.text = "P%d出战" % side
 		side_button.position = Vector2(1018.0 + float(side - 1) * 88.0, 508.0)
 		side_button.size = Vector2(82.0, 22.0)
@@ -48136,6 +48159,7 @@ func _build_scout_ui() -> void:
 		scout_sortie_side_buttons.append(side_button)
 	for i in range(ROSTER_UNIT_CAP):
 		var player_button := Button.new()
+		player_button.name = "ScoutPlayerSlot%d" % i
 		player_button.position = Vector2(650.0 + float(i % 2) * 270.0, 564.0 + float(floori(float(i) / 2.0)) * 28.0)
 		player_button.size = Vector2(264.0, 19.0)
 		player_button.focus_mode = Control.FOCUS_NONE
