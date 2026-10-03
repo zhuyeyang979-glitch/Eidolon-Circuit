@@ -18,6 +18,10 @@ const UnitStatsService = preload("res://scripts/services/unit_stats_service.gd")
 const TrainingEntryService = preload("res://scripts/services/training_entry_service.gd")
 const SavedUnitLibraryService = preload("res://scripts/services/saved_unit_library_service.gd")
 const BattleInputService = preload("res://scripts/services/battle_input_service.gd")
+const BattleContactTapeService = preload("res://scripts/services/battle_contact_tape_service.gd")
+const BattleReplayFileService = preload("res://scripts/services/battle_replay_file_service.gd")
+const BattleDamageReviewService = preload("res://scripts/services/battle_damage_review_service.gd")
+const BattleReplaySession = preload("res://scripts/services/battle_replay_session.gd")
 const ProjectileRuntimeService = preload("res://scripts/services/projectile_runtime_service.gd")
 const RuntimeContactService = preload("res://scripts/services/runtime_contact_service.gd")
 const HardwareFaultRuntimeService = preload("res://scripts/services/hardware_fault_runtime_service.gd")
@@ -456,6 +460,7 @@ const PUPPET_HP_SEGMENT_MAX = 12
 
 const RING_LENGTH = 24.0
 const VIEW_WIDTH = 7.2
+const BATTLE_PRESENTATION_ZOOM = 1.3
 const VIEW_HEIGHT = 5.2
 const BATTLE_HALF_HEIGHT = 7.5
 const MOBIUS_ENABLED_DEFAULT = true
@@ -825,15 +830,16 @@ const SLOT_NAMES_EN = {
 const SOFTWARE_MANUFACTURERS = ["NULL SOFTWARE", "BOOTLEG GHOST"]
 const UI_LANGUAGE_ZH = "zh"
 const UI_LANGUAGE_EN = "en"
-const MENU_ITEMS = ["开始训练", "已保存单位", "单位编辑", "本地双人", "电脑对战", "设置", "退出"]
-const MENU_ITEMS_EN = ["TRAINING", "SAVED UNITS", "UNIT EDIT", "LOCAL VERSUS", "COMPUTER BATTLE", "SETTINGS", "QUIT"]
+const MENU_ITEMS = ["训练", "已存单位", "单位编辑", "本地对战", "电脑对战", "本地录像", "设置", "退出"]
+const MENU_ITEMS_EN = ["TRAINING", "SAVED UNITS", "UNIT EDIT", "LOCAL VERSUS", "COMPUTER BATTLE", "LOCAL REPLAY", "SETTINGS", "QUIT"]
 const MENU_DESCRIPTIONS = [
-	"先选择训练单位、席位和靶机状态，再进入训练场。",
-	"查看已保存的单个单位，载入编辑，或单选/多选直接导入训练场。",
-	"空白画布优先：编辑单个单位，保存后再编成队伍。",
-	"正式战斗优先设计对象：双控制器本地对战，P1/P2 各自操作。",
-	"选择电脑对战席位：P1 左侧、P2 右侧，或 P3 观战双方规则队伍。",
-	"声音、画面、语言和战斗按键绑定。",
+	"选择训练单位与对手后进入战场。",
+	"浏览已保存的单位并组成队伍。",
+	"编辑单位并保存设计。",
+	"本地双人对战。",
+	"选择电脑对战席位。",
+	"播放最近保存的本地对局录像。",
+	"调整声音、画面、语言和按键。",
 	"退出游戏。",
 ]
 const MENU_DESCRIPTIONS_EN = [
@@ -842,6 +848,7 @@ const MENU_DESCRIPTIONS_EN = [
 	"Blank-canvas first: edit one unit, save it, then compose teams.",
 	"Formal battle priority: local two-controller versus, with P1/P2 controlling their own sides.",
 	"Choose a Computer Battle seat: P1 left, P2 right, or P3 watching two rule-driven sides.",
+	"Play the latest saved local battle replay.",
 	"Sound, video, language, and battle input bindings.",
 	"Quit the game.",
 ]
@@ -1570,6 +1577,15 @@ var battle_active_input_frame := {}
 var battle_pending_pressed_actions := {}
 var battle_pending_released_actions := {}
 var battle_replay_seed := 0
+var battle_contact_simulation_step := 0
+var battle_contact_tape_mode := "off"
+var battle_contact_tape_frames: Array = []
+var battle_contact_tape_cursor := 0
+var battle_contact_replay_error := ""
+var local_replay_session := BattleReplaySession.new()
+var local_replay_status := ""
+var local_replay_previous_setup: Dictionary = {}
+var local_replay_review_override: Dictionary = {}
 var battle_presentation_active := false
 var battle_presentation_alpha := 1.0
 var battle_camera_snapshot_initialized := false
@@ -1630,6 +1646,9 @@ var command_buffers := {1: [], 2: []}
 var command_timers := {1: 0.0, 2: 0.0}
 var battle_command_log: Array = []
 var battle_attack_rule_log: Array = []
+var battle_passive_contact_damage := {1: 0, 2: 0}
+var battle_passive_contact_latest := {1: {}, 2: {}}
+var battle_damage_review = BattleDamageReviewService.new()
 var battle_attack_execution_count := 0
 var battle_command_log_last_cache := {1: "", 2: ""}
 var attack_command_windows := {1: {}, 2: {}}
@@ -1655,6 +1674,7 @@ var unit2_boost_momentum_reference_cache := -1.0
 var unit2_turn_speed_reference_cache := -1.0
 var resolving_unit2_balance_reference := false
 var match_time_remaining := MATCH_TARGET_SECONDS
+var match_duration_seconds := MATCH_TARGET_SECONDS
 var identity_transfer_active := false
 var identity_freeze_timer := 0.0
 var hitstop_timer := 0.0
@@ -1710,6 +1730,7 @@ var saved_unit_thumb_views: Array = []
 var saved_unit_card_text_scrolls: Array = []
 var saved_unit_card_text_labels: Array = []
 var saved_unit_filter_buttons: Array = []
+var saved_unit_load_target_button: Button
 var saved_unit_action_buttons := {}
 var saved_unit_detail_view: ScoutUnitDetailView
 var saved_unit_title_label: Label
@@ -4205,14 +4226,21 @@ func _save_editor_current_unit_to_library_named(unit_name_override: String = "",
 		unit_bp["unit_name"] = clean_name
 		unit_bp["name"] = clean_name
 	_ensure_saved_units_dir()
+	var source_path := editor_source_saved_unit_path
+	var source_exists := source_path != "" and FileAccess.file_exists(source_path)
+	if source_exists:
+		var source_entry := _unit_library_entry_from_file(source_path)
+		if String(source_entry.get("role", "")) != role_key or String(source_entry.get("save_kind", "")) != SAVE_KIND_SINGLE_UNIT:
+			source_path = ""
+			source_exists = false
 	var matching_path := ""
-	if path == "" and not save_as_new and not (editor_source_saved_unit_path != "" and FileAccess.file_exists(editor_source_saved_unit_path)):
+	if path == "" and not save_as_new and not source_exists:
 		var matching_entry := _latest_saved_unit_named_for_role(String(unit_bp.get("unit_name", unit_bp.get("name", ""))), role_key)
 		if not matching_entry.is_empty():
 			matching_path = String(matching_entry.get("path", ""))
 	var stem := _safe_save_stem(String(unit_bp.get("unit_name", unit_bp.get("name", role_key))), "%s_unit" % role_key)
 	var generated_path := "%s/%s_%d.json" % [SAVED_UNITS_DIR, stem, int(Time.get_unix_time_from_system())]
-	var export_path := _saved_unit_library_service().resolve_save_path(path, save_as_new, editor_source_saved_unit_path, FileAccess.file_exists(editor_source_saved_unit_path), matching_path, generated_path)
+	var export_path := _saved_unit_library_service().resolve_save_path(path, save_as_new, source_path, source_exists, matching_path, generated_path)
 	var payload := _saved_unit_library_service().build_save_payload(unit_bp, role_key, SAVED_UNIT_SCHEMA_VERSION, _json_safe_value(unit_bp), SAVE_KIND_SINGLE_UNIT)
 	var save_audit := _unit_library_save_audit(_editor_player(), role_key, unit_bp, payload)
 	if not bool(save_audit.get("accepted", false)):
@@ -4593,8 +4621,8 @@ func _builtin_hero_preset_definitions() -> Array:
 
 
 func _builtin_hero_preset_blueprint(definition: Dictionary) -> Dictionary:
-	var torso_index := _builtin_hero_torso_index()
 	var limb_index := _builtin_hero_limb_index()
+	var torso_index := _builtin_hero_torso_index(limb_index)
 	var engine_index := _builtin_hero_engine_index()
 	var booster_index := _builtin_hero_booster_index()
 	var cooling_index := _builtin_hero_cooling_index()
@@ -4658,10 +4686,21 @@ func _builtin_hero_preset_blueprint(definition: Dictionary) -> Dictionary:
 	return canonical
 
 
-func _builtin_hero_torso_index() -> int:
+func _builtin_hero_torso_index(limb_index: int) -> int:
+	if limb_index < 0:
+		return -1
+	var limb_part := _selected_component("hero", "limb_muscle", limb_index)
+	var required_size_rank := _size_tier_rank(_part_size_tier_label(limb_part, "limb_muscle"))
+	var limb_maker := String(limb_part.get("maker", "")).strip_edges().to_upper()
 	for i in range(_catalog_for("hero", "muscle").size()):
 		var part: Dictionary = _selected_component("hero", "muscle", i)
-		if _component_is_torso(part) and _part_slot_volume_rank(part, "muscle") <= 2.0 and _torso_plugin_capacity_for_part(part) >= 3 and _torso_software_capacity_for_part(part) >= 1:
+		if not _component_is_torso(part) or _part_slot_volume_rank(part, "muscle") > 2.0:
+			continue
+		if _size_tier_rank(_part_size_tier_label(part, "muscle")) < required_size_rank:
+			continue
+		if limb_maker != "" and String(part.get("maker", "")).strip_edges().to_upper() != limb_maker:
+			continue
+		if _torso_plugin_capacity_for_part(part) >= 3 and _torso_software_capacity_for_part(part) >= 1:
 			return i
 	return -1
 
@@ -5638,6 +5677,11 @@ func _show_unit_editor_preserve_loaded_blueprint() -> void:
 	_show_editor_preserve_canvas()
 
 
+func _toggle_saved_units_target_player() -> void:
+	editor_player_id = 2 if _editor_player() == 1 else 1
+	_update_saved_units_ui()
+
+
 func _saved_units_action(action_key: String) -> void:
 	if saved_units_controller != null:
 		var entries := _saved_unit_filtered_entries()
@@ -5918,6 +5962,8 @@ func _update_saved_units_ui() -> void:
 			saved_unit_detail_view.clear("悬停或点击单位查看详情。" if _ui_is_zh() else "Hover or click a unit to inspect it.")
 		else:
 			_show_saved_unit_detail(detail_entry)
+	if saved_unit_load_target_button != null:
+		saved_unit_load_target_button.text = "TO P%d (SWITCH)" % _editor_player()
 	for key in saved_unit_action_buttons.keys():
 		var action_button: Button = saved_unit_action_buttons[key]
 		var has_selected := not _saved_unit_entry_at_absolute_index(saved_unit_selected_index).is_empty()
@@ -9050,6 +9096,9 @@ func _cleanup_battle_runtime(preserve_for_return: bool = false) -> void:
 		battle_attack_feedback_events = {1: {}, 2: {}}
 		battle_command_log.clear()
 		battle_attack_rule_log.clear()
+		battle_passive_contact_damage = {1: 0, 2: 0}
+		battle_passive_contact_latest = {1: {}, 2: {}}
+		battle_damage_review.reset()
 		battle_command_log_last_cache = {1: "", 2: ""}
 	_commit_battle_cleanup_intent(cleanup_intent)
 
@@ -9665,7 +9714,7 @@ func _menu_index_for_action(action_key: String) -> int:
 		var spec: Dictionary = MenuController.MAIN_MENU_SPECS[i]
 		if String(spec.get("key", "")) == action_key:
 			return i
-	var fallback_keys := ["training_config", "saved_units", "unit_edit", "pvp", "show_ai_seat_panel", "settings", "quit"]
+	var fallback_keys := ["training_config", "saved_units", "unit_edit", "pvp", "show_ai_seat_panel", "play_replay", "settings", "quit"]
 	return fallback_keys.find(action_key)
 
 
@@ -9783,9 +9832,11 @@ func _combat_state_name(state_key: String) -> String:
 
 
 func _battle_help_text() -> String:
+	if battle_mode == MODE_TRAINING:
+		return "WASD 移动 · Q/E 转向 · U 后按 WASD 出招 · G 散热 · Esc 选项" if _ui_is_zh() else "WASD move · Q/E turn · U then WASD to attack · G cool · Esc options"
 	if _ui_is_zh():
-		return "热量核心：进攻/撤退/停手/G主动散热。英雄高频：WASD移动，Q/E转向，双击Boost，U/I/O/J/K/L攻击。战术低频：Tab选入口，双攻击键部署；Esc选项。"
-	return "HEAT CORE: attack / disengage / stop / G cool. High-frequency hero: WASD move, Q/E turn, double-tap Boost, U-I-O-J-K-L attack. Low-frequency tactics: Tab portal, paired attack buttons deploy; Esc options."
+		return "WASD 移动 · Q/E 转向 · 双击冲刺 · U/I/O/J/K/L 攻击 · 双键部署 · G 散热 · Tab 入口 · Esc 选项"
+	return "WASD move · Q/E turn · double tap Boost · U/I/O/J/K/L attack · paired keys deploy · G cool · Tab portal · Esc options"
 
 
 func _find_control_by_name(root: Node, target_name: String) -> Control:
@@ -10734,6 +10785,9 @@ func _normalize_attack_rule_breakdown(raw_breakdown: Dictionary) -> Dictionary:
 	if raw_breakdown.is_empty():
 		return {}
 	var normalized := raw_breakdown.duplicate(true)
+	# Keep advisory replay logs stable after JSON contact-tape round trips.
+	if normalized.has("raw_damage"):
+		normalized["raw_damage"] = roundf(float(normalized["raw_damage"]) * 1000000.0) / 1000000.0
 	var tags: Array = []
 	for raw_tag in Array(raw_breakdown.get("reason_tags", [])):
 		var tag := String(raw_tag).strip_edges()
@@ -11603,7 +11657,7 @@ func _prepare_training_battle_loadouts(require_dummy: bool = true) -> bool:
 	if hero_entry.is_empty():
 		var player_roster: Dictionary = Dictionary(blueprints.get(1, {}))
 		var fallback_key := "fallback_missing_hero" if Array(player_roster.get("hero", [])).is_empty() else "fallback_invalid_roster"
-		var starter := _ai_starter_unit("P1 Training Starter")
+		var starter: Dictionary = _builtin_hero_preset_blueprint(Dictionary(_builtin_hero_preset_definitions()[0]))
 		var starter_state := _training_entry_service().starter_loadout(starter)
 		if not bool(starter_state.get("ok", false)):
 			training_import_error_note = "INVALID: training starter could not be prepared."
@@ -11664,15 +11718,20 @@ func _start_battle(mode: String, preloaded: bool = false) -> void:
 	_begin_battle(mode)
 
 
-func _begin_battle(mode: String, preloaded: bool = false, reason: String = "") -> void:
+func _begin_battle(mode: String, preloaded: bool = false, reason: String = "", replay_seed_override: int = -1) -> void:
 	var nav_reason := reason if reason != "" else "battle:%s" % mode
 	var loading_queued := not preloaded and _should_queue_loading_transition(STATE_BATTLE)
 	var show_intent := _battle_mode_show_intent(mode, preloaded, loading_queued, nav_reason, false)
 	if loading_queued:
-		queue_loading_transition(STATE_BATTLE, nav_reason, preload_battle_content(mode), Callable(self, "_begin_battle").bind(mode, true, nav_reason))
+		queue_loading_transition(STATE_BATTLE, nav_reason, preload_battle_content(mode), Callable(self, "_begin_battle").bind(mode, true, nav_reason, replay_seed_override))
 		return
+	var match_seed := replay_seed_override
+	if match_seed < 0:
+		match_seed = maxi(1, int(randi()))
+	seed(match_seed)
 	battle_mode = String(show_intent.get("battle_mode", mode))
 	_commit_battle_mode_show_intent(show_intent)
+	_set_named_label(hud_layer, "BattleHelp", _battle_help_text())
 	_transition_page(STATE_BATTLE, String(show_intent.get("reason", nav_reason)), Dictionary(show_intent.get("payload", {"mode": battle_mode})))
 	_hide_post_battle_review()
 	game_over = false
@@ -11691,7 +11750,15 @@ func _begin_battle(mode: String, preloaded: bool = false, reason: String = "") -
 	battle_pending_pressed_actions.clear()
 	battle_pending_released_actions.clear()
 	battle_attack_execution_count = 0
-	battle_replay_seed = 0
+	battle_replay_seed = match_seed
+	battle_contact_simulation_step = 0
+	battle_contact_tape_mode = "off"
+	battle_contact_tape_frames.clear()
+	battle_contact_tape_cursor = 0
+	battle_contact_replay_error = ""
+	local_replay_session.reset()
+	local_replay_review_override.clear()
+	local_replay_status = ""
 	battle_presentation_active = false
 	battle_presentation_alpha = 1.0
 	battle_camera_snapshot_initialized = false
@@ -11719,10 +11786,14 @@ func _begin_battle(mode: String, preloaded: bool = false, reason: String = "") -
 	hero_idle_puppet_summon_timers = {1: 0.0, 2: 0.0}
 	training_respawn_timer = 0.0
 	match_time_remaining = MATCH_TARGET_SECONDS
+	match_duration_seconds = MATCH_TARGET_SECONDS
 	command_buffers = {1: [], 2: []}
 	command_timers = {1: 0.0, 2: 0.0}
 	battle_command_log.clear()
 	battle_attack_rule_log.clear()
+	battle_passive_contact_damage = {1: 0, 2: 0}
+	battle_passive_contact_latest = {1: {}, 2: {}}
+	battle_damage_review.reset()
 	battle_command_log_last_cache = {1: "", 2: ""}
 	attack_command_windows = {1: {}, 2: {}}
 	pending_deploys = {
@@ -11745,8 +11816,13 @@ func _begin_battle(mode: String, preloaded: bool = false, reason: String = "") -
 	battle_attack_feedback_events = {1: {}, 2: {}}
 	battle_command_log.clear()
 	battle_attack_rule_log.clear()
+	battle_passive_contact_damage = {1: 0, 2: 0}
+	battle_passive_contact_latest = {1: {}, 2: {}}
+	battle_damage_review.reset()
 	battle_command_log_last_cache = {1: "", 2: ""}
 	salvo_landing_preview_effects.clear()
+	if mode == MODE_PVP:
+		local_replay_session.begin_capture(_battle_input_service().battle_start_payload(mode, ai_battle_seat, battle_replay_seed, _battle_input_action_names(), {"simulation_hz": int(roundf(BATTLE_SIMULATION_FPS))}), _local_replay_setup_snapshot())
 	_apply_ai_side_roster_mapping(mode)
 	_initialize_sortie_price_state()
 	var p1_starter := _starter_sortie_entry(1)
@@ -11798,6 +11874,64 @@ func _begin_battle(mode: String, preloaded: bool = false, reason: String = "") -
 		_show_battle_message("PVP：双控制器启用。键盘保留为 P1 练习备用。" if _ui_is_zh() else "PVP: two controllers active. Keyboard remains P1 practice fallback.", 2.2)
 	_refresh_battle_camera_projection_now()
 	_update_battle_ui()
+	if local_replay_session.mode == "capture" and not _begin_battle_contact_capture():
+		local_replay_session.reset()
+
+
+func _local_replay_setup_snapshot() -> Dictionary:
+	return {
+		"blueprints": _json_safe_value(blueprints),
+		"active_roster_indices": _json_safe_value(active_roster_indices),
+		"initial_role": _json_safe_value(initial_role),
+		"initial_sortie_slot": _json_safe_value(initial_sortie_slot),
+		"sortie_loadouts": _json_safe_value(sortie_loadouts),
+		"summon_pair_bindings": _json_safe_value(summon_pair_bindings),
+		"team_color_indices": _json_safe_value(team_color_indices),
+		"team_custom_colors": _json_safe_value(team_custom_colors),
+		"star_soul_battle_draft_payload": _json_safe_value(star_soul_battle_draft_payload),
+	}
+
+
+func _local_replay_player_map(raw_value) -> Dictionary:
+	if not (raw_value is Dictionary):
+		return {}
+	var restored: Dictionary = Dictionary(_json_restore_value(raw_value))
+	var result := {}
+	for player_id in [1, 2]:
+		var key := str(player_id)
+		if not restored.has(key) and not restored.has(player_id):
+			return {}
+		result[player_id] = restored.get(key, restored.get(player_id))
+	return result
+
+
+func _local_replay_apply_setup(setup: Dictionary) -> bool:
+	var restored := {}
+	for key in ["blueprints", "active_roster_indices", "initial_role", "initial_sortie_slot", "sortie_loadouts", "summon_pair_bindings", "team_color_indices", "team_custom_colors"]:
+		var player_map := _local_replay_player_map(setup.get(key, {}))
+		if player_map.is_empty():
+			return false
+		restored[key] = player_map
+	var draft = _json_restore_value(setup.get("star_soul_battle_draft_payload", {}))
+	if not (draft is Dictionary) or not bool(Dictionary(draft).get("valid", false)):
+		return false
+	blueprints = restored["blueprints"]
+	active_roster_indices = restored["active_roster_indices"]
+	initial_role = restored["initial_role"]
+	initial_sortie_slot = restored["initial_sortie_slot"]
+	sortie_loadouts = restored["sortie_loadouts"]
+	summon_pair_bindings = restored["summon_pair_bindings"]
+	team_color_indices = restored["team_color_indices"]
+	team_custom_colors = restored["team_custom_colors"]
+	star_soul_battle_draft_payload = draft
+	return true
+
+
+func _local_replay_restore_previous_setup() -> void:
+	if local_replay_previous_setup.is_empty():
+		return
+	_local_replay_apply_setup(local_replay_previous_setup)
+	local_replay_previous_setup.clear()
 
 
 func _begin_battle_from_start_payload(payload: Dictionary, preloaded: bool = false, reason: String = "") -> bool:
@@ -11810,10 +11944,8 @@ func _begin_battle_from_start_payload(payload: Dictionary, preloaded: bool = fal
 		queue_loading_transition(STATE_BATTLE, nav_reason, preload_battle_content(mode), Callable(self, "_begin_battle_from_start_payload").bind(canonical_payload, true, nav_reason))
 		return true
 	var replay_seed := int(canonical_payload.get("replay_seed", 0))
-	seed(replay_seed)
 	ai_battle_seat = clampi(int(canonical_payload.get("ai_seat", ai_battle_seat)), 1, 3)
-	_begin_battle(mode, preloaded, nav_reason)
-	battle_replay_seed = replay_seed
+	_begin_battle(mode, preloaded, nav_reason, replay_seed)
 	return game_state == STATE_BATTLE
 
 
@@ -12782,6 +12914,8 @@ func _activate_menu_item(index: int) -> void:
 			_update_menu_ui()
 		"pvp":
 			_start_battle(MODE_PVP)
+		"play_replay":
+			_local_replay_open_latest()
 		"settings":
 			_show_settings()
 		_:
@@ -26036,6 +26170,60 @@ func _capture_battle_input_frame() -> Dictionary:
 	return _battle_input_service().capture_input_frame(_battle_input_action_names(), battle_pending_pressed_actions, battle_pending_released_actions, Callable(self, "_input_action_just_pressed_for_service"), Callable(self, "_input_action_just_released_for_service"), Callable(self, "_input_action_strength_for_service"))
 
 
+func _begin_battle_contact_capture() -> bool:
+	if game_state != STATE_BATTLE or battle_contact_simulation_step != 0 or not _gpu_collision_available():
+		return false
+	battle_contact_tape_mode = "capture"
+	battle_contact_tape_frames.clear()
+	battle_contact_tape_cursor = 0
+	battle_contact_replay_error = ""
+	return true
+
+
+func _take_battle_contact_capture() -> Dictionary:
+	if battle_contact_tape_mode != "capture" or battle_contact_replay_error != "":
+		return {}
+	var tape := {
+		"schema_version": BattleContactTapeService.SCHEMA_VERSION,
+		"replay_seed": battle_replay_seed,
+		"frames": battle_contact_tape_frames.duplicate(true),
+	}
+	battle_contact_tape_mode = "off"
+	battle_contact_tape_frames.clear()
+	return tape
+
+
+func _begin_battle_contact_playback(tape: Dictionary) -> bool:
+	if game_state != STATE_BATTLE or battle_contact_simulation_step != 0 or int(tape.get("schema_version", -1)) != BattleContactTapeService.SCHEMA_VERSION:
+		battle_contact_replay_error = "invalid contact tape schema or battle state"
+		return false
+	if int(tape.get("replay_seed", 0)) != battle_replay_seed or not (tape.get("frames") is Array):
+		battle_contact_replay_error = "contact tape seed or frames do not match this battle"
+		return false
+	var frames: Array = tape["frames"]
+	var previous_step := -1
+	for raw_frame in frames:
+		if not (raw_frame is Dictionary) or int(Dictionary(raw_frame).get("step", -1)) <= previous_step:
+			battle_contact_replay_error = "contact tape steps are missing or unordered"
+			return false
+		previous_step = int(Dictionary(raw_frame).get("step", -1))
+	battle_contact_tape_frames = frames.duplicate(true)
+	battle_contact_tape_cursor = 0
+	battle_contact_replay_error = ""
+	battle_contact_tape_mode = "playback"
+	return true
+
+
+func _battle_contact_playback_complete() -> bool:
+	return battle_contact_tape_mode == "playback" and battle_contact_replay_error == "" and battle_contact_tape_cursor == battle_contact_tape_frames.size()
+
+
+func _reject_battle_contact_replay(reason: String) -> void:
+	if battle_contact_replay_error == "":
+		battle_contact_replay_error = reason
+		push_error("Battle contact replay rejected: %s" % reason)
+
+
 func _battle_replay_checkpoint_state() -> Dictionary:
 	var units: Array = []
 	for unit_index in range(all_units.size()):
@@ -26657,7 +26845,7 @@ func _apply_terrain_hazard_to_unit(hazard: Dictionary, unit, delta: float) -> vo
 		var blocked := final_damage <= 0 or bool(event.get("contact_gate_blocked", false))
 		_spawn_hit_effect(unit, 1, damage_type, blocked, "field")
 		if not blocked:
-			var killed: bool = unit.take_hit(final_damage, "normal", owner, damage_type, "field")
+			var killed: bool = _take_hit_with_review(unit, final_damage, "normal", owner, damage_type, "field", "environment", "Terrain hazard " + feature_id)
 			unit.set_meta("terrain_hazard_damage_last", final_damage)
 			if killed:
 				_handle_unit_killed(unit, owner)
@@ -26963,6 +27151,8 @@ func _tick_battle_with_input_frame(delta: float, input_frame: Dictionary) -> voi
 
 
 func _tick_battle_frame(delta: float, supplied_input_frame: Dictionary, use_supplied_input_frame: bool) -> void:
+	if battle_contact_tape_mode == "playback" and battle_contact_replay_error != "":
+		return
 	_reset_battle_vfx_frame_budget()
 	var plan := _battle_runtime_facade().frame_step_plan(delta, battle_simulation_accumulator, {
 		"game_over": game_over,
@@ -26974,25 +27164,47 @@ func _tick_battle_frame(delta: float, supplied_input_frame: Dictionary, use_supp
 		return
 	var frame_delta := float(plan.get("frame_delta", 0.0))
 	var steps := int(plan.get("steps", 0))
-	var input_frame := supplied_input_frame.duplicate(true) if use_supplied_input_frame else _capture_battle_input_frame()
+	var replaying := local_replay_session.mode == "playback"
+	var input_frame := {} if replaying else (supplied_input_frame.duplicate(true) if use_supplied_input_frame else _capture_battle_input_frame())
+	if steps > 0 and local_replay_session.mode == "capture" and local_replay_session.input_frames.is_empty():
+		local_replay_session.capture_opening(_battle_input_service().replay_checkpoint_digest(_battle_replay_checkpoint_state()), match_time_remaining)
+	var ran_steps := 0
 	for step_index in range(steps):
+		var step_frame: Dictionary = local_replay_session.take_playback_frame(_battle_input_service()) if replaying else input_frame.duplicate(true)
+		if replaying and local_replay_session.error != "":
+			_local_replay_abort(local_replay_session.error)
+			return
+		if not replaying and step_index > 0:
+			step_frame["pressed"] = {}
+			step_frame["released"] = {}
+		if local_replay_session.mode == "capture":
+			local_replay_session.append_step(_battle_input_service().serialize_input_frame(step_frame, _battle_input_action_names()))
 		_capture_battle_motion_before_step()
-		_consume_battle_input_edges_once(input_frame, step_index == 0)
+		_consume_battle_input_edges_once(step_frame if replaying else input_frame, true if replaying else step_index == 0)
 		_tick_battle_simulation(BATTLE_SIMULATION_DELTA)
+		if battle_contact_tape_mode == "playback" and battle_contact_replay_error != "":
+			_local_replay_abort(battle_contact_replay_error)
+			return
 		battle_input_frame_active = false
 		_capture_battle_motion_after_step()
+		ran_steps += 1
+		if game_over:
+			break
 	battle_simulation_accumulator = float(plan.get("accumulator_after", battle_simulation_accumulator))
 	var post_state := _battle_runtime_facade().post_step_state({
-		"steps": steps,
+		"steps": ran_steps,
 		"step_delta": BATTLE_SIMULATION_DELTA,
 		"accumulator": battle_simulation_accumulator,
 	})
-	battle_simulation_step_count += int(post_state.get("step_count_increment", steps))
-	battle_simulation_last_frame_steps = int(post_state.get("last_frame_steps", steps))
+	battle_simulation_step_count += int(post_state.get("step_count_increment", ran_steps))
+	battle_simulation_last_frame_steps = int(post_state.get("last_frame_steps", ran_steps))
 	_render_battle_frame(frame_delta, float(post_state.get("render_alpha", plan.get("render_alpha", 0.0))))
+	if replaying and game_over:
+		_local_replay_finish()
 
 
 func _tick_battle_simulation(delta: float, _input_frame: Dictionary = {}) -> void:
+	battle_contact_simulation_step += 1
 	battle_simulation_time_seconds += delta
 	if battle_controller != null:
 		battle_controller.note_tick()
@@ -28388,6 +28600,10 @@ func _note_battle_command_cache(player_id: int) -> void:
 	_record_battle_command_log(player_id, "cache", command_text, cached_state, "direction_buffer")
 
 
+func _battle_elapsed_seconds() -> float:
+	return maxf(0.0, match_duration_seconds - match_time_remaining)
+
+
 func _record_battle_command_log(player_id: int, event_kind: String, command_text: String, command_state: String, source: String = "", attack_index: int = -1, consumed: bool = false) -> void:
 	if player_id <= 0:
 		return
@@ -28397,7 +28613,7 @@ func _record_battle_command_log(player_id: int, event_kind: String, command_text
 	var state := String(command_state).strip_edges()
 	if state == "":
 		state = "command"
-	var elapsed := maxf(0.0, MATCH_TARGET_SECONDS - match_time_remaining)
+	var elapsed := _battle_elapsed_seconds()
 	battle_command_log.append({
 		"time": elapsed,
 		"player_id": player_id,
@@ -28417,7 +28633,7 @@ func _record_battle_attack_rule_log(player_id: int, raw_breakdown: Dictionary) -
 		return
 	var breakdown := _normalize_attack_rule_breakdown(raw_breakdown)
 	battle_attack_rule_log.append({
-		"time": maxf(0.0, MATCH_TARGET_SECONDS - match_time_remaining),
+		"time": _battle_elapsed_seconds(),
 		"player_id": player_id,
 		"breakdown": breakdown,
 	})
@@ -28496,8 +28712,50 @@ func _attack_rule_hardware_fault_post_review_text(breakdown: Dictionary) -> Stri
 	]
 
 
+func _take_hit_with_review(target, damage: int, state: String, attacker_owner: int, damage_type: String, material_class: String, category: String, source_label: String, source_unit = null) -> bool:
+	var health_before := int(target.health)
+	var killed: bool = target.take_hit(damage, state, attacker_owner, damage_type, material_class)
+	if String(target.role) == "hero":
+		var actor_name := ""
+		if source_unit != null and is_instance_valid(source_unit):
+			actor_name = String(source_unit.unit_name)
+		var health_lost := maxi(0, health_before - int(target.health))
+		var stamp := _battle_elapsed_seconds()
+		battle_damage_review.record(int(target.owner_id), health_lost, attacker_owner, category, source_label, actor_name, stamp)
+		if category == "passive" and health_lost > 0:
+			var victim_id := int(target.owner_id)
+			battle_passive_contact_damage[victim_id] = int(battle_passive_contact_damage.get(victim_id, 0)) + health_lost
+			battle_passive_contact_latest[victim_id] = {"attacker": attacker_owner, "part": source_label, "damage": health_lost, "time": stamp}
+	return killed
+
+
 func _battle_review_diagnostic_summary_text() -> String:
-	return "%s\n\n%s" % [_battle_attack_rule_summary_text(2), _battle_command_log_summary_text(2)]
+	var sections := PackedStringArray()
+	var contact_summary := battle_damage_review.summary(_ui_is_zh())
+	if contact_summary != "":
+		sections.append(contact_summary)
+	sections.append(_battle_attack_rule_summary_text(2))
+	sections.append(_battle_command_log_summary_text(2))
+	return "\n".join(sections)
+
+func _battle_contact_damage_summary_text() -> String:
+	var lines := PackedStringArray()
+	for player_id in [1, 2]:
+		var total := int(battle_passive_contact_damage.get(player_id, 0))
+		if total <= 0:
+			continue
+		if lines.is_empty():
+			lines.append("英雄碰撞受伤" if _ui_is_zh() else "Hero contact damage")
+		var latest: Dictionary = Dictionary(battle_passive_contact_latest.get(player_id, {}))
+		var source_id := int(latest.get("attacker", 0))
+		var part := _compact_feedback_text(String(latest.get("part", "CONTACT")), 18)
+		var last_damage := int(latest.get("damage", 0))
+		var stamp := float(latest.get("time", 0.0))
+		if _ui_is_zh():
+			lines.append("P%d 共失去 %d HP；最近 P%d %s 碰撞 -%d（%.1fs）" % [player_id, total, source_id, part, last_damage, stamp])
+		else:
+			lines.append("P%d lost %d HP; last P%d %s contact -%d at %.1fs" % [player_id, total, source_id, part, last_damage, stamp])
+	return "\n".join(lines)
 
 
 func _battle_command_log_summary_text(max_lines: int = 6) -> String:
@@ -29978,7 +30236,7 @@ func _update_served_balls(delta: float) -> void:
 			if blocked:
 				continue
 			_apply_hitstop(damage_type, 2, final_damage)
-			var killed: bool = target.take_hit(final_damage, "active", owner, damage_type, "weapon")
+			var killed: bool = _take_hit_with_review(target, final_damage, "active", owner, damage_type, "weapon", "active", "Served ball", ball)
 			ball.set_meta("served_ball_timer", 0.0)
 			ball.velocity *= -0.35
 			if killed:
@@ -31294,7 +31552,7 @@ func _terrain_mechanism_damage_pulse_intent(owner_id: int, mechanism_feature: Di
 			final_damage = 0
 		var killed := false
 		if final_damage > 0:
-			killed = unit.take_hit(final_damage, damage_state, source_owner, damage_type, "field")
+			killed = _take_hit_with_review(unit, final_damage, damage_state, source_owner, damage_type, "field", "environment", "Terrain mechanism " + String(mechanism_feature.get("feature_id", "")))
 			unit.set_meta("terrain_mechanism_damage_feature_id", String(mechanism_feature.get("feature_id", "")))
 			unit.set_meta("terrain_mechanism_damage_last", final_damage)
 			if killed:
@@ -31864,7 +32122,7 @@ func _try_force_barrier_entry(player_id: int, stats: Dictionary, spawn: Dictiona
 		_show_battle_message("FORCED ENTRY CHARGE failed to beat %s threshold" % String(event.get("stiffness_segment_name", "barrier")), 0.9)
 		return true
 	_apply_hitstop(damage_type, 2, final_damage)
-	var killed: bool = blocker.take_hit(final_damage, "active", player_id, damage_type, "field")
+	var killed: bool = _take_hit_with_review(blocker, final_damage, "active", player_id, damage_type, "field", "active", "Forced entry charge")
 	_show_battle_message("FORCED ENTRY CHARGE %d %s: rest of barrier phases in" % [final_damage, damage_type.to_upper()], 1.0)
 	if killed:
 		_handle_unit_killed(blocker, player_id)
@@ -32917,7 +33175,7 @@ func _apply_cage_wall(barrier, player_id: int, delta: float) -> void:
 			if blocked:
 				continue
 			_apply_hitstop(damage_type, 1, final_damage)
-			if target.take_hit(final_damage, "normal", player_id, damage_type, "field"):
+			if _take_hit_with_review(target, final_damage, "normal", player_id, damage_type, "field", "field", "Cage wall", barrier):
 				_handle_unit_killed(target, player_id)
 
 
@@ -33175,7 +33433,7 @@ func _apply_trap_damage(trap, target, player_id: int, damage_type: String, damag
 	if blocked:
 		return
 	_apply_hitstop(damage_type, 1, final_damage)
-	var killed: bool = target.take_hit(final_damage, "active", player_id, damage_type, "field")
+	var killed: bool = _take_hit_with_review(target, final_damage, "active", player_id, damage_type, "field", "field", "Field effect", trap)
 	if killed:
 		_handle_unit_killed(target, player_id)
 
@@ -33279,7 +33537,7 @@ func _apply_barrier_field_damage(barrier, target, player_id: int, damage_type: S
 	_spawn_hit_effect(target, 1, damage_type, blocked, "field")
 	if blocked:
 		return
-	var killed: bool = target.take_hit(final_damage, "normal", player_id, damage_type, "field")
+	var killed: bool = _take_hit_with_review(target, final_damage, "normal", player_id, damage_type, "field", "field", "Barrier field", barrier)
 	if killed:
 		_handle_unit_killed(target, player_id)
 
@@ -33360,7 +33618,7 @@ func _resolve_unit_body_spacing(delta: float) -> void:
 		"delta": delta,
 		"live_subject_count": live_subjects.size(),
 		"has_runtime_subject": has_runtime_subject,
-		"gpu_available": _gpu_collision_available() if has_runtime_subject else false,
+		"gpu_available": (battle_contact_tape_mode == "playback" or _gpu_collision_available()) if has_runtime_subject else false,
 	})
 	if bool(plan.get("gpu_runtime_contact", false)):
 		_gpu_collision_and_response_step(live_subjects, delta)
@@ -33602,10 +33860,34 @@ func _gpu_collision_and_response_step(live_subjects: Array, delta: float) -> voi
 	if gpu_colliders.size() < 2:
 		return
 	gpu_collision_pair_dispatch_count += 1
-	var records := gpu_collision_pipeline.compute_contact_responses_deferred(gpu_colliders, RUNTIME_CONTACT_REQUIRED_OVERLAP, delta)
-	gpu_collision_candidate_count += int(gpu_collision_pipeline.last_candidate_count)
+	var records: Array = []
+	var candidates := 0
+	var readback_bytes := 0
+	if battle_contact_tape_mode == "playback":
+		if battle_contact_tape_cursor >= battle_contact_tape_frames.size():
+			_reject_battle_contact_replay("contact tape ended before simulation step %d" % battle_contact_simulation_step)
+			return
+		var decoded: Dictionary = BattleContactTapeService.decode_step(battle_contact_tape_frames[battle_contact_tape_cursor], battle_contact_simulation_step, entries.size())
+		if decoded.has("error"):
+			_reject_battle_contact_replay(String(decoded["error"]))
+			return
+		records = Array(decoded.get("records", []))
+		candidates = int(decoded.get("candidate_count", 0))
+		readback_bytes = int(decoded.get("readback_bytes", 0))
+		battle_contact_tape_cursor += 1
+	else:
+		records = gpu_collision_pipeline.compute_contact_responses_deferred(gpu_colliders, RUNTIME_CONTACT_REQUIRED_OVERLAP, delta)
+		candidates = int(gpu_collision_pipeline.last_candidate_count)
+		readback_bytes = int(gpu_collision_pipeline.last_readback_bytes)
+		if battle_contact_tape_mode == "capture":
+			var captured_step: Dictionary = BattleContactTapeService.encode_step(battle_contact_simulation_step, entries.size(), records, candidates, readback_bytes)
+			if captured_step.is_empty():
+				_reject_battle_contact_replay("cannot encode contact step %d" % battle_contact_simulation_step)
+				return
+			battle_contact_tape_frames.append(captured_step)
+	gpu_collision_candidate_count += candidates
 	gpu_collision_contact_count += records.size()
-	gpu_collision_readback_bytes += int(gpu_collision_pipeline.last_readback_bytes)
+	gpu_collision_readback_bytes += readback_bytes
 	if records.is_empty():
 		return
 	for raw_record in records:
@@ -34311,6 +34593,7 @@ func _runtime_contact_material_class(collider: Dictionary) -> String:
 func _apply_runtime_contact_damage(attacker, attacker_collider: Dictionary, target, target_collider: Dictionary, normal: Vector2, contact_momentum: float, hit_position: Vector2, contact_source: String = "runtime_contact") -> void:
 	if contact_momentum <= 0.001 or not _is_live_unit(attacker) or not _is_live_unit(target):
 		return
+	var is_active_attack_contact := contact_source == "active_melee" or contact_source == "active_module_contact"
 	var damage_type := _runtime_contact_damage_type(attacker_collider)
 	var material_class := _runtime_contact_material_class(attacker_collider)
 	var attacker_path_stiffness := _runtime_contact_path_stiffness(attacker, attacker_collider)
@@ -34359,7 +34642,7 @@ func _apply_runtime_contact_damage(attacker, attacker_collider: Dictionary, targ
 	var damage_float := float(intent.get("damage_float", 0.0))
 	if bool(intent.get("threshold_blocked", false)):
 		_spawn_hit_effect(target, 1, damage_type, true, "threshold", hit_position)
-		if contact_source == "active_melee":
+		if is_active_attack_contact:
 			_record_attack_rule_result(attacker, event, {
 				"outcome": "blocked",
 				"blocked": true,
@@ -34379,7 +34662,7 @@ func _apply_runtime_contact_damage(attacker, attacker_collider: Dictionary, targ
 	var counter_tier := _counter_tier_for_hit(target, damage_type)
 	_spawn_hit_effect(target, 0, damage_type, false, "impact", hit_position)
 	_apply_hitstop(damage_type, counter_tier, damage)
-	if contact_source == "active_melee":
+	if is_active_attack_contact:
 		_record_attack_rule_result(attacker, event, {
 			"outcome": "hit",
 			"raw_damage": damage_float,
@@ -34390,10 +34673,10 @@ func _apply_runtime_contact_damage(attacker, attacker_collider: Dictionary, targ
 			"damage_type": damage_type,
 			"counter_tier": counter_tier,
 		})
-	var killed: bool = target.take_hit(damage, "normal", int(attacker.owner_id), damage_type, material_class)
+	var killed: bool = _take_hit_with_review(target, damage, "normal", int(attacker.owner_id), damage_type, material_class, "active" if is_active_attack_contact else "passive", String(event.get("group_name", "Contact")), attacker)
 	if not killed:
 		_consume_hardware_fault_destruction_for_target(target, hardware_fault_transition, int(attacker.owner_id))
-	if contact_source == "active_melee":
+	if is_active_attack_contact:
 		_training_validation_sample_record_hit(int(attacker.owner_id), float(damage), event)
 	if not killed and _is_back_hit(attacker, target, event):
 		_apply_back_hit_heat(attacker, target, event, damage)
@@ -35656,7 +35939,7 @@ func _gameplay_direction_screen_vector(direction: Vector2, fallback: Vector2 = V
 
 
 func _gameplay_ray_screen_end(start_screen: Vector2, direction: Vector2, world_range: float, min_pixels: float = 80.0) -> Vector2:
-	var screen_length := maxf(min_pixels, maxf(0.0, world_range) * _battle_world_to_screen_scale())
+	var screen_length := maxf(min_pixels, maxf(0.0, world_range) * _battle_world_to_screen_scale() * BATTLE_PRESENTATION_ZOOM)
 	return start_screen + _gameplay_direction_screen_vector(direction) * screen_length
 
 
@@ -37557,7 +37840,7 @@ func _execute_post_hit_intents(attacker, target, event: Dictionary, post_hit_int
 			"take_hit":
 				var unit_damage := _unit_damage_after_part_absorption(event, damage)
 				var health_before := int(target.health)
-				killed = target.take_hit(unit_damage, String(event.get("state", "normal")), int(attacker.owner_id), damage_type, material_class)
+				killed = _take_hit_with_review(target, unit_damage, String(event.get("state", "normal")), int(attacker.owner_id), damage_type, material_class, "active", "Projectile" if bool(event.get("projectile", false)) else "Active melee", attacker)
 				_training_validation_sample_record_hit(int(attacker.owner_id), float(maxi(0, health_before - int(target.health))), event)
 			"chemical_dot":
 				if not killed:
@@ -37872,7 +38155,7 @@ func _one_way_shield_intercept(attacker, target, event: Dictionary) -> bool:
 		_show_battle_message("%s 未破阈值：%s" % [best.unit_name, damage_type.to_upper()] if _ui_is_zh() else "%s threshold held: %s" % [best.unit_name, damage_type.to_upper()], 0.42)
 		return true
 	_apply_hitstop(damage_type, 1, damage)
-	if best.take_hit(damage, "armor", int(attacker.owner_id), damage_type, "projectile"):
+	if _take_hit_with_review(best, damage, "armor", int(attacker.owner_id), damage_type, "projectile", "active", "Shield intercept", attacker):
 		_handle_unit_killed(best, int(attacker.owner_id))
 	else:
 		_show_battle_message("%s intercepted %s" % [best.unit_name, damage_type.to_upper()], 0.42)
@@ -39400,7 +39683,7 @@ func _reflect_projectile_from_target_shield(target, attacker, event: Dictionary)
 		if blocked:
 			break
 		_apply_hitstop(damage_type, 1, final_damage)
-		if reflected_target.take_hit(final_damage, "armor", int(target.owner_id), damage_type, "projectile"):
+		if _take_hit_with_review(reflected_target, final_damage, "armor", int(target.owner_id), damage_type, "projectile", "active", "Reflected projectile", target):
 			_handle_unit_killed(reflected_target, int(target.owner_id))
 		break
 
@@ -39488,7 +39771,7 @@ func _apply_explosion_damage(attacker, primary_target, event: Dictionary) -> Arr
 		if blocked:
 			continue
 		_apply_hitstop(damage_type, 1, final_damage)
-		if target.take_hit(final_damage, String(event.get("state", "normal")), owner, damage_type, "field"):
+		if _take_hit_with_review(target, final_damage, String(event.get("state", "normal")), owner, damage_type, "field", "active", "Explosion", attacker):
 			killed_units.append(target)
 	return killed_units
 
@@ -39575,7 +39858,7 @@ func _update_chemical_dot_status(unit, delta: float) -> void:
 	if bool(intent.get("spawn_fx", false)):
 		_spawn_hit_effect(unit, 1, "chemical", false, "spray")
 	unit.set_meta("chemical_dot_fx_timer", float(intent.get("fx_timer", 0.0)))
-	if unit.take_hit(damage, "active", owner, "chemical", "projectile"):
+	if _take_hit_with_review(unit, damage, "active", owner, "chemical", "projectile", "status", "Chemical damage over time"):
 		_handle_unit_killed(unit, owner)
 
 
@@ -39608,7 +39891,7 @@ func _update_takeover_status(unit, delta: float) -> void:
 		var final_damage := _projectile_material_adjusted_damage(unit, event, damage)
 		var blocked := final_damage <= 0 or bool(event.get("contact_gate_blocked", false))
 		_spawn_hit_effect(unit, 1, damage_type, blocked, "hack")
-		if not blocked and unit.take_hit(final_damage, "active", owner, damage_type, "field"):
+		if not blocked and _take_hit_with_review(unit, final_damage, "active", owner, damage_type, "field", "status", "Takeover damage"):
 			_handle_unit_killed(unit, owner)
 			return
 	if bool(intent.get("complete", false)):
@@ -40840,7 +41123,7 @@ func _compute_unit_stats(player_id: int, role_key: String, unit_index: int = -1,
 		_apply_module_recovery_entry_pose_defaults(role_key, runtime_bp, true)
 		stats["teamedit_runtime_topology"] = true
 		stats["runtime_topology_segments"] = _runtime_topology_segments_for_blueprint(role_key, runtime_bp)
-		stats["runtime_visual_scale"] = _battle_world_to_screen_scale()
+		stats["runtime_visual_scale"] = _battle_world_to_screen_scale() * BATTLE_PRESENTATION_ZOOM
 		stats["runtime_topology_nodes"] = Array(Dictionary(runtime_bp.get("custom_topology", {})).get("nodes", [])).duplicate(true)
 		stats["runtime_topology_edges"] = Array(Dictionary(runtime_bp.get("custom_topology", {})).get("edges", [])).duplicate(true)
 		stats["runtime_module_bindings"] = _runtime_module_bindings_for_blueprint(role_key, runtime_bp)
@@ -47094,6 +47377,13 @@ func _build_saved_units_ui() -> void:
 		button.pressed.connect(_set_saved_unit_filter.bind(String(filters[i][0])))
 		root.add_child(button)
 		saved_unit_filter_buttons.append(button)
+	saved_unit_load_target_button = Button.new()
+	saved_unit_load_target_button.name = "SavedUnitLoadTargetButton"
+	saved_unit_load_target_button.position = Vector2(630.0, 88.0)
+	saved_unit_load_target_button.size = Vector2(164.0, 30.0)
+	saved_unit_load_target_button.focus_mode = Control.FOCUS_NONE
+	saved_unit_load_target_button.pressed.connect(_toggle_saved_units_target_player)
+	root.add_child(saved_unit_load_target_button)
 	for i in range(12):
 		var card := Button.new()
 		card.name = "SavedUnitCard%d" % i
@@ -48116,6 +48406,7 @@ func _build_scout_ui() -> void:
 	scout_player_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	for side in [1, 2]:
 		var side_button := Button.new()
+		side_button.name = "ScoutSortieSide%d" % side
 		side_button.text = "P%d出战" % side
 		side_button.position = Vector2(1018.0 + float(side - 1) * 88.0, 508.0)
 		side_button.size = Vector2(82.0, 22.0)
@@ -48125,6 +48416,7 @@ func _build_scout_ui() -> void:
 		scout_sortie_side_buttons.append(side_button)
 	for i in range(ROSTER_UNIT_CAP):
 		var player_button := Button.new()
+		player_button.name = "ScoutPlayerSlot%d" % i
 		player_button.position = Vector2(650.0 + float(i % 2) * 270.0, 564.0 + float(floori(float(i) / 2.0)) * 28.0)
 		player_button.size = Vector2(264.0, 19.0)
 		player_button.focus_mode = Control.FOCUS_NONE
@@ -48333,13 +48625,128 @@ func _build_battle_ui() -> void:
 	hud.add_child(battle_menu_button)
 	_build_battle_runtime_menu(hud)
 	_build_post_battle_review_ui(hud)
-	_make_token_label(hud, "BattleHelp", _battle_help_text(), "battle_help", 14, Color(0.84, 0.88, 0.94, 1.0), HORIZONTAL_ALIGNMENT_CENTER)
+	_make_token_label(hud, "BattleHelp", _battle_help_text(), "battle_help", 16, Color(0.9, 0.94, 1.0, 1.0), HORIZONTAL_ALIGNMENT_CENTER)
 
 
 func _build_battle_runtime_menu(root: Control) -> void:
 	_ensure_menu_view()
 	battle_runtime_menu_panel = menu_view.build_battle_runtime_menu(root, _ui_viewport_size())
 	battle_runtime_menu_buttons = menu_view.battle_runtime_menu_buttons
+
+
+func _local_replay_save() -> void:
+	if not game_over or local_replay_session.mode != "capture":
+		local_replay_status = "本局没有可保存的完整录像。" if _ui_is_zh() else "No complete replay is available for this match."
+		_show_post_battle_review(post_battle_review_winner_id, post_battle_review_reason)
+		return
+	if local_replay_session.saved_document.is_empty():
+		var tape := _take_battle_contact_capture()
+		if tape.is_empty():
+			local_replay_status = "碰撞事件记录不完整，无法保存录像。" if _ui_is_zh() else "Contact recording is incomplete; replay was not saved."
+			_show_post_battle_review(post_battle_review_winner_id, post_battle_review_reason)
+			return
+		var final_state := {
+			"simulation_steps": battle_simulation_step_count,
+			"checkpoint_digest": _battle_input_service().replay_checkpoint_digest(_battle_replay_checkpoint_state()),
+			"winner": post_battle_review_winner_id,
+			"reason": post_battle_review_reason,
+			"victory_points": _json_safe_value(victory_points),
+			"match_time_remaining": match_time_remaining,
+			"diagnostic": _battle_review_diagnostic_summary_text(),
+			"star_soul_summary_rows": _json_safe_value(_post_battle_star_soul_summary_rows()),
+		}
+		local_replay_session.build_document(tape, final_state)
+	var result := BattleReplayFileService.write_new(local_replay_session.saved_document)
+	local_replay_status = ("录像已保存：输入与权威碰撞事件；不同机器实时 GPU 模拟不保证一致。" if _ui_is_zh() else "Replay saved: input plus authoritative contact events. Live GPU simulation across machines is not guaranteed.") if bool(result.get("ok", false)) else String(result.get("error", "Replay save failed."))
+	_show_post_battle_review(post_battle_review_winner_id, post_battle_review_reason)
+
+
+func _local_replay_open_latest() -> void:
+	var path := BattleReplayFileService.latest_path()
+	var loaded := BattleReplayFileService.read_path(path)
+	if not bool(loaded.get("ok", false)):
+		_local_replay_show_load_error(String(loaded.get("error", "Replay could not be loaded.")))
+		return
+	var payload: Dictionary = loaded["payload"]
+	var start: Dictionary = payload["start"]
+	var setup: Dictionary = payload["setup"]
+	if int(start.get("simulation_hz", 0)) != int(roundf(BATTLE_SIMULATION_FPS)) or float(setup.get("match_seconds", 0.0)) <= 0.0 or float(setup.get("match_seconds", 0.0)) > MATCH_TARGET_SECONDS or String(setup.get("initial_checkpoint_digest", "")) == "":
+		_local_replay_show_load_error("录像的模拟版本或开局状态不兼容。" if _ui_is_zh() else "Replay simulation or opening state is incompatible.")
+		return
+	var previous := _local_replay_setup_snapshot()
+	if not _local_replay_apply_setup(setup):
+		_local_replay_show_load_error("录像编队数据无效。" if _ui_is_zh() else "Replay team data is invalid.")
+		return
+	if not _begin_battle_from_start_payload(start, true, "local_replay"):
+		_local_replay_apply_setup(previous)
+		_local_replay_show_load_error("录像无法开始战斗。" if _ui_is_zh() else "Replay battle could not start.")
+		return
+	match_time_remaining = float(setup.get("match_seconds", MATCH_TARGET_SECONDS))
+	match_duration_seconds = match_time_remaining
+	var opening_digest := _battle_input_service().replay_checkpoint_digest(_battle_replay_checkpoint_state())
+	if opening_digest != String(setup.get("initial_checkpoint_digest", "")) or not _begin_battle_contact_playback(Dictionary(payload["contact_tape"])):
+		_local_replay_apply_setup(previous)
+		local_replay_session.reset()
+		_show_menu(true)
+		_local_replay_show_load_error("录像开局或碰撞事件与当前版本不一致。" if _ui_is_zh() else "Replay opening state or contact data differs from this build.")
+		return
+	local_replay_previous_setup = previous
+	local_replay_session.begin_playback(payload)
+	local_replay_status = "播放本地录像：输入 + 权威碰撞事件。Esc → 复盘可提前返回。" if _ui_is_zh() else "Playing local input + authoritative contact replay. Esc > Post Review returns early."
+
+
+func _local_replay_show_load_error(message: String) -> void:
+	if _ui_is_zh():
+		match message:
+			"Replay file was not found.":
+				message = "未找到本地录像。"
+			"Replay integrity check failed.":
+				message = "录像完整性校验失败。"
+			"Replay file format is incompatible.", "Replay version is incompatible with this game build.":
+				message = "录像格式与当前版本不兼容。"
+			_:
+				message = "录像读取失败：%s" % message
+	local_replay_status = message
+	if game_state == STATE_MENU and menu_status_label != null:
+		menu_status_label.text = message
+	elif post_battle_review_panel != null and post_battle_review_panel.visible:
+		_show_post_battle_review(post_battle_review_winner_id, post_battle_review_reason)
+
+
+func _local_replay_abort(message: String) -> void:
+	local_replay_session.mode = "error"
+	game_over = true
+	_local_replay_restore_previous_setup()
+	_show_menu(true)
+	_local_replay_show_load_error("录像播放中止：%s" % message if _ui_is_zh() else "Replay stopped: %s" % message)
+
+
+func _local_replay_finish() -> void:
+	var digest := _battle_input_service().replay_checkpoint_digest(_battle_replay_checkpoint_state())
+	if not local_replay_session.complete(_battle_contact_playback_complete(), digest, post_battle_review_winner_id, post_battle_review_reason):
+		_local_replay_abort(local_replay_session.error)
+		return
+	local_replay_session.mode = "review"
+	local_replay_status = "录像播放完成；结果与保存的对局一致。" if _ui_is_zh() else "Replay complete; result matches the saved battle."
+	_local_replay_restore_previous_setup()
+	_show_post_battle_review(post_battle_review_winner_id, post_battle_review_reason)
+
+
+func _local_replay_return_to_review() -> void:
+	if local_replay_session.mode != "playback":
+		return
+	var final_state: Dictionary = local_replay_session.expected_final.duplicate(true)
+	local_replay_session.mode = "review"
+	game_over = true
+	post_battle_review_winner_id = int(final_state.get("winner", 0))
+	post_battle_review_reason = String(final_state.get("reason", ""))
+	match_time_remaining = float(final_state.get("match_time_remaining", 0.0))
+	var points: Dictionary = final_state.get("victory_points", {})
+	victory_points = {1: int(points.get("1", points.get(1, 0))), 2: int(points.get("2", points.get(2, 0)))}
+	local_replay_review_override = final_state
+	local_replay_status = "已返回已保存的复盘；场景停在退出播放的位置。" if _ui_is_zh() else "Saved review shown; field remains at the playback exit point."
+	_local_replay_restore_previous_setup()
+	_show_post_battle_review(post_battle_review_winner_id, post_battle_review_reason)
 
 
 func _build_post_battle_review_ui(root: Control) -> void:
@@ -48365,7 +48772,7 @@ func _hide_battle_runtime_menu() -> void:
 func _update_battle_runtime_menu_ui() -> void:
 	if battle_runtime_menu_panel == null or menu_controller == null or menu_view == null:
 		return
-	menu_view.update_battle_runtime(menu_controller.battle_runtime_model(ui_language, battle_mode, MODE_TRAINING, training_dummy_state, game_over))
+	menu_view.update_battle_runtime(menu_controller.battle_runtime_model(ui_language, battle_mode, MODE_TRAINING, training_dummy_state, game_over or local_replay_session.mode == "playback", local_replay_session.mode == "playback"))
 
 
 func _battle_runtime_menu_action(action_key: String) -> void:
@@ -48375,7 +48782,10 @@ func _battle_runtime_menu_action(action_key: String) -> void:
 			_hide_battle_runtime_menu()
 		"post_review":
 			_hide_battle_runtime_menu()
-			_show_post_battle_review(post_battle_review_winner_id, post_battle_review_reason)
+			if local_replay_session.mode == "playback":
+				_local_replay_return_to_review()
+			else:
+				_show_post_battle_review(post_battle_review_winner_id, post_battle_review_reason)
 		"battle_reset":
 			_hide_battle_runtime_menu()
 			_begin_battle(battle_mode, false, "battle_reset")
@@ -48400,6 +48810,9 @@ func _battle_runtime_menu_action(action_key: String) -> void:
 			_show_training_config(false)
 		"main_menu":
 			_hide_battle_runtime_menu()
+			if local_replay_session.mode == "playback":
+				local_replay_session.mode = "off"
+				_local_replay_restore_previous_setup()
 			_show_menu()
 
 
@@ -48408,7 +48821,11 @@ func _show_post_battle_review(winner_id: int, reason: String = "victory") -> voi
 	post_battle_review_reason = reason
 	if menu_view == null or menu_controller == null:
 		return
-	menu_view.update_post_battle_review(menu_controller.post_battle_review_model(ui_language, winner_id, victory_points, match_time_remaining, battle_mode, _battle_review_diagnostic_summary_text(), _post_battle_star_soul_summary_rows()))
+	var diagnostic := String(local_replay_review_override.get("diagnostic", "")) if not local_replay_review_override.is_empty() else _battle_review_diagnostic_summary_text()
+	var star_rows := Array(local_replay_review_override.get("star_soul_summary_rows", [])) if not local_replay_review_override.is_empty() else _post_battle_star_soul_summary_rows()
+	var can_save := game_over and local_replay_session.mode == "capture" and (battle_contact_tape_mode == "capture" or not local_replay_session.saved_document.is_empty())
+	var can_play := BattleReplayFileService.latest_path() != ""
+	menu_view.update_post_battle_review(menu_controller.post_battle_review_model(ui_language, winner_id, victory_points, match_time_remaining, battle_mode, diagnostic, star_rows, can_save, can_play, local_replay_status, local_replay_session.mode == "review"))
 	menu_view.show_post_battle_review()
 
 
@@ -48425,6 +48842,8 @@ func _hide_post_battle_review() -> void:
 
 
 func _post_battle_review_action(action_key: String) -> void:
+	if local_replay_session.mode == "review" and action_key in ["adjust_sortie", "edit_units", "rematch"]:
+		return
 	var action := menu_controller.post_battle_review_action(action_key) if menu_controller != null else {"action": action_key}
 	match String(action.get("action", action_key)):
 		"review":
@@ -48438,6 +48857,10 @@ func _post_battle_review_action(action_key: String) -> void:
 		"rematch":
 			_hide_post_battle_review()
 			_begin_battle(battle_mode, true, "post_battle_rematch")
+		"save_replay":
+			_local_replay_save()
+		"play_replay":
+			_local_replay_open_latest()
 		"main_menu":
 			_hide_post_battle_review()
 			_show_menu()
@@ -55346,6 +55769,12 @@ func _mobius_config() -> Dictionary:
 	return config
 
 
+func _mobius_presentation_config() -> Dictionary:
+	var config := _mobius_config()
+	config["screen_scale"] = float(config["screen_scale"]) * BATTLE_PRESENTATION_ZOOM
+	return config
+
+
 func _mobius_camera_coord() -> Vector2:
 	return Vector2(camera_mobius_s, camera_lane_center)
 
@@ -55368,7 +55797,7 @@ func _clamp_camera_lane_center(lane_value: float) -> float:
 func _mobius_project_coord(coord: Vector2) -> Dictionary:
 	if not mobius_enabled:
 		return {}
-	return MobiusWorld.project_to_screen(coord, _presentation_camera_coord(), _mobius_config(), mobius_rotation_state)
+	return MobiusWorld.project_to_screen(coord, _presentation_camera_coord(), _mobius_presentation_config(), mobius_rotation_state)
 
 
 func _project_combat_coord_to_screen(coord: Vector2) -> Dictionary:
@@ -55396,7 +55825,7 @@ func _mobius_surface_input_for_unit(unit, input_vector: Vector2) -> Vector2:
 
 func _mobius_boundary_points(lane_value: float) -> PackedVector2Array:
 	var points := PackedVector2Array()
-	var config := _mobius_config()
+	var config := _mobius_presentation_config()
 	config["twist_visual_enabled"] = true
 	var segment_count := 72
 	var span := VIEW_WIDTH * 1.2
@@ -55484,7 +55913,7 @@ func _refresh_mobius_surface_view() -> void:
 		battle_backdrop.visible = game_state == STATE_BATTLE and not mobius_battle_visible
 	if not mobius_battle_visible:
 		return
-	var surface_config := _mobius_config()
+	var surface_config := _mobius_presentation_config()
 	surface_config["stardust_band_enabled"] = false
 	surface_config["surface_field_kind"] = "square_grid_field"
 	surface_config["surface_projection_mode"] = "world_grid"
@@ -55682,7 +56111,7 @@ func _first_live_unit_any_role(player_id: int):
 
 
 func _screen_from_ring(ring_value: float, lane_value: float) -> Dictionary:
-	var screen_scale := _battle_world_to_screen_scale()
+	var screen_scale := _battle_world_to_screen_scale() * BATTLE_PRESENTATION_ZOOM
 	var lifted_coord := Vector2(ring_value, lane_value)
 	if mobius_enabled:
 		lifted_coord = MobiusWorld.lift_ring_lane_near(camera_mobius_s, ring_value, lane_value, RING_LENGTH)

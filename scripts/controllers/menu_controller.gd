@@ -7,6 +7,7 @@ const MAIN_MENU_SPECS := [
 	{"key": "unit_edit", "zh": "单位编辑", "en": "UNIT EDIT", "description_zh": "空白画布优先：编辑单个单位，保存后再编成队伍。", "description_en": "Blank-canvas first: edit one unit, save it, then compose teams."},
 	{"key": "pvp", "zh": "本地双人", "en": "LOCAL VERSUS", "description_zh": "正式战斗优先设计对象：双控制器本地对战，P1/P2 各自操作。", "description_en": "Formal battle priority: local two-controller versus, with P1/P2 controlling their own sides."},
 	{"key": "show_ai_seat_panel", "zh": "电脑对战", "en": "COMPUTER BATTLE", "description_zh": "选择电脑对战席位：P1 左侧、P2 右侧，或 P3 观战双方规则队伍。", "description_en": "Choose a Computer Battle seat: P1 left, P2 right, or P3 watching two rule-driven sides."},
+	{"key": "play_replay", "zh": "播放录像", "en": "LOCAL REPLAY", "description_zh": "读取最近保存的本地对局录像。", "description_en": "Play the latest saved local battle replay."},
 	{"key": "settings", "zh": "设置", "en": "SETTINGS", "description_zh": "声音、画面、语言和战斗按键绑定。", "description_en": "Sound, video, language, and battle input bindings."},
 	{"key": "quit", "zh": "退出", "en": "QUIT", "description_zh": "退出游戏。", "description_en": "Quit the game."},
 ]
@@ -36,6 +37,8 @@ const POST_BATTLE_REVIEW_SPECS := [
 	{"key": "adjust_sortie", "zh": "调整出战配置", "en": "ADJUST SORTIE"},
 	{"key": "edit_units", "zh": "编辑单位构筑", "en": "UNIT EDIT"},
 	{"key": "rematch", "zh": "立即再战", "en": "REMATCH"},
+	{"key": "save_replay", "zh": "保存本局录像", "en": "SAVE REPLAY"},
+	{"key": "play_replay", "zh": "播放录像", "en": "PLAY REPLAY"},
 	{"key": "main_menu", "zh": "主菜单", "en": "MAIN MENU"},
 ]
 
@@ -129,6 +132,8 @@ func post_battle_review_action(action_key: String) -> Dictionary:
 			return {"action": "rematch", "key": action_key}
 		"main_menu":
 			return {"action": "main_menu", "key": action_key}
+		"save_replay", "play_replay":
+			return {"action": action_key, "key": action_key}
 	return {"action": action_key, "key": action_key}
 
 
@@ -161,7 +166,7 @@ func page_options_model(language: String) -> Dictionary:
 	}
 
 
-func battle_runtime_model(language: String, battle_mode: String, training_mode: String, dummy_state: String, game_over: bool = false) -> Dictionary:
+func battle_runtime_model(language: String, battle_mode: String, training_mode: String, dummy_state: String, game_over: bool = false, replay_active: bool = false) -> Dictionary:
 	var zh := language == "zh"
 	var is_training := battle_mode == training_mode
 	var items := _localized_specs(BATTLE_RUNTIME_OPTION_SPECS, zh, false)
@@ -185,6 +190,8 @@ func battle_runtime_model(language: String, battle_mode: String, training_mode: 
 			item["disabled"] = not is_training
 		if bool(item.get("game_over_only", false)):
 			item["disabled"] = not game_over
+		if replay_active and String(item.get("key", "")) in ["reset_positions", "reset_resources", "dummy_state", "input", "settings", "training_config"]:
+			item["disabled"] = true
 		items[i] = item
 	return {
 		"title": ("训练选项" if zh else "TRAINING OPTIONS") if is_training else ("战斗选项" if zh else "BATTLE OPTIONS"),
@@ -192,7 +199,7 @@ func battle_runtime_model(language: String, battle_mode: String, training_mode: 
 	}
 
 
-func post_battle_review_model(language: String, winner_id: int, victory_points: Dictionary, match_time_remaining: float, battle_mode: String, command_log_text: String = "", star_soul_summary_rows: Array = []) -> Dictionary:
+func post_battle_review_model(language: String, winner_id: int, victory_points: Dictionary, match_time_remaining: float, battle_mode: String, command_log_text: String = "", star_soul_summary_rows: Array = [], can_save_replay: bool = false, can_play_replay: bool = false, replay_status: String = "", replay_review: bool = false) -> Dictionary:
 	var zh := language == "zh"
 	var p1_points := int(victory_points.get(1, 0))
 	var p2_points := int(victory_points.get(2, 0))
@@ -206,12 +213,25 @@ func post_battle_review_model(language: String, winner_id: int, victory_points: 
 	return {
 		"title": "战斗复盘" if zh else "POST-BATTLE REVIEW",
 		"summary": ("P%d 胜利  |  VP %d:%d  |  剩余 %02d:%02d  |  %s" if zh else "P%d wins  |  VP %d:%d  |  %02d:%02d left  |  %s") % [winner_id, p1_points, p2_points, minutes, seconds, mode_label],
-		"hint": "复盘和改构筑是玩家自主选择：可以先留在战场观察，也可以回到出战配置或单位编辑后再战。" if zh else "Review and build changes are player-chosen: inspect the frozen field, adjust sortie, edit units, or rematch.",
+		"hint": replay_status if replay_status != "" else "复盘和改构筑是玩家自主选择：可以先留在战场观察，也可以回到出战配置或单位编辑后再战。" if zh else "Review and build changes are player-chosen: inspect the frozen field, adjust sortie, edit units, or rematch.",
 		"command_log": command_log_text,
 		"star_soul_summary": _star_soul_summary_text(star_soul_summary_rows, zh),
 		"star_soul_summary_rows": star_soul_summary_rows.duplicate(true),
-		"items": _localized_specs(POST_BATTLE_REVIEW_SPECS, zh, false),
+		"items": _post_battle_review_items(zh, can_save_replay, can_play_replay, replay_review),
 	}
+
+
+func _post_battle_review_items(zh: bool, can_save_replay: bool, can_play_replay: bool, replay_review: bool) -> Array:
+	var items := _localized_specs(POST_BATTLE_REVIEW_SPECS, zh, false)
+	for item in items:
+		match String(Dictionary(item).get("key", "")):
+			"save_replay":
+				item["disabled"] = not can_save_replay
+			"play_replay":
+				item["disabled"] = not can_play_replay
+			"adjust_sortie", "edit_units", "rematch":
+				item["disabled"] = replay_review
+	return items
 
 
 func _star_soul_summary_text(summary_rows: Array, zh: bool) -> String:

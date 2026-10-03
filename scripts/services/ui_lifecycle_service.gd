@@ -1,7 +1,7 @@
 extends RefCounted
 class_name UILifecycleService
 
-const EDITOR_UNIT_ACTION_KEYS := ["load_unit"]
+const EDITOR_UNIT_ACTION_KEYS := ["edit_side", "load_unit"]
 const EDITOR_UNIT_MANAGEMENT_ACTION_KEYS := ["duplicate", "delete"]
 const EDITOR_ASSEMBLY_GUIDE_ACTION_KEYS := ["assembly_guide_prev", "assembly_guide_apply", "assembly_guide_next"]
 const EDITOR_BOARD_PRIMARY_ACTION_KEYS := ["save_canvas", "training_import", "open_saved_units"]
@@ -1088,8 +1088,8 @@ static func editor_panel_role_chrome_presentation(mode: String, active_role_key:
 		var build_position: Vector2 = role_build_spec.get("position", Vector2(936.0 + float(role_index) * 92.0, 156.0))
 		var build_size: Vector2 = role_build_spec.get("size", Vector2(86.0, 32.0))
 		role_buttons[role_key] = {
-			"visible": false,
-			"disabled": true,
+			"visible": mode == "load",
+			"disabled": mode != "load",
 			"position": Vector2(build_position.x, 118.0 if parts_visible else 212.0),
 			"size": Vector2(build_size.x, 24.0 if parts_visible else build_size.y),
 			"text": ("身份:%s" if zh else "ROLE:%s") % String(role_short_labels.get(role_key, role_key.to_upper())),

@@ -32,7 +32,7 @@ const MENU_STATUS_RECT := Rect2(Vector2(622.0, 658.0), Vector2(572.0, 20.0))
 const MENU_TELEMETRY_RECT := Rect2(Vector2(74.0, 690.0), Vector2(438.0, 22.0))
 const MENU_HELP_RECT := Rect2(Vector2(520.0, 682.0), Vector2(700.0, 24.0))
 const MENU_BUTTON_ORIGIN := Vector2(82.0, 176.0)
-const MENU_BUTTON_SIZE := Vector2(455.0, 68.0)
+const MENU_BUTTON_SIZE := Vector2(455.0, 60.0)
 const MENU_BUTTON_ROW_GAP := 4.0
 const MENU_AI_SEAT_PANEL_RECT := Rect2(Vector2(596.0, 454.0), Vector2(546.0, 118.0))
 const MENU_AI_SEAT_LABEL_RECT := Rect2(Vector2(622.0, 466.0), Vector2(494.0, 24.0))
@@ -52,16 +52,16 @@ const BATTLE_RUNTIME_TITLE_RECT := Rect2(Vector2(18.0, 12.0), Vector2(294.0, 28.
 const BATTLE_RUNTIME_BUTTON_ORIGIN := Vector2(24.0, 52.0)
 const BATTLE_RUNTIME_BUTTON_SIZE := Vector2(282.0, 28.0)
 const BATTLE_RUNTIME_BUTTON_ROW_GAP := 6.0
-const POST_BATTLE_REVIEW_RECT := Rect2(Vector2(306.0, 146.0), Vector2(668.0, 430.0))
+const POST_BATTLE_REVIEW_RECT := Rect2(Vector2(306.0, 55.0), Vector2(668.0, 610.0))
 const POST_BATTLE_REVIEW_ACCENT_RECT := Rect2(Vector2(32.0, 54.0), Vector2(604.0, 3.0))
 const POST_BATTLE_REVIEW_TITLE_RECT := Rect2(Vector2(32.0, 16.0), Vector2(604.0, 34.0))
 const POST_BATTLE_REVIEW_SUMMARY_RECT := Rect2(Vector2(42.0, 66.0), Vector2(584.0, 34.0))
 const POST_BATTLE_REVIEW_HINT_RECT := Rect2(Vector2(42.0, 104.0), Vector2(584.0, 48.0))
 const POST_BATTLE_REVIEW_STAR_SOUL_RECT := Rect2(Vector2(42.0, 156.0), Vector2(584.0, 58.0))
-const POST_BATTLE_REVIEW_COMMAND_LOG_RECT := Rect2(Vector2(42.0, 222.0), Vector2(584.0, 30.0))
-const POST_BATTLE_REVIEW_BUTTON_ORIGIN := Vector2(46.0, 270.0)
-const POST_BATTLE_REVIEW_BUTTON_SIZE := Vector2(252.0, 36.0)
-const POST_BATTLE_REVIEW_BUTTON_GAP := Vector2(32.0, 12.0)
+const POST_BATTLE_REVIEW_COMMAND_LOG_RECT := Rect2(Vector2(42.0, 222.0), Vector2(584.0, 200.0))
+const POST_BATTLE_REVIEW_BUTTON_ORIGIN := Vector2(46.0, 428.0)
+const POST_BATTLE_REVIEW_BUTTON_SIZE := Vector2(252.0, 34.0)
+const POST_BATTLE_REVIEW_BUTTON_GAP := Vector2(32.0, 8.0)
 
 const FORMAT_SELECT_PANEL_SIZE := Vector2(708.0, 360.0)
 const FORMAT_SELECT_ACCENT_RECT := Rect2(Vector2(40.0, 64.0), Vector2(628.0, 3.0))
@@ -121,7 +121,7 @@ const EDITOR_OPTIONS_BUTTON_RECT := Rect2(Vector2(1040.0, 24.0), Vector2(168.0, 
 const EDITOR_BOARD_RECT := Rect2(Vector2(8.0, 94.0), Vector2(908.0, 548.0))
 
 const BATTLE_MENU_BUTTON_RECT := Rect2(Vector2(1092.0, 650.0), Vector2(128.0, 34.0))
-const BATTLE_HELP_RECT := Rect2(Vector2(82.0, 684.0), Vector2(1000.0, 24.0))
+const BATTLE_HELP_RECT := Rect2(Vector2(82.0, 680.0), Vector2(1000.0, 28.0))
 
 
 static func left_sidebar_rect() -> Rect2:
